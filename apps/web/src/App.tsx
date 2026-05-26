@@ -16,7 +16,7 @@ import {
   WalletCards,
   X
 } from "lucide-react";
-import { dispose, init, type Chart, type KLineData } from "klinecharts";
+import { ActionType, dispose, init, LoadDataType, type Chart, type KLineData } from "klinecharts";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   buildLoadingMarketKlinesResult,
@@ -24,6 +24,7 @@ import {
   loadMarketSearch,
   loadResearchRunHistory,
   loadTerminalWorkspace,
+  mergeMarketKlines,
   MarketKlinesResult,
   MarketSearchSuggestion,
   resolveQuantCoreBaseUrl,
@@ -74,6 +75,8 @@ const initialKlinesState: MarketKlinesResult = {
 };
 
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
+const chartKlineLimit = 500;
+const chartRightBoundaryDistance = 0;
 
 const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
   market: Radar,
@@ -102,12 +105,18 @@ export function App() {
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
+  const klinesStateRef = useRef(initialKlinesState);
+  const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
   const skipNextSymbolSearchRef = useRef(false);
   const i18n = createI18n(locale);
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
   const latestChartBar = klinesState.bars.at(-1);
+
+  useEffect(() => {
+    klinesStateRef.current = klinesState;
+  }, [klinesState]);
 
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
@@ -141,12 +150,52 @@ export function App() {
     };
     setIsChartLoading(true);
     setKlinesState(buildLoadingMarketKlinesResult(params));
-    const result = await loadMarketKlines(quantCoreBaseUrl, { ...params, limit: 160 });
+    const result = await loadMarketKlines(quantCoreBaseUrl, { ...params, limit: chartKlineLimit });
     if (chartRequestIdRef.current === requestId) {
       setKlinesState(result);
       setIsChartLoading(false);
     }
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+
+  const loadHistoricalKlines = useCallback(async (beforeTimestampMs: number): Promise<MarketKlinesResult["bars"]> => {
+    const current = klinesStateRef.current;
+    const earliestTimestampMs = current.bars[0]?.timestampMs;
+    if (!Number.isFinite(beforeTimestampMs) || !earliestTimestampMs) {
+      return [];
+    }
+
+    const endMs = Math.min(beforeTimestampMs, earliestTimestampMs) - 1;
+    const requestKey = `${current.market}:${current.symbol}:${current.timeframe}:${endMs}`;
+    if (historicalKlineRequestRef.current === requestKey) {
+      return [];
+    }
+
+    historicalKlineRequestRef.current = requestKey;
+    try {
+      const result = await loadMarketKlines(quantCoreBaseUrl, {
+        market: current.market,
+        symbol: current.symbol,
+        timeframe: current.timeframe,
+        limit: chartKlineLimit,
+        end: new Date(endMs).toISOString()
+      });
+      const olderBars = result.bars.filter((bar) => bar.timestampMs < earliestTimestampMs);
+      if (olderBars.length) {
+        setKlinesState((existing) =>
+          existing.market === result.market &&
+          existing.symbol === result.symbol &&
+          existing.timeframe === result.timeframe
+            ? mergeMarketKlines(existing, result)
+            : existing
+        );
+      }
+      return olderBars;
+    } finally {
+      if (historicalKlineRequestRef.current === requestKey) {
+        historicalKlineRequestRef.current = null;
+      }
+    }
+  }, []);
 
   const runPipeline = useCallback(async () => {
     setIsRunning(true);
@@ -549,6 +598,8 @@ export function App() {
                 key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
                 bars={klinesState.bars}
                 locale={locale}
+                market={klinesState.market}
+                onLoadHistorical={loadHistoricalKlines}
                 symbol={klinesState.symbol}
                 timeframe={klinesState.timeframe}
               />
@@ -628,6 +679,8 @@ export function App() {
                 key={`expanded-${klinesState.market}-${klinesState.symbol}-${klinesState.timeframe}`}
                 bars={klinesState.bars}
                 locale={locale}
+                market={klinesState.market}
+                onLoadHistorical={loadHistoricalKlines}
                 symbol={klinesState.symbol}
                 timeframe={klinesState.timeframe}
               />
@@ -712,16 +765,26 @@ export function App() {
 function KlineChartCanvas({
   bars,
   locale,
+  market,
+  onLoadHistorical,
   symbol,
   timeframe
 }: {
   bars: MarketKlinesResult["bars"];
   locale: Locale;
+  market: Market;
+  onLoadHistorical?: (beforeTimestampMs: number) => Promise<MarketKlinesResult["bars"]>;
   symbol: string;
   timeframe: Timeframe;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<Chart | null>(null);
+  const contextKeyRef = useRef("");
+  const historicalLoaderRef = useRef(onLoadHistorical);
+
+  useEffect(() => {
+    historicalLoaderRef.current = onLoadHistorical;
+  }, [onLoadHistorical]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -734,7 +797,34 @@ function KlineChartCanvas({
     });
     chartRef.current = chart;
     chart?.setPriceVolumePrecision(4, 2);
+    chart?.setMaxOffsetRightDistance(chartRightBoundaryDistance);
+    chart?.setOffsetRightDistance(chartRightBoundaryDistance);
+    chart?.setRightMinVisibleBarCount(2);
     chart?.createIndicator("VOL", false, { height: 72, minHeight: 48 });
+    chart?.setLoadDataCallback(({ type, data, callback }) => {
+      if (type === LoadDataType.Forward && data?.timestamp) {
+        const loader = historicalLoaderRef.current;
+        if (!loader) {
+          callback([], false);
+          return;
+        }
+        void loader(data.timestamp)
+          .then((loadedBars) => callback(toKlineChartData(loadedBars), loadedBars.length > 0))
+          .catch(() => callback([], false));
+        return;
+      }
+      if (type === LoadDataType.Backward) {
+        chart.setOffsetRightDistance(chartRightBoundaryDistance);
+      }
+      callback([], false);
+    });
+    const clampFutureScroll = () => {
+      if (chart && chart.getOffsetRightDistance() > chartRightBoundaryDistance) {
+        chart.setOffsetRightDistance(chartRightBoundaryDistance);
+      }
+    };
+    chart?.subscribeAction(ActionType.OnScroll, clampFutureScroll);
+    chart?.subscribeAction(ActionType.OnVisibleRangeChange, clampFutureScroll);
 
     const resizeObserver =
       typeof ResizeObserver === "undefined"
@@ -747,6 +837,8 @@ function KlineChartCanvas({
     }
 
     return () => {
+      chart?.unsubscribeAction(ActionType.OnScroll, clampFutureScroll);
+      chart?.unsubscribeAction(ActionType.OnVisibleRangeChange, clampFutureScroll);
       resizeObserver?.disconnect();
       if (containerRef.current) {
         dispose(containerRef.current);
@@ -766,9 +858,17 @@ function KlineChartCanvas({
     if (!chart) {
       return;
     }
-    chart.applyNewData(toKlineChartData(bars));
-    chart.scrollToRealTime(0);
-  }, [bars, symbol, timeframe]);
+    const contextKey = `${market}:${symbol}:${timeframe}`;
+    const isNewContext = contextKeyRef.current !== contextKey;
+    contextKeyRef.current = contextKey;
+    chart.applyNewData(toKlineChartData(bars), true, () => {
+      chart.setMaxOffsetRightDistance(chartRightBoundaryDistance);
+      if (isNewContext) {
+        chart.setOffsetRightDistance(chartRightBoundaryDistance);
+        chart.scrollToRealTime(0);
+      }
+    });
+  }, [bars, market, symbol, timeframe]);
 
   return <div className="chart-canvas" ref={containerRef} aria-label={`${symbol} ${timeframe} K-line chart`} />;
 }

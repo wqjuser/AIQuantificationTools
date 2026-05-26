@@ -76,6 +76,11 @@ export interface TerminalResearchParams {
   timeframe: ResearchTimeframe;
 }
 
+export interface MarketKlinesParams extends TerminalResearchParams {
+  limit?: number;
+  end?: string;
+}
+
 const defaultFetcher: WorkspaceFetcher = async (url) => fetch(url);
 
 export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): string {
@@ -114,7 +119,8 @@ export function buildMarketKlinesUrl(
   market: Market,
   symbol: string,
   timeframe: ResearchTimeframe,
-  limit = 160
+  limit = 160,
+  end?: string
 ): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("api/market/klines", normalizedBase);
@@ -122,6 +128,9 @@ export function buildMarketKlinesUrl(
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("timeframe", timeframe);
   url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
+  if (end?.trim()) {
+    url.searchParams.set("end", end.trim());
+  }
   return url.toString();
 }
 
@@ -207,12 +216,12 @@ export async function loadResearchRunHistory(
 
 export async function loadMarketKlines(
   baseUrl: string,
-  params: TerminalResearchParams & { limit?: number },
+  params: MarketKlinesParams,
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<MarketKlinesResult> {
   try {
     const response = await fetcher(
-      buildMarketKlinesUrl(baseUrl, params.market, params.symbol, params.timeframe, params.limit ?? 160)
+      buildMarketKlinesUrl(baseUrl, params.market, params.symbol, params.timeframe, params.limit ?? 160, params.end)
     );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
@@ -241,6 +250,36 @@ export async function loadMarketKlines(
       error: error instanceof Error ? error.message : "Unknown market kline load error"
     };
   }
+}
+
+export function mergeMarketKlines(current: MarketKlinesResult, incoming: MarketKlinesResult): MarketKlinesResult {
+  if (
+    current.market !== incoming.market ||
+    current.symbol !== incoming.symbol ||
+    current.timeframe !== incoming.timeframe
+  ) {
+    return current;
+  }
+
+  const barsByTimestamp = new Map<number, MarketKlineBar>();
+  [...incoming.bars, ...current.bars].forEach((bar) => {
+    barsByTimestamp.set(bar.timestampMs, bar);
+  });
+  const bars = [...barsByTimestamp.values()].sort((left, right) => left.timestampMs - right.timestampMs);
+  const warnings = [...new Set([...current.quality.warnings, ...incoming.quality.warnings])];
+
+  return {
+    ...current,
+    source: current.source === "core" || incoming.source === "core" ? "core" : current.source,
+    error: current.error ?? incoming.error,
+    quality: {
+      source: incoming.quality.source || current.quality.source,
+      isComplete: current.quality.isComplete && incoming.quality.isComplete,
+      warnings,
+      rows: bars.length
+    },
+    bars
+  };
 }
 
 export async function loadMarketSearch(

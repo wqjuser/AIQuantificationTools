@@ -55,7 +55,9 @@ class QuantDingerKlineAdapter:
         self.cache = KlineCache(ttl_seconds=cache_ttl_seconds, now=now)
 
     def cache_key(self, request: MarketDataRequest, limit: int) -> str:
-        return f"kline:{request.market}:{request.symbol.strip().upper()}:{request.timeframe}:{limit}"
+        start_key = request.start.isoformat() if request.start else ""
+        end_key = request.end.isoformat() if request.end else ""
+        return f"kline:{request.market}:{request.symbol.strip().upper()}:{request.timeframe}:{limit}:{start_key}:{end_key}"
 
     def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160) -> tuple[list[OHLCVBar], DataQuality]:
         bounded_limit = max(1, min(int(limit or 160), 500))

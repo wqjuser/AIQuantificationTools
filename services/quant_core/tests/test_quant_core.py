@@ -445,6 +445,42 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["bars"][-1]["timestampMs"], int(bars[-1].timestamp.timestamp() * 1000))
         self.assertEqual(payload["bars"][-1]["volume"], 120000.0)
 
+    def test_quantdinger_style_kline_cache_key_includes_time_window(self):
+        from datetime import datetime, timezone
+
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        adapter = QuantDingerKlineAdapter()
+        latest_key = adapter.cache_key(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="60m", end=None),
+            limit=500,
+        )
+        older_key = adapter.cache_key(
+            MarketDataRequest(
+                market="ashare",
+                symbol="600000",
+                timeframe="60m",
+                end=datetime(2026, 5, 26, 9, 45, tzinfo=timezone.utc),
+            ),
+            limit=500,
+        )
+
+        self.assertNotEqual(latest_key, older_key)
+        self.assertIn("2026-05-26T09:45:00+00:00", older_key)
+
+    def test_api_parses_kline_end_boundary(self):
+        from datetime import timezone
+
+        from quant_core.api import _parse_kline_end
+
+        parsed = _parse_kline_end("2026-05-26T09:45:00.000Z")
+
+        self.assertEqual(parsed.isoformat(), "2026-05-26T09:45:00+00:00")
+        self.assertEqual(_parse_kline_end("1779788700000").tzinfo, timezone.utc)
+        self.assertIsNone(_parse_kline_end(""))
+        self.assertIsNone(_parse_kline_end("not-a-date"))
+
     def test_quantdinger_style_kline_adapter_maps_akshare_minute_rows(self):
         import pandas as pd
 

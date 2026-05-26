@@ -92,7 +92,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", ["600000"])[0]
             timeframe = query.get("timeframe", ["1d"])[0]
             limit = _parse_kline_limit(query.get("limit", ["160"])[0])
-            request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe)
+            request = MarketDataRequest(
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                end=_parse_kline_end(query.get("end", [""])[0]),
+            )
             bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
             self.cache.upsert_bars(bars)
             self._send_json(market_klines_to_payload(market, symbol, timeframe, bars, quality))
@@ -189,6 +194,27 @@ def _parse_kline_limit(raw: str) -> int:
     except ValueError:
         return 160
     return max(1, min(value, 500))
+
+
+def _parse_kline_end(raw: str) -> datetime | None:
+    value = raw.strip()
+    if not value:
+        return None
+    try:
+        timestamp = float(value)
+        if timestamp > 10**12:
+            timestamp /= 1000
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    except ValueError:
+        pass
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _parse_search_limit(raw: str) -> int:
