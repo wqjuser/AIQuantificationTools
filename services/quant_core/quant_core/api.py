@@ -108,11 +108,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 market=query.get("market", ["ashare"])[0],
                 symbol=query.get("symbol", ["600000"])[0],
                 timeframe=query.get("timeframe", ["1d"])[0],
-                adapter=self.adapter,
+                adapter=self.kline_adapter,
                 assistant=self.assistant,
                 engine=_backtest_engine_from_query(query),
                 cache=self.cache,
                 run_store=self.run_store,
+                data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
             )
             self._send_json(terminal_workspace_to_payload(workspace))
             return
@@ -193,6 +194,14 @@ def _parse_kline_limit(raw: str) -> int:
         value = int(raw)
     except ValueError:
         return 160
+    return max(1, min(value, 500))
+
+
+def _parse_research_data_limit(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return 500
     return max(1, min(value, 500))
 
 

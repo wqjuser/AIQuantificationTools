@@ -205,6 +205,65 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertAlmostEqual(fallback.fee_rate, 0.0003)
         self.assertAlmostEqual(fallback.slippage_rate, 0.0002)
 
+    def test_research_api_uses_kline_adapter_and_bounded_data_limit(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.ai import LocalResearchAssistant
+        from quant_core.api import QuantApiHandler
+        from quant_core.backtest import BacktestEngine
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+
+        class FailingDemoAdapter:
+            source = "demo"
+
+            def fetch_ohlcv(self, request):
+                raise AssertionError("research API should use the kline adapter")
+
+        class RecordingKlineAdapter:
+            source = "recording"
+
+            def __init__(self):
+                self.calls = []
+                self.delegate = DemoMarketDataAdapter()
+
+            def fetch_ohlcv(self, request, limit=160):
+                self.calls.append((request.market, request.symbol, request.timeframe, limit))
+                return self.delegate.fetch_ohlcv(request)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            recording_adapter = RecordingKlineAdapter()
+
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                adapter = FailingDemoAdapter()
+                assistant = LocalResearchAssistant()
+                engine = BacktestEngine()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                kline_adapter = recording_adapter
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=240")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
+        self.assertEqual(recording_adapter.calls, [("ashare", "600000", "1d", 240)])
+
     def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
         from quant_core.research import run_terminal_research
         from quant_core.terminal import terminal_workspace_to_payload

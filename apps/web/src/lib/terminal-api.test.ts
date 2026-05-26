@@ -23,7 +23,7 @@ describe("terminal workspace API client", () => {
 
   test("builds the research run URL with selected instrument context", () => {
     expect(buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d")).toBe(
-      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d"
+      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500"
     );
   });
 
@@ -35,7 +35,7 @@ describe("terminal workspace API client", () => {
         slippageBps: 4
       })
     ).toBe(
-      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&initialCash=250000&feeBps=8&slippageBps=4"
+      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500&initialCash=250000&feeBps=8&slippageBps=4"
     );
   });
 
@@ -154,7 +154,7 @@ describe("terminal workspace API client", () => {
     );
 
     expect(calls[0]).toBe(
-      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&initialCash=250000&feeBps=8&slippageBps=4"
+      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500&initialCash=250000&feeBps=8&slippageBps=4"
     );
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Research run complete");

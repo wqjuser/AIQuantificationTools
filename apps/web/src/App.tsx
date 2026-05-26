@@ -325,7 +325,8 @@ export function App() {
       {
         market: workspace.selectedInstrument.market,
         symbol: workspace.selectedInstrument.symbol,
-        timeframe: workspace.selectedTimeframe
+        timeframe: workspace.selectedTimeframe,
+        limit: chartKlineLimit
       },
       workspace
     );

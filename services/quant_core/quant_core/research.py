@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
+from inspect import Parameter, signature
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,7 +10,17 @@ from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
-from quant_core.domain import AiResearchRequest, Condition, Market, MarketDataRequest, RiskRules, StrategyConfig, Timeframe
+from quant_core.domain import (
+    AiResearchRequest,
+    Condition,
+    DataQuality,
+    Market,
+    MarketDataRequest,
+    OHLCVBar,
+    RiskRules,
+    StrategyConfig,
+    Timeframe,
+)
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestAssumptions,
@@ -33,6 +44,7 @@ def run_terminal_research(
     engine: BacktestEngine | None = None,
     cache: MarketDataCache | None = None,
     run_store: ResearchRunStore | None = None,
+    data_limit: int = 500,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -42,7 +54,7 @@ def run_terminal_research(
     created_at = datetime.now(timezone.utc)
 
     request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=created_at)
-    bars, quality = data_adapter.fetch_ohlcv(request)
+    bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit)
     market_cache.upsert_bars(bars)
 
     strategy = StrategyConfig(
@@ -128,6 +140,26 @@ def run_terminal_research(
             execution_mode="paper_only",
         ),
     )
+
+
+def _fetch_research_bars(
+    adapter: MarketDataAdapter,
+    request: MarketDataRequest,
+    *,
+    data_limit: int,
+) -> tuple[list[OHLCVBar], DataQuality]:
+    try:
+        requested_limit = int(data_limit)
+    except (TypeError, ValueError):
+        requested_limit = 500
+    bounded_limit = max(1, min(requested_limit, 500))
+    try:
+        parameters = signature(adapter.fetch_ohlcv).parameters.values()
+    except (TypeError, ValueError):
+        return adapter.fetch_ohlcv(request)
+    if any(parameter.name == "limit" or parameter.kind == Parameter.VAR_KEYWORD for parameter in parameters):
+        return adapter.fetch_ohlcv(request, limit=bounded_limit)
+    return adapter.fetch_ohlcv(request)
 
 
 def _instrument_for_symbol(workspace: TerminalWorkspace, market: Market, symbol: str) -> Instrument:

@@ -82,10 +82,10 @@ export interface TerminalResearchParams {
   market: Market;
   symbol: string;
   timeframe: ResearchTimeframe;
+  limit?: number;
 }
 
 export interface MarketKlinesParams extends TerminalResearchParams {
-  limit?: number;
   end?: string;
 }
 
@@ -106,13 +106,15 @@ export function buildResearchRunUrl(
   market: Market,
   symbol: string,
   timeframe: ResearchTimeframe,
-  assumptions?: BacktestAssumptions
+  assumptions?: BacktestAssumptions,
+  limit = 500
 ): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("api/research/run", normalizedBase);
   url.searchParams.set("market", market);
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("timeframe", timeframe);
+  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
   if (assumptions) {
     url.searchParams.set("initialCash", String(assumptions.initialCash));
     url.searchParams.set("feeBps", String(assumptions.feeBps));
@@ -338,7 +340,8 @@ export async function runTerminalResearch(
         params.market,
         params.symbol,
         params.timeframe,
-        resolveBacktestAssumptions(currentWorkspace)
+        resolveBacktestAssumptions(currentWorkspace),
+        params.limit ?? 500
       )
     );
     if (!response.ok) {
