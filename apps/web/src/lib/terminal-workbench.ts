@@ -78,6 +78,14 @@ export interface WorkflowNode {
   detail: string;
 }
 
+export interface ResearchRunSummary {
+  runId: string;
+  createdAt: string;
+  strategyRevision: string;
+  dataRows: number;
+  executionMode: string;
+}
+
 export interface TerminalWorkspace {
   schemaVersion: number;
   selectedInstrument: Instrument;
@@ -91,6 +99,7 @@ export interface TerminalWorkspace {
   metrics: BacktestMetric[];
   decisionLog: DecisionLogEntry[];
   workflowNodes: WorkflowNode[];
+  researchRun?: ResearchRunSummary | null;
 }
 
 export function buildTerminalWorkspace(): TerminalWorkspace {
@@ -217,4 +226,11 @@ export function executionModeLabel(execution: ExecutionState): string {
     return "Certified live";
   }
   return "Blocked live";
+}
+
+export function researchRunLabel(summary: ResearchRunSummary | null | undefined): string {
+  if (!summary) {
+    return "No audited run yet";
+  }
+  return `${summary.runId} · ${summary.dataRows} bars · ${summary.executionMode}`;
 }

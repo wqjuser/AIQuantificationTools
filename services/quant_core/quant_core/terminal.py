@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from quant_core.domain import Market
@@ -98,6 +99,15 @@ class WorkflowNode:
 
 
 @dataclass(frozen=True)
+class ResearchRunSummary:
+    run_id: str
+    created_at: datetime
+    strategy_revision: str
+    data_rows: int
+    execution_mode: str
+
+
+@dataclass(frozen=True)
 class TerminalWorkspace:
     schema_version: int
     selected_instrument: Instrument
@@ -111,6 +121,7 @@ class TerminalWorkspace:
     metrics: list[BacktestMetric]
     decision_log: list[DecisionLogEntry]
     workflow_nodes: list[WorkflowNode]
+    research_run: ResearchRunSummary | None = None
 
 
 def build_terminal_workspace() -> TerminalWorkspace:
@@ -232,6 +243,8 @@ def terminal_workspace_to_payload(workspace: TerminalWorkspace) -> dict[str, Any
 
 
 def _encode(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
     if is_dataclass(value):
         return {_snake_to_camel(key): _encode(item) for key, item in asdict(value).items()}
     if isinstance(value, list):

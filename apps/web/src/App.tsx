@@ -22,6 +22,7 @@ import {
   buildTerminalWorkspace,
   executionModeLabel,
   Market,
+  researchRunLabel,
   TerminalModule,
   TerminalWorkspace
 } from "./lib/terminal-workbench";
@@ -118,9 +119,9 @@ export function App() {
         </section>
 
         <section className="workspace-card">
-          <span className="section-label">Workspace</span>
+          <span className="section-label">Audit Trail</span>
           <strong>A-share trend research</strong>
-          <p>{workspace.watchlist.map((instrument) => instrument.symbol).join(" / ")}</p>
+          <p>{researchRunLabel(workspace.researchRun)}</p>
         </section>
       </aside>
 

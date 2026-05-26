@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, Market, MarketDataRequest, RiskRules, StrategyConfig, Timeframe
+from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestMetric,
     DecisionLogEntry,
     Instrument,
+    ResearchRunSummary,
     StrategySnapshot,
     TerminalWorkspace,
     build_terminal_workspace,
@@ -28,13 +31,16 @@ def run_terminal_research(
     assistant: LocalResearchAssistant | None = None,
     engine: BacktestEngine | None = None,
     cache: MarketDataCache | None = None,
+    run_store: ResearchRunStore | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
     backtest_engine = engine or BacktestEngine()
     market_cache = cache or MarketDataCache(Path("data/market.sqlite"))
+    audit_store = run_store or ResearchRunStore(Path("data/research_runs.sqlite"))
+    created_at = datetime.now(timezone.utc)
 
-    request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=datetime.now(timezone.utc))
+    request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=created_at)
     bars, quality = data_adapter.fetch_ohlcv(request)
     market_cache.upsert_bars(bars)
 
@@ -61,6 +67,27 @@ def run_terminal_research(
     workspace = build_terminal_workspace()
     selected = _instrument_for_symbol(workspace, market, symbol)
     watchlist = _watchlist_with_selected(workspace.watchlist, selected)
+    decision_log = [
+        DecisionLogEntry(agent="AI Summary", message=report.summary, tone="ai"),
+        DecisionLogEntry(agent="Risk Manager", message=report.risks[0], tone="risk"),
+        DecisionLogEntry(agent="Technical Analyst", message=f"Backtest replay completed on {quality.rows} bars.", tone="positive"),
+        DecisionLogEntry(agent="Portfolio Manager", message=report.improvements[0], tone="warning"),
+    ]
+    run_id = f"run-{uuid4().hex[:12]}"
+    audit = ResearchRunAudit(
+        run_id=run_id,
+        created_at=created_at,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+        strategy_name=strategy.name,
+        strategy_revision=strategy.revision,
+        data_rows=quality.rows,
+        metrics=asdict(backtest.metrics),
+        decisions=[asdict(entry) for entry in decision_log],
+        execution_mode="paper_only",
+    )
+    audit_store.record(audit)
 
     return replace(
         workspace,
@@ -79,12 +106,14 @@ def run_terminal_research(
             BacktestMetric(label="Win Rate", value=_format_pct(backtest.metrics.win_rate_pct), tone="neutral"),
             BacktestMetric(label="Trades", value=str(backtest.metrics.trade_count), tone="neutral"),
         ],
-        decision_log=[
-            DecisionLogEntry(agent="AI Summary", message=report.summary, tone="ai"),
-            DecisionLogEntry(agent="Risk Manager", message=report.risks[0], tone="risk"),
-            DecisionLogEntry(agent="Technical Analyst", message=f"Backtest replay completed on {quality.rows} bars.", tone="positive"),
-            DecisionLogEntry(agent="Portfolio Manager", message=report.improvements[0], tone="warning"),
-        ],
+        decision_log=decision_log,
+        research_run=ResearchRunSummary(
+            run_id=run_id,
+            created_at=created_at,
+            strategy_revision=strategy.revision,
+            data_rows=quality.rows,
+            execution_mode="paper_only",
+        ),
     )
 
 

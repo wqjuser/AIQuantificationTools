@@ -204,6 +204,53 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["execution"]["mode"], "paper_only")
         self.assertFalse(payload["execution"]["liveEnabled"])
 
+    def test_research_run_store_records_and_reads_audit_records(self):
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        created_at = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        record = ResearchRunAudit(
+            run_id="run-test",
+            created_at=created_at,
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev123",
+            data_rows=120,
+            metrics={"total_return_pct": 1.2, "trade_count": 6},
+            decisions=[{"agent": "AI Summary", "message": "研究完成", "tone": "ai"}],
+            execution_mode="paper_only",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            store.record(record)
+            latest = store.list_recent(limit=1)
+
+        self.assertEqual(len(latest), 1)
+        self.assertEqual(latest[0].run_id, "run-test")
+        self.assertEqual(latest[0].created_at, created_at)
+        self.assertEqual(latest[0].metrics["trade_count"], 6)
+        self.assertEqual(latest[0].decisions[0]["agent"], "AI Summary")
+
+    def test_terminal_research_run_persists_audit_summary(self):
+        from quant_core.research import run_terminal_research
+        from quant_core.runs import ResearchRunStore
+        from quant_core.terminal import terminal_workspace_to_payload
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            workspace = run_terminal_research(market="ashare", symbol="600000", timeframe="1d", run_store=store)
+            latest = store.list_recent(limit=1)
+
+        payload = terminal_workspace_to_payload(workspace)
+
+        self.assertEqual(len(latest), 1)
+        self.assertEqual(payload["researchRun"]["runId"], latest[0].run_id)
+        self.assertEqual(payload["researchRun"]["strategyRevision"], latest[0].strategy_revision)
+        self.assertEqual(payload["researchRun"]["dataRows"], latest[0].data_rows)
+        self.assertEqual(payload["researchRun"]["executionMode"], "paper_only")
+
 
 if __name__ == "__main__":
     unittest.main()

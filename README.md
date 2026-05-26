@@ -8,6 +8,7 @@
 - Python 量化核心：`services/quant_core` 提供 OHLCV schema、SQLite 本地缓存、可视化策略配置、回测、AI 研究报告和 Paper Trading 执行器。
 - 本地 API：`npm run api` 启动 `http://127.0.0.1:8765`，前端通过 `/api/workspace` 读取终端工作区契约，通过 `/api/research/run` 触发终端研究流水线，也可调用 `/api/demo` 跑通演示研究闭环。
 - 免费数据源预留：A 股 AKShare、美股 yfinance/Alpha Vantage、加密货币 ccxt 以适配器方式预留；当前默认用 demo adapter 保证开箱可跑。
+- 运行审计：每次终端研究流水线会写入 `data/research_runs.sqlite`，用于追踪 run id、策略 revision、数据行数、指标和 AI 决策。
 
 ## Commands
 

@@ -3,6 +3,7 @@ import {
   agentRoleLabels,
   buildTerminalWorkspace,
   executionModeLabel,
+  researchRunLabel,
   quantLoopLabels,
   visiblePanels
 } from "./terminal-workbench";
@@ -56,5 +57,18 @@ describe("terminal workbench model", () => {
       "Risk Manager",
       "Portfolio Manager"
     ]);
+  });
+
+  test("formats research run audit summaries for the terminal", () => {
+    expect(
+      researchRunLabel({
+        runId: "run-abc123",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        strategyRevision: "rev123",
+        dataRows: 120,
+        executionMode: "paper_only"
+      })
+    ).toBe("run-abc123 · 120 bars · paper_only");
+    expect(researchRunLabel(undefined)).toBe("No audited run yet");
   });
 });
