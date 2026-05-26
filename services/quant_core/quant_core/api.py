@@ -13,6 +13,7 @@ from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
 from quant_core.research import run_terminal_research
+from quant_core.runs import ResearchRunStore, research_run_audits_to_payload
 from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
 
 
@@ -33,6 +34,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     adapter = DemoMarketDataAdapter()
     assistant = LocalResearchAssistant()
     engine = BacktestEngine()
+    run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -64,8 +66,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 assistant=self.assistant,
                 engine=self.engine,
                 cache=self.cache,
+                run_store=self.run_store,
             )
             self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if parsed.path == "/api/research/runs":
+            query = parse_qs(parsed.query)
+            limit = _parse_limit(query.get("limit", ["10"])[0])
+            self._send_json(research_run_audits_to_payload(self.run_store.list_recent(limit=limit)))
             return
         self._send_json({"error": "not_found"}, status=404)
 
@@ -124,6 +132,14 @@ def run(host: str = "127.0.0.1", port: int = 8765) -> None:
     server = HTTPServer((host, port), QuantApiHandler)
     print(f"quant-core API listening on http://{host}:{port}")
     server.serve_forever()
+
+
+def _parse_limit(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return 10
+    return max(1, min(value, 50))
 
 
 if __name__ == "__main__":

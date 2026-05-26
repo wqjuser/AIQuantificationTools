@@ -233,6 +233,44 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].metrics["trade_count"], 6)
         self.assertEqual(latest[0].decisions[0]["agent"], "AI Summary")
 
+    def test_research_run_audits_serialize_for_history_api(self):
+        from quant_core.runs import ResearchRunAudit, research_run_audits_to_payload
+
+        older = ResearchRunAudit(
+            run_id="run-old",
+            created_at=datetime(2026, 5, 26, 7, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-old",
+            data_rows=100,
+            metrics={"total_return_pct": 1.2, "trade_count": 4},
+            decisions=[],
+            execution_mode="paper_only",
+        )
+        newer = ResearchRunAudit(
+            run_id="run-new",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="us",
+            symbol="AAPL",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-new",
+            data_rows=120,
+            metrics={"total_return_pct": 3.4, "trade_count": 8},
+            decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
+            execution_mode="paper_only",
+        )
+
+        payload = research_run_audits_to_payload([newer, older])
+
+        self.assertEqual(payload["runs"][0]["runId"], "run-new")
+        self.assertEqual(payload["runs"][0]["createdAt"], "2026-05-26T08:00:00+00:00")
+        self.assertEqual(payload["runs"][0]["strategyRevision"], "rev-new")
+        self.assertEqual(payload["runs"][0]["metrics"]["trade_count"], 8)
+        self.assertEqual(payload["runs"][1]["symbol"], "600000")
+
     def test_terminal_research_run_persists_audit_summary(self):
         from quant_core.research import run_terminal_research
         from quant_core.runs import ResearchRunStore

@@ -3,6 +3,7 @@ import {
   agentRoleLabels,
   buildTerminalWorkspace,
   executionModeLabel,
+  researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
   visiblePanels
@@ -70,5 +71,23 @@ describe("terminal workbench model", () => {
       })
     ).toBe("run-abc123 · 120 bars · paper_only");
     expect(researchRunLabel(undefined)).toBe("No audited run yet");
+  });
+
+  test("formats research run history rows for dense terminal display", () => {
+    expect(
+      researchRunHistoryLabel({
+        runId: "run-history",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "SMA trend demo",
+        strategyRevision: "rev123",
+        dataRows: 120,
+        metrics: { total_return_pct: 3.4, trade_count: 8 },
+        decisions: [],
+        executionMode: "paper_only"
+      })
+    ).toBe("600000 · +3.40% · 8 trades");
   });
 });

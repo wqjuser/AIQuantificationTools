@@ -48,7 +48,7 @@ button {
 .agent-rail {
   border-width: 0 0 0 1px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   gap: 12px;
   padding: 12px;
 }
@@ -102,7 +102,8 @@ button {
 .module-list,
 .ai-actions,
 .gate-list,
-.decision-log {
+.decision-log,
+.run-history {
   display: grid;
   gap: 8px;
 }
@@ -567,6 +568,30 @@ dd {
   color: #a8b7c7;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.history-row {
+  border: 1px solid #2a3b51;
+  border-radius: 7px;
+  background: #151f2d;
+  padding: 9px 10px;
+}
+
+.history-row strong,
+.history-row span {
+  display: block;
+}
+
+.history-row strong {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.history-row span,
+.empty-state {
+  margin-top: 5px;
+  color: #8fa0b2;
+  font-size: 11px;
 }
 
 .ai-actions button {

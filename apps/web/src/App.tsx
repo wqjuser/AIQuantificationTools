@@ -13,15 +13,19 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
+  loadResearchRunHistory,
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  ResearchRunHistoryResult,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
 import {
   buildTerminalWorkspace,
   executionModeLabel,
   Market,
+  ResearchRunAudit,
+  researchRunHistoryLabel,
   researchRunLabel,
   TerminalModule,
   TerminalWorkspace
@@ -34,6 +38,10 @@ const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildTerminalWorkspace(),
   source: "fallback",
   statusLabel: "Offline snapshot"
+};
+const initialRunHistoryState: ResearchRunHistoryResult = {
+  runs: [],
+  source: "fallback"
 };
 
 const marketLabels: Record<Market, string> = {
@@ -51,15 +59,21 @@ const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
 
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
+  const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+
+  const refreshRunHistory = useCallback(async () => {
+    setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
+  }, []);
 
   const refreshWorkspace = useCallback(async () => {
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
     setWorkspaceState(result);
+    await refreshRunHistory();
     setIsRefreshing(false);
-  }, []);
+  }, [refreshRunHistory]);
 
   const runPipeline = useCallback(async () => {
     setIsRunning(true);
@@ -73,8 +87,9 @@ export function App() {
       workspace
     );
     setWorkspaceState(result);
+    await refreshRunHistory();
     setIsRunning(false);
-  }, [workspace]);
+  }, [refreshRunHistory, workspace]);
 
   useEffect(() => {
     void refreshWorkspace();
@@ -243,6 +258,16 @@ export function App() {
           </div>
         </Panel>
 
+        <Panel title="Run History" subtitle="Recent audited runs">
+          <div className="run-history">
+            {runHistory.length ? (
+              runHistory.map((run) => <RunHistoryRow key={run.runId} run={run} />)
+            ) : (
+              <span className="empty-state">No audited runs</span>
+            )}
+          </div>
+        </Panel>
+
         <Panel title="AI Actions" subtitle="Structured, not generic chat">
           <div className="ai-actions">
             <button>
@@ -290,6 +315,15 @@ function Panel({
       </header>
       {children}
     </section>
+  );
+}
+
+function RunHistoryRow({ run }: { run: ResearchRunAudit }) {
+  return (
+    <article className="history-row">
+      <strong>{researchRunHistoryLabel(run)}</strong>
+      <span>{run.runId}</span>
+    </article>
   );
 }
 

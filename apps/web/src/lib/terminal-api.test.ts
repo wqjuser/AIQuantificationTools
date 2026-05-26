@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 import { buildTerminalWorkspace } from "./terminal-workbench";
 import {
   buildResearchRunUrl,
+  buildResearchRunsUrl,
   buildWorkspaceUrl,
+  loadResearchRunHistory,
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch
@@ -16,6 +18,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run URL with selected instrument context", () => {
     expect(buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d")).toBe(
       "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d"
+    );
+  });
+
+  test("builds the research run history URL with a bounded limit", () => {
+    expect(buildResearchRunsUrl("http://127.0.0.1:8765/", 5)).toBe(
+      "http://127.0.0.1:8765/api/research/runs?limit=5"
     );
   });
 
@@ -107,5 +115,47 @@ describe("terminal workspace API client", () => {
     expect(result.statusLabel).toBe("Research run failed");
     expect(result.workspace).toBe(currentWorkspace);
     expect(result.error).toBe("core offline");
+  });
+
+  test("loads recent research run history from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadResearchRunHistory("http://127.0.0.1:8765", 2, async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          runs: [
+            {
+              runId: "run-new",
+              createdAt: "2026-05-26T08:00:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyName: "SMA trend demo",
+              strategyRevision: "rev123",
+              dataRows: 120,
+              metrics: { total_return_pct: 3.4, trade_count: 8 },
+              decisions: [],
+              executionMode: "paper_only"
+            }
+          ]
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs?limit=2"]);
+    expect(result.source).toBe("core");
+    expect(result.runs[0].runId).toBe("run-new");
+    expect(result.runs[0].metrics.trade_count).toBe(8);
+  });
+
+  test("returns an empty run history when the Python core is unavailable", async () => {
+    const result = await loadResearchRunHistory("http://127.0.0.1:8765", 5, async () => {
+      throw new Error("offline");
+    });
+
+    expect(result.source).toBe("fallback");
+    expect(result.runs).toEqual([]);
+    expect(result.error).toBe("offline");
   });
 });

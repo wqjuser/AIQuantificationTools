@@ -86,6 +86,20 @@ export interface ResearchRunSummary {
   executionMode: string;
 }
 
+export interface ResearchRunAudit {
+  runId: string;
+  createdAt: string;
+  market: Market;
+  symbol: string;
+  timeframe: string;
+  strategyName: string;
+  strategyRevision: string;
+  dataRows: number;
+  metrics: Record<string, number>;
+  decisions: DecisionLogEntry[];
+  executionMode: string;
+}
+
 export interface TerminalWorkspace {
   schemaVersion: number;
   selectedInstrument: Instrument;
@@ -233,4 +247,13 @@ export function researchRunLabel(summary: ResearchRunSummary | null | undefined)
     return "No audited run yet";
   }
   return `${summary.runId} · ${summary.dataRows} bars · ${summary.executionMode}`;
+}
+
+export function researchRunHistoryLabel(run: ResearchRunAudit): string {
+  const totalReturn = run.metrics.total_return_pct;
+  const tradeCount = run.metrics.trade_count ?? 0;
+  const returnLabel = Number.isFinite(totalReturn)
+    ? `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`
+    : "N/A";
+  return `${run.symbol} · ${returnLabel} · ${tradeCount} trades`;
 }
