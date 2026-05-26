@@ -79,6 +79,7 @@ export interface WorkflowNode {
 }
 
 export interface TerminalWorkspace {
+  schemaVersion: number;
   selectedInstrument: Instrument;
   watchlist: Instrument[];
   quantLoop: QuantLoopStep[];
@@ -94,6 +95,7 @@ export interface TerminalWorkspace {
 
 export function buildTerminalWorkspace(): TerminalWorkspace {
   return {
+    schemaVersion: 1,
     selectedInstrument: {
       symbol: "600000",
       name: "浦发银行",

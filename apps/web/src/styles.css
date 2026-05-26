@@ -274,6 +274,21 @@ h2 {
   color: #ffffff;
 }
 
+.run-button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .watchlist-strip,
 .metrics-row {
   display: grid;

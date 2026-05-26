@@ -12,6 +12,7 @@ from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
+from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
 
 
 def _json_default(value):
@@ -48,6 +49,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 timeframe=query.get("timeframe", ["1d"])[0],
             )
             self._send_json(payload)
+            return
+        if parsed.path == "/api/workspace":
+            self._send_json(terminal_workspace_to_payload(build_terminal_workspace()))
             return
         self._send_json({"error": "not_found"}, status=404)
 

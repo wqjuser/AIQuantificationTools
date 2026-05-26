@@ -7,10 +7,12 @@ import {
   GitBranch,
   Play,
   Radar,
+  RefreshCw,
   ShieldCheck,
   WalletCards
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { loadTerminalWorkspace, resolveQuantCoreBaseUrl, WorkspaceLoadResult } from "./lib/terminal-api";
 import {
   buildTerminalWorkspace,
   executionModeLabel,
@@ -19,7 +21,14 @@ import {
   TerminalWorkspace
 } from "./lib/terminal-workbench";
 
-const workspace = buildTerminalWorkspace();
+const quantCoreBaseUrl = resolveQuantCoreBaseUrl({
+  VITE_QUANT_API_BASE: import.meta.env.VITE_QUANT_API_BASE
+});
+const initialWorkspaceState: WorkspaceLoadResult = {
+  workspace: buildTerminalWorkspace(),
+  source: "fallback",
+  statusLabel: "Offline snapshot"
+};
 
 const marketLabels: Record<Market, string> = {
   ashare: "A 股",
@@ -35,6 +44,20 @@ const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
 };
 
 export function App() {
+  const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refreshWorkspace = useCallback(async () => {
+    setIsRefreshing(true);
+    const result = await loadTerminalWorkspace(quantCoreBaseUrl);
+    setWorkspaceState(result);
+    setIsRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    void refreshWorkspace();
+  }, [refreshWorkspace]);
+
   return (
     <div className="terminal-shell">
       <aside className="left-rail">
@@ -76,7 +99,7 @@ export function App() {
         <section className="workspace-card">
           <span className="section-label">Workspace</span>
           <strong>A-share trend research</strong>
-          <p>600000 / 000300 / AAPL / BTC</p>
+          <p>{workspace.watchlist.map((instrument) => instrument.symbol).join(" / ")}</p>
         </section>
       </aside>
 
@@ -87,11 +110,13 @@ export function App() {
             <h1>{workspace.selectedInstrument.name} · {workspace.selectedInstrument.symbol}</h1>
           </div>
           <div className="topbar-actions">
-            <span className="status-pill ok">Data OK</span>
+            <span className={`status-pill ${source === "core" ? "ok" : "paper"}`} title={error}>
+              {statusLabel}
+            </span>
             <span className="status-pill paper">{executionModeLabel(workspace.execution)}</span>
-            <button className="run-button">
-              <Play size={17} />
-              Run Pipeline
+            <button className="run-button" disabled={isRefreshing} onClick={refreshWorkspace}>
+              {isRefreshing ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
+              Sync Workspace
             </button>
           </div>
         </header>

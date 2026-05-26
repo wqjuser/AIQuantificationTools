@@ -6,7 +6,7 @@
 
 - Web/Desktop 共用前端：`apps/web` 使用 React、TypeScript、Vite，并包含 Tauri v2 桌面壳配置。
 - Python 量化核心：`services/quant_core` 提供 OHLCV schema、SQLite 本地缓存、可视化策略配置、回测、AI 研究报告和 Paper Trading 执行器。
-- 本地 API：`npm run api` 启动 `http://127.0.0.1:8765`，前端可调用 `/api/demo` 跑通演示研究闭环。
+- 本地 API：`npm run api` 启动 `http://127.0.0.1:8765`，前端通过 `/api/workspace` 读取终端工作区契约，也可调用 `/api/demo` 跑通演示研究闭环。
 - 免费数据源预留：A 股 AKShare、美股 yfinance/Alpha Vantage、加密货币 ccxt 以适配器方式预留；当前默认用 demo adapter 保证开箱可跑。
 
 ## Commands
@@ -17,6 +17,12 @@ npm run test
 npm run build
 npm run api
 npm run dev
+```
+
+前端默认连接 `http://127.0.0.1:8765`。如需更换本地核心地址，可在 `.env` 中设置：
+
+```powershell
+VITE_QUANT_API_BASE=http://127.0.0.1:8765
 ```
 
 桌面端开发：
@@ -33,7 +39,7 @@ npm run desktop:build
 
 ## Product Boundary
 
-首版聚焦研究、回测、AI 解读和模拟交易，不连接真实 A 股券商账户。自动化交易能力通过 `ExecutionAdapter` 风格的接口预留，等有合法券商接口后再接入实盘适配器。
+首版聚焦研究、回测、AI 解读和模拟交易，不连接真实 A 股券商账户。终端工作区默认 `paper_only`，自动化交易能力通过 `ExecutionAdapter` 风格的接口预留，等有合法券商接口且通过适配器认证、风控审批和人工确认后再接入实盘适配器。
 
 ## Data Policy
 

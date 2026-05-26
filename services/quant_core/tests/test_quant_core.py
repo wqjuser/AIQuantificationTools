@@ -137,6 +137,57 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(accepted.status, "filled")
         self.assertEqual(paper.account().positions["600000"], 100)
 
+    def test_terminal_workspace_contract_keeps_ai_and_execution_gates_traceable(self):
+        from quant_core.terminal import (
+            agent_role_labels,
+            build_terminal_workspace,
+            execution_gate_ids,
+            quant_loop_labels,
+        )
+
+        workspace = build_terminal_workspace()
+
+        self.assertEqual(workspace.schema_version, 1)
+        self.assertEqual(
+            quant_loop_labels(workspace),
+            [
+                "Idea Lab",
+                "Data & Factor",
+                "Strategy Builder",
+                "Backtest Lab",
+                "Agent Review",
+                "Paper Trading",
+                "Broker Center",
+            ],
+        )
+        self.assertEqual(
+            agent_role_labels(workspace),
+            [
+                "Technical Analyst",
+                "Fundamental Analyst",
+                "News Analyst",
+                "Sentiment Analyst",
+                "Bull Researcher",
+                "Bear Researcher",
+                "Risk Manager",
+                "Portfolio Manager",
+            ],
+        )
+        self.assertEqual(execution_gate_ids(workspace), ["adapter-certified", "risk-approved", "human-confirmed"])
+        self.assertEqual(workspace.execution.mode, "paper_only")
+        self.assertFalse(workspace.execution.live_enabled)
+
+    def test_terminal_workspace_serializes_to_frontend_contract_shape(self):
+        from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
+
+        payload = terminal_workspace_to_payload(build_terminal_workspace())
+
+        self.assertEqual(payload["schemaVersion"], 1)
+        self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
+        self.assertEqual(payload["execution"]["liveEnabled"], False)
+        self.assertEqual(payload["workflowNodes"][-1]["id"], "execution")
+        self.assertGreaterEqual(len(payload["decisionLog"]), 4)
+
 
 if __name__ == "__main__":
     unittest.main()
