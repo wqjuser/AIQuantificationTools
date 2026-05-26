@@ -9,12 +9,13 @@ import {
   Play,
   Radar,
   RefreshCw,
+  Search,
   ShieldCheck,
   Timer,
   WalletCards
 } from "lucide-react";
 import { dispose, init, type Chart, type KLineData } from "klinecharts";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   loadMarketKlines,
   loadResearchRunHistory,
@@ -28,6 +29,7 @@ import {
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
+  buildInstrumentFromSymbol,
   formatInstrumentPrice,
   Market,
   ResearchRunAudit,
@@ -35,6 +37,7 @@ import {
   TerminalModule,
   TerminalWorkspace,
   workspaceFromResearchRunAudit,
+  workspaceWithPreservedSelection,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
@@ -81,24 +84,44 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
+  const [activeLoopStepId, setActiveLoopStepId] = useState(workspace.quantLoop[0]?.id ?? "idea");
+  const [activeModuleId, setActiveModuleId] = useState(workspace.modules[0]?.id ?? "watchlist");
+  const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
+  const [symbolDraft, setSymbolDraft] = useState(workspace.selectedInstrument.symbol);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(false);
+  const manualSelectionVersionRef = useRef(0);
+  const chartRequestIdRef = useRef(0);
   const i18n = createI18n(locale);
+  const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
+  const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
 
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
   }, []);
 
   const refreshWorkspace = useCallback(async () => {
+    const startedSelectionVersion = manualSelectionVersionRef.current;
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
-    setWorkspaceState(result);
+    setWorkspaceState((current) => {
+      if (manualSelectionVersionRef.current === startedSelectionVersion) {
+        return result;
+      }
+      return {
+        ...result,
+        workspace: workspaceWithPreservedSelection(result.workspace, current.workspace),
+        statusLabel: current.statusLabel
+      };
+    });
     await refreshRunHistory();
     setIsRefreshing(false);
   }, [refreshRunHistory]);
 
   const refreshChart = useCallback(async () => {
+    const requestId = chartRequestIdRef.current + 1;
+    chartRequestIdRef.current = requestId;
     setIsChartLoading(true);
     const result = await loadMarketKlines(quantCoreBaseUrl, {
       market: workspace.selectedInstrument.market,
@@ -106,8 +129,10 @@ export function App() {
       timeframe: workspace.selectedTimeframe,
       limit: 160
     });
-    setKlinesState(result);
-    setIsChartLoading(false);
+    if (chartRequestIdRef.current === requestId) {
+      setKlinesState(result);
+      setIsChartLoading(false);
+    }
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const runPipeline = useCallback(async () => {
@@ -128,35 +153,51 @@ export function App() {
 
   const replayRun = useCallback(
     (run: ResearchRunAudit) => {
-      setWorkspaceState({
-        workspace: workspaceFromResearchRunAudit(workspace, run),
+      manualSelectionVersionRef.current += 1;
+      setWorkspaceState((current) => ({
+        workspace: workspaceFromResearchRunAudit(current.workspace, run),
         source: "core",
         statusLabel: "Audit replay loaded"
-      });
+      }));
     },
-    [workspace]
+    []
   );
 
   const selectInstrument = useCallback(
     (instrument: TerminalWorkspace["selectedInstrument"]) => {
-      setWorkspaceState({
-        workspace: workspaceWithSelectedInstrument(workspace, instrument),
+      manualSelectionVersionRef.current += 1;
+      setWorkspaceState((current) => ({
+        workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
         statusLabel: "Instrument selected"
-      });
+      }));
     },
-    [workspace]
+    []
   );
 
   const selectTimeframe = useCallback(
     (timeframe: Timeframe) => {
-      setWorkspaceState({
-        workspace: workspaceWithSelectedTimeframe(workspace, timeframe),
+      manualSelectionVersionRef.current += 1;
+      setWorkspaceState((current) => ({
+        workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
         source: "core",
         statusLabel: "Timeframe selected"
-      });
+      }));
     },
-    [workspace]
+    []
+  );
+
+  const submitSymbol = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const instrument = buildInstrumentFromSymbol(marketDraft, symbolDraft);
+      if (!instrument) {
+        return;
+      }
+      selectInstrument(instrument);
+      setActiveModuleId("watchlist");
+    },
+    [marketDraft, selectInstrument, symbolDraft]
   );
 
   useEffect(() => {
@@ -171,6 +212,11 @@ export function App() {
     document.documentElement.lang = locale;
     window.localStorage.setItem("aiqt.locale", locale);
   }, [locale]);
+
+  useEffect(() => {
+    setMarketDraft(workspace.selectedInstrument.market);
+    setSymbolDraft(workspace.selectedInstrument.symbol);
+  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol]);
 
   return (
     <div className="terminal-shell">
@@ -187,7 +233,12 @@ export function App() {
           <p className="section-label">{i18n.t("section.quantLoop")}</p>
           <nav className="loop-nav">
             {workspace.quantLoop.map((step, index) => (
-              <button className={`loop-step ${step.status}`} key={step.id}>
+              <button
+                className={`loop-step ${step.status} ${activeLoopStepId === step.id ? "selected" : ""}`}
+                key={step.id}
+                onClick={() => setActiveLoopStepId(step.id)}
+                type="button"
+              >
                 <span>{index + 1}</span>
                 {i18n.quantLoopLabel(step.id, step.label)}
               </button>
@@ -201,7 +252,12 @@ export function App() {
             {workspace.modules.map((module) => {
               const Icon = moduleIcons[module.accent];
               return (
-                <button className={`module-button ${module.accent}`} key={module.id}>
+                <button
+                  className={`module-button ${module.accent} ${activeModuleId === module.id ? "active" : ""}`}
+                  key={module.id}
+                  onClick={() => setActiveModuleId(module.id)}
+                  type="button"
+                >
                   <Icon size={16} />
                   {i18n.moduleLabel(module.id, module.label)}
                 </button>
@@ -224,6 +280,29 @@ export function App() {
             <h1>{workspace.selectedInstrument.name} · {workspace.selectedInstrument.symbol}</h1>
           </div>
           <div className="topbar-actions">
+            <form className="symbol-switcher" onSubmit={submitSymbol} aria-label={i18n.t("aria.symbolSwitcher")}>
+              <select
+                aria-label={i18n.t("symbol.market")}
+                onChange={(event) => setMarketDraft(event.currentTarget.value as Market)}
+                value={marketDraft}
+              >
+                {(["ashare", "us", "crypto"] as Market[]).map((market) => (
+                  <option key={market} value={market}>
+                    {i18n.marketLabel(market)}
+                  </option>
+                ))}
+              </select>
+              <input
+                aria-label={i18n.t("symbol.placeholder")}
+                onChange={(event) => setSymbolDraft(event.currentTarget.value)}
+                placeholder={i18n.t("symbol.placeholder")}
+                value={symbolDraft}
+              />
+              <button type="submit">
+                <Search size={15} />
+                {i18n.t("action.switchSymbol")}
+              </button>
+            </form>
             <span className={`status-pill ${source === "core" ? "ok" : "paper"}`} title={error}>
               {i18n.statusLabel(statusLabel)}
             </span>
@@ -283,6 +362,26 @@ export function App() {
               </em>
             </button>
           ))}
+        </section>
+
+        <section className={`module-focus-card ${activeModule?.accent ?? "market"}`}>
+          <div>
+            <span className="section-label">{i18n.t("moduleFocus.label")}</span>
+            <strong>
+              {i18n.moduleLabel(activeModule?.id ?? "watchlist", activeModule?.label ?? "Watchlist")} ·{" "}
+              {i18n.quantLoopLabel(activeLoopStep?.id ?? "idea", activeLoopStep?.label ?? "Idea Lab")}
+            </strong>
+            <p>
+              {i18n.moduleFocus(activeModule?.id ?? "watchlist", {
+                market: i18n.marketLabel(workspace.selectedInstrument.market),
+                symbol: workspace.selectedInstrument.symbol
+              })}
+            </p>
+            <p>{i18n.quantLoopFocus(activeLoopStep?.id ?? "idea", { symbol: workspace.selectedInstrument.symbol })}</p>
+          </div>
+          <span className="module-focus-symbol">
+            {i18n.t("moduleFocus.instrument")} · {workspace.selectedInstrument.symbol}
+          </span>
         </section>
 
         <section className="metrics-row">

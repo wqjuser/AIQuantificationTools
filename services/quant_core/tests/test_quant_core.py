@@ -438,6 +438,86 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 9.27)
         self.assertEqual(bars[-1].volume, 26674.0)
 
+    def test_us_kline_adapter_uses_yahoo_chart_without_python_package(self):
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            self.assertIn("query1.finance.yahoo.com", url)
+            self.assertIn("/AAPL?", url)
+            self.assertIn("interval=1d", url)
+            return (
+                '{"chart":{"result":[{"timestamp":[1779408000,1779494400],'
+                '"indicators":{"quote":[{'
+                '"open":[190.00,192.40],"high":[193.20,195.00],"low":[188.90,191.50],'
+                '"close":[192.10,194.80],"volume":[50100000,55200000]'
+                "}]}}],\"error\":null}}"
+            )
+
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="us", symbol="AAPL", timeframe="1d"),
+            limit=2,
+        )
+
+        self.assertEqual(quality.source, "yahoo")
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(bars[-1].market, "us")
+        self.assertEqual(bars[-1].close, 194.8)
+        self.assertEqual(bars[-1].volume, 55200000.0)
+
+    def test_crypto_kline_adapter_uses_binance_without_ccxt(self):
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            self.assertIn("api.binance.com", url)
+            self.assertIn("symbol=BTCUSDT", url)
+            self.assertIn("interval=1d", url)
+            return (
+                "["
+                "[1779408000000,\"100.0\",\"110.0\",\"95.0\",\"108.5\",\"1234.56\"],"
+                "[1779494400000,\"108.5\",\"116.0\",\"107.0\",\"114.2\",\"1567.89\"]"
+                "]"
+            )
+
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1d"),
+            limit=2,
+        )
+
+        self.assertEqual(quality.source, "binance")
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(bars[-1].market, "crypto")
+        self.assertEqual(bars[-1].close, 114.2)
+        self.assertEqual(bars[-1].volume, 1567.89)
+
+    def test_crypto_kline_adapter_falls_back_to_coinbase_when_binance_is_blocked(self):
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            if "api.binance.com" in url:
+                return '{"code":451,"msg":"restricted"}'
+            self.assertIn("api.exchange.coinbase.com", url)
+            self.assertIn("/products/BTC-USD/candles", url)
+            self.assertIn("granularity=86400", url)
+            return (
+                "["
+                "[1779494400,107.0,116.0,108.5,114.2,1567.89],"
+                "[1779408000,95.0,110.0,100.0,108.5,1234.56]"
+                "]"
+            )
+
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1d"),
+            limit=2,
+        )
+
+        self.assertEqual(quality.source, "coinbase")
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(bars[-1].close, 114.2)
+        self.assertEqual(bars[-1].volume, 1567.89)
+
 
 if __name__ == "__main__":
     unittest.main()

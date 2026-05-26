@@ -9,6 +9,8 @@ type LocalizedLabelMap = {
   modules: Record<string, string>;
   agents: Record<string, string>;
   workflowNodes: Record<string, WorkflowNodeTranslation>;
+  moduleFocus: Record<string, string>;
+  quantLoopFocus: Record<string, string>;
   gates: Record<string, string>;
   metrics: Record<string, string>;
   statuses: Record<string, string>;
@@ -25,12 +27,18 @@ const messages = {
     "language.en.label": "English",
     "aria.language": "Language",
     "aria.timeframe": "Research timeframe",
+    "aria.symbolSwitcher": "Symbol switcher",
     "brand.subtitle": "Local-first quant OS",
     "section.quantLoop": "Quant Loop",
     "section.terminalModules": "Terminal Modules",
     "section.auditTrail": "Audit Trail",
     "topbar.eyebrow": "Professional Quant Workbench",
+    "symbol.market": "Market",
+    "symbol.placeholder": "Symbol",
+    "action.switchSymbol": "Switch",
     "action.runPipeline": "Run Pipeline",
+    "moduleFocus.label": "Active Focus",
+    "moduleFocus.instrument": "Instrument",
     "panel.chart.title": "Chart & Factor Overlays",
     "panel.chart.subtitle": "Price · SMA20 · Trades · {timeframe}",
     "chart.noData": "No K-line data",
@@ -72,12 +80,18 @@ const messages = {
     "language.en.label": "English",
     "aria.language": "语言",
     "aria.timeframe": "研究周期",
+    "aria.symbolSwitcher": "标的切换",
     "brand.subtitle": "本地优先量化系统",
     "section.quantLoop": "量化闭环",
     "section.terminalModules": "终端模块",
     "section.auditTrail": "审计轨迹",
     "topbar.eyebrow": "专业量化工作台",
+    "symbol.market": "市场",
+    "symbol.placeholder": "输入股票/币对代码",
+    "action.switchSymbol": "查询",
     "action.runPipeline": "运行流水线",
+    "moduleFocus.label": "当前焦点",
+    "moduleFocus.instrument": "标的",
     "panel.chart.title": "图表与因子叠加",
     "panel.chart.subtitle": "价格 · SMA20 · 交易 · {timeframe}",
     "chart.noData": "暂无 K 线数据",
@@ -154,6 +168,22 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       agent: ["Agent", "debate / risk / report"],
       execution: ["Execution", "paper / certified live"]
     },
+    moduleFocus: {
+      watchlist: "Watchlist is bound to {symbol}; chart and research pipeline use this context.",
+      scanner: "Scanner is focused on {market} candidates while the chart stays on {symbol}.",
+      portfolio: "Portfolio risk is scoped to paper exposure and gates for {symbol}.",
+      news: "News and event agents are scoped to {symbol}; live event feeds are not connected yet.",
+      workflow: "Node workflow is staging data, factor, backtest, agent review, and execution for {symbol}."
+    },
+    quantLoopFocus: {
+      idea: "Capture the research hypothesis for {symbol}.",
+      data: "Prepare market data, factors, and quality checks for {symbol}.",
+      strategy: "Configure entry, exit, position, and risk rules for {symbol}.",
+      backtest: "Replay the selected timeframe and calculate audited metrics.",
+      "agent-review": "Ask the AI committee to explain results and risks from supplied data only.",
+      paper: "Route validated ideas into paper trading and risk logs.",
+      broker: "Live broker adapters stay locked until certification and human confirmation."
+    },
     gates: {
       "adapter-certified": "Adapter certified",
       "risk-approved": "Risk approved",
@@ -218,6 +248,22 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       backtest: ["回测", "手续费 / 滑点 / 回放"],
       agent: ["智能体", "辩论 / 风险 / 报告"],
       execution: ["执行", "模拟 / 认证实盘"]
+    },
+    moduleFocus: {
+      watchlist: "自选列表已绑定 {symbol}；图表和研究流水线会使用这个上下文。",
+      scanner: "市场扫描聚焦 {market} 候选池，当前图表保持在 {symbol}。",
+      portfolio: "组合风险当前只展示 {symbol} 的模拟盘暴露和风控闸门。",
+      news: "新闻事件智能体已切到 {symbol}；实时事件源尚未接入。",
+      workflow: "节点工作流正在围绕 {symbol} 串联数据、因子、回测、智能体评审和执行。"
+    },
+    quantLoopFocus: {
+      idea: "记录 {symbol} 的研究假设。",
+      data: "准备 {symbol} 的行情、因子和质量检查。",
+      strategy: "配置 {symbol} 的入场、出场、仓位和风控规则。",
+      backtest: "回放所选周期并计算可审计指标。",
+      "agent-review": "让 AI 委员会只基于传入数据解释结果和风险。",
+      paper: "把通过校验的想法送入模拟交易和风控日志。",
+      broker: "实盘券商适配器在认证和人工确认前保持锁定。"
     },
     gates: {
       "adapter-certified": "适配器已认证",
@@ -300,6 +346,12 @@ export function createI18n(locale: Locale) {
     },
     moduleLabel(id: string, fallback: string) {
       return valueOf(labels.modules, id, fallback);
+    },
+    moduleFocus(id: string, values: Record<string, string | number>) {
+      return formatMessage(valueOf(labels.moduleFocus, id, id), values);
+    },
+    quantLoopFocus(id: string, values: Record<string, string | number>) {
+      return formatMessage(valueOf(labels.quantLoopFocus, id, id), values);
     },
     agentLabel(id: string, fallback: string) {
       return valueOf(labels.agents, id, fallback);

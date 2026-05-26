@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
+  buildInstrumentFromSymbol,
   buildTerminalWorkspace,
   executionModeLabel,
   formatInstrumentPrice,
@@ -8,6 +9,7 @@ import {
   researchRunLabel,
   quantLoopLabels,
   visiblePanels,
+  workspaceWithPreservedSelection,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument,
   workspaceFromResearchRunAudit
@@ -101,6 +103,61 @@ describe("terminal workbench model", () => {
     expect(formatInstrumentPrice(8.66)).toBe("8.66");
     expect(formatInstrumentPrice(3898.221)).toBe("3898.22");
     expect(formatInstrumentPrice(undefined)).toBe("N/A");
+  });
+
+  test("builds a research instrument from a manually entered symbol", () => {
+    expect(buildInstrumentFromSymbol("ashare", " 600000 ")).toEqual({
+      symbol: "600000",
+      name: "600000",
+      market: "ashare",
+      changePct: 0
+    });
+    expect(buildInstrumentFromSymbol("us", " aapl ")).toEqual({
+      symbol: "AAPL",
+      name: "AAPL",
+      market: "us",
+      changePct: 0
+    });
+    expect(buildInstrumentFromSymbol("crypto", " btcusdt ")).toEqual({
+      symbol: "BTC/USDT",
+      name: "BTC/USDT",
+      market: "crypto",
+      changePct: 0
+    });
+    expect(buildInstrumentFromSymbol("us", "   ")).toBeNull();
+  });
+
+  test("adds a manually selected instrument to the watchlist context", () => {
+    const workspace = workspaceWithSelectedInstrument(
+      buildTerminalWorkspace(),
+      buildInstrumentFromSymbol("us", "MSFT")!
+    );
+
+    expect(workspace.selectedInstrument).toEqual({
+      symbol: "MSFT",
+      name: "MSFT",
+      market: "us",
+      changePct: 0
+    });
+    expect(workspace.watchlist[0].symbol).toBe("MSFT");
+    expect(workspace.watchlist).toHaveLength(5);
+    expect(workspace.researchRun).toBeNull();
+  });
+
+  test("preserves a manual symbol selection when a workspace refresh completes later", () => {
+    const currentWorkspace = workspaceWithSelectedTimeframe(
+      workspaceWithSelectedInstrument(buildTerminalWorkspace(), buildInstrumentFromSymbol("us", "MSFT")!),
+      "5m"
+    );
+    const refreshedWorkspace = buildTerminalWorkspace();
+
+    const merged = workspaceWithPreservedSelection(refreshedWorkspace, currentWorkspace);
+
+    expect(merged.selectedInstrument.symbol).toBe("MSFT");
+    expect(merged.selectedInstrument.market).toBe("us");
+    expect(merged.selectedTimeframe).toBe("5m");
+    expect(merged.watchlist[0].symbol).toBe("MSFT");
+    expect(merged.researchRun).toBeNull();
   });
 
   test("replays an audited research run into the terminal workspace", () => {

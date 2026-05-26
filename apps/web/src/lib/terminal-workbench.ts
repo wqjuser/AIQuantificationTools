@@ -273,6 +273,41 @@ export function formatInstrumentPrice(value: number | null | undefined): string 
   return value.toFixed(2);
 }
 
+export function buildInstrumentFromSymbol(market: Market, rawSymbol: string): Instrument | null {
+  const symbol = normalizeInstrumentSymbol(market, rawSymbol);
+  if (!symbol) {
+    return null;
+  }
+  return {
+    symbol,
+    name: symbol,
+    market,
+    changePct: 0
+  };
+}
+
+export function normalizeInstrumentSymbol(market: Market, rawSymbol: string): string {
+  const compact = rawSymbol.trim().toUpperCase().replace(/\s+/g, "");
+  if (!compact) {
+    return "";
+  }
+  if (market === "ashare") {
+    return compact
+      .replace(/^(SH|SZ|SSE|SZSE|CN:)/, "")
+      .replace(/\.(SH|SZ|SS|SSE|SZSE)$/u, "");
+  }
+  if (market === "crypto") {
+    const withSlash = compact.replace("-", "/");
+    if (withSlash.includes("/")) {
+      return withSlash;
+    }
+    if (withSlash.endsWith("USDT") && withSlash.length > 4) {
+      return `${withSlash.slice(0, -4)}/USDT`;
+    }
+  }
+  return compact;
+}
+
 export function workspaceFromResearchRunAudit(
   currentWorkspace: TerminalWorkspace,
   run: ResearchRunAudit
@@ -328,7 +363,7 @@ export function workspaceWithSelectedInstrument(
     (candidate) => candidate.symbol === instrument.symbol && candidate.market === instrument.market
   )
     ? currentWorkspace.watchlist
-    : [instrument, ...currentWorkspace.watchlist.slice(0, 3)];
+    : [instrument, ...currentWorkspace.watchlist].slice(0, 8);
 
   return {
     ...freshResearchContext(currentWorkspace, instrument, currentWorkspace.selectedTimeframe),
@@ -341,6 +376,25 @@ export function workspaceWithSelectedTimeframe(
   timeframe: Timeframe
 ): TerminalWorkspace {
   return freshResearchContext(currentWorkspace, currentWorkspace.selectedInstrument, timeframe);
+}
+
+export function workspaceWithPreservedSelection(
+  refreshedWorkspace: TerminalWorkspace,
+  currentWorkspace: TerminalWorkspace
+): TerminalWorkspace {
+  const sameInstrument =
+    refreshedWorkspace.selectedInstrument.symbol === currentWorkspace.selectedInstrument.symbol &&
+    refreshedWorkspace.selectedInstrument.market === currentWorkspace.selectedInstrument.market;
+  const sameTimeframe = refreshedWorkspace.selectedTimeframe === currentWorkspace.selectedTimeframe;
+
+  let workspace = refreshedWorkspace;
+  if (!sameInstrument) {
+    workspace = workspaceWithSelectedInstrument(workspace, currentWorkspace.selectedInstrument);
+  }
+  if (!sameTimeframe) {
+    workspace = workspaceWithSelectedTimeframe(workspace, currentWorkspace.selectedTimeframe);
+  }
+  return workspace;
 }
 
 function freshResearchContext(

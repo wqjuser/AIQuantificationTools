@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Callable
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
@@ -162,15 +162,29 @@ class QuantDingerKlineAdapter:
         return akshare_minute_frame_to_bars(frame, market="ashare", symbol=request.symbol, timeframe=request.timeframe)
 
     def _fetch_us_bars(self, request: MarketDataRequest, limit: int) -> tuple[list[OHLCVBar], DataQuality]:
+        yahoo_warning: str | None = None
+        try:
+            bars = self._fetch_yahoo_us_bars(request, limit)
+            if bars:
+                return bars[-limit:], DataQuality(source="yahoo", is_complete=True, warnings=[], rows=len(bars[-limit:]))
+        except Exception as exc:
+            yahoo_warning = str(exc)
+
         try:
             import yfinance as yf  # type: ignore
         except ImportError:
-            return self._fallback(request, limit, "yfinance is not installed")
+            warning = "yfinance is not installed"
+            if yahoo_warning:
+                warning = f"{yahoo_warning}; {warning}"
+            return self._fallback(request, limit, warning)
 
         interval, period = yfinance_period(request.timeframe)
         frame = yf.Ticker(request.symbol).history(period=period, interval=interval, auto_adjust=False)
         if frame is None or frame.empty:
-            return self._fallback(request, limit, "yfinance returned no chart bars")
+            warning = "yfinance returned no chart bars"
+            if yahoo_warning:
+                warning = f"{yahoo_warning}; {warning}"
+            return self._fallback(request, limit, warning)
         bars: list[OHLCVBar] = []
         for timestamp, row in frame.tail(limit).iterrows():
             bars.append(
@@ -188,11 +202,41 @@ class QuantDingerKlineAdapter:
             )
         return bars, DataQuality(source="yfinance", is_complete=True, warnings=[], rows=len(bars))
 
+    def _fetch_yahoo_us_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
+        interval, range_label = yahoo_chart_range_interval(request.timeframe)
+        params = urlencode({"range": range_label, "interval": interval})
+        text = self.fetch_text(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(request.symbol.upper())}?{params}",
+            "utf-8",
+        )
+        return yahoo_chart_to_bars(json.loads(text), symbol=request.symbol, timeframe=request.timeframe)[-limit:]
+
     def _fetch_crypto_bars(self, request: MarketDataRequest, limit: int) -> tuple[list[OHLCVBar], DataQuality]:
+        binance_warning: str | None = None
+        try:
+            bars = self._fetch_binance_crypto_bars(request, limit)
+            if bars:
+                return bars[-limit:], DataQuality(source="binance", is_complete=True, warnings=[], rows=len(bars[-limit:]))
+        except Exception as exc:
+            binance_warning = str(exc)
+
+        coinbase_warning: str | None = None
+        try:
+            bars = self._fetch_coinbase_crypto_bars(request, limit)
+            if bars:
+                return bars[-limit:], DataQuality(source="coinbase", is_complete=True, warnings=[], rows=len(bars[-limit:]))
+        except Exception as exc:
+            coinbase_warning = str(exc)
+
         try:
             import ccxt  # type: ignore
         except ImportError:
-            return self._fallback(request, limit, "ccxt is not installed")
+            warning = "ccxt is not installed"
+            if binance_warning:
+                warning = f"{binance_warning}; {warning}"
+            if coinbase_warning:
+                warning = f"{coinbase_warning}; {warning}"
+            return self._fallback(request, limit, warning)
 
         exchange_id = os.getenv("CCXT_DEFAULT_EXCHANGE", "binance").strip().lower() or "binance"
         exchange_class = getattr(ccxt, exchange_id)
@@ -213,6 +257,25 @@ class QuantDingerKlineAdapter:
             for row in rows
         ]
         return bars, DataQuality(source=f"ccxt:{exchange_id}", is_complete=True, warnings=[], rows=len(bars))
+
+    def _fetch_binance_crypto_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
+        params = urlencode(
+            {
+                "symbol": binance_symbol(request.symbol),
+                "interval": ccxt_timeframe(request.timeframe),
+                "limit": max(1, min(limit, 500)),
+            }
+        )
+        payload = json.loads(self.fetch_text(f"https://api.binance.com/api/v3/klines?{params}", "utf-8"))
+        return binance_klines_to_bars(payload, symbol=request.symbol, timeframe=request.timeframe)
+
+    def _fetch_coinbase_crypto_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
+        params = urlencode({"granularity": coinbase_granularity(request.timeframe)})
+        text = self.fetch_text(
+            f"https://api.exchange.coinbase.com/products/{coinbase_product(request.symbol)}/candles?{params}",
+            "utf-8",
+        )
+        return coinbase_candles_to_bars(json.loads(text), symbol=request.symbol, timeframe=request.timeframe)[-limit:]
 
     def _fallback(self, request: MarketDataRequest, limit: int, reason: str) -> tuple[list[OHLCVBar], DataQuality]:
         bars, quality = self.fallback_adapter.fetch_ohlcv(request)
@@ -354,6 +417,131 @@ def akshare_minute_frame_to_bars(frame: object, *, market: Market, symbol: str, 
     return bars
 
 
+def yahoo_chart_to_bars(payload: dict[str, object], *, symbol: str, timeframe: Timeframe) -> list[OHLCVBar]:
+    chart = payload.get("chart")
+    if not isinstance(chart, dict):
+        return []
+    result = chart.get("result")
+    if not isinstance(result, list) or not result:
+        return []
+    first = result[0]
+    if not isinstance(first, dict):
+        return []
+    timestamps = first.get("timestamp")
+    indicators = first.get("indicators")
+    if not isinstance(timestamps, list) or not isinstance(indicators, dict):
+        return []
+    quotes = indicators.get("quote")
+    if not isinstance(quotes, list) or not quotes or not isinstance(quotes[0], dict):
+        return []
+    quote_payload = quotes[0]
+    opens = quote_payload.get("open")
+    highs = quote_payload.get("high")
+    lows = quote_payload.get("low")
+    closes = quote_payload.get("close")
+    volumes = quote_payload.get("volume")
+    if not all(isinstance(values, list) for values in (opens, highs, lows, closes, volumes)):
+        return []
+
+    bars: list[OHLCVBar] = []
+    for index, timestamp in enumerate(timestamps):
+        try:
+            bars.append(
+                OHLCVBar(
+                    symbol=symbol,
+                    market="us",
+                    timeframe=timeframe,
+                    timestamp=datetime.fromtimestamp(float(timestamp), tz=timezone.utc),
+                    open=round(float(opens[index]), 4),  # type: ignore[index]
+                    high=round(float(highs[index]), 4),  # type: ignore[index]
+                    low=round(float(lows[index]), 4),  # type: ignore[index]
+                    close=round(float(closes[index]), 4),  # type: ignore[index]
+                    volume=round(float(volumes[index] or 0), 2),  # type: ignore[index]
+                )
+            )
+        except (IndexError, TypeError, ValueError):
+            continue
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
+def binance_symbol(symbol: str) -> str:
+    return normalize_crypto_symbol(symbol).replace("/", "")
+
+
+def binance_klines_to_bars(rows: object, *, symbol: str, timeframe: Timeframe) -> list[OHLCVBar]:
+    if not isinstance(rows, list):
+        return []
+    bars: list[OHLCVBar] = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) < 6:
+            continue
+        try:
+            bars.append(
+                OHLCVBar(
+                    symbol=symbol,
+                    market="crypto",
+                    timeframe=timeframe,
+                    timestamp=datetime.fromtimestamp(float(row[0]) / 1000, tz=timezone.utc),
+                    open=round(float(row[1]), 4),
+                    high=round(float(row[2]), 4),
+                    low=round(float(row[3]), 4),
+                    close=round(float(row[4]), 4),
+                    volume=round(float(row[5]), 2),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
+def coinbase_product(symbol: str) -> str:
+    normalized = normalize_crypto_symbol(symbol)
+    base, quote_symbol = normalized.split("/", 1)
+    if quote_symbol == "USDT":
+        quote_symbol = "USD"
+    return f"{base}-{quote_symbol}"
+
+
+def coinbase_granularity(timeframe: Timeframe) -> int:
+    return {
+        "1m": 60,
+        "5m": 300,
+        "15m": 900,
+        "30m": 1800,
+        "60m": 3600,
+        "1d": 86400,
+    }[timeframe]
+
+
+def coinbase_candles_to_bars(rows: object, *, symbol: str, timeframe: Timeframe) -> list[OHLCVBar]:
+    if not isinstance(rows, list):
+        return []
+    bars: list[OHLCVBar] = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) < 6:
+            continue
+        try:
+            bars.append(
+                OHLCVBar(
+                    symbol=symbol,
+                    market="crypto",
+                    timeframe=timeframe,
+                    timestamp=datetime.fromtimestamp(float(row[0]), tz=timezone.utc),
+                    open=round(float(row[3]), 4),
+                    high=round(float(row[2]), 4),
+                    low=round(float(row[1]), 4),
+                    close=round(float(row[4]), 4),
+                    volume=round(float(row[5]), 2),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
 def pick_column(columns: list[str], preferred: str, index: int) -> str:
     if preferred in columns:
         return preferred
@@ -406,6 +594,14 @@ def bar_to_payload(bar: OHLCVBar) -> dict[str, object]:
 
 
 def yfinance_period(timeframe: Timeframe) -> tuple[str, str]:
+    if timeframe == "1d":
+        return "1d", "1y"
+    if timeframe == "60m":
+        return "60m", "3mo"
+    return timeframe, "1mo"
+
+
+def yahoo_chart_range_interval(timeframe: Timeframe) -> tuple[str, str]:
     if timeframe == "1d":
         return "1d", "1y"
     if timeframe == "60m":
