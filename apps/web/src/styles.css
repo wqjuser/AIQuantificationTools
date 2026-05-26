@@ -24,15 +24,14 @@ button {
 
 .terminal-shell {
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr) minmax(320px, 360px);
+  grid-template-columns: 224px minmax(0, 1fr);
   align-items: start;
   min-height: 100vh;
   overflow: visible;
   background: #090d13;
 }
 
-.left-rail,
-.agent-rail {
+.left-rail {
   background: #0f1722;
   border-color: #233044;
   border-style: solid;
@@ -50,19 +49,6 @@ button {
   height: 100vh;
   overflow: hidden;
   padding: 16px 12px;
-}
-
-.agent-rail {
-  border-width: 0 0 0 1px;
-  display: flex;
-  flex-direction: column;
-  align-content: start;
-  gap: 12px;
-  padding: 12px;
-}
-
-.agent-rail > * {
-  flex: 0 0 auto;
 }
 
 .brand {
@@ -249,7 +235,7 @@ button {
 
 .terminal-main {
   display: grid;
-  grid-template-rows: auto auto auto auto auto;
+  grid-template-rows: auto auto auto auto auto auto;
   align-content: start;
   gap: 12px;
   min-width: 0;
@@ -656,6 +642,26 @@ em {
   color: #dce6ee;
 }
 
+.assistant-command-strip {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr) minmax(240px, 0.7fr);
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.assistant-command-strip .safety-footer {
+  align-self: start;
+}
+
+.assistant-command-strip .agent-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.assistant-command-strip .ai-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .center-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
@@ -683,6 +689,10 @@ em {
   min-width: 0;
   min-height: auto;
   padding: 12px;
+}
+
+.assistant-command-strip .terminal-panel {
+  min-height: 100%;
 }
 
 .terminal-panel header {
@@ -1785,18 +1795,6 @@ em {
   gap: 8px;
 }
 
-.agent-rail .agent-grid {
-  grid-template-columns: 1fr;
-}
-
-.agent-rail .agent-evidence-grid {
-  grid-template-columns: 1fr;
-}
-
-.agent-rail .history-comparison-row {
-  grid-template-columns: 1fr;
-}
-
 .agent-role {
   border: 1px solid #403968;
   border-radius: 7px;
@@ -2164,17 +2162,9 @@ em {
   }
 
   .left-rail,
-  .terminal-main,
-  .agent-rail {
+  .terminal-main {
     max-height: none;
     overflow: visible;
-  }
-
-  .agent-rail {
-    grid-column: 1 / -1;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    border-width: 1px 0 0;
   }
 
   .safety-footer {
@@ -2198,9 +2188,9 @@ em {
 
   .watchlist-strip,
   .metrics-row,
+  .assistant-command-strip,
   .center-grid,
   .module-workspace-grid,
-  .agent-rail,
   .node-row,
   .execution-grid,
   .gate-list,
@@ -2230,6 +2220,8 @@ em {
   }
 
   .watchlist-ai-panel .agent-panel-body,
+  .assistant-command-strip .agent-grid,
+  .assistant-command-strip .ai-actions,
   .watchlist-history-panel .history-panel-body,
   .watchlist-history-panel .run-history {
     grid-template-columns: 1fr;

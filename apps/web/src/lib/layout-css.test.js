@@ -52,27 +52,17 @@ function sourceBetween(startMarker, endMarker) {
 
 describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
+    expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 224px minmax(0, 1fr);");
     expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
     expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
     expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
-    expect(cssBlock(".left-rail,\n.agent-rail")).not.toContain("max-height: 100vh;");
-    expect(cssBlock(".left-rail,\n.agent-rail")).not.toContain("overflow: auto;");
+    expect(cssBlock(".left-rail")).not.toContain("max-height: 100vh;");
+    expect(cssBlock(".left-rail")).not.toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).not.toContain("max-height: 100vh;");
     expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
-    expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto auto auto;");
-    expect(hasCssDeclaration(".agent-rail", "display: flex;")).toBe(true);
-    expect(hasCssDeclaration(".agent-rail", "flex-direction: column;")).toBe(true);
-    expect(hasCssDeclaration(".agent-rail", "grid-template-rows: auto auto auto auto auto;")).toBe(false);
-    expect(cssBlock(".agent-rail > *")).toContain("flex: 0 0 auto;");
-    expect(hasCssDeclaration(".agent-rail", "align-content: start;")).toBe(true);
-    expect(
-      hasCssBlockWith(".agent-rail", [
-        "grid-column: 1 / -1;",
-        "grid-template-columns: 1fr;",
-        "grid-template-rows: auto;"
-      ])
-    ).toBe(true);
+    expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto auto auto auto;");
   });
 
   test("keeps the watchlist chart and strategy snapshot in the same visual row", () => {
@@ -121,18 +111,18 @@ describe("terminal layout css", () => {
     expect(cssBlock(".module-workspace-grid")).toContain("grid-template-rows: minmax(0, 1fr);");
   });
 
-  test("keeps the right rail focused instead of stacking long workflow content", () => {
-    const agentRailSource = sourceBetween('<aside className="agent-rail">', "</aside>");
+  test("folds AI roles and actions into the main workspace command strip", () => {
+    const commandStripSource = sourceBetween('<section className="assistant-command-strip">', "</section>");
 
-    expect(agentRailSource).not.toContain("<AgentEvidenceBoard");
-    expect(agentRailSource).not.toContain("<AgentCommitteeBoard");
-    expect(agentRailSource).not.toContain('className="decision-panel"');
-    expect(agentRailSource).not.toContain('className="history-panel"');
-    expect(agentRailSource).not.toContain('i18n.t("panel.agent.title")');
-    expect(agentRailSource).toContain('i18n.t("panel.agentRoles.title")');
-    expect(cssBlock(".agent-rail .agent-grid")).toContain("grid-template-columns: 1fr;");
-    expect(cssBlock(".agent-rail .agent-evidence-grid")).toContain("grid-template-columns: 1fr;");
-    expect(cssBlock(".agent-rail .history-comparison-row")).toContain("grid-template-columns: 1fr;");
+    expect(appSource).toContain('className="assistant-command-strip"');
+    expect(commandStripSource).toContain('i18n.t("panel.agentRoles.title")');
+    expect(commandStripSource).toContain('i18n.t("panel.aiActions.title")');
+    expect(commandStripSource).toContain('i18n.t("safety.footer")');
+    expect(commandStripSource).not.toContain("<AgentEvidenceBoard");
+    expect(commandStripSource).not.toContain("<AgentCommitteeBoard");
+    expect(cssBlock(".assistant-command-strip")).toContain("grid-template-columns:");
+    expect(cssBlock(".assistant-command-strip .agent-grid")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(cssBlock(".assistant-command-strip .ai-actions")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(appSource).toContain('className="agent-panel-body"');
     expect(appSource).toContain('className="watchlist-decision-panel"');
     expect(appSource).toContain('className="watchlist-history-panel"');

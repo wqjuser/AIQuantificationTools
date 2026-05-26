@@ -780,6 +780,8 @@ export function App() {
           ))}
         </section>
 
+        <AssistantCommandStrip i18n={i18n} onRunAiAction={runAiWorkbenchAction} workspace={workspace} />
+
         <section className={`center-grid ${activeModuleId === "watchlist" ? "watchlist-layout" : "module-workspace-grid"}`}>
           {activeModuleId === "watchlist" ? (
             <>
@@ -953,39 +955,6 @@ export function App() {
         </div>
       ) : null}
 
-      <aside className="agent-rail">
-        <Panel title={i18n.t("panel.agentRoles.title")} subtitle={i18n.t("panel.agentRoles.subtitle")} className="agent-panel">
-          <div className="agent-grid">
-            {workspace.agents.map((agent) => (
-              <span className={`agent-role ${agent.stance}`} key={agent.id}>
-                {i18n.agentLabel(agent.id, agent.label)}
-              </span>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title={i18n.t("panel.aiActions.title")} subtitle={i18n.t("panel.aiActions.subtitle")}>
-          <div className="ai-actions">
-            <button onClick={() => runAiWorkbenchAction("debate")} type="button">
-              <BrainCircuit size={15} />
-              {i18n.t("aiAction.debate")}
-            </button>
-            <button onClick={() => runAiWorkbenchAction("explain")} type="button">
-              <BarChart3 size={15} />
-              {i18n.t("aiAction.explain")}
-            </button>
-            <button onClick={() => runAiWorkbenchAction("strategy-draft")} type="button">
-              <Cable size={15} />
-              {i18n.t("aiAction.strategyDraft")}
-            </button>
-          </div>
-        </Panel>
-
-        <footer className="safety-footer">
-          <Activity size={16} />
-          <span>{i18n.t("safety.footer")}</span>
-        </footer>
-      </aside>
     </div>
   );
 }
@@ -1009,6 +978,52 @@ function ChartDataStrip({
       <span>{i18n.t("chart.source")}: {state.quality.source}</span>
       <span>{i18n.t("chart.bars", { count: state.bars.length })}</span>
     </div>
+  );
+}
+
+function AssistantCommandStrip({
+  i18n,
+  onRunAiAction,
+  workspace
+}: {
+  i18n: AppI18n;
+  onRunAiAction: (action: AiWorkbenchAction) => void;
+  workspace: TerminalWorkspace;
+}) {
+  return (
+    <section className="assistant-command-strip">
+      <Panel title={i18n.t("panel.agentRoles.title")} subtitle={i18n.t("panel.agentRoles.subtitle")} className="agent-panel">
+        <div className="agent-grid">
+          {workspace.agents.map((agent) => (
+            <span className={`agent-role ${agent.stance}`} key={agent.id}>
+              {i18n.agentLabel(agent.id, agent.label)}
+            </span>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title={i18n.t("panel.aiActions.title")} subtitle={i18n.t("panel.aiActions.subtitle")}>
+        <div className="ai-actions">
+          <button onClick={() => onRunAiAction("debate")} type="button">
+            <BrainCircuit size={15} />
+            {i18n.t("aiAction.debate")}
+          </button>
+          <button onClick={() => onRunAiAction("explain")} type="button">
+            <BarChart3 size={15} />
+            {i18n.t("aiAction.explain")}
+          </button>
+          <button onClick={() => onRunAiAction("strategy-draft")} type="button">
+            <Cable size={15} />
+            {i18n.t("aiAction.strategyDraft")}
+          </button>
+        </div>
+      </Panel>
+
+      <footer className="safety-footer">
+        <Activity size={16} />
+        <span>{i18n.t("safety.footer")}</span>
+      </footer>
+    </section>
   );
 }
 
