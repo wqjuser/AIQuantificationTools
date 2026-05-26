@@ -28,17 +28,29 @@ function hasCssDeclaration(selector, declaration) {
   return cssBlocks(selector).some((block) => block.includes(declaration));
 }
 
+function hasExactCssDeclaration(selector, declaration) {
+  return cssBlocks(selector).some((block) =>
+    block
+      .split(";")
+      .map((line) => `${line.trim()};`)
+      .includes(declaration)
+  );
+}
+
 function hasCssBlockWith(selector, declarations) {
   return cssBlocks(selector).some((block) => declarations.every((declaration) => block.includes(declaration)));
 }
 
 describe("terminal layout css", () => {
-  test("keeps desktop shell columns independently scrollable", () => {
-    expect(cssBlock(".terminal-shell")).toContain("height: 100vh;");
-    expect(cssBlock(".terminal-shell")).toContain("overflow: hidden;");
-    expect(cssBlock(".left-rail,\n.agent-rail")).toContain("max-height: 100vh;");
-    expect(cssBlock(".terminal-main")).toContain("max-height: 100vh;");
-    expect(cssBlock(".terminal-main")).toContain("overflow: auto;");
+  test("uses the document as the single desktop scroll surface", () => {
+    expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
+    expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
+    expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
+    expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
+    expect(cssBlock(".left-rail,\n.agent-rail")).not.toContain("max-height: 100vh;");
+    expect(cssBlock(".left-rail,\n.agent-rail")).not.toContain("overflow: auto;");
+    expect(cssBlock(".terminal-main")).not.toContain("max-height: 100vh;");
+    expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto auto auto;");
     expect(hasCssDeclaration(".agent-rail", "display: flex;")).toBe(true);
     expect(hasCssDeclaration(".agent-rail", "flex-direction: column;")).toBe(true);
@@ -81,11 +93,11 @@ describe("terminal layout css", () => {
     expect(cssBlock(".chart-panel")).toContain("height: clamp(380px, 48vh, 560px);");
     expect(cssBlock(".chart-panel")).toContain("grid-area: chart;");
     expect(cssBlock(".chart-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
-    expect(cssBlock(".strategy-panel")).toContain("height: clamp(380px, 48vh, 560px);");
+    expect(cssBlock(".strategy-panel")).not.toContain("height: clamp(380px, 48vh, 560px);");
     expect(cssBlock(".strategy-panel")).toContain("grid-area: strategy;");
-    expect(cssBlock(".strategy-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
-    expect(cssBlock(".strategy-panel")).toContain("overflow: hidden;");
-    expect(cssBlock(".strategy-panel .strategy-workbench")).toContain("overflow: auto;");
+    expect(cssBlock(".strategy-panel")).toContain("grid-template-rows: auto auto;");
+    expect(cssBlock(".strategy-panel")).not.toContain("overflow: hidden;");
+    expect(cssBlock(".strategy-panel .strategy-workbench")).not.toContain("overflow: auto;");
     expect(cssBlock(".strategy-panel .strategy-rule-row")).toContain("grid-template-columns:");
     expect(cssBlock(".strategy-panel .strategy-rule-row")).toContain("minmax(0, 1.2fr)");
     expect(cssBlock(".module-workspace-grid")).toContain("grid-template-rows: minmax(0, 1fr);");
@@ -99,14 +111,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="decision-panel"');
     expect(appSource).toContain('className="history-panel"');
     expect(appSource).toContain('className="history-panel-body"');
-    expect(cssBlock(".agent-panel")).toContain("height: clamp(");
-    expect(cssBlock(".agent-panel-body")).toContain("overflow: auto;");
-    expect(cssBlock(".agent-panel-body")).toContain("overflow-x: hidden;");
-    expect(cssBlock(".decision-panel")).toContain("max-height:");
-    expect(cssBlock(".decision-log")).toContain("min-height: 0;");
-    expect(cssBlock(".decision-log")).toContain("overflow-x: hidden;");
-    expect(cssBlock(".history-panel")).toContain("height: clamp(");
-    expect(cssBlock(".history-panel-body")).toContain("overflow: auto;");
-    expect(cssBlock(".history-panel-body")).toContain("overflow-x: hidden;");
+    expect(cssBlock(".agent-panel")).not.toContain("height: clamp(");
+    expect(cssBlock(".agent-panel")).not.toContain("overflow: hidden;");
+    expect(cssBlock(".agent-panel-body")).not.toContain("overflow: auto;");
+    expect(cssBlock(".decision-panel")).not.toContain("max-height:");
+    expect(cssBlock(".decision-log")).not.toContain("overflow: auto;");
+    expect(cssBlock(".history-panel")).not.toContain("height: clamp(");
+    expect(cssBlock(".history-panel")).not.toContain("overflow: hidden;");
+    expect(cssBlock(".history-panel-body")).not.toContain("overflow: auto;");
   });
 });

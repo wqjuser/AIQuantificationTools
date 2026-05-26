@@ -24,10 +24,10 @@ button {
 
 .terminal-shell {
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr) 360px;
-  height: 100vh;
+  grid-template-columns: 224px minmax(0, 1fr) minmax(320px, 360px);
+  align-items: start;
   min-height: 100vh;
-  overflow: hidden;
+  overflow: visible;
   background: #090d13;
 }
 
@@ -37,15 +37,18 @@ button {
   border-color: #233044;
   border-style: solid;
   color: #dce6ee;
-  max-height: 100vh;
-  overflow: auto;
 }
 
 .left-rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
   border-width: 0 1px 0 0;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
   gap: 16px;
+  height: 100vh;
+  overflow: hidden;
   padding: 16px 12px;
 }
 
@@ -251,8 +254,6 @@ button {
   gap: 12px;
   min-width: 0;
   min-height: 0;
-  max-height: 100vh;
-  overflow: auto;
   padding: 12px;
 }
 
@@ -708,16 +709,11 @@ em {
 .strategy-panel {
   align-self: start;
   grid-area: strategy;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: clamp(380px, 48vh, 560px);
-  overflow: hidden;
+  grid-template-rows: auto auto;
 }
 
 .strategy-panel .strategy-workbench {
   min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
-  scrollbar-gutter: stable;
 }
 
 .strategy-panel .strategy-rule-row {
@@ -1730,30 +1726,19 @@ em {
 }
 
 .agent-panel {
-  grid-template-rows: auto minmax(0, 1fr);
-  height: clamp(360px, 38vh, 500px);
-  min-height: 0;
-  overflow: hidden;
+  grid-template-rows: auto auto;
 }
 
 .agent-panel-body {
   display: grid;
   gap: 10px;
   min-height: 0;
-  overflow: auto;
-  overflow-x: hidden;
-  padding-right: 2px;
-  scrollbar-gutter: stable;
 }
 
 .history-panel-body {
   display: grid;
   gap: 10px;
   min-height: 0;
-  overflow: auto;
-  overflow-x: hidden;
-  padding-right: 2px;
-  scrollbar-gutter: stable;
 }
 
 .agent-grid {
@@ -1937,22 +1922,15 @@ em {
 }
 
 .decision-panel {
-  grid-template-rows: auto minmax(0, 1fr);
-  max-height: clamp(220px, 24vh, 320px);
-  overflow: hidden;
+  grid-template-rows: auto auto;
 }
 
 .decision-log {
   min-height: 0;
-  overflow: auto;
-  overflow-x: hidden;
 }
 
 .history-panel {
-  grid-template-rows: auto minmax(0, 1fr);
-  height: clamp(360px, 40vh, 520px);
-  min-height: 0;
-  overflow: hidden;
+  grid-template-rows: auto auto;
 }
 
 .decision-entry {
