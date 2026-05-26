@@ -254,7 +254,8 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Research run failed": "Research run failed",
       "Audit replay loaded": "Audit replay loaded",
       "Instrument selected": "Instrument selected",
-      "Timeframe selected": "Timeframe selected"
+      "Timeframe selected": "Timeframe selected",
+      "AI action generated": "AI action generated"
     },
     executionModes: {
       paper_only: "Paper only",
@@ -335,7 +336,8 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Research run failed": "研究运行失败",
       "Audit replay loaded": "审计回放已加载",
       "Instrument selected": "标的已选择",
-      "Timeframe selected": "周期已选择"
+      "Timeframe selected": "周期已选择",
+      "AI action generated": "AI 操作已生成"
     },
     executionModes: {
       paper_only: "模拟盘",
@@ -355,6 +357,11 @@ const strategyTextMaps: Record<Locale, Record<string, string>> = {
     "20% cap per instrument": "单标的仓位上限 20%",
     "Stop -8%, drawdown guard 12%, paper only": "止损 -8%，回撤保护 12%，仅模拟盘",
     "Replay from audited research run": "来自审计研究运行的回放",
+    "Momentum confirmation plus AI committee agreement": "动量确认 + AI 委员会一致",
+    "Close below trend support or risk manager downgrade": "跌破趋势支撑，或风险经理下调评级",
+    "Start with paper sizing and cap exposure before audited replay": "先以模拟盘定仓，审计回放前限制暴露",
+    "Paper only; require adapter certification, risk approval, and human confirmation":
+      "仅模拟盘；需要适配器认证、风控审批和人工确认",
     "Pending audited backtest": "等待可审计回测",
     "Pending risk sizing": "等待风控定仓",
     "Paper only until a new audited run is available": "生成新的审计运行前仅允许模拟盘"
@@ -500,6 +507,24 @@ function translateDecisionMessage(locale: Locale, message: string): string {
   if (backtestReplay) {
     return `回测已基于 ${backtestReplay[1]} 根K线完成。`;
   }
+  const aiExplanation = message.match(
+    /^Backtest explanation for (.+): return (.+), max drawdown (.+), trades (.+); no guaranteed outcome\.$/
+  );
+  if (aiExplanation) {
+    return `${aiExplanation[1]} 回测解释：收益率 ${aiExplanation[2]}，最大回撤 ${aiExplanation[3]}，交易数 ${aiExplanation[4]}；不构成收益保证。`;
+  }
+  const aiDebate = message.match(
+    /^Debate generated for (.+): bull case requires momentum confirmation; bear case flags drawdown and data quality\.$/
+  );
+  if (aiDebate) {
+    return `${aiDebate[1]} 智能体辩论：多头观点需要动量确认；空头观点提示回撤和数据质量风险。`;
+  }
+  const strategyDraft = message.match(
+    /^Strategy draft generated for (.+): keep paper-only execution until data, risk, and human gates pass\.$/
+  );
+  if (strategyDraft) {
+    return `${strategyDraft[1]} 策略草稿已生成：数据、风控和人工闸门通过前保持模拟盘执行。`;
+  }
   return message;
 }
 
@@ -517,7 +542,9 @@ function translateAgentName(locale: Locale, agent: string): string {
     Technical: "技术分析",
     Fundamental: "基本面",
     Risk: "风险",
-    "Portfolio Manager": "组合经理"
+    "Portfolio Manager": "组合经理",
+    "AI Debate": "AI 辩论",
+    "Strategy Drafter": "策略起草员"
   };
   return extra[agent] ?? agent;
 }

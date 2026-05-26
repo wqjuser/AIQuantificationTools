@@ -114,6 +114,8 @@ export interface WorkflowStageView {
   output: string;
 }
 
+export type AiWorkbenchAction = "debate" | "explain" | "strategy-draft";
+
 export interface ResearchRunSummary {
   runId: string;
   createdAt: string;
@@ -364,6 +366,58 @@ export function buildWorkflowStages(workspace: TerminalWorkspace): WorkflowStage
   });
 }
 
+export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWorkbenchAction): TerminalWorkspace {
+  if (action === "strategy-draft") {
+    return {
+      ...workspace,
+      strategy: {
+        name: `${workspace.selectedInstrument.symbol} ${workspace.selectedTimeframe} AI draft`,
+        entry: "Momentum confirmation plus AI committee agreement",
+        exit: "Close below trend support or risk manager downgrade",
+        position: "Start with paper sizing and cap exposure before audited replay",
+        risk: "Paper only; require adapter certification, risk approval, and human confirmation"
+      },
+      decisionLog: [
+        {
+          agent: "Strategy Drafter",
+          message: `Strategy draft generated for ${workspace.selectedInstrument.symbol}: keep paper-only execution until data, risk, and human gates pass.`,
+          tone: "warning"
+        },
+        ...workspace.decisionLog
+      ]
+    };
+  }
+
+  if (action === "explain") {
+    const returnMetric = workspace.metrics.find((metric) => metric.label === "Return")?.value ?? "N/A";
+    const drawdownMetric = workspace.metrics.find((metric) => metric.label === "Max DD")?.value ?? "N/A";
+    const tradeMetric = workspace.metrics.find((metric) => metric.label === "Trades")?.value ?? "0";
+    return {
+      ...workspace,
+      decisionLog: [
+        {
+          agent: "AI Summary",
+          message: `Backtest explanation for ${workspace.selectedInstrument.symbol}: return ${returnMetric}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
+          tone: "ai"
+        },
+        ...workspace.decisionLog
+      ]
+    };
+  }
+
+  return {
+    ...workspace,
+    decisionLog: [
+      {
+        agent: "AI Debate",
+        message: `Debate generated for ${workspace.selectedInstrument.symbol}: bull case requires momentum confirmation; bear case flags drawdown and data quality.`,
+        tone: "ai"
+      },
+      ...workspace.decisionLog
+    ]
+  };
+}
+
 export function executionModeLabel(execution: ExecutionState): string {
   if (execution.mode === "paper_only") {
     return "Paper only";
@@ -519,6 +573,20 @@ export function workspaceWithPreservedSelection(
     workspace = workspaceWithSelectedTimeframe(workspace, currentWorkspace.selectedTimeframe);
   }
   return workspace;
+}
+
+export function workspaceWithPreservedInteractiveState(
+  refreshedWorkspace: TerminalWorkspace,
+  currentWorkspace: TerminalWorkspace
+): TerminalWorkspace {
+  const workspace = workspaceWithPreservedSelection(refreshedWorkspace, currentWorkspace);
+  return {
+    ...workspace,
+    strategy: currentWorkspace.strategy,
+    metrics: currentWorkspace.metrics,
+    decisionLog: currentWorkspace.decisionLog,
+    researchRun: currentWorkspace.researchRun
+  };
 }
 
 function freshResearchContext(

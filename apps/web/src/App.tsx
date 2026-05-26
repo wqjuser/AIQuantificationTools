@@ -41,6 +41,7 @@ import {
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
+  AiWorkbenchAction,
   Market,
   ModuleNewsEvent,
   PortfolioRiskRow,
@@ -51,7 +52,8 @@ import {
   TerminalWorkspace,
   WorkflowStageView,
   workspaceFromResearchRunAudit,
-  workspaceWithPreservedSelection,
+  workspaceWithAiAction,
+  workspaceWithPreservedInteractiveState,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
@@ -146,7 +148,7 @@ export function App() {
       }
       return {
         ...result,
-        workspace: workspaceWithPreservedSelection(result.workspace, current.workspace),
+        workspace: workspaceWithPreservedInteractiveState(result.workspace, current.workspace),
         statusLabel: current.statusLabel
       };
     });
@@ -262,6 +264,16 @@ export function App() {
     },
     []
   );
+
+  const runAiWorkbenchAction = useCallback((action: AiWorkbenchAction) => {
+    manualSelectionVersionRef.current += 1;
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithAiAction(current.workspace, action),
+      source: "core",
+      statusLabel: "AI action generated"
+    }));
+    setActiveModuleId(action === "strategy-draft" ? "watchlist" : "news");
+  }, []);
 
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -744,15 +756,15 @@ export function App() {
 
         <Panel title={i18n.t("panel.aiActions.title")} subtitle={i18n.t("panel.aiActions.subtitle")}>
           <div className="ai-actions">
-            <button>
+            <button onClick={() => runAiWorkbenchAction("debate")} type="button">
               <BrainCircuit size={15} />
               {i18n.t("aiAction.debate")}
             </button>
-            <button>
+            <button onClick={() => runAiWorkbenchAction("explain")} type="button">
               <BarChart3 size={15} />
               {i18n.t("aiAction.explain")}
             </button>
-            <button>
+            <button onClick={() => runAiWorkbenchAction("strategy-draft")} type="button">
               <Cable size={15} />
               {i18n.t("aiAction.strategyDraft")}
             </button>

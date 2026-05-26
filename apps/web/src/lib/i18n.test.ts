@@ -18,6 +18,7 @@ describe("i18n", () => {
     expect(zh.decisionAgent("Technical")).toBe("技术分析");
     expect(zh.metricLabel("Max DD")).toBe("最大回撤");
     expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
+    expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
   });
 
   test("provides dropdown labels for every supported locale", () => {
@@ -71,6 +72,14 @@ describe("i18n", () => {
     const zh = createI18n("zh-CN");
 
     expect(zh.strategyText("Close > SMA20 and relative strength improving")).toBe("收盘价 > SMA20，且相对强度改善");
+    expect(zh.strategyText("Momentum confirmation plus AI committee agreement")).toBe("动量确认 + AI 委员会一致");
+    expect(zh.decisionAgent("AI Debate")).toBe("AI 辩论");
+    expect(zh.decisionAgent("Strategy Drafter")).toBe("策略起草员");
+    expect(
+      zh.decisionMessage(
+        "Backtest explanation for 600000: return +12.4%, max drawdown 5.8%, trades 42; no guaranteed outcome."
+      )
+    ).toBe("600000 回测解释：收益率 +12.4%，最大回撤 5.8%，交易数 42；不构成收益保证。");
     expect(
       zh.decisionMessage("600000 15m selected. Run Pipeline to generate an audited backtest and agent review.")
     ).toBe("600000 15m 已选中。运行流水线以生成可审计回测和智能体评审。");

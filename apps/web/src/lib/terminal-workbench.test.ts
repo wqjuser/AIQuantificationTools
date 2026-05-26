@@ -13,6 +13,8 @@ import {
   researchRunLabel,
   quantLoopLabels,
   visiblePanels,
+  workspaceWithAiAction,
+  workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument,
@@ -120,6 +122,38 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("adds a TradingAgents-style debate note to the decision log", () => {
+    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "debate");
+
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "AI Debate",
+      message:
+        "Debate generated for 600000: bull case requires momentum confirmation; bear case flags drawdown and data quality.",
+      tone: "ai"
+    });
+    expect(workspace.decisionLog).toHaveLength(5);
+  });
+
+  test("adds a grounded backtest explanation without promising returns", () => {
+    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "explain");
+
+    expect(workspace.decisionLog[0].agent).toBe("AI Summary");
+    expect(workspace.decisionLog[0].message).toContain("return +12.4%");
+    expect(workspace.decisionLog[0].message).toContain("no guaranteed outcome");
+  });
+
+  test("generates a paper-only strategy draft from the current context", () => {
+    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
+
+    expect(workspace.strategy.name).toBe("600000 1d AI draft");
+    expect(workspace.strategy.entry).toBe("Momentum confirmation plus AI committee agreement");
+    expect(workspace.strategy.risk).toBe("Paper only; require adapter certification, risk approval, and human confirmation");
+    expect(workspace.decisionLog[0]).toMatchObject({
+      agent: "Strategy Drafter",
+      tone: "warning"
+    });
+  });
+
   test("formats research run audit summaries for the terminal", () => {
     expect(
       researchRunLabel({
@@ -211,6 +245,19 @@ describe("terminal workbench model", () => {
     expect(merged.selectedTimeframe).toBe("5m");
     expect(merged.watchlist[0].symbol).toBe("MSFT");
     expect(merged.researchRun).toBeNull();
+  });
+
+  test("preserves local AI action output when a workspace refresh completes later", () => {
+    const currentWorkspace = workspaceWithAiAction(buildTerminalWorkspace(), "explain");
+    const refreshedWorkspace = buildTerminalWorkspace();
+
+    const merged = workspaceWithPreservedInteractiveState(refreshedWorkspace, currentWorkspace);
+
+    expect(merged.selectedInstrument.symbol).toBe("600000");
+    expect(merged.decisionLog[0].agent).toBe("AI Summary");
+    expect(merged.decisionLog[0].message).toContain("no guaranteed outcome");
+    expect(merged.strategy).toBe(currentWorkspace.strategy);
+    expect(merged.watchlist[0].price).toBe(refreshedWorkspace.watchlist[0].price);
   });
 
   test("replays an audited research run into the terminal workspace", () => {
