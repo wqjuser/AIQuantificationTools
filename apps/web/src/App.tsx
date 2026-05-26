@@ -39,6 +39,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestTradeRows,
   buildModuleNewsEvents,
+  buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildQuantLoopNavigationTarget,
@@ -52,6 +53,7 @@ import {
   AgentCommitteeRound,
   BacktestTradeRow,
   ModuleNewsEvent,
+  PaperPositionRow,
   PaperTradingRow,
   PortfolioRiskRow,
   ResearchRunAudit,
@@ -169,6 +171,7 @@ export function App() {
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
+  const paperPositionRows = buildPaperPositionRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
@@ -792,7 +795,13 @@ export function App() {
           ) : null}
 
           {activeModuleId === "portfolio" ? (
-            <PortfolioWorkspace i18n={i18n} paperRows={paperTradingRows} rows={portfolioRiskRows} workspace={workspace} />
+            <PortfolioWorkspace
+              i18n={i18n}
+              paperRows={paperTradingRows}
+              positionRows={paperPositionRows}
+              rows={portfolioRiskRows}
+              workspace={workspace}
+            />
           ) : null}
 
           {activeModuleId === "news" ? (
@@ -1161,11 +1170,13 @@ function ScannerWorkspace({
 function PortfolioWorkspace({
   i18n,
   paperRows,
+  positionRows,
   rows,
   workspace
 }: {
   i18n: AppI18n;
   paperRows: PaperTradingRow[];
+  positionRows: PaperPositionRow[];
   rows: PortfolioRiskRow[];
   workspace: TerminalWorkspace;
 }) {
@@ -1180,6 +1191,36 @@ function PortfolioWorkspace({
               <p>{portfolioRiskDetail(i18n, row)}</p>
             </article>
           ))}
+        </div>
+        <div className="paper-position-ledger">
+          <div className="paper-position-title">
+            <span>{i18n.t("portfolio.paperPositions")}</span>
+            <strong>{positionRows.length}</strong>
+          </div>
+          <div className="paper-position-table">
+            <div className="paper-position-row paper-position-head">
+              <span>{i18n.t("chart.symbol")}</span>
+              <span>{i18n.t("execution.quantity")}</span>
+              <span>{i18n.t("portfolio.avgCost")}</span>
+              <span>{i18n.t("portfolio.markPrice")}</span>
+              <span>{i18n.t("portfolio.marketValue")}</span>
+              <span>{i18n.t("portfolio.unrealizedPnl")}</span>
+              <span>{i18n.t("portfolio.returnPct")}</span>
+              <span>{i18n.t("execution.status")}</span>
+            </div>
+            {positionRows.map((row) => (
+              <div className={`paper-position-row ${row.tone}`} key={row.id}>
+                <span>{row.symbol}</span>
+                <span>{row.quantity}</span>
+                <span>{row.avgCost}</span>
+                <span>{row.markPrice}</span>
+                <span>{row.marketValue}</span>
+                <span>{row.unrealizedPnl}</span>
+                <span>{row.returnPct}</span>
+                <span>{paperPositionStatusLabel(i18n, row.status)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </Panel>
       <ExecutionPanel i18n={i18n} rows={paperRows} workspace={workspace} />
@@ -1406,6 +1447,13 @@ function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
     return "需要完成适配器认证、风控审批和人工确认。";
   }
   return row.detail;
+}
+
+function paperPositionStatusLabel(i18n: AppI18n, status: PaperPositionRow["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { paper: "模拟", flat: "空仓", blocked: "已阻断" }[status];
 }
 
 function agentPhaseLabel(i18n: AppI18n, phase: AgentCommitteeRound["phase"]): string {

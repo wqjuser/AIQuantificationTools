@@ -162,6 +162,19 @@ export interface PortfolioRiskRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PaperPositionRow {
+  id: string;
+  symbol: string;
+  quantity: string;
+  avgCost: string;
+  markPrice: string;
+  marketValue: string;
+  unrealizedPnl: string;
+  returnPct: string;
+  status: "paper" | "flat" | "blocked";
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface PaperTradingRow {
   id: string;
   symbol: string;
@@ -525,6 +538,33 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
   ];
 }
 
+export function buildPaperPositionRows(workspace: TerminalWorkspace): PaperPositionRow[] {
+  const price = resolvePaperOrderPrice(workspace);
+  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
+  const marketValue = quantity * price;
+  const returnMetric = metricValue(workspace, "Return", "N/A");
+  const returnPct = parsePercentMetric(returnMetric);
+  const costBasis = returnPct === null ? marketValue : marketValue / (1 + returnPct / 100);
+  const avgCost = quantity > 0 ? costBasis / quantity : 0;
+  const unrealizedPnl = marketValue - costBasis;
+  const tone: PaperPositionRow["tone"] = returnPct === null ? "neutral" : returnPct < 0 ? "warning" : "positive";
+
+  return [
+    {
+      id: "selected-paper-position",
+      symbol: workspace.selectedInstrument.symbol,
+      quantity: String(quantity),
+      avgCost: avgCost.toFixed(2),
+      markPrice: price.toFixed(2),
+      marketValue: marketValue.toFixed(2),
+      unrealizedPnl: formatSignedCurrency(unrealizedPnl),
+      returnPct: returnMetric,
+      status: "paper",
+      tone
+    }
+  ];
+}
+
 export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRuleRow[] {
   return [
     {
@@ -664,6 +704,16 @@ function normalizeDrawdownLoss(value: string): string {
     return value;
   }
   return `-${value}`;
+}
+
+function parsePercentMetric(value: string): number | null {
+  const normalized = value.trim().replace("%", "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatSignedCurrency(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
 function inferExposureFromPosition(position: string): string {

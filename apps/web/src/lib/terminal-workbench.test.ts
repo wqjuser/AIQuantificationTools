@@ -6,6 +6,7 @@ import {
   buildBacktestTradeRows,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
+  buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildQuantLoopNavigationTarget,
@@ -179,6 +180,23 @@ describe("terminal workbench model", () => {
       status: "blocked",
       reason: "3 live gates blocked; paper route remains available.",
       tone: "warning"
+    });
+  });
+
+  test("derives paper position rows from sizing and audited return", () => {
+    const rows = buildPaperPositionRows(buildTerminalWorkspace());
+
+    expect(rows.map((row) => row.id)).toEqual(["selected-paper-position"]);
+    expect(rows[0]).toMatchObject({
+      symbol: "600000",
+      quantity: "2300",
+      avgCost: "7.70",
+      markPrice: "8.66",
+      marketValue: "19918.00",
+      unrealizedPnl: "+2197.36",
+      returnPct: "+12.4%",
+      status: "paper",
+      tone: "positive"
     });
   });
 
