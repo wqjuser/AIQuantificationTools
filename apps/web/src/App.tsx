@@ -816,7 +816,11 @@ export function App() {
                 </div>
               </Panel>
 
-              <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)}>
+              <Panel
+                title={i18n.t("panel.strategy.title")}
+                subtitle={i18n.strategyText(workspace.strategy.name)}
+                className="strategy-panel"
+              >
                 <StrategySummary
                   i18n={i18n}
                   onUpdateStrategyField={updateStrategyField}

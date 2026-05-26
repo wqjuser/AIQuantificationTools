@@ -667,6 +667,8 @@ em {
 }
 
 .chart-panel {
+  align-self: start;
+  height: clamp(380px, 48vh, 560px);
   min-height: 300px;
 }
 
@@ -676,6 +678,19 @@ em {
   gap: 8px;
   min-height: 0;
   position: relative;
+}
+
+.strategy-panel {
+  align-self: start;
+  height: clamp(380px, 48vh, 560px);
+  overflow: hidden;
+}
+
+.strategy-panel .strategy-workbench {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .chart-canvas {
