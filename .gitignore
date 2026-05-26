@@ -12,4 +12,5 @@ __pycache__/
 .env
 local.properties
 .superpowers/
+artifacts/
 *.tsbuildinfo

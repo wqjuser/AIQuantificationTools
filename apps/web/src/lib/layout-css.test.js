@@ -57,6 +57,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="watchlist-workflow-panel"');
     expect(appSource).toContain('className="watchlist-execution-panel"');
     expect(cssBlock(".terminal-panel")).toContain("grid-template-rows: auto auto;");
+    expect(cssBlock(".terminal-panel")).toContain("min-height: auto;");
+    expect(cssBlock(".terminal-panel")).not.toContain("min-height: 0;");
     expect(cssBlock(".watchlist-layout")).toContain("grid-template-areas:");
     expect(
       hasCssBlockWith(".watchlist-layout", [

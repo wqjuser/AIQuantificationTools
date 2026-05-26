@@ -673,7 +673,7 @@ em {
   grid-template-rows: auto auto;
   align-content: start;
   min-width: 0;
-  min-height: 0;
+  min-height: auto;
   padding: 12px;
 }
 
