@@ -1006,6 +1006,7 @@ dd {
 .risk-ledger-row,
 .event-row,
 .workflow-output,
+.workflow-artifacts,
 .workflow-log {
   border: 1px solid #27364a;
   border-radius: 7px;
@@ -1020,6 +1021,7 @@ dd {
 .risk-ledger-row span,
 .event-row span,
 .workflow-output span,
+.workflow-artifacts > span,
 .workflow-log > span {
   color: #8fa0b2;
   font-size: 11px;
@@ -1143,6 +1145,70 @@ dd {
 
 .workflow-log {
   margin-top: 10px;
+}
+
+.workflow-artifacts {
+  margin-top: 10px;
+}
+
+.workflow-artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.workflow-artifact {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 6px;
+  background: #0f1723;
+  padding: 9px 10px;
+}
+
+.workflow-artifact.positive {
+  border-left-color: #4cc9ad;
+}
+
+.workflow-artifact.warning {
+  border-left-color: #e8be62;
+}
+
+.workflow-artifact.risk {
+  border-left-color: #ff7f6d;
+}
+
+.workflow-artifact.ai {
+  border-left-color: #9f8cff;
+}
+
+.workflow-artifact span,
+.workflow-artifact strong,
+.workflow-artifact p {
+  display: block;
+  min-width: 0;
+}
+
+.workflow-artifact span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-artifact strong {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: #dce6ee;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.workflow-artifact p {
+  margin: 7px 0 0;
+  color: #a8b7c7;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .workflow-log-list {
@@ -1352,6 +1418,7 @@ dd {
   .gate-list,
   .risk-ledger,
   .event-stream,
+  .workflow-artifact-grid,
   .workflow-canvas-large {
     grid-template-columns: 1fr;
   }

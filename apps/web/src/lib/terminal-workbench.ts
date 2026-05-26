@@ -99,6 +99,13 @@ export interface WorkflowRunState {
   log: WorkflowRunLogEntry[];
 }
 
+export interface WorkflowStageArtifact {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface ScannerCandidate {
   instrument: Instrument;
   signal: "Momentum watch" | "Baseline watch" | "Risk review";
@@ -129,6 +136,7 @@ export interface WorkflowStageView {
   detail: string;
   status: WorkflowStageStatus;
   output: string;
+  artifacts: WorkflowStageArtifact[];
 }
 
 export type AiWorkbenchAction = "debate" | "explain" | "strategy-draft";
@@ -397,9 +405,83 @@ export function buildWorkflowStages(workspace: TerminalWorkspace, runState?: Wor
           ? `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`
           : isExecution && !workspace.execution.liveEnabled
             ? "Paper execution only"
-            : "Ready for pipeline run")
+            : "Ready for pipeline run"),
+      artifacts: buildWorkflowStageArtifacts(workspace, node.id)
     };
   });
+}
+
+function buildWorkflowStageArtifacts(workspace: TerminalWorkspace, stageId: string): WorkflowStageArtifact[] {
+  if (stageId === "data") {
+    return [
+      {
+        label: "Instrument",
+        value: workspace.selectedInstrument.symbol,
+        detail: `${workspace.selectedInstrument.name} · ${workspace.selectedInstrument.market}`,
+        tone: "neutral"
+      },
+      {
+        label: "Timeframe",
+        value: workspace.selectedTimeframe,
+        detail: "Selected research interval",
+        tone: "neutral"
+      },
+      {
+        label: "Rows",
+        value: workspace.researchRun ? `${workspace.researchRun.dataRows} bars` : "Pending run",
+        detail: workspace.researchRun
+          ? `Bound to audited run ${workspace.researchRun.runId}.`
+          : "Run Pipeline to bind an audited data snapshot.",
+        tone: workspace.researchRun ? "positive" : "warning"
+      }
+    ];
+  }
+
+  if (stageId === "factor") {
+    return [
+      { label: "Entry", value: workspace.strategy.entry, detail: "Signal gate", tone: "positive" },
+      { label: "Exit", value: workspace.strategy.exit, detail: "Invalidation rule", tone: "warning" },
+      { label: "Risk", value: workspace.strategy.risk, detail: "Sizing and guardrail", tone: "risk" }
+    ];
+  }
+
+  if (stageId === "backtest") {
+    return workspace.metrics.map((metric) => ({
+      label: metric.label,
+      value: metric.value,
+      detail: "Latest audited metric for the selected context.",
+      tone: metric.tone
+    }));
+  }
+
+  if (stageId === "agent") {
+    return workspace.decisionLog.slice(0, 4).map((entry) => ({
+      label: entry.agent,
+      value: entry.message,
+      detail: "AI research note from supplied workspace context.",
+      tone: entry.tone
+    }));
+  }
+
+  if (stageId === "execution") {
+    const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+    return [
+      {
+        label: "Mode",
+        value: workspace.execution.mode,
+        detail: workspace.execution.liveEnabled ? "Certified live route is available." : "Paper route only.",
+        tone: workspace.execution.liveEnabled ? "positive" : "warning"
+      },
+      {
+        label: "Live gates",
+        value: workspace.execution.liveEnabled ? "open" : `${blockedGateCount} blocked`,
+        detail: workspace.execution.gates.map((gate) => gate.label).join(", "),
+        tone: workspace.execution.liveEnabled ? "positive" : "warning"
+      }
+    ];
+  }
+
+  return [];
 }
 
 export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWorkbenchAction): TerminalWorkspace {

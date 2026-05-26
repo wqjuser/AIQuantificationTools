@@ -1119,6 +1119,20 @@ function WorkflowWorkspace({
           <strong>{workflowOutputLabel(i18n, activeStage?.output ?? "Ready for pipeline run")}</strong>
           <p>{activeStage ? workflowStageLabel(i18n, activeStage).detail : ""}</p>
         </div>
+        {activeStage?.artifacts.length ? (
+          <div className="workflow-artifacts">
+            <span>{i18n.t("module.workflow.artifacts")}</span>
+            <div className="workflow-artifact-grid">
+              {activeStage.artifacts.map((artifact) => (
+                <article className={`workflow-artifact ${artifact.tone}`} key={`${artifact.label}-${artifact.value}`}>
+                  <span>{workflowArtifactLabel(i18n, artifact)}</span>
+                  <strong>{workflowArtifactValue(i18n, artifact)}</strong>
+                  <p>{workflowArtifactDetail(i18n, artifact)}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="workflow-log">
           <span>{i18n.t("module.workflow.log")}</span>
           {visibleLog.length ? (
@@ -1272,6 +1286,67 @@ function workflowOutputLabel(i18n: AppI18n, output: string): string {
     .replace("Audited backtest received", "已收到审计回测")
     .replace("Agent committee report received", "智能体委员会报告已收到")
     .replace("Live execution remains blocked; paper review is ready", "实盘执行保持阻断；模拟复盘已就绪");
+}
+
+function workflowArtifactLabel(i18n: AppI18n, artifact: WorkflowStageView["artifacts"][number]): string {
+  if (i18n.locale === "en-US") {
+    return artifact.label;
+  }
+  const directLabel = {
+    Instrument: "标的",
+    Timeframe: "周期",
+    Rows: "数据行",
+    Entry: "入场",
+    Exit: "出场",
+    Risk: "风控",
+    Mode: "模式",
+    "Live gates": "实盘闸门"
+  }[artifact.label];
+  if (directLabel) {
+    return directLabel;
+  }
+  const metricLabel = i18n.metricLabel(artifact.label);
+  return metricLabel === artifact.label ? i18n.decisionAgent(artifact.label) : metricLabel;
+}
+
+function workflowArtifactValue(i18n: AppI18n, artifact: WorkflowStageView["artifacts"][number]): string {
+  if (i18n.locale === "en-US") {
+    return artifact.value;
+  }
+  if (artifact.label === "Rows") {
+    return artifact.value.replace("Pending run", "等待运行").replace("bars", "根K线");
+  }
+  if (artifact.label === "Mode") {
+    return artifact.value.replace("paper_only", "模拟盘").replace("certified_live", "认证实盘").replace("blocked_live", "实盘阻断");
+  }
+  if (artifact.label === "Live gates") {
+    return artifact.value.replace("blocked", "个阻断").replace("open", "已开启");
+  }
+  if (artifact.label === "Entry" || artifact.label === "Exit" || artifact.label === "Risk") {
+    return i18n.strategyText(artifact.value);
+  }
+  if (!["Instrument", "Timeframe", "Return", "Max DD", "Win Rate", "Trades"].includes(artifact.label)) {
+    return i18n.decisionMessage(artifact.value);
+  }
+  return artifact.value;
+}
+
+function workflowArtifactDetail(i18n: AppI18n, artifact: WorkflowStageView["artifacts"][number]): string {
+  if (i18n.locale === "en-US") {
+    return artifact.detail;
+  }
+  return artifact.detail
+    .replace("Selected research interval", "当前研究周期")
+    .replace("Run Pipeline to bind an audited data snapshot.", "运行流水线后绑定可审计数据快照。")
+    .replace(/^Bound to audited run (.+)\.$/, "已绑定审计运行 $1。")
+    .replace("Signal gate", "信号闸门")
+    .replace("Invalidation rule", "失效规则")
+    .replace("Sizing and guardrail", "仓位与保护")
+    .replace("Latest audited metric for the selected context.", "当前上下文的最新审计指标。")
+    .replace("AI research note from supplied workspace context.", "来自当前工作台上下文的 AI 研究记录。")
+    .replace("Paper route only.", "仅模拟盘路径。")
+    .replace("Certified live route is available.", "已具备认证实盘路径。")
+    .replace("Adapter certified, Risk approved, Human confirmed", "适配器认证、风控审批、人工确认");
 }
 
 function KlineChartCanvas({

@@ -149,6 +149,28 @@ describe("terminal workbench model", () => {
     expect(stages[0].output).toBe("Data snapshot prepared for 600000 · 1d");
   });
 
+  test("attaches auditable artifacts to workflow stages", () => {
+    const stages = buildWorkflowStages(buildTerminalWorkspace());
+
+    expect(stages.find((stage) => stage.id === "data")?.artifacts).toEqual([
+      { label: "Instrument", value: "600000", detail: "浦发银行 · ashare", tone: "neutral" },
+      { label: "Timeframe", value: "1d", detail: "Selected research interval", tone: "neutral" },
+      { label: "Rows", value: "Pending run", detail: "Run Pipeline to bind an audited data snapshot.", tone: "warning" }
+    ]);
+    expect(stages.find((stage) => stage.id === "backtest")?.artifacts.map((artifact) => artifact.label)).toEqual([
+      "Return",
+      "Max DD",
+      "Win Rate",
+      "Trades"
+    ]);
+    expect(stages.find((stage) => stage.id === "execution")?.artifacts.at(-1)).toEqual({
+      label: "Live gates",
+      value: "3 blocked",
+      detail: "Adapter certified, Risk approved, Human confirmed",
+      tone: "warning"
+    });
+  });
+
   test("adds a TradingAgents-style debate note to the decision log", () => {
     const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "debate");
 
