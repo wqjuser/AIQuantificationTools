@@ -11,6 +11,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildQuantLoopNavigationTarget,
+  buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
   buildTerminalWorkspace,
@@ -398,6 +399,95 @@ describe("terminal workbench model", () => {
         executionMode: "paper_only"
       })
     ).toBe("600000 · 1d · +3.40% · 8 trades");
+  });
+
+  test("compares the two latest audited research runs", () => {
+    const rows = buildResearchRunComparisonRows([
+      {
+        runId: "run-new",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "SMA trend demo",
+        strategyRevision: "rev-new",
+        dataRows: 120,
+        metrics: { total_return_pct: 4.2, max_drawdown_pct: 3.1, trade_count: 9 },
+        decisions: [],
+        executionMode: "paper_only",
+        backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
+      },
+      {
+        runId: "run-old",
+        createdAt: "2026-05-26T07:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "SMA trend demo",
+        strategyRevision: "rev-old",
+        dataRows: 100,
+        metrics: { total_return_pct: 1.2, max_drawdown_pct: 4.6, trade_count: 6 },
+        decisions: [],
+        executionMode: "paper_only",
+        backtestAssumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 }
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "return",
+        label: "Return",
+        current: "+4.20%",
+        previous: "+1.20%",
+        delta: "+3.00pp",
+        tone: "positive"
+      },
+      {
+        id: "drawdown",
+        label: "Max DD",
+        current: "3.10%",
+        previous: "4.60%",
+        delta: "-1.50pp",
+        tone: "positive"
+      },
+      {
+        id: "trades",
+        label: "Trades",
+        current: "9",
+        previous: "6",
+        delta: "+3",
+        tone: "neutral"
+      },
+      {
+        id: "assumptions",
+        label: "Assumptions",
+        current: "Cash 250,000 · Fee 8bps · Slippage 4bps",
+        previous: "Cash 100,000 · Fee 3bps · Slippage 2bps",
+        delta: "changed",
+        tone: "warning"
+      }
+    ]);
+  });
+
+  test("does not compare history until two audited runs are available", () => {
+    expect(buildResearchRunComparisonRows([])).toEqual([]);
+    expect(
+      buildResearchRunComparisonRows([
+        {
+          runId: "run-only",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyName: "SMA trend demo",
+          strategyRevision: "rev-only",
+          dataRows: 120,
+          metrics: { total_return_pct: 4.2, max_drawdown_pct: 3.1, trade_count: 9 },
+          decisions: [],
+          executionMode: "paper_only"
+        }
+      ])
+    ).toEqual([]);
   });
 
   test("formats optional live quote prices for watchlist display", () => {

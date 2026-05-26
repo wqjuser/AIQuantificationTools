@@ -44,6 +44,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildQuantLoopNavigationTarget,
+  buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
   buildWorkflowStages,
@@ -60,6 +61,7 @@ import {
   PaperTradingRow,
   PortfolioRiskRow,
   ResearchRunAudit,
+  ResearchRunComparisonRow,
   ScannerCandidate,
   StrategyRuleRow,
   StrategyField,
@@ -185,6 +187,7 @@ export function App() {
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
+  const runComparisonRows = buildResearchRunComparisonRows(runHistory);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -927,6 +930,7 @@ export function App() {
         </Panel>
 
         <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")}>
+          {runComparisonRows.length ? <RunComparisonBoard i18n={i18n} rows={runComparisonRows} /> : null}
           <div className="run-history">
             {runHistory.length ? (
               runHistory.map((run) => (
@@ -2028,6 +2032,34 @@ function RunHistoryRow({
   );
 }
 
+function RunComparisonBoard({ i18n, rows }: { i18n: AppI18n; rows: ResearchRunComparisonRow[] }) {
+  return (
+    <div className="history-comparison">
+      <div className="history-comparison-title">
+        <span>{i18n.t("history.comparison")}</span>
+        <strong>{rows.length}</strong>
+      </div>
+      <div className="history-comparison-grid">
+        <div className="history-comparison-row history-comparison-head">
+          <span>{i18n.t("history.delta")}</span>
+          <span>{i18n.t("history.current")}</span>
+          <span>{i18n.t("history.previous")}</span>
+        </div>
+        {rows.map((row) => (
+          <article className={`history-comparison-row ${row.tone}`} key={row.id}>
+            <span>
+              <strong>{historyComparisonLabel(i18n, row.label)}</strong>
+              <em>{historyComparisonDeltaLabel(i18n, row.delta)}</em>
+            </span>
+            <span>{historyComparisonValue(i18n, row.current)}</span>
+            <span>{historyComparisonValue(i18n, row.previous)}</span>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function historyRunDetailLabel(i18n: AppI18n, run: ResearchRunAudit): string {
   const rows = i18n.t("history.rows", { count: run.dataRows });
   const revision = `${i18n.t("history.revision")}: ${run.strategyRevision}`;
@@ -2052,6 +2084,30 @@ function historyAssumptionLabel(i18n: AppI18n, run: ResearchRunAudit): string | 
     return `资金 ${cash} / 手续费 ${run.backtestAssumptions.feeBps}基点 / 滑点 ${run.backtestAssumptions.slippageBps}基点`;
   }
   return `Cash ${cash} / Fee ${run.backtestAssumptions.feeBps}bps / Slippage ${run.backtestAssumptions.slippageBps}bps`;
+}
+
+function historyComparisonLabel(i18n: AppI18n, label: string): string {
+  if (label === "Assumptions") {
+    return i18n.locale === "zh-CN" ? "回测假设" : label;
+  }
+  return i18n.metricLabel(label);
+}
+
+function historyComparisonDeltaLabel(i18n: AppI18n, delta: string): string {
+  if (delta === "changed") {
+    return i18n.t("history.changed");
+  }
+  if (delta === "same") {
+    return i18n.t("history.unchanged");
+  }
+  return delta;
+}
+
+function historyComparisonValue(i18n: AppI18n, value: string): string {
+  if (i18n.locale === "en-US") {
+    return value;
+  }
+  return value.replace("Cash", "资金").replace("Fee", "手续费").replace("Slippage", "滑点").replaceAll("bps", "基点");
 }
 
 function ExecutionTile({

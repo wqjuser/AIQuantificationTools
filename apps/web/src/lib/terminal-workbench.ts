@@ -249,6 +249,15 @@ export interface ResearchRunAudit {
   backtestAssumptions?: BacktestAssumptions;
 }
 
+export interface ResearchRunComparisonRow {
+  id: "return" | "drawdown" | "trades" | "assumptions";
+  label: string;
+  current: string;
+  previous: string;
+  delta: string;
+  tone: "positive" | "warning" | "neutral";
+}
+
 export interface TerminalWorkspace {
   schemaVersion: number;
   selectedInstrument: Instrument;
@@ -1038,6 +1047,57 @@ export function researchRunHistoryLabel(run: ResearchRunAudit): string {
   return `${run.symbol} · ${run.timeframe} · ${returnLabel} · ${tradeCount} trades`;
 }
 
+export function buildResearchRunComparisonRows(runs: ResearchRunAudit[]): ResearchRunComparisonRow[] {
+  if (runs.length < 2) {
+    return [];
+  }
+  const [current, previous] = runs;
+  const returnDelta = metricNumber(current, "total_return_pct") - metricNumber(previous, "total_return_pct");
+  const drawdownDelta = metricNumber(current, "max_drawdown_pct") - metricNumber(previous, "max_drawdown_pct");
+  const tradeDelta = metricNumber(current, "trade_count") - metricNumber(previous, "trade_count");
+  const currentAssumptions = normalizeBacktestAssumptions(current.backtestAssumptions);
+  const previousAssumptions = normalizeBacktestAssumptions(previous.backtestAssumptions);
+  const assumptionsChanged =
+    currentAssumptions.initialCash !== previousAssumptions.initialCash ||
+    currentAssumptions.feeBps !== previousAssumptions.feeBps ||
+    currentAssumptions.slippageBps !== previousAssumptions.slippageBps;
+
+  return [
+    {
+      id: "return",
+      label: "Return",
+      current: formatSignedPct(metricNumber(current, "total_return_pct")),
+      previous: formatSignedPct(metricNumber(previous, "total_return_pct")),
+      delta: formatSignedPointDelta(returnDelta),
+      tone: returnDelta > 0 ? "positive" : returnDelta < 0 ? "warning" : "neutral"
+    },
+    {
+      id: "drawdown",
+      label: "Max DD",
+      current: formatPct(metricNumber(current, "max_drawdown_pct")),
+      previous: formatPct(metricNumber(previous, "max_drawdown_pct")),
+      delta: formatSignedPointDelta(drawdownDelta),
+      tone: drawdownDelta < 0 ? "positive" : drawdownDelta > 0 ? "warning" : "neutral"
+    },
+    {
+      id: "trades",
+      label: "Trades",
+      current: String(metricNumber(current, "trade_count")),
+      previous: String(metricNumber(previous, "trade_count")),
+      delta: formatSignedIntegerDelta(tradeDelta),
+      tone: "neutral"
+    },
+    {
+      id: "assumptions",
+      label: "Assumptions",
+      current: formatAssumptionsForAudit(currentAssumptions),
+      previous: formatAssumptionsForAudit(previousAssumptions),
+      delta: assumptionsChanged ? "changed" : "same",
+      tone: assumptionsChanged ? "warning" : "neutral"
+    }
+  ];
+}
+
 export function formatInstrumentPrice(value: number | null | undefined): string {
   if (value === undefined || value === null || !Number.isFinite(value)) {
     return "N/A";
@@ -1338,4 +1398,27 @@ function formatPct(value: number | undefined): string {
     return "N/A";
   }
   return `${value.toFixed(2)}%`;
+}
+
+function formatSignedPointDelta(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}pp`;
+}
+
+function formatSignedIntegerDelta(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+  return `${value >= 0 ? "+" : ""}${Math.round(value)}`;
+}
+
+function metricNumber(run: ResearchRunAudit, key: string): number {
+  const value = run.metrics[key];
+  return Number.isFinite(value) ? value : 0;
+}
+
+function formatAssumptionsForAudit(assumptions: BacktestAssumptions): string {
+  return `Cash ${formatAssumptionCurrency(assumptions.initialCash)} · Fee ${assumptions.feeBps}bps · Slippage ${assumptions.slippageBps}bps`;
 }
