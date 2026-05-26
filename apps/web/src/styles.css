@@ -306,6 +306,18 @@ h2 {
   padding: 10px;
 }
 
+.ticker {
+  color: #dce6ee;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ticker:hover,
+.ticker.active {
+  border-color: #2b6f62;
+  background: #122b27;
+}
+
 .ticker span,
 .metric-card span,
 .terminal-panel header span {

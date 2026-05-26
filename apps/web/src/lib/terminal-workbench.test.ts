@@ -7,6 +7,7 @@ import {
   researchRunLabel,
   quantLoopLabels,
   visiblePanels,
+  workspaceWithSelectedInstrument,
   workspaceFromResearchRunAudit
 } from "./terminal-workbench";
 
@@ -123,5 +124,42 @@ describe("terminal workbench model", () => {
     expect(workspace.metrics.map((metric) => metric.value)).toEqual(["-1.25%", "4.50%", "40.00%", "5"]);
     expect(workspace.decisionLog[0].message).toBe("Replay loaded");
     expect(workspace.researchRun?.runId).toBe("run-history");
+  });
+
+  test("selects a watchlist instrument as a fresh research context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    const workspace = workspaceWithSelectedInstrument(auditedWorkspace, {
+      symbol: "AAPL",
+      name: "Apple",
+      market: "us",
+      changePct: -0.36
+    });
+
+    expect(workspace.selectedInstrument.symbol).toBe("AAPL");
+    expect(workspace.researchRun).toBeNull();
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "Research Context",
+      message: "AAPL selected. Run Pipeline to generate an audited backtest and agent review.",
+      tone: "ai"
+    });
   });
 });

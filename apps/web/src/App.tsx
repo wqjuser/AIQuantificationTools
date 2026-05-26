@@ -29,7 +29,8 @@ import {
   researchRunLabel,
   TerminalModule,
   TerminalWorkspace,
-  workspaceFromResearchRunAudit
+  workspaceFromResearchRunAudit,
+  workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
 
 const quantCoreBaseUrl = resolveQuantCoreBaseUrl({
@@ -98,6 +99,17 @@ export function App() {
         workspace: workspaceFromResearchRunAudit(workspace, run),
         source: "core",
         statusLabel: "Audit replay loaded"
+      });
+    },
+    [workspace]
+  );
+
+  const selectInstrument = useCallback(
+    (instrument: TerminalWorkspace["selectedInstrument"]) => {
+      setWorkspaceState({
+        workspace: workspaceWithSelectedInstrument(workspace, instrument),
+        source: "core",
+        statusLabel: "Instrument selected"
       });
     },
     [workspace]
@@ -172,14 +184,23 @@ export function App() {
 
         <section className="watchlist-strip">
           {workspace.watchlist.map((instrument) => (
-            <article className="ticker" key={instrument.symbol}>
+            <button
+              className={`ticker ${
+                workspace.selectedInstrument.symbol === instrument.symbol &&
+                workspace.selectedInstrument.market === instrument.market
+                  ? "active"
+                  : ""
+              }`}
+              key={`${instrument.market}-${instrument.symbol}`}
+              onClick={() => selectInstrument(instrument)}
+            >
               <span>{marketLabels[instrument.market]}</span>
               <strong>{instrument.symbol}</strong>
               <em className={instrument.changePct >= 0 ? "up" : "down"}>
                 {instrument.changePct >= 0 ? "+" : ""}
                 {instrument.changePct.toFixed(2)}%
               </em>
-            </article>
+            </button>
           ))}
         </section>
 

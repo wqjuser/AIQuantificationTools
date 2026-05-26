@@ -303,6 +303,49 @@ export function workspaceFromResearchRunAudit(
   };
 }
 
+export function workspaceWithSelectedInstrument(
+  currentWorkspace: TerminalWorkspace,
+  instrument: Instrument
+): TerminalWorkspace {
+  const watchlist = currentWorkspace.watchlist.some(
+    (candidate) => candidate.symbol === instrument.symbol && candidate.market === instrument.market
+  )
+    ? currentWorkspace.watchlist
+    : [instrument, ...currentWorkspace.watchlist.slice(0, 3)];
+
+  return {
+    ...currentWorkspace,
+    selectedInstrument: instrument,
+    watchlist,
+    strategy: {
+      name: `${instrument.symbol} research context`,
+      entry: "Run Pipeline to generate entry rules from the selected context",
+      exit: "Pending audited backtest",
+      position: "Pending risk sizing",
+      risk: "Paper only until a new audited run is available"
+    },
+    metrics: [
+      { label: "Return", value: "N/A", tone: "neutral" },
+      { label: "Max DD", value: "N/A", tone: "warning" },
+      { label: "Win Rate", value: "N/A", tone: "neutral" },
+      { label: "Trades", value: "0", tone: "neutral" }
+    ],
+    decisionLog: [
+      {
+        agent: "Research Context",
+        message: `${instrument.symbol} selected. Run Pipeline to generate an audited backtest and agent review.`,
+        tone: "ai"
+      },
+      {
+        agent: "Risk Manager",
+        message: "Previous audit results are cleared for this symbol context; live execution remains blocked.",
+        tone: "risk"
+      }
+    ],
+    researchRun: null
+  };
+}
+
 function formatSignedPct(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) {
     return "N/A";
