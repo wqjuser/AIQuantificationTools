@@ -367,6 +367,12 @@ h2 {
   font-size: 15px;
 }
 
+.ticker .ticker-price {
+  color: #dce6ee;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 em {
   font-style: normal;
 }

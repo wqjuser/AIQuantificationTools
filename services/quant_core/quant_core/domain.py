@@ -69,6 +69,23 @@ class MarketDataRequest:
 
 
 @dataclass(frozen=True)
+class MarketQuote:
+    market: Market
+    symbol: str
+    price: float
+    change: float
+    change_pct: float
+    source: str
+    as_of: datetime
+    high: float = 0.0
+    low: float = 0.0
+    open: float = 0.0
+    previous_close: float = 0.0
+    is_live: bool = True
+    warning: str | None = None
+
+
+@dataclass(frozen=True)
 class Condition:
     kind: str
     params: dict[str, float | int | str] = field(default_factory=dict)

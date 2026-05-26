@@ -51,6 +51,9 @@ export interface Instrument {
   name: string;
   market: Market;
   changePct: number;
+  price?: number | null;
+  quoteSource?: string | null;
+  quoteAsOf?: string | null;
 }
 
 export interface StrategySnapshot {
@@ -126,14 +129,15 @@ export function buildTerminalWorkspace(): TerminalWorkspace {
       symbol: "600000",
       name: "浦发银行",
       market: "ashare",
-      changePct: 1.24
+      changePct: 1.24,
+      price: 8.66
     },
     selectedTimeframe: "1d",
     watchlist: [
-      { symbol: "600000", name: "浦发银行", market: "ashare", changePct: 1.24 },
-      { symbol: "000300", name: "沪深300", market: "ashare", changePct: 0.41 },
-      { symbol: "AAPL", name: "Apple", market: "us", changePct: -0.36 },
-      { symbol: "BTC/USDT", name: "Bitcoin", market: "crypto", changePct: 2.81 }
+      { symbol: "600000", name: "浦发银行", market: "ashare", changePct: 1.24, price: 8.66 },
+      { symbol: "000300", name: "沪深300", market: "ashare", changePct: 0.41, price: 3898.22 },
+      { symbol: "AAPL", name: "Apple", market: "us", changePct: -0.36, price: 191.2 },
+      { symbol: "BTC/USDT", name: "Bitcoin", market: "crypto", changePct: 2.81, price: 68200 }
     ],
     quantLoop: [
       { id: "idea", label: "Idea Lab", status: "active" },
@@ -260,6 +264,13 @@ export function researchRunHistoryLabel(run: ResearchRunAudit): string {
     ? `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`
     : "N/A";
   return `${run.symbol} · ${run.timeframe} · ${returnLabel} · ${tradeCount} trades`;
+}
+
+export function formatInstrumentPrice(value: number | null | undefined): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) {
+    return "N/A";
+  }
+  return value.toFixed(2);
 }
 
 export function workspaceFromResearchRunAudit(

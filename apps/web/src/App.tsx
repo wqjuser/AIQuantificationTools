@@ -25,6 +25,7 @@ import {
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
+  formatInstrumentPrice,
   Market,
   ResearchRunAudit,
   Timeframe,
@@ -238,6 +239,7 @@ export function App() {
             >
               <span>{i18n.marketLabel(instrument.market)}</span>
               <strong>{instrument.symbol}</strong>
+              <span className="ticker-price">{formatInstrumentPrice(instrument.price)}</span>
               <em className={instrument.changePct >= 0 ? "up" : "down"}>
                 {instrument.changePct >= 0 ? "+" : ""}
                 {instrument.changePct.toFixed(2)}%

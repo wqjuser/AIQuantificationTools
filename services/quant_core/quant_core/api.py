@@ -12,6 +12,7 @@ from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
+from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.research import run_terminal_research
 from quant_core.runs import ResearchRunStore, research_run_audits_to_payload
 from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
@@ -35,6 +36,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     assistant = LocalResearchAssistant()
     engine = BacktestEngine()
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
+    quote_adapter = QuantDingerLiveQuoteAdapter()
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -54,7 +56,23 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
             return
         if parsed.path == "/api/workspace":
-            self._send_json(terminal_workspace_to_payload(build_terminal_workspace()))
+            workspace, _quotes = workspace_with_live_quotes(build_terminal_workspace(), self.quote_adapter)
+            self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if parsed.path == "/api/market/quotes":
+            query = parse_qs(parsed.query)
+            workspace = build_terminal_workspace()
+            instruments = workspace.watchlist
+            market = query.get("market", [""])[0]
+            symbol = query.get("symbol", [""])[0]
+            if market and symbol:
+                instruments = [instrument for instrument in instruments if instrument.market == market and instrument.symbol == symbol]
+                if not instruments:
+                    from quant_core.terminal import Instrument
+
+                    instruments = [Instrument(symbol=symbol, name=symbol, market=market, change_pct=0.0)]
+            quotes = self.quote_adapter.fetch_quotes(instruments)
+            self._send_json(market_quotes_to_payload(quotes))
             return
         if parsed.path == "/api/research/run":
             query = parse_qs(parsed.query)

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
-from quant_core.domain import Market, Timeframe
+from quant_core.domain import Market, MarketQuote, Timeframe
 
 
 PanelId = Literal[
@@ -66,6 +66,9 @@ class Instrument:
     name: str
     market: Market
     change_pct: float
+    price: float | None = None
+    quote_source: str | None = None
+    quote_as_of: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -129,13 +132,13 @@ class TerminalWorkspace:
 def build_terminal_workspace() -> TerminalWorkspace:
     return TerminalWorkspace(
         schema_version=1,
-        selected_instrument=Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=1.24),
+        selected_instrument=Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=1.24, price=8.66),
         selected_timeframe="1d",
         watchlist=[
-            Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=1.24),
-            Instrument(symbol="000300", name="沪深300", market="ashare", change_pct=0.41),
-            Instrument(symbol="AAPL", name="Apple", market="us", change_pct=-0.36),
-            Instrument(symbol="BTC/USDT", name="Bitcoin", market="crypto", change_pct=2.81),
+            Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=1.24, price=8.66),
+            Instrument(symbol="000300", name="沪深300", market="ashare", change_pct=0.41, price=3898.22),
+            Instrument(symbol="AAPL", name="Apple", market="us", change_pct=-0.36, price=191.2),
+            Instrument(symbol="BTC/USDT", name="Bitcoin", market="crypto", change_pct=2.81, price=68200.0),
         ],
         quant_loop=[
             QuantLoopStep(id="idea", label="Idea Lab", status="active"),
@@ -236,6 +239,26 @@ def agent_role_labels(workspace: TerminalWorkspace) -> list[str]:
 
 def execution_gate_ids(workspace: TerminalWorkspace) -> list[str]:
     return [gate.id for gate in workspace.execution.gates]
+
+
+def apply_market_quotes(workspace: TerminalWorkspace, quotes: list[MarketQuote]) -> TerminalWorkspace:
+    quote_map = {(quote.market, quote.symbol.upper()): quote for quote in quotes}
+
+    def with_quote(instrument: Instrument) -> Instrument:
+        quote = quote_map.get((instrument.market, instrument.symbol.upper()))
+        if not quote or not quote.is_live:
+            return instrument
+        return replace(
+            instrument,
+            change_pct=quote.change_pct,
+            price=quote.price,
+            quote_source=quote.source,
+            quote_as_of=quote.as_of,
+        )
+
+    watchlist = [with_quote(instrument) for instrument in workspace.watchlist]
+    selected = with_quote(workspace.selected_instrument)
+    return replace(workspace, selected_instrument=selected, watchlist=watchlist)
 
 
 def terminal_workspace_to_payload(workspace: TerminalWorkspace) -> dict[str, Any]:

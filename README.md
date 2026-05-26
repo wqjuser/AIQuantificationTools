@@ -14,6 +14,7 @@
 - 研究上下文切换：点击 Watchlist 标的会切换当前研究对象，并清除旧审计结果，避免跨标的复用过期回测指标。
 - 周期粒度切换：顶部 `1d / 1m / 5m / 15m / 30m / 60m` 控件会改变研究周期，Pipeline 按当前标的和周期运行。
 - 多语言：`apps/web/src/lib/i18n.ts` 提供 `zh-CN / en-US` 语言包，默认中文，顶部语言控件可切换。
+- 实时报价：参考 QuantDinger 的 REST quote + watchlist cache 方法，A 股走腾讯 quote，美股优先 Finnhub 并降级 yfinance，加密货币走 ccxt ticker，API 暴露 `/api/market/quotes`。
 
 ## Commands
 
@@ -29,6 +30,13 @@ npm run dev
 
 ```powershell
 VITE_QUANT_API_BASE=http://127.0.0.1:8765
+```
+
+实时报价可选配置：
+
+```powershell
+FINNHUB_API_KEY=your_finnhub_key
+CCXT_DEFAULT_EXCHANGE=binance
 ```
 
 桌面端开发：

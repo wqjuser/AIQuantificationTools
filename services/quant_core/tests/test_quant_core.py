@@ -292,6 +292,90 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["researchRun"]["dataRows"], latest[0].data_rows)
         self.assertEqual(payload["researchRun"]["executionMode"], "paper_only")
 
+    def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
+        from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            if "finnhub.io" in url:
+                return '{"c": 191.20, "d": 1.25, "dp": 0.66, "h": 193.0, "l": 189.1, "o": 190.0, "pc": 189.95, "t": 1779780000}'
+            if "qt.gtimg.cn" in url:
+                return 'v_sh600000="1~浦发银行~600000~8.66~8.55~8.60~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~8.70~8.50";'
+            raise AssertionError(url)
+
+        adapter = QuantDingerLiveQuoteAdapter(finnhub_api_key="demo", fetch_text=fake_fetch_text)
+
+        us_quote = adapter.fetch_quote("us", "AAPL")
+        ashare_quote = adapter.fetch_quote("ashare", "600000")
+
+        self.assertEqual(us_quote.source, "finnhub")
+        self.assertEqual(us_quote.price, 191.2)
+        self.assertEqual(us_quote.change_pct, 0.66)
+        self.assertEqual(ashare_quote.source, "tencent")
+        self.assertEqual(ashare_quote.price, 8.66)
+        self.assertAlmostEqual(ashare_quote.change_pct, 1.29)
+
+    def test_live_quote_adapter_reuses_ttl_cache_for_watchlist_prices(self):
+        from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
+
+        calls = []
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            calls.append(url)
+            return '{"c": 100, "d": 2, "dp": 2.04, "h": 101, "l": 98, "o": 99, "pc": 98, "t": 1779780000}'
+
+        adapter = QuantDingerLiveQuoteAdapter(
+            finnhub_api_key="demo",
+            fetch_text=fake_fetch_text,
+            cache_ttl_seconds=30,
+            now=lambda: 1000.0,
+        )
+
+        first = adapter.fetch_quote("us", "AAPL")
+        second = adapter.fetch_quote("us", "AAPL")
+
+        self.assertEqual(first.price, second.price)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(adapter.cache_key("us", "AAPL"), "watchlist_price:us:AAPL")
+
+    def test_terminal_workspace_applies_live_quotes_to_watchlist_and_selected_symbol(self):
+        from quant_core.domain import MarketQuote
+        from quant_core.terminal import apply_market_quotes, build_terminal_workspace, terminal_workspace_to_payload
+
+        workspace = build_terminal_workspace()
+        updated = apply_market_quotes(
+            workspace,
+            [
+                MarketQuote(
+                    market="ashare",
+                    symbol="600000",
+                    price=8.66,
+                    change=0.11,
+                    change_pct=1.29,
+                    source="tencent",
+                    as_of=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+                )
+            ],
+        )
+        payload = terminal_workspace_to_payload(updated)
+
+        self.assertEqual(payload["selectedInstrument"]["price"], 8.66)
+        self.assertEqual(payload["selectedInstrument"]["changePct"], 1.29)
+        self.assertEqual(payload["selectedInstrument"]["quoteSource"], "tencent")
+        self.assertEqual(payload["watchlist"][0]["price"], 8.66)
+
+    def test_terminal_workspace_keeps_fallback_price_when_live_quote_unavailable(self):
+        from quant_core.live_quotes import unavailable_quote
+        from quant_core.terminal import apply_market_quotes, build_terminal_workspace, terminal_workspace_to_payload
+
+        workspace = build_terminal_workspace()
+        updated = apply_market_quotes(workspace, [unavailable_quote("us", "AAPL", "missing key")])
+        payload = terminal_workspace_to_payload(updated)
+
+        self.assertEqual(payload["watchlist"][2]["symbol"], "AAPL")
+        self.assertEqual(payload["watchlist"][2]["price"], 191.2)
+        self.assertEqual(payload["watchlist"][2]["changePct"], -0.36)
+        self.assertIsNone(payload["watchlist"][2]["quoteSource"])
+
 
 if __name__ == "__main__":
     unittest.main()

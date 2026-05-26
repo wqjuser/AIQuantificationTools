@@ -3,6 +3,7 @@ import {
   agentRoleLabels,
   buildTerminalWorkspace,
   executionModeLabel,
+  formatInstrumentPrice,
   researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
@@ -96,6 +97,12 @@ describe("terminal workbench model", () => {
     ).toBe("600000 · 1d · +3.40% · 8 trades");
   });
 
+  test("formats optional live quote prices for watchlist display", () => {
+    expect(formatInstrumentPrice(8.66)).toBe("8.66");
+    expect(formatInstrumentPrice(3898.221)).toBe("3898.22");
+    expect(formatInstrumentPrice(undefined)).toBe("N/A");
+  });
+
   test("replays an audited research run into the terminal workspace", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-history",
@@ -120,7 +127,8 @@ describe("terminal workbench model", () => {
       symbol: "AAPL",
       name: "Apple",
       market: "us",
-      changePct: -0.36
+      changePct: -0.36,
+      price: 191.2
     });
     expect(workspace.selectedTimeframe).toBe("5m");
     expect(workspace.strategy.name).toBe("SMA trend demo");
