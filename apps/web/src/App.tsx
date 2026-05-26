@@ -5,6 +5,7 @@ import {
   Cable,
   Database,
   GitBranch,
+  Languages,
   Play,
   Radar,
   RefreshCw,
@@ -21,13 +22,11 @@ import {
   ResearchRunHistoryResult,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
+import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
-  executionModeLabel,
   Market,
   ResearchRunAudit,
-  researchRunHistoryLabel,
-  researchRunLabel,
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
@@ -49,11 +48,6 @@ const initialRunHistoryState: ResearchRunHistoryResult = {
   source: "fallback"
 };
 
-const marketLabels: Record<Market, string> = {
-  ashare: "A 股",
-  us: "美股",
-  crypto: "Crypto"
-};
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 
 const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
@@ -66,8 +60,12 @@ const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
+  const [locale, setLocale] = useState<Locale>(() =>
+    resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const i18n = createI18n(locale);
 
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
@@ -134,6 +132,11 @@ export function App() {
     void refreshWorkspace();
   }, [refreshWorkspace]);
 
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    window.localStorage.setItem("aiqt.locale", locale);
+  }, [locale]);
+
   return (
     <div className="terminal-shell">
       <aside className="left-rail">
@@ -141,31 +144,31 @@ export function App() {
           <span className="brand-mark">AQ</span>
           <div>
             <strong>AIQuant Terminal</strong>
-            <span>Local-first quant OS</span>
+            <span>{i18n.t("brand.subtitle")}</span>
           </div>
         </div>
 
         <section className="rail-section">
-          <p className="section-label">Quant Loop</p>
+          <p className="section-label">{i18n.t("section.quantLoop")}</p>
           <nav className="loop-nav">
             {workspace.quantLoop.map((step, index) => (
               <button className={`loop-step ${step.status}`} key={step.id}>
                 <span>{index + 1}</span>
-                {step.label}
+                {i18n.quantLoopLabel(step.id, step.label)}
               </button>
             ))}
           </nav>
         </section>
 
         <section className="rail-section">
-          <p className="section-label">Terminal Modules</p>
+          <p className="section-label">{i18n.t("section.terminalModules")}</p>
           <div className="module-list">
             {workspace.modules.map((module) => {
               const Icon = moduleIcons[module.accent];
               return (
                 <button className={`module-button ${module.accent}`} key={module.id}>
                   <Icon size={16} />
-                  {module.label}
+                  {i18n.moduleLabel(module.id, module.label)}
                 </button>
               );
             })}
@@ -173,24 +176,36 @@ export function App() {
         </section>
 
         <section className="workspace-card">
-          <span className="section-label">Audit Trail</span>
+          <span className="section-label">{i18n.t("section.auditTrail")}</span>
           <strong>{workspace.selectedInstrument.symbol} · {workspace.selectedTimeframe}</strong>
-          <p>{researchRunLabel(workspace.researchRun)}</p>
+          <p>{i18n.researchRunLabel(workspace.researchRun)}</p>
         </section>
       </aside>
 
       <main className="terminal-main">
         <header className="terminal-topbar">
           <div>
-            <p className="section-label">Professional Quant Workbench</p>
+            <p className="section-label">{i18n.t("topbar.eyebrow")}</p>
             <h1>{workspace.selectedInstrument.name} · {workspace.selectedInstrument.symbol}</h1>
           </div>
           <div className="topbar-actions">
             <span className={`status-pill ${source === "core" ? "ok" : "paper"}`} title={error}>
-              {statusLabel}
+              {i18n.statusLabel(statusLabel)}
             </span>
-            <span className="status-pill paper">{executionModeLabel(workspace.execution)}</span>
-            <div className="timeframe-control" aria-label="Research timeframe">
+            <span className="status-pill paper">{i18n.executionMode(workspace.execution)}</span>
+            <div className="locale-control" aria-label={i18n.t("aria.language")}>
+              <Languages size={15} />
+              {supportedLocales.map((candidate) => (
+                <button
+                  className={locale === candidate ? "active" : ""}
+                  key={candidate}
+                  onClick={() => setLocale(candidate)}
+                >
+                  {candidate === "zh-CN" ? i18n.t("language.zh") : i18n.t("language.en")}
+                </button>
+              ))}
+            </div>
+            <div className="timeframe-control" aria-label={i18n.t("aria.timeframe")}>
               <Timer size={15} />
               {timeframeOptions.map((timeframe) => (
                 <button
@@ -204,7 +219,7 @@ export function App() {
             </div>
             <button className="run-button" disabled={isRefreshing || isRunning} onClick={runPipeline}>
               {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
-              Run Pipeline
+              {i18n.t("action.runPipeline")}
             </button>
           </div>
         </header>
@@ -221,7 +236,7 @@ export function App() {
               key={`${instrument.market}-${instrument.symbol}`}
               onClick={() => selectInstrument(instrument)}
             >
-              <span>{marketLabels[instrument.market]}</span>
+              <span>{i18n.marketLabel(instrument.market)}</span>
               <strong>{instrument.symbol}</strong>
               <em className={instrument.changePct >= 0 ? "up" : "down"}>
                 {instrument.changePct >= 0 ? "+" : ""}
@@ -234,7 +249,7 @@ export function App() {
         <section className="metrics-row">
           {workspace.metrics.map((metric) => (
             <article className={`metric-card ${metric.tone}`} key={metric.label}>
-              <span>{metric.label}</span>
+              <span>{i18n.metricLabel(metric.label)}</span>
               <strong>{metric.value}</strong>
             </article>
           ))}
@@ -242,8 +257,8 @@ export function App() {
 
         <section className="center-grid">
           <Panel
-            title="Chart & Factor Overlays"
-            subtitle={`Price · SMA20 · Trades · ${workspace.selectedTimeframe}`}
+            title={i18n.t("panel.chart.title")}
+            subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
             className="chart-panel"
           >
             <div className="chart-canvas" aria-label="terminal chart preview">
@@ -263,36 +278,39 @@ export function App() {
             </div>
           </Panel>
 
-          <Panel title="Strategy Snapshot" subtitle={workspace.strategy.name}>
+          <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)}>
             <dl className="strategy-list">
-              <StrategyFact label="Entry" value={workspace.strategy.entry} />
-              <StrategyFact label="Exit" value={workspace.strategy.exit} />
-              <StrategyFact label="Position" value={workspace.strategy.position} />
-              <StrategyFact label="Risk" value={workspace.strategy.risk} />
+              <StrategyFact label={i18n.t("strategy.entry")} value={i18n.strategyText(workspace.strategy.entry)} />
+              <StrategyFact label={i18n.t("strategy.exit")} value={i18n.strategyText(workspace.strategy.exit)} />
+              <StrategyFact label={i18n.t("strategy.position")} value={i18n.strategyText(workspace.strategy.position)} />
+              <StrategyFact label={i18n.t("strategy.risk")} value={i18n.strategyText(workspace.strategy.risk)} />
             </dl>
           </Panel>
 
-          <Panel title="Node Workflow" subtitle="Visual pipeline">
+          <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
             <div className="node-row">
-              {workspace.workflowNodes.map((node) => (
-                <article className="workflow-node" key={node.id}>
-                  <strong>{node.label}</strong>
-                  <span>{node.detail}</span>
-                </article>
-              ))}
+              {workspace.workflowNodes.map((node) => {
+                const translated = i18n.workflowNode(node.id, node.label, node.detail);
+                return (
+                  <article className="workflow-node" key={node.id}>
+                    <strong>{translated.label}</strong>
+                    <span>{translated.detail}</span>
+                  </article>
+                );
+              })}
             </div>
           </Panel>
 
-          <Panel title="Execution Center" subtitle="Paper first · certified live only">
+          <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")}>
             <div className="execution-grid">
-              <ExecutionTile icon={Database} label="Account Sync" value="paper account" />
-              <ExecutionTile icon={WalletCards} label="Positions" value="4 watched / 0 live" />
-              <ExecutionTile icon={ShieldCheck} label="Risk State" value="live blocked" />
+              <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
+              <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
+              <ExecutionTile icon={ShieldCheck} label={i18n.t("execution.riskState")} value={i18n.t("execution.liveBlocked")} />
             </div>
             <div className="gate-list">
               {workspace.execution.gates.map((gate) => (
                 <span key={gate.id} className={gate.passed ? "passed" : "blocked"}>
-                  {gate.label}
+                  {i18n.gateLabel(gate.id, gate.label)}
                 </span>
               ))}
             </div>
@@ -301,59 +319,65 @@ export function App() {
       </main>
 
       <aside className="agent-rail">
-        <Panel title="Agent Committee" subtitle="TradingAgents-style review" className="agent-panel">
+        <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="agent-panel">
           <div className="agent-grid">
             {workspace.agents.map((agent) => (
               <span className={`agent-role ${agent.stance}`} key={agent.id}>
-                {agent.label}
+                {i18n.agentLabel(agent.id, agent.label)}
               </span>
             ))}
           </div>
         </Panel>
 
-        <Panel title="Decision Log" subtitle="Traceable AI research">
+        <Panel title={i18n.t("panel.decision.title")} subtitle={i18n.t("panel.decision.subtitle")}>
           <div className="decision-log">
             {workspace.decisionLog.map((entry) => (
               <article className={`decision-entry ${entry.tone}`} key={`${entry.agent}-${entry.message}`}>
-                <strong>{entry.agent}</strong>
-                <p>{entry.message}</p>
+                <strong>{i18n.decisionAgent(entry.agent)}</strong>
+                <p>{i18n.decisionMessage(entry.message)}</p>
               </article>
             ))}
           </div>
         </Panel>
 
-        <Panel title="Run History" subtitle="Recent audited runs">
+        <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")}>
           <div className="run-history">
             {runHistory.length ? (
               runHistory.map((run) => (
-                <RunHistoryRow key={run.runId} run={run} isActive={workspace.researchRun?.runId === run.runId} onReplay={replayRun} />
+                <RunHistoryRow
+                  key={run.runId}
+                  labelRun={i18n.researchRunHistoryLabel}
+                  run={run}
+                  isActive={workspace.researchRun?.runId === run.runId}
+                  onReplay={replayRun}
+                />
               ))
             ) : (
-              <span className="empty-state">No audited runs</span>
+              <span className="empty-state">{i18n.t("empty.noAuditedRuns")}</span>
             )}
           </div>
         </Panel>
 
-        <Panel title="AI Actions" subtitle="Structured, not generic chat">
+        <Panel title={i18n.t("panel.aiActions.title")} subtitle={i18n.t("panel.aiActions.subtitle")}>
           <div className="ai-actions">
             <button>
               <BrainCircuit size={15} />
-              Run agent debate
+              {i18n.t("aiAction.debate")}
             </button>
             <button>
               <BarChart3 size={15} />
-              Explain backtest
+              {i18n.t("aiAction.explain")}
             </button>
             <button>
               <Cable size={15} />
-              Generate strategy draft
+              {i18n.t("aiAction.strategyDraft")}
             </button>
           </div>
         </Panel>
 
         <footer className="safety-footer">
           <Activity size={16} />
-          <span>Live execution requires adapter certification, risk approval, and human confirmation.</span>
+          <span>{i18n.t("safety.footer")}</span>
         </footer>
       </aside>
     </div>
@@ -387,15 +411,17 @@ function Panel({
 function RunHistoryRow({
   run,
   isActive,
-  onReplay
+  onReplay,
+  labelRun
 }: {
   run: ResearchRunAudit;
   isActive: boolean;
   onReplay: (run: ResearchRunAudit) => void;
+  labelRun: (run: ResearchRunAudit) => string;
 }) {
   return (
     <button className={`history-row ${isActive ? "active" : ""}`} onClick={() => onReplay(run)}>
-      <strong>{researchRunHistoryLabel(run)}</strong>
+      <strong>{labelRun(run)}</strong>
       <span>{run.runId}</span>
     </button>
   );

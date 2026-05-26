@@ -111,6 +111,7 @@ button {
 .loop-step,
 .module-button,
 .run-button,
+.locale-control button,
 .timeframe-control button,
 .ai-actions button {
   border: 1px solid #27364a;
@@ -246,6 +247,7 @@ h2 {
   gap: 8px;
 }
 
+.locale-control,
 .timeframe-control {
   display: inline-flex;
   align-items: center;
@@ -258,6 +260,7 @@ h2 {
   color: #8fa0b2;
 }
 
+.locale-control button,
 .timeframe-control button {
   min-width: 38px;
   min-height: 24px;
@@ -267,6 +270,7 @@ h2 {
   font-weight: 800;
 }
 
+.locale-control button.active,
 .timeframe-control button.active {
   border-color: #2b6f62;
   background: #122b27;

@@ -1,0 +1,47 @@
+import { describe, expect, test } from "vitest";
+import { createI18n, resolveInitialLocale } from "./i18n";
+
+describe("i18n", () => {
+  test("defaults to Simplified Chinese unless a supported locale is stored", () => {
+    expect(resolveInitialLocale()).toBe("zh-CN");
+    expect(resolveInitialLocale("en-US")).toBe("en-US");
+    expect(resolveInitialLocale("fr-FR")).toBe("zh-CN");
+  });
+
+  test("translates terminal chrome and known workspace labels", () => {
+    const zh = createI18n("zh-CN");
+
+    expect(zh.t("topbar.eyebrow")).toBe("专业量化工作台");
+    expect(zh.quantLoopLabel("agent-review", "Agent Review")).toBe("智能体评审");
+    expect(zh.moduleLabel("portfolio", "Portfolio Risk")).toBe("组合风险");
+    expect(zh.agentLabel("risk", "Risk Manager")).toBe("风险经理");
+    expect(zh.metricLabel("Max DD")).toBe("最大回撤");
+    expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
+  });
+
+  test("formats audited run labels in the active locale", () => {
+    const zh = createI18n("zh-CN");
+    const en = createI18n("en-US");
+    const run = {
+      runId: "run-1",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      timeframe: "5m" as const,
+      strategyRevision: "rev123",
+      dataRows: 240,
+      executionMode: "paper_only"
+    };
+
+    expect(zh.researchRunLabel(run)).toBe("run-1 · 240 根 5m K线 · 模拟盘");
+    expect(en.researchRunLabel(run)).toBe("run-1 · 240 5m bars · paper_only");
+  });
+
+  test("translates known strategy and decision copy without changing unknown text", () => {
+    const zh = createI18n("zh-CN");
+
+    expect(zh.strategyText("Close > SMA20 and relative strength improving")).toBe("收盘价 > SMA20，且相对强度改善");
+    expect(
+      zh.decisionMessage("600000 15m selected. Run Pipeline to generate an audited backtest and agent review.")
+    ).toBe("600000 15m 已选中。运行流水线以生成可审计回测和智能体评审。");
+    expect(zh.decisionMessage("自定义中文研究结论")).toBe("自定义中文研究结论");
+  });
+});
