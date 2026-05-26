@@ -2,7 +2,11 @@ import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
   buildInstrumentFromSymbol,
+  buildModuleNewsEvents,
+  buildPortfolioRiskRows,
+  buildScannerCandidates,
   buildTerminalWorkspace,
+  buildWorkflowStages,
   executionModeLabel,
   formatInstrumentPrice,
   researchRunHistoryLabel,
@@ -65,6 +69,55 @@ describe("terminal workbench model", () => {
       "Risk Manager",
       "Portfolio Manager"
     ]);
+  });
+
+  test("derives scanner candidates from the active watchlist", () => {
+    const candidates = buildScannerCandidates(buildTerminalWorkspace());
+
+    expect(candidates.map((candidate) => candidate.instrument.symbol)).toEqual(["BTC/USDT", "600000", "000300", "AAPL"]);
+    expect(candidates[0]).toMatchObject({
+      signal: "Momentum watch",
+      risk: "medium",
+      score: 72
+    });
+    expect(candidates.at(-1)).toMatchObject({
+      signal: "Risk review",
+      risk: "medium"
+    });
+  });
+
+  test("derives paper portfolio risk rows from the workspace state", () => {
+    const rows = buildPortfolioRiskRows(buildTerminalWorkspace());
+
+    expect(rows.map((row) => row.id)).toEqual(["paper-exposure", "selected-risk", "live-gates"]);
+    expect(rows[0].value).toBe("4 watched");
+    expect(rows[1].detail).toContain("600000");
+    expect(rows[2].tone).toBe("warning");
+  });
+
+  test("derives module news events without pretending to have a live feed", () => {
+    const events = buildModuleNewsEvents(buildTerminalWorkspace());
+
+    expect(events[0]).toMatchObject({
+      source: "AI committee",
+      impact: "positive"
+    });
+    expect(events.at(-1)).toMatchObject({
+      source: "Local event watch",
+      impact: "warning"
+    });
+    expect(events.at(-1)?.title).toContain("600000");
+  });
+
+  test("derives workflow stages with execution blocked until gates pass", () => {
+    const stages = buildWorkflowStages(buildTerminalWorkspace());
+
+    expect(stages.map((stage) => stage.id)).toEqual(["data", "factor", "backtest", "agent", "execution"]);
+    expect(stages[0].status).toBe("active");
+    expect(stages.at(-1)).toMatchObject({
+      status: "blocked",
+      output: "Paper execution only"
+    });
   });
 
   test("formats research run audit summaries for the terminal", () => {

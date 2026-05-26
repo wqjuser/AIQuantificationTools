@@ -35,13 +35,21 @@ import {
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
+  buildModuleNewsEvents,
+  buildPortfolioRiskRows,
+  buildScannerCandidates,
+  buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
   Market,
+  ModuleNewsEvent,
+  PortfolioRiskRow,
   ResearchRunAudit,
+  ScannerCandidate,
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
+  WorkflowStageView,
   workspaceFromResearchRunAudit,
   workspaceWithPreservedSelection,
   workspaceWithSelectedTimeframe,
@@ -94,6 +102,7 @@ export function App() {
   );
   const [activeLoopStepId, setActiveLoopStepId] = useState(workspace.quantLoop[0]?.id ?? "idea");
   const [activeModuleId, setActiveModuleId] = useState(workspace.modules[0]?.id ?? "watchlist");
+  const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(workspace.workflowNodes[0]?.id ?? "data");
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
   const [symbolDraft, setSymbolDraft] = useState(workspace.selectedInstrument.symbol);
   const [searchSuggestions, setSearchSuggestions] = useState<MarketSearchSuggestion[]>([]);
@@ -113,6 +122,11 @@ export function App() {
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
   const latestChartBar = klinesState.bars.at(-1);
+  const scannerCandidates = buildScannerCandidates(workspace);
+  const portfolioRiskRows = buildPortfolioRiskRows(workspace);
+  const moduleNewsEvents = buildModuleNewsEvents(workspace);
+  const workflowStages = buildWorkflowStages(workspace);
+  const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -576,83 +590,75 @@ export function App() {
           ))}
         </section>
 
-        <section className="center-grid">
-          <Panel
-            title={i18n.t("panel.chart.title")}
-            subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
-            className="chart-panel"
-            action={
-              <button
-                aria-label={i18n.t("chart.expand")}
-                className="panel-icon-button"
-                onClick={() => setIsChartExpanded(true)}
-                title={i18n.t("chart.expand")}
-                type="button"
+        <section className={`center-grid ${activeModuleId === "watchlist" ? "" : "module-workspace-grid"}`}>
+          {activeModuleId === "watchlist" ? (
+            <>
+              <Panel
+                title={i18n.t("panel.chart.title")}
+                subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
+                className="chart-panel"
+                action={
+                  <button
+                    aria-label={i18n.t("chart.expand")}
+                    className="panel-icon-button"
+                    onClick={() => setIsChartExpanded(true)}
+                    title={i18n.t("chart.expand")}
+                    type="button"
+                  >
+                    <Maximize2 size={16} />
+                  </button>
+                }
               >
-                <Maximize2 size={16} />
-              </button>
-            }
-          >
-            <div className="chart-panel-body">
-              <KlineChartCanvas
-                key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
-                bars={klinesState.bars}
-                locale={locale}
-                market={klinesState.market}
-                onLoadHistorical={loadHistoricalKlines}
-                symbol={klinesState.symbol}
-                timeframe={klinesState.timeframe}
-              />
-              {!klinesState.bars.length && !isChartLoading ? (
-                <div className="chart-empty">{i18n.t("chart.noData")}</div>
-              ) : null}
-              <div className="chart-data-strip">
-                <span>{i18n.t("chart.symbol")}: {klinesState.symbol}</span>
-                {latestChartBar ? <span>{i18n.t("chart.latestClose")}: {latestChartBar.close.toFixed(2)}</span> : null}
-                {latestChartBar ? <span>{i18n.t("chart.asOf")}: {formatChartDate(latestChartBar.timestamp)}</span> : null}
-                <span>{i18n.t("chart.source")}: {klinesState.quality.source}</span>
-                <span>{i18n.t("chart.bars", { count: klinesState.bars.length })}</span>
-              </div>
-            </div>
-          </Panel>
+                <div className="chart-panel-body">
+                  <KlineChartCanvas
+                    key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
+                    bars={klinesState.bars}
+                    locale={locale}
+                    market={klinesState.market}
+                    onLoadHistorical={loadHistoricalKlines}
+                    symbol={klinesState.symbol}
+                    timeframe={klinesState.timeframe}
+                  />
+                  {!klinesState.bars.length && !isChartLoading ? (
+                    <div className="chart-empty">{i18n.t("chart.noData")}</div>
+                  ) : null}
+                  <ChartDataStrip i18n={i18n} latestChartBar={latestChartBar} state={klinesState} />
+                </div>
+              </Panel>
 
-          <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)}>
-            <dl className="strategy-list">
-              <StrategyFact label={i18n.t("strategy.entry")} value={i18n.strategyText(workspace.strategy.entry)} />
-              <StrategyFact label={i18n.t("strategy.exit")} value={i18n.strategyText(workspace.strategy.exit)} />
-              <StrategyFact label={i18n.t("strategy.position")} value={i18n.strategyText(workspace.strategy.position)} />
-              <StrategyFact label={i18n.t("strategy.risk")} value={i18n.strategyText(workspace.strategy.risk)} />
-            </dl>
-          </Panel>
+              <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)}>
+                <StrategySummary i18n={i18n} workspace={workspace} />
+              </Panel>
 
-          <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
-            <div className="node-row">
-              {workspace.workflowNodes.map((node) => {
-                const translated = i18n.workflowNode(node.id, node.label, node.detail);
-                return (
-                  <article className="workflow-node" key={node.id}>
-                    <strong>{translated.label}</strong>
-                    <span>{translated.detail}</span>
-                  </article>
-                );
-              })}
-            </div>
-          </Panel>
+              <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
+                <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
+              </Panel>
 
-          <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")}>
-            <div className="execution-grid">
-              <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
-              <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
-              <ExecutionTile icon={ShieldCheck} label={i18n.t("execution.riskState")} value={i18n.t("execution.liveBlocked")} />
-            </div>
-            <div className="gate-list">
-              {workspace.execution.gates.map((gate) => (
-                <span key={gate.id} className={gate.passed ? "passed" : "blocked"}>
-                  {i18n.gateLabel(gate.id, gate.label)}
-                </span>
-              ))}
-            </div>
-          </Panel>
+              <ExecutionPanel i18n={i18n} workspace={workspace} />
+            </>
+          ) : null}
+
+          {activeModuleId === "scanner" ? (
+            <ScannerWorkspace candidates={scannerCandidates} i18n={i18n} onSelectInstrument={selectInstrument} />
+          ) : null}
+
+          {activeModuleId === "portfolio" ? (
+            <PortfolioWorkspace i18n={i18n} rows={portfolioRiskRows} workspace={workspace} />
+          ) : null}
+
+          {activeModuleId === "news" ? (
+            <NewsWorkspace events={moduleNewsEvents} i18n={i18n} />
+          ) : null}
+
+          {activeModuleId === "workflow" ? (
+            <WorkflowWorkspace
+              activeStage={activeWorkflowStage}
+              i18n={i18n}
+              onRunPipeline={runPipeline}
+              onSelectStage={setActiveWorkflowStageId}
+              stages={workflowStages}
+            />
+          ) : null}
         </section>
       </main>
 
@@ -760,6 +766,321 @@ export function App() {
       </aside>
     </div>
   );
+}
+
+type AppI18n = ReturnType<typeof createI18n>;
+
+function ChartDataStrip({
+  i18n,
+  latestChartBar,
+  state
+}: {
+  i18n: AppI18n;
+  latestChartBar: MarketKlinesResult["bars"][number] | undefined;
+  state: MarketKlinesResult;
+}) {
+  return (
+    <div className="chart-data-strip">
+      <span>{i18n.t("chart.symbol")}: {state.symbol}</span>
+      {latestChartBar ? <span>{i18n.t("chart.latestClose")}: {latestChartBar.close.toFixed(2)}</span> : null}
+      {latestChartBar ? <span>{i18n.t("chart.asOf")}: {formatChartDate(latestChartBar.timestamp)}</span> : null}
+      <span>{i18n.t("chart.source")}: {state.quality.source}</span>
+      <span>{i18n.t("chart.bars", { count: state.bars.length })}</span>
+    </div>
+  );
+}
+
+function StrategySummary({ i18n, workspace }: { i18n: AppI18n; workspace: TerminalWorkspace }) {
+  return (
+    <dl className="strategy-list">
+      <StrategyFact label={i18n.t("strategy.entry")} value={i18n.strategyText(workspace.strategy.entry)} />
+      <StrategyFact label={i18n.t("strategy.exit")} value={i18n.strategyText(workspace.strategy.exit)} />
+      <StrategyFact label={i18n.t("strategy.position")} value={i18n.strategyText(workspace.strategy.position)} />
+      <StrategyFact label={i18n.t("strategy.risk")} value={i18n.strategyText(workspace.strategy.risk)} />
+    </dl>
+  );
+}
+
+function CompactWorkflowNodes({ i18n, workspace }: { i18n: AppI18n; workspace: TerminalWorkspace }) {
+  return (
+    <div className="node-row">
+      {workspace.workflowNodes.map((node) => {
+        const translated = i18n.workflowNode(node.id, node.label, node.detail);
+        return (
+          <article className="workflow-node" key={node.id}>
+            <strong>{translated.label}</strong>
+            <span>{translated.detail}</span>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function ExecutionPanel({ i18n, workspace }: { i18n: AppI18n; workspace: TerminalWorkspace }) {
+  return (
+    <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")}>
+      <div className="execution-grid">
+        <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
+        <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
+        <ExecutionTile icon={ShieldCheck} label={i18n.t("execution.riskState")} value={i18n.t("execution.liveBlocked")} />
+      </div>
+      <div className="gate-list">
+        {workspace.execution.gates.map((gate) => (
+          <span key={gate.id} className={gate.passed ? "passed" : "blocked"}>
+            {i18n.gateLabel(gate.id, gate.label)}
+          </span>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function ScannerWorkspace({
+  candidates,
+  i18n,
+  onSelectInstrument
+}: {
+  candidates: ScannerCandidate[];
+  i18n: AppI18n;
+  onSelectInstrument: (instrument: TerminalWorkspace["selectedInstrument"]) => void;
+}) {
+  return (
+    <Panel title={i18n.t("module.scanner.title")} subtitle={i18n.t("module.scanner.subtitle")} className="module-workspace-panel">
+      <div className="module-toolbar">
+        <span>{i18n.t("module.scanner.filters")}: watchlist · momentum · risk</span>
+        <strong>{candidates.length}</strong>
+      </div>
+      <div className="scanner-table">
+        <div className="scanner-row scanner-head">
+          <span>{i18n.t("chart.symbol")}</span>
+          <span>{i18n.t("module.scanner.score")}</span>
+          <span>{i18n.t("module.scanner.signal")}</span>
+          <span>{i18n.t("module.scanner.risk")}</span>
+          <span>{i18n.t("module.scanner.research")}</span>
+        </div>
+        {candidates.map((candidate) => (
+          <div className="scanner-row" key={`${candidate.instrument.market}-${candidate.instrument.symbol}`}>
+            <span>
+              <strong>{candidate.instrument.symbol}</strong>
+              <em>{candidate.instrument.name}</em>
+            </span>
+            <span>
+              <b>{candidate.score}</b>
+              <i style={{ width: `${candidate.score}%` }} />
+            </span>
+            <span>{scannerSignalLabel(i18n, candidate.signal)}</span>
+            <span className={`risk-chip ${candidate.risk}`}>{riskLabel(i18n, candidate.risk)}</span>
+            <button onClick={() => onSelectInstrument(candidate.instrument)} type="button">
+              <Search size={14} />
+              {i18n.t("module.scanner.research")}
+            </button>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function PortfolioWorkspace({
+  i18n,
+  rows,
+  workspace
+}: {
+  i18n: AppI18n;
+  rows: PortfolioRiskRow[];
+  workspace: TerminalWorkspace;
+}) {
+  return (
+    <>
+      <Panel title={i18n.t("module.portfolio.title")} subtitle={i18n.t("module.portfolio.subtitle")} className="module-workspace-panel">
+        <div className="risk-ledger">
+          {rows.map((row) => (
+            <article className={`risk-ledger-row ${row.tone}`} key={row.id}>
+              <span>{portfolioRiskLabel(i18n, row)}</span>
+              <strong>{portfolioRiskValue(i18n, row)}</strong>
+              <p>{portfolioRiskDetail(i18n, row)}</p>
+            </article>
+          ))}
+        </div>
+      </Panel>
+      <ExecutionPanel i18n={i18n} workspace={workspace} />
+    </>
+  );
+}
+
+function NewsWorkspace({ events, i18n }: { events: ModuleNewsEvent[]; i18n: AppI18n }) {
+  return (
+    <Panel title={i18n.t("module.news.title")} subtitle={i18n.t("module.news.subtitle")} className="module-workspace-panel">
+      <div className="module-toolbar">
+        <span>{i18n.t("module.news.pending")}</span>
+      </div>
+      <div className="event-stream">
+        {events.map((event) => (
+          <article className={`event-row ${event.impact}`} key={event.id}>
+            <span>{eventSourceLabel(i18n, event)}</span>
+            <strong>{eventTitleLabel(i18n, event)}</strong>
+            <p>{eventDetailLabel(i18n, event)}</p>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function WorkflowWorkspace({
+  activeStage,
+  i18n,
+  onRunPipeline,
+  onSelectStage,
+  stages
+}: {
+  activeStage?: WorkflowStageView;
+  i18n: AppI18n;
+  onRunPipeline: () => void;
+  onSelectStage: (stageId: string) => void;
+  stages: WorkflowStageView[];
+}) {
+  return (
+    <>
+      <Panel title={i18n.t("module.workflow.title")} subtitle={i18n.t("module.workflow.subtitle")} className="module-workspace-panel workflow-workspace">
+        <div className="workflow-canvas-label">{i18n.t("module.workflow.canvas")}</div>
+        <div className="workflow-canvas-large">
+          {stages.map((stage, index) => (
+            <button
+              className={`workflow-stage ${stage.status} ${activeStage?.id === stage.id ? "selected" : ""}`}
+              key={stage.id}
+              onClick={() => onSelectStage(stage.id)}
+              type="button"
+            >
+              <small>{String(index + 1).padStart(2, "0")}</small>
+              <strong>{workflowStageLabel(i18n, stage).label}</strong>
+              <span>{workflowStageLabel(i18n, stage).detail}</span>
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <Panel
+        title={activeStage ? workflowStageLabel(i18n, activeStage).label : i18n.t("module.workflow.output")}
+        subtitle={workflowStatusLabel(i18n, activeStage?.status ?? "ready")}
+        action={
+          <button className="run-button compact" onClick={onRunPipeline} type="button">
+            <Play size={15} />
+            {i18n.t("module.workflow.run")}
+          </button>
+        }
+      >
+        <div className="workflow-output">
+          <span>{i18n.t("module.workflow.output")}</span>
+          <strong>{workflowOutputLabel(i18n, activeStage?.output ?? "Ready for pipeline run")}</strong>
+          <p>{activeStage ? workflowStageLabel(i18n, activeStage).detail : ""}</p>
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+function workflowStageLabel(i18n: AppI18n, stage: WorkflowStageView): { label: string; detail: string } {
+  return i18n.workflowNode(stage.id, stage.label, stage.detail);
+}
+
+function scannerSignalLabel(i18n: AppI18n, signal: ScannerCandidate["signal"]): string {
+  if (i18n.locale === "en-US") {
+    return signal;
+  }
+  return {
+    "Momentum watch": "动量观察",
+    "Baseline watch": "基准观察",
+    "Risk review": "风险复核"
+  }[signal];
+}
+
+function riskLabel(i18n: AppI18n, risk: ScannerCandidate["risk"]): string {
+  if (i18n.locale === "en-US") {
+    return risk;
+  }
+  return { low: "低", medium: "中", high: "高" }[risk];
+}
+
+function portfolioRiskLabel(i18n: AppI18n, row: PortfolioRiskRow): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return {
+    "paper-exposure": "模拟盘暴露",
+    "selected-risk": "当前标的",
+    "live-gates": "实盘闸门"
+  }[row.id] ?? row.label;
+}
+
+function portfolioRiskValue(i18n: AppI18n, row: PortfolioRiskRow): string {
+  if (i18n.locale === "en-US") {
+    return row.value;
+  }
+  return row.value.replace("watched", "个观察").replace("blocked", "个阻断").replace("open", "已开启");
+}
+
+function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
+  if (i18n.locale === "en-US") {
+    return row.detail;
+  }
+  if (row.id === "paper-exposure") {
+    return "当前工作台没有连接已认证实盘持仓。";
+  }
+  if (row.id === "selected-risk") {
+    return `${row.value} 在新的审计运行通过闸门前保持模拟盘。`;
+  }
+  if (row.id === "live-gates") {
+    return "需要完成适配器认证、风控审批和人工确认。";
+  }
+  return row.detail;
+}
+
+function eventSourceLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
+  if (i18n.locale === "en-US") {
+    return event.source;
+  }
+  return event.source === "AI committee" ? "智能体委员会" : "本地事件观察";
+}
+
+function eventTitleLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
+  if (i18n.locale === "en-US") {
+    return event.title;
+  }
+  if (event.id === "live-feed-pending") {
+    return event.title.replace(" live event feed is not connected yet", " 实时事件源尚未接入");
+  }
+  const separatorIndex = event.title.indexOf(": ");
+  if (separatorIndex > 0) {
+    const agent = event.title.slice(0, separatorIndex);
+    const message = event.title.slice(separatorIndex + 2);
+    return `${i18n.decisionAgent(agent)}: ${i18n.decisionMessage(message)}`;
+  }
+  return i18n.decisionMessage(event.title);
+}
+
+function eventDetailLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
+  if (i18n.locale === "en-US") {
+    return event.detail;
+  }
+  if (event.id === "live-feed-pending") {
+    return "当前面板展示本地智能体上下文，后续可接入新闻供应商适配器。";
+  }
+  return event.detail.replace("Linked to ", "已关联 ").replace(" research context.", " 研究上下文。");
+}
+
+function workflowStatusLabel(i18n: AppI18n, status: WorkflowStageView["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { active: "运行中", ready: "就绪", blocked: "阻断" }[status];
+}
+
+function workflowOutputLabel(i18n: AppI18n, output: string): string {
+  if (i18n.locale === "en-US") {
+    return output;
+  }
+  return output.replace("Paper execution only", "仅模拟盘执行").replace("Ready for pipeline run", "等待运行流水线");
 }
 
 function KlineChartCanvas({

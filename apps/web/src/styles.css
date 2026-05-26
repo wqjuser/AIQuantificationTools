@@ -868,6 +868,262 @@ dd {
   color: #71dfc5;
 }
 
+.module-workspace-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.45fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.module-workspace-panel {
+  grid-column: span 2;
+}
+
+.module-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #0f1722;
+  color: #8fa0b2;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.module-toolbar strong {
+  color: #71dfc5;
+}
+
+.scanner-table,
+.risk-ledger,
+.event-stream,
+.workflow-output {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  min-height: 0;
+}
+
+.scanner-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(80px, 0.6fr) minmax(130px, 1fr) minmax(72px, 0.5fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 50px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.scanner-head {
+  min-height: 34px;
+  background: #0f1722;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.scanner-row strong,
+.scanner-row em,
+.scanner-row b {
+  display: block;
+}
+
+.scanner-row em {
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: 11px;
+}
+
+.scanner-row b {
+  margin-bottom: 5px;
+  color: #ffffff;
+}
+
+.scanner-row i {
+  display: block;
+  height: 5px;
+  max-width: 100%;
+  border-radius: 999px;
+  background: #4cc9ad;
+}
+
+.scanner-row button,
+.run-button.compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #122b27;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 9px;
+}
+
+.risk-chip {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.risk-chip.low,
+.risk-ledger-row.positive {
+  border: 1px solid #2b6f62;
+  background: #122b27;
+  color: #71dfc5;
+}
+
+.risk-chip.medium,
+.risk-ledger-row.warning {
+  border: 1px solid #614e20;
+  background: #2a2315;
+  color: #e8be62;
+}
+
+.risk-chip.high,
+.risk-ledger-row.risk {
+  border: 1px solid #7a3a32;
+  background: #2b1d22;
+  color: #ff9c8e;
+}
+
+.risk-ledger {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.risk-ledger-row,
+.event-row,
+.workflow-output {
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 11px;
+}
+
+.risk-ledger-row.neutral {
+  border-color: #27364a;
+}
+
+.risk-ledger-row span,
+.event-row span,
+.workflow-output span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.risk-ledger-row strong,
+.event-row strong,
+.workflow-output strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 15px;
+}
+
+.risk-ledger-row p,
+.event-row p,
+.workflow-output p {
+  margin: 7px 0 0;
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.event-stream {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.event-row.positive {
+  border-left: 3px solid #4cc9ad;
+}
+
+.event-row.warning {
+  border-left: 3px solid #e8be62;
+}
+
+.event-row.risk {
+  border-left: 3px solid #ff7f6d;
+}
+
+.event-row.ai {
+  border-left: 3px solid #9f8cff;
+}
+
+.workflow-workspace {
+  grid-column: 1 / 2;
+}
+
+.workflow-canvas-label {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 10px;
+}
+
+.workflow-canvas-large {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.workflow-stage {
+  min-height: 156px;
+  border: 1px solid #2a3b51;
+  border-radius: 7px;
+  background: #151f2d;
+  color: #dce6ee;
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+}
+
+.workflow-stage:hover,
+.workflow-stage.selected {
+  border-color: #2b6f62;
+  background: #122b27;
+}
+
+.workflow-stage small,
+.workflow-stage strong,
+.workflow-stage span {
+  display: block;
+}
+
+.workflow-stage small {
+  color: #e8be62;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-stage strong {
+  margin-top: 18px;
+  font-size: 15px;
+}
+
+.workflow-stage span {
+  margin-top: 8px;
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-stage.blocked {
+  border-color: #7a3a32;
+}
+
 .agent-panel {
   min-height: 196px;
 }
@@ -1020,10 +1276,23 @@ dd {
   .watchlist-strip,
   .metrics-row,
   .center-grid,
+  .module-workspace-grid,
   .agent-rail,
   .node-row,
   .execution-grid,
-  .gate-list {
+  .gate-list,
+  .risk-ledger,
+  .event-stream,
+  .workflow-canvas-large {
+    grid-template-columns: 1fr;
+  }
+
+  .module-workspace-panel,
+  .workflow-workspace {
+    grid-column: auto;
+  }
+
+  .scanner-row {
     grid-template-columns: 1fr;
   }
 

@@ -82,6 +82,38 @@ export interface WorkflowNode {
   detail: string;
 }
 
+export interface ScannerCandidate {
+  instrument: Instrument;
+  signal: "Momentum watch" | "Baseline watch" | "Risk review";
+  risk: "low" | "medium" | "high";
+  score: number;
+  note: string;
+}
+
+export interface PortfolioRiskRow {
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export interface ModuleNewsEvent {
+  id: string;
+  source: string;
+  title: string;
+  impact: "positive" | "warning" | "risk" | "ai";
+  detail: string;
+}
+
+export interface WorkflowStageView {
+  id: string;
+  label: string;
+  detail: string;
+  status: "active" | "ready" | "blocked";
+  output: string;
+}
+
 export interface ResearchRunSummary {
   runId: string;
   createdAt: string;
@@ -238,6 +270,98 @@ export function visiblePanels(workspace: TerminalWorkspace): PanelId[] {
 
 export function agentRoleLabels(workspace: TerminalWorkspace): string[] {
   return workspace.agents.map((agent) => agent.label);
+}
+
+export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCandidate[] {
+  return [...workspace.watchlist]
+    .map((instrument) => {
+      const changePct = Number.isFinite(instrument.changePct) ? instrument.changePct : 0;
+      const score = Math.max(0, Math.min(100, Math.round(50 + changePct * 8)));
+      const signal: ScannerCandidate["signal"] =
+        changePct >= 1 ? "Momentum watch" : changePct < 0 ? "Risk review" : "Baseline watch";
+      const risk: ScannerCandidate["risk"] = instrument.market === "crypto" || changePct < 0 ? "medium" : "low";
+      return {
+        instrument,
+        signal,
+        risk,
+        score,
+        note:
+          signal === "Momentum watch"
+            ? "Price momentum is stronger than the local watchlist baseline."
+            : signal === "Risk review"
+              ? "Negative change needs risk review before promotion."
+              : "Stable candidate ready for factor checks."
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+}
+
+export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioRiskRow[] {
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  return [
+    {
+      id: "paper-exposure",
+      label: "Paper exposure",
+      value: `${workspace.watchlist.length} watched`,
+      detail: "No certified live positions are connected in this workspace.",
+      tone: "neutral"
+    },
+    {
+      id: "selected-risk",
+      label: "Selected instrument",
+      value: workspace.selectedInstrument.symbol,
+      detail: `${workspace.selectedInstrument.symbol} remains paper-only until a fresh audited run passes gates.`,
+      tone: workspace.selectedInstrument.changePct < 0 ? "warning" : "positive"
+    },
+    {
+      id: "live-gates",
+      label: "Live gates",
+      value: workspace.execution.liveEnabled ? "open" : `${blockedGateCount} blocked`,
+      detail: workspace.execution.liveEnabled
+        ? "Execution adapter reports live trading enabled."
+        : "Adapter certification, risk approval, and human confirmation are required.",
+      tone: workspace.execution.liveEnabled ? "positive" : "warning"
+    }
+  ];
+}
+
+export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
+  const selectedSymbol = workspace.selectedInstrument.symbol;
+  const committeeEvents = workspace.decisionLog.slice(0, 3).map((entry, index) => ({
+    id: `committee-${index}`,
+    source: "AI committee",
+    title: `${entry.agent}: ${entry.message}`,
+    impact: entry.tone,
+    detail: `Linked to ${selectedSymbol} research context.`
+  }));
+  return [
+    ...committeeEvents,
+    {
+      id: "live-feed-pending",
+      source: "Local event watch",
+      title: `${selectedSymbol} live event feed is not connected yet`,
+      impact: "warning",
+      detail: "This panel currently surfaces local agent context and will accept a news provider adapter later."
+    }
+  ];
+}
+
+export function buildWorkflowStages(workspace: TerminalWorkspace): WorkflowStageView[] {
+  return workspace.workflowNodes.map((node, index) => {
+    const isExecution = node.id === "execution";
+    return {
+      id: node.id,
+      label: node.label,
+      detail: node.detail,
+      status: isExecution && !workspace.execution.liveEnabled ? "blocked" : index === 0 ? "active" : "ready",
+      output:
+        node.id === "data"
+          ? `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`
+          : isExecution && !workspace.execution.liveEnabled
+            ? "Paper execution only"
+            : "Ready for pipeline run"
+    };
+  });
 }
 
 export function executionModeLabel(execution: ExecutionState): string {

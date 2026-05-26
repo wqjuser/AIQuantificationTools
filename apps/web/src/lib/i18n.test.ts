@@ -15,6 +15,7 @@ describe("i18n", () => {
     expect(zh.quantLoopLabel("agent-review", "Agent Review")).toBe("智能体评审");
     expect(zh.moduleLabel("portfolio", "Portfolio Risk")).toBe("组合风险");
     expect(zh.agentLabel("risk", "Risk Manager")).toBe("风险经理");
+    expect(zh.decisionAgent("Technical")).toBe("技术分析");
     expect(zh.metricLabel("Max DD")).toBe("最大回撤");
     expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
   });
@@ -38,6 +39,16 @@ describe("i18n", () => {
     expect(zh.t("chart.closeExpanded")).toBe("关闭放大图表");
     expect(en.t("chart.expand")).toBe("Expand chart");
     expect(en.t("chart.closeExpanded")).toBe("Close expanded chart");
+  });
+
+  test("translates module workbench panel labels", () => {
+    const zh = createI18n("zh-CN");
+    const en = createI18n("en-US");
+
+    expect(zh.t("module.scanner.title")).toBe("市场扫描器");
+    expect(zh.t("module.workflow.canvas")).toBe("节点画布");
+    expect(en.t("module.news.pending")).toBe("Live feed pending");
+    expect(en.t("module.workflow.run")).toBe("Run pipeline");
   });
 
   test("formats audited run labels in the active locale", () => {
