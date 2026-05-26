@@ -28,6 +28,10 @@ function hasCssDeclaration(selector, declaration) {
   return cssBlocks(selector).some((block) => block.includes(declaration));
 }
 
+function hasCssBlockWith(selector, declarations) {
+  return cssBlocks(selector).some((block) => declarations.every((declaration) => block.includes(declaration)));
+}
+
 describe("terminal layout css", () => {
   test("keeps desktop shell columns independently scrollable", () => {
     expect(cssBlock(".terminal-shell")).toContain("height: 100vh;");
@@ -37,17 +41,44 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-main")).toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto auto auto;");
     expect(hasCssDeclaration(".agent-rail", "grid-template-rows: auto auto auto auto auto;")).toBe(true);
+    expect(hasCssDeclaration(".agent-rail", "align-content: start;")).toBe(true);
+    expect(
+      hasCssBlockWith(".agent-rail", [
+        "grid-column: 1 / -1;",
+        "grid-template-columns: 1fr;",
+        "grid-template-rows: auto;"
+      ])
+    ).toBe(true);
   });
 
   test("keeps the watchlist chart height isolated from the strategy panel", () => {
     expect(appSource).toContain('className="strategy-panel"');
+    expect(appSource).toContain('className="watchlist-backtest-panel"');
+    expect(appSource).toContain('className="watchlist-workflow-panel"');
     expect(appSource).toContain('className="watchlist-execution-panel"');
-    expect(cssBlock(".center-grid")).toContain("grid-template-rows: auto auto auto;");
+    expect(cssBlock(".terminal-panel")).toContain("grid-template-rows: auto auto;");
+    expect(cssBlock(".watchlist-layout")).toContain("grid-template-areas:");
+    expect(
+      hasCssBlockWith(".watchlist-layout", [
+        '"chart"',
+        '"strategy"',
+        '"backtest"',
+        '"workflow"',
+        '"execution"'
+      ])
+    ).toBe(true);
+    expect(cssBlock(".watchlist-backtest-panel")).toContain("grid-area: backtest;");
+    expect(cssBlock(".watchlist-workflow-panel")).toContain("grid-area: workflow;");
     expect(cssBlock(".center-grid")).toContain("align-content: start;");
     expect(cssBlock(".center-grid")).not.toContain("1fr");
     expect(cssBlock(".watchlist-execution-panel")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".watchlist-execution-panel")).toContain("grid-area: execution;");
     expect(cssBlock(".chart-panel")).toContain("height: clamp(380px, 48vh, 560px);");
+    expect(cssBlock(".chart-panel")).toContain("grid-area: chart;");
+    expect(cssBlock(".chart-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(cssBlock(".strategy-panel")).toContain("height: clamp(380px, 48vh, 560px);");
+    expect(cssBlock(".strategy-panel")).toContain("grid-area: strategy;");
+    expect(cssBlock(".strategy-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(cssBlock(".strategy-panel")).toContain("overflow: hidden;");
     expect(cssBlock(".strategy-panel .strategy-workbench")).toContain("overflow: auto;");
     expect(cssBlock(".strategy-panel .strategy-rule-row")).toContain("grid-template-columns:");

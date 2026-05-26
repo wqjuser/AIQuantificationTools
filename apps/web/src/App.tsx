@@ -780,7 +780,7 @@ export function App() {
           ))}
         </section>
 
-        <section className={`center-grid ${activeModuleId === "watchlist" ? "" : "module-workspace-grid"}`}>
+        <section className={`center-grid ${activeModuleId === "watchlist" ? "watchlist-layout" : "module-workspace-grid"}`}>
           {activeModuleId === "watchlist" ? (
             <>
               <Panel
@@ -831,12 +831,17 @@ export function App() {
 
               <BacktestReplayPanel
                 assumptionRows={backtestAssumptionRows}
+                className="watchlist-backtest-panel"
                 i18n={i18n}
                 onUpdateAssumption={updateBacktestAssumption}
                 rows={backtestTradeRows}
               />
 
-              <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
+              <Panel
+                title={i18n.t("panel.nodeWorkflow.title")}
+                subtitle={i18n.t("panel.nodeWorkflow.subtitle")}
+                className="watchlist-workflow-panel"
+              >
                 <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
               </Panel>
 
@@ -1105,17 +1110,19 @@ function StrategySummary({
 
 function BacktestReplayPanel({
   assumptionRows,
+  className,
   i18n,
   onUpdateAssumption,
   rows
 }: {
   assumptionRows: BacktestAssumptionRow[];
+  className?: string;
   i18n: AppI18n;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
   rows: BacktestTradeRow[];
 }) {
   return (
-    <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")}>
+    <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")} className={className}>
       <div className="backtest-replay">
         <div className="backtest-assumptions">
           <div className="backtest-replay-title">

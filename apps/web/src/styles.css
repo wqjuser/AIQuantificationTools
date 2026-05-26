@@ -53,6 +53,7 @@ button {
   border-width: 0 0 0 1px;
   display: grid;
   grid-template-rows: auto auto auto auto auto;
+  align-content: start;
   gap: 12px;
   padding: 12px;
 }
@@ -653,16 +654,24 @@ em {
 .center-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
-  grid-template-rows: auto auto auto;
   align-content: start;
   align-items: start;
   gap: 12px;
   min-height: 0;
 }
 
+.watchlist-layout {
+  grid-template-areas:
+    "chart strategy"
+    "backtest workflow"
+    "execution execution";
+  grid-template-rows: auto auto auto;
+}
+
 .terminal-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
   min-width: 0;
   min-height: 0;
   padding: 12px;
@@ -678,6 +687,8 @@ em {
 
 .chart-panel {
   align-self: start;
+  grid-area: chart;
+  grid-template-rows: auto minmax(0, 1fr);
   height: clamp(380px, 48vh, 560px);
   min-height: 300px;
 }
@@ -692,6 +703,8 @@ em {
 
 .strategy-panel {
   align-self: start;
+  grid-area: strategy;
+  grid-template-rows: auto minmax(0, 1fr);
   height: clamp(380px, 48vh, 560px);
   overflow: hidden;
 }
@@ -709,6 +722,15 @@ em {
 
 .watchlist-execution-panel {
   grid-column: 1 / -1;
+  grid-area: execution;
+}
+
+.watchlist-backtest-panel {
+  grid-area: backtest;
+}
+
+.watchlist-workflow-panel {
+  grid-area: workflow;
 }
 
 .chart-canvas {
@@ -2092,7 +2114,7 @@ em {
 
   .agent-rail {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     grid-template-rows: auto;
     border-width: 1px 0 0;
   }
@@ -2135,6 +2157,15 @@ em {
   .workflow-artifact-grid,
   .workflow-canvas-large {
     grid-template-columns: 1fr;
+  }
+
+  .watchlist-layout {
+    grid-template-areas:
+      "chart"
+      "strategy"
+      "backtest"
+      "workflow"
+      "execution";
   }
 
   .module-workspace-panel,
