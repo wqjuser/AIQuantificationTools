@@ -646,6 +646,7 @@ em {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
   grid-template-rows: auto auto auto;
+  align-content: start;
   align-items: start;
   gap: 12px;
   min-height: 0;
