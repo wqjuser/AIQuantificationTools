@@ -22,6 +22,11 @@ export interface TerminalModule {
   accent: "market" | "strategy" | "ai" | "execution";
 }
 
+export interface QuantLoopNavigationTarget {
+  moduleId: string;
+  workflowStageId: string;
+}
+
 export interface TerminalPanel {
   id: PanelId;
   title: string;
@@ -336,6 +341,19 @@ export function buildTerminalWorkspace(): TerminalWorkspace {
 
 export function quantLoopLabels(workspace: TerminalWorkspace): string[] {
   return workspace.quantLoop.map((step) => step.label);
+}
+
+export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigationTarget {
+  const targets: Record<string, QuantLoopNavigationTarget> = {
+    idea: { moduleId: "watchlist", workflowStageId: "data" },
+    data: { moduleId: "workflow", workflowStageId: "data" },
+    strategy: { moduleId: "watchlist", workflowStageId: "factor" },
+    backtest: { moduleId: "workflow", workflowStageId: "backtest" },
+    "agent-review": { moduleId: "workflow", workflowStageId: "agent" },
+    paper: { moduleId: "portfolio", workflowStageId: "execution" },
+    broker: { moduleId: "portfolio", workflowStageId: "execution" }
+  };
+  return targets[stepId] ?? targets.idea;
 }
 
 export function visiblePanels(workspace: TerminalWorkspace): PanelId[] {

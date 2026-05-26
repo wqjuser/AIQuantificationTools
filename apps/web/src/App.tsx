@@ -41,6 +41,7 @@ import {
   buildModuleNewsEvents,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
+  buildQuantLoopNavigationTarget,
   buildScannerCandidates,
   buildStrategyRuleRows,
   buildWorkflowStages,
@@ -402,6 +403,13 @@ export function App() {
     setActiveModuleId(action === "strategy-draft" ? "watchlist" : "news");
   }, []);
 
+  const selectQuantLoopStep = useCallback((stepId: string) => {
+    const target = buildQuantLoopNavigationTarget(stepId);
+    setActiveLoopStepId(stepId);
+    setActiveModuleId(target.moduleId);
+    setActiveWorkflowStageId(target.workflowStageId);
+  }, []);
+
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -530,7 +538,7 @@ export function App() {
               <button
                 className={`loop-step ${step.status} ${activeLoopStepId === step.id ? "selected" : ""}`}
                 key={step.id}
-                onClick={() => setActiveLoopStepId(step.id)}
+                onClick={() => selectQuantLoopStep(step.id)}
                 type="button"
               >
                 <span>{index + 1}</span>

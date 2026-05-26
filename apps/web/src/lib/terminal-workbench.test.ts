@@ -8,6 +8,7 @@ import {
   buildModuleNewsEvents,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
+  buildQuantLoopNavigationTarget,
   buildScannerCandidates,
   buildStrategyRuleRows,
   buildTerminalWorkspace,
@@ -50,6 +51,37 @@ describe("terminal workbench model", () => {
       "agent-committee"
     ]);
     expect(workspace.selectedTimeframe).toBe("1d");
+  });
+
+  test("maps quant loop steps to concrete workspace navigation targets", () => {
+    expect(buildQuantLoopNavigationTarget("idea")).toEqual({
+      moduleId: "watchlist",
+      workflowStageId: "data"
+    });
+    expect(buildQuantLoopNavigationTarget("data")).toEqual({
+      moduleId: "workflow",
+      workflowStageId: "data"
+    });
+    expect(buildQuantLoopNavigationTarget("strategy")).toEqual({
+      moduleId: "watchlist",
+      workflowStageId: "factor"
+    });
+    expect(buildQuantLoopNavigationTarget("backtest")).toEqual({
+      moduleId: "workflow",
+      workflowStageId: "backtest"
+    });
+    expect(buildQuantLoopNavigationTarget("agent-review")).toEqual({
+      moduleId: "workflow",
+      workflowStageId: "agent"
+    });
+    expect(buildQuantLoopNavigationTarget("paper")).toEqual({
+      moduleId: "portfolio",
+      workflowStageId: "execution"
+    });
+    expect(buildQuantLoopNavigationTarget("broker")).toEqual({
+      moduleId: "portfolio",
+      workflowStageId: "execution"
+    });
   });
 
   test("keeps live execution blocked by default with explicit safety gates", () => {
