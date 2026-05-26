@@ -937,18 +937,20 @@ export function App() {
 
       <aside className="agent-rail">
         <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="agent-panel">
-          <div className="agent-grid">
-            {workspace.agents.map((agent) => (
-              <span className={`agent-role ${agent.stance}`} key={agent.id}>
-                {i18n.agentLabel(agent.id, agent.label)}
-              </span>
-            ))}
+          <div className="agent-panel-body">
+            <div className="agent-grid">
+              {workspace.agents.map((agent) => (
+                <span className={`agent-role ${agent.stance}`} key={agent.id}>
+                  {i18n.agentLabel(agent.id, agent.label)}
+                </span>
+              ))}
+            </div>
+            <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
+            <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
           </div>
-          <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
-          <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
         </Panel>
 
-        <Panel title={i18n.t("panel.decision.title")} subtitle={i18n.t("panel.decision.subtitle")}>
+        <Panel title={i18n.t("panel.decision.title")} subtitle={i18n.t("panel.decision.subtitle")} className="decision-panel">
           <div className="decision-log">
             {workspace.decisionLog.map((entry) => (
               <article className={`decision-entry ${entry.tone}`} key={`${entry.agent}-${entry.message}`}>
@@ -959,22 +961,24 @@ export function App() {
           </div>
         </Panel>
 
-        <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")}>
-          {runComparisonRows.length ? <RunComparisonBoard i18n={i18n} rows={runComparisonRows} /> : null}
-          <div className="run-history">
-            {runHistory.length ? (
-              runHistory.map((run) => (
-                <RunHistoryRow
-                  key={run.runId}
-                  i18n={i18n}
-                  run={run}
-                  isActive={workspace.researchRun?.runId === run.runId}
-                  onReplay={replayRun}
-                />
-              ))
-            ) : (
-              <span className="empty-state">{i18n.t("empty.noAuditedRuns")}</span>
-            )}
+        <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")} className="history-panel">
+          <div className="history-panel-body">
+            {runComparisonRows.length ? <RunComparisonBoard i18n={i18n} rows={runComparisonRows} /> : null}
+            <div className="run-history">
+              {runHistory.length ? (
+                runHistory.map((run) => (
+                  <RunHistoryRow
+                    key={run.runId}
+                    i18n={i18n}
+                    run={run}
+                    isActive={workspace.researchRun?.runId === run.runId}
+                    onReplay={replayRun}
+                  />
+                ))
+              ) : (
+                <span className="empty-state">{i18n.t("empty.noAuditedRuns")}</span>
+              )}
+            </div>
           </div>
         </Panel>
 

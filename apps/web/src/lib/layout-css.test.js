@@ -40,7 +40,10 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-main")).toContain("max-height: 100vh;");
     expect(cssBlock(".terminal-main")).toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto auto auto;");
-    expect(hasCssDeclaration(".agent-rail", "grid-template-rows: auto auto auto auto auto;")).toBe(true);
+    expect(hasCssDeclaration(".agent-rail", "display: flex;")).toBe(true);
+    expect(hasCssDeclaration(".agent-rail", "flex-direction: column;")).toBe(true);
+    expect(hasCssDeclaration(".agent-rail", "grid-template-rows: auto auto auto auto auto;")).toBe(false);
+    expect(cssBlock(".agent-rail > *")).toContain("flex: 0 0 auto;");
     expect(hasCssDeclaration(".agent-rail", "align-content: start;")).toBe(true);
     expect(
       hasCssBlockWith(".agent-rail", [
@@ -92,5 +95,18 @@ describe("terminal layout css", () => {
     expect(cssBlock(".agent-rail .agent-grid")).toContain("grid-template-columns: 1fr;");
     expect(cssBlock(".agent-rail .agent-evidence-grid")).toContain("grid-template-columns: 1fr;");
     expect(cssBlock(".agent-rail .history-comparison-row")).toContain("grid-template-columns: 1fr;");
+    expect(appSource).toContain('className="agent-panel-body"');
+    expect(appSource).toContain('className="decision-panel"');
+    expect(appSource).toContain('className="history-panel"');
+    expect(appSource).toContain('className="history-panel-body"');
+    expect(cssBlock(".agent-panel")).toContain("height: clamp(");
+    expect(cssBlock(".agent-panel-body")).toContain("overflow: auto;");
+    expect(cssBlock(".agent-panel-body")).toContain("overflow-x: hidden;");
+    expect(cssBlock(".decision-panel")).toContain("max-height:");
+    expect(cssBlock(".decision-log")).toContain("min-height: 0;");
+    expect(cssBlock(".decision-log")).toContain("overflow-x: hidden;");
+    expect(cssBlock(".history-panel")).toContain("height: clamp(");
+    expect(cssBlock(".history-panel-body")).toContain("overflow: auto;");
+    expect(cssBlock(".history-panel-body")).toContain("overflow-x: hidden;");
   });
 });

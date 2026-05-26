@@ -51,11 +51,15 @@ button {
 
 .agent-rail {
   border-width: 0 0 0 1px;
-  display: grid;
-  grid-template-rows: auto auto auto auto auto;
+  display: flex;
+  flex-direction: column;
   align-content: start;
   gap: 12px;
   padding: 12px;
+}
+
+.agent-rail > * {
+  flex: 0 0 auto;
 }
 
 .brand {
@@ -1726,7 +1730,30 @@ em {
 }
 
 .agent-panel {
-  min-height: 196px;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: clamp(360px, 38vh, 500px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agent-panel-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.history-panel-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .agent-grid {
@@ -1909,8 +1936,23 @@ em {
   line-height: 1.45;
 }
 
+.decision-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: clamp(220px, 24vh, 320px);
+  overflow: hidden;
+}
+
 .decision-log {
+  min-height: 0;
   overflow: auto;
+  overflow-x: hidden;
+}
+
+.history-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: clamp(360px, 40vh, 520px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .decision-entry {
