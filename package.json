@@ -1,0 +1,24 @@
+{
+  "name": "ai-quantification-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first AI quant research workbench for web and desktop.",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @aiqt/web",
+    "build": "npm run build --workspace @aiqt/web",
+    "preview": "npm run preview --workspace @aiqt/web",
+    "test": "npm run test:python && npm run test --workspace @aiqt/web",
+    "test:python": "python -m unittest discover -s services/quant_core/tests -t services/quant_core",
+    "desktop:dev": "npm run tauri:dev --workspace @aiqt/web",
+    "desktop:build": "npm run tauri:build --workspace @aiqt/web",
+    "api": "python tools/run_quant_api.py"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10",
+    "python": ">=3.12"
+  }
+}

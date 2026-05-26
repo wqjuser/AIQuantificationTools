@@ -1,0 +1,11 @@
+[project]
+name = "quant-core"
+version = "0.1.0"
+description = "Local quant research core for AIQuantificationTools"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+data = ["akshare", "yfinance", "ccxt"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

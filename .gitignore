@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+.vite/
+.tauri/
+data/
+*.sqlite
+*.db
+__pycache__/
+*.py[cod]
+.venv/
+.env
+local.properties
+.superpowers/
+*.tsbuildinfo
