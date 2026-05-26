@@ -12,6 +12,7 @@ import {
   researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
+  type WorkflowRunState,
   visiblePanels,
   workspaceWithAiAction,
   workspaceWithPreservedInteractiveState,
@@ -120,6 +121,32 @@ describe("terminal workbench model", () => {
       status: "blocked",
       output: "Paper execution only"
     });
+  });
+
+  test("derives workflow stages from a visible pipeline run state", () => {
+    const runState: WorkflowRunState = {
+      activeStageId: "backtest",
+      completedStageIds: ["data", "factor"],
+      log: [
+        {
+          id: "data-ready",
+          stageId: "data",
+          level: "success",
+          message: "Data snapshot prepared for 600000 · 1d"
+        }
+      ]
+    };
+
+    const stages = buildWorkflowStages(buildTerminalWorkspace(), runState);
+
+    expect(stages.map((stage) => [stage.id, stage.status])).toEqual([
+      ["data", "completed"],
+      ["factor", "completed"],
+      ["backtest", "running"],
+      ["agent", "ready"],
+      ["execution", "blocked"]
+    ]);
+    expect(stages[0].output).toBe("Data snapshot prepared for 600000 · 1d");
   });
 
   test("adds a TradingAgents-style debate note to the decision log", () => {

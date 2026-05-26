@@ -1005,7 +1005,8 @@ dd {
 
 .risk-ledger-row,
 .event-row,
-.workflow-output {
+.workflow-output,
+.workflow-log {
   border: 1px solid #27364a;
   border-radius: 7px;
   background: #121b29;
@@ -1018,7 +1019,8 @@ dd {
 
 .risk-ledger-row span,
 .event-row span,
-.workflow-output span {
+.workflow-output span,
+.workflow-log > span {
   color: #8fa0b2;
   font-size: 11px;
   font-weight: 900;
@@ -1122,6 +1124,73 @@ dd {
 
 .workflow-stage.blocked {
   border-color: #7a3a32;
+}
+
+.workflow-stage.running {
+  border-color: #2b6f62;
+  background: #122b27;
+  box-shadow: inset 0 0 0 1px rgba(76, 201, 173, 0.22);
+}
+
+.workflow-stage.completed {
+  border-color: #356d65;
+}
+
+.workflow-stage.failed {
+  border-color: #9c4a40;
+  background: #2b1d22;
+}
+
+.workflow-log {
+  margin-top: 10px;
+}
+
+.workflow-log-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.workflow-log-entry {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.32fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin: 0;
+  border-left: 3px solid #2a3b51;
+  border-radius: 6px;
+  background: #0f1723;
+  padding: 8px 10px;
+}
+
+.workflow-log-entry small {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-log-entry span {
+  color: #dce6ee;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-log-entry.success {
+  border-left-color: #4cc9ad;
+}
+
+.workflow-log-entry.warning {
+  border-left-color: #e8be62;
+}
+
+.workflow-log-entry.error {
+  border-left-color: #ff7f6d;
+}
+
+.workflow-log-empty {
+  margin: 8px 0 0;
+  color: #8fa0b2;
+  font-size: 12px;
 }
 
 .agent-panel {

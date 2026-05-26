@@ -82,6 +82,23 @@ export interface WorkflowNode {
   detail: string;
 }
 
+export type WorkflowStageStatus = "active" | "ready" | "blocked" | "running" | "completed" | "failed";
+export type WorkflowRunLogLevel = "info" | "success" | "warning" | "error";
+
+export interface WorkflowRunLogEntry {
+  id: string;
+  stageId: string;
+  level: WorkflowRunLogLevel;
+  message: string;
+}
+
+export interface WorkflowRunState {
+  activeStageId: string;
+  completedStageIds: string[];
+  failedStageId?: string | null;
+  log: WorkflowRunLogEntry[];
+}
+
 export interface ScannerCandidate {
   instrument: Instrument;
   signal: "Momentum watch" | "Baseline watch" | "Risk review";
@@ -110,7 +127,7 @@ export interface WorkflowStageView {
   id: string;
   label: string;
   detail: string;
-  status: "active" | "ready" | "blocked";
+  status: WorkflowStageStatus;
   output: string;
 }
 
@@ -348,20 +365,39 @@ export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsE
   ];
 }
 
-export function buildWorkflowStages(workspace: TerminalWorkspace): WorkflowStageView[] {
+export function buildWorkflowStages(workspace: TerminalWorkspace, runState?: WorkflowRunState): WorkflowStageView[] {
+  const completedStageIds = new Set(runState?.completedStageIds ?? []);
+  const latestOutputByStage = new Map<string, string>();
+  for (const logEntry of runState?.log ?? []) {
+    latestOutputByStage.set(logEntry.stageId, logEntry.message);
+  }
+
   return workspace.workflowNodes.map((node, index) => {
     const isExecution = node.id === "execution";
+    const defaultStatus: WorkflowStageStatus =
+      isExecution && !workspace.execution.liveEnabled ? "blocked" : index === 0 ? "active" : "ready";
+    const status: WorkflowStageStatus =
+      isExecution && !workspace.execution.liveEnabled
+        ? "blocked"
+        : runState?.failedStageId === node.id
+          ? "failed"
+          : completedStageIds.has(node.id)
+            ? "completed"
+            : runState?.activeStageId === node.id
+              ? "running"
+              : defaultStatus;
     return {
       id: node.id,
       label: node.label,
       detail: node.detail,
-      status: isExecution && !workspace.execution.liveEnabled ? "blocked" : index === 0 ? "active" : "ready",
+      status,
       output:
-        node.id === "data"
+        latestOutputByStage.get(node.id) ??
+        (node.id === "data"
           ? `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`
           : isExecution && !workspace.execution.liveEnabled
             ? "Paper execution only"
-            : "Ready for pipeline run"
+            : "Ready for pipeline run")
     };
   });
 }

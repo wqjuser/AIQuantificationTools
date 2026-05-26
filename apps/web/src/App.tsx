@@ -50,6 +50,8 @@ import {
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
+  WorkflowRunLogEntry,
+  WorkflowRunState,
   WorkflowStageView,
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
@@ -87,6 +89,7 @@ const initialKlinesState: MarketKlinesResult = {
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
+const workflowStepDelayMs = 180;
 
 const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
   market: Radar,
@@ -94,6 +97,33 @@ const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
   ai: BrainCircuit,
   execution: WalletCards
 };
+
+function createWorkflowRunState(): WorkflowRunState {
+  return {
+    activeStageId: "data",
+    completedStageIds: [],
+    log: []
+  };
+}
+
+function createWorkflowLogEntry(
+  runId: number,
+  index: number,
+  stageId: string,
+  level: WorkflowRunLogEntry["level"],
+  message: string
+): WorkflowRunLogEntry {
+  return {
+    id: `workflow-${runId}-${index}-${stageId}`,
+    stageId,
+    level,
+    message
+  };
+}
+
+function waitForWorkflowStep() {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, workflowStepDelayMs));
+}
 
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
@@ -105,6 +135,7 @@ export function App() {
   const [activeLoopStepId, setActiveLoopStepId] = useState(workspace.quantLoop[0]?.id ?? "idea");
   const [activeModuleId, setActiveModuleId] = useState(workspace.modules[0]?.id ?? "watchlist");
   const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(workspace.workflowNodes[0]?.id ?? "data");
+  const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>(() => createWorkflowRunState());
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
   const [symbolDraft, setSymbolDraft] = useState(workspace.selectedInstrument.symbol);
   const [searchSuggestions, setSearchSuggestions] = useState<MarketSearchSuggestion[]>([]);
@@ -116,6 +147,7 @@ export function App() {
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
+  const workflowRunIdRef = useRef(0);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -127,7 +159,7 @@ export function App() {
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
-  const workflowStages = buildWorkflowStages(workspace);
+  const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
 
   useEffect(() => {
@@ -214,7 +246,47 @@ export function App() {
   }, []);
 
   const runPipeline = useCallback(async () => {
+    const runId = workflowRunIdRef.current + 1;
+    workflowRunIdRef.current = runId;
+    let log: WorkflowRunLogEntry[] = [];
+    const selectedContext = `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`;
+    const publishStage = (
+      activeStageId: string,
+      completedStageIds: string[],
+      failedStageId: string | null = null
+    ) => {
+      if (workflowRunIdRef.current !== runId) {
+        return;
+      }
+      setActiveWorkflowStageId(activeStageId);
+      setWorkflowRunState({
+        activeStageId,
+        completedStageIds,
+        failedStageId,
+        log
+      });
+    };
+    const appendLog = (stageId: string, level: WorkflowRunLogEntry["level"], message: string) => {
+      log = [...log, createWorkflowLogEntry(runId, log.length + 1, stageId, level, message)];
+    };
+
+    setActiveModuleId("workflow");
     setIsRunning(true);
+    appendLog("data", "info", `Data snapshot prepared for ${selectedContext}`);
+    publishStage("data", []);
+    await waitForWorkflowStep();
+    if (workflowRunIdRef.current !== runId) {
+      return;
+    }
+    appendLog("factor", "success", "Factor set staged: SMA / RSI / volume");
+    publishStage("factor", ["data"]);
+    await waitForWorkflowStep();
+    if (workflowRunIdRef.current !== runId) {
+      return;
+    }
+    appendLog("backtest", "info", "Backtest request sent to local core");
+    publishStage("backtest", ["data", "factor"]);
+
     const result = await runTerminalResearch(
       quantCoreBaseUrl,
       {
@@ -224,7 +296,35 @@ export function App() {
       },
       workspace
     );
+    if (workflowRunIdRef.current !== runId) {
+      return;
+    }
     setWorkspaceState(result);
+
+    if (result.source === "fallback") {
+      appendLog("backtest", "error", `Pipeline failed before audited backtest: ${result.error ?? result.statusLabel}`);
+      publishStage("backtest", ["data", "factor"], "backtest");
+      await refreshRunHistory();
+      setIsRunning(false);
+      return;
+    }
+
+    const researchSummary = result.workspace.researchRun;
+    appendLog(
+      "backtest",
+      "success",
+      researchSummary
+        ? `Audited backtest received: ${researchSummary.dataRows} bars · ${researchSummary.executionMode}`
+        : "Audited backtest received"
+    );
+    publishStage("agent", ["data", "factor", "backtest"]);
+    await waitForWorkflowStep();
+    if (workflowRunIdRef.current !== runId) {
+      return;
+    }
+    appendLog("agent", "success", "Agent committee report received");
+    appendLog("execution", "warning", "Live execution remains blocked; paper review is ready");
+    publishStage("execution", ["data", "factor", "backtest", "agent"]);
     await refreshRunHistory();
     setIsRunning(false);
   }, [refreshRunHistory, workspace]);
@@ -232,11 +332,26 @@ export function App() {
   const replayRun = useCallback(
     (run: ResearchRunAudit) => {
       manualSelectionVersionRef.current += 1;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
       setWorkspaceState((current) => ({
         workspace: workspaceFromResearchRunAudit(current.workspace, run),
         source: "core",
         statusLabel: "Audit replay loaded"
       }));
+      setActiveWorkflowStageId("execution");
+      setWorkflowRunState({
+        activeStageId: "execution",
+        completedStageIds: ["data", "factor", "backtest", "agent"],
+        log: [
+          {
+            id: `replay-${run.runId}`,
+            stageId: "backtest",
+            level: "success",
+            message: `Audit replay loaded: ${run.dataRows} bars · ${run.executionMode}`
+          }
+        ]
+      });
     },
     []
   );
@@ -244,11 +359,15 @@ export function App() {
   const selectInstrument = useCallback(
     (instrument: TerminalWorkspace["selectedInstrument"]) => {
       manualSelectionVersionRef.current += 1;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
         statusLabel: "Instrument selected"
       }));
+      setActiveWorkflowStageId("data");
+      setWorkflowRunState(createWorkflowRunState());
     },
     []
   );
@@ -256,11 +375,15 @@ export function App() {
   const selectTimeframe = useCallback(
     (timeframe: Timeframe) => {
       manualSelectionVersionRef.current += 1;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
         source: "core",
         statusLabel: "Timeframe selected"
       }));
+      setActiveWorkflowStageId("data");
+      setWorkflowRunState(createWorkflowRunState());
     },
     []
   );
@@ -666,8 +789,10 @@ export function App() {
             <WorkflowWorkspace
               activeStage={activeWorkflowStage}
               i18n={i18n}
+              isRunning={isRunning}
               onRunPipeline={runPipeline}
               onSelectStage={setActiveWorkflowStageId}
+              runState={workflowRunState}
               stages={workflowStages}
             />
           ) : null}
@@ -943,16 +1068,23 @@ function NewsWorkspace({ events, i18n }: { events: ModuleNewsEvent[]; i18n: AppI
 function WorkflowWorkspace({
   activeStage,
   i18n,
+  isRunning,
   onRunPipeline,
   onSelectStage,
+  runState,
   stages
 }: {
   activeStage?: WorkflowStageView;
   i18n: AppI18n;
+  isRunning: boolean;
   onRunPipeline: () => void;
   onSelectStage: (stageId: string) => void;
+  runState: WorkflowRunState;
   stages: WorkflowStageView[];
 }) {
+  const stageLabelById = new Map(stages.map((stage) => [stage.id, workflowStageLabel(i18n, stage).label]));
+  const visibleLog = runState.log.slice(-6);
+
   return (
     <>
       <Panel title={i18n.t("module.workflow.title")} subtitle={i18n.t("module.workflow.subtitle")} className="module-workspace-panel workflow-workspace">
@@ -976,8 +1108,8 @@ function WorkflowWorkspace({
         title={activeStage ? workflowStageLabel(i18n, activeStage).label : i18n.t("module.workflow.output")}
         subtitle={workflowStatusLabel(i18n, activeStage?.status ?? "ready")}
         action={
-          <button className="run-button compact" onClick={onRunPipeline} type="button">
-            <Play size={15} />
+          <button className="run-button compact" disabled={isRunning} onClick={onRunPipeline} type="button">
+            {isRunning ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
             {i18n.t("module.workflow.run")}
           </button>
         }
@@ -986,6 +1118,21 @@ function WorkflowWorkspace({
           <span>{i18n.t("module.workflow.output")}</span>
           <strong>{workflowOutputLabel(i18n, activeStage?.output ?? "Ready for pipeline run")}</strong>
           <p>{activeStage ? workflowStageLabel(i18n, activeStage).detail : ""}</p>
+        </div>
+        <div className="workflow-log">
+          <span>{i18n.t("module.workflow.log")}</span>
+          {visibleLog.length ? (
+            <div className="workflow-log-list">
+              {visibleLog.map((entry) => (
+                <p className={`workflow-log-entry ${entry.level}`} key={entry.id}>
+                  <small>{stageLabelById.get(entry.stageId) ?? entry.stageId}</small>
+                  <span>{workflowOutputLabel(i18n, entry.message)}</span>
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="workflow-log-empty">{i18n.t("module.workflow.idle")}</p>
+          )}
         </div>
       </Panel>
     </>
@@ -1083,16 +1230,48 @@ function eventDetailLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
 
 function workflowStatusLabel(i18n: AppI18n, status: WorkflowStageView["status"]): string {
   if (i18n.locale === "en-US") {
-    return status;
+    return {
+      active: "Active",
+      ready: "Ready",
+      blocked: "Blocked",
+      running: "Running",
+      completed: "Completed",
+      failed: "Failed"
+    }[status];
   }
-  return { active: "运行中", ready: "就绪", blocked: "阻断" }[status];
+  return { active: "运行中", ready: "就绪", blocked: "阻断", running: "运行中", completed: "已完成", failed: "失败" }[
+    status
+  ];
 }
 
 function workflowOutputLabel(i18n: AppI18n, output: string): string {
   if (i18n.locale === "en-US") {
     return output;
   }
-  return output.replace("Paper execution only", "仅模拟盘执行").replace("Ready for pipeline run", "等待运行流水线");
+  const dataSnapshot = output.match(/^Data snapshot prepared for (.+)$/);
+  if (dataSnapshot) {
+    return `已准备数据快照：${dataSnapshot[1]}`;
+  }
+  const backtestReceived = output.match(/^Audited backtest received: (.+) bars · (.+)$/);
+  if (backtestReceived) {
+    return `已收到审计回测：${backtestReceived[1]} 根K线 · ${backtestReceived[2].replace("paper_only", "模拟盘")}`;
+  }
+  const replayLoaded = output.match(/^Audit replay loaded: (.+) bars · (.+)$/);
+  if (replayLoaded) {
+    return `已加载审计回放：${replayLoaded[1]} 根K线 · ${replayLoaded[2].replace("paper_only", "模拟盘")}`;
+  }
+  const failedBacktest = output.match(/^Pipeline failed before audited backtest: (.+)$/);
+  if (failedBacktest) {
+    return `审计回测前流水线失败：${failedBacktest[1]}`;
+  }
+  return output
+    .replace("Paper execution only", "仅模拟盘执行")
+    .replace("Ready for pipeline run", "等待运行流水线")
+    .replace("Factor set staged: SMA / RSI / volume", "因子集已准备：SMA / RSI / 成交量")
+    .replace("Backtest request sent to local core", "回测请求已发送到本地核心")
+    .replace("Audited backtest received", "已收到审计回测")
+    .replace("Agent committee report received", "智能体委员会报告已收到")
+    .replace("Live execution remains blocked; paper review is ready", "实盘执行保持阻断；模拟复盘已就绪");
 }
 
 function KlineChartCanvas({
