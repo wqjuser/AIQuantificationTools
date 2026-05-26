@@ -25,7 +25,9 @@ button {
 .terminal-shell {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr) 360px;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   background: #090d13;
 }
 
@@ -35,6 +37,8 @@ button {
   border-color: #233044;
   border-style: solid;
   color: #dce6ee;
+  max-height: 100vh;
+  overflow: auto;
 }
 
 .left-rail {
@@ -240,6 +244,9 @@ button {
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
+  min-height: 0;
+  max-height: 100vh;
+  overflow: auto;
   padding: 12px;
 }
 
@@ -2051,6 +2058,15 @@ em {
 @media (max-width: 1180px) {
   .terminal-shell {
     grid-template-columns: 210px minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+
+  .left-rail,
+  .terminal-main,
+  .agent-rail {
+    max-height: none;
+    overflow: visible;
   }
 
   .agent-rail {

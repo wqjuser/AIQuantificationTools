@@ -15,6 +15,14 @@ function cssBlock(selector) {
 }
 
 describe("terminal layout css", () => {
+  test("keeps desktop shell columns independently scrollable", () => {
+    expect(cssBlock(".terminal-shell")).toContain("height: 100vh;");
+    expect(cssBlock(".terminal-shell")).toContain("overflow: hidden;");
+    expect(cssBlock(".left-rail,\n.agent-rail")).toContain("max-height: 100vh;");
+    expect(cssBlock(".terminal-main")).toContain("max-height: 100vh;");
+    expect(cssBlock(".terminal-main")).toContain("overflow: auto;");
+  });
+
   test("keeps the watchlist chart height isolated from the strategy panel", () => {
     expect(appSource).toContain('className="strategy-panel"');
     expect(cssBlock(".center-grid")).toContain("grid-template-rows: auto auto auto;");
