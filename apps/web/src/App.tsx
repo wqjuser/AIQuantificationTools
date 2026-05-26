@@ -6,13 +6,15 @@ import {
   Database,
   GitBranch,
   Languages,
+  Maximize2,
   Play,
   Radar,
   RefreshCw,
   Search,
   ShieldCheck,
   Timer,
-  WalletCards
+  WalletCards,
+  X
 } from "lucide-react";
 import { dispose, init, type Chart, type KLineData } from "klinecharts";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -97,6 +99,7 @@ export function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(false);
   const [isSymbolSearching, setIsSymbolSearching] = useState(false);
+  const [isChartExpanded, setIsChartExpanded] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const symbolSearchRequestIdRef = useRef(0);
@@ -293,6 +296,19 @@ export function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, [marketDraft, symbolDraft]);
+
+  useEffect(() => {
+    if (!isChartExpanded) {
+      return;
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsChartExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isChartExpanded]);
 
   return (
     <div className="terminal-shell">
@@ -516,6 +532,17 @@ export function App() {
             title={i18n.t("panel.chart.title")}
             subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
             className="chart-panel"
+            action={
+              <button
+                aria-label={i18n.t("chart.expand")}
+                className="panel-icon-button"
+                onClick={() => setIsChartExpanded(true)}
+                title={i18n.t("chart.expand")}
+                type="button"
+              >
+                <Maximize2 size={16} />
+              </button>
+            }
           >
             <div className="chart-panel-body">
               <KlineChartCanvas
@@ -577,6 +604,44 @@ export function App() {
           </Panel>
         </section>
       </main>
+
+      {isChartExpanded ? (
+        <div className="chart-modal-backdrop" role="dialog" aria-modal="true" aria-label={i18n.t("panel.chart.title")}>
+          <section className="chart-modal">
+            <header>
+              <div>
+                <h2>{workspace.selectedInstrument.name} · {klinesState.symbol}</h2>
+                <span>{workspace.selectedTimeframe} · {i18n.t("panel.chart.title")}</span>
+              </div>
+              <button
+                aria-label={i18n.t("chart.closeExpanded")}
+                className="panel-icon-button"
+                onClick={() => setIsChartExpanded(false)}
+                title={i18n.t("chart.closeExpanded")}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <div className="chart-modal-body">
+              <KlineChartCanvas
+                key={`expanded-${klinesState.market}-${klinesState.symbol}-${klinesState.timeframe}`}
+                bars={klinesState.bars}
+                locale={locale}
+                symbol={klinesState.symbol}
+                timeframe={klinesState.timeframe}
+              />
+              <div className="chart-data-strip">
+                <span>{i18n.t("chart.symbol")}: {klinesState.symbol}</span>
+                {latestChartBar ? <span>{i18n.t("chart.latestClose")}: {latestChartBar.close.toFixed(2)}</span> : null}
+                {latestChartBar ? <span>{i18n.t("chart.asOf")}: {formatChartDate(latestChartBar.timestamp)}</span> : null}
+                <span>{i18n.t("chart.source")}: {klinesState.quality.source}</span>
+                <span>{i18n.t("chart.bars", { count: klinesState.bars.length })}</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <aside className="agent-rail">
         <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="agent-panel">
@@ -726,11 +791,13 @@ function formatChartDate(timestamp: string): string {
 function Panel({
   title,
   subtitle,
+  action,
   className,
   children
 }: {
   title: string;
   subtitle: string;
+  action?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
@@ -741,6 +808,7 @@ function Panel({
           <h2>{title}</h2>
           <span>{subtitle}</span>
         </div>
+        {action}
       </header>
       {children}
     </section>

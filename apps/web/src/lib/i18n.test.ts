@@ -30,6 +30,16 @@ describe("i18n", () => {
     ]);
   });
 
+  test("translates chart expansion actions", () => {
+    const zh = createI18n("zh-CN");
+    const en = createI18n("en-US");
+
+    expect(zh.t("chart.expand")).toBe("放大图表");
+    expect(zh.t("chart.closeExpanded")).toBe("关闭放大图表");
+    expect(en.t("chart.expand")).toBe("Expand chart");
+    expect(en.t("chart.closeExpanded")).toBe("Close expanded chart");
+  });
+
   test("formats audited run labels in the active locale", () => {
     const zh = createI18n("zh-CN");
     const en = createI18n("en-US");
