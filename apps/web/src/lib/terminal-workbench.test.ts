@@ -261,18 +261,59 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("derives module news events without pretending to have a live feed", () => {
-    const events = buildModuleNewsEvents(buildTerminalWorkspace());
+  test("derives module news events from local market, audit, execution, and agent evidence", () => {
+    const workspace = {
+      ...buildTerminalWorkspace(),
+      selectedInstrument: {
+        symbol: "600000",
+        name: "浦发银行",
+        market: "ashare" as const,
+        changePct: 2.4,
+        price: 9.27,
+        quoteSource: "tencent",
+        quoteAsOf: "2026-05-27T00:36:00+08:00"
+      },
+      researchRun: {
+        runId: "run-local",
+        createdAt: "2026-05-27T00:35:00+08:00",
+        timeframe: "5m" as const,
+        strategyRevision: "rev-local",
+        dataRows: 240,
+        executionMode: "paper_only"
+      }
+    };
+
+    const events = buildModuleNewsEvents(workspace);
 
     expect(events[0]).toMatchObject({
-      source: "AI committee",
+      id: "quote-update",
+      source: "Market data",
       impact: "positive"
     });
-    expect(events.at(-1)).toMatchObject({
-      source: "Local event watch",
-      impact: "warning"
+    expect(events[0].title).toBe("600000 quote 9.27 from tencent");
+    expect(events[1]).toMatchObject({
+      id: "audit-run",
+      source: "Audit log",
+      title: "Run run-local bound to 600000"
     });
-    expect(events.at(-1)?.title).toContain("600000");
+    expect(events[2]).toMatchObject({
+      id: "execution-gates",
+      source: "Risk engine",
+      impact: "risk"
+    });
+    expect(events.map((event) => event.id)).not.toContain("live-feed-pending");
+  });
+
+  test("asks for a fresh audited run in local events when no run is bound", () => {
+    const events = buildModuleNewsEvents(buildTerminalWorkspace());
+
+    expect(events.some((event) => event.id === "audit-needed")).toBe(true);
+    expect(events.find((event) => event.id === "audit-needed")).toMatchObject({
+      source: "Audit log",
+      impact: "warning",
+      title: "600000 needs a fresh audited run"
+    });
+    expect(events.map((event) => event.source)).toContain("AI committee");
   });
 
   test("derives workflow stages with execution blocked until gates pass", () => {

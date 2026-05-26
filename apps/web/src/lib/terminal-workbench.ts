@@ -734,7 +734,53 @@ export function buildBacktestAssumptionRows(workspace: TerminalWorkspace): Backt
 }
 
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
-  const selectedSymbol = workspace.selectedInstrument.symbol;
+  const selectedInstrument = workspace.selectedInstrument;
+  const selectedSymbol = selectedInstrument.symbol;
+  const price = selectedInstrument.price;
+  const quoteSource = selectedInstrument.quoteSource ?? "workspace";
+  const hasQuote = price !== undefined && price !== null && Number.isFinite(price);
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  const localEvents: ModuleNewsEvent[] = [
+    hasQuote
+      ? {
+          id: "quote-update",
+          source: "Market data",
+          title: `${selectedSymbol} quote ${formatInstrumentPrice(price)} from ${quoteSource}`,
+          impact: selectedInstrument.changePct < 0 ? "warning" : "positive",
+          detail: `As of ${selectedInstrument.quoteAsOf ?? "latest workspace refresh"} · change ${formatSignedPct(
+            selectedInstrument.changePct
+          )}`
+        }
+      : {
+          id: "quote-missing",
+          source: "Market data",
+          title: `${selectedSymbol} quote unavailable`,
+          impact: "warning",
+          detail: "Refresh workspace or configure a market data adapter."
+        },
+    workspace.researchRun
+      ? {
+          id: "audit-run",
+          source: "Audit log",
+          title: `Run ${workspace.researchRun.runId} bound to ${selectedSymbol}`,
+          impact: "ai",
+          detail: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars · revision ${workspace.researchRun.strategyRevision} · ${workspace.researchRun.executionMode}`
+        }
+      : {
+          id: "audit-needed",
+          source: "Audit log",
+          title: `${selectedSymbol} needs a fresh audited run`,
+          impact: "warning",
+          detail: "Run Pipeline to bind data, backtest, agent review, and execution gates."
+        },
+    {
+      id: "execution-gates",
+      source: "Risk engine",
+      title: workspace.execution.liveEnabled ? "Live execution gates open" : `${blockedGateCount} execution gates blocked`,
+      impact: workspace.execution.liveEnabled ? "positive" : "risk",
+      detail: workspace.execution.gates.map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`).join(" · ")
+    }
+  ];
   const committeeEvents = workspace.decisionLog.slice(0, 3).map((entry, index) => ({
     id: `committee-${index}`,
     source: "AI committee",
@@ -742,16 +788,7 @@ export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsE
     impact: entry.tone,
     detail: `Linked to ${selectedSymbol} research context.`
   }));
-  return [
-    ...committeeEvents,
-    {
-      id: "live-feed-pending",
-      source: "Local event watch",
-      title: `${selectedSymbol} live event feed is not connected yet`,
-      impact: "warning",
-      detail: "This panel currently surfaces local agent context and will accept a news provider adapter later."
-    }
-  ];
+  return [...localEvents, ...committeeEvents];
 }
 
 function inferStrategyParameter(condition: string, fallback: string): string {

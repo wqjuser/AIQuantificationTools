@@ -96,8 +96,8 @@ const messages = {
     "portfolio.unrealizedPnl": "Unrealized P&L",
     "portfolio.returnPct": "Return",
     "module.news.title": "News & Events",
-    "module.news.subtitle": "Agent context with explicit feed status",
-    "module.news.pending": "Live feed pending",
+    "module.news.subtitle": "Quote, audit, risk, and AI context",
+    "module.news.context": "Local evidence stream",
     "module.workflow.title": "Node Workflow",
     "module.workflow.subtitle": "A+C orchestration surface",
     "module.workflow.canvas": "Node canvas",
@@ -218,8 +218,8 @@ const messages = {
     "portfolio.unrealizedPnl": "未实现盈亏",
     "portfolio.returnPct": "收益率",
     "module.news.title": "新闻事件",
-    "module.news.subtitle": "智能体上下文与事件源状态",
-    "module.news.pending": "实时源待接入",
+    "module.news.subtitle": "行情、审计、风控与 AI 上下文",
+    "module.news.context": "本地证据流",
     "module.workflow.title": "节点工作流",
     "module.workflow.subtitle": "A+C 编排入口",
     "module.workflow.canvas": "节点画布",
@@ -310,7 +310,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       watchlist: "Watchlist is bound to {symbol}; chart and research pipeline use this context.",
       scanner: "Scanner is focused on {market} candidates while the chart stays on {symbol}.",
       portfolio: "Portfolio risk is scoped to paper exposure and gates for {symbol}.",
-      news: "News and event agents are scoped to {symbol}; live event feeds are not connected yet.",
+      news: "News and event agents are scoped to local quote, audit, risk, and AI evidence for {symbol}.",
       workflow: "Node workflow is staging data, factor, backtest, agent review, and execution for {symbol}."
     },
     quantLoopFocus: {
@@ -394,7 +394,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       watchlist: "自选列表已绑定 {symbol}；图表和研究流水线会使用这个上下文。",
       scanner: "市场扫描聚焦 {market} 候选池，当前图表保持在 {symbol}。",
       portfolio: "组合风险当前只展示 {symbol} 的模拟盘暴露和风控闸门。",
-      news: "新闻事件智能体已切到 {symbol}；实时事件源尚未接入。",
+      news: "新闻事件智能体已切到 {symbol} 的本地行情、审计、风控和 AI 证据。",
       workflow: "节点工作流正在围绕 {symbol} 串联数据、因子、回测、智能体评审和执行。"
     },
     quantLoopFocus: {

@@ -1346,7 +1346,7 @@ function NewsWorkspace({ events, i18n }: { events: ModuleNewsEvent[]; i18n: AppI
   return (
     <Panel title={i18n.t("module.news.title")} subtitle={i18n.t("module.news.subtitle")} className="module-workspace-panel">
       <div className="module-toolbar">
-        <span>{i18n.t("module.news.pending")}</span>
+        <span>{i18n.t("module.news.context")}</span>
       </div>
       <div className="event-stream">
         {events.map((event) => (
@@ -1685,15 +1685,42 @@ function eventSourceLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
   if (i18n.locale === "en-US") {
     return event.source;
   }
-  return event.source === "AI committee" ? "智能体委员会" : "本地事件观察";
+  return (
+    {
+      "AI committee": "智能体委员会",
+      "Market data": "行情数据",
+      "Audit log": "审计日志",
+      "Risk engine": "风控引擎"
+    }[event.source] ?? event.source
+  );
 }
 
 function eventTitleLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
   if (i18n.locale === "en-US") {
     return event.title;
   }
-  if (event.id === "live-feed-pending") {
-    return event.title.replace(" live event feed is not connected yet", " 实时事件源尚未接入");
+  const quoteUpdate = event.title.match(/^(.+) quote (.+) from (.+)$/);
+  if (quoteUpdate) {
+    return `${quoteUpdate[1]} 报价 ${quoteUpdate[2]} · ${quoteUpdate[3]}`;
+  }
+  const quoteMissing = event.title.match(/^(.+) quote unavailable$/);
+  if (quoteMissing) {
+    return `${quoteMissing[1]} 报价暂不可用`;
+  }
+  const auditRun = event.title.match(/^Run (.+) bound to (.+)$/);
+  if (auditRun) {
+    return `审计运行 ${auditRun[1]} 已绑定 ${auditRun[2]}`;
+  }
+  const auditNeeded = event.title.match(/^(.+) needs a fresh audited run$/);
+  if (auditNeeded) {
+    return `${auditNeeded[1]} 需要新的审计运行`;
+  }
+  const blockedGates = event.title.match(/^(\d+) execution gates blocked$/);
+  if (blockedGates) {
+    return `${blockedGates[1]} 个执行闸门阻断`;
+  }
+  if (event.title === "Live execution gates open") {
+    return "实盘执行闸门已开启";
   }
   const separatorIndex = event.title.indexOf(": ");
   if (separatorIndex > 0) {
@@ -1708,10 +1735,29 @@ function eventDetailLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
   if (i18n.locale === "en-US") {
     return event.detail;
   }
-  if (event.id === "live-feed-pending") {
-    return "当前面板展示本地智能体上下文，后续可接入新闻供应商适配器。";
+  const quoteDetail = event.detail.match(/^As of (.+) · change (.+)$/);
+  if (quoteDetail) {
+    return `截至 ${quoteDetail[1]} · 涨跌幅 ${quoteDetail[2]}`;
   }
-  return event.detail.replace("Linked to ", "已关联 ").replace(" research context.", " 研究上下文。");
+  const auditRun = event.detail.match(/^(.+) (.+) bars · revision (.+) · (.+)$/);
+  if (auditRun) {
+    return `${auditRun[1]} 根 ${auditRun[2]} K线 · 版本 ${auditRun[3]} · ${auditRun[4].replace("paper_only", "模拟盘")}`;
+  }
+  if (event.detail === "Run Pipeline to bind data, backtest, agent review, and execution gates.") {
+    return "运行流水线以绑定数据、回测、智能体评审和执行闸门。";
+  }
+  if (event.detail === "Refresh workspace or configure a market data adapter.") {
+    return "刷新工作区或配置行情数据适配器。";
+  }
+  return event.detail
+    .replace("Linked to ", "已关联 ")
+    .replace(" research context.", " 研究上下文。")
+    .replace("Adapter certified: blocked", "适配器认证：阻断")
+    .replace("Risk approved: blocked", "风控审批：阻断")
+    .replace("Human confirmed: blocked", "人工确认：阻断")
+    .replace("Adapter certified: passed", "适配器认证：通过")
+    .replace("Risk approved: passed", "风控审批：通过")
+    .replace("Human confirmed: passed", "人工确认：通过");
 }
 
 function workflowStatusLabel(i18n: AppI18n, status: WorkflowStageView["status"]): string {
