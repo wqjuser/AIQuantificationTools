@@ -235,7 +235,22 @@ describe("terminal workspace API client", () => {
               metrics: { total_return_pct: 3.4, trade_count: 8 },
               decisions: [],
               executionMode: "paper_only",
-              backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
+              backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+              backtestTrades: [
+                {
+                  id: "trade-1",
+                  timestamp: "2026-05-26T08:00:00+00:00",
+                  symbol: "600000",
+                  side: "BUY",
+                  status: "filled",
+                  price: "9.20",
+                  quantity: "2100",
+                  exposure: "19.32%",
+                  pnl: "-",
+                  reason: "entry_conditions",
+                  tone: "neutral"
+                }
+              ]
             }
           ]
         })
@@ -247,6 +262,7 @@ describe("terminal workspace API client", () => {
     expect(result.runs[0].runId).toBe("run-new");
     expect(result.runs[0].metrics.trade_count).toBe(8);
     expect(result.runs[0].backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
+    expect(result.runs[0].backtestTrades?.[0]).toMatchObject({ id: "trade-1", side: "BUY" });
   });
 
   test("loads market klines from the Python core", async () => {

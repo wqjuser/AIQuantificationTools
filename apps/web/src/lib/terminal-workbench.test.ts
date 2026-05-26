@@ -745,7 +745,22 @@ describe("terminal workbench model", () => {
       },
       decisions: [{ agent: "AI Summary", message: "Replay loaded", tone: "ai" }],
       executionMode: "paper_only",
-      backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
+      backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+      backtestTrades: [
+        {
+          id: "trade-1",
+          timestamp: "2026-05-26T08:00:00+00:00",
+          symbol: "AAPL",
+          side: "BUY",
+          status: "filled",
+          price: "191.20",
+          quantity: "100",
+          exposure: "19.12%",
+          pnl: "-",
+          reason: "entry_conditions",
+          tone: "neutral"
+        }
+      ]
     });
 
     expect(workspace.selectedInstrument).toEqual({
@@ -760,6 +775,21 @@ describe("terminal workbench model", () => {
     expect(workspace.strategy.risk).toContain("rev123");
     expect(workspace.metrics.map((metric) => metric.value)).toEqual(["-1.25%", "4.50%", "40.00%", "5"]);
     expect(workspace.backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
+    expect(workspace.backtestTrades).toEqual([
+      {
+        id: "trade-1",
+        timestamp: "2026-05-26T08:00:00+00:00",
+        symbol: "AAPL",
+        side: "BUY",
+        status: "filled",
+        price: "191.20",
+        quantity: "100",
+        exposure: "19.12%",
+        pnl: "-",
+        reason: "entry_conditions",
+        tone: "neutral"
+      }
+    ]);
     expect(workspace.decisionLog[0].message).toBe("Replay loaded");
     expect(workspace.researchRun?.runId).toBe("run-history");
   });

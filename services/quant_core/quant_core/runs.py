@@ -25,6 +25,7 @@ class ResearchRunAudit:
     decisions: list[dict[str, Any]]
     execution_mode: str
     backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
+    backtest_trades: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ResearchRunStore:
@@ -53,7 +54,8 @@ class ResearchRunStore:
                     metrics_json text not null,
                     decisions_json text not null,
                     execution_mode text not null,
-                    backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}'
+                    backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
+                    backtest_trades_json text not null default '[]'
                 )
                 """
             )
@@ -64,6 +66,14 @@ class ResearchRunStore:
                     alter table research_runs
                     add column backtest_assumptions_json text not null
                     default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}'
+                    """
+                )
+            if "backtest_trades_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column backtest_trades_json text not null
+                    default '[]'
                     """
                 )
             connection.commit()
@@ -87,9 +97,10 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
-                    backtest_assumptions_json
+                    backtest_assumptions_json,
+                    backtest_trades_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -101,7 +112,8 @@ class ResearchRunStore:
                     metrics_json = excluded.metrics_json,
                     decisions_json = excluded.decisions_json,
                     execution_mode = excluded.execution_mode,
-                    backtest_assumptions_json = excluded.backtest_assumptions_json
+                    backtest_assumptions_json = excluded.backtest_assumptions_json,
+                    backtest_trades_json = excluded.backtest_trades_json
                 """,
                 (
                     audit.run_id,
@@ -116,6 +128,7 @@ class ResearchRunStore:
                     json.dumps(audit.decisions, ensure_ascii=False, sort_keys=True),
                     audit.execution_mode,
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
+                    json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
                 ),
             )
             connection.commit()
@@ -139,7 +152,8 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
-                    backtest_assumptions_json
+                    backtest_assumptions_json,
+                    backtest_trades_json
                 from research_runs
                 order by created_at desc
                 limit ?
@@ -163,6 +177,7 @@ class ResearchRunStore:
                 decisions=json.loads(row[9]),
                 execution_mode=row[10],
                 backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[11])),
+                backtest_trades=json.loads(row[12]),
             )
             for row in rows
         ]
@@ -182,6 +197,7 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "decisions": audit.decisions,
         "executionMode": audit.execution_mode,
         "backtestAssumptions": _normalize_backtest_assumptions(audit.backtest_assumptions),
+        "backtestTrades": audit.backtest_trades,
     }
 
 

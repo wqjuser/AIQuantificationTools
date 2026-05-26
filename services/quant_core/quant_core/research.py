@@ -84,6 +84,7 @@ def run_terminal_research(
         DecisionLogEntry(agent="Portfolio Manager", message=report.improvements[0], tone="warning"),
     ]
     run_id = f"run-{uuid4().hex[:12]}"
+    backtest_trade_rows = _backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash)
     audit = ResearchRunAudit(
         run_id=run_id,
         created_at=created_at,
@@ -101,6 +102,7 @@ def run_terminal_research(
             "feeBps": round(backtest_engine.fee_rate * 10_000, 4),
             "slippageBps": round(backtest_engine.slippage_rate * 10_000, 4),
         },
+        backtest_trades=[asdict(row) for row in backtest_trade_rows],
     )
     audit_store.record(audit)
 
@@ -128,7 +130,7 @@ def run_terminal_research(
             BacktestMetric(label="Trades", value=str(backtest.metrics.trade_count), tone="neutral"),
         ],
         decision_log=decision_log,
-        backtest_trades=_backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash),
+        backtest_trades=backtest_trade_rows,
         research_run=ResearchRunSummary(
             run_id=run_id,
             created_at=created_at,

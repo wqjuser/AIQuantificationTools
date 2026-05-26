@@ -266,6 +266,7 @@ export interface ResearchRunAudit {
   decisions: DecisionLogEntry[];
   executionMode: string;
   backtestAssumptions?: BacktestAssumptions;
+  backtestTrades?: BacktestTradeRow[];
 }
 
 export interface ResearchRunComparisonRow {
@@ -1332,6 +1333,7 @@ export function workspaceFromResearchRunAudit(
     decisionLog: run.decisions.length
       ? run.decisions
       : [{ agent: "Audit", message: "No decision entries recorded for this run.", tone: "warning" }],
+    backtestTrades: run.backtestTrades ?? [],
     researchRun: {
       runId: run.runId,
       createdAt: run.createdAt,

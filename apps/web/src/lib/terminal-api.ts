@@ -462,7 +462,28 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Boolean(run.metrics) &&
     Array.isArray(run.decisions) &&
     Boolean(run.executionMode) &&
-    (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions))
+    (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
+    (run.backtestTrades === undefined || (Array.isArray(run.backtestTrades) && run.backtestTrades.every(isBacktestTradeRow)))
+  );
+}
+
+function isBacktestTradeRow(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === "string" &&
+    typeof row.timestamp === "string" &&
+    typeof row.symbol === "string" &&
+    (row.side === "BUY" || row.side === "SELL" || row.side === "RISK" || row.side === "HOLD") &&
+    (row.status === "filled" || row.status === "open" || row.status === "review" || row.status === "blocked") &&
+    typeof row.price === "string" &&
+    typeof row.quantity === "string" &&
+    typeof row.exposure === "string" &&
+    typeof row.pnl === "string" &&
+    typeof row.reason === "string" &&
+    (row.tone === "positive" || row.tone === "warning" || row.tone === "neutral" || row.tone === "risk")
   );
 }
 
