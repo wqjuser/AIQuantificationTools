@@ -840,7 +840,12 @@ export function App() {
                 <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
               </Panel>
 
-              <ExecutionPanel i18n={i18n} rows={paperTradingRows} workspace={workspace} />
+              <ExecutionPanel
+                i18n={i18n}
+                rows={paperTradingRows}
+                workspace={workspace}
+                className="watchlist-execution-panel"
+              />
             </>
           ) : null}
 
@@ -1228,9 +1233,19 @@ function AgentCommitteeBoard({ i18n, rounds }: { i18n: AppI18n; rounds: AgentCom
   );
 }
 
-function ExecutionPanel({ i18n, rows, workspace }: { i18n: AppI18n; rows: PaperTradingRow[]; workspace: TerminalWorkspace }) {
+function ExecutionPanel({
+  className,
+  i18n,
+  rows,
+  workspace
+}: {
+  className?: string;
+  i18n: AppI18n;
+  rows: PaperTradingRow[];
+  workspace: TerminalWorkspace;
+}) {
   return (
-    <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")}>
+    <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")} className={className}>
       <div className="execution-grid">
         <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
         <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
