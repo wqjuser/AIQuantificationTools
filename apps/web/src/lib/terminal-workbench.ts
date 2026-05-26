@@ -214,6 +214,17 @@ export interface PaperTradingRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface BrokerAdapterRow {
+  id: string;
+  market: Market;
+  adapter: string;
+  route: "paper" | "live";
+  status: "paper_ready" | "interface_only" | "config_required" | "blocked";
+  certification: string;
+  nextStep: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface ModuleNewsEvent {
   id: string;
   source: string;
@@ -330,6 +341,7 @@ export function buildTerminalWorkspace(): TerminalWorkspace {
       { id: "scanner", label: "Market Scanner", accent: "market" },
       { id: "portfolio", label: "Portfolio Risk", accent: "execution" },
       { id: "news", label: "News & Events", accent: "ai" },
+      { id: "broker", label: "Broker Center", accent: "execution" },
       { id: "workflow", label: "Node Workflow", accent: "strategy" }
     ],
     panels: [
@@ -418,7 +430,7 @@ export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigat
     backtest: { moduleId: "workflow", workflowStageId: "backtest" },
     "agent-review": { moduleId: "workflow", workflowStageId: "agent" },
     paper: { moduleId: "portfolio", workflowStageId: "execution" },
-    broker: { moduleId: "portfolio", workflowStageId: "execution" }
+    broker: { moduleId: "broker", workflowStageId: "execution" }
   };
   return targets[stepId] ?? targets.idea;
 }
@@ -662,6 +674,52 @@ export function buildPaperPositionRows(workspace: TerminalWorkspace): PaperPosit
       returnPct: returnMetric,
       status: "paper",
       tone
+    }
+  ];
+}
+
+export function buildBrokerAdapterRows(workspace: TerminalWorkspace): BrokerAdapterRow[] {
+  const liveBlocked = !workspace.execution.liveEnabled;
+  return [
+    {
+      id: "paper-local",
+      market: "ashare",
+      adapter: "Local Paper Trading",
+      route: "paper",
+      status: "paper_ready",
+      certification: "Simulated fills, order log, and risk checks are available locally.",
+      nextStep: "Use paper execution for research runs before certifying live adapters.",
+      tone: "positive"
+    },
+    {
+      id: "ashare-live",
+      market: "ashare",
+      adapter: "A-share broker interface",
+      route: "live",
+      status: "interface_only",
+      certification: "No certified A-share broker API is connected.",
+      nextStep: "Keep live trading blocked until a legal broker adapter passes certification.",
+      tone: liveBlocked ? "risk" : "warning"
+    },
+    {
+      id: "us-live",
+      market: "us",
+      adapter: "IBKR / Alpaca adapter shape",
+      route: "live",
+      status: "config_required",
+      certification: "Adapter shape is reserved; paper credentials are not configured.",
+      nextStep: "Configure a paper account and certify submit, cancel, fill, reject, and reconnect paths.",
+      tone: "warning"
+    },
+    {
+      id: "crypto-live",
+      market: "crypto",
+      adapter: "ccxt exchange adapter shape",
+      route: "live",
+      status: "config_required",
+      certification: "Exchange adapter shape is reserved; API keys are not configured.",
+      nextStep: "Start with sandbox or testnet routes plus max order and emergency-stop limits.",
+      tone: "warning"
     }
   ];
 }

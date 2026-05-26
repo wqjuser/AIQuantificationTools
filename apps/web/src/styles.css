@@ -1196,6 +1196,7 @@ em {
 }
 
 .scanner-table,
+.broker-adapter-table,
 .risk-ledger,
 .event-stream,
 .workflow-output {
@@ -1362,6 +1363,52 @@ em {
 }
 
 .paper-position-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.broker-adapter-row {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.9fr) minmax(64px, 0.4fr) minmax(56px, 0.35fr) minmax(78px, 0.45fr)
+    minmax(150px, 1fr) minmax(150px, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 46px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  color: #dce6ee;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.broker-adapter-head {
+  min-height: 30px;
+  background: #0f1722;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.broker-adapter-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.broker-adapter-row.warning {
+  border-left-color: #e8be62;
+}
+
+.broker-adapter-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.broker-adapter-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.broker-adapter-row span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -2025,6 +2072,7 @@ em {
   .paper-blotter-row,
   .risk-ledger,
   .paper-position-row,
+  .broker-adapter-row,
   .event-stream,
   .strategy-rule-row,
   .strategy-editor,

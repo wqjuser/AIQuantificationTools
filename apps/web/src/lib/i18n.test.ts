@@ -57,6 +57,9 @@ describe("i18n", () => {
     expect(zh.t("history.unchanged")).toBe("未变化");
     expect(zh.t("panel.agent.evidence")).toBe("证据摘要");
     expect(zh.t("portfolio.paperPositions")).toBe("模拟持仓");
+    expect(zh.moduleLabel("broker", "Broker Center")).toBe("券商中心");
+    expect(zh.t("module.broker.title")).toBe("券商中心");
+    expect(zh.t("broker.certification")).toBe("认证状态");
     expect(zh.t("module.news.context")).toBe("本地证据流");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
     expect(en.t("backtest.replay")).toBe("Trade replay");
@@ -65,6 +68,8 @@ describe("i18n", () => {
     expect(en.t("history.rows", { count: 240 })).toBe("240 bars");
     expect(en.t("history.comparison")).toBe("Run comparison");
     expect(en.t("panel.agent.evidence")).toBe("Evidence summary");
+    expect(en.t("module.broker.title")).toBe("Broker Center");
+    expect(en.t("broker.nextStep")).toBe("Next step");
     expect(en.t("module.news.context")).toBe("Local evidence stream");
     expect(en.t("module.workflow.run")).toBe("Run pipeline");
   });

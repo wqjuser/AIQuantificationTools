@@ -96,6 +96,14 @@ const messages = {
     "portfolio.marketValue": "Market value",
     "portfolio.unrealizedPnl": "Unrealized P&L",
     "portfolio.returnPct": "Return",
+    "module.broker.title": "Broker Center",
+    "module.broker.subtitle": "Adapter certification and live-trading gates",
+    "broker.adapter": "Adapter",
+    "broker.market": "Market",
+    "broker.route": "Route",
+    "broker.status": "Status",
+    "broker.certification": "Certification",
+    "broker.nextStep": "Next step",
     "module.news.title": "News & Events",
     "module.news.subtitle": "Quote, audit, risk, and AI context",
     "module.news.context": "Local evidence stream",
@@ -219,6 +227,14 @@ const messages = {
     "portfolio.marketValue": "市值",
     "portfolio.unrealizedPnl": "未实现盈亏",
     "portfolio.returnPct": "收益率",
+    "module.broker.title": "券商中心",
+    "module.broker.subtitle": "适配器认证与实盘闸门",
+    "broker.adapter": "适配器",
+    "broker.market": "市场",
+    "broker.route": "通道",
+    "broker.status": "状态",
+    "broker.certification": "认证状态",
+    "broker.nextStep": "下一步",
     "module.news.title": "新闻事件",
     "module.news.subtitle": "行情、审计、风控与 AI 上下文",
     "module.news.context": "本地证据流",
@@ -289,6 +305,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       scanner: "Market Scanner",
       portfolio: "Portfolio Risk",
       news: "News & Events",
+      broker: "Broker Center",
       workflow: "Node Workflow"
     },
     agents: {
@@ -313,6 +330,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       scanner: "Scanner is focused on {market} candidates while the chart stays on {symbol}.",
       portfolio: "Portfolio risk is scoped to paper exposure and gates for {symbol}.",
       news: "News and event agents are scoped to local quote, audit, risk, and AI evidence for {symbol}.",
+      broker: "Broker adapters stay blocked until certification, risk checks, and human confirmation pass.",
       workflow: "Node workflow is staging data, factor, backtest, agent review, and execution for {symbol}."
     },
     quantLoopFocus: {
@@ -373,6 +391,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       scanner: "市场扫描",
       portfolio: "组合风险",
       news: "新闻事件",
+      broker: "券商中心",
       workflow: "节点工作流"
     },
     agents: {
@@ -397,6 +416,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       scanner: "市场扫描聚焦 {market} 候选池，当前图表保持在 {symbol}。",
       portfolio: "组合风险当前只展示 {symbol} 的模拟盘暴露和风控闸门。",
       news: "新闻事件智能体已切到 {symbol} 的本地行情、审计、风控和 AI 证据。",
+      broker: "券商适配器在认证、风控检查和人工确认前保持阻断。",
       workflow: "节点工作流正在围绕 {symbol} 串联数据、因子、回测、智能体评审和执行。"
     },
     quantLoopFocus: {

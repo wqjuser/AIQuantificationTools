@@ -40,6 +40,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestTradeRows,
+  buildBrokerAdapterRows,
   buildModuleNewsEvents,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -58,6 +59,7 @@ import {
   BacktestAssumptionField,
   BacktestAssumptionRow,
   BacktestTradeRow,
+  BrokerAdapterRow,
   ModuleNewsEvent,
   PaperPositionRow,
   PaperTradingRow,
@@ -187,6 +189,7 @@ export function App() {
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
+  const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
@@ -855,6 +858,15 @@ export function App() {
             <NewsWorkspace events={moduleNewsEvents} i18n={i18n} />
           ) : null}
 
+          {activeModuleId === "broker" ? (
+            <BrokerWorkspace
+              adapterRows={brokerAdapterRows}
+              executionRows={paperTradingRows}
+              i18n={i18n}
+              workspace={workspace}
+            />
+          ) : null}
+
           {activeModuleId === "workflow" ? (
             <WorkflowWorkspace
               activeStage={activeWorkflowStage}
@@ -1385,6 +1397,46 @@ function NewsWorkspace({ events, i18n }: { events: ModuleNewsEvent[]; i18n: AppI
   );
 }
 
+function BrokerWorkspace({
+  adapterRows,
+  executionRows,
+  i18n,
+  workspace
+}: {
+  adapterRows: BrokerAdapterRow[];
+  executionRows: PaperTradingRow[];
+  i18n: AppI18n;
+  workspace: TerminalWorkspace;
+}) {
+  return (
+    <>
+      <Panel title={i18n.t("module.broker.title")} subtitle={i18n.t("module.broker.subtitle")} className="module-workspace-panel">
+        <div className="broker-adapter-table">
+          <div className="broker-adapter-row broker-adapter-head">
+            <span>{i18n.t("broker.adapter")}</span>
+            <span>{i18n.t("broker.market")}</span>
+            <span>{i18n.t("broker.route")}</span>
+            <span>{i18n.t("broker.status")}</span>
+            <span>{i18n.t("broker.certification")}</span>
+            <span>{i18n.t("broker.nextStep")}</span>
+          </div>
+          {adapterRows.map((row) => (
+            <article className={`broker-adapter-row ${row.tone}`} key={row.id}>
+              <span>{brokerAdapterName(i18n, row)}</span>
+              <span>{i18n.marketLabel(row.market)}</span>
+              <span>{brokerRouteLabel(i18n, row.route)}</span>
+              <span>{brokerStatusLabel(i18n, row.status)}</span>
+              <span>{brokerCertificationLabel(i18n, row.certification)}</span>
+              <span>{brokerNextStepLabel(i18n, row.nextStep)}</span>
+            </article>
+          ))}
+        </div>
+      </Panel>
+      <ExecutionPanel i18n={i18n} rows={executionRows} workspace={workspace} />
+    </>
+  );
+}
+
 function WorkflowWorkspace({
   activeStage,
   i18n,
@@ -1703,6 +1755,67 @@ function paperReasonLabel(i18n: AppI18n, reason: string): string {
   return reason
     .replace("Certified live route is available but this run stays paper-first.", "认证实盘通道可用，但本次仍优先模拟盘。")
     .replace("Local paper account only; broker account synchronization is not connected.", "仅本地模拟账户；尚未连接券商账户同步。");
+}
+
+function brokerAdapterName(i18n: AppI18n, row: BrokerAdapterRow): string {
+  if (i18n.locale === "en-US") {
+    return row.adapter;
+  }
+  return (
+    {
+      "paper-local": "本地模拟交易",
+      "ashare-live": "A 股券商接口",
+      "us-live": "IBKR / Alpaca 适配器形态",
+      "crypto-live": "ccxt 交易所适配器形态"
+    }[row.id] ?? row.adapter
+  );
+}
+
+function brokerRouteLabel(i18n: AppI18n, route: BrokerAdapterRow["route"]): string {
+  if (i18n.locale === "en-US") {
+    return route;
+  }
+  return { paper: "模拟", live: "实盘" }[route];
+}
+
+function brokerStatusLabel(i18n: AppI18n, status: BrokerAdapterRow["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status.replaceAll("_", " ");
+  }
+  return {
+    paper_ready: "模拟可用",
+    interface_only: "仅接口",
+    config_required: "需配置",
+    blocked: "已阻断"
+  }[status];
+}
+
+function brokerCertificationLabel(i18n: AppI18n, certification: string): string {
+  if (i18n.locale === "en-US") {
+    return certification;
+  }
+  return certification
+    .replace("Simulated fills, order log, and risk checks are available locally.", "本地已具备模拟成交、委托日志和风控检查。")
+    .replace("No certified A-share broker API is connected.", "尚未连接已认证 A 股券商 API。")
+    .replace("Adapter shape is reserved; paper credentials are not configured.", "已预留适配器形态；尚未配置模拟账户凭据。")
+    .replace("Exchange adapter shape is reserved; API keys are not configured.", "已预留交易所适配器形态；尚未配置 API Key。");
+}
+
+function brokerNextStepLabel(i18n: AppI18n, nextStep: string): string {
+  if (i18n.locale === "en-US") {
+    return nextStep;
+  }
+  return nextStep
+    .replace("Use paper execution for research runs before certifying live adapters.", "实盘适配器认证前，研究运行统一走模拟执行。")
+    .replace("Keep live trading blocked until a legal broker adapter passes certification.", "合法券商适配器通过认证前，继续阻断实盘交易。")
+    .replace(
+      "Configure a paper account and certify submit, cancel, fill, reject, and reconnect paths.",
+      "先配置模拟账户，并认证下单、撤单、成交、拒单和重连路径。"
+    )
+    .replace(
+      "Start with sandbox or testnet routes plus max order and emergency-stop limits.",
+      "先使用 sandbox/testnet，并配置最大订单和紧急停止限制。"
+    );
 }
 
 function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {

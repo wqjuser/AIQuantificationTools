@@ -6,6 +6,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestTradeRows,
+  buildBrokerAdapterRows,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
   buildPaperPositionRows,
@@ -86,7 +87,7 @@ describe("terminal workbench model", () => {
       workflowStageId: "execution"
     });
     expect(buildQuantLoopNavigationTarget("broker")).toEqual({
-      moduleId: "portfolio",
+      moduleId: "broker",
       workflowStageId: "execution"
     });
   });
@@ -268,6 +269,26 @@ describe("terminal workbench model", () => {
       status: "paper",
       tone: "positive"
     });
+  });
+
+  test("surfaces broker adapters and certification status before live execution is available", () => {
+    const rows = buildBrokerAdapterRows(buildTerminalWorkspace());
+
+    expect(rows.map((row) => row.id)).toEqual(["paper-local", "ashare-live", "us-live", "crypto-live"]);
+    expect(rows[0]).toMatchObject({
+      adapter: "Local Paper Trading",
+      market: "ashare",
+      route: "paper",
+      status: "paper_ready",
+      tone: "positive"
+    });
+    expect(rows[1]).toMatchObject({
+      adapter: "A-share broker interface",
+      route: "live",
+      status: "interface_only",
+      tone: "risk"
+    });
+    expect(rows.slice(1).every((row) => row.route === "live" && row.status !== "paper_ready")).toBe(true);
   });
 
   test("derives visual strategy rule rows from the active strategy snapshot", () => {
