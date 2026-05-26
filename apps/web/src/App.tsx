@@ -13,10 +13,13 @@ import {
   Timer,
   WalletCards
 } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { dispose, init, type Chart, type KLineData } from "klinecharts";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  loadMarketKlines,
   loadResearchRunHistory,
   loadTerminalWorkspace,
+  MarketKlinesResult,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunHistoryResult,
@@ -48,6 +51,19 @@ const initialRunHistoryState: ResearchRunHistoryResult = {
   runs: [],
   source: "fallback"
 };
+const initialKlinesState: MarketKlinesResult = {
+  market: "ashare",
+  symbol: "600000",
+  timeframe: "1d",
+  bars: [],
+  quality: {
+    source: "loading",
+    isComplete: false,
+    warnings: [],
+    rows: 0
+  },
+  source: "fallback"
+};
 
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 
@@ -61,11 +77,13 @@ const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
+  const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isChartLoading, setIsChartLoading] = useState(false);
   const i18n = createI18n(locale);
 
   const refreshRunHistory = useCallback(async () => {
@@ -79,6 +97,18 @@ export function App() {
     await refreshRunHistory();
     setIsRefreshing(false);
   }, [refreshRunHistory]);
+
+  const refreshChart = useCallback(async () => {
+    setIsChartLoading(true);
+    const result = await loadMarketKlines(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      limit: 160
+    });
+    setKlinesState(result);
+    setIsChartLoading(false);
+  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const runPipeline = useCallback(async () => {
     setIsRunning(true);
@@ -132,6 +162,10 @@ export function App() {
   useEffect(() => {
     void refreshWorkspace();
   }, [refreshWorkspace]);
+
+  useEffect(() => {
+    void refreshChart();
+  }, [refreshChart]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -266,20 +300,20 @@ export function App() {
             subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
             className="chart-panel"
           >
-            <div className="chart-canvas" aria-label="terminal chart preview">
-              <svg viewBox="0 0 720 280" preserveAspectRatio="none">
-                <line x1="0" y1="64" x2="720" y2="64" />
-                <line x1="0" y1="132" x2="720" y2="132" />
-                <line x1="0" y1="200" x2="720" y2="200" />
-                <polyline
-                  className="price-line"
-                  points="0,220 55,196 96,208 142,154 184,168 238,112 292,134 340,94 392,116 448,72 506,84 562,48 626,62 720,42"
-                />
-                <polyline
-                  className="factor-line"
-                  points="0,232 55,224 96,212 142,196 184,178 238,166 292,150 340,138 392,120 448,108 506,92 562,80 626,68 720,58"
-                />
-              </svg>
+            <div className="chart-panel-body">
+              <KlineChartCanvas
+                bars={klinesState.bars}
+                locale={locale}
+                symbol={workspace.selectedInstrument.symbol}
+                timeframe={workspace.selectedTimeframe}
+              />
+              {!klinesState.bars.length && !isChartLoading ? (
+                <div className="chart-empty">{i18n.t("chart.noData")}</div>
+              ) : null}
+              <div className="chart-data-strip">
+                <span>{i18n.t("chart.source")}: {klinesState.quality.source}</span>
+                <span>{i18n.t("chart.bars", { count: klinesState.bars.length })}</span>
+              </div>
             </div>
           </Panel>
 
@@ -387,6 +421,81 @@ export function App() {
       </aside>
     </div>
   );
+}
+
+function KlineChartCanvas({
+  bars,
+  locale,
+  symbol,
+  timeframe
+}: {
+  bars: MarketKlinesResult["bars"];
+  locale: Locale;
+  symbol: string;
+  timeframe: Timeframe;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) {
+      return;
+    }
+    const chart = init(containerRef.current, {
+      locale,
+      styles: "dark",
+      timezone: "Asia/Shanghai"
+    });
+    chartRef.current = chart;
+    chart?.setPriceVolumePrecision(4, 2);
+    chart?.createIndicator("VOL", false, { height: 72, minHeight: 48 });
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            chart?.resize();
+          });
+    if (resizeObserver) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      resizeObserver?.disconnect();
+      if (containerRef.current) {
+        dispose(containerRef.current);
+      } else if (chart) {
+        dispose(chart);
+      }
+      chartRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    chartRef.current?.setLocale(locale);
+  }, [locale]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) {
+      return;
+    }
+    chart.applyNewData(toKlineChartData(bars));
+    chart.scrollToRealTime(0);
+  }, [bars, symbol, timeframe]);
+
+  return <div className="chart-canvas" ref={containerRef} aria-label={`${symbol} ${timeframe} K-line chart`} />;
+}
+
+function toKlineChartData(bars: MarketKlinesResult["bars"]): KLineData[] {
+  return bars.map((bar) => ({
+    timestamp: bar.timestampMs,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume
+  }));
 }
 
 function Panel({

@@ -3,6 +3,8 @@ import { buildTerminalWorkspace } from "./terminal-workbench";
 import {
   buildResearchRunUrl,
   buildResearchRunsUrl,
+  buildMarketKlinesUrl,
+  loadMarketKlines,
   buildWorkspaceUrl,
   loadResearchRunHistory,
   loadTerminalWorkspace,
@@ -24,6 +26,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run history URL with a bounded limit", () => {
     expect(buildResearchRunsUrl("http://127.0.0.1:8765/", 5)).toBe(
       "http://127.0.0.1:8765/api/research/runs?limit=5"
+    );
+  });
+
+  test("builds the market klines URL with selected chart context", () => {
+    expect(buildMarketKlinesUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d", 160)).toBe(
+      "http://127.0.0.1:8765/api/market/klines?market=ashare&symbol=600000&timeframe=1d&limit=160"
     );
   });
 
@@ -147,6 +155,53 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.runs[0].runId).toBe("run-new");
     expect(result.runs[0].metrics.trade_count).toBe(8);
+  });
+
+  test("loads market klines from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadMarketKlines(
+      "http://127.0.0.1:8765",
+      { market: "ashare", symbol: "600000", timeframe: "1d", limit: 2 },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            quality: { source: "tencent", isComplete: true, warnings: [], rows: 2 },
+            bars: [
+              {
+                timestamp: "2026-05-22T00:00:00+08:00",
+                timestampMs: 1779379200000,
+                open: 9,
+                high: 9.12,
+                low: 8.98,
+                close: 9.08,
+                volume: 100000
+              },
+              {
+                timestamp: "2026-05-25T00:00:00+08:00",
+                timestampMs: 1779638400000,
+                open: 9.1,
+                high: 9.32,
+                low: 9.09,
+                close: 9.27,
+                volume: 120000
+              }
+            ]
+          })
+        };
+      }
+    );
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/market/klines?market=ashare&symbol=600000&timeframe=1d&limit=2"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.quality.source).toBe("tencent");
+    expect(result.bars.at(-1)?.close).toBe(9.27);
   });
 
   test("returns an empty run history when the Python core is unavailable", async () => {

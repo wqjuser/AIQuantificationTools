@@ -18,6 +18,33 @@ export interface ResearchRunHistoryResult {
   error?: string;
 }
 
+export interface MarketKlineBar {
+  timestamp: string;
+  timestampMs: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface MarketKlineQuality {
+  source: string;
+  isComplete: boolean;
+  warnings: string[];
+  rows: number;
+}
+
+export interface MarketKlinesResult {
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  bars: MarketKlineBar[];
+  quality: MarketKlineQuality;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface WorkspaceResponse {
   ok: boolean;
   status?: number;
@@ -62,6 +89,22 @@ export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("api/research/runs", normalizedBase);
   url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 50))));
+  return url.toString();
+}
+
+export function buildMarketKlinesUrl(
+  baseUrl: string,
+  market: Market,
+  symbol: string,
+  timeframe: ResearchTimeframe,
+  limit = 160
+): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const url = new URL("api/market/klines", normalizedBase);
+  url.searchParams.set("market", market);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("timeframe", timeframe);
+  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
   return url.toString();
 }
 
@@ -120,6 +163,44 @@ export async function loadResearchRunHistory(
   }
 }
 
+export async function loadMarketKlines(
+  baseUrl: string,
+  params: TerminalResearchParams & { limit?: number },
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketKlinesResult> {
+  try {
+    const response = await fetcher(
+      buildMarketKlinesUrl(baseUrl, params.market, params.symbol, params.timeframe, params.limit ?? 160)
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isMarketKlinesPayload(payload)) {
+      throw new Error("Invalid market klines contract");
+    }
+    return {
+      ...payload,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      market: params.market,
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      bars: [],
+      quality: {
+        source: "unavailable",
+        isComplete: false,
+        warnings: [],
+        rows: 0
+      },
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown market kline load error"
+    };
+  }
+}
+
 export async function runTerminalResearch(
   baseUrl: string,
   params: TerminalResearchParams,
@@ -158,6 +239,41 @@ function isResearchRunHistoryPayload(value: unknown): value is { runs: ResearchR
   return Array.isArray(payload.runs) && payload.runs.every(isResearchRunAudit);
 }
 
+function isMarketKlinesPayload(value: unknown): value is Omit<MarketKlinesResult, "source" | "error"> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<MarketKlinesResult>;
+  return (
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isTimeframe(payload.timeframe) &&
+    Boolean(payload.quality) &&
+    typeof payload.quality?.source === "string" &&
+    typeof payload.quality?.isComplete === "boolean" &&
+    Array.isArray(payload.quality?.warnings) &&
+    typeof payload.quality?.rows === "number" &&
+    Array.isArray(payload.bars) &&
+    payload.bars.every(isMarketKlineBar)
+  );
+}
+
+function isMarketKlineBar(value: unknown): value is MarketKlineBar {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const bar = value as Partial<MarketKlineBar>;
+  return (
+    typeof bar.timestamp === "string" &&
+    typeof bar.timestampMs === "number" &&
+    typeof bar.open === "number" &&
+    typeof bar.high === "number" &&
+    typeof bar.low === "number" &&
+    typeof bar.close === "number" &&
+    typeof bar.volume === "number"
+  );
+}
+
 function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
   if (!value || typeof value !== "object") {
     return false;
@@ -176,6 +292,10 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Array.isArray(run.decisions) &&
     Boolean(run.executionMode)
   );
+}
+
+function isMarket(value: unknown): value is Market {
+  return value === "ashare" || value === "us" || value === "crypto";
 }
 
 function isTerminalWorkspace(value: unknown): value is TerminalWorkspace {

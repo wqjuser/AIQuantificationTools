@@ -376,6 +376,32 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["watchlist"][2]["changePct"], -0.36)
         self.assertIsNone(payload["watchlist"][2]["quoteSource"])
 
+    def test_quantdinger_style_kline_adapter_maps_tencent_fqkline_rows(self):
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            self.assertIn("web.ifzq.gtimg.cn", url)
+            self.assertIn("sh600000%2Cday", url)
+            return (
+                '{"code":0,"data":{"sh600000":{"qfqday":['
+                '["2026-05-22","9.00","9.08","9.12","8.98","100000"],'
+                '["2026-05-25","9.10","9.27","9.32","9.09","120000"]'
+                ']}}}'
+            )
+
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="1d"),
+            limit=2,
+        )
+        payload = market_klines_to_payload("ashare", "600000", "1d", bars, quality)
+
+        self.assertEqual(quality.source, "tencent")
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(bars[-1].close, 9.27)
+        self.assertEqual(payload["bars"][-1]["timestampMs"], int(bars[-1].timestamp.timestamp() * 1000))
+        self.assertEqual(payload["bars"][-1]["volume"], 120000.0)
+
 
 if __name__ == "__main__":
     unittest.main()
