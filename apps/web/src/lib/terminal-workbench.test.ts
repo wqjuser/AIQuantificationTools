@@ -3,6 +3,7 @@ import {
   agentRoleLabels,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
+  buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildScannerCandidates,
   buildTerminalWorkspace,
@@ -96,6 +97,27 @@ describe("terminal workbench model", () => {
     expect(rows[0].value).toBe("4 watched");
     expect(rows[1].detail).toContain("600000");
     expect(rows[2].tone).toBe("warning");
+  });
+
+  test("derives paper trading rows with sizing and live gate rejection", () => {
+    const rows = buildPaperTradingRows(buildTerminalWorkspace());
+
+    expect(rows.map((row) => row.id)).toEqual(["paper-order", "risk-check", "account-sync"]);
+    expect(rows[0]).toMatchObject({
+      symbol: "600000",
+      side: "BUY",
+      quantity: "2300",
+      price: "8.66",
+      notional: "19918.00",
+      status: "queued",
+      tone: "positive"
+    });
+    expect(rows[1]).toMatchObject({
+      side: "RISK",
+      status: "blocked",
+      reason: "3 live gates blocked; paper route remains available.",
+      tone: "warning"
+    });
   });
 
   test("derives module news events without pretending to have a live feed", () => {

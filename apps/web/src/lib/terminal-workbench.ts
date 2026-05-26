@@ -122,6 +122,18 @@ export interface PortfolioRiskRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PaperTradingRow {
+  id: string;
+  symbol: string;
+  side: "BUY" | "SELL" | "RISK" | "SYNC";
+  quantity: string;
+  price: string;
+  notional: string;
+  status: "queued" | "filled" | "blocked" | "paper";
+  reason: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface ModuleNewsEvent {
   id: string;
   source: string;
@@ -352,6 +364,51 @@ export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioR
   ];
 }
 
+export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradingRow[] {
+  const price = resolvePaperOrderPrice(workspace);
+  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  const notional = quantity * price;
+
+  return [
+    {
+      id: "paper-order",
+      symbol: workspace.selectedInstrument.symbol,
+      side: "BUY",
+      quantity: String(quantity),
+      price: price.toFixed(2),
+      notional: notional.toFixed(2),
+      status: "queued",
+      reason: `Paper order staged from ${workspace.strategy.name}; no live route is used.`,
+      tone: "positive"
+    },
+    {
+      id: "risk-check",
+      symbol: workspace.selectedInstrument.symbol,
+      side: "RISK",
+      quantity: "-",
+      price: "-",
+      notional: "-",
+      status: workspace.execution.liveEnabled ? "paper" : "blocked",
+      reason: workspace.execution.liveEnabled
+        ? "Certified live route is available but this run stays paper-first."
+        : `${blockedGateCount} live gates blocked; paper route remains available.`,
+      tone: workspace.execution.liveEnabled ? "neutral" : "warning"
+    },
+    {
+      id: "account-sync",
+      symbol: "PAPER",
+      side: "SYNC",
+      quantity: "-",
+      price: "-",
+      notional: "0.00",
+      status: "paper",
+      reason: "Local paper account only; broker account synchronization is not connected.",
+      tone: "neutral"
+    }
+  ];
+}
+
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
   const selectedSymbol = workspace.selectedInstrument.symbol;
   const committeeEvents = workspace.decisionLog.slice(0, 3).map((entry, index) => ({
@@ -371,6 +428,26 @@ export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsE
       detail: "This panel currently surfaces local agent context and will accept a news provider adapter later."
     }
   ];
+}
+
+function resolvePaperOrderPrice(workspace: TerminalWorkspace): number {
+  const selectedPrice = workspace.selectedInstrument.price;
+  if (selectedPrice !== undefined && selectedPrice !== null && Number.isFinite(selectedPrice) && selectedPrice > 0) {
+    return selectedPrice;
+  }
+  return 1;
+}
+
+function calculatePaperQuantity(market: Market, price: number): number {
+  const targetNotional = 20_000;
+  const rawQuantity = Math.max(1, Math.floor(targetNotional / price));
+  if (market === "ashare") {
+    return Math.max(100, Math.floor(rawQuantity / 100) * 100);
+  }
+  if (market === "crypto") {
+    return Math.max(1, Math.floor(rawQuantity));
+  }
+  return rawQuantity;
 }
 
 export function buildWorkflowStages(workspace: TerminalWorkspace, runState?: WorkflowRunState): WorkflowStageView[] {

@@ -103,7 +103,8 @@ button {
 .ai-actions,
 .gate-list,
 .decision-log,
-.run-history {
+.run-history,
+.paper-blotter-table {
   display: grid;
   gap: 8px;
 }
@@ -868,6 +869,69 @@ dd {
   color: #71dfc5;
 }
 
+.paper-blotter {
+  margin-top: 12px;
+}
+
+.paper-blotter-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.paper-blotter-title strong {
+  color: #dce6ee;
+}
+
+.paper-blotter-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.9fr) minmax(56px, 0.45fr) minmax(62px, 0.45fr) minmax(62px, 0.45fr) minmax(86px, 0.6fr) minmax(72px, 0.55fr) minmax(180px, 1.6fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.paper-blotter-head {
+  min-height: 32px;
+  background: #0f1723;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.paper-blotter-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.paper-blotter-row.warning {
+  border-left-color: #e8be62;
+}
+
+.paper-blotter-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.paper-blotter-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.paper-blotter-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .module-workspace-grid {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.45fr);
   grid-template-rows: minmax(0, 1fr);
@@ -1416,6 +1480,7 @@ dd {
   .node-row,
   .execution-grid,
   .gate-list,
+  .paper-blotter-row,
   .risk-ledger,
   .event-stream,
   .workflow-artifact-grid,

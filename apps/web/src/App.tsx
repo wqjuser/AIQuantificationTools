@@ -36,6 +36,7 @@ import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./li
 import {
   buildTerminalWorkspace,
   buildModuleNewsEvents,
+  buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildScannerCandidates,
   buildWorkflowStages,
@@ -44,6 +45,7 @@ import {
   AiWorkbenchAction,
   Market,
   ModuleNewsEvent,
+  PaperTradingRow,
   PortfolioRiskRow,
   ResearchRunAudit,
   ScannerCandidate,
@@ -158,6 +160,7 @@ export function App() {
   const latestChartBar = klinesState.bars.at(-1);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
+  const paperTradingRows = buildPaperTradingRows(workspace);
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
@@ -769,7 +772,7 @@ export function App() {
                 <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
               </Panel>
 
-              <ExecutionPanel i18n={i18n} workspace={workspace} />
+              <ExecutionPanel i18n={i18n} rows={paperTradingRows} workspace={workspace} />
             </>
           ) : null}
 
@@ -778,7 +781,7 @@ export function App() {
           ) : null}
 
           {activeModuleId === "portfolio" ? (
-            <PortfolioWorkspace i18n={i18n} rows={portfolioRiskRows} workspace={workspace} />
+            <PortfolioWorkspace i18n={i18n} paperRows={paperTradingRows} rows={portfolioRiskRows} workspace={workspace} />
           ) : null}
 
           {activeModuleId === "news" ? (
@@ -954,7 +957,7 @@ function CompactWorkflowNodes({ i18n, workspace }: { i18n: AppI18n; workspace: T
   );
 }
 
-function ExecutionPanel({ i18n, workspace }: { i18n: AppI18n; workspace: TerminalWorkspace }) {
+function ExecutionPanel({ i18n, rows, workspace }: { i18n: AppI18n; rows: PaperTradingRow[]; workspace: TerminalWorkspace }) {
   return (
     <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")}>
       <div className="execution-grid">
@@ -968,6 +971,34 @@ function ExecutionPanel({ i18n, workspace }: { i18n: AppI18n; workspace: Termina
             {i18n.gateLabel(gate.id, gate.label)}
           </span>
         ))}
+      </div>
+      <div className="paper-blotter">
+        <div className="paper-blotter-title">
+          <span>{i18n.t("execution.paperBlotter")}</span>
+          <strong>{rows.length}</strong>
+        </div>
+        <div className="paper-blotter-table">
+          <div className="paper-blotter-row paper-blotter-head">
+            <span>{i18n.t("chart.symbol")}</span>
+            <span>{i18n.t("execution.side")}</span>
+            <span>{i18n.t("execution.quantity")}</span>
+            <span>{i18n.t("execution.price")}</span>
+            <span>{i18n.t("execution.notional")}</span>
+            <span>{i18n.t("execution.status")}</span>
+            <span>{i18n.t("execution.reason")}</span>
+          </div>
+          {rows.map((row) => (
+            <div className={`paper-blotter-row ${row.tone}`} key={row.id}>
+              <span>{row.symbol}</span>
+              <span>{paperSideLabel(i18n, row.side)}</span>
+              <span>{row.quantity}</span>
+              <span>{row.price}</span>
+              <span>{paperNotionalLabel(i18n, row.notional)}</span>
+              <span>{paperStatusLabel(i18n, row.status)}</span>
+              <span>{paperReasonLabel(i18n, row.reason)}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </Panel>
   );
@@ -1021,10 +1052,12 @@ function ScannerWorkspace({
 
 function PortfolioWorkspace({
   i18n,
+  paperRows,
   rows,
   workspace
 }: {
   i18n: AppI18n;
+  paperRows: PaperTradingRow[];
   rows: PortfolioRiskRow[];
   workspace: TerminalWorkspace;
 }) {
@@ -1041,7 +1074,7 @@ function PortfolioWorkspace({
           ))}
         </div>
       </Panel>
-      <ExecutionPanel i18n={i18n} workspace={workspace} />
+      <ExecutionPanel i18n={i18n} rows={paperRows} workspace={workspace} />
     </>
   );
 }
@@ -1207,6 +1240,44 @@ function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
     return "需要完成适配器认证、风控审批和人工确认。";
   }
   return row.detail;
+}
+
+function paperSideLabel(i18n: AppI18n, side: PaperTradingRow["side"]): string {
+  if (i18n.locale === "en-US") {
+    return side;
+  }
+  return { BUY: "买入", SELL: "卖出", RISK: "风控", SYNC: "同步" }[side];
+}
+
+function paperStatusLabel(i18n: AppI18n, status: PaperTradingRow["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { queued: "待处理", filled: "已成交", blocked: "已阻断", paper: "模拟" }[status];
+}
+
+function paperNotionalLabel(i18n: AppI18n, notional: string): string {
+  if (i18n.locale === "en-US" || notional === "-") {
+    return notional;
+  }
+  return `${notional} 模拟资金`;
+}
+
+function paperReasonLabel(i18n: AppI18n, reason: string): string {
+  if (i18n.locale === "en-US") {
+    return reason;
+  }
+  const stagedOrder = reason.match(/^Paper order staged from (.+); no live route is used\.$/);
+  if (stagedOrder) {
+    return `已从 ${i18n.strategyText(stagedOrder[1])} 生成模拟委托；不使用实盘通道。`;
+  }
+  const blockedGate = reason.match(/^(\d+) live gates blocked; paper route remains available\.$/);
+  if (blockedGate) {
+    return `${blockedGate[1]} 个实盘闸门阻断；模拟盘通道可用。`;
+  }
+  return reason
+    .replace("Certified live route is available but this run stays paper-first.", "认证实盘通道可用，但本次仍优先模拟盘。")
+    .replace("Local paper account only; broker account synchronization is not connected.", "仅本地模拟账户；尚未连接券商账户同步。");
 }
 
 function eventSourceLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
