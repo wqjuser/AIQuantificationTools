@@ -36,6 +36,7 @@ import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./li
 import {
   buildTerminalWorkspace,
   buildAgentCommitteeRounds,
+  buildAiEvidenceCards,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestTradeRows,
@@ -51,6 +52,7 @@ import {
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
   AiWorkbenchAction,
+  AiEvidenceCard,
   Market,
   AgentCommitteeRound,
   BacktestAssumptionField,
@@ -177,6 +179,7 @@ export function App() {
   const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
+  const aiEvidenceCards = buildAiEvidenceCards(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const paperPositionRows = buildPaperPositionRows(workspace);
@@ -915,6 +918,7 @@ export function App() {
               </span>
             ))}
           </div>
+          <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
           <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
         </Panel>
 
@@ -1160,6 +1164,26 @@ function CompactWorkflowNodes({ i18n, workspace }: { i18n: AppI18n; workspace: T
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function AgentEvidenceBoard({ cards, i18n }: { cards: AiEvidenceCard[]; i18n: AppI18n }) {
+  return (
+    <div className="agent-evidence">
+      <div className="agent-rounds-title">
+        <span>{i18n.t("panel.agent.evidence")}</span>
+        <strong>{cards.length}</strong>
+      </div>
+      <div className="agent-evidence-grid">
+        {cards.map((card) => (
+          <article className={`agent-evidence-card ${card.tone}`} key={card.id}>
+            <span>{agentEvidenceLabel(i18n, card)}</span>
+            <strong>{agentEvidenceValue(i18n, card)}</strong>
+            <p>{agentEvidenceDetail(i18n, card)}</p>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1679,6 +1703,63 @@ function paperReasonLabel(i18n: AppI18n, reason: string): string {
   return reason
     .replace("Certified live route is available but this run stays paper-first.", "认证实盘通道可用，但本次仍优先模拟盘。")
     .replace("Local paper account only; broker account synchronization is not connected.", "仅本地模拟账户；尚未连接券商账户同步。");
+}
+
+function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {
+  if (i18n.locale === "en-US") {
+    return card.label;
+  }
+  return (
+    {
+      context: "研究上下文",
+      backtest: "回测证据",
+      risk: "风控闸门",
+      safety: "AI 边界"
+    }[card.id] ?? card.label
+  );
+}
+
+function agentEvidenceValue(i18n: AppI18n, card: AiEvidenceCard): string {
+  if (i18n.locale === "en-US") {
+    return card.value;
+  }
+  if (card.value === "Pending audited run") {
+    return "等待审计运行";
+  }
+  if (card.value === "No buy/sell advice") {
+    return "不输出买卖建议";
+  }
+  if (card.value === "Live gates open") {
+    return "实盘闸门已开启";
+  }
+  return card.value.replace("bars", "根K线").replace("blocked gates", "个阻断闸门");
+}
+
+function agentEvidenceDetail(i18n: AppI18n, card: AiEvidenceCard): string {
+  if (i18n.locale === "en-US") {
+    return card.detail;
+  }
+  const context = card.detail.match(/^(.+) · price (.+)$/);
+  if (context) {
+    return `${i18n.marketLabel(context[1] as Market)} · 价格 ${context[2]}`;
+  }
+  const auditedRun = card.detail.match(/^Audited run (.+) · revision (.+)$/);
+  if (auditedRun) {
+    return `审计运行 ${auditedRun[1]} · 版本 ${auditedRun[2]}`;
+  }
+  if (card.detail === "Run Pipeline before trusting AI review.") {
+    return "先运行流水线，再信任 AI 评审。";
+  }
+  if (card.detail === "AI can explain supplied evidence only; no guaranteed outcome.") {
+    return "AI 只能解释已提供证据；不保证结果。";
+  }
+  return card.detail
+    .replace("Adapter certified: blocked", "适配器认证：阻断")
+    .replace("Risk approved: blocked", "风控审批：阻断")
+    .replace("Human confirmed: blocked", "人工确认：阻断")
+    .replace("Adapter certified: passed", "适配器认证：通过")
+    .replace("Risk approved: passed", "风控审批：通过")
+    .replace("Human confirmed: passed", "人工确认：通过");
 }
 
 function eventSourceLabel(i18n: AppI18n, event: ModuleNewsEvent): string {

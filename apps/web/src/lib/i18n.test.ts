@@ -55,6 +55,7 @@ describe("i18n", () => {
     expect(zh.t("history.comparison")).toBe("运行对比");
     expect(zh.t("history.changed")).toBe("已变化");
     expect(zh.t("history.unchanged")).toBe("未变化");
+    expect(zh.t("panel.agent.evidence")).toBe("证据摘要");
     expect(zh.t("portfolio.paperPositions")).toBe("模拟持仓");
     expect(zh.t("module.news.context")).toBe("本地证据流");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
@@ -63,6 +64,7 @@ describe("i18n", () => {
     expect(en.t("portfolio.unrealizedPnl")).toBe("Unrealized P&L");
     expect(en.t("history.rows", { count: 240 })).toBe("240 bars");
     expect(en.t("history.comparison")).toBe("Run comparison");
+    expect(en.t("panel.agent.evidence")).toBe("Evidence summary");
     expect(en.t("module.news.context")).toBe("Local evidence stream");
     expect(en.t("module.workflow.run")).toBe("Run pipeline");
   });

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
   buildAgentCommitteeRounds,
+  buildAiEvidenceCards,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestTradeRows,
@@ -140,6 +141,70 @@ describe("terminal workbench model", () => {
       verdict: "risk",
       thesis: "Live order is blocked until adapter certification and user confirmation pass.",
       confidence: 82
+    });
+  });
+
+  test("builds AI evidence cards from local context and guardrails", () => {
+    const cards = buildAiEvidenceCards(buildTerminalWorkspace());
+
+    expect(cards).toEqual([
+      {
+        id: "context",
+        label: "Research context",
+        value: "600000 · 1d",
+        detail: "ashare · price 8.66",
+        tone: "neutral"
+      },
+      {
+        id: "backtest",
+        label: "Backtest evidence",
+        value: "Pending audited run",
+        detail: "Run Pipeline before trusting AI review.",
+        tone: "warning"
+      },
+      {
+        id: "risk",
+        label: "Risk gates",
+        value: "3 blocked gates",
+        detail: "Adapter certified: blocked · Risk approved: blocked · Human confirmed: blocked",
+        tone: "risk"
+      },
+      {
+        id: "safety",
+        label: "AI boundary",
+        value: "No buy/sell advice",
+        detail: "AI can explain supplied evidence only; no guaranteed outcome.",
+        tone: "ai"
+      }
+    ]);
+  });
+
+  test("binds AI evidence cards to audited run metadata when available", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-evidence",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "5m",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Replay loaded", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    expect(buildAiEvidenceCards(workspace)[1]).toEqual({
+      id: "backtest",
+      label: "Backtest evidence",
+      value: "240 5m bars",
+      detail: "Audited run run-evidence · revision rev123",
+      tone: "positive"
     });
   });
 

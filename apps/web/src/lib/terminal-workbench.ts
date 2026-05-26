@@ -135,6 +135,14 @@ export interface AgentCommitteeRound {
   tone: DecisionLogEntry["tone"];
 }
 
+export interface AiEvidenceCard {
+  id: "context" | "backtest" | "risk" | "safety";
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -481,6 +489,53 @@ export function buildAgentCommitteeRounds(workspace: TerminalWorkspace): AgentCo
         : "No audited run is bound to this research context yet.",
       verdict: "watch",
       confidence: workspace.researchRun ? 66 : 60,
+      tone: "ai"
+    }
+  ];
+}
+
+export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCard[] {
+  const selected = workspace.selectedInstrument;
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  const gateDetail = workspace.execution.gates
+    .map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`)
+    .join(" · ");
+
+  return [
+    {
+      id: "context",
+      label: "Research context",
+      value: `${selected.symbol} · ${workspace.selectedTimeframe}`,
+      detail: `${selected.market} · price ${formatInstrumentPrice(selected.price)}`,
+      tone: "neutral"
+    },
+    workspace.researchRun
+      ? {
+          id: "backtest",
+          label: "Backtest evidence",
+          value: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars`,
+          detail: `Audited run ${workspace.researchRun.runId} · revision ${workspace.researchRun.strategyRevision}`,
+          tone: "positive"
+        }
+      : {
+          id: "backtest",
+          label: "Backtest evidence",
+          value: "Pending audited run",
+          detail: "Run Pipeline before trusting AI review.",
+          tone: "warning"
+        },
+    {
+      id: "risk",
+      label: "Risk gates",
+      value: workspace.execution.liveEnabled ? "Live gates open" : `${blockedGateCount} blocked gates`,
+      detail: gateDetail,
+      tone: workspace.execution.liveEnabled ? "positive" : "risk"
+    },
+    {
+      id: "safety",
+      label: "AI boundary",
+      value: "No buy/sell advice",
+      detail: "AI can explain supplied evidence only; no guaranteed outcome.",
       tone: "ai"
     }
   ];

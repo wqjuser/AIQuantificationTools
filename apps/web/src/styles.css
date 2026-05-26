@@ -1652,6 +1652,71 @@ em {
   color: #83e6ce;
 }
 
+.agent-evidence {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.agent-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.agent-evidence-card {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px 9px;
+}
+
+.agent-evidence-card.positive {
+  border-left-color: #4cc9ad;
+}
+
+.agent-evidence-card.warning {
+  border-left-color: #e8be62;
+}
+
+.agent-evidence-card.risk {
+  border-left-color: #ff7f6d;
+}
+
+.agent-evidence-card.ai {
+  border-left-color: #9f8cff;
+}
+
+.agent-evidence-card span,
+.agent-evidence-card strong,
+.agent-evidence-card p {
+  display: block;
+  min-width: 0;
+}
+
+.agent-evidence-card span {
+  color: #8fa0b2;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.agent-evidence-card strong {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: #dce6ee;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.agent-evidence-card p {
+  margin: 6px 0 0;
+  color: #a8b7c7;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .agent-rounds {
   display: grid;
   gap: 8px;
