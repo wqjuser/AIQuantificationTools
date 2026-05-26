@@ -954,7 +954,7 @@ export function App() {
       ) : null}
 
       <aside className="agent-rail">
-        <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="agent-panel">
+        <Panel title={i18n.t("panel.agentRoles.title")} subtitle={i18n.t("panel.agentRoles.subtitle")} className="agent-panel">
           <div className="agent-grid">
             {workspace.agents.map((agent) => (
               <span className={`agent-role ${agent.stance}`} key={agent.id}>

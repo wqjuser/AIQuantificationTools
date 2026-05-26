@@ -128,6 +128,8 @@ describe("terminal layout css", () => {
     expect(agentRailSource).not.toContain("<AgentCommitteeBoard");
     expect(agentRailSource).not.toContain('className="decision-panel"');
     expect(agentRailSource).not.toContain('className="history-panel"');
+    expect(agentRailSource).not.toContain('i18n.t("panel.agent.title")');
+    expect(agentRailSource).toContain('i18n.t("panel.agentRoles.title")');
     expect(cssBlock(".agent-rail .agent-grid")).toContain("grid-template-columns: 1fr;");
     expect(cssBlock(".agent-rail .agent-evidence-grid")).toContain("grid-template-columns: 1fr;");
     expect(cssBlock(".agent-rail .history-comparison-row")).toContain("grid-template-columns: 1fr;");
