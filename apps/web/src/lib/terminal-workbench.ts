@@ -76,6 +76,17 @@ export interface DecisionLogEntry {
   tone: "positive" | "warning" | "risk" | "ai";
 }
 
+export interface AgentCommitteeRound {
+  id: string;
+  phase: "analysis" | "debate" | "risk" | "decision";
+  agent: string;
+  thesis: string;
+  evidence: string;
+  verdict: "support" | "challenge" | "risk" | "watch";
+  confidence: number;
+  tone: DecisionLogEntry["tone"];
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -311,6 +322,69 @@ export function agentRoleLabels(workspace: TerminalWorkspace): string[] {
   return workspace.agents.map((agent) => agent.label);
 }
 
+export function buildAgentCommitteeRounds(workspace: TerminalWorkspace): AgentCommitteeRound[] {
+  const returnMetric = workspace.metrics.find((metric) => metric.label === "Return")?.value ?? "N/A";
+  const drawdownMetric = workspace.metrics.find((metric) => metric.label === "Max DD")?.value ?? "N/A";
+  const technicalNote = findDecisionMessage(workspace, "Technical");
+  const riskNote = findDecisionMessage(workspace, "Risk");
+  const portfolioNote = findDecisionMessage(workspace, "Portfolio Manager");
+
+  return [
+    {
+      id: "technical-analysis",
+      phase: "analysis",
+      agent: "Technical Analyst",
+      thesis: technicalNote,
+      evidence: `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe} · Return ${returnMetric} · Max DD ${drawdownMetric}`,
+      verdict: returnMetric.startsWith("+") ? "support" : "challenge",
+      confidence: returnMetric.startsWith("+") ? 64 : 52,
+      tone: returnMetric.startsWith("+") ? "positive" : "warning"
+    },
+    {
+      id: "bull-research",
+      phase: "debate",
+      agent: "Bull Researcher",
+      thesis: `Bull case requires ${workspace.strategy.entry}.`,
+      evidence: `Position rule: ${workspace.strategy.position}.`,
+      verdict: "support",
+      confidence: 58,
+      tone: "positive"
+    },
+    {
+      id: "bear-research",
+      phase: "debate",
+      agent: "Bear Researcher",
+      thesis: `Bear case challenges the setup if ${workspace.strategy.exit}.`,
+      evidence: `Risk rule: ${workspace.strategy.risk}.`,
+      verdict: "challenge",
+      confidence: 55,
+      tone: "warning"
+    },
+    {
+      id: "risk-manager",
+      phase: "risk",
+      agent: "Risk Manager",
+      thesis: riskNote,
+      evidence: workspace.execution.gates.map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`).join(" · "),
+      verdict: "risk",
+      confidence: workspace.execution.liveEnabled ? 48 : 82,
+      tone: "risk"
+    },
+    {
+      id: "portfolio-decision",
+      phase: "decision",
+      agent: "Portfolio Manager",
+      thesis: portfolioNote,
+      evidence: workspace.researchRun
+        ? `Audited run ${workspace.researchRun.runId} · ${workspace.researchRun.dataRows} bars`
+        : "No audited run is bound to this research context yet.",
+      verdict: "watch",
+      confidence: workspace.researchRun ? 66 : 60,
+      tone: "ai"
+    }
+  ];
+}
+
 export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCandidate[] {
   return [...workspace.watchlist]
     .map((instrument) => {
@@ -448,6 +522,10 @@ function calculatePaperQuantity(market: Market, price: number): number {
     return Math.max(1, Math.floor(rawQuantity));
   }
   return rawQuantity;
+}
+
+function findDecisionMessage(workspace: TerminalWorkspace, agent: string): string {
+  return workspace.decisionLog.find((entry) => entry.agent === agent)?.message ?? "No committee note recorded yet.";
 }
 
 export function buildWorkflowStages(workspace: TerminalWorkspace, runState?: WorkflowRunState): WorkflowStageView[] {

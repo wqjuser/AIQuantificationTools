@@ -1353,6 +1353,83 @@ dd {
   color: #83e6ce;
 }
 
+.agent-rounds {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.agent-rounds-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.agent-rounds-title strong {
+  color: #dce6ee;
+}
+
+.agent-round {
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 9px 10px;
+}
+
+.agent-round.warning {
+  border-left-color: #e8be62;
+}
+
+.agent-round.risk {
+  border-left-color: #ff7f6d;
+}
+
+.agent-round.ai {
+  border-left-color: #9f8cff;
+}
+
+.agent-round header {
+  display: grid;
+  grid-template-columns: minmax(50px, 0.45fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.agent-round header span,
+.agent-round header em {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.agent-round header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.agent-round p {
+  margin: 7px 0 0;
+  color: #dce6ee;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-round small {
+  display: block;
+  margin-top: 7px;
+  color: #a8b7c7;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .decision-log {
   overflow: auto;
 }

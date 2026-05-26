@@ -35,6 +35,7 @@ import {
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
+  buildAgentCommitteeRounds,
   buildModuleNewsEvents,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
@@ -44,6 +45,7 @@ import {
   formatInstrumentPrice,
   AiWorkbenchAction,
   Market,
+  AgentCommitteeRound,
   ModuleNewsEvent,
   PaperTradingRow,
   PortfolioRiskRow,
@@ -158,6 +160,7 @@ export function App() {
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
   const latestChartBar = klinesState.bars.at(-1);
+  const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
@@ -851,6 +854,7 @@ export function App() {
               </span>
             ))}
           </div>
+          <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
         </Panel>
 
         <Panel title={i18n.t("panel.decision.title")} subtitle={i18n.t("panel.decision.subtitle")}>
@@ -953,6 +957,30 @@ function CompactWorkflowNodes({ i18n, workspace }: { i18n: AppI18n; workspace: T
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function AgentCommitteeBoard({ i18n, rounds }: { i18n: AppI18n; rounds: AgentCommitteeRound[] }) {
+  return (
+    <div className="agent-rounds">
+      <div className="agent-rounds-title">
+        <span>{i18n.t("panel.agent.rounds")}</span>
+        <strong>{rounds.length}</strong>
+      </div>
+      {rounds.map((round) => (
+        <article className={`agent-round ${round.tone}`} key={round.id}>
+          <header>
+            <span>{agentPhaseLabel(i18n, round.phase)}</span>
+            <strong>{i18n.decisionAgent(round.agent)}</strong>
+            <em>{round.confidence}%</em>
+          </header>
+          <p>{agentRoundThesis(i18n, round)}</p>
+          <small>
+            {agentVerdictLabel(i18n, round.verdict)} · {agentRoundEvidence(i18n, round.evidence)}
+          </small>
+        </article>
+      ))}
     </div>
   );
 }
@@ -1240,6 +1268,63 @@ function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
     return "需要完成适配器认证、风控审批和人工确认。";
   }
   return row.detail;
+}
+
+function agentPhaseLabel(i18n: AppI18n, phase: AgentCommitteeRound["phase"]): string {
+  if (i18n.locale === "en-US") {
+    return phase;
+  }
+  return { analysis: "分析", debate: "辩论", risk: "风控", decision: "决策" }[phase];
+}
+
+function agentVerdictLabel(i18n: AppI18n, verdict: AgentCommitteeRound["verdict"]): string {
+  if (i18n.locale === "en-US") {
+    return verdict;
+  }
+  return { support: "支持", challenge: "质疑", risk: "风险", watch: "观察" }[verdict];
+}
+
+function agentRoundThesis(i18n: AppI18n, round: AgentCommitteeRound): string {
+  if (i18n.locale === "en-US") {
+    return round.thesis;
+  }
+  const bullCase = round.thesis.match(/^Bull case requires (.+)\.$/);
+  if (bullCase) {
+    return `多头观点需要：${i18n.strategyText(bullCase[1])}。`;
+  }
+  const bearCase = round.thesis.match(/^Bear case challenges the setup if (.+)\.$/);
+  if (bearCase) {
+    return `空头观点在以下条件下质疑配置：${i18n.strategyText(bearCase[1])}。`;
+  }
+  return i18n.decisionMessage(round.thesis);
+}
+
+function agentRoundEvidence(i18n: AppI18n, evidence: string): string {
+  if (i18n.locale === "en-US") {
+    return evidence;
+  }
+  const positionRule = evidence.match(/^Position rule: (.+)\.$/);
+  if (positionRule) {
+    return `仓位规则：${i18n.strategyText(positionRule[1])}。`;
+  }
+  const riskRule = evidence.match(/^Risk rule: (.+)\.$/);
+  if (riskRule) {
+    return `风控规则：${i18n.strategyText(riskRule[1])}。`;
+  }
+  const auditedRun = evidence.match(/^Audited run (.+) · (.+) bars$/);
+  if (auditedRun) {
+    return `审计运行 ${auditedRun[1]} · ${auditedRun[2]} 根K线`;
+  }
+  return evidence
+    .replace("Return", "收益率")
+    .replace("Max DD", "最大回撤")
+    .replace("Adapter certified: blocked", "适配器认证：阻断")
+    .replace("Risk approved: blocked", "风控审批：阻断")
+    .replace("Human confirmed: blocked", "人工确认：阻断")
+    .replace("Adapter certified: passed", "适配器认证：通过")
+    .replace("Risk approved: passed", "风控审批：通过")
+    .replace("Human confirmed: passed", "人工确认：通过")
+    .replace("No audited run is bound to this research context yet.", "当前研究上下文尚未绑定审计运行。");
 }
 
 function paperSideLabel(i18n: AppI18n, side: PaperTradingRow["side"]): string {

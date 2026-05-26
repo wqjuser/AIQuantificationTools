@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
+  buildAgentCommitteeRounds,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
   buildPaperTradingRows,
@@ -73,6 +74,32 @@ describe("terminal workbench model", () => {
       "Risk Manager",
       "Portfolio Manager"
     ]);
+  });
+
+  test("derives TradingAgents-style committee rounds from workspace evidence", () => {
+    const rounds = buildAgentCommitteeRounds(buildTerminalWorkspace());
+
+    expect(rounds.map((round) => round.id)).toEqual([
+      "technical-analysis",
+      "bull-research",
+      "bear-research",
+      "risk-manager",
+      "portfolio-decision"
+    ]);
+    expect(rounds[0]).toMatchObject({
+      phase: "analysis",
+      agent: "Technical Analyst",
+      verdict: "support",
+      evidence: "600000 · 1d · Return +12.4% · Max DD 5.8%",
+      confidence: 64
+    });
+    expect(rounds.find((round) => round.id === "risk-manager")).toMatchObject({
+      phase: "risk",
+      agent: "Risk Manager",
+      verdict: "risk",
+      thesis: "Live order is blocked until adapter certification and user confirmation pass.",
+      confidence: 82
+    });
   });
 
   test("derives scanner candidates from the active watchlist", () => {
