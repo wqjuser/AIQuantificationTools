@@ -41,6 +41,15 @@ function hasCssBlockWith(selector, declarations) {
   return cssBlocks(selector).some((block) => declarations.every((declaration) => block.includes(declaration)));
 }
 
+function sourceBetween(startMarker, endMarker) {
+  const start = appSource.indexOf(startMarker);
+  if (start < 0) {
+    return "";
+  }
+  const end = appSource.indexOf(endMarker, start);
+  return end < 0 ? appSource.slice(start) : appSource.slice(start, end + endMarker.length);
+}
+
 describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
@@ -66,35 +75,44 @@ describe("terminal layout css", () => {
     ).toBe(true);
   });
 
-  test("keeps the watchlist chart height isolated from the strategy panel", () => {
+  test("keeps the watchlist chart and strategy snapshot in the same visual row", () => {
     expect(appSource).toContain('className="strategy-panel"');
     expect(appSource).toContain('className="watchlist-backtest-panel"');
     expect(appSource).toContain('className="watchlist-workflow-panel"');
     expect(appSource).toContain('className="watchlist-execution-panel"');
+    expect(appSource).toContain('className="watchlist-ai-panel"');
+    expect(appSource).toContain('className="watchlist-decision-panel"');
+    expect(appSource).toContain('className="watchlist-history-panel"');
     expect(cssBlock(".terminal-panel")).toContain("grid-template-rows: auto auto;");
     expect(cssBlock(".terminal-panel")).toContain("min-height: auto;");
     expect(cssBlock(".terminal-panel")).not.toContain("min-height: 0;");
     expect(cssBlock(".watchlist-layout")).toContain("grid-template-areas:");
     expect(
       hasCssBlockWith(".watchlist-layout", [
-        '"chart"',
-        '"strategy"',
-        '"backtest"',
-        '"workflow"',
-        '"execution"'
+        '"chart strategy"',
+        '"backtest workflow"',
+        '"ai decision"',
+        '"execution execution"',
+        '"history history"'
       ])
     ).toBe(true);
+    expect(cssBlock(".watchlist-layout")).toContain("align-items: stretch;");
     expect(cssBlock(".watchlist-backtest-panel")).toContain("grid-area: backtest;");
     expect(cssBlock(".watchlist-workflow-panel")).toContain("grid-area: workflow;");
+    expect(cssBlock(".watchlist-ai-panel")).toContain("grid-area: ai;");
+    expect(cssBlock(".watchlist-decision-panel")).toContain("grid-area: decision;");
+    expect(cssBlock(".watchlist-history-panel")).toContain("grid-area: history;");
     expect(cssBlock(".center-grid")).toContain("align-content: start;");
     expect(cssBlock(".center-grid")).not.toContain("1fr");
     expect(cssBlock(".watchlist-execution-panel")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".watchlist-execution-panel")).toContain("grid-area: execution;");
-    expect(cssBlock(".chart-panel")).toContain("height: clamp(380px, 48vh, 560px);");
+    expect(cssBlock(".chart-panel")).not.toContain("height: clamp(380px, 48vh, 560px);");
+    expect(cssBlock(".chart-panel")).toContain("min-height: clamp(520px, 56vh, 720px);");
     expect(cssBlock(".chart-panel")).toContain("grid-area: chart;");
     expect(cssBlock(".chart-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(cssBlock(".strategy-panel")).not.toContain("height: clamp(380px, 48vh, 560px);");
     expect(cssBlock(".strategy-panel")).toContain("grid-area: strategy;");
+    expect(cssBlock(".strategy-panel")).toContain("align-self: stretch;");
     expect(cssBlock(".strategy-panel")).toContain("grid-template-rows: auto auto;");
     expect(cssBlock(".strategy-panel")).not.toContain("overflow: hidden;");
     expect(cssBlock(".strategy-panel .strategy-workbench")).not.toContain("overflow: auto;");
@@ -103,13 +121,19 @@ describe("terminal layout css", () => {
     expect(cssBlock(".module-workspace-grid")).toContain("grid-template-rows: minmax(0, 1fr);");
   });
 
-  test("stacks dense agent rail content so cards are not squeezed", () => {
+  test("keeps the right rail focused instead of stacking long workflow content", () => {
+    const agentRailSource = sourceBetween('<aside className="agent-rail">', "</aside>");
+
+    expect(agentRailSource).not.toContain("<AgentEvidenceBoard");
+    expect(agentRailSource).not.toContain("<AgentCommitteeBoard");
+    expect(agentRailSource).not.toContain('className="decision-panel"');
+    expect(agentRailSource).not.toContain('className="history-panel"');
     expect(cssBlock(".agent-rail .agent-grid")).toContain("grid-template-columns: 1fr;");
     expect(cssBlock(".agent-rail .agent-evidence-grid")).toContain("grid-template-columns: 1fr;");
     expect(cssBlock(".agent-rail .history-comparison-row")).toContain("grid-template-columns: 1fr;");
     expect(appSource).toContain('className="agent-panel-body"');
-    expect(appSource).toContain('className="decision-panel"');
-    expect(appSource).toContain('className="history-panel"');
+    expect(appSource).toContain('className="watchlist-decision-panel"');
+    expect(appSource).toContain('className="watchlist-history-panel"');
     expect(appSource).toContain('className="history-panel-body"');
     expect(cssBlock(".agent-panel")).not.toContain("height: clamp(");
     expect(cssBlock(".agent-panel")).not.toContain("overflow: hidden;");

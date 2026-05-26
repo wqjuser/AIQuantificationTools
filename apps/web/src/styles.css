@@ -669,8 +669,11 @@ em {
   grid-template-areas:
     "chart strategy"
     "backtest workflow"
-    "execution execution";
-  grid-template-rows: auto auto auto;
+    "ai decision"
+    "execution execution"
+    "history history";
+  grid-template-rows: auto auto auto auto auto;
+  align-items: stretch;
 }
 
 .terminal-panel {
@@ -691,11 +694,10 @@ em {
 }
 
 .chart-panel {
-  align-self: start;
+  align-self: stretch;
   grid-area: chart;
   grid-template-rows: auto minmax(0, 1fr);
-  height: clamp(380px, 48vh, 560px);
-  min-height: 300px;
+  min-height: clamp(520px, 56vh, 720px);
 }
 
 .chart-panel-body {
@@ -707,7 +709,7 @@ em {
 }
 
 .strategy-panel {
-  align-self: start;
+  align-self: stretch;
   grid-area: strategy;
   grid-template-rows: auto auto;
 }
@@ -723,6 +725,19 @@ em {
 .watchlist-execution-panel {
   grid-column: 1 / -1;
   grid-area: execution;
+}
+
+.watchlist-ai-panel {
+  grid-area: ai;
+}
+
+.watchlist-decision-panel {
+  grid-area: decision;
+}
+
+.watchlist-history-panel {
+  grid-column: 1 / -1;
+  grid-area: history;
 }
 
 .watchlist-backtest-panel {
@@ -1741,6 +1756,29 @@ em {
   min-height: 0;
 }
 
+.watchlist-ai-panel .agent-panel-body {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: start;
+}
+
+.watchlist-ai-panel .agent-evidence,
+.watchlist-ai-panel .agent-rounds {
+  margin-top: 0;
+}
+
+.watchlist-decision-panel .decision-log {
+  align-content: start;
+}
+
+.watchlist-history-panel .history-panel-body {
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr);
+  align-items: start;
+}
+
+.watchlist-history-panel .run-history {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .agent-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2185,7 +2223,16 @@ em {
       "strategy"
       "backtest"
       "workflow"
-      "execution";
+      "ai"
+      "decision"
+      "execution"
+      "history";
+  }
+
+  .watchlist-ai-panel .agent-panel-body,
+  .watchlist-history-panel .history-panel-body,
+  .watchlist-history-panel .run-history {
+    grid-template-columns: 1fr;
   }
 
   .module-workspace-panel,

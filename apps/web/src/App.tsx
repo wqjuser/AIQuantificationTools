@@ -845,11 +845,29 @@ export function App() {
                 <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
               </Panel>
 
+              <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="watchlist-ai-panel">
+                <div className="agent-panel-body">
+                  <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
+                  <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
+                </div>
+              </Panel>
+
+              <DecisionLogPanel className="watchlist-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+
               <ExecutionPanel
                 i18n={i18n}
                 rows={paperTradingRows}
                 workspace={workspace}
                 className="watchlist-execution-panel"
+              />
+
+              <RunHistoryPanel
+                className="watchlist-history-panel"
+                i18n={i18n}
+                onReplay={replayRun}
+                runComparisonRows={runComparisonRows}
+                runHistory={runHistory}
+                workspace={workspace}
               />
             </>
           ) : null}
@@ -937,48 +955,12 @@ export function App() {
 
       <aside className="agent-rail">
         <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="agent-panel">
-          <div className="agent-panel-body">
-            <div className="agent-grid">
-              {workspace.agents.map((agent) => (
-                <span className={`agent-role ${agent.stance}`} key={agent.id}>
-                  {i18n.agentLabel(agent.id, agent.label)}
-                </span>
-              ))}
-            </div>
-            <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
-            <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
-          </div>
-        </Panel>
-
-        <Panel title={i18n.t("panel.decision.title")} subtitle={i18n.t("panel.decision.subtitle")} className="decision-panel">
-          <div className="decision-log">
-            {workspace.decisionLog.map((entry) => (
-              <article className={`decision-entry ${entry.tone}`} key={`${entry.agent}-${entry.message}`}>
-                <strong>{i18n.decisionAgent(entry.agent)}</strong>
-                <p>{i18n.decisionMessage(entry.message)}</p>
-              </article>
+          <div className="agent-grid">
+            {workspace.agents.map((agent) => (
+              <span className={`agent-role ${agent.stance}`} key={agent.id}>
+                {i18n.agentLabel(agent.id, agent.label)}
+              </span>
             ))}
-          </div>
-        </Panel>
-
-        <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")} className="history-panel">
-          <div className="history-panel-body">
-            {runComparisonRows.length ? <RunComparisonBoard i18n={i18n} rows={runComparisonRows} /> : null}
-            <div className="run-history">
-              {runHistory.length ? (
-                runHistory.map((run) => (
-                  <RunHistoryRow
-                    key={run.runId}
-                    i18n={i18n}
-                    run={run}
-                    isActive={workspace.researchRun?.runId === run.runId}
-                    onReplay={replayRun}
-                  />
-                ))
-              ) : (
-                <span className="empty-state">{i18n.t("empty.noAuditedRuns")}</span>
-              )}
-            </div>
           </div>
         </Panel>
 
@@ -1241,6 +1223,68 @@ function AgentCommitteeBoard({ i18n, rounds }: { i18n: AppI18n; rounds: AgentCom
         </article>
       ))}
     </div>
+  );
+}
+
+function DecisionLogPanel({
+  className,
+  entries,
+  i18n
+}: {
+  className?: string;
+  entries: TerminalWorkspace["decisionLog"];
+  i18n: AppI18n;
+}) {
+  return (
+    <Panel title={i18n.t("panel.decision.title")} subtitle={i18n.t("panel.decision.subtitle")} className={className}>
+      <div className="decision-log">
+        {entries.map((entry) => (
+          <article className={`decision-entry ${entry.tone}`} key={`${entry.agent}-${entry.message}`}>
+            <strong>{i18n.decisionAgent(entry.agent)}</strong>
+            <p>{i18n.decisionMessage(entry.message)}</p>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function RunHistoryPanel({
+  className,
+  i18n,
+  onReplay,
+  runComparisonRows,
+  runHistory,
+  workspace
+}: {
+  className?: string;
+  i18n: AppI18n;
+  onReplay: (run: ResearchRunAudit) => void;
+  runComparisonRows: ResearchRunComparisonRow[];
+  runHistory: ResearchRunAudit[];
+  workspace: TerminalWorkspace;
+}) {
+  return (
+    <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")} className={className}>
+      <div className="history-panel-body">
+        {runComparisonRows.length ? <RunComparisonBoard i18n={i18n} rows={runComparisonRows} /> : null}
+        <div className="run-history">
+          {runHistory.length ? (
+            runHistory.map((run) => (
+              <RunHistoryRow
+                key={run.runId}
+                i18n={i18n}
+                run={run}
+                isActive={workspace.researchRun?.runId === run.runId}
+                onReplay={onReplay}
+              />
+            ))
+          ) : (
+            <span className="empty-state">{i18n.t("empty.noAuditedRuns")}</span>
+          )}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
