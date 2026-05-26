@@ -80,16 +80,19 @@ describe("terminal layout css", () => {
     expect(
       hasCssBlockWith(".watchlist-layout", [
         '"chart strategy"',
-        '"backtest workflow"',
-        '"ai decision"',
+        '"workflow workflow"',
+        '"backtest decision"',
+        '"ai ai"',
         '"execution execution"',
         '"history history"'
       ])
     ).toBe(true);
-    expect(cssBlock(".watchlist-layout")).toContain("align-items: stretch;");
+    expect(cssBlock(".watchlist-layout")).toContain("align-items: start;");
+    expect(cssBlock(".watchlist-layout")).not.toContain("align-items: stretch;");
     expect(cssBlock(".watchlist-backtest-panel")).toContain("grid-area: backtest;");
     expect(cssBlock(".watchlist-workflow-panel")).toContain("grid-area: workflow;");
     expect(cssBlock(".watchlist-ai-panel")).toContain("grid-area: ai;");
+    expect(cssBlock(".watchlist-ai-panel")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".watchlist-decision-panel")).toContain("grid-area: decision;");
     expect(cssBlock(".watchlist-history-panel")).toContain("grid-area: history;");
     expect(cssBlock(".center-grid")).toContain("align-content: start;");
@@ -101,6 +104,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".chart-panel")).toContain("grid-area: chart;");
     expect(cssBlock(".chart-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(cssBlock(".strategy-panel")).not.toContain("height: clamp(380px, 48vh, 560px);");
+    expect(cssBlock(".strategy-panel")).toContain("min-height: clamp(520px, 56vh, 720px);");
     expect(cssBlock(".strategy-panel")).toContain("grid-area: strategy;");
     expect(cssBlock(".strategy-panel")).toContain("align-self: stretch;");
     expect(cssBlock(".strategy-panel")).toContain("grid-template-rows: auto auto;");
@@ -109,6 +113,12 @@ describe("terminal layout css", () => {
     expect(cssBlock(".strategy-panel .strategy-rule-row")).toContain("grid-template-columns:");
     expect(cssBlock(".strategy-panel .strategy-rule-row")).toContain("minmax(0, 1.2fr)");
     expect(cssBlock(".module-workspace-grid")).toContain("grid-template-rows: minmax(0, 1fr);");
+    expect(cssBlock(".watchlist-workflow-panel")).toContain("align-self: start;");
+    expect(cssBlock(".watchlist-decision-panel")).toContain("align-self: start;");
+    expect(hasCssDeclaration(".watchlist-ai-panel .agent-rounds", "grid-template-columns: repeat(2, minmax(0, 1fr));")).toBe(
+      true
+    );
+    expect(cssBlock(".watchlist-ai-panel .agent-rounds-title")).toContain("grid-column: 1 / -1;");
   });
 
   test("folds AI roles and actions into the main workspace command strip", () => {

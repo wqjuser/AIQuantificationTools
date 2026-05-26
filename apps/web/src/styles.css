@@ -674,12 +674,13 @@ em {
 .watchlist-layout {
   grid-template-areas:
     "chart strategy"
-    "backtest workflow"
-    "ai decision"
+    "workflow workflow"
+    "backtest decision"
+    "ai ai"
     "execution execution"
     "history history";
   grid-template-rows: auto auto auto auto auto;
-  align-items: stretch;
+  align-items: start;
 }
 
 .terminal-panel {
@@ -722,6 +723,7 @@ em {
   align-self: stretch;
   grid-area: strategy;
   grid-template-rows: auto auto;
+  min-height: clamp(520px, 56vh, 720px);
 }
 
 .strategy-panel .strategy-workbench {
@@ -738,10 +740,12 @@ em {
 }
 
 .watchlist-ai-panel {
+  grid-column: 1 / -1;
   grid-area: ai;
 }
 
 .watchlist-decision-panel {
+  align-self: start;
   grid-area: decision;
 }
 
@@ -755,6 +759,7 @@ em {
 }
 
 .watchlist-workflow-panel {
+  align-self: start;
   grid-area: workflow;
 }
 
@@ -1774,6 +1779,14 @@ em {
 .watchlist-ai-panel .agent-evidence,
 .watchlist-ai-panel .agent-rounds {
   margin-top: 0;
+}
+
+.watchlist-ai-panel .agent-rounds {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.watchlist-ai-panel .agent-rounds-title {
+  grid-column: 1 / -1;
 }
 
 .watchlist-decision-panel .decision-log {
