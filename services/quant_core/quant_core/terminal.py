@@ -88,6 +88,13 @@ class BacktestMetric:
 
 
 @dataclass(frozen=True)
+class BacktestAssumptions:
+    initial_cash: float
+    fee_bps: float
+    slippage_bps: float
+
+
+@dataclass(frozen=True)
 class DecisionLogEntry:
     agent: str
     message: str
@@ -123,6 +130,7 @@ class TerminalWorkspace:
     agents: list[AgentRole]
     execution: ExecutionState
     strategy: StrategySnapshot
+    backtest_assumptions: BacktestAssumptions
     metrics: list[BacktestMetric]
     decision_log: list[DecisionLogEntry]
     workflow_nodes: list[WorkflowNode]
@@ -191,6 +199,7 @@ def build_terminal_workspace() -> TerminalWorkspace:
             position="20% cap per instrument",
             risk="Stop -8%, drawdown guard 12%, paper only",
         ),
+        backtest_assumptions=BacktestAssumptions(initial_cash=100_000, fee_bps=3, slippage_bps=2),
         metrics=[
             BacktestMetric(label="Return", value="+12.4%", tone="positive"),
             BacktestMetric(label="Max DD", value="5.8%", tone="warning"),

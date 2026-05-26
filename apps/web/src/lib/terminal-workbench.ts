@@ -101,6 +101,23 @@ export interface BacktestTradeRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface BacktestAssumptions {
+  initialCash: number;
+  feeBps: number;
+  slippageBps: number;
+}
+
+export type BacktestAssumptionField = keyof BacktestAssumptions;
+
+export interface BacktestAssumptionRow {
+  field: BacktestAssumptionField;
+  label: string;
+  value: number;
+  suffix: string;
+  min: number;
+  step: number;
+}
+
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -242,11 +259,27 @@ export interface TerminalWorkspace {
   agents: AgentRole[];
   execution: ExecutionState;
   strategy: StrategySnapshot;
+  backtestAssumptions?: BacktestAssumptions;
   metrics: BacktestMetric[];
   decisionLog: DecisionLogEntry[];
   workflowNodes: WorkflowNode[];
   researchRun?: ResearchRunSummary | null;
 }
+
+export const defaultBacktestAssumptions: BacktestAssumptions = {
+  initialCash: 100_000,
+  feeBps: 3,
+  slippageBps: 2
+};
+
+const backtestAssumptionSpecs: Record<
+  BacktestAssumptionField,
+  { label: string; suffix: string; min: number; step: number }
+> = {
+  initialCash: { label: "Initial cash", suffix: "CNY", min: 1_000, step: 1_000 },
+  feeBps: { label: "Fee", suffix: "bps", min: 0, step: 1 },
+  slippageBps: { label: "Slippage", suffix: "bps", min: 0, step: 1 }
+};
 
 export function buildTerminalWorkspace(): TerminalWorkspace {
   return {
@@ -316,6 +349,7 @@ export function buildTerminalWorkspace(): TerminalWorkspace {
       position: "20% cap per instrument",
       risk: "Stop -8%, drawdown guard 12%, paper only"
     },
+    backtestAssumptions: defaultBacktestAssumptions,
     metrics: [
       { label: "Return", value: "+12.4%", tone: "positive" },
       { label: "Max DD", value: "5.8%", tone: "warning" },
@@ -659,6 +693,28 @@ export function buildBacktestTradeRows(workspace: TerminalWorkspace): BacktestTr
   ];
 }
 
+export function resolveBacktestAssumptions(workspace: TerminalWorkspace): BacktestAssumptions {
+  const current = workspace.backtestAssumptions ?? defaultBacktestAssumptions;
+  return {
+    initialCash: normalizeBacktestAssumptionValue("initialCash", current.initialCash, defaultBacktestAssumptions.initialCash),
+    feeBps: normalizeBacktestAssumptionValue("feeBps", current.feeBps, defaultBacktestAssumptions.feeBps),
+    slippageBps: normalizeBacktestAssumptionValue(
+      "slippageBps",
+      current.slippageBps,
+      defaultBacktestAssumptions.slippageBps
+    )
+  };
+}
+
+export function buildBacktestAssumptionRows(workspace: TerminalWorkspace): BacktestAssumptionRow[] {
+  const assumptions = resolveBacktestAssumptions(workspace);
+  return (Object.keys(backtestAssumptionSpecs) as BacktestAssumptionField[]).map((field) => ({
+    field,
+    ...backtestAssumptionSpecs[field],
+    value: assumptions[field]
+  }));
+}
+
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
   const selectedSymbol = workspace.selectedInstrument.symbol;
   const committeeEvents = workspace.decisionLog.slice(0, 3).map((entry, index) => ({
@@ -716,6 +772,22 @@ function parsePercentMetric(value: string): number | null {
 
 function formatSignedCurrency(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function formatAssumptionCurrency(value: number): string {
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+function normalizeBacktestAssumptionValue(
+  field: BacktestAssumptionField,
+  value: number,
+  fallback: number
+): number {
+  const spec = backtestAssumptionSpecs[field];
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(spec.min, Math.round(value));
 }
 
 function inferExposureFromPosition(position: string): string {
@@ -820,12 +892,33 @@ function buildWorkflowStageArtifacts(workspace: TerminalWorkspace, stageId: stri
   }
 
   if (stageId === "backtest") {
-    return workspace.metrics.map((metric) => ({
-      label: metric.label,
-      value: metric.value,
-      detail: "Latest audited metric for the selected context.",
-      tone: metric.tone
-    }));
+    const assumptions = resolveBacktestAssumptions(workspace);
+    return [
+      ...workspace.metrics.map((metric) => ({
+        label: metric.label,
+        value: metric.value,
+        detail: "Latest audited metric for the selected context.",
+        tone: metric.tone
+      })),
+      {
+        label: "Initial cash",
+        value: formatAssumptionCurrency(assumptions.initialCash),
+        detail: "Backtest capital assumption.",
+        tone: "neutral" as const
+      },
+      {
+        label: "Fee",
+        value: `${assumptions.feeBps} bps`,
+        detail: "Round-trip fee assumption in basis points.",
+        tone: "neutral" as const
+      },
+      {
+        label: "Slippage",
+        value: `${assumptions.slippageBps} bps`,
+        detail: "Execution slippage assumption in basis points.",
+        tone: "warning" as const
+      }
+    ];
   }
 
   if (stageId === "agent") {
@@ -1118,6 +1211,39 @@ export function workspaceWithStrategyField(
   };
 }
 
+export function workspaceWithBacktestAssumption(
+  currentWorkspace: TerminalWorkspace,
+  field: BacktestAssumptionField,
+  value: number
+): TerminalWorkspace {
+  const currentAssumptions = resolveBacktestAssumptions(currentWorkspace);
+  const nextAssumptions = {
+    ...currentAssumptions,
+    [field]: normalizeBacktestAssumptionValue(field, value, currentAssumptions[field])
+  };
+  const note: DecisionLogEntry = {
+    agent: "Backtest Lab",
+    message: `Backtest assumption ${field} updated locally. Run Pipeline to generate a fresh audited backtest.`,
+    tone: "warning"
+  };
+  const existingLog =
+    currentWorkspace.decisionLog[0]?.agent === "Backtest Lab"
+      ? currentWorkspace.decisionLog.slice(1)
+      : currentWorkspace.decisionLog;
+  return {
+    ...currentWorkspace,
+    backtestAssumptions: nextAssumptions,
+    metrics: [
+      { label: "Return", value: "N/A", tone: "neutral" },
+      { label: "Max DD", value: "N/A", tone: "warning" },
+      { label: "Win Rate", value: "N/A", tone: "neutral" },
+      { label: "Trades", value: "0", tone: "neutral" }
+    ],
+    decisionLog: [note, ...existingLog],
+    researchRun: null
+  };
+}
+
 export function workspaceWithPreservedSelection(
   refreshedWorkspace: TerminalWorkspace,
   currentWorkspace: TerminalWorkspace
@@ -1145,6 +1271,7 @@ export function workspaceWithPreservedInteractiveState(
   return {
     ...workspace,
     strategy: currentWorkspace.strategy,
+    backtestAssumptions: resolveBacktestAssumptions(currentWorkspace),
     metrics: currentWorkspace.metrics,
     decisionLog: currentWorkspace.decisionLog,
     researchRun: currentWorkspace.researchRun

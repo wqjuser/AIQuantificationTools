@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildTerminalWorkspace } from "./terminal-workbench";
+import { buildTerminalWorkspace, workspaceWithBacktestAssumption } from "./terminal-workbench";
 import {
   buildResearchRunUrl,
   buildResearchRunsUrl,
@@ -24,6 +24,18 @@ describe("terminal workspace API client", () => {
   test("builds the research run URL with selected instrument context", () => {
     expect(buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d")).toBe(
       "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d"
+    );
+  });
+
+  test("builds the research run URL with editable backtest assumptions", () => {
+    expect(
+      buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d", {
+        initialCash: 250000,
+        feeBps: 8,
+        slippageBps: 4
+      })
+    ).toBe(
+      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&initialCash=250000&feeBps=8&slippageBps=4"
     );
   });
 
@@ -123,10 +135,15 @@ describe("terminal workspace API client", () => {
       ]
     };
     const calls: string[] = [];
+    const currentWorkspace = workspaceWithBacktestAssumption(
+      workspaceWithBacktestAssumption(buildTerminalWorkspace(), "initialCash", 250000),
+      "feeBps",
+      8
+    );
     const result = await runTerminalResearch(
       "http://127.0.0.1:8765",
       { market: "ashare", symbol: "600000", timeframe: "1d" },
-      buildTerminalWorkspace(),
+      workspaceWithBacktestAssumption(currentWorkspace, "slippageBps", 4),
       async (url) => {
         calls.push(url);
         return {
@@ -136,7 +153,9 @@ describe("terminal workspace API client", () => {
       }
     );
 
-    expect(calls[0]).toContain("/api/research/run?");
+    expect(calls[0]).toBe(
+      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&initialCash=250000&feeBps=8&slippageBps=4"
+    );
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Research run complete");
     expect(result.workspace.metrics[0].value).toBe("+3.20%");

@@ -1,4 +1,12 @@
-import { buildTerminalWorkspace, Market, ResearchRunAudit, TerminalWorkspace, Timeframe } from "./terminal-workbench";
+import {
+  buildTerminalWorkspace,
+  resolveBacktestAssumptions,
+  Market,
+  ResearchRunAudit,
+  TerminalWorkspace,
+  Timeframe,
+  type BacktestAssumptions
+} from "./terminal-workbench";
 
 export const defaultQuantCoreBaseUrl = "http://127.0.0.1:8765";
 export type ResearchTimeframe = Timeframe;
@@ -97,13 +105,19 @@ export function buildResearchRunUrl(
   baseUrl: string,
   market: Market,
   symbol: string,
-  timeframe: ResearchTimeframe
+  timeframe: ResearchTimeframe,
+  assumptions?: BacktestAssumptions
 ): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("api/research/run", normalizedBase);
   url.searchParams.set("market", market);
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("timeframe", timeframe);
+  if (assumptions) {
+    url.searchParams.set("initialCash", String(assumptions.initialCash));
+    url.searchParams.set("feeBps", String(assumptions.feeBps));
+    url.searchParams.set("slippageBps", String(assumptions.slippageBps));
+  }
   return url.toString();
 }
 
@@ -318,7 +332,15 @@ export async function runTerminalResearch(
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<WorkspaceLoadResult> {
   try {
-    const response = await fetcher(buildResearchRunUrl(baseUrl, params.market, params.symbol, params.timeframe));
+    const response = await fetcher(
+      buildResearchRunUrl(
+        baseUrl,
+        params.market,
+        params.symbol,
+        params.timeframe,
+        resolveBacktestAssumptions(currentWorkspace)
+      )
+    );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }

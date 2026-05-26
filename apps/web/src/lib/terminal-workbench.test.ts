@@ -3,6 +3,7 @@ import {
   agentRoleLabels,
   buildAgentCommitteeRounds,
   buildAuditReplayWorkflowState,
+  buildBacktestAssumptionRows,
   buildBacktestTradeRows,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
@@ -19,9 +20,11 @@ import {
   researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
+  resolveBacktestAssumptions,
   type WorkflowRunState,
   visiblePanels,
   workspaceWithAiAction,
+  workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
   workspaceWithStrategyField,
@@ -320,7 +323,10 @@ describe("terminal workbench model", () => {
       "Return",
       "Max DD",
       "Win Rate",
-      "Trades"
+      "Trades",
+      "Initial cash",
+      "Fee",
+      "Slippage"
     ]);
     expect(stages.find((stage) => stage.id === "execution")?.artifacts.at(-1)).toEqual({
       label: "Live gates",
@@ -608,6 +614,59 @@ describe("terminal workbench model", () => {
       message: "Strategy field entry updated locally. Run Pipeline to generate a fresh audited backtest.",
       tone: "warning"
     });
+  });
+
+  test("edits backtest assumptions locally and invalidates stale audited results", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    const workspace = workspaceWithBacktestAssumption(auditedWorkspace, "feeBps", 8);
+
+    expect(resolveBacktestAssumptions(buildTerminalWorkspace())).toEqual({
+      initialCash: 100000,
+      feeBps: 3,
+      slippageBps: 2
+    });
+    expect(workspace.backtestAssumptions).toEqual({
+      initialCash: 100000,
+      feeBps: 8,
+      slippageBps: 2
+    });
+    expect(workspace.researchRun).toBeNull();
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "Backtest Lab",
+      message: "Backtest assumption feeBps updated locally. Run Pipeline to generate a fresh audited backtest.",
+      tone: "warning"
+    });
+  });
+
+  test("derives editable backtest assumption rows for the replay panel", () => {
+    const rows = buildBacktestAssumptionRows(
+      workspaceWithBacktestAssumption(buildTerminalWorkspace(), "initialCash", 250000)
+    );
+
+    expect(rows).toEqual([
+      { field: "initialCash", label: "Initial cash", value: 250000, suffix: "CNY", min: 1000, step: 1000 },
+      { field: "feeBps", label: "Fee", value: 3, suffix: "bps", min: 0, step: 1 },
+      { field: "slippageBps", label: "Slippage", value: 2, suffix: "bps", min: 0, step: 1 }
+    ]);
   });
 
   test("selects a timeframe as a fresh research context", () => {

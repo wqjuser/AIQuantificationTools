@@ -110,7 +110,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 timeframe=query.get("timeframe", ["1d"])[0],
                 adapter=self.adapter,
                 assistant=self.assistant,
-                engine=self.engine,
+                engine=_backtest_engine_from_query(query),
                 cache=self.cache,
                 run_store=self.run_store,
             )
@@ -223,6 +223,31 @@ def _parse_search_limit(raw: str) -> int:
     except ValueError:
         return 8
     return max(1, min(value, 20))
+
+
+def _backtest_engine_from_query(query: dict[str, list[str]]) -> BacktestEngine:
+    initial_cash = _parse_positive_float(query.get("initialCash", ["100000"])[0], default=100_000)
+    fee_bps = _parse_bps(query.get("feeBps", ["3"])[0], default=3)
+    slippage_bps = _parse_bps(query.get("slippageBps", ["2"])[0], default=2)
+    return BacktestEngine(initial_cash=initial_cash, fee_rate=fee_bps / 10_000, slippage_rate=slippage_bps / 10_000)
+
+
+def _parse_positive_float(raw: str, *, default: float) -> float:
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _parse_bps(raw: str, *, default: float) -> float:
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    if value < 0:
+        return default
+    return min(value, 1_000)
 
 
 if __name__ == "__main__":

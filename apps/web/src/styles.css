@@ -929,6 +929,67 @@ em {
   color: #dce6ee;
 }
 
+.backtest-assumptions {
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #0f1723;
+  padding: 10px;
+}
+
+.backtest-assumption-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.backtest-assumption-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.assumption-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #151f2d;
+  overflow: hidden;
+}
+
+.assumption-input input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #dce6ee;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 9px;
+}
+
+.assumption-input input:focus {
+  outline: none;
+}
+
+.assumption-input:focus-within {
+  border-color: #2b6f62;
+}
+
+.assumption-input em {
+  border-left: 1px solid #27364a;
+  color: #71dfc5;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 8px;
+}
+
 .backtest-table {
   display: grid;
   gap: 7px;

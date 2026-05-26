@@ -186,8 +186,24 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
         self.assertEqual(payload["selectedTimeframe"], "1d")
         self.assertEqual(payload["execution"]["liveEnabled"], False)
+        self.assertEqual(payload["backtestAssumptions"], {"initialCash": 100000, "feeBps": 3, "slippageBps": 2})
         self.assertEqual(payload["workflowNodes"][-1]["id"], "execution")
         self.assertGreaterEqual(len(payload["decisionLog"]), 4)
+
+    def test_research_api_builds_engine_from_backtest_assumption_query(self):
+        from quant_core.api import _backtest_engine_from_query
+
+        engine = _backtest_engine_from_query({"initialCash": ["250000"], "feeBps": ["8"], "slippageBps": ["4"]})
+
+        self.assertEqual(engine.initial_cash, 250000)
+        self.assertAlmostEqual(engine.fee_rate, 0.0008)
+        self.assertAlmostEqual(engine.slippage_rate, 0.0004)
+
+        fallback = _backtest_engine_from_query({"initialCash": ["0"], "feeBps": ["-1"], "slippageBps": ["abc"]})
+
+        self.assertEqual(fallback.initial_cash, 100000)
+        self.assertAlmostEqual(fallback.fee_rate, 0.0003)
+        self.assertAlmostEqual(fallback.slippage_rate, 0.0002)
 
     def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
         from quant_core.research import run_terminal_research
@@ -200,6 +216,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
         self.assertEqual(payload["selectedTimeframe"], "5m")
         self.assertEqual(payload["strategy"]["name"], "SMA trend demo")
+        self.assertEqual(payload["backtestAssumptions"], {"initialCash": 100000, "feeBps": 3, "slippageBps": 2})
         self.assertEqual([metric["label"] for metric in payload["metrics"]], ["Return", "Max DD", "Win Rate", "Trades"])
         self.assertTrue(payload["decisionLog"][0]["message"])
         self.assertEqual(payload["decisionLog"][0]["agent"], "AI Summary")

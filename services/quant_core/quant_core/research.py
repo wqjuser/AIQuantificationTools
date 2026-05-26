@@ -12,6 +12,7 @@ from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, Market, MarketDataRequest, RiskRules, StrategyConfig, Timeframe
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
+    BacktestAssumptions,
     BacktestMetric,
     DecisionLogEntry,
     Instrument,
@@ -100,6 +101,11 @@ def run_terminal_research(
             exit="Close < SMA20, stop loss, take profit, or end of backtest",
             position=f"{strategy.risk.position_pct:.0%} max capital allocation",
             risk="Stop -8%, take profit +18%, drawdown guard 20%, paper only",
+        ),
+        backtest_assumptions=BacktestAssumptions(
+            initial_cash=backtest_engine.initial_cash,
+            fee_bps=round(backtest_engine.fee_rate * 10_000, 4),
+            slippage_bps=round(backtest_engine.slippage_rate * 10_000, 4),
         ),
         metrics=[
             BacktestMetric(label="Return", value=_format_signed_pct(backtest.metrics.total_return_pct), tone="positive"),

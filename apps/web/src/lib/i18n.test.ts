@@ -50,10 +50,12 @@ describe("i18n", () => {
     expect(zh.t("module.scanner.title")).toBe("市场扫描器");
     expect(zh.t("strategy.name")).toBe("名称");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
+    expect(zh.t("backtest.assumptions")).toBe("回测假设");
     expect(zh.t("history.replay")).toBe("回放");
     expect(zh.t("portfolio.paperPositions")).toBe("模拟持仓");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
     expect(en.t("backtest.replay")).toBe("Trade replay");
+    expect(en.t("backtest.initialCash")).toBe("Initial cash");
     expect(en.t("portfolio.unrealizedPnl")).toBe("Unrealized P&L");
     expect(en.t("history.rows", { count: 240 })).toBe("240 bars");
     expect(en.t("module.news.pending")).toBe("Live feed pending");

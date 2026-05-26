@@ -37,6 +37,7 @@ import {
   buildTerminalWorkspace,
   buildAgentCommitteeRounds,
   buildAuditReplayWorkflowState,
+  buildBacktestAssumptionRows,
   buildBacktestTradeRows,
   buildModuleNewsEvents,
   buildPaperPositionRows,
@@ -51,6 +52,8 @@ import {
   AiWorkbenchAction,
   Market,
   AgentCommitteeRound,
+  BacktestAssumptionField,
+  BacktestAssumptionRow,
   BacktestTradeRow,
   ModuleNewsEvent,
   PaperPositionRow,
@@ -68,6 +71,7 @@ import {
   WorkflowStageView,
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
+  workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
   workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
@@ -176,6 +180,7 @@ export function App() {
   const paperPositionRows = buildPaperPositionRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
+  const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
@@ -418,6 +423,18 @@ export function App() {
     setActiveLoopStepId("strategy");
     setActiveModuleId("watchlist");
     setActiveWorkflowStageId("factor");
+  }, []);
+
+  const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
+    manualSelectionVersionRef.current += 1;
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithBacktestAssumption(current.workspace, field, value),
+      source: "core",
+      statusLabel: "Backtest assumptions edited"
+    }));
+    setActiveLoopStepId("backtest");
+    setActiveModuleId("watchlist");
+    setActiveWorkflowStageId("backtest");
   }, []);
 
   const selectQuantLoopStep = useCallback((stepId: string) => {
@@ -799,7 +816,12 @@ export function App() {
                 />
               </Panel>
 
-              <BacktestReplayPanel i18n={i18n} rows={backtestTradeRows} />
+              <BacktestReplayPanel
+                assumptionRows={backtestAssumptionRows}
+                i18n={i18n}
+                onUpdateAssumption={updateBacktestAssumption}
+                rows={backtestTradeRows}
+              />
 
               <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
                 <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
@@ -1052,10 +1074,43 @@ function StrategySummary({
   );
 }
 
-function BacktestReplayPanel({ i18n, rows }: { i18n: AppI18n; rows: BacktestTradeRow[] }) {
+function BacktestReplayPanel({
+  assumptionRows,
+  i18n,
+  onUpdateAssumption,
+  rows
+}: {
+  assumptionRows: BacktestAssumptionRow[];
+  i18n: AppI18n;
+  onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
+  rows: BacktestTradeRow[];
+}) {
   return (
     <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")}>
       <div className="backtest-replay">
+        <div className="backtest-assumptions">
+          <div className="backtest-replay-title">
+            <span>{i18n.t("backtest.assumptions")}</span>
+            <strong>{assumptionRows.length}</strong>
+          </div>
+          <div className="backtest-assumption-grid">
+            {assumptionRows.map((row) => (
+              <label key={row.field}>
+                <span>{backtestAssumptionLabel(i18n, row.field, row.label)}</span>
+                <div className="assumption-input">
+                  <input
+                    min={row.min}
+                    onChange={(event) => onUpdateAssumption(row.field, Number(event.currentTarget.value))}
+                    step={row.step}
+                    type="number"
+                    value={row.value}
+                  />
+                  <em>{backtestAssumptionSuffixLabel(i18n, row.suffix)}</em>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
         <div className="backtest-replay-title">
           <span>{i18n.t("backtest.replay")}</span>
           <strong>{rows.length}</strong>
@@ -1470,6 +1525,22 @@ function backtestExposureLabel(i18n: AppI18n, exposure: string): string {
   return exposure.replace("drawdown", "回撤").replace("paper", "模拟");
 }
 
+function backtestAssumptionLabel(i18n: AppI18n, field: BacktestAssumptionField, fallback: string): string {
+  const key = {
+    initialCash: "backtest.initialCash",
+    feeBps: "backtest.feeBps",
+    slippageBps: "backtest.slippageBps"
+  }[field] as Parameters<AppI18n["t"]>[0];
+  return i18n.t(key) || fallback;
+}
+
+function backtestAssumptionSuffixLabel(i18n: AppI18n, suffix: string): string {
+  if (i18n.locale === "zh-CN") {
+    return suffix === "CNY" ? "资金" : "基点";
+  }
+  return suffix;
+}
+
 function portfolioRiskLabel(i18n: AppI18n, row: PortfolioRiskRow): string {
   if (i18n.locale === "en-US") {
     return row.label;
@@ -1712,6 +1783,9 @@ function workflowArtifactLabel(i18n: AppI18n, artifact: WorkflowStageView["artif
     Entry: "入场",
     Exit: "出场",
     Risk: "风控",
+    "Initial cash": "初始资金",
+    Fee: "手续费",
+    Slippage: "滑点",
     Mode: "模式",
     "Live gates": "实盘闸门"
   }[artifact.label];
@@ -1735,10 +1809,20 @@ function workflowArtifactValue(i18n: AppI18n, artifact: WorkflowStageView["artif
   if (artifact.label === "Live gates") {
     return artifact.value.replace("blocked", "个阻断").replace("open", "已开启");
   }
+  if (artifact.label === "Initial cash") {
+    return `${artifact.value} 资金`;
+  }
+  if (artifact.label === "Fee" || artifact.label === "Slippage") {
+    return artifact.value.replace("bps", "基点");
+  }
   if (artifact.label === "Entry" || artifact.label === "Exit" || artifact.label === "Risk") {
     return i18n.strategyText(artifact.value);
   }
-  if (!["Instrument", "Timeframe", "Return", "Max DD", "Win Rate", "Trades"].includes(artifact.label)) {
+  if (
+    !["Instrument", "Timeframe", "Return", "Max DD", "Win Rate", "Trades", "Initial cash", "Fee", "Slippage"].includes(
+      artifact.label
+    )
+  ) {
     return i18n.decisionMessage(artifact.value);
   }
   return artifact.value;
@@ -1756,6 +1840,9 @@ function workflowArtifactDetail(i18n: AppI18n, artifact: WorkflowStageView["arti
     .replace("Invalidation rule", "失效规则")
     .replace("Sizing and guardrail", "仓位与保护")
     .replace("Latest audited metric for the selected context.", "当前上下文的最新审计指标。")
+    .replace("Backtest capital assumption.", "回测初始资金假设。")
+    .replace("Round-trip fee assumption in basis points.", "以基点表示的往返手续费假设。")
+    .replace("Execution slippage assumption in basis points.", "以基点表示的成交滑点假设。")
     .replace("AI research note from supplied workspace context.", "来自当前工作台上下文的 AI 研究记录。")
     .replace("Paper route only.", "仅模拟盘路径。")
     .replace("Certified live route is available.", "已具备认证实盘路径。")

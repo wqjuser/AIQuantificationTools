@@ -110,6 +110,10 @@ const messages = {
     "strategy.parameter": "Parameter",
     "strategy.status": "Status",
     "backtest.replay": "Trade replay",
+    "backtest.assumptions": "Backtest assumptions",
+    "backtest.initialCash": "Initial cash",
+    "backtest.feeBps": "Fee",
+    "backtest.slippageBps": "Slippage",
     "backtest.time": "Time",
     "backtest.exposure": "Exposure",
     "backtest.pnl": "P&L",
@@ -222,6 +226,10 @@ const messages = {
     "strategy.parameter": "参数",
     "strategy.status": "状态",
     "backtest.replay": "交易回放",
+    "backtest.assumptions": "回测假设",
+    "backtest.initialCash": "初始资金",
+    "backtest.feeBps": "手续费",
+    "backtest.slippageBps": "滑点",
     "backtest.time": "时间",
     "backtest.exposure": "暴露",
     "backtest.pnl": "盈亏",
@@ -322,6 +330,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Instrument selected": "Instrument selected",
       "Timeframe selected": "Timeframe selected",
       "Strategy edited": "Strategy edited",
+      "Backtest assumptions edited": "Backtest assumptions edited",
       "AI action generated": "AI action generated"
     },
     executionModes: {
@@ -405,6 +414,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Instrument selected": "标的已选择",
       "Timeframe selected": "周期已选择",
       "Strategy edited": "策略已编辑",
+      "Backtest assumptions edited": "回测假设已编辑",
       "AI action generated": "AI 操作已生成"
     },
     executionModes: {
@@ -599,6 +609,12 @@ function translateDecisionMessage(locale: Locale, message: string): string {
   if (strategyEdited) {
     return `策略字段 ${strategyFieldText(locale, strategyEdited[1])} 已本地更新。运行流水线以生成新的可审计回测。`;
   }
+  const backtestAssumptionEdited = message.match(
+    /^Backtest assumption (.+) updated locally\. Run Pipeline to generate a fresh audited backtest\.$/
+  );
+  if (backtestAssumptionEdited) {
+    return `回测假设 ${backtestAssumptionFieldText(locale, backtestAssumptionEdited[1])} 已本地更新。运行流水线以生成新的可审计回测。`;
+  }
   return message;
 }
 
@@ -613,6 +629,19 @@ function strategyFieldText(locale: Locale, field: string): string {
       exit: "出场",
       position: "仓位",
       risk: "风控"
+    }[field] ?? field
+  );
+}
+
+function backtestAssumptionFieldText(locale: Locale, field: string): string {
+  if (locale === "en-US") {
+    return field;
+  }
+  return (
+    {
+      initialCash: "初始资金",
+      feeBps: "手续费",
+      slippageBps: "滑点"
     }[field] ?? field
   );
 }
