@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
   buildAgentCommitteeRounds,
+  buildBacktestTradeRows,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
   buildPaperTradingRows,
@@ -170,6 +171,37 @@ describe("terminal workbench model", () => {
       parameter: "Stop / drawdown / execution mode",
       status: "guardrail",
       tone: "risk"
+    });
+  });
+
+  test("derives audited backtest trade rows from strategy and metrics", () => {
+    const rows = buildBacktestTradeRows(buildTerminalWorkspace());
+
+    expect(rows.map((row) => row.id)).toEqual(["entry-fill", "risk-review", "exit-review"]);
+    expect(rows[0]).toMatchObject({
+      symbol: "600000",
+      side: "BUY",
+      status: "filled",
+      price: "8.66",
+      quantity: "2300",
+      exposure: "20%",
+      pnl: "+12.4%",
+      tone: "positive"
+    });
+    expect(rows[1]).toMatchObject({
+      side: "RISK",
+      status: "review",
+      price: "-",
+      quantity: "-",
+      exposure: "drawdown",
+      pnl: "-5.8%",
+      tone: "warning"
+    });
+    expect(rows[2]).toMatchObject({
+      side: "SELL",
+      status: "open",
+      reason: "Close < SMA20 or risk manager downgrade",
+      tone: "neutral"
     });
   });
 

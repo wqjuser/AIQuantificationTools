@@ -80,6 +80,20 @@ export interface BacktestMetric {
   tone: "positive" | "warning" | "neutral";
 }
 
+export interface BacktestTradeRow {
+  id: string;
+  timestamp: string;
+  symbol: string;
+  side: "BUY" | "SELL" | "RISK" | "HOLD";
+  status: "filled" | "open" | "review" | "blocked";
+  price: string;
+  quantity: string;
+  exposure: string;
+  pnl: string;
+  reason: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -534,6 +548,57 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
   ];
 }
 
+export function buildBacktestTradeRows(workspace: TerminalWorkspace): BacktestTradeRow[] {
+  const price = resolvePaperOrderPrice(workspace);
+  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
+  const returnMetric = metricValue(workspace, "Return", "N/A");
+  const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
+  const exposure = inferExposureFromPosition(workspace.strategy.position);
+  const entryTone: BacktestTradeRow["tone"] = returnMetric.startsWith("-") ? "warning" : "positive";
+
+  return [
+    {
+      id: "entry-fill",
+      timestamp: "T+0",
+      symbol: workspace.selectedInstrument.symbol,
+      side: "BUY",
+      status: isPendingStrategyText(workspace.strategy.entry) ? "blocked" : "filled",
+      price: price.toFixed(2),
+      quantity: String(quantity),
+      exposure,
+      pnl: returnMetric,
+      reason: workspace.strategy.entry,
+      tone: isPendingStrategyText(workspace.strategy.entry) ? "warning" : entryTone
+    },
+    {
+      id: "risk-review",
+      timestamp: "T+1",
+      symbol: workspace.selectedInstrument.symbol,
+      side: "RISK",
+      status: "review",
+      price: "-",
+      quantity: "-",
+      exposure: "drawdown",
+      pnl: normalizeDrawdownLoss(drawdownMetric),
+      reason: workspace.strategy.risk,
+      tone: "warning"
+    },
+    {
+      id: "exit-review",
+      timestamp: "T+2",
+      symbol: workspace.selectedInstrument.symbol,
+      side: "SELL",
+      status: isPendingStrategyText(workspace.strategy.exit) ? "blocked" : "open",
+      price: price.toFixed(2),
+      quantity: String(quantity),
+      exposure,
+      pnl: returnMetric,
+      reason: workspace.strategy.exit,
+      tone: "neutral"
+    }
+  ];
+}
+
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
   const selectedSymbol = workspace.selectedInstrument.symbol;
   const committeeEvents = workspace.decisionLog.slice(0, 3).map((entry, index) => ({
@@ -570,6 +635,22 @@ function inferStrategyParameter(condition: string, fallback: string): string {
 
 function isPendingStrategyText(text: string): boolean {
   return text.startsWith("Pending") || text.startsWith("Run Pipeline");
+}
+
+function metricValue(workspace: TerminalWorkspace, label: string, fallback: string): string {
+  return workspace.metrics.find((metric) => metric.label === label)?.value ?? fallback;
+}
+
+function normalizeDrawdownLoss(value: string): string {
+  if (value === "N/A" || value.startsWith("-")) {
+    return value;
+  }
+  return `-${value}`;
+}
+
+function inferExposureFromPosition(position: string): string {
+  const cap = position.match(/(\d+(?:\.\d+)?)%\s*cap/i);
+  return cap ? `${cap[1]}%` : "paper";
 }
 
 function resolvePaperOrderPrice(workspace: TerminalWorkspace): number {

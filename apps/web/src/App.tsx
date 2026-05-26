@@ -36,6 +36,7 @@ import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./li
 import {
   buildTerminalWorkspace,
   buildAgentCommitteeRounds,
+  buildBacktestTradeRows,
   buildModuleNewsEvents,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
@@ -47,6 +48,7 @@ import {
   AiWorkbenchAction,
   Market,
   AgentCommitteeRound,
+  BacktestTradeRow,
   ModuleNewsEvent,
   PaperTradingRow,
   PortfolioRiskRow,
@@ -167,6 +169,7 @@ export function App() {
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
+  const backtestTradeRows = buildBacktestTradeRows(workspace);
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
@@ -774,6 +777,8 @@ export function App() {
                 <StrategySummary i18n={i18n} rows={strategyRuleRows} workspace={workspace} />
               </Panel>
 
+              <BacktestReplayPanel i18n={i18n} rows={backtestTradeRows} />
+
               <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
                 <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
               </Panel>
@@ -980,6 +985,43 @@ function StrategySummary({
         </div>
       </div>
     </div>
+  );
+}
+
+function BacktestReplayPanel({ i18n, rows }: { i18n: AppI18n; rows: BacktestTradeRow[] }) {
+  return (
+    <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")}>
+      <div className="backtest-replay">
+        <div className="backtest-replay-title">
+          <span>{i18n.t("backtest.replay")}</span>
+          <strong>{rows.length}</strong>
+        </div>
+        <div className="backtest-table">
+          <div className="backtest-row backtest-head">
+            <span>{i18n.t("backtest.time")}</span>
+            <span>{i18n.t("execution.side")}</span>
+            <span>{i18n.t("execution.status")}</span>
+            <span>{i18n.t("execution.price")}</span>
+            <span>{i18n.t("execution.quantity")}</span>
+            <span>{i18n.t("backtest.exposure")}</span>
+            <span>{i18n.t("backtest.pnl")}</span>
+            <span>{i18n.t("execution.reason")}</span>
+          </div>
+          {rows.map((row) => (
+            <article className={`backtest-row ${row.tone}`} key={row.id}>
+              <span>{row.timestamp}</span>
+              <span>{backtestSideLabel(i18n, row.side)}</span>
+              <span>{backtestStatusLabel(i18n, row.status)}</span>
+              <span>{row.price}</span>
+              <span>{row.quantity}</span>
+              <span>{backtestExposureLabel(i18n, row.exposure)}</span>
+              <span>{row.pnl}</span>
+              <span>{i18n.strategyText(row.reason)}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
@@ -1309,6 +1351,27 @@ function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"
     return status;
   }
   return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
+}
+
+function backtestSideLabel(i18n: AppI18n, side: BacktestTradeRow["side"]): string {
+  if (i18n.locale === "en-US") {
+    return side;
+  }
+  return { BUY: "买入", SELL: "卖出", RISK: "风控", HOLD: "持有" }[side];
+}
+
+function backtestStatusLabel(i18n: AppI18n, status: BacktestTradeRow["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { filled: "已成交", open: "观察中", review: "复核", blocked: "已阻断" }[status];
+}
+
+function backtestExposureLabel(i18n: AppI18n, exposure: string): string {
+  if (i18n.locale === "en-US") {
+    return exposure;
+  }
+  return exposure.replace("drawdown", "回撤").replace("paper", "模拟");
 }
 
 function portfolioRiskLabel(i18n: AppI18n, row: PortfolioRiskRow): string {

@@ -47,7 +47,9 @@ describe("i18n", () => {
     const en = createI18n("en-US");
 
     expect(zh.t("module.scanner.title")).toBe("市场扫描器");
+    expect(zh.t("panel.backtest.title")).toBe("回测回放");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
+    expect(en.t("backtest.replay")).toBe("Trade replay");
     expect(en.t("module.news.pending")).toBe("Live feed pending");
     expect(en.t("module.workflow.run")).toBe("Run pipeline");
   });
