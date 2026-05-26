@@ -4,7 +4,9 @@ import {
   buildResearchRunUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
+  buildMarketSearchUrl,
   loadMarketKlines,
+  loadMarketSearch,
   buildWorkspaceUrl,
   loadResearchRunHistory,
   loadTerminalWorkspace,
@@ -32,6 +34,12 @@ describe("terminal workspace API client", () => {
   test("builds the market klines URL with selected chart context", () => {
     expect(buildMarketKlinesUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d", 160)).toBe(
       "http://127.0.0.1:8765/api/market/klines?market=ashare&symbol=600000&timeframe=1d&limit=160"
+    );
+  });
+
+  test("builds the market search URL with encoded Chinese query text", () => {
+    expect(buildMarketSearchUrl("http://127.0.0.1:8765/", "ashare", "浦发", 8)).toBe(
+      "http://127.0.0.1:8765/api/market/search?market=ashare&query=%E6%B5%A6%E5%8F%91&limit=8"
     );
   });
 
@@ -202,6 +210,38 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.quality.source).toBe("tencent");
     expect(result.bars.at(-1)?.close).toBe(9.27);
+  });
+
+  test("loads market symbol search suggestions from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadMarketSearch(
+      "http://127.0.0.1:8765",
+      { market: "ashare", query: "600", limit: 2 },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            market: "ashare",
+            query: "600",
+            results: [
+              {
+                market: "ashare",
+                symbol: "600000",
+                name: "浦发银行",
+                source: "eastmoney",
+                exchange: "沪A",
+                pinyin: "PFYH"
+              }
+            ]
+          })
+        };
+      }
+    );
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/market/search?market=ashare&query=600&limit=2"]);
+    expect(result.source).toBe("core");
+    expect(result.results[0].name).toBe("浦发银行");
   });
 
   test("returns an empty run history when the Python core is unavailable", async () => {

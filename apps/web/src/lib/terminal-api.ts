@@ -45,6 +45,23 @@ export interface MarketKlinesResult {
   error?: string;
 }
 
+export interface MarketSearchSuggestion {
+  market: Market;
+  symbol: string;
+  name: string;
+  source: string;
+  exchange?: string | null;
+  pinyin?: string | null;
+}
+
+export interface MarketSearchResult {
+  market: Market;
+  query: string;
+  results: MarketSearchSuggestion[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface WorkspaceResponse {
   ok: boolean;
   status?: number;
@@ -105,6 +122,15 @@ export function buildMarketKlinesUrl(
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("timeframe", timeframe);
   url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
+  return url.toString();
+}
+
+export function buildMarketSearchUrl(baseUrl: string, market: Market, query: string, limit = 8): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const url = new URL("api/market/search", normalizedBase);
+  url.searchParams.set("market", market);
+  url.searchParams.set("query", query);
+  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 20))));
   return url.toString();
 }
 
@@ -201,6 +227,35 @@ export async function loadMarketKlines(
   }
 }
 
+export async function loadMarketSearch(
+  baseUrl: string,
+  params: { market: Market; query: string; limit?: number },
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketSearchResult> {
+  try {
+    const response = await fetcher(buildMarketSearchUrl(baseUrl, params.market, params.query, params.limit ?? 8));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isMarketSearchPayload(payload)) {
+      throw new Error("Invalid market search contract");
+    }
+    return {
+      ...payload,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      market: params.market,
+      query: params.query,
+      results: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown market search error"
+    };
+  }
+}
+
 export async function runTerminalResearch(
   baseUrl: string,
   params: TerminalResearchParams,
@@ -271,6 +326,32 @@ function isMarketKlineBar(value: unknown): value is MarketKlineBar {
     typeof bar.low === "number" &&
     typeof bar.close === "number" &&
     typeof bar.volume === "number"
+  );
+}
+
+function isMarketSearchPayload(value: unknown): value is Omit<MarketSearchResult, "source" | "error"> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<MarketSearchResult>;
+  return (
+    isMarket(payload.market) &&
+    typeof payload.query === "string" &&
+    Array.isArray(payload.results) &&
+    payload.results.every(isMarketSearchSuggestion)
+  );
+}
+
+function isMarketSearchSuggestion(value: unknown): value is MarketSearchSuggestion {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const suggestion = value as Partial<MarketSearchSuggestion>;
+  return (
+    isMarket(suggestion.market) &&
+    typeof suggestion.symbol === "string" &&
+    typeof suggestion.name === "string" &&
+    typeof suggestion.source === "string"
   );
 }
 

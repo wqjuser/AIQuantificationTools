@@ -18,9 +18,11 @@ import { dispose, init, type Chart, type KLineData } from "klinecharts";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   loadMarketKlines,
+  loadMarketSearch,
   loadResearchRunHistory,
   loadTerminalWorkspace,
   MarketKlinesResult,
+  MarketSearchSuggestion,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunHistoryResult,
@@ -88,11 +90,16 @@ export function App() {
   const [activeModuleId, setActiveModuleId] = useState(workspace.modules[0]?.id ?? "watchlist");
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
   const [symbolDraft, setSymbolDraft] = useState(workspace.selectedInstrument.symbol);
+  const [searchSuggestions, setSearchSuggestions] = useState<MarketSearchSuggestion[]>([]);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(false);
+  const [isSymbolSearching, setIsSymbolSearching] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
+  const symbolSearchRequestIdRef = useRef(0);
+  const skipNextSymbolSearchRef = useRef(false);
   const i18n = createI18n(locale);
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
@@ -190,14 +197,45 @@ export function App() {
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const instrument = buildInstrumentFromSymbol(marketDraft, symbolDraft);
+      const normalizedSymbol = buildInstrumentFromSymbol(marketDraft, symbolDraft)?.symbol;
+      const matchedSuggestion = searchSuggestions.find(
+        (suggestion) => suggestion.market === marketDraft && suggestion.symbol === normalizedSymbol
+      );
+      const instrument = matchedSuggestion
+        ? {
+            symbol: matchedSuggestion.symbol,
+            name: matchedSuggestion.name,
+            market: matchedSuggestion.market,
+            changePct: 0
+          }
+        : buildInstrumentFromSymbol(marketDraft, symbolDraft);
       if (!instrument) {
         return;
       }
       selectInstrument(instrument);
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
       setActiveModuleId("watchlist");
     },
-    [marketDraft, selectInstrument, symbolDraft]
+    [marketDraft, searchSuggestions, selectInstrument, symbolDraft]
+  );
+
+  const selectSearchSuggestion = useCallback(
+    (suggestion: MarketSearchSuggestion) => {
+      skipNextSymbolSearchRef.current = true;
+      setMarketDraft(suggestion.market);
+      setSymbolDraft(suggestion.symbol);
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
+      selectInstrument({
+        symbol: suggestion.symbol,
+        name: suggestion.name,
+        market: suggestion.market,
+        changePct: 0
+      });
+      setActiveModuleId("watchlist");
+    },
+    [selectInstrument]
   );
 
   useEffect(() => {
@@ -214,9 +252,44 @@ export function App() {
   }, [locale]);
 
   useEffect(() => {
+    skipNextSymbolSearchRef.current = true;
     setMarketDraft(workspace.selectedInstrument.market);
     setSymbolDraft(workspace.selectedInstrument.symbol);
+    setSearchSuggestions([]);
+    setIsSearchOpen(false);
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol]);
+
+  useEffect(() => {
+    const query = symbolDraft.trim();
+    const requestId = symbolSearchRequestIdRef.current + 1;
+    symbolSearchRequestIdRef.current = requestId;
+
+    if (skipNextSymbolSearchRef.current) {
+      skipNextSymbolSearchRef.current = false;
+      setIsSymbolSearching(false);
+      return;
+    }
+
+    if (!query) {
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
+      setIsSymbolSearching(false);
+      return;
+    }
+
+    setIsSymbolSearching(true);
+    setIsSearchOpen(true);
+    const timeoutId = window.setTimeout(async () => {
+      const result = await loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8 });
+      if (symbolSearchRequestIdRef.current === requestId) {
+        setSearchSuggestions(result.results);
+        setIsSearchOpen(true);
+        setIsSymbolSearching(false);
+      }
+    }, 220);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [marketDraft, symbolDraft]);
 
   return (
     <div className="terminal-shell">
@@ -292,12 +365,54 @@ export function App() {
                   </option>
                 ))}
               </select>
-              <input
-                aria-label={i18n.t("symbol.placeholder")}
-                onChange={(event) => setSymbolDraft(event.currentTarget.value)}
-                placeholder={i18n.t("symbol.placeholder")}
-                value={symbolDraft}
-              />
+              <div className="symbol-field">
+                <input
+                  aria-label={i18n.t("symbol.placeholder")}
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setSymbolDraft(event.currentTarget.value);
+                    setIsSearchOpen(true);
+                  }}
+                  onFocus={() => {
+                    if (symbolDraft.trim()) {
+                      setIsSearchOpen(true);
+                    }
+                  }}
+                  placeholder={i18n.t("symbol.placeholder")}
+                  value={symbolDraft}
+                />
+                {isSearchOpen && symbolDraft.trim() ? (
+                  <div className="symbol-suggestions" role="listbox">
+                    {isSymbolSearching ? (
+                      <span className="symbol-suggestion-state">{i18n.t("symbol.searching")}</span>
+                    ) : null}
+                    {!isSymbolSearching && searchSuggestions.length
+                      ? searchSuggestions.map((suggestion) => (
+                          <button
+                            key={`${suggestion.market}-${suggestion.symbol}-${suggestion.source}`}
+                            onClick={() => selectSearchSuggestion(suggestion)}
+                            role="option"
+                            type="button"
+                          >
+                            <span>
+                              <strong>{suggestion.symbol}</strong>
+                              <em>{suggestion.name}</em>
+                            </span>
+                            <small>
+                              {i18n.marketLabel(suggestion.market)}
+                              {suggestion.exchange ? ` · ${suggestion.exchange}` : ""}
+                              {" · "}
+                              {suggestion.source}
+                            </small>
+                          </button>
+                        ))
+                      : null}
+                    {!isSymbolSearching && !searchSuggestions.length ? (
+                      <span className="symbol-suggestion-state">{i18n.t("symbol.noResults")}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
               <button type="submit">
                 <Search size={15} />
                 {i18n.t("action.switchSymbol")}

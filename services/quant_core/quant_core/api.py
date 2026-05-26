@@ -14,6 +14,7 @@ from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
+from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.research import run_terminal_research
 from quant_core.runs import ResearchRunStore, research_run_audits_to_payload
 from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
@@ -39,6 +40,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
+    search_adapter = MarketSymbolSearchAdapter()
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -75,6 +77,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     instruments = [Instrument(symbol=symbol, name=symbol, market=market, change_pct=0.0)]
             quotes = self.quote_adapter.fetch_quotes(instruments)
             self._send_json(market_quotes_to_payload(quotes))
+            return
+        if parsed.path == "/api/market/search":
+            query = parse_qs(parsed.query)
+            market = query.get("market", ["ashare"])[0]
+            search_query = query.get("query", [""])[0]
+            limit = _parse_search_limit(query.get("limit", ["8"])[0])
+            results = self.search_adapter.search(market=market, query=search_query, limit=limit)
+            self._send_json(market_search_to_payload(market, search_query, results))
             return
         if parsed.path == "/api/market/klines":
             query = parse_qs(parsed.query)
@@ -179,6 +189,14 @@ def _parse_kline_limit(raw: str) -> int:
     except ValueError:
         return 160
     return max(1, min(value, 500))
+
+
+def _parse_search_limit(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return 8
+    return max(1, min(value, 20))
 
 
 if __name__ == "__main__":

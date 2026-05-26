@@ -376,6 +376,49 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["watchlist"][2]["changePct"], -0.36)
         self.assertIsNone(payload["watchlist"][2]["quoteSource"])
 
+    def test_market_symbol_search_maps_eastmoney_code_and_chinese_results(self):
+        from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
+
+        calls = []
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            calls.append(url)
+            self.assertIn("searchapi.eastmoney.com", url)
+            return (
+                '{"QuotationCodeTable":{"Data":['
+                '{"Code":"600000","Name":"浦发银行","PinYin":"PFYH","Classify":"AStock","SecurityTypeName":"沪A","QuoteID":"1.600000"},'
+                '{"Code":"360003","Name":"浦发优1","PinYin":"PFY1","Classify":"Bond","SecurityTypeName":"债券","QuoteID":"1.360003"}'
+                '],"Status":0,"Message":"成功","TotalCount":2}}'
+            )
+
+        adapter = MarketSymbolSearchAdapter(fetch_text=fake_fetch_text)
+        results = adapter.search("ashare", "浦发", limit=8)
+        payload = market_search_to_payload("ashare", "浦发", results)
+
+        self.assertIn("input=%E6%B5%A6%E5%8F%91", calls[0])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].symbol, "600000")
+        self.assertEqual(results[0].name, "浦发银行")
+        self.assertEqual(results[0].source, "eastmoney")
+        self.assertEqual(payload["results"][0]["market"], "ashare")
+
+    def test_market_symbol_search_uses_local_catalog_when_remote_is_unavailable(self):
+        from quant_core.market_search import MarketSymbolSearchAdapter
+
+        def failing_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            raise OSError("offline")
+
+        adapter = MarketSymbolSearchAdapter(fetch_text=failing_fetch_text)
+
+        ashare_results = adapter.search("ashare", "600", limit=3)
+        us_results = adapter.search("us", "apple", limit=3)
+        crypto_results = adapter.search("crypto", "btc", limit=3)
+
+        self.assertEqual(ashare_results[0].symbol, "600000")
+        self.assertEqual(ashare_results[0].name, "浦发银行")
+        self.assertEqual(us_results[0].symbol, "AAPL")
+        self.assertEqual(crypto_results[0].symbol, "BTC/USDT")
+
     def test_quantdinger_style_kline_adapter_maps_tencent_fqkline_rows(self):
         from quant_core.domain import MarketDataRequest
         from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
