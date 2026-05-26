@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createI18n, resolveInitialLocale } from "./i18n";
+import { createI18n, resolveInitialLocale, supportedLocales } from "./i18n";
 
 describe("i18n", () => {
   test("defaults to Simplified Chinese unless a supported locale is stored", () => {
@@ -17,6 +17,17 @@ describe("i18n", () => {
     expect(zh.agentLabel("risk", "Risk Manager")).toBe("风险经理");
     expect(zh.metricLabel("Max DD")).toBe("最大回撤");
     expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
+  });
+
+  test("provides dropdown labels for every supported locale", () => {
+    const zh = createI18n("zh-CN");
+    const en = createI18n("en-US");
+
+    expect(supportedLocales.map((locale) => zh.localeOptionLabel(locale))).toEqual(["简体中文", "English"]);
+    expect(supportedLocales.map((locale) => en.localeOptionLabel(locale))).toEqual([
+      "Simplified Chinese",
+      "English"
+    ]);
   });
 
   test("formats audited run labels in the active locale", () => {

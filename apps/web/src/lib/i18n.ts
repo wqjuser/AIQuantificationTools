@@ -21,6 +21,8 @@ const messages = {
   "en-US": {
     "language.zh": "中文",
     "language.en": "EN",
+    "language.zh.label": "Simplified Chinese",
+    "language.en.label": "English",
     "aria.language": "Language",
     "aria.timeframe": "Research timeframe",
     "brand.subtitle": "Local-first quant OS",
@@ -63,6 +65,8 @@ const messages = {
   "zh-CN": {
     "language.zh": "中文",
     "language.en": "EN",
+    "language.zh.label": "简体中文",
+    "language.en.label": "English",
     "aria.language": "语言",
     "aria.timeframe": "研究周期",
     "brand.subtitle": "本地优先量化系统",
@@ -276,6 +280,9 @@ export function createI18n(locale: Locale) {
 
   return {
     locale,
+    localeOptionLabel(candidate: Locale) {
+      return candidate === "zh-CN" ? dictionary["language.zh.label"] : dictionary["language.en.label"];
+    },
     t(key: TranslationKey, values: Record<string, string | number> = {}) {
       return formatMessage(dictionary[key] ?? messages["en-US"][key] ?? key, values);
     },

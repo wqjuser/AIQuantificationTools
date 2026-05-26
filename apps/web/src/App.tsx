@@ -196,15 +196,18 @@ export function App() {
             <span className="status-pill paper">{i18n.executionMode(workspace.execution)}</span>
             <div className="locale-control" aria-label={i18n.t("aria.language")}>
               <Languages size={15} />
-              {supportedLocales.map((candidate) => (
-                <button
-                  className={locale === candidate ? "active" : ""}
-                  key={candidate}
-                  onClick={() => setLocale(candidate)}
-                >
-                  {candidate === "zh-CN" ? i18n.t("language.zh") : i18n.t("language.en")}
-                </button>
-              ))}
+              <select
+                aria-label={i18n.t("aria.language")}
+                className="locale-select"
+                onChange={(event) => setLocale(event.currentTarget.value as Locale)}
+                value={locale}
+              >
+                {supportedLocales.map((candidate) => (
+                  <option key={candidate} value={candidate}>
+                    {i18n.localeOptionLabel(candidate)}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="timeframe-control" aria-label={i18n.t("aria.timeframe")}>
               <Timer size={15} />
