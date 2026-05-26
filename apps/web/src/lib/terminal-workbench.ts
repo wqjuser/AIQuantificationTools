@@ -246,6 +246,7 @@ export interface ResearchRunAudit {
   metrics: Record<string, number>;
   decisions: DecisionLogEntry[];
   executionMode: string;
+  backtestAssumptions?: BacktestAssumptions;
 }
 
 export interface TerminalWorkspace {
@@ -694,13 +695,21 @@ export function buildBacktestTradeRows(workspace: TerminalWorkspace): BacktestTr
 }
 
 export function resolveBacktestAssumptions(workspace: TerminalWorkspace): BacktestAssumptions {
-  const current = workspace.backtestAssumptions ?? defaultBacktestAssumptions;
+  return normalizeBacktestAssumptions(workspace.backtestAssumptions);
+}
+
+function normalizeBacktestAssumptions(current?: Partial<BacktestAssumptions>): BacktestAssumptions {
+  const assumptions = current ?? defaultBacktestAssumptions;
   return {
-    initialCash: normalizeBacktestAssumptionValue("initialCash", current.initialCash, defaultBacktestAssumptions.initialCash),
-    feeBps: normalizeBacktestAssumptionValue("feeBps", current.feeBps, defaultBacktestAssumptions.feeBps),
+    initialCash: normalizeBacktestAssumptionValue(
+      "initialCash",
+      assumptions.initialCash,
+      defaultBacktestAssumptions.initialCash
+    ),
+    feeBps: normalizeBacktestAssumptionValue("feeBps", assumptions.feeBps, defaultBacktestAssumptions.feeBps),
     slippageBps: normalizeBacktestAssumptionValue(
       "slippageBps",
-      current.slippageBps,
+      assumptions.slippageBps,
       defaultBacktestAssumptions.slippageBps
     )
   };
@@ -780,11 +789,11 @@ function formatAssumptionCurrency(value: number): string {
 
 function normalizeBacktestAssumptionValue(
   field: BacktestAssumptionField,
-  value: number,
+  value: number | undefined,
   fallback: number
 ): number {
   const spec = backtestAssumptionSpecs[field];
-  if (!Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
   return Math.max(spec.min, Math.round(value));
@@ -1087,6 +1096,7 @@ export function workspaceFromResearchRunAudit(
     ...currentWorkspace,
     selectedInstrument: instrument,
     selectedTimeframe: run.timeframe,
+    backtestAssumptions: normalizeBacktestAssumptions(run.backtestAssumptions),
     strategy: {
       name: run.strategyName,
       entry: "Replay from audited research run",

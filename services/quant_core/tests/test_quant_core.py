@@ -239,6 +239,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 1.2, "trade_count": 6},
             decisions=[{"agent": "AI Summary", "message": "研究完成", "tone": "ai"}],
             execution_mode="paper_only",
+            backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,6 +252,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].created_at, created_at)
         self.assertEqual(latest[0].metrics["trade_count"], 6)
         self.assertEqual(latest[0].decisions[0]["agent"], "AI Summary")
+        self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
 
     def test_research_run_audits_serialize_for_history_api(self):
         from quant_core.runs import ResearchRunAudit, research_run_audits_to_payload
@@ -280,6 +282,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 3.4, "trade_count": 8},
             decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
             execution_mode="paper_only",
+            backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
         )
 
         payload = research_run_audits_to_payload([newer, older])
@@ -287,17 +290,25 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["runId"], "run-new")
         self.assertEqual(payload["runs"][0]["createdAt"], "2026-05-26T08:00:00+00:00")
         self.assertEqual(payload["runs"][0]["strategyRevision"], "rev-new")
+        self.assertEqual(payload["runs"][0]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(payload["runs"][0]["metrics"]["trade_count"], 8)
         self.assertEqual(payload["runs"][1]["symbol"], "600000")
 
     def test_terminal_research_run_persists_audit_summary(self):
+        from quant_core.backtest import BacktestEngine
         from quant_core.research import run_terminal_research
         from quant_core.runs import ResearchRunStore
         from quant_core.terminal import terminal_workspace_to_payload
 
         with tempfile.TemporaryDirectory() as tmp:
             store = ResearchRunStore(f"{tmp}/runs.sqlite")
-            workspace = run_terminal_research(market="ashare", symbol="600000", timeframe="1d", run_store=store)
+            workspace = run_terminal_research(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                engine=BacktestEngine(initial_cash=250_000, fee_rate=0.0008, slippage_rate=0.0004),
+                run_store=store,
+            )
             latest = store.list_recent(limit=1)
 
         payload = terminal_workspace_to_payload(workspace)
@@ -308,6 +319,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["researchRun"]["strategyRevision"], latest[0].strategy_revision)
         self.assertEqual(payload["researchRun"]["dataRows"], latest[0].data_rows)
         self.assertEqual(payload["researchRun"]["executionMode"], "paper_only")
+        self.assertEqual(payload["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
+        self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
 
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter

@@ -448,7 +448,20 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     typeof run.dataRows === "number" &&
     Boolean(run.metrics) &&
     Array.isArray(run.decisions) &&
-    Boolean(run.executionMode)
+    Boolean(run.executionMode) &&
+    (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions))
+  );
+}
+
+function isBacktestAssumptions(value: unknown): value is BacktestAssumptions {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const assumptions = value as Partial<BacktestAssumptions>;
+  return (
+    typeof assumptions.initialCash === "number" &&
+    typeof assumptions.feeBps === "number" &&
+    typeof assumptions.slippageBps === "number"
   );
 }
 

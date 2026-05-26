@@ -491,7 +491,8 @@ describe("terminal workbench model", () => {
         trade_count: 5
       },
       decisions: [{ agent: "AI Summary", message: "Replay loaded", tone: "ai" }],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
     });
 
     expect(workspace.selectedInstrument).toEqual({
@@ -505,6 +506,7 @@ describe("terminal workbench model", () => {
     expect(workspace.strategy.name).toBe("SMA trend demo");
     expect(workspace.strategy.risk).toContain("rev123");
     expect(workspace.metrics.map((metric) => metric.value)).toEqual(["-1.25%", "4.50%", "40.00%", "5"]);
+    expect(workspace.backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
     expect(workspace.decisionLog[0].message).toBe("Replay loaded");
     expect(workspace.researchRun?.runId).toBe("run-history");
   });

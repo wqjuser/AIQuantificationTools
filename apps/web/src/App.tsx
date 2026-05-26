@@ -2032,7 +2032,8 @@ function historyRunDetailLabel(i18n: AppI18n, run: ResearchRunAudit): string {
   const rows = i18n.t("history.rows", { count: run.dataRows });
   const revision = `${i18n.t("history.revision")}: ${run.strategyRevision}`;
   const execution = `${i18n.t("history.execution")}: ${historyExecutionModeLabel(i18n, run.executionMode)}`;
-  return `${rows} · ${revision} · ${execution}`;
+  const assumptions = historyAssumptionLabel(i18n, run);
+  return assumptions ? `${rows} · ${revision} · ${execution} · ${assumptions}` : `${rows} · ${revision} · ${execution}`;
 }
 
 function historyExecutionModeLabel(i18n: AppI18n, mode: string): string {
@@ -2040,6 +2041,17 @@ function historyExecutionModeLabel(i18n: AppI18n, mode: string): string {
     return mode.replace("paper_only", "模拟盘").replace("certified_live", "认证实盘").replace("blocked_live", "实盘阻断");
   }
   return mode;
+}
+
+function historyAssumptionLabel(i18n: AppI18n, run: ResearchRunAudit): string | null {
+  if (!run.backtestAssumptions) {
+    return null;
+  }
+  const cash = run.backtestAssumptions.initialCash.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (i18n.locale === "zh-CN") {
+    return `资金 ${cash} / 手续费 ${run.backtestAssumptions.feeBps}基点 / 滑点 ${run.backtestAssumptions.slippageBps}基点`;
+  }
+  return `Cash ${cash} / Fee ${run.backtestAssumptions.feeBps}bps / Slippage ${run.backtestAssumptions.slippageBps}bps`;
 }
 
 function ExecutionTile({

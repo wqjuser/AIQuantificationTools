@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,7 @@ class ResearchRunAudit:
     metrics: dict[str, Any]
     decisions: list[dict[str, Any]]
     execution_mode: str
+    backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
 
 
 class ResearchRunStore:
@@ -48,10 +52,20 @@ class ResearchRunStore:
                     data_rows integer not null,
                     metrics_json text not null,
                     decisions_json text not null,
-                    execution_mode text not null
+                    execution_mode text not null,
+                    backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}'
                 )
                 """
             )
+            columns = {row[1] for row in connection.execute("pragma table_info(research_runs)").fetchall()}
+            if "backtest_assumptions_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column backtest_assumptions_json text not null
+                    default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}'
+                    """
+                )
             connection.commit()
         finally:
             connection.close()
@@ -72,9 +86,10 @@ class ResearchRunStore:
                     data_rows,
                     metrics_json,
                     decisions_json,
-                    execution_mode
+                    execution_mode,
+                    backtest_assumptions_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -85,7 +100,8 @@ class ResearchRunStore:
                     data_rows = excluded.data_rows,
                     metrics_json = excluded.metrics_json,
                     decisions_json = excluded.decisions_json,
-                    execution_mode = excluded.execution_mode
+                    execution_mode = excluded.execution_mode,
+                    backtest_assumptions_json = excluded.backtest_assumptions_json
                 """,
                 (
                     audit.run_id,
@@ -99,6 +115,7 @@ class ResearchRunStore:
                     json.dumps(audit.metrics, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.decisions, ensure_ascii=False, sort_keys=True),
                     audit.execution_mode,
+                    json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
                 ),
             )
             connection.commit()
@@ -121,7 +138,8 @@ class ResearchRunStore:
                     data_rows,
                     metrics_json,
                     decisions_json,
-                    execution_mode
+                    execution_mode,
+                    backtest_assumptions_json
                 from research_runs
                 order by created_at desc
                 limit ?
@@ -144,6 +162,7 @@ class ResearchRunStore:
                 metrics=json.loads(row[8]),
                 decisions=json.loads(row[9]),
                 execution_mode=row[10],
+                backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[11])),
             )
             for row in rows
         ]
@@ -162,8 +181,28 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "metrics": audit.metrics,
         "decisions": audit.decisions,
         "executionMode": audit.execution_mode,
+        "backtestAssumptions": _normalize_backtest_assumptions(audit.backtest_assumptions),
     }
 
 
 def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, Any]:
     return {"runs": [research_run_audit_to_payload(audit) for audit in audits]}
+
+
+def _normalize_backtest_assumptions(value: dict[str, Any] | None) -> dict[str, Any]:
+    assumptions = value or {}
+    return {
+        "initialCash": _number_or_default(assumptions.get("initialCash"), DEFAULT_BACKTEST_ASSUMPTIONS["initialCash"]),
+        "feeBps": _number_or_default(assumptions.get("feeBps"), DEFAULT_BACKTEST_ASSUMPTIONS["feeBps"]),
+        "slippageBps": _number_or_default(assumptions.get("slippageBps"), DEFAULT_BACKTEST_ASSUMPTIONS["slippageBps"]),
+    }
+
+
+def _number_or_default(value: Any, default: int | float) -> int | float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed.is_integer():
+        return int(parsed)
+    return parsed

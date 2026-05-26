@@ -87,6 +87,11 @@ def run_terminal_research(
         metrics=asdict(backtest.metrics),
         decisions=[asdict(entry) for entry in decision_log],
         execution_mode="paper_only",
+        backtest_assumptions={
+            "initialCash": backtest_engine.initial_cash,
+            "feeBps": round(backtest_engine.fee_rate * 10_000, 4),
+            "slippageBps": round(backtest_engine.slippage_rate * 10_000, 4),
+        },
     )
     audit_store.record(audit)
 

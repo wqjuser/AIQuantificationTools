@@ -197,7 +197,8 @@ describe("terminal workspace API client", () => {
               dataRows: 120,
               metrics: { total_return_pct: 3.4, trade_count: 8 },
               decisions: [],
-              executionMode: "paper_only"
+              executionMode: "paper_only",
+              backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
             }
           ]
         })
@@ -208,6 +209,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.runs[0].runId).toBe("run-new");
     expect(result.runs[0].metrics.trade_count).toBe(8);
+    expect(result.runs[0].backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
   });
 
   test("loads market klines from the Python core", async () => {
