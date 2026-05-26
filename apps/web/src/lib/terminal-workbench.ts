@@ -69,6 +69,8 @@ export interface StrategySnapshot {
   risk: string;
 }
 
+export type StrategyField = keyof StrategySnapshot;
+
 export interface StrategyRuleRow {
   id: string;
   group: "entry" | "exit" | "position" | "risk";
@@ -1083,6 +1085,37 @@ export function workspaceWithSelectedTimeframe(
   timeframe: Timeframe
 ): TerminalWorkspace {
   return freshResearchContext(currentWorkspace, currentWorkspace.selectedInstrument, timeframe);
+}
+
+export function workspaceWithStrategyField(
+  currentWorkspace: TerminalWorkspace,
+  field: StrategyField,
+  value: string
+): TerminalWorkspace {
+  const note: DecisionLogEntry = {
+    agent: "Strategy Editor",
+    message: `Strategy field ${field} updated locally. Run Pipeline to generate a fresh audited backtest.`,
+    tone: "warning"
+  };
+  const existingLog =
+    currentWorkspace.decisionLog[0]?.agent === "Strategy Editor"
+      ? currentWorkspace.decisionLog.slice(1)
+      : currentWorkspace.decisionLog;
+  return {
+    ...currentWorkspace,
+    strategy: {
+      ...currentWorkspace.strategy,
+      [field]: value
+    },
+    metrics: [
+      { label: "Return", value: "N/A", tone: "neutral" },
+      { label: "Max DD", value: "N/A", tone: "warning" },
+      { label: "Win Rate", value: "N/A", tone: "neutral" },
+      { label: "Trades", value: "0", tone: "neutral" }
+    ],
+    decisionLog: [note, ...existingLog],
+    researchRun: null
+  };
 }
 
 export function workspaceWithPreservedSelection(

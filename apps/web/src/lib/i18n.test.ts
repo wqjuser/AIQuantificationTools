@@ -18,6 +18,7 @@ describe("i18n", () => {
     expect(zh.decisionAgent("Technical")).toBe("技术分析");
     expect(zh.metricLabel("Max DD")).toBe("最大回撤");
     expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
+    expect(zh.statusLabel("Strategy edited")).toBe("策略已编辑");
     expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
   });
 
@@ -47,6 +48,7 @@ describe("i18n", () => {
     const en = createI18n("en-US");
 
     expect(zh.t("module.scanner.title")).toBe("市场扫描器");
+    expect(zh.t("strategy.name")).toBe("名称");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
     expect(zh.t("history.replay")).toBe("回放");
     expect(zh.t("portfolio.paperPositions")).toBe("模拟持仓");
@@ -89,6 +91,9 @@ describe("i18n", () => {
     expect(
       zh.decisionMessage("600000 15m selected. Run Pipeline to generate an audited backtest and agent review.")
     ).toBe("600000 15m 已选中。运行流水线以生成可审计回测和智能体评审。");
+    expect(
+      zh.decisionMessage("Strategy field entry updated locally. Run Pipeline to generate a fresh audited backtest.")
+    ).toBe("策略字段 入场 已本地更新。运行流水线以生成新的可审计回测。");
     expect(zh.decisionMessage("自定义中文研究结论")).toBe("自定义中文研究结论");
   });
 });

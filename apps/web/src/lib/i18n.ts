@@ -100,6 +100,7 @@ const messages = {
     "module.workflow.log": "Run log",
     "module.workflow.idle": "No workflow run yet",
     "module.workflow.run": "Run pipeline",
+    "strategy.name": "Name",
     "strategy.entry": "Entry",
     "strategy.exit": "Exit",
     "strategy.position": "Position",
@@ -211,6 +212,7 @@ const messages = {
     "module.workflow.log": "运行日志",
     "module.workflow.idle": "尚未运行工作流",
     "module.workflow.run": "运行流水线",
+    "strategy.name": "名称",
     "strategy.entry": "入场",
     "strategy.exit": "出场",
     "strategy.position": "仓位",
@@ -319,6 +321,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Audit replay loaded": "Audit replay loaded",
       "Instrument selected": "Instrument selected",
       "Timeframe selected": "Timeframe selected",
+      "Strategy edited": "Strategy edited",
       "AI action generated": "AI action generated"
     },
     executionModes: {
@@ -401,6 +404,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Audit replay loaded": "审计回放已加载",
       "Instrument selected": "标的已选择",
       "Timeframe selected": "周期已选择",
+      "Strategy edited": "策略已编辑",
       "AI action generated": "AI 操作已生成"
     },
     executionModes: {
@@ -589,7 +593,28 @@ function translateDecisionMessage(locale: Locale, message: string): string {
   if (strategyDraft) {
     return `${strategyDraft[1]} 策略草稿已生成：数据、风控和人工闸门通过前保持模拟盘执行。`;
   }
+  const strategyEdited = message.match(
+    /^Strategy field (.+) updated locally\. Run Pipeline to generate a fresh audited backtest\.$/
+  );
+  if (strategyEdited) {
+    return `策略字段 ${strategyFieldText(locale, strategyEdited[1])} 已本地更新。运行流水线以生成新的可审计回测。`;
+  }
   return message;
+}
+
+function strategyFieldText(locale: Locale, field: string): string {
+  if (locale === "en-US") {
+    return field;
+  }
+  return (
+    {
+      name: "名称",
+      entry: "入场",
+      exit: "出场",
+      position: "仓位",
+      risk: "风控"
+    }[field] ?? field
+  );
 }
 
 function translateAgentName(locale: Locale, agent: string): string {

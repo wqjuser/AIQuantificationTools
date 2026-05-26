@@ -24,6 +24,7 @@ import {
   workspaceWithAiAction,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
+  workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument,
   workspaceFromResearchRunAudit
@@ -574,6 +575,38 @@ describe("terminal workbench model", () => {
       agent: "Research Context",
       message: "AAPL 1d selected. Run Pipeline to generate an audited backtest and agent review.",
       tone: "ai"
+    });
+  });
+
+  test("edits strategy fields locally and invalidates stale audited results", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    const workspace = workspaceWithStrategyField(auditedWorkspace, "entry", "RSI < 30 rebound confirmation");
+
+    expect(workspace.strategy.entry).toBe("RSI < 30 rebound confirmation");
+    expect(workspace.researchRun).toBeNull();
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "Strategy Editor",
+      message: "Strategy field entry updated locally. Run Pipeline to generate a fresh audited backtest.",
+      tone: "warning"
     });
   });
 

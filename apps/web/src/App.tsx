@@ -59,6 +59,7 @@ import {
   ResearchRunAudit,
   ScannerCandidate,
   StrategyRuleRow,
+  StrategyField,
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
@@ -68,6 +69,7 @@ import {
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
   workspaceWithPreservedInteractiveState,
+  workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
@@ -404,6 +406,18 @@ export function App() {
       statusLabel: "AI action generated"
     }));
     setActiveModuleId(action === "strategy-draft" ? "watchlist" : "news");
+  }, []);
+
+  const updateStrategyField = useCallback((field: StrategyField, value: string) => {
+    manualSelectionVersionRef.current += 1;
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithStrategyField(current.workspace, field, value),
+      source: "core",
+      statusLabel: "Strategy edited"
+    }));
+    setActiveLoopStepId("strategy");
+    setActiveModuleId("watchlist");
+    setActiveWorkflowStageId("factor");
   }, []);
 
   const selectQuantLoopStep = useCallback((stepId: string) => {
@@ -777,7 +791,12 @@ export function App() {
               </Panel>
 
               <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)}>
-                <StrategySummary i18n={i18n} rows={strategyRuleRows} workspace={workspace} />
+                <StrategySummary
+                  i18n={i18n}
+                  onUpdateStrategyField={updateStrategyField}
+                  rows={strategyRuleRows}
+                  workspace={workspace}
+                />
               </Panel>
 
               <BacktestReplayPanel i18n={i18n} rows={backtestTradeRows} />
@@ -953,21 +972,57 @@ function ChartDataStrip({
 
 function StrategySummary({
   i18n,
+  onUpdateStrategyField,
   rows,
   workspace
 }: {
   i18n: AppI18n;
+  onUpdateStrategyField: (field: StrategyField, value: string) => void;
   rows: StrategyRuleRow[];
   workspace: TerminalWorkspace;
 }) {
   return (
     <div className="strategy-workbench">
-      <dl className="strategy-list">
-        <StrategyFact label={i18n.t("strategy.entry")} value={i18n.strategyText(workspace.strategy.entry)} />
-        <StrategyFact label={i18n.t("strategy.exit")} value={i18n.strategyText(workspace.strategy.exit)} />
-        <StrategyFact label={i18n.t("strategy.position")} value={i18n.strategyText(workspace.strategy.position)} />
-        <StrategyFact label={i18n.t("strategy.risk")} value={i18n.strategyText(workspace.strategy.risk)} />
-      </dl>
+      <div className="strategy-editor">
+        <label>
+          <span>{i18n.t("strategy.name")}</span>
+          <input
+            onChange={(event) => onUpdateStrategyField("name", event.currentTarget.value)}
+            value={workspace.strategy.name}
+          />
+        </label>
+        <label>
+          <span>{i18n.t("strategy.entry")}</span>
+          <textarea
+            onChange={(event) => onUpdateStrategyField("entry", event.currentTarget.value)}
+            rows={2}
+            value={workspace.strategy.entry}
+          />
+        </label>
+        <label>
+          <span>{i18n.t("strategy.exit")}</span>
+          <textarea
+            onChange={(event) => onUpdateStrategyField("exit", event.currentTarget.value)}
+            rows={2}
+            value={workspace.strategy.exit}
+          />
+        </label>
+        <label>
+          <span>{i18n.t("strategy.position")}</span>
+          <input
+            onChange={(event) => onUpdateStrategyField("position", event.currentTarget.value)}
+            value={workspace.strategy.position}
+          />
+        </label>
+        <label>
+          <span>{i18n.t("strategy.risk")}</span>
+          <textarea
+            onChange={(event) => onUpdateStrategyField("risk", event.currentTarget.value)}
+            rows={2}
+            value={workspace.strategy.risk}
+          />
+        </label>
+      </div>
       <div className="strategy-rule-board">
         <div className="strategy-rule-title">
           <span>{i18n.t("strategy.rules")}</span>
@@ -1898,15 +1953,6 @@ function historyExecutionModeLabel(i18n: AppI18n, mode: string): string {
     return mode.replace("paper_only", "模拟盘").replace("certified_live", "认证实盘").replace("blocked_live", "实盘阻断");
   }
   return mode;
-}
-
-function StrategyFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
 }
 
 function ExecutionTile({
