@@ -48,8 +48,10 @@ describe("i18n", () => {
 
     expect(zh.t("module.scanner.title")).toBe("市场扫描器");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
+    expect(zh.t("history.replay")).toBe("回放");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
     expect(en.t("backtest.replay")).toBe("Trade replay");
+    expect(en.t("history.rows", { count: 240 })).toBe("240 bars");
     expect(en.t("module.news.pending")).toBe("Live feed pending");
     expect(en.t("module.workflow.run")).toBe("Run pipeline");
   });

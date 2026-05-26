@@ -36,6 +36,7 @@ import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./li
 import {
   buildTerminalWorkspace,
   buildAgentCommitteeRounds,
+  buildAuditReplayWorkflowState,
   buildBacktestTradeRows,
   buildModuleNewsEvents,
   buildPaperTradingRows,
@@ -351,19 +352,10 @@ export function App() {
         source: "core",
         statusLabel: "Audit replay loaded"
       }));
+      setActiveModuleId("workflow");
+      setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");
-      setWorkflowRunState({
-        activeStageId: "execution",
-        completedStageIds: ["data", "factor", "backtest", "agent"],
-        log: [
-          {
-            id: `replay-${run.runId}`,
-            stageId: "backtest",
-            level: "success",
-            message: `Audit replay loaded: ${run.dataRows} bars · ${run.executionMode}`
-          }
-        ]
-      });
+      setWorkflowRunState(buildAuditReplayWorkflowState(run));
     },
     []
   );
@@ -882,7 +874,7 @@ export function App() {
               runHistory.map((run) => (
                 <RunHistoryRow
                   key={run.runId}
-                  labelRun={i18n.researchRunHistoryLabel}
+                  i18n={i18n}
                   run={run}
                   isActive={workspace.researchRun?.runId === run.runId}
                   onReplay={replayRun}
@@ -1568,6 +1560,22 @@ function workflowOutputLabel(i18n: AppI18n, output: string): string {
   if (replayLoaded) {
     return `已加载审计回放：${replayLoaded[1]} 根K线 · ${replayLoaded[2].replace("paper_only", "模拟盘")}`;
   }
+  const restoredData = output.match(/^Audit data snapshot restored: (.+) · (.+) · (.+) bars$/);
+  if (restoredData) {
+    return `已恢复审计数据快照：${restoredData[1]} · ${restoredData[2]} · ${restoredData[3]} 根K线`;
+  }
+  const restoredRevision = output.match(/^Strategy revision restored: (.+)$/);
+  if (restoredRevision) {
+    return `已恢复策略版本：${restoredRevision[1]}`;
+  }
+  const restoredDecisions = output.match(/^Decision notes restored: (.+)$/);
+  if (restoredDecisions) {
+    return `已恢复决策记录：${restoredDecisions[1]} 条`;
+  }
+  const restoredExecution = output.match(/^Execution mode restored: (.+); live gates remain controlled locally$/);
+  if (restoredExecution) {
+    return `已恢复执行模式：${restoredExecution[1].replace("paper_only", "模拟盘")}；实盘闸门仍由本地控制`;
+  }
   const failedBacktest = output.match(/^Pipeline failed before audited backtest: (.+)$/);
   if (failedBacktest) {
     return `审计回测前流水线失败：${failedBacktest[1]}`;
@@ -1800,19 +1808,40 @@ function RunHistoryRow({
   run,
   isActive,
   onReplay,
-  labelRun
+  i18n
 }: {
   run: ResearchRunAudit;
   isActive: boolean;
   onReplay: (run: ResearchRunAudit) => void;
-  labelRun: (run: ResearchRunAudit) => string;
+  i18n: AppI18n;
 }) {
   return (
-    <button className={`history-row ${isActive ? "active" : ""}`} onClick={() => onReplay(run)}>
-      <strong>{labelRun(run)}</strong>
+    <button
+      aria-current={isActive ? "true" : undefined}
+      className={`history-row ${isActive ? "active" : ""}`}
+      onClick={() => onReplay(run)}
+      type="button"
+    >
+      <strong>{i18n.researchRunHistoryLabel(run)}</strong>
+      <span>{historyRunDetailLabel(i18n, run)}</span>
       <span>{run.runId}</span>
+      <small>{isActive ? i18n.t("history.active") : i18n.t("history.replay")}</small>
     </button>
   );
+}
+
+function historyRunDetailLabel(i18n: AppI18n, run: ResearchRunAudit): string {
+  const rows = i18n.t("history.rows", { count: run.dataRows });
+  const revision = `${i18n.t("history.revision")}: ${run.strategyRevision}`;
+  const execution = `${i18n.t("history.execution")}: ${historyExecutionModeLabel(i18n, run.executionMode)}`;
+  return `${rows} · ${revision} · ${execution}`;
+}
+
+function historyExecutionModeLabel(i18n: AppI18n, mode: string): string {
+  if (i18n.locale === "zh-CN") {
+    return mode.replace("paper_only", "模拟盘").replace("certified_live", "认证实盘").replace("blocked_live", "实盘阻断");
+  }
+  return mode;
 }
 
 function StrategyFact({ label, value }: { label: string; value: string }) {

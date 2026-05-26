@@ -955,6 +955,45 @@ export function workspaceFromResearchRunAudit(
   };
 }
 
+export function buildAuditReplayWorkflowState(run: ResearchRunAudit): WorkflowRunState {
+  return {
+    activeStageId: "execution",
+    completedStageIds: ["data", "factor", "backtest", "agent"],
+    log: [
+      {
+        id: `replay-${run.runId}-data`,
+        stageId: "data",
+        level: "success",
+        message: `Audit data snapshot restored: ${run.symbol} · ${run.timeframe} · ${run.dataRows} bars`
+      },
+      {
+        id: `replay-${run.runId}-factor`,
+        stageId: "factor",
+        level: "success",
+        message: `Strategy revision restored: ${run.strategyRevision}`
+      },
+      {
+        id: `replay-${run.runId}-backtest`,
+        stageId: "backtest",
+        level: "success",
+        message: `Audit replay loaded: ${run.dataRows} bars · ${run.executionMode}`
+      },
+      {
+        id: `replay-${run.runId}-agent`,
+        stageId: "agent",
+        level: "success",
+        message: `Decision notes restored: ${run.decisions.length}`
+      },
+      {
+        id: `replay-${run.runId}-execution`,
+        stageId: "execution",
+        level: "warning",
+        message: `Execution mode restored: ${run.executionMode}; live gates remain controlled locally`
+      }
+    ]
+  };
+}
+
 export function workspaceWithSelectedInstrument(
   currentWorkspace: TerminalWorkspace,
   instrument: Instrument

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
   buildAgentCommitteeRounds,
+  buildAuditReplayWorkflowState,
   buildBacktestTradeRows,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
@@ -449,6 +450,44 @@ describe("terminal workbench model", () => {
     expect(workspace.metrics.map((metric) => metric.value)).toEqual(["-1.25%", "4.50%", "40.00%", "5"]);
     expect(workspace.decisionLog[0].message).toBe("Replay loaded");
     expect(workspace.researchRun?.runId).toBe("run-history");
+  });
+
+  test("builds a full workflow state when an audited run is replayed", () => {
+    const state = buildAuditReplayWorkflowState({
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "15m",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [
+        { agent: "AI Summary", message: "Replay loaded", tone: "ai" },
+        { agent: "Risk", message: "Risk review loaded", tone: "risk" }
+      ],
+      executionMode: "paper_only"
+    });
+
+    expect(state.activeStageId).toBe("execution");
+    expect(state.completedStageIds).toEqual(["data", "factor", "backtest", "agent"]);
+    expect(state.log.map((entry) => entry.stageId)).toEqual(["data", "factor", "backtest", "agent", "execution"]);
+    expect(state.log[0]).toMatchObject({
+      level: "success",
+      message: "Audit data snapshot restored: 600000 · 15m · 240 bars"
+    });
+    expect(state.log[1].message).toBe("Strategy revision restored: rev123");
+    expect(state.log[3].message).toBe("Decision notes restored: 2");
+    expect(state.log[4]).toMatchObject({
+      level: "warning",
+      message: "Execution mode restored: paper_only; live gates remain controlled locally"
+    });
   });
 
   test("selects a watchlist instrument as a fresh research context", () => {

@@ -1613,6 +1613,8 @@ dd {
 }
 
 .history-row {
+  display: grid;
+  gap: 5px;
   border: 1px solid #2a3b51;
   border-radius: 7px;
   background: #151f2d;
@@ -1623,7 +1625,8 @@ dd {
 }
 
 .history-row strong,
-.history-row span {
+.history-row span,
+.history-row small {
   display: block;
 }
 
@@ -1633,10 +1636,19 @@ dd {
 }
 
 .history-row span,
+.history-row small,
 .empty-state {
-  margin-top: 5px;
   color: #8fa0b2;
   font-size: 11px;
+}
+
+.history-row small {
+  justify-self: start;
+  border: 1px solid #2a3b51;
+  border-radius: 6px;
+  padding: 4px 7px;
+  color: #71dfc5;
+  font-weight: 900;
 }
 
 .history-row:hover,
