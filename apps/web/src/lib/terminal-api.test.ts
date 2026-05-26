@@ -5,6 +5,7 @@ import {
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
+  buildLoadingMarketKlinesResult,
   loadMarketKlines,
   loadMarketSearch,
   buildWorkspaceUrl,
@@ -41,6 +42,22 @@ describe("terminal workspace API client", () => {
     expect(buildMarketSearchUrl("http://127.0.0.1:8765/", "ashare", "浦发", 8)).toBe(
       "http://127.0.0.1:8765/api/market/search?market=ashare&query=%E6%B5%A6%E5%8F%91&limit=8"
     );
+  });
+
+  test("builds an empty chart loading state for the newly selected symbol", () => {
+    expect(buildLoadingMarketKlinesResult({ market: "ashare", symbol: "600004", timeframe: "1d" })).toEqual({
+      market: "ashare",
+      symbol: "600004",
+      timeframe: "1d",
+      bars: [],
+      quality: {
+        source: "loading",
+        isComplete: false,
+        warnings: [],
+        rows: 0
+      },
+      source: "fallback"
+    });
   });
 
   test("resolves the local core base URL from Vite environment with a default", () => {

@@ -17,6 +17,7 @@ import {
 import { dispose, init, type Chart, type KLineData } from "klinecharts";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
+  buildLoadingMarketKlinesResult,
   loadMarketKlines,
   loadMarketSearch,
   loadResearchRunHistory,
@@ -103,6 +104,7 @@ export function App() {
   const i18n = createI18n(locale);
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
+  const latestChartBar = klinesState.bars.at(-1);
 
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
@@ -129,13 +131,14 @@ export function App() {
   const refreshChart = useCallback(async () => {
     const requestId = chartRequestIdRef.current + 1;
     chartRequestIdRef.current = requestId;
-    setIsChartLoading(true);
-    const result = await loadMarketKlines(quantCoreBaseUrl, {
+    const params = {
       market: workspace.selectedInstrument.market,
       symbol: workspace.selectedInstrument.symbol,
-      timeframe: workspace.selectedTimeframe,
-      limit: 160
-    });
+      timeframe: workspace.selectedTimeframe
+    };
+    setIsChartLoading(true);
+    setKlinesState(buildLoadingMarketKlinesResult(params));
+    const result = await loadMarketKlines(quantCoreBaseUrl, { ...params, limit: 160 });
     if (chartRequestIdRef.current === requestId) {
       setKlinesState(result);
       setIsChartLoading(false);
@@ -516,15 +519,19 @@ export function App() {
           >
             <div className="chart-panel-body">
               <KlineChartCanvas
+                key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
                 bars={klinesState.bars}
                 locale={locale}
-                symbol={workspace.selectedInstrument.symbol}
-                timeframe={workspace.selectedTimeframe}
+                symbol={klinesState.symbol}
+                timeframe={klinesState.timeframe}
               />
               {!klinesState.bars.length && !isChartLoading ? (
                 <div className="chart-empty">{i18n.t("chart.noData")}</div>
               ) : null}
               <div className="chart-data-strip">
+                <span>{i18n.t("chart.symbol")}: {klinesState.symbol}</span>
+                {latestChartBar ? <span>{i18n.t("chart.latestClose")}: {latestChartBar.close.toFixed(2)}</span> : null}
+                {latestChartBar ? <span>{i18n.t("chart.asOf")}: {formatChartDate(latestChartBar.timestamp)}</span> : null}
                 <span>{i18n.t("chart.source")}: {klinesState.quality.source}</span>
                 <span>{i18n.t("chart.bars", { count: klinesState.bars.length })}</span>
               </div>
@@ -710,6 +717,10 @@ function toKlineChartData(bars: MarketKlinesResult["bars"]): KLineData[] {
     close: bar.close,
     volume: bar.volume
   }));
+}
+
+function formatChartDate(timestamp: string): string {
+  return timestamp.slice(0, 10);
 }
 
 function Panel({

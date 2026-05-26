@@ -134,6 +134,22 @@ export function buildMarketSearchUrl(baseUrl: string, market: Market, query: str
   return url.toString();
 }
 
+export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
+  return {
+    market: params.market,
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    bars: [],
+    quality: {
+      source: "loading",
+      isComplete: false,
+      warnings: [],
+      rows: 0
+    },
+    source: "fallback"
+  };
+}
+
 export async function loadTerminalWorkspace(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
