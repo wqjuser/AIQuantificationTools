@@ -13,6 +13,7 @@ from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import (
     AiResearchRequest,
+    BacktestRun,
     Condition,
     DataQuality,
     Market,
@@ -26,6 +27,7 @@ from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestAssumptions,
     BacktestMetric,
+    BacktestTradeReplay,
     DecisionLogEntry,
     Instrument,
     ResearchRunSummary,
@@ -126,6 +128,7 @@ def run_terminal_research(
             BacktestMetric(label="Trades", value=str(backtest.metrics.trade_count), tone="neutral"),
         ],
         decision_log=decision_log,
+        backtest_trades=_backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash),
         research_run=ResearchRunSummary(
             run_id=run_id,
             created_at=created_at,
@@ -135,6 +138,40 @@ def run_terminal_research(
             execution_mode="paper_only",
         ),
     )
+
+
+def _backtest_trade_replay_rows(backtest: BacktestRun, *, initial_cash: float) -> list[BacktestTradeReplay]:
+    rows: list[BacktestTradeReplay] = []
+    entry_trade = None
+    capital_base = max(initial_cash, 1)
+    for index, trade in enumerate(backtest.trades, start=1):
+        notional = trade.price * trade.quantity
+        pnl = "-"
+        tone = "neutral"
+        if trade.side == "buy":
+            entry_trade = trade
+        elif trade.side == "sell" and entry_trade is not None:
+            pnl_value = (trade.price - entry_trade.price) * min(trade.quantity, entry_trade.quantity) - entry_trade.fee - trade.fee
+            pnl = _format_signed_amount(pnl_value)
+            tone = "positive" if pnl_value >= 0 else "warning"
+            entry_trade = None
+
+        rows.append(
+            BacktestTradeReplay(
+                id=f"trade-{index}",
+                timestamp=trade.timestamp.isoformat(),
+                symbol=trade.symbol,
+                side=trade.side.upper(),
+                status="filled",
+                price=_format_amount(trade.price),
+                quantity=_format_quantity(trade.quantity),
+                exposure=_format_pct((notional / capital_base) * 100),
+                pnl=pnl,
+                reason=trade.reason,
+                tone=tone,
+            )
+        )
+    return rows
 
 
 def _default_strategy_snapshot() -> StrategySnapshot:
@@ -247,3 +284,18 @@ def _format_signed_pct(value: float) -> str:
 
 def _format_pct(value: float) -> str:
     return f"{value:.2f}%"
+
+
+def _format_amount(value: float) -> str:
+    return f"{value:.2f}"
+
+
+def _format_signed_amount(value: float) -> str:
+    sign = "+" if value >= 0 else ""
+    return f"{sign}{value:.2f}"
+
+
+def _format_quantity(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.6f}".rstrip("0").rstrip(".")

@@ -292,6 +292,7 @@ export interface TerminalWorkspace {
   metrics: BacktestMetric[];
   decisionLog: DecisionLogEntry[];
   workflowNodes: WorkflowNode[];
+  backtestTrades?: BacktestTradeRow[];
   researchRun?: ResearchRunSummary | null;
 }
 
@@ -766,6 +767,10 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
 }
 
 export function buildBacktestTradeRows(workspace: TerminalWorkspace): BacktestTradeRow[] {
+  if (workspace.backtestTrades?.length) {
+    return workspace.backtestTrades;
+  }
+
   const price = resolvePaperOrderPrice(workspace);
   const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
   const returnMetric = metricValue(workspace, "Return", "N/A");

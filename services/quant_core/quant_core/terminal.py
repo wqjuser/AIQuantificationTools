@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import datetime
 from typing import Any, Literal
 
@@ -95,6 +95,21 @@ class BacktestAssumptions:
 
 
 @dataclass(frozen=True)
+class BacktestTradeReplay:
+    id: str
+    timestamp: str
+    symbol: str
+    side: Literal["BUY", "SELL", "RISK", "HOLD"]
+    status: Literal["filled", "open", "review", "blocked"]
+    price: str
+    quantity: str
+    exposure: str
+    pnl: str
+    reason: str
+    tone: Literal["positive", "warning", "neutral", "risk"]
+
+
+@dataclass(frozen=True)
 class DecisionLogEntry:
     agent: str
     message: str
@@ -134,6 +149,7 @@ class TerminalWorkspace:
     metrics: list[BacktestMetric]
     decision_log: list[DecisionLogEntry]
     workflow_nodes: list[WorkflowNode]
+    backtest_trades: list[BacktestTradeReplay] = field(default_factory=list)
     research_run: ResearchRunSummary | None = None
 
 

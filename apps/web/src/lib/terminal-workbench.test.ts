@@ -347,6 +347,42 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("uses audited backtest trade rows when the core supplies real trades", () => {
+    const workspace = {
+      ...buildTerminalWorkspace(),
+      backtestTrades: [
+        {
+          id: "trade-1",
+          timestamp: "2026-01-05T00:00:00+00:00",
+          symbol: "600000",
+          side: "BUY" as const,
+          status: "filled" as const,
+          price: "9.20",
+          quantity: "2100",
+          exposure: "19.3%",
+          pnl: "-",
+          reason: "entry_conditions",
+          tone: "neutral" as const
+        },
+        {
+          id: "trade-2",
+          timestamp: "2026-02-01T00:00:00+00:00",
+          symbol: "600000",
+          side: "SELL" as const,
+          status: "filled" as const,
+          price: "10.40",
+          quantity: "2100",
+          exposure: "21.8%",
+          pnl: "+2512.00",
+          reason: "exit_conditions",
+          tone: "positive" as const
+        }
+      ]
+    };
+
+    expect(buildBacktestTradeRows(workspace)).toEqual(workspace.backtestTrades);
+  });
+
   test("derives module news events from local market, audit, execution, and agent evidence", () => {
     const workspace = {
       ...buildTerminalWorkspace(),
