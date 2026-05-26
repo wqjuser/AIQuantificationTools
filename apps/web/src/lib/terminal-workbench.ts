@@ -64,6 +64,16 @@ export interface StrategySnapshot {
   risk: string;
 }
 
+export interface StrategyRuleRow {
+  id: string;
+  group: "entry" | "exit" | "position" | "risk";
+  label: string;
+  condition: string;
+  parameter: string;
+  status: "active" | "pending" | "guardrail";
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface BacktestMetric {
   label: string;
   value: string;
@@ -483,6 +493,47 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
   ];
 }
 
+export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRuleRow[] {
+  return [
+    {
+      id: "entry-rule",
+      group: "entry",
+      label: "Entry signal",
+      condition: workspace.strategy.entry,
+      parameter: inferStrategyParameter(workspace.strategy.entry, "SMA20 / relative strength"),
+      status: isPendingStrategyText(workspace.strategy.entry) ? "pending" : "active",
+      tone: isPendingStrategyText(workspace.strategy.entry) ? "warning" : "positive"
+    },
+    {
+      id: "exit-rule",
+      group: "exit",
+      label: "Exit signal",
+      condition: workspace.strategy.exit,
+      parameter: inferStrategyParameter(workspace.strategy.exit, "Trend support / risk downgrade"),
+      status: isPendingStrategyText(workspace.strategy.exit) ? "pending" : "active",
+      tone: "warning"
+    },
+    {
+      id: "position-rule",
+      group: "position",
+      label: "Position sizing",
+      condition: workspace.strategy.position,
+      parameter: inferStrategyParameter(workspace.strategy.position, "Exposure cap / paper sizing"),
+      status: isPendingStrategyText(workspace.strategy.position) ? "pending" : "active",
+      tone: isPendingStrategyText(workspace.strategy.position) ? "warning" : "neutral"
+    },
+    {
+      id: "risk-rule",
+      group: "risk",
+      label: "Risk guardrail",
+      condition: workspace.strategy.risk,
+      parameter: "Stop / drawdown / execution mode",
+      status: "guardrail",
+      tone: "risk"
+    }
+  ];
+}
+
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
   const selectedSymbol = workspace.selectedInstrument.symbol;
   const committeeEvents = workspace.decisionLog.slice(0, 3).map((entry, index) => ({
@@ -502,6 +553,23 @@ export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsE
       detail: "This panel currently surfaces local agent context and will accept a news provider adapter later."
     }
   ];
+}
+
+function inferStrategyParameter(condition: string, fallback: string): string {
+  if (condition.includes("support") || condition.includes("downgrade")) {
+    return "Trend support / risk downgrade";
+  }
+  if (condition.includes("SMA20") || condition.includes("relative strength")) {
+    return "SMA20 / relative strength";
+  }
+  if (condition.includes("20%") || condition.includes("paper sizing") || condition.includes("cap exposure")) {
+    return "Exposure cap / paper sizing";
+  }
+  return fallback;
+}
+
+function isPendingStrategyText(text: string): boolean {
+  return text.startsWith("Pending") || text.startsWith("Run Pipeline");
 }
 
 function resolvePaperOrderPrice(workspace: TerminalWorkspace): number {

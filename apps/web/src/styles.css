@@ -777,6 +777,11 @@ em {
   min-height: 0;
 }
 
+.strategy-workbench {
+  display: grid;
+  gap: 10px;
+}
+
 .strategy-list {
   display: grid;
   gap: 9px;
@@ -801,6 +806,85 @@ dd {
   color: #dce6ee;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.strategy-rule-board {
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.strategy-rule-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.strategy-rule-title strong {
+  color: #dce6ee;
+}
+
+.strategy-rule-grid {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.strategy-rule-row {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.55fr) minmax(160px, 1.4fr) minmax(100px, 0.8fr) minmax(70px, 0.45fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #0f1723;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.strategy-rule-row.warning {
+  border-left-color: #e8be62;
+}
+
+.strategy-rule-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.strategy-rule-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.strategy-rule-head {
+  min-height: 30px;
+  border-left-color: #27364a;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.strategy-rule-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.strategy-rule-row strong,
+.strategy-rule-row em {
+  display: block;
+}
+
+.strategy-rule-row em {
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-style: normal;
 }
 
 .node-row {
@@ -1560,6 +1644,7 @@ dd {
   .paper-blotter-row,
   .risk-ledger,
   .event-stream,
+  .strategy-rule-row,
   .workflow-artifact-grid,
   .workflow-canvas-large {
     grid-template-columns: 1fr;

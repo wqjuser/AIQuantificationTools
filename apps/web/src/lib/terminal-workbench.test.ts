@@ -7,6 +7,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildScannerCandidates,
+  buildStrategyRuleRows,
   buildTerminalWorkspace,
   buildWorkflowStages,
   executionModeLabel,
@@ -144,6 +145,31 @@ describe("terminal workbench model", () => {
       status: "blocked",
       reason: "3 live gates blocked; paper route remains available.",
       tone: "warning"
+    });
+  });
+
+  test("derives visual strategy rule rows from the active strategy snapshot", () => {
+    const rows = buildStrategyRuleRows(buildTerminalWorkspace());
+
+    expect(rows.map((row) => row.id)).toEqual(["entry-rule", "exit-rule", "position-rule", "risk-rule"]);
+    expect(rows[0]).toMatchObject({
+      group: "entry",
+      label: "Entry signal",
+      condition: "Close > SMA20 and relative strength improving",
+      parameter: "SMA20 / relative strength",
+      status: "active",
+      tone: "positive"
+    });
+    expect(rows[1]).toMatchObject({
+      group: "exit",
+      parameter: "Trend support / risk downgrade"
+    });
+    expect(rows.at(-1)).toMatchObject({
+      group: "risk",
+      label: "Risk guardrail",
+      parameter: "Stop / drawdown / execution mode",
+      status: "guardrail",
+      tone: "risk"
     });
   });
 

@@ -40,6 +40,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildScannerCandidates,
+  buildStrategyRuleRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
@@ -51,6 +52,7 @@ import {
   PortfolioRiskRow,
   ResearchRunAudit,
   ScannerCandidate,
+  StrategyRuleRow,
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
@@ -164,6 +166,7 @@ export function App() {
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
+  const strategyRuleRows = buildStrategyRuleRows(workspace);
   const moduleNewsEvents = buildModuleNewsEvents(workspace);
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
@@ -768,7 +771,7 @@ export function App() {
               </Panel>
 
               <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)}>
-                <StrategySummary i18n={i18n} workspace={workspace} />
+                <StrategySummary i18n={i18n} rows={strategyRuleRows} workspace={workspace} />
               </Panel>
 
               <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")}>
@@ -934,14 +937,49 @@ function ChartDataStrip({
   );
 }
 
-function StrategySummary({ i18n, workspace }: { i18n: AppI18n; workspace: TerminalWorkspace }) {
+function StrategySummary({
+  i18n,
+  rows,
+  workspace
+}: {
+  i18n: AppI18n;
+  rows: StrategyRuleRow[];
+  workspace: TerminalWorkspace;
+}) {
   return (
-    <dl className="strategy-list">
-      <StrategyFact label={i18n.t("strategy.entry")} value={i18n.strategyText(workspace.strategy.entry)} />
-      <StrategyFact label={i18n.t("strategy.exit")} value={i18n.strategyText(workspace.strategy.exit)} />
-      <StrategyFact label={i18n.t("strategy.position")} value={i18n.strategyText(workspace.strategy.position)} />
-      <StrategyFact label={i18n.t("strategy.risk")} value={i18n.strategyText(workspace.strategy.risk)} />
-    </dl>
+    <div className="strategy-workbench">
+      <dl className="strategy-list">
+        <StrategyFact label={i18n.t("strategy.entry")} value={i18n.strategyText(workspace.strategy.entry)} />
+        <StrategyFact label={i18n.t("strategy.exit")} value={i18n.strategyText(workspace.strategy.exit)} />
+        <StrategyFact label={i18n.t("strategy.position")} value={i18n.strategyText(workspace.strategy.position)} />
+        <StrategyFact label={i18n.t("strategy.risk")} value={i18n.strategyText(workspace.strategy.risk)} />
+      </dl>
+      <div className="strategy-rule-board">
+        <div className="strategy-rule-title">
+          <span>{i18n.t("strategy.rules")}</span>
+          <strong>{rows.length}</strong>
+        </div>
+        <div className="strategy-rule-grid">
+          <div className="strategy-rule-row strategy-rule-head">
+            <span>{i18n.t("strategy.rules")}</span>
+            <span>{i18n.t("strategy.condition")}</span>
+            <span>{i18n.t("strategy.parameter")}</span>
+            <span>{i18n.t("strategy.status")}</span>
+          </div>
+          {rows.map((row) => (
+            <article className={`strategy-rule-row ${row.tone}`} key={row.id}>
+              <span>
+                <strong>{strategyRuleGroupLabel(i18n, row.group)}</strong>
+                <em>{strategyRuleLabel(i18n, row.label)}</em>
+              </span>
+              <span>{i18n.strategyText(row.condition)}</span>
+              <span>{strategyRuleParameterLabel(i18n, row.parameter)}</span>
+              <span>{strategyRuleStatusLabel(i18n, row.status)}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1234,6 +1272,43 @@ function riskLabel(i18n: AppI18n, risk: ScannerCandidate["risk"]): string {
     return risk;
   }
   return { low: "低", medium: "中", high: "高" }[risk];
+}
+
+function strategyRuleGroupLabel(i18n: AppI18n, group: StrategyRuleRow["group"]): string {
+  if (i18n.locale === "en-US") {
+    return group;
+  }
+  return { entry: "入场", exit: "出场", position: "仓位", risk: "风控" }[group];
+}
+
+function strategyRuleLabel(i18n: AppI18n, label: StrategyRuleRow["label"]): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return {
+    "Entry signal": "入场信号",
+    "Exit signal": "出场信号",
+    "Position sizing": "仓位规则",
+    "Risk guardrail": "风险闸门"
+  }[label] ?? label;
+}
+
+function strategyRuleParameterLabel(i18n: AppI18n, parameter: string): string {
+  if (i18n.locale === "en-US") {
+    return parameter;
+  }
+  return parameter
+    .replace("SMA20 / relative strength", "SMA20 / 相对强度")
+    .replace("Trend support / risk downgrade", "趋势支撑 / 风险下调")
+    .replace("Exposure cap / paper sizing", "暴露上限 / 模拟定仓")
+    .replace("Stop / drawdown / execution mode", "止损 / 回撤 / 执行模式");
+}
+
+function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
 }
 
 function portfolioRiskLabel(i18n: AppI18n, row: PortfolioRiskRow): string {
