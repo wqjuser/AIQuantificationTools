@@ -1,7 +1,7 @@
-import { buildTerminalWorkspace, Market, ResearchRunAudit, TerminalWorkspace } from "./terminal-workbench";
+import { buildTerminalWorkspace, Market, ResearchRunAudit, TerminalWorkspace, Timeframe } from "./terminal-workbench";
 
 export const defaultQuantCoreBaseUrl = "http://127.0.0.1:8765";
-export type ResearchTimeframe = "1d" | "1m" | "5m" | "15m" | "30m" | "60m";
+export type ResearchTimeframe = Timeframe;
 
 export type WorkspaceSource = "core" | "fallback";
 
@@ -168,7 +168,7 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Boolean(run.createdAt) &&
     Boolean(run.market) &&
     Boolean(run.symbol) &&
-    Boolean(run.timeframe) &&
+    isTimeframe(run.timeframe) &&
     Boolean(run.strategyName) &&
     Boolean(run.strategyRevision) &&
     typeof run.dataRows === "number" &&
@@ -186,6 +186,7 @@ function isTerminalWorkspace(value: unknown): value is TerminalWorkspace {
   return (
     workspace.schemaVersion === 1 &&
     Boolean(workspace.selectedInstrument?.symbol) &&
+    isTimeframe(workspace.selectedTimeframe) &&
     Array.isArray(workspace.watchlist) &&
     Array.isArray(workspace.quantLoop) &&
     Array.isArray(workspace.modules) &&
@@ -197,5 +198,16 @@ function isTerminalWorkspace(value: unknown): value is TerminalWorkspace {
     Array.isArray(workspace.metrics) &&
     Array.isArray(workspace.decisionLog) &&
     Array.isArray(workspace.workflowNodes)
+  );
+}
+
+function isTimeframe(value: unknown): value is Timeframe {
+  return (
+    value === "1d" ||
+    value === "1m" ||
+    value === "5m" ||
+    value === "15m" ||
+    value === "30m" ||
+    value === "60m"
   );
 }

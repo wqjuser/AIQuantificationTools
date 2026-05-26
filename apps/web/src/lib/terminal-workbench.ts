@@ -8,6 +8,7 @@ export type PanelId =
   | "agent-committee";
 
 export type Market = "ashare" | "us" | "crypto";
+export type Timeframe = "1d" | "1m" | "5m" | "15m" | "30m" | "60m";
 
 export interface QuantLoopStep {
   id: string;
@@ -81,6 +82,7 @@ export interface WorkflowNode {
 export interface ResearchRunSummary {
   runId: string;
   createdAt: string;
+  timeframe: Timeframe;
   strategyRevision: string;
   dataRows: number;
   executionMode: string;
@@ -91,7 +93,7 @@ export interface ResearchRunAudit {
   createdAt: string;
   market: Market;
   symbol: string;
-  timeframe: string;
+  timeframe: Timeframe;
   strategyName: string;
   strategyRevision: string;
   dataRows: number;
@@ -103,6 +105,7 @@ export interface ResearchRunAudit {
 export interface TerminalWorkspace {
   schemaVersion: number;
   selectedInstrument: Instrument;
+  selectedTimeframe: Timeframe;
   watchlist: Instrument[];
   quantLoop: QuantLoopStep[];
   modules: TerminalModule[];
@@ -125,6 +128,7 @@ export function buildTerminalWorkspace(): TerminalWorkspace {
       market: "ashare",
       changePct: 1.24
     },
+    selectedTimeframe: "1d",
     watchlist: [
       { symbol: "600000", name: "浦发银行", market: "ashare", changePct: 1.24 },
       { symbol: "000300", name: "沪深300", market: "ashare", changePct: 0.41 },
@@ -246,7 +250,7 @@ export function researchRunLabel(summary: ResearchRunSummary | null | undefined)
   if (!summary) {
     return "No audited run yet";
   }
-  return `${summary.runId} · ${summary.dataRows} bars · ${summary.executionMode}`;
+  return `${summary.runId} · ${summary.dataRows} ${summary.timeframe} bars · ${summary.executionMode}`;
 }
 
 export function researchRunHistoryLabel(run: ResearchRunAudit): string {
@@ -255,7 +259,7 @@ export function researchRunHistoryLabel(run: ResearchRunAudit): string {
   const returnLabel = Number.isFinite(totalReturn)
     ? `${totalReturn >= 0 ? "+" : ""}${totalReturn.toFixed(2)}%`
     : "N/A";
-  return `${run.symbol} · ${returnLabel} · ${tradeCount} trades`;
+  return `${run.symbol} · ${run.timeframe} · ${returnLabel} · ${tradeCount} trades`;
 }
 
 export function workspaceFromResearchRunAudit(
@@ -273,6 +277,7 @@ export function workspaceFromResearchRunAudit(
   return {
     ...currentWorkspace,
     selectedInstrument: instrument,
+    selectedTimeframe: run.timeframe,
     strategy: {
       name: run.strategyName,
       entry: "Replay from audited research run",
@@ -296,6 +301,7 @@ export function workspaceFromResearchRunAudit(
     researchRun: {
       runId: run.runId,
       createdAt: run.createdAt,
+      timeframe: run.timeframe,
       strategyRevision: run.strategyRevision,
       dataRows: run.dataRows,
       executionMode: run.executionMode
@@ -314,11 +320,29 @@ export function workspaceWithSelectedInstrument(
     : [instrument, ...currentWorkspace.watchlist.slice(0, 3)];
 
   return {
+    ...freshResearchContext(currentWorkspace, instrument, currentWorkspace.selectedTimeframe),
+    watchlist
+  };
+}
+
+export function workspaceWithSelectedTimeframe(
+  currentWorkspace: TerminalWorkspace,
+  timeframe: Timeframe
+): TerminalWorkspace {
+  return freshResearchContext(currentWorkspace, currentWorkspace.selectedInstrument, timeframe);
+}
+
+function freshResearchContext(
+  currentWorkspace: TerminalWorkspace,
+  instrument: Instrument,
+  timeframe: Timeframe
+): TerminalWorkspace {
+  return {
     ...currentWorkspace,
     selectedInstrument: instrument,
-    watchlist,
+    selectedTimeframe: timeframe,
     strategy: {
-      name: `${instrument.symbol} research context`,
+      name: `${instrument.symbol} ${timeframe} research context`,
       entry: "Run Pipeline to generate entry rules from the selected context",
       exit: "Pending audited backtest",
       position: "Pending risk sizing",
@@ -333,12 +357,12 @@ export function workspaceWithSelectedInstrument(
     decisionLog: [
       {
         agent: "Research Context",
-        message: `${instrument.symbol} selected. Run Pipeline to generate an audited backtest and agent review.`,
+        message: `${instrument.symbol} ${timeframe} selected. Run Pipeline to generate an audited backtest and agent review.`,
         tone: "ai"
       },
       {
         agent: "Risk Manager",
-        message: "Previous audit results are cleared for this symbol context; live execution remains blocked.",
+        message: "Previous audit results are cleared for this research context; live execution remains blocked.",
         tone: "risk"
       }
     ],

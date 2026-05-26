@@ -9,6 +9,7 @@ import {
   Radar,
   RefreshCw,
   ShieldCheck,
+  Timer,
   WalletCards
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -27,9 +28,11 @@ import {
   ResearchRunAudit,
   researchRunHistoryLabel,
   researchRunLabel,
+  Timeframe,
   TerminalModule,
   TerminalWorkspace,
   workspaceFromResearchRunAudit,
+  workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
 
@@ -51,6 +54,7 @@ const marketLabels: Record<Market, string> = {
   us: "美股",
   crypto: "Crypto"
 };
+const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 
 const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
   market: Radar,
@@ -84,7 +88,7 @@ export function App() {
       {
         market: workspace.selectedInstrument.market,
         symbol: workspace.selectedInstrument.symbol,
-        timeframe: "1d"
+        timeframe: workspace.selectedTimeframe
       },
       workspace
     );
@@ -110,6 +114,17 @@ export function App() {
         workspace: workspaceWithSelectedInstrument(workspace, instrument),
         source: "core",
         statusLabel: "Instrument selected"
+      });
+    },
+    [workspace]
+  );
+
+  const selectTimeframe = useCallback(
+    (timeframe: Timeframe) => {
+      setWorkspaceState({
+        workspace: workspaceWithSelectedTimeframe(workspace, timeframe),
+        source: "core",
+        statusLabel: "Timeframe selected"
       });
     },
     [workspace]
@@ -159,7 +174,7 @@ export function App() {
 
         <section className="workspace-card">
           <span className="section-label">Audit Trail</span>
-          <strong>A-share trend research</strong>
+          <strong>{workspace.selectedInstrument.symbol} · {workspace.selectedTimeframe}</strong>
           <p>{researchRunLabel(workspace.researchRun)}</p>
         </section>
       </aside>
@@ -175,6 +190,18 @@ export function App() {
               {statusLabel}
             </span>
             <span className="status-pill paper">{executionModeLabel(workspace.execution)}</span>
+            <div className="timeframe-control" aria-label="Research timeframe">
+              <Timer size={15} />
+              {timeframeOptions.map((timeframe) => (
+                <button
+                  className={workspace.selectedTimeframe === timeframe ? "active" : ""}
+                  key={timeframe}
+                  onClick={() => selectTimeframe(timeframe)}
+                >
+                  {timeframe}
+                </button>
+              ))}
+            </div>
             <button className="run-button" disabled={isRefreshing || isRunning} onClick={runPipeline}>
               {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
               Run Pipeline
@@ -214,7 +241,11 @@ export function App() {
         </section>
 
         <section className="center-grid">
-          <Panel title="Chart & Factor Overlays" subtitle="Price · SMA20 · Trades" className="chart-panel">
+          <Panel
+            title="Chart & Factor Overlays"
+            subtitle={`Price · SMA20 · Trades · ${workspace.selectedTimeframe}`}
+            className="chart-panel"
+          >
             <div className="chart-canvas" aria-label="terminal chart preview">
               <svg viewBox="0 0 720 280" preserveAspectRatio="none">
                 <line x1="0" y1="64" x2="720" y2="64" />

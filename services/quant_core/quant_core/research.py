@@ -92,6 +92,7 @@ def run_terminal_research(
     return replace(
         workspace,
         selected_instrument=selected,
+        selected_timeframe=timeframe,
         watchlist=watchlist,
         strategy=StrategySnapshot(
             name=strategy.name,
@@ -110,6 +111,7 @@ def run_terminal_research(
         research_run=ResearchRunSummary(
             run_id=run_id,
             created_at=created_at,
+            timeframe=timeframe,
             strategy_revision=strategy.revision,
             data_rows=quality.rows,
             execution_mode="paper_only",

@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from typing import Any, Literal
 
-from quant_core.domain import Market
+from quant_core.domain import Market, Timeframe
 
 
 PanelId = Literal[
@@ -102,6 +102,7 @@ class WorkflowNode:
 class ResearchRunSummary:
     run_id: str
     created_at: datetime
+    timeframe: Timeframe
     strategy_revision: str
     data_rows: int
     execution_mode: str
@@ -111,6 +112,7 @@ class ResearchRunSummary:
 class TerminalWorkspace:
     schema_version: int
     selected_instrument: Instrument
+    selected_timeframe: Timeframe
     watchlist: list[Instrument]
     quant_loop: list[QuantLoopStep]
     modules: list[TerminalModule]
@@ -128,6 +130,7 @@ def build_terminal_workspace() -> TerminalWorkspace:
     return TerminalWorkspace(
         schema_version=1,
         selected_instrument=Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=1.24),
+        selected_timeframe="1d",
         watchlist=[
             Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=1.24),
             Instrument(symbol="000300", name="沪深300", market="ashare", change_pct=0.41),

@@ -111,6 +111,7 @@ button {
 .loop-step,
 .module-button,
 .run-button,
+.timeframe-control button,
 .ai-actions button {
   border: 1px solid #27364a;
   border-radius: 7px;
@@ -243,6 +244,33 @@ h2 {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.timeframe-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #0f1722;
+  padding: 4px 5px;
+  color: #8fa0b2;
+}
+
+.timeframe-control button {
+  min-width: 38px;
+  min-height: 24px;
+  padding: 4px 7px;
+  color: #dce6ee;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.timeframe-control button.active {
+  border-color: #2b6f62;
+  background: #122b27;
+  color: #71dfc5;
 }
 
 .status-pill,

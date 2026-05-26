@@ -184,6 +184,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(payload["schemaVersion"], 1)
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
+        self.assertEqual(payload["selectedTimeframe"], "1d")
         self.assertEqual(payload["execution"]["liveEnabled"], False)
         self.assertEqual(payload["workflowNodes"][-1]["id"], "execution")
         self.assertGreaterEqual(len(payload["decisionLog"]), 4)
@@ -192,11 +193,12 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.research import run_terminal_research
         from quant_core.terminal import terminal_workspace_to_payload
 
-        workspace = run_terminal_research(market="ashare", symbol="600000", timeframe="1d")
+        workspace = run_terminal_research(market="ashare", symbol="600000", timeframe="5m")
         payload = terminal_workspace_to_payload(workspace)
 
         self.assertEqual(payload["schemaVersion"], 1)
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
+        self.assertEqual(payload["selectedTimeframe"], "5m")
         self.assertEqual(payload["strategy"]["name"], "SMA trend demo")
         self.assertEqual([metric["label"] for metric in payload["metrics"]], ["Return", "Max DD", "Win Rate", "Trades"])
         self.assertTrue(payload["decisionLog"][0]["message"])
@@ -285,6 +287,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(len(latest), 1)
         self.assertEqual(payload["researchRun"]["runId"], latest[0].run_id)
+        self.assertEqual(payload["researchRun"]["timeframe"], latest[0].timeframe)
         self.assertEqual(payload["researchRun"]["strategyRevision"], latest[0].strategy_revision)
         self.assertEqual(payload["researchRun"]["dataRows"], latest[0].data_rows)
         self.assertEqual(payload["researchRun"]["executionMode"], "paper_only")
