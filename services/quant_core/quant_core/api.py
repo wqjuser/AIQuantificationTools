@@ -12,6 +12,7 @@ from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
+from quant_core.research import run_terminal_research
 from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
 
 
@@ -52,6 +53,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/workspace":
             self._send_json(terminal_workspace_to_payload(build_terminal_workspace()))
+            return
+        if parsed.path == "/api/research/run":
+            query = parse_qs(parsed.query)
+            workspace = run_terminal_research(
+                market=query.get("market", ["ashare"])[0],
+                symbol=query.get("symbol", ["600000"])[0],
+                timeframe=query.get("timeframe", ["1d"])[0],
+                adapter=self.adapter,
+                assistant=self.assistant,
+                engine=self.engine,
+                cache=self.cache,
+            )
+            self._send_json(terminal_workspace_to_payload(workspace))
             return
         self._send_json({"error": "not_found"}, status=404)
 

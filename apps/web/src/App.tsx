@@ -12,7 +12,12 @@ import {
   WalletCards
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { loadTerminalWorkspace, resolveQuantCoreBaseUrl, WorkspaceLoadResult } from "./lib/terminal-api";
+import {
+  loadTerminalWorkspace,
+  resolveQuantCoreBaseUrl,
+  runTerminalResearch,
+  WorkspaceLoadResult
+} from "./lib/terminal-api";
 import {
   buildTerminalWorkspace,
   executionModeLabel,
@@ -46,6 +51,7 @@ const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
 
   const refreshWorkspace = useCallback(async () => {
     setIsRefreshing(true);
@@ -53,6 +59,21 @@ export function App() {
     setWorkspaceState(result);
     setIsRefreshing(false);
   }, []);
+
+  const runPipeline = useCallback(async () => {
+    setIsRunning(true);
+    const result = await runTerminalResearch(
+      quantCoreBaseUrl,
+      {
+        market: workspace.selectedInstrument.market,
+        symbol: workspace.selectedInstrument.symbol,
+        timeframe: "1d"
+      },
+      workspace
+    );
+    setWorkspaceState(result);
+    setIsRunning(false);
+  }, [workspace]);
 
   useEffect(() => {
     void refreshWorkspace();
@@ -114,9 +135,9 @@ export function App() {
               {statusLabel}
             </span>
             <span className="status-pill paper">{executionModeLabel(workspace.execution)}</span>
-            <button className="run-button" disabled={isRefreshing} onClick={refreshWorkspace}>
-              {isRefreshing ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
-              Sync Workspace
+            <button className="run-button" disabled={isRefreshing || isRunning} onClick={runPipeline}>
+              {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
+              Run Pipeline
             </button>
           </div>
         </header>

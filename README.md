@@ -6,7 +6,7 @@
 
 - Web/Desktop 共用前端：`apps/web` 使用 React、TypeScript、Vite，并包含 Tauri v2 桌面壳配置。
 - Python 量化核心：`services/quant_core` 提供 OHLCV schema、SQLite 本地缓存、可视化策略配置、回测、AI 研究报告和 Paper Trading 执行器。
-- 本地 API：`npm run api` 启动 `http://127.0.0.1:8765`，前端通过 `/api/workspace` 读取终端工作区契约，也可调用 `/api/demo` 跑通演示研究闭环。
+- 本地 API：`npm run api` 启动 `http://127.0.0.1:8765`，前端通过 `/api/workspace` 读取终端工作区契约，通过 `/api/research/run` 触发终端研究流水线，也可调用 `/api/demo` 跑通演示研究闭环。
 - 免费数据源预留：A 股 AKShare、美股 yfinance/Alpha Vantage、加密货币 ccxt 以适配器方式预留；当前默认用 demo adapter 保证开箱可跑。
 
 ## Commands

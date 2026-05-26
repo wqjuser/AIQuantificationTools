@@ -188,6 +188,22 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["workflowNodes"][-1]["id"], "execution")
         self.assertGreaterEqual(len(payload["decisionLog"]), 4)
 
+    def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
+        from quant_core.research import run_terminal_research
+        from quant_core.terminal import terminal_workspace_to_payload
+
+        workspace = run_terminal_research(market="ashare", symbol="600000", timeframe="1d")
+        payload = terminal_workspace_to_payload(workspace)
+
+        self.assertEqual(payload["schemaVersion"], 1)
+        self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
+        self.assertEqual(payload["strategy"]["name"], "SMA trend demo")
+        self.assertEqual([metric["label"] for metric in payload["metrics"]], ["Return", "Max DD", "Win Rate", "Trades"])
+        self.assertTrue(payload["decisionLog"][0]["message"])
+        self.assertEqual(payload["decisionLog"][0]["agent"], "AI Summary")
+        self.assertEqual(payload["execution"]["mode"], "paper_only")
+        self.assertFalse(payload["execution"]["liveEnabled"])
+
 
 if __name__ == "__main__":
     unittest.main()
