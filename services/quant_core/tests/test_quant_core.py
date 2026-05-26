@@ -402,6 +402,42 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["bars"][-1]["timestampMs"], int(bars[-1].timestamp.timestamp() * 1000))
         self.assertEqual(payload["bars"][-1]["volume"], 120000.0)
 
+    def test_quantdinger_style_kline_adapter_maps_akshare_minute_rows(self):
+        import pandas as pd
+
+        from quant_core.market_klines import akshare_minute_frame_to_bars
+
+        frame = pd.DataFrame(
+            [
+                {"时间": "2026-05-26 09:30:00", "开盘": 9.10, "收盘": 9.16, "最高": 9.18, "最低": 9.09, "成交量": 3200},
+                {"时间": "2026-05-26 09:31:00", "开盘": 9.16, "收盘": 9.20, "最高": 9.21, "最低": 9.15, "成交量": 4100},
+            ]
+        )
+
+        bars = akshare_minute_frame_to_bars(frame, market="ashare", symbol="600000", timeframe="1m")
+
+        self.assertEqual(len(bars), 2)
+        self.assertEqual(bars[-1].close, 9.20)
+        self.assertEqual(bars[-1].volume, 4100.0)
+
+    def test_quantdinger_style_kline_adapter_maps_eastmoney_minute_rows(self):
+        from quant_core.market_klines import eastmoney_minute_rows_to_bars
+
+        bars = eastmoney_minute_rows_to_bars(
+            [
+                "2026-05-26 14:55,9.26,9.28,9.29,9.25,2000,1856000.00,9.264",
+                "2026-05-26 15:00,9.28,9.27,9.29,9.27,26674,24739076.00,0.22,-0.11,-0.01,0.01",
+            ],
+            market="ashare",
+            symbol="600000",
+            timeframe="5m",
+        )
+
+        self.assertEqual(len(bars), 2)
+        self.assertEqual(bars[-1].open, 9.28)
+        self.assertEqual(bars[-1].close, 9.27)
+        self.assertEqual(bars[-1].volume, 26674.0)
+
 
 if __name__ == "__main__":
     unittest.main()
