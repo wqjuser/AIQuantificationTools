@@ -5,7 +5,8 @@ import {
   ResearchRunAudit,
   TerminalWorkspace,
   Timeframe,
-  type BacktestAssumptions
+  type BacktestAssumptions,
+  type StrategySnapshot
 } from "./terminal-workbench";
 
 export const defaultQuantCoreBaseUrl = "http://127.0.0.1:8765";
@@ -107,7 +108,8 @@ export function buildResearchRunUrl(
   symbol: string,
   timeframe: ResearchTimeframe,
   assumptions?: BacktestAssumptions,
-  limit = 500
+  limit = 500,
+  strategy?: StrategySnapshot
 ): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL("api/research/run", normalizedBase);
@@ -115,6 +117,13 @@ export function buildResearchRunUrl(
   url.searchParams.set("symbol", symbol);
   url.searchParams.set("timeframe", timeframe);
   url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
+  if (strategy) {
+    url.searchParams.set("strategyName", strategy.name);
+    url.searchParams.set("strategyEntry", strategy.entry);
+    url.searchParams.set("strategyExit", strategy.exit);
+    url.searchParams.set("strategyPosition", strategy.position);
+    url.searchParams.set("strategyRisk", strategy.risk);
+  }
   if (assumptions) {
     url.searchParams.set("initialCash", String(assumptions.initialCash));
     url.searchParams.set("feeBps", String(assumptions.feeBps));
@@ -341,7 +350,8 @@ export async function runTerminalResearch(
         params.symbol,
         params.timeframe,
         resolveBacktestAssumptions(currentWorkspace),
-        params.limit ?? 500
+        params.limit ?? 500,
+        currentWorkspace.strategy
       )
     );
     if (!response.ok) {

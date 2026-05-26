@@ -17,7 +17,7 @@ from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_p
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.research import run_terminal_research
 from quant_core.runs import ResearchRunStore, research_run_audits_to_payload
-from quant_core.terminal import build_terminal_workspace, terminal_workspace_to_payload
+from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 
 
 def _json_default(value):
@@ -114,6 +114,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 cache=self.cache,
                 run_store=self.run_store,
                 data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
+                strategy_snapshot=_strategy_snapshot_from_query(query),
             )
             self._send_json(terminal_workspace_to_payload(workspace))
             return
@@ -203,6 +204,21 @@ def _parse_research_data_limit(raw: str) -> int:
     except ValueError:
         return 500
     return max(1, min(value, 500))
+
+
+def _strategy_snapshot_from_query(query: dict[str, list[str]]) -> StrategySnapshot | None:
+    strategy_keys = ["strategyName", "strategyEntry", "strategyExit", "strategyPosition", "strategyRisk"]
+    if not any(key in query for key in strategy_keys):
+        return None
+    return StrategySnapshot(
+        name=query.get("strategyName", ["SMA trend demo"])[0].strip() or "SMA trend demo",
+        entry=query.get("strategyEntry", ["Close > SMA20"])[0].strip() or "Close > SMA20",
+        exit=query.get("strategyExit", ["Close < SMA20, stop loss, take profit, or end of backtest"])[0].strip()
+        or "Close < SMA20, stop loss, take profit, or end of backtest",
+        position=query.get("strategyPosition", ["80% max capital allocation"])[0].strip() or "80% max capital allocation",
+        risk=query.get("strategyRisk", ["Stop -8%, take profit +18%, drawdown guard 20%, paper only"])[0].strip()
+        or "Stop -8%, take profit +18%, drawdown guard 20%, paper only",
+    )
 
 
 def _parse_kline_end(raw: str) -> datetime | None:

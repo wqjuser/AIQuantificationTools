@@ -264,6 +264,60 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
         self.assertEqual(recording_adapter.calls, [("ashare", "600000", "1d", 240)])
 
+    def test_research_api_applies_submitted_strategy_snapshot(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+        from urllib.parse import urlencode
+
+        from quant_core.ai import LocalResearchAssistant
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                assistant = LocalResearchAssistant()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            params = urlencode(
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "strategyName": "Custom SMA risk plan",
+                    "strategyEntry": "Close > SMA5",
+                    "strategyExit": "Close < SMA7",
+                    "strategyPosition": "25% cap per instrument",
+                    "strategyRisk": "Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+                    "initialCash": "100000",
+                    "feeBps": "3",
+                    "slippageBps": "2",
+                }
+            )
+            try:
+                connection.request("GET", f"/api/research/run?{params}")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["strategy"]["name"], "Custom SMA risk plan")
+        self.assertEqual(payload["strategy"]["entry"], "Close > SMA5")
+        self.assertEqual(payload["strategy"]["exit"], "Close < SMA7")
+        self.assertEqual(payload["strategy"]["position"], "25% cap per instrument")
+        self.assertEqual(payload["strategy"]["risk"], "Stop -6%, take profit +12%, drawdown guard 9%, paper only")
+
     def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
         from quant_core.research import run_terminal_research
         from quant_core.terminal import terminal_workspace_to_payload
@@ -281,6 +335,57 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["decisionLog"][0]["agent"], "AI Summary")
         self.assertEqual(payload["execution"]["mode"], "paper_only")
         self.assertFalse(payload["execution"]["liveEnabled"])
+
+    def test_terminal_research_run_builds_strategy_from_submitted_snapshot(self):
+        from quant_core.backtest import BacktestEngine
+        from quant_core.research import run_terminal_research
+        from quant_core.terminal import StrategySnapshot, terminal_workspace_to_payload
+
+        class RecordingBacktestEngine(BacktestEngine):
+            def __init__(self):
+                super().__init__(initial_cash=100_000, fee_rate=0.0003, slippage_rate=0.0002)
+                self.strategy = None
+
+            def run(self, strategy, bars):
+                self.strategy = strategy
+                return super().run(strategy, bars)
+
+        engine = RecordingBacktestEngine()
+        snapshot = StrategySnapshot(
+            name="Custom SMA risk plan",
+            entry="Close > SMA5",
+            exit="Close < SMA7",
+            position="25% cap per instrument",
+            risk="Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+        )
+
+        workspace = run_terminal_research(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            engine=engine,
+            strategy_snapshot=snapshot,
+        )
+        payload = terminal_workspace_to_payload(workspace)
+
+        self.assertEqual(payload["strategy"], {
+            "name": "Custom SMA risk plan",
+            "entry": "Close > SMA5",
+            "exit": "Close < SMA7",
+            "position": "25% cap per instrument",
+            "risk": "Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+        })
+        self.assertIsNotNone(engine.strategy)
+        self.assertEqual(engine.strategy.name, "Custom SMA risk plan")
+        self.assertEqual(engine.strategy.entry_conditions[0].kind, "close_above_sma")
+        self.assertEqual(engine.strategy.entry_conditions[0].params, {"window": 5})
+        self.assertEqual(engine.strategy.exit_conditions[0].kind, "close_below_sma")
+        self.assertEqual(engine.strategy.exit_conditions[0].params, {"window": 7})
+        self.assertAlmostEqual(engine.strategy.risk.position_pct, 0.25)
+        self.assertAlmostEqual(engine.strategy.risk.stop_loss_pct, 0.06)
+        self.assertAlmostEqual(engine.strategy.risk.take_profit_pct, 0.12)
+        self.assertAlmostEqual(engine.strategy.risk.max_drawdown_pct, 0.09)
+        self.assertEqual(payload["researchRun"]["strategyRevision"], engine.strategy.revision)
 
     def test_research_run_store_records_and_reads_audit_records(self):
         from quant_core.runs import ResearchRunAudit, ResearchRunStore

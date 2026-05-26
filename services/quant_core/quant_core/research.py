@@ -4,6 +4,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from inspect import Parameter, signature
 from pathlib import Path
+import re
 from uuid import uuid4
 
 from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
@@ -45,6 +46,7 @@ def run_terminal_research(
     cache: MarketDataCache | None = None,
     run_store: ResearchRunStore | None = None,
     data_limit: int = 500,
+    strategy_snapshot: StrategySnapshot | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -57,15 +59,8 @@ def run_terminal_research(
     bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit)
     market_cache.upsert_bars(bars)
 
-    strategy = StrategyConfig(
-        name="SMA trend demo",
-        market=market,
-        symbols=[symbol],
-        timeframe=timeframe,
-        entry_conditions=[Condition(kind="close_above_sma", params={"window": 20})],
-        exit_conditions=[Condition(kind="close_below_sma", params={"window": 20})],
-        risk=RiskRules(position_pct=0.8, stop_loss_pct=0.08, take_profit_pct=0.18, max_drawdown_pct=0.2),
-    )
+    snapshot = strategy_snapshot or _default_strategy_snapshot()
+    strategy = _strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
     backtest = backtest_engine.run(strategy, bars)
     report = research_assistant.analyze(
         AiResearchRequest(
@@ -113,11 +108,11 @@ def run_terminal_research(
         selected_timeframe=timeframe,
         watchlist=watchlist,
         strategy=StrategySnapshot(
-            name=strategy.name,
-            entry="Close > SMA20",
-            exit="Close < SMA20, stop loss, take profit, or end of backtest",
-            position=f"{strategy.risk.position_pct:.0%} max capital allocation",
-            risk="Stop -8%, take profit +18%, drawdown guard 20%, paper only",
+            name=snapshot.name,
+            entry=snapshot.entry,
+            exit=snapshot.exit,
+            position=snapshot.position,
+            risk=snapshot.risk,
         ),
         backtest_assumptions=BacktestAssumptions(
             initial_cash=backtest_engine.initial_cash,
@@ -140,6 +135,76 @@ def run_terminal_research(
             execution_mode="paper_only",
         ),
     )
+
+
+def _default_strategy_snapshot() -> StrategySnapshot:
+    return StrategySnapshot(
+        name="SMA trend demo",
+        entry="Close > SMA20",
+        exit="Close < SMA20, stop loss, take profit, or end of backtest",
+        position="80% max capital allocation",
+        risk="Stop -8%, take profit +18%, drawdown guard 20%, paper only",
+    )
+
+
+def _strategy_config_from_snapshot(
+    snapshot: StrategySnapshot,
+    *,
+    market: Market,
+    symbol: str,
+    timeframe: Timeframe,
+) -> StrategyConfig:
+    return StrategyConfig(
+        name=snapshot.name.strip() or "SMA trend demo",
+        market=market,
+        symbols=[symbol],
+        timeframe=timeframe,
+        entry_conditions=[_condition_from_text(snapshot.entry, default_kind="close_above_sma")],
+        exit_conditions=[_condition_from_text(snapshot.exit, default_kind="close_below_sma")],
+        risk=RiskRules(
+            position_pct=_position_pct_from_text(snapshot.position),
+            stop_loss_pct=_percent_near_keywords(snapshot.risk, ["stop", "止损"], default=0.08),
+            take_profit_pct=_percent_near_keywords(snapshot.risk, ["take profit", "take-profit", "止盈"], default=0.18),
+            max_drawdown_pct=_percent_near_keywords(snapshot.risk, ["drawdown", "回撤"], default=0.2),
+        ),
+    )
+
+
+def _condition_from_text(text: str, *, default_kind: str) -> Condition:
+    normalized = text.lower()
+    if "sma" in normalized:
+        if "<" in text or "below" in normalized:
+            kind = "close_below_sma"
+        elif ">" in text or "above" in normalized:
+            kind = "close_above_sma"
+        else:
+            kind = default_kind
+    else:
+        kind = default_kind
+    window_match = re.search(r"sma\s*(\d+)", normalized)
+    window = int(window_match.group(1)) if window_match else 20
+    return Condition(kind=kind, params={"window": max(1, min(window, 250))})
+
+
+def _position_pct_from_text(text: str) -> float:
+    percent = _first_percent(text)
+    if percent is None:
+        return 0.8
+    return max(0.01, min(percent / 100, 1.0))
+
+
+def _percent_near_keywords(text: str, keywords: list[str], *, default: float) -> float:
+    normalized = text.lower()
+    for match in re.finditer(r"([+-]?\d+(?:\.\d+)?)\s*%", normalized):
+        prefix = normalized[max(0, match.start() - 36) : match.start()]
+        if any(keyword in prefix for keyword in keywords):
+            return max(0.0, min(abs(float(match.group(1))) / 100, 1.0))
+    return default
+
+
+def _first_percent(text: str) -> float | None:
+    match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
+    return float(match.group(1)) if match else None
 
 
 def _fetch_research_bars(

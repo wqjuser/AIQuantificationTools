@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildTerminalWorkspace, workspaceWithBacktestAssumption } from "./terminal-workbench";
+import { buildTerminalWorkspace, workspaceWithBacktestAssumption, workspaceWithStrategyField } from "./terminal-workbench";
 import {
   buildResearchRunUrl,
   buildResearchRunsUrl,
@@ -37,6 +37,32 @@ describe("terminal workspace API client", () => {
     ).toBe(
       "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500&initialCash=250000&feeBps=8&slippageBps=4"
     );
+  });
+
+  test("builds the research run URL with editable strategy snapshot fields", () => {
+    const url = new URL(
+      buildResearchRunUrl(
+        "http://127.0.0.1:8765/",
+        "ashare",
+        "600000",
+        "1d",
+        undefined,
+        500,
+        {
+          name: "Custom SMA risk plan",
+          entry: "Close > SMA5",
+          exit: "Close < SMA7",
+          position: "25% cap per instrument",
+          risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+        }
+      )
+    );
+
+    expect(url.searchParams.get("strategyName")).toBe("Custom SMA risk plan");
+    expect(url.searchParams.get("strategyEntry")).toBe("Close > SMA5");
+    expect(url.searchParams.get("strategyExit")).toBe("Close < SMA7");
+    expect(url.searchParams.get("strategyPosition")).toBe("25% cap per instrument");
+    expect(url.searchParams.get("strategyRisk")).toBe("Stop -6%, take profit +12%, drawdown guard 9%, paper only");
   });
 
   test("builds the research run history URL with a bounded limit", () => {
@@ -135,10 +161,14 @@ describe("terminal workspace API client", () => {
       ]
     };
     const calls: string[] = [];
-    const currentWorkspace = workspaceWithBacktestAssumption(
-      workspaceWithBacktestAssumption(buildTerminalWorkspace(), "initialCash", 250000),
-      "feeBps",
-      8
+    const currentWorkspace = workspaceWithStrategyField(
+      workspaceWithBacktestAssumption(
+        workspaceWithBacktestAssumption(buildTerminalWorkspace(), "initialCash", 250000),
+        "feeBps",
+        8
+      ),
+      "entry",
+      "Close > SMA5"
     );
     const result = await runTerminalResearch(
       "http://127.0.0.1:8765",
@@ -153,9 +183,16 @@ describe("terminal workspace API client", () => {
       }
     );
 
-    expect(calls[0]).toBe(
-      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500&initialCash=250000&feeBps=8&slippageBps=4"
-    );
+    const requestUrl = new URL(calls[0]);
+    expect(requestUrl.searchParams.get("market")).toBe("ashare");
+    expect(requestUrl.searchParams.get("symbol")).toBe("600000");
+    expect(requestUrl.searchParams.get("timeframe")).toBe("1d");
+    expect(requestUrl.searchParams.get("limit")).toBe("500");
+    expect(requestUrl.searchParams.get("initialCash")).toBe("250000");
+    expect(requestUrl.searchParams.get("feeBps")).toBe("8");
+    expect(requestUrl.searchParams.get("slippageBps")).toBe("4");
+    expect(requestUrl.searchParams.get("strategyName")).toBe("SMA Trend / Bank Sector");
+    expect(requestUrl.searchParams.get("strategyEntry")).toBe("Close > SMA5");
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Research run complete");
     expect(result.workspace.metrics[0].value).toBe("+3.20%");
