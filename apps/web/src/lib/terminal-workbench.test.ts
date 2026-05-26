@@ -6,7 +6,8 @@ import {
   researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
-  visiblePanels
+  visiblePanels,
+  workspaceFromResearchRunAudit
 } from "./terminal-workbench";
 
 describe("terminal workbench model", () => {
@@ -89,5 +90,38 @@ describe("terminal workbench model", () => {
         executionMode: "paper_only"
       })
     ).toBe("600000 · +3.40% · 8 trades");
+  });
+
+  test("replays an audited research run into the terminal workspace", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "us",
+      symbol: "AAPL",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: -1.25,
+        max_drawdown_pct: 4.5,
+        win_rate_pct: 40,
+        trade_count: 5
+      },
+      decisions: [{ agent: "AI Summary", message: "Replay loaded", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    expect(workspace.selectedInstrument).toEqual({
+      symbol: "AAPL",
+      name: "Apple",
+      market: "us",
+      changePct: -0.36
+    });
+    expect(workspace.strategy.name).toBe("SMA trend demo");
+    expect(workspace.strategy.risk).toContain("rev123");
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["-1.25%", "4.50%", "40.00%", "5"]);
+    expect(workspace.decisionLog[0].message).toBe("Replay loaded");
+    expect(workspace.researchRun?.runId).toBe("run-history");
   });
 });

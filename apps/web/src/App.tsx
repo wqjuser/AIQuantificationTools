@@ -28,7 +28,8 @@ import {
   researchRunHistoryLabel,
   researchRunLabel,
   TerminalModule,
-  TerminalWorkspace
+  TerminalWorkspace,
+  workspaceFromResearchRunAudit
 } from "./lib/terminal-workbench";
 
 const quantCoreBaseUrl = resolveQuantCoreBaseUrl({
@@ -90,6 +91,17 @@ export function App() {
     await refreshRunHistory();
     setIsRunning(false);
   }, [refreshRunHistory, workspace]);
+
+  const replayRun = useCallback(
+    (run: ResearchRunAudit) => {
+      setWorkspaceState({
+        workspace: workspaceFromResearchRunAudit(workspace, run),
+        source: "core",
+        statusLabel: "Audit replay loaded"
+      });
+    },
+    [workspace]
+  );
 
   useEffect(() => {
     void refreshWorkspace();
@@ -261,7 +273,9 @@ export function App() {
         <Panel title="Run History" subtitle="Recent audited runs">
           <div className="run-history">
             {runHistory.length ? (
-              runHistory.map((run) => <RunHistoryRow key={run.runId} run={run} />)
+              runHistory.map((run) => (
+                <RunHistoryRow key={run.runId} run={run} isActive={workspace.researchRun?.runId === run.runId} onReplay={replayRun} />
+              ))
             ) : (
               <span className="empty-state">No audited runs</span>
             )}
@@ -318,12 +332,20 @@ function Panel({
   );
 }
 
-function RunHistoryRow({ run }: { run: ResearchRunAudit }) {
+function RunHistoryRow({
+  run,
+  isActive,
+  onReplay
+}: {
+  run: ResearchRunAudit;
+  isActive: boolean;
+  onReplay: (run: ResearchRunAudit) => void;
+}) {
   return (
-    <article className="history-row">
+    <button className={`history-row ${isActive ? "active" : ""}`} onClick={() => onReplay(run)}>
       <strong>{researchRunHistoryLabel(run)}</strong>
       <span>{run.runId}</span>
-    </article>
+    </button>
   );
 }
 

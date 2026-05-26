@@ -257,3 +257,62 @@ export function researchRunHistoryLabel(run: ResearchRunAudit): string {
     : "N/A";
   return `${run.symbol} · ${returnLabel} · ${tradeCount} trades`;
 }
+
+export function workspaceFromResearchRunAudit(
+  currentWorkspace: TerminalWorkspace,
+  run: ResearchRunAudit
+): TerminalWorkspace {
+  const instrument = currentWorkspace.watchlist.find(
+    (candidate) => candidate.symbol === run.symbol && candidate.market === run.market
+  ) ?? {
+    symbol: run.symbol,
+    name: run.symbol,
+    market: run.market,
+    changePct: 0
+  };
+  return {
+    ...currentWorkspace,
+    selectedInstrument: instrument,
+    strategy: {
+      name: run.strategyName,
+      entry: "Replay from audited research run",
+      exit: `Original timeframe ${run.timeframe}`,
+      position: `${run.dataRows} bars replayed`,
+      risk: `Strategy revision ${run.strategyRevision}; execution ${run.executionMode}`
+    },
+    metrics: [
+      {
+        label: "Return",
+        value: formatSignedPct(run.metrics.total_return_pct),
+        tone: run.metrics.total_return_pct >= 0 ? "positive" : "warning"
+      },
+      { label: "Max DD", value: formatPct(run.metrics.max_drawdown_pct), tone: "warning" },
+      { label: "Win Rate", value: formatPct(run.metrics.win_rate_pct), tone: "neutral" },
+      { label: "Trades", value: String(run.metrics.trade_count ?? 0), tone: "neutral" }
+    ],
+    decisionLog: run.decisions.length
+      ? run.decisions
+      : [{ agent: "Audit", message: "No decision entries recorded for this run.", tone: "warning" }],
+    researchRun: {
+      runId: run.runId,
+      createdAt: run.createdAt,
+      strategyRevision: run.strategyRevision,
+      dataRows: run.dataRows,
+      executionMode: run.executionMode
+    }
+  };
+}
+
+function formatSignedPct(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "N/A";
+  }
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatPct(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "N/A";
+  }
+  return `${value.toFixed(2)}%`;
+}

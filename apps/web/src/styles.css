@@ -574,7 +574,10 @@ dd {
   border: 1px solid #2a3b51;
   border-radius: 7px;
   background: #151f2d;
+  color: #dce6ee;
+  cursor: pointer;
   padding: 9px 10px;
+  text-align: left;
 }
 
 .history-row strong,
@@ -592,6 +595,12 @@ dd {
   margin-top: 5px;
   color: #8fa0b2;
   font-size: 11px;
+}
+
+.history-row:hover,
+.history-row.active {
+  border-color: #2b6f62;
+  background: #122b27;
 }
 
 .ai-actions button {
