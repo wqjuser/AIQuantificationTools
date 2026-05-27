@@ -760,6 +760,10 @@ describe("terminal workbench model", () => {
           reason: "entry_conditions",
           tone: "neutral"
         }
+      ],
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 250000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 252000 }
       ]
     });
 
@@ -789,6 +793,10 @@ describe("terminal workbench model", () => {
         reason: "entry_conditions",
         tone: "neutral"
       }
+    ]);
+    expect(workspace.backtestEquityCurve).toEqual([
+      { timestamp: "2026-05-26T08:00:00+00:00", equity: 250000 },
+      { timestamp: "2026-05-27T08:00:00+00:00", equity: 252000 }
     ]);
     expect(workspace.decisionLog[0].message).toBe("Replay loaded");
     expect(workspace.researchRun?.runId).toBe("run-history");

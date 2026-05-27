@@ -110,6 +110,12 @@ class BacktestTradeReplay:
 
 
 @dataclass(frozen=True)
+class BacktestEquityPointReplay:
+    timestamp: str
+    equity: float
+
+
+@dataclass(frozen=True)
 class DecisionLogEntry:
     agent: str
     message: str
@@ -150,6 +156,7 @@ class TerminalWorkspace:
     decision_log: list[DecisionLogEntry]
     workflow_nodes: list[WorkflowNode]
     backtest_trades: list[BacktestTradeReplay] = field(default_factory=list)
+    backtest_equity_curve: list[BacktestEquityPointReplay] = field(default_factory=list)
     research_run: ResearchRunSummary | None = None
 
 

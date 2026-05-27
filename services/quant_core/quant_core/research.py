@@ -26,6 +26,7 @@ from quant_core.domain import (
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestAssumptions,
+    BacktestEquityPointReplay,
     BacktestMetric,
     BacktestTradeReplay,
     DecisionLogEntry,
@@ -85,6 +86,7 @@ def run_terminal_research(
     ]
     run_id = f"run-{uuid4().hex[:12]}"
     backtest_trade_rows = _backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash)
+    backtest_equity_curve = _backtest_equity_curve_rows(backtest)
     audit = ResearchRunAudit(
         run_id=run_id,
         created_at=created_at,
@@ -103,6 +105,7 @@ def run_terminal_research(
             "slippageBps": round(backtest_engine.slippage_rate * 10_000, 4),
         },
         backtest_trades=[asdict(row) for row in backtest_trade_rows],
+        backtest_equity_curve=[asdict(row) for row in backtest_equity_curve],
     )
     audit_store.record(audit)
 
@@ -131,6 +134,7 @@ def run_terminal_research(
         ],
         decision_log=decision_log,
         backtest_trades=backtest_trade_rows,
+        backtest_equity_curve=backtest_equity_curve,
         research_run=ResearchRunSummary(
             run_id=run_id,
             created_at=created_at,
@@ -174,6 +178,13 @@ def _backtest_trade_replay_rows(backtest: BacktestRun, *, initial_cash: float) -
             )
         )
     return rows
+
+
+def _backtest_equity_curve_rows(backtest: BacktestRun) -> list[BacktestEquityPointReplay]:
+    return [
+        BacktestEquityPointReplay(timestamp=point.timestamp.isoformat(), equity=round(point.equity, 4))
+        for point in backtest.equity_curve
+    ]
 
 
 def _default_strategy_snapshot() -> StrategySnapshot:

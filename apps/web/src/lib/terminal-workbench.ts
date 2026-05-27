@@ -101,6 +101,11 @@ export interface BacktestTradeRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface BacktestEquityPoint {
+  timestamp: string;
+  equity: number;
+}
+
 export interface BacktestAssumptions {
   initialCash: number;
   feeBps: number;
@@ -267,6 +272,7 @@ export interface ResearchRunAudit {
   executionMode: string;
   backtestAssumptions?: BacktestAssumptions;
   backtestTrades?: BacktestTradeRow[];
+  backtestEquityCurve?: BacktestEquityPoint[];
 }
 
 export interface ResearchRunComparisonRow {
@@ -294,6 +300,7 @@ export interface TerminalWorkspace {
   decisionLog: DecisionLogEntry[];
   workflowNodes: WorkflowNode[];
   backtestTrades?: BacktestTradeRow[];
+  backtestEquityCurve?: BacktestEquityPoint[];
   researchRun?: ResearchRunSummary | null;
 }
 
@@ -1334,6 +1341,7 @@ export function workspaceFromResearchRunAudit(
       ? run.decisions
       : [{ agent: "Audit", message: "No decision entries recorded for this run.", tone: "warning" }],
     backtestTrades: run.backtestTrades ?? [],
+    backtestEquityCurve: run.backtestEquityCurve ?? [],
     researchRun: {
       runId: run.runId,
       createdAt: run.createdAt,

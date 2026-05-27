@@ -336,6 +336,9 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIn(payload["backtestTrades"][0]["side"], ["BUY", "SELL"])
         self.assertEqual(payload["backtestTrades"][0]["status"], "filled")
         self.assertTrue(payload["backtestTrades"][0]["timestamp"])
+        self.assertGreater(len(payload["backtestEquityCurve"]), 0)
+        self.assertTrue(payload["backtestEquityCurve"][0]["timestamp"])
+        self.assertIsInstance(payload["backtestEquityCurve"][0]["equity"], (int, float))
         self.assertTrue(payload["decisionLog"][0]["message"])
         self.assertEqual(payload["decisionLog"][0]["agent"], "AI Summary")
         self.assertEqual(payload["execution"]["mode"], "paper_only")
@@ -424,6 +427,10 @@ class QuantCoreContractTest(unittest.TestCase):
                     "tone": "neutral",
                 }
             ],
+            backtest_equity_curve=[
+                {"timestamp": "2026-05-26T08:00:00+00:00", "equity": 250000.0},
+                {"timestamp": "2026-05-27T08:00:00+00:00", "equity": 253000.0},
+            ],
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -439,6 +446,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades[0]["id"], "trade-1")
         self.assertEqual(latest[0].backtest_trades[0]["side"], "BUY")
+        self.assertEqual(latest[0].backtest_equity_curve[-1]["equity"], 253000.0)
 
     def test_research_run_audits_serialize_for_history_api(self):
         from quant_core.runs import ResearchRunAudit, research_run_audits_to_payload
@@ -484,6 +492,10 @@ class QuantCoreContractTest(unittest.TestCase):
                     "tone": "neutral",
                 }
             ],
+            backtest_equity_curve=[
+                {"timestamp": "2026-05-26T08:00:00+00:00", "equity": 250000.0},
+                {"timestamp": "2026-05-27T08:00:00+00:00", "equity": 254000.0},
+            ],
         )
 
         payload = research_run_audits_to_payload([newer, older])
@@ -494,6 +506,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(payload["runs"][0]["backtestTrades"][0]["symbol"], "AAPL")
         self.assertEqual(payload["runs"][0]["backtestTrades"][0]["side"], "BUY")
+        self.assertEqual(payload["runs"][0]["backtestEquityCurve"][-1]["equity"], 254000.0)
         self.assertEqual(payload["runs"][0]["metrics"]["trade_count"], 8)
         self.assertEqual(payload["runs"][1]["symbol"], "600000")
 
@@ -525,6 +538,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
+        self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
 
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter

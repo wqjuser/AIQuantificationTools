@@ -463,8 +463,19 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Array.isArray(run.decisions) &&
     Boolean(run.executionMode) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
-    (run.backtestTrades === undefined || (Array.isArray(run.backtestTrades) && run.backtestTrades.every(isBacktestTradeRow)))
+    (run.backtestTrades === undefined ||
+      (Array.isArray(run.backtestTrades) && run.backtestTrades.every(isBacktestTradeRow))) &&
+    (run.backtestEquityCurve === undefined ||
+      (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint)))
   );
+}
+
+function isBacktestEquityPoint(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const point = value as Record<string, unknown>;
+  return typeof point.timestamp === "string" && typeof point.equity === "number";
 }
 
 function isBacktestTradeRow(value: unknown): boolean {
