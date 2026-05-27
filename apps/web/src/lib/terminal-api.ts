@@ -27,6 +27,12 @@ export interface ResearchRunHistoryResult {
   error?: string;
 }
 
+export interface ResearchRunDetailResult {
+  run?: ResearchRunAudit;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -139,6 +145,11 @@ export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
   return url.toString();
 }
 
+export function buildResearchRunDetailUrl(baseUrl: string, runId: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(`api/research/runs/${encodeURIComponent(runId)}`, normalizedBase).toString();
+}
+
 export function buildMarketKlinesUrl(
   baseUrl: string,
   market: Market,
@@ -235,6 +246,32 @@ export async function loadResearchRunHistory(
       runs: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run history error"
+    };
+  }
+}
+
+export async function loadResearchRunDetail(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchRunDetailResult> {
+  try {
+    const response = await fetcher(buildResearchRunDetailUrl(baseUrl, runId));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isResearchRunDetailPayload(payload)) {
+      throw new Error("Invalid research run detail contract");
+    }
+    return {
+      run: payload.run,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research run detail error"
     };
   }
 }
@@ -382,6 +419,14 @@ function isResearchRunHistoryPayload(value: unknown): value is { runs: ResearchR
   }
   const payload = value as { runs?: unknown };
   return Array.isArray(payload.runs) && payload.runs.every(isResearchRunAudit);
+}
+
+function isResearchRunDetailPayload(value: unknown): value is { run: ResearchRunAudit } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { run?: unknown };
+  return isResearchRunAudit(payload.run);
 }
 
 function isMarketKlinesPayload(value: unknown): value is Omit<MarketKlinesResult, "source" | "error"> {

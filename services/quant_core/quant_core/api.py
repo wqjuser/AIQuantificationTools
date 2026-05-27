@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
@@ -16,7 +16,7 @@ from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.research import run_terminal_research
-from quant_core.runs import ResearchRunStore, research_run_audits_to_payload
+from quant_core.runs import ResearchRunStore, research_run_audit_to_payload, research_run_audits_to_payload
 from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 
 
@@ -117,6 +117,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 strategy_snapshot=_strategy_snapshot_from_query(query),
             )
             self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if parsed.path.startswith("/api/research/runs/"):
+            run_id = unquote(parsed.path.removeprefix("/api/research/runs/")).strip()
+            audit = self.run_store.get(run_id) if run_id else None
+            if not audit:
+                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
+                return
+            self._send_json({"run": research_run_audit_to_payload(audit)})
             return
         if parsed.path == "/api/research/runs":
             query = parse_qs(parsed.query)

@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 import { buildTerminalWorkspace, workspaceWithBacktestAssumption, workspaceWithStrategyField } from "./terminal-workbench";
 import {
   buildResearchRunUrl,
+  buildResearchRunDetailUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
   buildLoadingMarketKlinesResult,
   loadMarketKlines,
   loadMarketSearch,
+  loadResearchRunDetail,
   mergeMarketKlines,
   buildWorkspaceUrl,
   loadResearchRunHistory,
@@ -68,6 +70,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run history URL with a bounded limit", () => {
     expect(buildResearchRunsUrl("http://127.0.0.1:8765/", 5)).toBe(
       "http://127.0.0.1:8765/api/research/runs?limit=5"
+    );
+  });
+
+  test("builds the research run detail URL with an encoded run id", () => {
+    expect(buildResearchRunDetailUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1"
     );
   });
 
@@ -278,6 +286,48 @@ describe("terminal workspace API client", () => {
     expect(result.runs[0].backtestTrades?.[0]).toMatchObject({ id: "trade-1", side: "BUY" });
     expect(result.runs[0].backtestEquityCurve?.at(-1)?.equity).toBe(253400);
     expect(result.runs[0].backtestDiagnostics?.[0]).toMatchObject({ id: "return-profile", tone: "positive" });
+  });
+
+  test("loads one research run detail from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          run: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyName: "SMA trend demo",
+            strategyRevision: "rev123",
+            dataRows: 120,
+            metrics: { total_return_pct: 3.4, trade_count: 8 },
+            decisions: [],
+            executionMode: "paper_only",
+            backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
+          }
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-new"]);
+    expect(result.source).toBe("core");
+    expect(result.run?.runId).toBe("run-new");
+    expect(result.run?.backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
+  });
+
+  test("returns fallback when the research run detail payload is invalid", async () => {
+    const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({ run: { runId: "run-new" } })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.run).toBeUndefined();
+    expect(result.error).toBe("Invalid research run detail contract");
   });
 
   test("loads market klines from the Python core", async () => {

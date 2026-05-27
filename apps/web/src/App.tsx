@@ -22,6 +22,7 @@ import {
   buildLoadingMarketKlinesResult,
   loadMarketKlines,
   loadMarketSearch,
+  loadResearchRunDetail,
   loadResearchRunHistory,
   loadTerminalWorkspace,
   mergeMarketKlines,
@@ -364,19 +365,25 @@ export function App() {
   }, [refreshRunHistory, workspace]);
 
   const replayRun = useCallback(
-    (run: ResearchRunAudit) => {
-      manualSelectionVersionRef.current += 1;
+    async (run: ResearchRunAudit) => {
+      const replayVersion = manualSelectionVersionRef.current + 1;
+      manualSelectionVersionRef.current = replayVersion;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
+      const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
+      if (manualSelectionVersionRef.current !== replayVersion) {
+        return;
+      }
+      const auditedRun = detail.run ?? run;
       setWorkspaceState((current) => ({
-        workspace: workspaceFromResearchRunAudit(current.workspace, run),
+        workspace: workspaceFromResearchRunAudit(current.workspace, auditedRun),
         source: "core",
-        statusLabel: "Audit replay loaded"
+        statusLabel: detail.source === "core" ? "Audit detail loaded" : "Audit replay loaded"
       }));
       setActiveModuleId("workflow");
       setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");
-      setWorkflowRunState(buildAuditReplayWorkflowState(run));
+      setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
     },
     []
   );

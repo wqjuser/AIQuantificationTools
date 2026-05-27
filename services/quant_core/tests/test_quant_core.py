@@ -463,6 +463,79 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].backtest_equity_curve[-1]["equity"], 253000.0)
         self.assertEqual(latest[0].backtest_diagnostics[0]["id"], "return-profile")
 
+    def test_research_run_store_reads_single_audit_record_by_id(self):
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        older = ResearchRunAudit(
+            run_id="run-older",
+            created_at=datetime(2026, 5, 26, 7, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-old",
+            data_rows=100,
+            metrics={"total_return_pct": 1.2, "trade_count": 4},
+            decisions=[],
+            execution_mode="paper_only",
+        )
+        newer = ResearchRunAudit(
+            run_id="run-newer",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="us",
+            symbol="AAPL",
+            timeframe="5m",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-new",
+            data_rows=240,
+            metrics={"total_return_pct": 3.4, "trade_count": 8},
+            decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
+            execution_mode="paper_only",
+            backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
+            backtest_trades=[
+                {
+                    "id": "trade-1",
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "symbol": "AAPL",
+                    "side": "BUY",
+                    "status": "filled",
+                    "price": "191.20",
+                    "quantity": "100",
+                    "exposure": "19.12%",
+                    "pnl": "-",
+                    "reason": "entry_conditions",
+                    "tone": "neutral",
+                }
+            ],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 250000.0}],
+            backtest_diagnostics=[
+                {
+                    "id": "return-profile",
+                    "label": "Return profile",
+                    "value": "+3.40%",
+                    "detail": "Total return over 240 bars",
+                    "tone": "positive",
+                }
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            store.record(older)
+            store.record(newer)
+            restored = store.get("run-newer")
+            missing = store.get("run-missing")
+
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(restored.run_id, "run-newer")
+        self.assertEqual(restored.symbol, "AAPL")
+        self.assertEqual(restored.backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
+        self.assertEqual(restored.backtest_trades[0]["id"], "trade-1")
+        self.assertEqual(restored.backtest_equity_curve[0]["equity"], 250000.0)
+        self.assertEqual(restored.backtest_diagnostics[0]["id"], "return-profile")
+        self.assertIsNone(missing)
+
     def test_research_run_audits_serialize_for_history_api(self):
         from quant_core.runs import ResearchRunAudit, research_run_audits_to_payload
 
@@ -565,6 +638,88 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
         self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
         self.assertEqual(latest[0].backtest_diagnostics, payload["backtestDiagnostics"])
+
+    def test_research_run_detail_api_returns_audited_run_by_id(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            store.record(
+                ResearchRunAudit(
+                    run_id="run-detail",
+                    created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+                    market="ashare",
+                    symbol="600000",
+                    timeframe="1d",
+                    strategy_name="SMA trend demo",
+                    strategy_revision="rev-detail",
+                    data_rows=120,
+                    metrics={"total_return_pct": 3.4, "trade_count": 8},
+                    decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
+                    execution_mode="paper_only",
+                    backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                run_store = store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/runs/run-detail")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["run"]["runId"], "run-detail")
+        self.assertEqual(payload["run"]["strategyRevision"], "rev-detail")
+        self.assertEqual(payload["run"]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
+
+    def test_research_run_detail_api_returns_404_for_missing_run(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                run_store = store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/runs/run-missing")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 404)
+        self.assertEqual(payload, {"error": "research_run_not_found", "runId": "run-missing"})
 
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter

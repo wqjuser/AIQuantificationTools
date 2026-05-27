@@ -191,26 +191,39 @@ class ResearchRunStore:
         finally:
             connection.close()
 
-        return [
-            ResearchRunAudit(
-                run_id=row[0],
-                created_at=datetime.fromisoformat(row[1]),
-                market=row[2],
-                symbol=row[3],
-                timeframe=row[4],
-                strategy_name=row[5],
-                strategy_revision=row[6],
-                data_rows=row[7],
-                metrics=json.loads(row[8]),
-                decisions=json.loads(row[9]),
-                execution_mode=row[10],
-                backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[11])),
-                backtest_trades=json.loads(row[12]),
-                backtest_equity_curve=json.loads(row[13]),
-                backtest_diagnostics=json.loads(row[14]),
-            )
-            for row in rows
-        ]
+        return [_row_to_research_run_audit(row) for row in rows]
+
+    def get(self, run_id: str) -> ResearchRunAudit | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                select
+                    run_id,
+                    created_at,
+                    market,
+                    symbol,
+                    timeframe,
+                    strategy_name,
+                    strategy_revision,
+                    data_rows,
+                    metrics_json,
+                    decisions_json,
+                    execution_mode,
+                    backtest_assumptions_json,
+                    backtest_trades_json,
+                    backtest_equity_curve_json,
+                    backtest_diagnostics_json
+                from research_runs
+                where run_id = ?
+                limit 1
+                """,
+                (run_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        return _row_to_research_run_audit(row) if row else None
 
 
 def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
@@ -235,6 +248,26 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
 
 def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, Any]:
     return {"runs": [research_run_audit_to_payload(audit) for audit in audits]}
+
+
+def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRunAudit:
+    return ResearchRunAudit(
+        run_id=row[0],
+        created_at=datetime.fromisoformat(row[1]),
+        market=row[2],
+        symbol=row[3],
+        timeframe=row[4],
+        strategy_name=row[5],
+        strategy_revision=row[6],
+        data_rows=row[7],
+        metrics=json.loads(row[8]),
+        decisions=json.loads(row[9]),
+        execution_mode=row[10],
+        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[11])),
+        backtest_trades=json.loads(row[12]),
+        backtest_equity_curve=json.loads(row[13]),
+        backtest_diagnostics=json.loads(row[14]),
+    )
 
 
 def _normalize_backtest_assumptions(value: dict[str, Any] | None) -> dict[str, Any]:
