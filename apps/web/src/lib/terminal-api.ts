@@ -466,7 +466,26 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     (run.backtestTrades === undefined ||
       (Array.isArray(run.backtestTrades) && run.backtestTrades.every(isBacktestTradeRow))) &&
     (run.backtestEquityCurve === undefined ||
-      (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint)))
+      (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint))) &&
+    (run.backtestDiagnostics === undefined ||
+      (Array.isArray(run.backtestDiagnostics) && run.backtestDiagnostics.every(isBacktestDiagnostic)))
+  );
+}
+
+function isBacktestDiagnostic(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const diagnostic = value as Record<string, unknown>;
+  return (
+    typeof diagnostic.id === "string" &&
+    typeof diagnostic.label === "string" &&
+    typeof diagnostic.value === "string" &&
+    typeof diagnostic.detail === "string" &&
+    (diagnostic.tone === "positive" ||
+      diagnostic.tone === "warning" ||
+      diagnostic.tone === "neutral" ||
+      diagnostic.tone === "risk")
   );
 }
 

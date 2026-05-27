@@ -116,6 +116,15 @@ class BacktestEquityPointReplay:
 
 
 @dataclass(frozen=True)
+class BacktestDiagnostic:
+    id: str
+    label: str
+    value: str
+    detail: str
+    tone: Literal["positive", "warning", "neutral", "risk"]
+
+
+@dataclass(frozen=True)
 class DecisionLogEntry:
     agent: str
     message: str
@@ -157,6 +166,7 @@ class TerminalWorkspace:
     workflow_nodes: list[WorkflowNode]
     backtest_trades: list[BacktestTradeReplay] = field(default_factory=list)
     backtest_equity_curve: list[BacktestEquityPointReplay] = field(default_factory=list)
+    backtest_diagnostics: list[BacktestDiagnostic] = field(default_factory=list)
     research_run: ResearchRunSummary | None = None
 
 

@@ -254,6 +254,15 @@ describe("terminal workspace API client", () => {
               backtestEquityCurve: [
                 { timestamp: "2026-05-26T08:00:00+00:00", equity: 250000 },
                 { timestamp: "2026-05-27T08:00:00+00:00", equity: 253400 }
+              ],
+              backtestDiagnostics: [
+                {
+                  id: "return-profile",
+                  label: "Return profile",
+                  value: "+3.40%",
+                  detail: "Total return over 120 bars",
+                  tone: "positive"
+                }
               ]
             }
           ]
@@ -268,6 +277,7 @@ describe("terminal workspace API client", () => {
     expect(result.runs[0].backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
     expect(result.runs[0].backtestTrades?.[0]).toMatchObject({ id: "trade-1", side: "BUY" });
     expect(result.runs[0].backtestEquityCurve?.at(-1)?.equity).toBe(253400);
+    expect(result.runs[0].backtestDiagnostics?.[0]).toMatchObject({ id: "return-profile", tone: "positive" });
   });
 
   test("loads market klines from the Python core", async () => {

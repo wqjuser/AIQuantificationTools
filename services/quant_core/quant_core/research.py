@@ -26,6 +26,7 @@ from quant_core.domain import (
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestAssumptions,
+    BacktestDiagnostic,
     BacktestEquityPointReplay,
     BacktestMetric,
     BacktestTradeReplay,
@@ -87,6 +88,7 @@ def run_terminal_research(
     run_id = f"run-{uuid4().hex[:12]}"
     backtest_trade_rows = _backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash)
     backtest_equity_curve = _backtest_equity_curve_rows(backtest)
+    backtest_diagnostics = _backtest_diagnostics(backtest, data_rows=quality.rows)
     audit = ResearchRunAudit(
         run_id=run_id,
         created_at=created_at,
@@ -106,6 +108,7 @@ def run_terminal_research(
         },
         backtest_trades=[asdict(row) for row in backtest_trade_rows],
         backtest_equity_curve=[asdict(row) for row in backtest_equity_curve],
+        backtest_diagnostics=[asdict(row) for row in backtest_diagnostics],
     )
     audit_store.record(audit)
 
@@ -135,6 +138,7 @@ def run_terminal_research(
         decision_log=decision_log,
         backtest_trades=backtest_trade_rows,
         backtest_equity_curve=backtest_equity_curve,
+        backtest_diagnostics=backtest_diagnostics,
         research_run=ResearchRunSummary(
             run_id=run_id,
             created_at=created_at,
@@ -184,6 +188,40 @@ def _backtest_equity_curve_rows(backtest: BacktestRun) -> list[BacktestEquityPoi
     return [
         BacktestEquityPointReplay(timestamp=point.timestamp.isoformat(), equity=round(point.equity, 4))
         for point in backtest.equity_curve
+    ]
+
+
+def _backtest_diagnostics(backtest: BacktestRun, *, data_rows: int) -> list[BacktestDiagnostic]:
+    metrics = backtest.metrics
+    return [
+        BacktestDiagnostic(
+            id="return-profile",
+            label="Return profile",
+            value=_format_signed_pct(metrics.total_return_pct),
+            detail=f"Total return over {data_rows} bars",
+            tone="positive" if metrics.total_return_pct >= 0 else "warning",
+        ),
+        BacktestDiagnostic(
+            id="drawdown-profile",
+            label="Drawdown profile",
+            value=_format_pct(metrics.max_drawdown_pct),
+            detail="Maximum peak-to-trough equity decline",
+            tone="risk" if metrics.max_drawdown_pct >= 15 else "warning",
+        ),
+        BacktestDiagnostic(
+            id="trade-quality",
+            label="Trade quality",
+            value=f"{metrics.win_rate_pct:.2f}% win rate",
+            detail=f"{metrics.trade_count} orders, profit factor {metrics.profit_factor:.2f}",
+            tone="positive" if metrics.profit_factor >= 1 else "neutral",
+        ),
+        BacktestDiagnostic(
+            id="data-coverage",
+            label="Data coverage",
+            value=f"{data_rows} bars",
+            detail=f"{backtest.market} {backtest.symbol} {backtest.timeframe} replay window",
+            tone="neutral",
+        ),
     ]
 
 

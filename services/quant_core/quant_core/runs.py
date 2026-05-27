@@ -27,6 +27,7 @@ class ResearchRunAudit:
     backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
     backtest_trades: list[dict[str, Any]] = field(default_factory=list)
     backtest_equity_curve: list[dict[str, Any]] = field(default_factory=list)
+    backtest_diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ResearchRunStore:
@@ -57,7 +58,8 @@ class ResearchRunStore:
                     execution_mode text not null,
                     backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
                     backtest_trades_json text not null default '[]',
-                    backtest_equity_curve_json text not null default '[]'
+                    backtest_equity_curve_json text not null default '[]',
+                    backtest_diagnostics_json text not null default '[]'
                 )
                 """
             )
@@ -86,6 +88,14 @@ class ResearchRunStore:
                     default '[]'
                     """
                 )
+            if "backtest_diagnostics_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column backtest_diagnostics_json text not null
+                    default '[]'
+                    """
+                )
             connection.commit()
         finally:
             connection.close()
@@ -109,9 +119,10 @@ class ResearchRunStore:
                     execution_mode,
                     backtest_assumptions_json,
                     backtest_trades_json,
-                    backtest_equity_curve_json
+                    backtest_equity_curve_json,
+                    backtest_diagnostics_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -125,7 +136,8 @@ class ResearchRunStore:
                     execution_mode = excluded.execution_mode,
                     backtest_assumptions_json = excluded.backtest_assumptions_json,
                     backtest_trades_json = excluded.backtest_trades_json,
-                    backtest_equity_curve_json = excluded.backtest_equity_curve_json
+                    backtest_equity_curve_json = excluded.backtest_equity_curve_json,
+                    backtest_diagnostics_json = excluded.backtest_diagnostics_json
                 """,
                 (
                     audit.run_id,
@@ -142,6 +154,7 @@ class ResearchRunStore:
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_equity_curve, ensure_ascii=False, sort_keys=True),
+                    json.dumps(audit.backtest_diagnostics, ensure_ascii=False, sort_keys=True),
                 ),
             )
             connection.commit()
@@ -167,7 +180,8 @@ class ResearchRunStore:
                     execution_mode,
                     backtest_assumptions_json,
                     backtest_trades_json,
-                    backtest_equity_curve_json
+                    backtest_equity_curve_json,
+                    backtest_diagnostics_json
                 from research_runs
                 order by created_at desc
                 limit ?
@@ -193,6 +207,7 @@ class ResearchRunStore:
                 backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[11])),
                 backtest_trades=json.loads(row[12]),
                 backtest_equity_curve=json.loads(row[13]),
+                backtest_diagnostics=json.loads(row[14]),
             )
             for row in rows
         ]
@@ -214,6 +229,7 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "backtestAssumptions": _normalize_backtest_assumptions(audit.backtest_assumptions),
         "backtestTrades": audit.backtest_trades,
         "backtestEquityCurve": audit.backtest_equity_curve,
+        "backtestDiagnostics": audit.backtest_diagnostics,
     }
 
 
