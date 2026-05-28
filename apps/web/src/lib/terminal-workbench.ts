@@ -387,6 +387,7 @@ const primaryQuantLoopStepDefinitions = [
   { id: "research", label: "Market Research" },
   { id: "strategy", label: "Strategy Lab" },
   { id: "backtest", label: "Backtest Review" },
+  { id: "agent-review", label: "Agent Review" },
   { id: "paper", label: "Paper Trading" }
 ] as const;
 
@@ -525,6 +526,7 @@ export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigat
     research: { moduleId: "watchlist", workflowStageId: "data" },
     strategy: { moduleId: "watchlist", workflowStageId: "factor" },
     backtest: { moduleId: "workflow", workflowStageId: "backtest" },
+    "agent-review": { moduleId: "workflow", workflowStageId: "agent" },
     paper: { moduleId: "portfolio", workflowStageId: "execution" }
   };
   return targets[stepId] ?? targets.research;

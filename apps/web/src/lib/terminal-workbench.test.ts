@@ -45,6 +45,7 @@ describe("terminal workbench model", () => {
       "Market Research",
       "Strategy Lab",
       "Backtest Review",
+      "Agent Review",
       "Paper Trading"
     ]);
     expect(visiblePanels(workspace)).toEqual([
@@ -71,6 +72,10 @@ describe("terminal workbench model", () => {
     expect(buildQuantLoopNavigationTarget("backtest")).toEqual({
       moduleId: "workflow",
       workflowStageId: "backtest"
+    });
+    expect(buildQuantLoopNavigationTarget("agent-review")).toEqual({
+      moduleId: "workflow",
+      workflowStageId: "agent"
     });
     expect(buildQuantLoopNavigationTarget("paper")).toEqual({
       moduleId: "portfolio",

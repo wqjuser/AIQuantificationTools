@@ -56,6 +56,7 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("resolveInitialWorkflowStepId");
     expect(appSource).toContain('new URLSearchParams(window.location.search).get("workflow")');
+    expect(appSource).toContain('"agent-review"');
     expect(appSource).toContain("url.searchParams.set(\"workflow\", activeLoopStepId)");
     expect(leftRailSource).toContain('className="loop-step-copy"');
     expect(leftRailSource).toContain("title={`${i18n.quantLoopLabel");
@@ -108,6 +109,9 @@ describe("terminal layout css", () => {
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');
+    expect(appSource).toContain('activeLoopStepId === "agent-review"');
+    expect(appSource).toContain('runAiWorkbenchAction("debate")');
+    expect(appSource).toContain('setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "agent-review")');
     expect(appSource).toContain('renderWorkflowNodesPanel("workflow-nodes-panel")');
     expect(appSource).toContain("buildWorkflowStages(workspace, workflowRunState)");
     expect(appSource).toContain('className="workflow-backtest-panel"');
@@ -130,6 +134,7 @@ describe("terminal layout css", () => {
     ).toBe(true);
     expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"decision workflow"'])).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
+    expect(hasCssBlockWith(".agent-review-layout", ['"ai workflow"', '"decision history"'])).toBe(true);
     expect(cssBlock(".paper-layout")).toContain(
       "grid-template-columns: minmax(720px, 1.15fr) minmax(380px, 0.65fr) minmax(320px, 0.45fr);"
     );

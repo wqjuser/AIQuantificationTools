@@ -191,11 +191,18 @@ describe("terminal workspace API client", () => {
       json: async () => remoteWorkspace
     }));
 
-    expect(result.workspace.quantLoop.map((step) => step.id)).toEqual(["research", "strategy", "backtest", "paper"]);
+    expect(result.workspace.quantLoop.map((step) => step.id)).toEqual([
+      "research",
+      "strategy",
+      "backtest",
+      "agent-review",
+      "paper"
+    ]);
     expect(result.workspace.quantLoop.map((step) => step.label)).toEqual([
       "Market Research",
       "Strategy Lab",
       "Backtest Review",
+      "Agent Review",
       "Paper Trading"
     ]);
   });
@@ -267,7 +274,13 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Research run complete");
     expect(result.workspace.metrics[0].value).toBe("+3.20%");
-    expect(result.workspace.quantLoop.map((step) => step.id)).toEqual(["research", "strategy", "backtest", "paper"]);
+    expect(result.workspace.quantLoop.map((step) => step.id)).toEqual([
+      "research",
+      "strategy",
+      "backtest",
+      "agent-review",
+      "paper"
+    ]);
   });
 
   test("keeps the current workspace when research run fails", async () => {

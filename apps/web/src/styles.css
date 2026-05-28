@@ -845,6 +845,12 @@ em {
     "ai ai";
 }
 
+.agent-review-layout {
+  grid-template-areas:
+    "ai workflow"
+    "decision history";
+}
+
 .paper-layout {
   grid-template-columns: minmax(720px, 1.15fr) minmax(380px, 0.65fr) minmax(320px, 0.45fr);
   grid-template-areas:
@@ -2778,6 +2784,14 @@ em {
       "ai";
   }
 
+  .agent-review-layout {
+    grid-template-areas:
+      "ai"
+      "workflow"
+      "decision"
+      "history";
+  }
+
   .paper-layout {
     grid-template-areas:
       "execution"
@@ -2867,6 +2881,14 @@ em {
       "workflow"
       "history"
       "ai";
+  }
+
+  .agent-review-layout {
+    grid-template-areas:
+      "ai"
+      "workflow"
+      "decision"
+      "history";
   }
 
   .paper-layout {

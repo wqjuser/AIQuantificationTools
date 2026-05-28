@@ -126,6 +126,7 @@ const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
   backtest: BarChart3,
+  "agent-review": BrainCircuit,
   paper: WalletCards
 };
 
@@ -133,9 +134,10 @@ const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
   research: "market",
   strategy: "strategy",
   backtest: "ai",
+  "agent-review": "ai",
   paper: "execution"
 };
-const workflowStepIds = ["research", "strategy", "backtest", "paper"] as const;
+const workflowStepIds = ["research", "strategy", "backtest", "agent-review", "paper"] as const;
 
 function resolveInitialWorkflowStepId(fallback: string): string {
   if (typeof window === "undefined") {
@@ -578,7 +580,7 @@ export function App() {
       source: "core",
       statusLabel: "AI action generated"
     });
-    setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "backtest");
+    setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "agent-review");
     setActiveWorkflowStageId(nextWorkflowState.activeStageId);
     setWorkflowRunState(nextWorkflowState);
   }, [workspace]);
@@ -768,6 +770,10 @@ export function App() {
       runAiWorkbenchAction("strategy-draft");
       return;
     }
+    if (activeLoopStepId === "agent-review") {
+      runAiWorkbenchAction("debate");
+      return;
+    }
     if (activeLoopStepId === "paper") {
       void submitPaperExecution();
       return;
@@ -879,6 +885,26 @@ export function App() {
             workspace={workspace}
           />
           {renderAgentPanel("workflow-agent-panel")}
+        </>
+      );
+    }
+
+    if (activeLoopStepId === "agent-review") {
+      return (
+        <>
+          {renderAgentPanel("workflow-agent-panel")}
+          {renderWorkflowNodesPanel("workflow-nodes-panel")}
+          <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+          <RunHistoryPanel
+            className="workflow-history-panel"
+            i18n={i18n}
+            onExport={exportRun}
+            onImportFile={importRunExportFile}
+            onReplay={replayRun}
+            runComparisonRows={runComparisonRows}
+            runHistory={runHistory}
+            workspace={workspace}
+          />
         </>
       );
     }
@@ -1175,6 +1201,9 @@ type AppI18n = ReturnType<typeof createI18n>;
 function workflowNextActionLabel(i18n: AppI18n, stepId: string): string {
   if (stepId === "strategy") {
     return i18n.t("aiAction.strategyDraft");
+  }
+  if (stepId === "agent-review") {
+    return i18n.t("aiAction.debate");
   }
   if (stepId === "paper") {
     return i18n.t("execution.submitPaper");
