@@ -508,6 +508,7 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Array.isArray(run.decisions) &&
     Boolean(run.executionMode) &&
     (run.dataQuality === undefined || isResearchRunDataQuality(run.dataQuality)) &&
+    (run.strategyConfig === undefined || isResearchRunStrategyConfig(run.strategyConfig)) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
     (run.backtestTrades === undefined ||
       (Array.isArray(run.backtestTrades) && run.backtestTrades.every(isBacktestTradeRow))) &&
@@ -516,6 +517,56 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     (run.backtestDiagnostics === undefined ||
       (Array.isArray(run.backtestDiagnostics) && run.backtestDiagnostics.every(isBacktestDiagnostic)))
   );
+}
+
+function isResearchRunStrategyConfig(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const config = value as Record<string, unknown>;
+  return (
+    typeof config.name === "string" &&
+    typeof config.revision === "string" &&
+    isMarket(config.market) &&
+    Array.isArray(config.symbols) &&
+    config.symbols.every((symbol) => typeof symbol === "string") &&
+    isTimeframe(config.timeframe) &&
+    typeof config.version === "number" &&
+    Array.isArray(config.entryConditions) &&
+    config.entryConditions.every(isResearchRunStrategyCondition) &&
+    Array.isArray(config.exitConditions) &&
+    config.exitConditions.every(isResearchRunStrategyCondition) &&
+    isResearchRunStrategyRisk(config.risk)
+  );
+}
+
+function isResearchRunStrategyCondition(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const condition = value as Record<string, unknown>;
+  return typeof condition.kind === "string" && isPlainRecord(condition.params);
+}
+
+function isResearchRunStrategyRisk(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const risk = value as Record<string, unknown>;
+  return (
+    isNullableNumber(risk.positionPct) &&
+    isNullableNumber(risk.stopLossPct) &&
+    isNullableNumber(risk.takeProfitPct) &&
+    isNullableNumber(risk.maxDrawdownPct)
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNullableNumber(value: unknown): boolean {
+  return value === null || typeof value === "number";
 }
 
 function isResearchRunDataQuality(value: unknown): boolean {

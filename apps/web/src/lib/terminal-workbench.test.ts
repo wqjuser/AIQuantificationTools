@@ -820,6 +820,51 @@ describe("terminal workbench model", () => {
     expect(workspace.researchRun?.runId).toBe("run-history");
   });
 
+  test("replays structured strategy config into the strategy snapshot", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-structured",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Custom SMA risk plan",
+      strategyRevision: "rev-structured",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      strategyConfig: {
+        name: "Custom SMA risk plan",
+        revision: "rev-structured",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 5 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 7 } }],
+        risk: {
+          positionPct: 0.25,
+          stopLossPct: 0.06,
+          takeProfitPct: 0.12,
+          maxDrawdownPct: 0.09
+        }
+      }
+    });
+
+    expect(workspace.strategy).toEqual({
+      name: "Custom SMA risk plan",
+      entry: "close_above_sma(window=5)",
+      exit: "close_below_sma(window=7)",
+      position: "25.00% position cap",
+      risk: "Stop 6.00% / take profit 12.00% / max drawdown 9.00%"
+    });
+  });
+
   test("builds a full workflow state when an audited run is replayed", () => {
     const state = buildAuditReplayWorkflowState({
       runId: "run-history",

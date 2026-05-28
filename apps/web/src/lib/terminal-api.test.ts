@@ -244,6 +244,17 @@ describe("terminal workspace API client", () => {
               decisions: [],
               executionMode: "paper_only",
               dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 120 },
+              strategyConfig: {
+                name: "SMA trend demo",
+                revision: "rev123",
+                market: "ashare",
+                symbols: ["600000"],
+                timeframe: "1d",
+                version: 1,
+                entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+                exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+                risk: { positionPct: 0.8, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.2 }
+              },
               backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
               backtestTrades: [
                 {
@@ -284,6 +295,8 @@ describe("terminal workspace API client", () => {
     expect(result.runs[0].runId).toBe("run-new");
     expect(result.runs[0].metrics.trade_count).toBe(8);
     expect(result.runs[0].dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
+    expect(result.runs[0].strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
+    expect(result.runs[0].strategyConfig?.risk.positionPct).toBe(0.8);
     expect(result.runs[0].backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
     expect(result.runs[0].backtestTrades?.[0]).toMatchObject({ id: "trade-1", side: "BUY" });
     expect(result.runs[0].backtestEquityCurve?.at(-1)?.equity).toBe(253400);
@@ -310,6 +323,17 @@ describe("terminal workspace API client", () => {
             decisions: [],
             executionMode: "paper_only",
             dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 120 },
+            strategyConfig: {
+              name: "SMA trend demo",
+              revision: "rev123",
+              market: "ashare",
+              symbols: ["600000"],
+              timeframe: "1d",
+              version: 1,
+              entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+              exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+              risk: { positionPct: 0.8, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.2 }
+            },
             backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 }
           }
         })
@@ -320,6 +344,8 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.run?.runId).toBe("run-new");
     expect(result.run?.dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
+    expect(result.run?.strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
+    expect(result.run?.strategyConfig?.risk.positionPct).toBe(0.8);
     expect(result.run?.backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
   });
 
@@ -327,6 +353,42 @@ describe("terminal workspace API client", () => {
     const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async () => ({
       ok: true,
       json: async () => ({ run: { runId: "run-new" } })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.run).toBeUndefined();
+    expect(result.error).toBe("Invalid research run detail contract");
+  });
+
+  test("returns fallback when research run strategy config is malformed", async () => {
+    const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        run: {
+          runId: "run-new",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyName: "SMA trend demo",
+          strategyRevision: "rev123",
+          dataRows: 120,
+          metrics: { total_return_pct: 3.4, trade_count: 8 },
+          decisions: [],
+          executionMode: "paper_only",
+          strategyConfig: {
+            name: "SMA trend demo",
+            revision: "rev123",
+            market: "ashare",
+            symbols: ["600000"],
+            timeframe: "1d",
+            version: 1,
+            entryConditions: [{ kind: "close_above_sma", params: "window=20" }],
+            exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+            risk: { positionPct: 0.8 }
+          }
+        }
+      })
     }));
 
     expect(result.source).toBe("fallback");

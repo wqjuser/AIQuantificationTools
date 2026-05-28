@@ -26,6 +26,7 @@ class ResearchRunAudit:
     decisions: list[dict[str, Any]]
     execution_mode: str
     data_quality: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DATA_QUALITY))
+    strategy_config: dict[str, Any] | None = None
     backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
     backtest_trades: list[dict[str, Any]] = field(default_factory=list)
     backtest_equity_curve: list[dict[str, Any]] = field(default_factory=list)
@@ -59,6 +60,7 @@ class ResearchRunStore:
                     decisions_json text not null,
                     execution_mode text not null,
                     data_quality_json text not null default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}',
+                    strategy_config_json text not null default '{}',
                     backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
                     backtest_trades_json text not null default '[]',
                     backtest_equity_curve_json text not null default '[]',
@@ -81,6 +83,14 @@ class ResearchRunStore:
                     alter table research_runs
                     add column data_quality_json text not null
                     default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}'
+                    """
+                )
+            if "strategy_config_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column strategy_config_json text not null
+                    default '{}'
                     """
                 )
             if "backtest_trades_json" not in columns:
@@ -129,12 +139,13 @@ class ResearchRunStore:
                     decisions_json,
                     execution_mode,
                     data_quality_json,
+                    strategy_config_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
                     backtest_diagnostics_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -147,6 +158,7 @@ class ResearchRunStore:
                     decisions_json = excluded.decisions_json,
                     execution_mode = excluded.execution_mode,
                     data_quality_json = excluded.data_quality_json,
+                    strategy_config_json = excluded.strategy_config_json,
                     backtest_assumptions_json = excluded.backtest_assumptions_json,
                     backtest_trades_json = excluded.backtest_trades_json,
                     backtest_equity_curve_json = excluded.backtest_equity_curve_json,
@@ -165,6 +177,7 @@ class ResearchRunStore:
                     json.dumps(audit.decisions, ensure_ascii=False, sort_keys=True),
                     audit.execution_mode,
                     json.dumps(_normalize_data_quality(audit.data_quality, data_rows=audit.data_rows), ensure_ascii=False, sort_keys=True),
+                    json.dumps(_normalize_strategy_config(audit.strategy_config, audit=audit), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_equity_curve, ensure_ascii=False, sort_keys=True),
@@ -193,6 +206,7 @@ class ResearchRunStore:
                     decisions_json,
                     execution_mode,
                     data_quality_json,
+                    strategy_config_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
@@ -226,6 +240,7 @@ class ResearchRunStore:
                     decisions_json,
                     execution_mode,
                     data_quality_json,
+                    strategy_config_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
@@ -256,6 +271,7 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "decisions": audit.decisions,
         "executionMode": audit.execution_mode,
         "dataQuality": _normalize_data_quality(audit.data_quality, data_rows=audit.data_rows),
+        "strategyConfig": _normalize_strategy_config(audit.strategy_config, audit=audit),
         "backtestAssumptions": _normalize_backtest_assumptions(audit.backtest_assumptions),
         "backtestTrades": audit.backtest_trades,
         "backtestEquityCurve": audit.backtest_equity_curve,
@@ -281,10 +297,20 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         decisions=json.loads(row[9]),
         execution_mode=row[10],
         data_quality=_normalize_data_quality(json.loads(row[11]), data_rows=row[7]),
-        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[12])),
-        backtest_trades=json.loads(row[13]),
-        backtest_equity_curve=json.loads(row[14]),
-        backtest_diagnostics=json.loads(row[15]),
+        strategy_config=_normalize_strategy_config(
+            json.loads(row[12]),
+            audit_fields={
+                "strategy_name": row[5],
+                "strategy_revision": row[6],
+                "market": row[2],
+                "symbol": row[3],
+                "timeframe": row[4],
+            },
+        ),
+        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[13])),
+        backtest_trades=json.loads(row[14]),
+        backtest_equity_curve=json.loads(row[15]),
+        backtest_diagnostics=json.loads(row[16]),
     )
 
 
@@ -302,6 +328,52 @@ def _normalize_data_quality(value: dict[str, Any] | None, *, data_rows: int) -> 
     }
 
 
+def _normalize_strategy_config(
+    value: dict[str, Any] | None,
+    *,
+    audit: ResearchRunAudit | None = None,
+    audit_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    config = value or {}
+    fields = audit_fields or {}
+    name = config.get("name") or (audit.strategy_name if audit else fields.get("strategy_name")) or "Unknown strategy"
+    revision = config.get("revision") or (audit.strategy_revision if audit else fields.get("strategy_revision")) or "unknown"
+    market = config.get("market") or (audit.market if audit else fields.get("market")) or "ashare"
+    symbol = audit.symbol if audit else fields.get("symbol")
+    symbols = config.get("symbols") if isinstance(config.get("symbols"), list) else ([symbol] if symbol else [])
+    timeframe = config.get("timeframe") or (audit.timeframe if audit else fields.get("timeframe")) or "1d"
+    entry_conditions = config.get("entryConditions", config.get("entry_conditions", []))
+    exit_conditions = config.get("exitConditions", config.get("exit_conditions", []))
+    return {
+        "name": str(name),
+        "revision": str(revision),
+        "market": str(market),
+        "symbols": [str(item) for item in symbols],
+        "timeframe": str(timeframe),
+        "version": int(_number_or_default(config.get("version"), 1)),
+        "entryConditions": [_normalize_condition(condition) for condition in entry_conditions if isinstance(condition, dict)],
+        "exitConditions": [_normalize_condition(condition) for condition in exit_conditions if isinstance(condition, dict)],
+        "risk": _normalize_strategy_risk(config.get("risk") if isinstance(config.get("risk"), dict) else {}),
+    }
+
+
+def _normalize_condition(value: dict[str, Any]) -> dict[str, Any]:
+    params = value.get("params")
+    return {
+        "kind": str(value.get("kind") or "unknown"),
+        "params": dict(params) if isinstance(params, dict) else {},
+    }
+
+
+def _normalize_strategy_risk(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "positionPct": _nullable_number(value.get("positionPct", value.get("position_pct"))),
+        "stopLossPct": _nullable_number(value.get("stopLossPct", value.get("stop_loss_pct"))),
+        "takeProfitPct": _nullable_number(value.get("takeProfitPct", value.get("take_profit_pct"))),
+        "maxDrawdownPct": _nullable_number(value.get("maxDrawdownPct", value.get("max_drawdown_pct"))),
+    }
+
+
 def _normalize_backtest_assumptions(value: dict[str, Any] | None) -> dict[str, Any]:
     assumptions = value or {}
     return {
@@ -309,6 +381,13 @@ def _normalize_backtest_assumptions(value: dict[str, Any] | None) -> dict[str, A
         "feeBps": _number_or_default(assumptions.get("feeBps"), DEFAULT_BACKTEST_ASSUMPTIONS["feeBps"]),
         "slippageBps": _number_or_default(assumptions.get("slippageBps"), DEFAULT_BACKTEST_ASSUMPTIONS["slippageBps"]),
     }
+
+
+def _nullable_number(value: Any) -> int | float | None:
+    if value is None:
+        return None
+    parsed = _number_or_default(value, 0)
+    return parsed
 
 
 def _number_or_default(value: Any, default: int | float) -> int | float:

@@ -273,6 +273,30 @@ export interface ResearchRunDataQuality {
   rows: number;
 }
 
+export interface ResearchRunStrategyCondition {
+  kind: string;
+  params: Record<string, string | number | boolean | null>;
+}
+
+export interface ResearchRunStrategyRisk {
+  positionPct: number | null;
+  stopLossPct: number | null;
+  takeProfitPct: number | null;
+  maxDrawdownPct: number | null;
+}
+
+export interface ResearchRunStrategyConfig {
+  name: string;
+  revision: string;
+  market: Market;
+  symbols: string[];
+  timeframe: Timeframe;
+  version: number;
+  entryConditions: ResearchRunStrategyCondition[];
+  exitConditions: ResearchRunStrategyCondition[];
+  risk: ResearchRunStrategyRisk;
+}
+
 export interface ResearchRunAudit {
   runId: string;
   createdAt: string;
@@ -286,6 +310,7 @@ export interface ResearchRunAudit {
   decisions: DecisionLogEntry[];
   executionMode: string;
   dataQuality?: ResearchRunDataQuality;
+  strategyConfig?: ResearchRunStrategyConfig;
   backtestAssumptions?: BacktestAssumptions;
   backtestTrades?: BacktestTradeRow[];
   backtestEquityCurve?: BacktestEquityPoint[];
@@ -1338,13 +1363,7 @@ export function workspaceFromResearchRunAudit(
     selectedInstrument: instrument,
     selectedTimeframe: run.timeframe,
     backtestAssumptions: normalizeBacktestAssumptions(run.backtestAssumptions),
-    strategy: {
-      name: run.strategyName,
-      entry: "Replay from audited research run",
-      exit: `Original timeframe ${run.timeframe}`,
-      position: `${run.dataRows} bars replayed`,
-      risk: `Strategy revision ${run.strategyRevision}; execution ${run.executionMode}`
-    },
+    strategy: strategySnapshotFromAudit(run),
     metrics: [
       {
         label: "Return",
@@ -1370,6 +1389,55 @@ export function workspaceFromResearchRunAudit(
       executionMode: run.executionMode
     }
   };
+}
+
+function strategySnapshotFromAudit(run: ResearchRunAudit): StrategySnapshot {
+  if (!run.strategyConfig) {
+    return {
+      name: run.strategyName,
+      entry: "Replay from audited research run",
+      exit: `Original timeframe ${run.timeframe}`,
+      position: `${run.dataRows} bars replayed`,
+      risk: `Strategy revision ${run.strategyRevision}; execution ${run.executionMode}`
+    };
+  }
+  return {
+    name: run.strategyConfig.name,
+    entry: formatStrategyConditions(run.strategyConfig.entryConditions),
+    exit: formatStrategyConditions(run.strategyConfig.exitConditions),
+    position:
+      run.strategyConfig.risk.positionPct === null
+        ? "Position cap unavailable"
+        : `${formatFractionPct(run.strategyConfig.risk.positionPct)} position cap`,
+    risk: formatStrategyRisk(run.strategyConfig.risk)
+  };
+}
+
+function formatStrategyConditions(conditions: ResearchRunStrategyCondition[]): string {
+  if (!conditions.length) {
+    return "No structured condition";
+  }
+  return conditions.map((condition) => formatStrategyCondition(condition)).join(" AND ");
+}
+
+function formatStrategyCondition(condition: ResearchRunStrategyCondition): string {
+  const params = Object.entries(condition.params)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(", ");
+  return params ? `${condition.kind}(${params})` : condition.kind;
+}
+
+function formatStrategyRisk(risk: ResearchRunStrategyRisk): string {
+  const parts = [
+    risk.stopLossPct === null ? null : `Stop ${formatFractionPct(risk.stopLossPct)}`,
+    risk.takeProfitPct === null ? null : `take profit ${formatFractionPct(risk.takeProfitPct)}`,
+    risk.maxDrawdownPct === null ? null : `max drawdown ${formatFractionPct(risk.maxDrawdownPct)}`
+  ].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" / ") : "No structured risk guardrail";
+}
+
+function formatFractionPct(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
 }
 
 export function buildAuditReplayWorkflowState(run: ResearchRunAudit): WorkflowRunState {

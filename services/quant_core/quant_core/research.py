@@ -102,6 +102,7 @@ def run_terminal_research(
         decisions=[asdict(entry) for entry in decision_log],
         execution_mode="paper_only",
         data_quality=_data_quality_payload(quality),
+        strategy_config=_strategy_config_payload(strategy),
         backtest_assumptions={
             "initialCash": backtest_engine.initial_cash,
             "feeBps": round(backtest_engine.fee_rate * 10_000, 4),
@@ -192,6 +193,29 @@ def _data_quality_payload(quality: DataQuality) -> dict[str, object]:
         "warnings": list(quality.warnings),
         "rows": quality.rows,
     }
+
+
+def _strategy_config_payload(strategy: StrategyConfig) -> dict[str, object]:
+    return {
+        "name": strategy.name,
+        "revision": strategy.revision,
+        "market": strategy.market,
+        "symbols": list(strategy.symbols),
+        "timeframe": strategy.timeframe,
+        "version": strategy.version,
+        "entryConditions": [_condition_payload(condition) for condition in strategy.entry_conditions],
+        "exitConditions": [_condition_payload(condition) for condition in strategy.exit_conditions],
+        "risk": {
+            "positionPct": strategy.risk.position_pct,
+            "stopLossPct": strategy.risk.stop_loss_pct,
+            "takeProfitPct": strategy.risk.take_profit_pct,
+            "maxDrawdownPct": strategy.risk.max_drawdown_pct,
+        },
+    }
+
+
+def _condition_payload(condition: Condition) -> dict[str, object]:
+    return {"kind": condition.kind, "params": dict(condition.params)}
 
 
 def _backtest_equity_curve_rows(backtest: BacktestRun) -> list[BacktestEquityPointReplay]:
