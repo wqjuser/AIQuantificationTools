@@ -321,6 +321,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "Market Research",
                 "Strategy Lab",
                 "Backtest Review",
+                "Agent Review",
                 "Paper Trading",
             ],
         )

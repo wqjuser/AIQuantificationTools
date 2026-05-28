@@ -185,6 +185,7 @@ def build_terminal_workspace() -> TerminalWorkspace:
             QuantLoopStep(id="research", label="Market Research", status="active"),
             QuantLoopStep(id="strategy", label="Strategy Lab", status="ready"),
             QuantLoopStep(id="backtest", label="Backtest Review", status="ready"),
+            QuantLoopStep(id="agent-review", label="Agent Review", status="ready"),
             QuantLoopStep(id="paper", label="Paper Trading", status="ready"),
         ],
         modules=[
