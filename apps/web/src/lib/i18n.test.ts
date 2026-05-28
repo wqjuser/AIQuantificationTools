@@ -108,6 +108,15 @@ describe("i18n", () => {
         "Backtest explanation for 600000: return +12.4%, max drawdown 5.8%, trades 42; no guaranteed outcome."
       )
     ).toBe("600000 回测解释：收益率 +12.4%，最大回撤 5.8%，交易数 42；不构成收益保证。");
+    expect(zh.decisionAgent("AI Review Gate")).toBe("AI 评审闸门");
+    expect(
+      zh.decisionMessage(
+        "Backtest explanation for 600000 using audited run run-1: return +8.20%, max drawdown 3.10%, trades 9; no guaranteed outcome."
+      )
+    ).toBe("600000 审计运行 run-1 回测解释：收益率 +8.20%，最大回撤 3.10%，交易数 9；不构成收益保证。");
+    expect(
+      zh.decisionMessage("AI explanation blocked for 600000: run Pipeline to create an audited backtest first.")
+    ).toBe("600000 AI 解释已阻断：请先运行流水线生成可审计回测。");
     expect(
       zh.decisionMessage("600000 15m selected. Run Pipeline to generate an audited backtest and agent review.")
     ).toBe("600000 15m 已选中。运行流水线以生成可审计回测和智能体评审。");

@@ -1338,6 +1338,21 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
     );
   }
 
+  if (!workspace.researchRun) {
+    const actionLabel = action === "explain" ? "explanation" : "debate";
+    return {
+      ...workspace,
+      decisionLog: [
+        {
+          agent: "AI Review Gate",
+          message: `AI ${actionLabel} blocked for ${workspace.selectedInstrument.symbol}: run Pipeline to create an audited backtest first.`,
+          tone: "warning"
+        },
+        ...workspace.decisionLog
+      ]
+    };
+  }
+
   if (action === "explain") {
     const returnMetric = workspace.metrics.find((metric) => metric.label === "Return")?.value ?? "N/A";
     const drawdownMetric = workspace.metrics.find((metric) => metric.label === "Max DD")?.value ?? "N/A";
@@ -1347,7 +1362,7 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
       decisionLog: [
         {
           agent: "AI Summary",
-          message: `Backtest explanation for ${workspace.selectedInstrument.symbol}: return ${returnMetric}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
+          message: `Backtest explanation for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: return ${returnMetric}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
           tone: "ai"
         },
         ...workspace.decisionLog
@@ -1360,7 +1375,7 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
     decisionLog: [
       {
         agent: "AI Debate",
-        message: `Debate generated for ${workspace.selectedInstrument.symbol}: bull case requires momentum confirmation; bear case flags drawdown and data quality.`,
+        message: `Debate generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: bull case requires momentum confirmation; bear case flags drawdown and data quality.`,
         tone: "ai"
       },
       ...workspace.decisionLog
@@ -1393,10 +1408,45 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
 
   const returnMetric = metricValue(workspace, "Return", "N/A");
   const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
+  if (!workspace.researchRun) {
+    const actionLabel = action === "explain" ? "explanation" : "debate";
+    const blockedMessage = `AI ${actionLabel} blocked for ${workspace.selectedInstrument.symbol}: run Pipeline to create an audited backtest first.`;
+    return {
+      activeStageId: "backtest",
+      completedStageIds: ["data", "factor"],
+      log: [
+        {
+          id: `ai-action-${workspace.selectedInstrument.symbol}-data`,
+          stageId: "data",
+          level: "success",
+          message: `Research context selected: ${context}`
+        },
+        {
+          id: `ai-action-${workspace.selectedInstrument.symbol}-factor`,
+          stageId: "factor",
+          level: "success",
+          message: `Strategy context selected: ${workspace.strategy.name}`
+        },
+        {
+          id: `ai-action-${workspace.selectedInstrument.symbol}-backtest`,
+          stageId: "backtest",
+          level: "warning",
+          message: "Audited backtest is missing; run Pipeline before AI review."
+        },
+        {
+          id: `ai-action-${workspace.selectedInstrument.symbol}-agent`,
+          stageId: "agent",
+          level: "warning",
+          message: blockedMessage
+        }
+      ]
+    };
+  }
+
   const actionMessage =
     action === "explain"
-      ? `AI explanation generated for ${workspace.selectedInstrument.symbol}: return ${returnMetric}, max drawdown ${drawdownMetric}; no guaranteed outcome.`
-      : `AI debate generated for ${workspace.selectedInstrument.symbol}; bull, bear, and risk notes updated.`;
+      ? `AI explanation generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: return ${returnMetric}, max drawdown ${drawdownMetric}; no guaranteed outcome.`
+      : `AI debate generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}; bull, bear, and risk notes updated.`;
 
   return {
     activeStageId: "agent",

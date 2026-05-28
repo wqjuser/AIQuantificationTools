@@ -647,17 +647,36 @@ function translateDecisionMessage(locale: Locale, message: string): string {
   if (backtestReplay) {
     return `回测已基于 ${backtestReplay[1]} 根K线完成。`;
   }
+  const auditedAiExplanation = message.match(
+    /^Backtest explanation for (.+) using audited run (.+): return (.+), max drawdown (.+), trades (.+); no guaranteed outcome\.$/
+  );
+  if (auditedAiExplanation) {
+    return `${auditedAiExplanation[1]} 审计运行 ${auditedAiExplanation[2]} 回测解释：收益率 ${auditedAiExplanation[3]}，最大回撤 ${auditedAiExplanation[4]}，交易数 ${auditedAiExplanation[5]}；不构成收益保证。`;
+  }
   const aiExplanation = message.match(
     /^Backtest explanation for (.+): return (.+), max drawdown (.+), trades (.+); no guaranteed outcome\.$/
   );
   if (aiExplanation) {
     return `${aiExplanation[1]} 回测解释：收益率 ${aiExplanation[2]}，最大回撤 ${aiExplanation[3]}，交易数 ${aiExplanation[4]}；不构成收益保证。`;
   }
+  const auditedAiDebate = message.match(
+    /^Debate generated for (.+) using audited run (.+): bull case requires momentum confirmation; bear case flags drawdown and data quality\.$/
+  );
+  if (auditedAiDebate) {
+    return `${auditedAiDebate[1]} 审计运行 ${auditedAiDebate[2]} 智能体辩论：多头观点需要动量确认；空头观点提示回撤和数据质量风险。`;
+  }
   const aiDebate = message.match(
     /^Debate generated for (.+): bull case requires momentum confirmation; bear case flags drawdown and data quality\.$/
   );
   if (aiDebate) {
     return `${aiDebate[1]} 智能体辩论：多头观点需要动量确认；空头观点提示回撤和数据质量风险。`;
+  }
+  const blockedAiReview = message.match(
+    /^AI (explanation|debate) blocked for (.+): run Pipeline to create an audited backtest first\.$/
+  );
+  if (blockedAiReview) {
+    const action = blockedAiReview[1] === "explanation" ? "解释" : "辩论";
+    return `${blockedAiReview[2]} AI ${action}已阻断：请先运行流水线生成可审计回测。`;
   }
   const strategyDraft = message.match(
     /^Strategy draft generated for (.+): keep paper-only execution until data, risk, and human gates pass\.$/
@@ -718,6 +737,7 @@ function translateAgentName(locale: Locale, agent: string): string {
   }
   const extra: Record<string, string> = {
     "AI Summary": "AI 摘要",
+    "AI Review Gate": "AI 评审闸门",
     Audit: "审计",
     Technical: "技术分析",
     Fundamental: "基本面",

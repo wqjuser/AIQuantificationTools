@@ -748,40 +748,90 @@ describe("terminal workbench model", () => {
     expect(state.log[1].message).toBe("Strategy draft staged: 600000 1d AI draft; audit required before backtest.");
   });
 
-  test("builds a visible workflow trail for AI explanation and debate actions", () => {
+  test("blocks AI explanation and debate workflow trails until an audited run is bound", () => {
     const workspace = buildTerminalWorkspace();
 
     const explainState = buildAiActionWorkflowState(workspaceWithAiAction(workspace, "explain"), "explain");
-    expect(explainState.activeStageId).toBe("agent");
-    expect(explainState.completedStageIds).toEqual(["data", "factor", "backtest"]);
+    expect(explainState.activeStageId).toBe("backtest");
+    expect(explainState.completedStageIds).toEqual(["data", "factor"]);
     expect(explainState.log.at(-1)?.message).toBe(
-      "AI explanation generated for 600000: return +12.4%, max drawdown 5.8%; no guaranteed outcome."
+      "AI explanation blocked for 600000: run Pipeline to create an audited backtest first."
     );
+    expect(explainState.log.at(-1)?.level).toBe("warning");
 
     const debateState = buildAiActionWorkflowState(workspaceWithAiAction(workspace, "debate"), "debate");
-    expect(debateState.activeStageId).toBe("agent");
-    expect(debateState.completedStageIds).toEqual(["data", "factor", "backtest"]);
-    expect(debateState.log.at(-1)?.message).toBe("AI debate generated for 600000; bull, bear, and risk notes updated.");
+    expect(debateState.activeStageId).toBe("backtest");
+    expect(debateState.completedStageIds).toEqual(["data", "factor"]);
+    expect(debateState.log.at(-1)?.message).toBe(
+      "AI debate blocked for 600000: run Pipeline to create an audited backtest first."
+    );
+    expect(debateState.log.at(-1)?.level).toBe("warning");
   });
 
-  test("adds a TradingAgents-style debate note to the decision log", () => {
-    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "debate");
+  test("adds a TradingAgents-style debate note to the decision log from audited evidence", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-review",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+    const workspace = workspaceWithAiAction(auditedWorkspace, "debate");
 
     expect(workspace.decisionLog[0]).toEqual({
       agent: "AI Debate",
       message:
-        "Debate generated for 600000: bull case requires momentum confirmation; bear case flags drawdown and data quality.",
+        "Debate generated for 600000 using audited run run-ai-review: bull case requires momentum confirmation; bear case flags drawdown and data quality.",
       tone: "ai"
     });
-    expect(workspace.decisionLog).toHaveLength(5);
   });
 
-  test("adds a grounded backtest explanation without promising returns", () => {
-    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "explain");
+  test("adds a grounded audited backtest explanation without promising returns", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-explain",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+    const workspace = workspaceWithAiAction(auditedWorkspace, "explain");
 
     expect(workspace.decisionLog[0].agent).toBe("AI Summary");
-    expect(workspace.decisionLog[0].message).toContain("return +12.4%");
+    expect(workspace.decisionLog[0].message).toContain("using audited run run-ai-explain");
+    expect(workspace.decisionLog[0].message).toContain("return +8.20%");
     expect(workspace.decisionLog[0].message).toContain("no guaranteed outcome");
+  });
+
+  test("warns instead of explaining when AI review has no audited evidence", () => {
+    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "explain");
+
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "AI Review Gate",
+      message: "AI explanation blocked for 600000: run Pipeline to create an audited backtest first.",
+      tone: "warning"
+    });
   });
 
   test("generates a paper-only strategy draft from the current context", () => {
@@ -1044,8 +1094,8 @@ describe("terminal workbench model", () => {
     const merged = workspaceWithPreservedInteractiveState(refreshedWorkspace, currentWorkspace);
 
     expect(merged.selectedInstrument.symbol).toBe("600000");
-    expect(merged.decisionLog[0].agent).toBe("AI Summary");
-    expect(merged.decisionLog[0].message).toContain("no guaranteed outcome");
+    expect(merged.decisionLog[0].agent).toBe("AI Review Gate");
+    expect(merged.decisionLog[0].message).toContain("run Pipeline to create an audited backtest first");
     expect(merged.strategy).toBe(currentWorkspace.strategy);
     expect(merged.watchlist[0].price).toBe(refreshedWorkspace.watchlist[0].price);
   });
