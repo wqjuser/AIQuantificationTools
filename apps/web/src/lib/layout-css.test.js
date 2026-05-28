@@ -309,6 +309,19 @@ describe("terminal layout css", () => {
     expect(cssBlock(".execution-tile.warning")).toContain("border-left-color: #e8be62;");
   });
 
+  test("renders execution promotion readiness as a separate queue after paper execution", () => {
+    expect(appSource).toContain("buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows)");
+    expect(appSource).toContain("<PromotionQueuePanel");
+    expect(appSource).toContain("readiness={promotionReadiness}");
+    expect(appSource).toContain('className="promotion-stage-list"');
+    expect(appSource).toContain('className={`promotion-stage');
+    expect(styles).toContain(".promotion-queue");
+    expect(styles).toContain(".promotion-stage-list");
+    expect(styles).toContain(".promotion-stage");
+    expect(cssBlock(".workflow-promotion-panel")).toContain("grid-area: promotion;");
+    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion broker"'])).toBe(true);
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

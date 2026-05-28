@@ -58,6 +58,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
+  buildPromotionReadiness,
   buildResearchRunComparisonRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
@@ -83,6 +84,8 @@ import {
   PaperExecutionSummaryTile,
   PaperTradingRow,
   PortfolioRiskRow,
+  PromotionQueueStage,
+  PromotionReadiness,
   ProductWorkArea,
   ProductWorkAreaId,
   ResearchRunAudit,
@@ -293,6 +296,7 @@ export function App() {
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
+  const promotionReadiness = buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
 
   useEffect(() => {
@@ -1044,6 +1048,11 @@ export function App() {
             rows={visiblePaperTradingRows}
             summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
+          />
+          <PromotionQueuePanel
+            className="workflow-promotion-panel"
+            i18n={i18n}
+            readiness={promotionReadiness}
           />
           <BrokerAdapterPanel adapterRows={brokerAdapterRows} className="workflow-broker-panel" i18n={i18n} />
         </>
@@ -2249,6 +2258,42 @@ function BrokerWorkspace({
   );
 }
 
+function PromotionQueuePanel({
+  className,
+  i18n,
+  readiness
+}: {
+  className?: string;
+  i18n: AppI18n;
+  readiness: PromotionReadiness;
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "晋级队列" : "Promotion Queue"}
+      subtitle={i18n.locale === "zh-CN" ? "模拟盘到实盘准备" : "Paper to live readiness"}
+      className={className}
+    >
+      <div className={`promotion-queue ${readiness.status}`}>
+        <div className="promotion-summary">
+          <span>{promotionStatusLabel(i18n, readiness.status)}</span>
+          <strong>{promotionHeadline(i18n, readiness.headline)}</strong>
+          <p>{promotionSummaryText(i18n, readiness.summary)}</p>
+        </div>
+        <div className="promotion-stage-list">
+          {readiness.stages.map((stage) => (
+            <article className={`promotion-stage ${stage.tone}`} key={stage.id}>
+              <span>{promotionStageLabel(i18n, stage)}</span>
+              <strong>{promotionStageValue(i18n, stage.value)}</strong>
+              <em>{promotionStageStatusLabel(i18n, stage.status)}</em>
+              <p>{promotionStageDetail(i18n, stage.detail)}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function BrokerAdapterPanel({
   adapterRows,
   className,
@@ -2282,6 +2327,118 @@ function BrokerAdapterPanel({
       </div>
     </Panel>
   );
+}
+
+function promotionStatusLabel(i18n: AppI18n, status: PromotionReadiness["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status.replaceAll("_", " ");
+  }
+  return {
+    blocked: "晋级阻断",
+    paper_pending: "等待模拟成交",
+    certification_pending: "等待认证",
+    live_ready: "实盘准备就绪"
+  }[status];
+}
+
+function promotionHeadline(i18n: AppI18n, headline: string): string {
+  if (i18n.locale === "en-US") {
+    return headline;
+  }
+  return {
+    "Promotion queue blocked": "晋级队列阻断",
+    "Paper execution required": "需要模拟执行",
+    "Live promotion pending certification": "等待实盘认证",
+    "Live promotion ready": "实盘晋级就绪"
+  }[headline] ?? headline;
+}
+
+function promotionSummaryText(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  return summary
+    .replace(
+      "A strategy needs audited evidence and risk approval before it can enter execution promotion.",
+      "策略需要先绑定审计证据并通过风控审批，才能进入执行晋级。"
+    )
+    .replace(
+      "The audited run is risk-approved for paper trading, but no filled paper execution is bound yet.",
+      "审计运行已通过模拟盘风控审批，但尚未绑定已成交模拟执行。"
+    )
+    .replace(
+      "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass.",
+      "模拟执行已经通过；实盘通道仍需适配器认证和人工确认。"
+    )
+    .replace(
+      "Audited evidence, paper execution, certified adapter, and human confirmation are all bound.",
+      "审计证据、模拟执行、认证适配器和人工确认均已绑定。"
+    );
+}
+
+function promotionStageLabel(i18n: AppI18n, stage: PromotionQueueStage): string {
+  if (i18n.locale === "en-US") {
+    return stage.label;
+  }
+  return {
+    "audited-run": "审计运行",
+    "risk-approval": "风控审批",
+    "paper-execution": "模拟执行",
+    "adapter-certification": "适配器认证",
+    "human-confirmation": "人工确认"
+  }[stage.id];
+}
+
+function promotionStageValue(i18n: AppI18n, value: string): string {
+  if (i18n.locale === "en-US") {
+    return value;
+  }
+  const filledOrders = value.match(/^(\d+) filled orders?$/);
+  if (filledOrders) {
+    return `${filledOrders[1]} 笔已成交`;
+  }
+  const certifiedAdapters = value.match(/^(\d+) certified live adapters?$/);
+  if (certifiedAdapters) {
+    return `${certifiedAdapters[1]} 个认证实盘适配器`;
+  }
+  return value
+    .replace("No audited run", "缺少审计运行")
+    .replace("paper approved", "模拟已批准")
+    .replace("live approved", "实盘已批准")
+    .replace("risk blocked", "风控阻断")
+    .replace("No paper fill", "缺少模拟成交")
+    .replace("manual approval recorded", "人工确认已记录")
+    .replace("manual approval required", "需要人工确认");
+}
+
+function promotionStageStatusLabel(i18n: AppI18n, status: PromotionQueueStage["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { passed: "通过", blocked: "阻断", review: "复核" }[status];
+}
+
+function promotionStageDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  const boundRun = detail.match(/^(\d+) (.+) bars are bound to the promotion queue\.$/);
+  if (boundRun) {
+    return `${boundRun[1]} 根 ${boundRun[2]} K线已绑定到晋级队列。`;
+  }
+  const paperSnapshot = detail.match(/^Paper snapshot (.+) passed local risk checks before live promotion\.$/);
+  if (paperSnapshot) {
+    return `模拟快照 ${paperSnapshot[1]} 已在实盘晋级前通过本地风控检查。`;
+  }
+  return detail
+    .replace("Run Pipeline before a strategy can enter the promotion queue.", "策略进入晋级队列前需要先运行流水线。")
+    .replace("Paper execution exists, but a filled order and passing risk check are both required.", "已有模拟执行，但仍需要已成交委托和通过的风控检查。")
+    .replace("Submit a paper order from the active audited run before live promotion review.", "实盘晋级评审前，请先基于当前审计运行提交模拟委托。")
+    .replace("A certified live adapter is available for the selected market.", "当前市场已有可用的认证实盘适配器。")
+    .replace("Live adapters remain interface-only or configuration-required until certification passes.", "认证通过前，实盘适配器仍保持仅接口或需配置状态。")
+    .replace("A human operator confirmed this promotion path.", "人工操作员已确认该晋级路径。")
+    .replace("Live promotion requires explicit human confirmation after adapter certification.", "适配器认证后，实盘晋级仍需要明确人工确认。")
+    .replace("Bind an audited run before paper or live execution.", "先绑定审计运行，再进入模拟或实盘执行。");
 }
 
 function scannerSignalLabel(i18n: AppI18n, signal: ScannerCandidate["signal"]): string {

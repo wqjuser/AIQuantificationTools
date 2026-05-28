@@ -1003,7 +1003,8 @@ em {
 .execution-layout {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
-    "execution broker";
+    "execution broker"
+    "promotion broker";
 }
 
 .audit-layout {
@@ -1146,6 +1147,11 @@ em {
 
 .workflow-execution-panel {
   grid-area: execution;
+}
+
+.workflow-promotion-panel {
+  grid-area: promotion;
+  align-self: start;
 }
 
 .workflow-portfolio-panel {
@@ -2158,6 +2164,90 @@ em {
 
 .paper-blotter-row span {
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.promotion-queue {
+  display: grid;
+  gap: 10px;
+}
+
+.promotion-summary {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 8px;
+  background: #101925;
+  padding: 10px;
+}
+
+.promotion-queue.paper_pending .promotion-summary,
+.promotion-queue.certification_pending .promotion-summary {
+  border-left-color: #e8be62;
+}
+
+.promotion-queue.live_ready .promotion-summary {
+  border-left-color: #4cc9ad;
+}
+
+.promotion-queue.blocked .promotion-summary {
+  border-left-color: #ff7f6d;
+}
+
+.promotion-summary span,
+.promotion-stage span,
+.promotion-stage em {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.promotion-summary strong {
+  color: #dce6ee;
+  font-size: 15px;
+}
+
+.promotion-summary p,
+.promotion-stage p {
+  margin: 0;
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.promotion-stage-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.promotion-stage {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-top: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px;
+}
+
+.promotion-stage.positive {
+  border-top-color: #4cc9ad;
+}
+
+.promotion-stage.warning {
+  border-top-color: #e8be62;
+}
+
+.promotion-stage.risk {
+  border-top-color: #ff7f6d;
+}
+
+.promotion-stage strong,
+.promotion-stage p {
   overflow-wrap: anywhere;
 }
 
@@ -3446,6 +3536,7 @@ em {
   .execution-layout {
     grid-template-areas:
       "execution"
+      "promotion"
       "broker";
   }
 
@@ -3487,6 +3578,10 @@ em {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .promotion-stage-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .safety-footer {
     min-height: 100%;
   }
@@ -3517,6 +3612,7 @@ em {
   .execution-grid,
   .gate-list,
   .risk-approval-grid,
+  .promotion-stage-list,
   .paper-blotter-row,
   .risk-ledger,
   .paper-position-row,
@@ -3614,6 +3710,7 @@ em {
   .execution-layout {
     grid-template-areas:
       "execution"
+      "promotion"
       "broker";
   }
 

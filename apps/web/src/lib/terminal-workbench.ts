@@ -385,6 +385,24 @@ export interface BrokerAdapterRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type PromotionReadinessStatus = "blocked" | "paper_pending" | "certification_pending" | "live_ready";
+
+export interface PromotionQueueStage {
+  id: "audited-run" | "risk-approval" | "paper-execution" | "adapter-certification" | "human-confirmation";
+  label: string;
+  value: string;
+  detail: string;
+  status: "passed" | "blocked" | "review";
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export interface PromotionReadiness {
+  status: PromotionReadinessStatus;
+  headline: string;
+  summary: string;
+  stages: PromotionQueueStage[];
+}
+
 export interface ModuleNewsEvent {
   id: string;
   source: string;
@@ -1530,6 +1548,125 @@ export function buildBrokerAdapterRows(workspace: TerminalWorkspace): BrokerAdap
       tone: "warning"
     }
   ];
+}
+
+export function buildPromotionReadiness(
+  workspace: TerminalWorkspace,
+  execution: PaperExecutionSnapshot | null | undefined,
+  brokerRows: BrokerAdapterRow[]
+): PromotionReadiness {
+  const approval = buildRiskApprovalSummary(workspace);
+  const activeExecution = workspace.researchRun && execution?.runId === workspace.researchRun.runId ? execution : null;
+  const filledOrders = activeExecution?.orders.filter((order) => order.status === "filled") ?? [];
+  const paperRiskGate = activeExecution?.gates.find((gate) => gate.id === "paper-risk-check");
+  const paperExecutionPassed = filledOrders.length > 0 && paperRiskGate?.passed === true;
+  const adapterGatePassed = workspace.execution.gates.find((gate) => gate.id === "adapter-certified")?.passed === true;
+  const humanGatePassed = workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true;
+  const certifiedLiveAdapters = brokerRows.filter((row) => row.route === "live" && row.status === "paper_ready").length;
+  const liveAdapterCertified = adapterGatePassed && certifiedLiveAdapters > 0;
+
+  const auditedStage: PromotionQueueStage = workspace.researchRun
+    ? {
+        id: "audited-run",
+        label: "Audited run",
+        value: workspace.researchRun.runId,
+        detail: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars are bound to the promotion queue.`,
+        status: "passed",
+        tone: "positive"
+      }
+    : {
+        id: "audited-run",
+        label: "Audited run",
+        value: "No audited run",
+        detail: "Run Pipeline before a strategy can enter the promotion queue.",
+        status: "blocked",
+        tone: "risk"
+      };
+
+  const riskStage: PromotionQueueStage = {
+    id: "risk-approval",
+    label: "Risk approval",
+    value:
+      approval.status === "live_ready" ? "live approved" : approval.status === "paper_ready" ? "paper approved" : "risk blocked",
+    detail: approval.summary,
+    status: approval.status === "blocked" ? "blocked" : "passed",
+    tone: approval.status === "blocked" ? "risk" : "positive"
+  };
+
+  const paperStage: PromotionQueueStage = paperExecutionPassed
+    ? {
+        id: "paper-execution",
+        label: "Paper execution",
+        value: filledOrders.length === 1 ? "1 filled order" : `${filledOrders.length} filled orders`,
+        detail: `Paper snapshot ${activeExecution?.executionId} passed local risk checks before live promotion.`,
+        status: "passed",
+        tone: "positive"
+      }
+    : {
+        id: "paper-execution",
+        label: "Paper execution",
+        value: "No paper fill",
+        detail: activeExecution
+          ? "Paper execution exists, but a filled order and passing risk check are both required."
+          : "Submit a paper order from the active audited run before live promotion review.",
+        status: "blocked",
+        tone: "warning"
+      };
+
+  const adapterStage: PromotionQueueStage = {
+    id: "adapter-certification",
+    label: "Adapter certification",
+    value:
+      certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
+    detail: liveAdapterCertified
+      ? "A certified live adapter is available for the selected market."
+      : "Live adapters remain interface-only or configuration-required until certification passes.",
+    status: liveAdapterCertified ? "passed" : "blocked",
+    tone: liveAdapterCertified ? "positive" : "risk"
+  };
+
+  const humanStage: PromotionQueueStage = {
+    id: "human-confirmation",
+    label: "Human confirmation",
+    value: humanGatePassed ? "manual approval recorded" : "manual approval required",
+    detail: humanGatePassed
+      ? "A human operator confirmed this promotion path."
+      : "Live promotion requires explicit human confirmation after adapter certification.",
+    status: humanGatePassed ? "passed" : "blocked",
+    tone: humanGatePassed ? "positive" : "warning"
+  };
+
+  const stages = [auditedStage, riskStage, paperStage, adapterStage, humanStage];
+  if (!workspace.researchRun || approval.status === "blocked") {
+    return {
+      status: "blocked",
+      headline: "Promotion queue blocked",
+      summary: "A strategy needs audited evidence and risk approval before it can enter execution promotion.",
+      stages
+    };
+  }
+  if (!paperExecutionPassed) {
+    return {
+      status: "paper_pending",
+      headline: "Paper execution required",
+      summary: "The audited run is risk-approved for paper trading, but no filled paper execution is bound yet.",
+      stages
+    };
+  }
+  if (!liveAdapterCertified || !humanGatePassed) {
+    return {
+      status: "certification_pending",
+      headline: "Live promotion pending certification",
+      summary: "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass.",
+      stages
+    };
+  }
+  return {
+    status: "live_ready",
+    headline: "Live promotion ready",
+    summary: "Audited evidence, paper execution, certified adapter, and human confirmation are all bound.",
+    stages
+  };
 }
 
 export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRuleRow[] {

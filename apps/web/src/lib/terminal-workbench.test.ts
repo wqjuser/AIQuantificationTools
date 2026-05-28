@@ -16,6 +16,7 @@ import {
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
+  buildPromotionReadiness,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
@@ -978,6 +979,126 @@ describe("terminal workbench model", () => {
       tone: "risk"
     });
     expect(rows.slice(1).every((row) => row.route === "live" && row.status !== "paper_ready")).toBe(true);
+  });
+
+  test("blocks promotion readiness before an audited run is bound", () => {
+    const workspace = buildTerminalWorkspace();
+    const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
+
+    expect(readiness.status).toBe("blocked");
+    expect(readiness.headline).toBe("Promotion queue blocked");
+    expect(readiness.stages.map((stage) => stage.id)).toEqual([
+      "audited-run",
+      "risk-approval",
+      "paper-execution",
+      "adapter-certification",
+      "human-confirmation"
+    ]);
+    expect(readiness.stages[0]).toMatchObject({
+      value: "No audited run",
+      status: "blocked",
+      tone: "risk"
+    });
+    expect(readiness.stages[2]).toMatchObject({
+      value: "No paper fill",
+      status: "blocked"
+    });
+  });
+
+  test("requires paper execution before a run can enter live promotion", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-paper-required",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-paper-required",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
+
+    expect(readiness.status).toBe("paper_pending");
+    expect(readiness.headline).toBe("Paper execution required");
+    expect(readiness.stages.find((stage) => stage.id === "audited-run")).toMatchObject({
+      value: "run-promotion-paper-required",
+      status: "passed"
+    });
+    expect(readiness.stages.find((stage) => stage.id === "risk-approval")).toMatchObject({
+      value: "paper approved",
+      status: "passed"
+    });
+    expect(readiness.stages.find((stage) => stage.id === "paper-execution")).toMatchObject({
+      value: "No paper fill",
+      status: "blocked"
+    });
+  });
+
+  test("keeps live promotion pending certification after paper execution fills", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-filled",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-filled",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const execution = {
+      executionId: "paper-promotion",
+      runId: "run-promotion-filled",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      mode: "paper_only",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+
+    const readiness = buildPromotionReadiness(workspace, execution, buildBrokerAdapterRows(workspace));
+
+    expect(readiness.status).toBe("certification_pending");
+    expect(readiness.headline).toBe("Live promotion pending certification");
+    expect(readiness.stages.find((stage) => stage.id === "paper-execution")).toMatchObject({
+      value: "1 filled order",
+      status: "passed",
+      tone: "positive"
+    });
+    expect(readiness.stages.find((stage) => stage.id === "adapter-certification")).toMatchObject({
+      value: "0 certified live adapters",
+      status: "blocked",
+      tone: "risk"
+    });
+    expect(readiness.stages.find((stage) => stage.id === "human-confirmation")).toMatchObject({
+      value: "manual approval required",
+      status: "blocked"
+    });
   });
 
   test("derives visual strategy rule rows from the active strategy snapshot", () => {
