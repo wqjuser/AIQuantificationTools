@@ -2567,6 +2567,82 @@ em {
   min-height: 0;
 }
 
+.ai-dossier {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.ai-dossier-head {
+  border: 1px solid #27364a;
+  border-left: 3px solid #9f8cff;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.ai-dossier-head.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.ai-dossier-head span,
+.ai-dossier-card span {
+  display: block;
+  color: #8fa0b2;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.ai-dossier-head strong,
+.ai-dossier-card strong {
+  display: block;
+  margin-top: 5px;
+  color: #dce6ee;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ai-dossier-head p,
+.ai-dossier-card p {
+  margin: 6px 0 0;
+  color: #a8b7c7;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.ai-dossier-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-dossier-card {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px 9px;
+}
+
+.ai-dossier-card.positive {
+  border-left-color: #4cc9ad;
+}
+
+.ai-dossier-card.warning {
+  border-left-color: #e8be62;
+}
+
+.ai-dossier-card.risk {
+  border-left-color: #ff7f6d;
+}
+
+.ai-dossier-card.ai {
+  border-left-color: #9f8cff;
+}
+
 .history-panel-body {
   display: grid;
   gap: 10px;
@@ -3338,6 +3414,7 @@ em {
   .strategy-editor,
   .strategy-draft-grid,
   .strategy-generated-snapshot,
+  .ai-dossier-grid,
   .backtest-evidence-grid,
   .backtest-readiness-list,
   .backtest-diagnostic-strip,

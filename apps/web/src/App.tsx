@@ -46,6 +46,7 @@ import {
   buildAgentCommitteeRounds,
   buildAiActionWorkflowState,
   buildAiEvidenceCards,
+  buildAiReviewDossier,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -66,6 +67,8 @@ import {
   resolveProductWorkAreaSelection,
   AiWorkbenchAction,
   AiEvidenceCard,
+  AiReviewDossier,
+  AiReviewCitation,
   Market,
   AgentCommitteeRound,
   BacktestAssumptionField,
@@ -265,6 +268,7 @@ export function App() {
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
+  const aiReviewDossier = buildAiReviewDossier(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const paperPositionRows = buildPaperPositionRows(workspace);
@@ -904,6 +908,7 @@ export function App() {
   const renderAgentPanel = (className = "watchlist-ai-panel") => (
     <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className={className}>
       <div className="agent-panel-body">
+        <AiReviewDossierBoard dossier={aiReviewDossier} i18n={i18n} />
         <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
         <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
       </div>
@@ -1824,6 +1829,27 @@ function workflowArtifactLabel(i18n: AppI18n, label: string): string {
   )[label] ?? label;
 }
 
+function AiReviewDossierBoard({ dossier, i18n }: { dossier: AiReviewDossier; i18n: AppI18n }) {
+  return (
+    <div className="ai-dossier">
+      <div className={`ai-dossier-head ${dossier.status}`}>
+        <span>{i18n.locale === "zh-CN" ? "AI 评审档案" : "AI review dossier"}</span>
+        <strong>{aiDossierText(i18n, dossier.headline)}</strong>
+        <p>{aiDossierText(i18n, dossier.summary)}</p>
+      </div>
+      <div className="ai-dossier-grid">
+        {dossier.citations.map((citation) => (
+          <article className={`ai-dossier-card ${citation.tone}`} key={citation.id}>
+            <span>{aiCitationLabel(i18n, citation)}</span>
+            <strong>{aiCitationValue(i18n, citation)}</strong>
+            <p>{aiCitationDetail(i18n, citation.detail)}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AgentEvidenceBoard({ cards, i18n }: { cards: AiEvidenceCard[]; i18n: AppI18n }) {
   return (
     <div className="agent-evidence">
@@ -2518,6 +2544,88 @@ function agentRoundEvidence(i18n: AppI18n, evidence: string): string {
     .replace("Risk approved: passed", "风控审批：通过")
     .replace("Human confirmed: passed", "人工确认：通过")
     .replace("No audited run is bound to this research context yet.", "当前研究上下文尚未绑定审计运行。");
+}
+
+function aiDossierText(i18n: AppI18n, text: string): string {
+  if (i18n.locale === "en-US") {
+    return text;
+  }
+  if (text === "Audited evidence required") {
+    return "需要审计证据";
+  }
+  if (text === "Run Pipeline before agent debate, explanation, or strategy promotion.") {
+    return "运行流水线后，才能进行智能体辩论、解释或策略晋级。";
+  }
+  const bound = text.match(/^AI review bound to (.+)$/);
+  if (bound) {
+    return `AI 评审已绑定 ${bound[1]}`;
+  }
+  const summary = text.match(/^Agents may explain evidence for (.+), but live execution remains gated\.$/);
+  if (summary) {
+    return `智能体可以解释 ${summary[1]} 的证据，但实盘执行仍受闸门限制。`;
+  }
+  return text;
+}
+
+function aiCitationLabel(i18n: AppI18n, citation: AiReviewCitation): string {
+  if (i18n.locale === "en-US") {
+    return citation.label;
+  }
+  return (
+    {
+      run: "运行编号",
+      metrics: "回测指标",
+      strategy: "策略版本",
+      "data-quality": "数据质量",
+      "risk-gates": "风控闸门"
+    }[citation.id] ?? citation.label
+  );
+}
+
+function aiCitationValue(i18n: AppI18n, citation: AiReviewCitation): string {
+  if (i18n.locale === "en-US") {
+    return citation.value;
+  }
+  if (citation.value === "Missing audited run") {
+    return "缺少审计运行";
+  }
+  if (citation.value === "Unavailable") {
+    return "不可用";
+  }
+  if (citation.value === "Not attached") {
+    return "未附加";
+  }
+  return citation.value
+    .replace("Live gates open", "实盘闸门已开启")
+    .replace("complete", "完整")
+    .replace("review", "需复核")
+    .replace("trades", "笔交易")
+    .replace("blocked gates", "个阻断闸门");
+}
+
+function aiCitationDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("No reproducible backtest is bound to this context.", "当前上下文尚未绑定可复现回测。")
+    .replace("Data quality is only trusted after an audited run is loaded.", "数据质量只在加载审计运行后可信。")
+    .replace("Run metadata did not include data quality details.", "运行元数据未包含数据质量详情。")
+    .replace("no guaranteed outcome.", "不保证结果。")
+    .replace("Win rate", "胜率")
+    .replace("rows", "行")
+    .replace("warnings", "条告警")
+    .replace("warning", "条告警")
+    .replace("bars", "根K线")
+    .replace("paper_only", "仅模拟盘")
+    .replace("certified_live", "认证实盘")
+    .replace("blocked_live", "实盘阻断")
+    .replace("Adapter certified: blocked", "适配器认证：阻断")
+    .replace("Risk approved: blocked", "风控审批：阻断")
+    .replace("Human confirmed: blocked", "人工确认：阻断")
+    .replace("Adapter certified: passed", "适配器认证：通过")
+    .replace("Risk approved: passed", "风控审批：通过")
+    .replace("Human confirmed: passed", "人工确认：通过");
 }
 
 function paperTradingRowsFromExecutionRecord(record: PaperExecutionRecord): PaperTradingRow[] {

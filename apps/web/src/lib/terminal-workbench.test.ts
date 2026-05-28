@@ -4,6 +4,7 @@ import {
   buildAgentCommitteeRounds,
   buildAiActionWorkflowState,
   buildAiEvidenceCards,
+  buildAiReviewDossier,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -529,6 +530,107 @@ describe("terminal workbench model", () => {
       value: "240 5m bars",
       detail: "Audited run run-evidence · revision rev123",
       tone: "positive"
+    });
+  });
+
+  test("blocks the AI review dossier until an audited run is bound", () => {
+    expect(buildAiReviewDossier(buildTerminalWorkspace())).toEqual({
+      status: "blocked",
+      headline: "Audited evidence required",
+      summary: "Run Pipeline before agent debate, explanation, or strategy promotion.",
+      citations: [
+        {
+          id: "run",
+          label: "Run id",
+          value: "Missing audited run",
+          detail: "No reproducible backtest is bound to this context.",
+          tone: "risk"
+        },
+        {
+          id: "data-quality",
+          label: "Data quality",
+          value: "Unavailable",
+          detail: "Data quality is only trusted after an audited run is loaded.",
+          tone: "warning"
+        },
+        {
+          id: "risk-gates",
+          label: "Risk gates",
+          value: "3 blocked gates",
+          detail: "Adapter certified: blocked · Risk approved: blocked · Human confirmed: blocked",
+          tone: "risk"
+        }
+      ]
+    });
+  });
+
+  test("builds an evidence-locked AI review dossier from audited run metadata", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-dossier",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-dossier",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
+    });
+
+    expect(buildAiReviewDossier(workspace)).toEqual({
+      status: "ready",
+      headline: "AI review bound to run-ai-dossier",
+      summary: "Agents may explain evidence for 600000, but live execution remains gated.",
+      citations: [
+        {
+          id: "run",
+          label: "Run id",
+          value: "run-ai-dossier",
+          detail: "240 1d bars · paper_only",
+          tone: "positive"
+        },
+        {
+          id: "metrics",
+          label: "Backtest metrics",
+          value: "+8.20% / 3.10% / 9 trades",
+          detail: "Win rate 55.00%; no guaranteed outcome.",
+          tone: "positive"
+        },
+        {
+          id: "strategy",
+          label: "Strategy revision",
+          value: "rev-ai-dossier",
+          detail: "SMA trend demo",
+          tone: "positive"
+        },
+        {
+          id: "data-quality",
+          label: "Data quality",
+          value: "tencent · complete",
+          detail: "240 rows · 0 warnings",
+          tone: "positive"
+        },
+        {
+          id: "risk-gates",
+          label: "Risk gates",
+          value: "3 blocked gates",
+          detail: "Adapter certified: blocked · Risk approved: blocked · Human confirmed: blocked",
+          tone: "risk"
+        }
+      ]
     });
   });
 

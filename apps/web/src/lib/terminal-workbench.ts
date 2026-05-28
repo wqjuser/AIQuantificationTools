@@ -230,6 +230,21 @@ export interface AiEvidenceCard {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export interface AiReviewCitation {
+  id: "run" | "metrics" | "strategy" | "data-quality" | "risk-gates";
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
+export interface AiReviewDossier {
+  status: "ready" | "blocked";
+  headline: string;
+  summary: string;
+  citations: AiReviewCitation[];
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -338,6 +353,7 @@ export interface ResearchRunSummary {
   strategyRevision: string;
   dataRows: number;
   executionMode: string;
+  dataQuality?: ResearchRunDataQuality;
 }
 
 export interface ResearchRunDataQuality {
@@ -878,6 +894,96 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
       tone: "ai"
     }
   ];
+}
+
+export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDossier {
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  const riskGateCitation: AiReviewCitation = {
+    id: "risk-gates",
+    label: "Risk gates",
+    value: workspace.execution.liveEnabled ? "Live gates open" : `${blockedGateCount} blocked gates`,
+    detail: workspace.execution.gates
+      .map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`)
+      .join(" · "),
+    tone: workspace.execution.liveEnabled ? "positive" : "risk"
+  };
+
+  if (!workspace.researchRun) {
+    return {
+      status: "blocked",
+      headline: "Audited evidence required",
+      summary: "Run Pipeline before agent debate, explanation, or strategy promotion.",
+      citations: [
+        {
+          id: "run",
+          label: "Run id",
+          value: "Missing audited run",
+          detail: "No reproducible backtest is bound to this context.",
+          tone: "risk"
+        },
+        {
+          id: "data-quality",
+          label: "Data quality",
+          value: "Unavailable",
+          detail: "Data quality is only trusted after an audited run is loaded.",
+          tone: "warning"
+        },
+        riskGateCitation
+      ]
+    };
+  }
+
+  const run = workspace.researchRun;
+  const returnMetric = metricValue(workspace, "Return", "N/A");
+  const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
+  const winRateMetric = metricValue(workspace, "Win Rate", "N/A");
+  const tradeMetric = metricValue(workspace, "Trades", "0");
+  const dataQuality = run.dataQuality;
+
+  return {
+    status: "ready",
+    headline: `AI review bound to ${run.runId}`,
+    summary: `Agents may explain evidence for ${workspace.selectedInstrument.symbol}, but live execution remains gated.`,
+    citations: [
+      {
+        id: "run",
+        label: "Run id",
+        value: run.runId,
+        detail: `${run.dataRows} ${run.timeframe} bars · ${run.executionMode}`,
+        tone: "positive"
+      },
+      {
+        id: "metrics",
+        label: "Backtest metrics",
+        value: `${returnMetric} / ${drawdownMetric} / ${tradeMetric} trades`,
+        detail: `Win rate ${winRateMetric}; no guaranteed outcome.`,
+        tone: returnMetric.startsWith("-") ? "warning" : "positive"
+      },
+      {
+        id: "strategy",
+        label: "Strategy revision",
+        value: run.strategyRevision,
+        detail: workspace.strategy.name,
+        tone: "positive"
+      },
+      dataQuality
+        ? {
+            id: "data-quality",
+            label: "Data quality",
+            value: `${dataQuality.source} · ${dataQuality.isComplete ? "complete" : "review"}`,
+            detail: `${dataQuality.rows} rows · ${formatWarningCount(dataQuality.warnings.length)}`,
+            tone: dataQuality.isComplete && dataQuality.warnings.length === 0 ? "positive" : "warning"
+          }
+        : {
+            id: "data-quality",
+            label: "Data quality",
+            value: "Not attached",
+            detail: "Run metadata did not include data quality details.",
+            tone: "warning"
+          },
+      riskGateCitation
+    ]
+  };
 }
 
 export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCandidate[] {
@@ -1532,6 +1638,10 @@ function normalizeDrawdownLoss(value: string): string {
   return `-${value}`;
 }
 
+function formatWarningCount(count: number): string {
+  return count === 1 ? "1 warning" : `${count} warnings`;
+}
+
 function parsePercentMetric(value: string): number | null {
   const normalized = value.trim().replace("%", "");
   const parsed = Number(normalized);
@@ -2049,7 +2159,8 @@ export function workspaceFromResearchRunAudit(
     timeframe: run.timeframe,
     strategyRevision: run.strategyRevision,
     dataRows: run.dataRows,
-    executionMode: run.executionMode
+    executionMode: run.executionMode,
+    dataQuality: run.dataQuality
   };
   return {
     ...currentWorkspace,

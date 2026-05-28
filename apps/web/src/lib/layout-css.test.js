@@ -275,6 +275,17 @@ describe("terminal layout css", () => {
     expect(cssBlock(".history-panel-body")).not.toContain("overflow: auto;");
   });
 
+  test("renders AI review as an evidence-locked dossier", () => {
+    expect(appSource).toContain("buildAiReviewDossier(workspace)");
+    expect(appSource).toContain("<AiReviewDossierBoard");
+    expect(appSource).toContain('className="ai-dossier"');
+    expect(appSource).toContain('className="ai-dossier-grid"');
+    expect(appSource).toContain('className={`ai-dossier-card');
+    expect(styles).toContain(".ai-dossier");
+    expect(styles).toContain(".ai-dossier-grid");
+    expect(styles).toContain(".ai-dossier-card");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');
