@@ -15,6 +15,7 @@ from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, R
 from quant_core.execution import (
     PaperExecutionStore,
     create_paper_execution_from_audit,
+    paper_execution_payload_to_record,
     paper_execution_record_to_payload,
 )
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
@@ -26,6 +27,7 @@ from quant_core.runs import (
     research_run_audit_to_payload,
     research_run_audits_to_payload,
     research_run_export_to_payload,
+    research_run_import_paper_executions,
     research_run_import_to_audit,
 )
 from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
@@ -63,10 +65,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             try:
                 payload = self._read_json_body()
                 audit = research_run_import_to_audit(payload)
+                paper_executions = research_run_import_paper_executions(payload, run_id=audit.run_id)
+                paper_execution_records = [
+                    paper_execution_payload_to_record(execution_payload) for execution_payload in paper_executions
+                ]
             except ValueError as error:
                 self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
                 return
             self.run_store.record(audit)
+            for execution_record in paper_execution_records:
+                self.paper_execution_store.record(execution_record)
             self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):
@@ -173,7 +181,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             if not audit:
                 self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
                 return
-            self._send_json({"export": research_run_export_to_payload(audit)})
+            executions = [
+                paper_execution_record_to_payload(execution)
+                for execution in self.paper_execution_store.list_by_run(run_id, limit=20)
+            ]
+            self._send_json({"export": research_run_export_to_payload(audit, paper_executions=executions)})
             return
         if parsed.path.startswith("/api/research/runs/"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/")).strip()

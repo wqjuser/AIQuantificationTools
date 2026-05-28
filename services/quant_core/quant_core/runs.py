@@ -351,17 +351,24 @@ def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, 
     return {"runs": [research_run_audit_to_payload(audit) for audit in audits]}
 
 
-def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: datetime | None = None) -> dict[str, Any]:
+def research_run_export_to_payload(
+    audit: ResearchRunAudit,
+    *,
+    exported_at: datetime | None = None,
+    paper_executions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     exported = exported_at or datetime.now(timezone.utc)
     run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
     data_snapshot = run_payload.get("dataSnapshot", {})
     ai_report = run_payload.get("aiReport", {})
+    paper_execution_payloads = _normalize_paper_execution_payloads(paper_executions, run_id=audit.run_id)
     artifact_counts = {
         "bars": len(data_snapshot.get("bars", [])) if isinstance(data_snapshot, dict) else 0,
         "trades": len(run_payload.get("backtestTrades", [])),
         "equityPoints": len(run_payload.get("backtestEquityCurve", [])),
         "decisions": len(run_payload.get("decisions", [])),
         "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
+        "paperExecutions": len(paper_execution_payloads),
     }
     export_package = {
         "kind": "aiqt.researchRun.export",
@@ -382,6 +389,7 @@ def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: date
             "artifactCounts": artifact_counts,
         },
         "researchRun": run_payload,
+        "paperExecutions": paper_execution_payloads,
         "executionHandoff": {
             "mode": audit.execution_mode,
             "paperOnly": True,
@@ -412,6 +420,26 @@ def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: date
     return export_package
 
 
+def research_run_import_paper_executions(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_executions = export_package.get("paperExecutions", [])
+    if raw_executions is None:
+        return []
+    if not isinstance(raw_executions, list):
+        raise ValueError("paper_executions_must_be_array")
+    executions = []
+    for item in raw_executions:
+        if not isinstance(item, dict):
+            raise ValueError("paper_execution_must_be_object")
+        execution = dict(item)
+        if run_id is not None and str(execution.get("runId") or "") != run_id:
+            raise ValueError("paper_execution_run_id_mismatch")
+        executions.append(execution)
+    return executions
+
+
 def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
@@ -435,10 +463,17 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         raise ValueError("live_trading_exports_cannot_be_imported")
 
     run_id = _required_text(research_run, "runId")
+    paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
     data_snapshot = research_run.get("dataSnapshot")
     if not isinstance(data_snapshot, dict):
         raise ValueError("data_snapshot_must_be_object")
-    _validate_manifest_consistency(manifest, research_run, data_snapshot, handoff)
+    _validate_manifest_consistency(
+        manifest,
+        research_run,
+        data_snapshot,
+        handoff,
+        paper_executions=paper_executions,
+    )
 
     created_at_raw = _required_text(research_run, "createdAt")
     try:
@@ -553,6 +588,8 @@ def _validate_manifest_consistency(
     research_run: dict[str, Any],
     data_snapshot: dict[str, Any],
     handoff: dict[str, Any],
+    *,
+    paper_executions: list[dict[str, Any]] | None = None,
 ) -> None:
     for manifest_key, run_key, error_code in [
         ("runId", "runId", "manifest_run_id_mismatch"),
@@ -593,6 +630,8 @@ def _validate_manifest_consistency(
         "decisions": len(_list_of_dicts(research_run.get("decisions"))),
         "aiRisks": len(_safe_string_list(_dict_or_empty(research_run.get("aiReport")).get("risks"))),
     }
+    if "paperExecutions" in counts or paper_executions:
+        expected_counts["paperExecutions"] = len(paper_executions or [])
     for key, expected in expected_counts.items():
         actual = int(_number_or_default(counts.get(key), -1))
         if actual != expected:
@@ -615,6 +654,28 @@ def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _normalize_paper_execution_payloads(value: list[dict[str, Any]] | None, *, run_id: str) -> list[dict[str, Any]]:
+    normalized = []
+    for item in value or []:
+        if not isinstance(item, dict):
+            continue
+        execution_run_id = str(item.get("runId") or run_id)
+        if execution_run_id != run_id:
+            continue
+        normalized.append(
+            {
+                "executionId": str(item.get("executionId") or ""),
+                "runId": execution_run_id,
+                "createdAt": str(item.get("createdAt") or ""),
+                "mode": str(item.get("mode") or "paper_only"),
+                "account": _dict_or_empty(item.get("account")),
+                "orders": _list_of_dicts(item.get("orders")),
+                "gates": _list_of_dicts(item.get("gates")),
+            }
+        )
+    return normalized
 
 
 def _safe_string_list(value: Any) -> list[str]:

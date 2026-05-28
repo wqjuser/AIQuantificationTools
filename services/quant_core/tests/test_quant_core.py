@@ -1583,6 +1583,151 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(detail_payload["run"]["dataSnapshot"]["bars"][1]["close"], 9.3)
         self.assertEqual(detail_payload["run"]["executionMode"], "paper_only")
 
+    def test_research_run_export_import_preserves_paper_execution_history(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-paper-portable",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Portable SMA trend",
+            strategy_revision="rev-paper-portable",
+            data_rows=2,
+            metrics={"total_return_pct": 4.2, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Portable evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={
+                "summary": "Portable package summary",
+                "risks": ["Portable paper-only risk"],
+                "improvements": ["Review imported execution gates"],
+                "disclaimer": "No investment advice",
+            },
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 2,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-27T08:00:00+00:00",
+                "hash": "snapshot-paper-portable",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    },
+                    {
+                        "timestamp": "2026-05-27T08:00:00+00:00",
+                        "timestampMs": 1779868800000,
+                        "open": 9.2,
+                        "high": 9.4,
+                        "low": 9.1,
+                        "close": 9.3,
+                        "volume": 1300000,
+                    },
+                ],
+            },
+            strategy_config={
+                "name": "Portable SMA trend",
+                "revision": "rev-paper-portable",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            backtest_trades=[{"id": "trade-paper-portable", "side": "BUY", "price": "9.20"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000.0}],
+            backtest_diagnostics=[{"id": "return-profile", "label": "Return profile", "value": "+4.20%"}],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source_run_store = ResearchRunStore(f"{tmp}/source-runs.sqlite")
+            source_paper_store = PaperExecutionStore(f"{tmp}/source-paper.sqlite")
+            target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
+            target_paper_store = PaperExecutionStore(f"{tmp}/target-paper.sqlite")
+            source_run_store.record(audit)
+            source_paper_store.record(
+                create_paper_execution_from_audit(
+                    audit,
+                    created_at=datetime(2026, 5, 26, 8, 5, tzinfo=timezone.utc),
+                )
+            )
+
+            class SourceHandler(QuantApiHandler):
+                run_store = source_run_store
+                paper_execution_store = source_paper_store
+
+            source_server = HTTPServer(("127.0.0.1", 0), SourceHandler)
+            source_thread = Thread(target=source_server.serve_forever, daemon=True)
+            source_thread.start()
+            source_connection = HTTPConnection(source_server.server_address[0], source_server.server_address[1], timeout=5)
+            try:
+                source_connection.request("GET", "/api/research/runs/run-paper-portable/export")
+                export_response = source_connection.getresponse()
+                export_payload = json.loads(export_response.read().decode("utf-8"))
+            finally:
+                source_connection.close()
+                source_server.shutdown()
+                source_thread.join(timeout=5)
+                source_server.server_close()
+
+            class TargetHandler(QuantApiHandler):
+                run_store = target_run_store
+                paper_execution_store = target_paper_store
+
+            target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
+            target_thread = Thread(target=target_server.serve_forever, daemon=True)
+            target_thread.start()
+            target_connection = HTTPConnection(target_server.server_address[0], target_server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(export_payload["export"]).encode("utf-8")
+                target_connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                import_response = target_connection.getresponse()
+                import_payload = json.loads(import_response.read().decode("utf-8"))
+                target_connection.request("GET", "/api/research/runs/run-paper-portable/paper-executions")
+                history_response = target_connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                target_connection.close()
+                target_server.shutdown()
+                target_thread.join(timeout=5)
+                target_server.server_close()
+
+        self.assertEqual(export_response.status, 200)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["paperExecutions"], 1)
+        self.assertEqual(export_payload["export"]["paperExecutions"][0]["runId"], "run-paper-portable")
+        self.assertEqual(import_response.status, 201)
+        self.assertEqual(import_payload["run"]["runId"], "run-paper-portable")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["executions"]), 1)
+        self.assertEqual(
+            history_payload["executions"][0]["executionId"],
+            export_payload["export"]["paperExecutions"][0]["executionId"],
+        )
+
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 

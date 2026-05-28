@@ -51,6 +51,7 @@ export interface ResearchRunExportManifest {
     equityPoints: number;
     decisions: number;
     aiRisks: number;
+    paperExecutions?: number;
   };
 }
 
@@ -81,6 +82,7 @@ export interface ResearchRunExportPackage {
   manifest: ResearchRunExportManifest;
   researchRun: ResearchRunAudit;
   executionHandoff: ResearchRunExecutionHandoff;
+  paperExecutions?: PaperExecutionRecord[];
 }
 
 export interface ResearchRunExportResult {
@@ -808,7 +810,9 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
     isResearchRunExportManifest(exportPackage.manifest) &&
     isResearchRunAudit(exportPackage.researchRun) &&
     Boolean(exportPackage.researchRun.dataSnapshot) &&
-    isResearchRunExecutionHandoff(exportPackage.executionHandoff)
+    isResearchRunExecutionHandoff(exportPackage.executionHandoff) &&
+    (exportPackage.paperExecutions === undefined ||
+      (Array.isArray(exportPackage.paperExecutions) && exportPackage.paperExecutions.every(isPaperExecutionRecord)))
   );
 }
 

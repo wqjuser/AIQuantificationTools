@@ -453,7 +453,7 @@ describe("terminal workspace API client", () => {
               executionMode: "paper_only",
               paperOnly: true,
               liveTradingAllowed: false,
-              artifactCounts: { bars: 2, trades: 1, equityPoints: 2, decisions: 0, aiRisks: 1 }
+              artifactCounts: { bars: 2, trades: 1, equityPoints: 2, decisions: 0, aiRisks: 1, paperExecutions: 1 }
             },
             researchRun: {
               runId: "run-new",
@@ -509,7 +509,36 @@ describe("terminal workspace API client", () => {
                   reason: "No certified live adapter is bound to this audited run."
                 }
               ]
-            }
+            },
+            paperExecutions: [
+              {
+                executionId: "paper-exported",
+                runId: "run-new",
+                createdAt: "2026-05-26T08:20:00+00:00",
+                mode: "paper_only",
+                account: { cash: 80680, positions: { "600000": 2100 }, equity: 100000 },
+                orders: [
+                  {
+                    orderId: "order-exported",
+                    symbol: "600000",
+                    side: "buy",
+                    quantity: 2100,
+                    price: 9.2,
+                    status: "filled",
+                    reason: "filled_immediately",
+                    timestamp: "2026-05-26T08:20:00+00:00"
+                  }
+                ],
+                gates: [
+                  {
+                    id: "paper-risk-check",
+                    label: "Paper risk check",
+                    passed: true,
+                    reason: "filled_immediately"
+                  }
+                ]
+              }
+            ]
           }
         })
       };
@@ -520,8 +549,10 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.integrity?.algorithm).toBe("sha256");
     expect(result.exportPackage?.manifest.dataHash).toBe("snapshot-detail");
     expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
+    expect(result.exportPackage?.manifest.artifactCounts.paperExecutions).toBe(1);
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
+    expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
   });
 
   test("returns fallback when research run export package is malformed", async () => {

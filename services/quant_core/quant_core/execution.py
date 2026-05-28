@@ -219,6 +219,48 @@ def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[s
     }
 
 
+def paper_execution_payload_to_record(payload: dict[str, Any]) -> PaperExecutionRecord:
+    account_payload = payload.get("account")
+    orders_payload = payload.get("orders")
+    gates_payload = payload.get("gates")
+    if not isinstance(account_payload, dict):
+        raise ValueError("paper_execution_account_must_be_object")
+    if not isinstance(orders_payload, list):
+        raise ValueError("paper_execution_orders_must_be_array")
+    if not isinstance(gates_payload, list):
+        raise ValueError("paper_execution_gates_must_be_array")
+    if any(not isinstance(order, dict) for order in orders_payload):
+        raise ValueError("paper_execution_order_must_be_object")
+    if any(not isinstance(gate, dict) for gate in gates_payload):
+        raise ValueError("paper_execution_gate_must_be_object")
+    execution_id = str(payload.get("executionId") or "").strip()
+    run_id = str(payload.get("runId") or "").strip()
+    if not execution_id:
+        raise ValueError("paper_execution_id_is_required")
+    if not run_id:
+        raise ValueError("paper_execution_run_id_is_required")
+    mode = str(payload.get("mode") or "paper_only")
+    if mode != "paper_only":
+        raise ValueError("paper_execution_must_be_paper_only")
+    try:
+        created_at = datetime.fromisoformat(str(payload.get("createdAt")))
+    except ValueError as error:
+        raise ValueError("paper_execution_created_at_must_be_iso_datetime") from error
+    return PaperExecutionRecord(
+        execution_id=execution_id,
+        run_id=run_id,
+        created_at=created_at,
+        mode=mode,
+        account=PaperAccount(
+            cash=float(account_payload.get("cash", 0)),
+            positions={str(symbol): float(quantity) for symbol, quantity in dict(account_payload.get("positions", {})).items()},
+            equity=float(account_payload.get("equity", 0)),
+        ),
+        orders=[_payload_to_order(order) for order in orders_payload],
+        gates=_normalize_gates(gates_payload),
+    )
+
+
 def _latest_close(audit: Any) -> float:
     snapshot = getattr(audit, "data_snapshot", {})
     bars = snapshot.get("bars") if isinstance(snapshot, dict) else None
