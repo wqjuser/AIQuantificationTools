@@ -25,6 +25,7 @@ import {
   importResearchRunExport,
   loadMarketKlines,
   loadMarketSearch,
+  loadLatestResearchRunPaperExecution,
   loadResearchRunDetail,
   loadResearchRunExport,
   loadResearchRunHistory,
@@ -401,6 +402,18 @@ export function App() {
       if (auditedKlines) {
         setKlinesState(auditedKlines);
       }
+      const paperHistory = await loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId);
+      if (manualSelectionVersionRef.current !== replayVersion) {
+        return;
+      }
+      setPaperExecutionRecord(paperHistory.execution ?? null);
+      if (paperHistory.execution) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Paper execution history loaded",
+          error: undefined
+        }));
+      }
       setActiveModuleId("workflow");
       setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");
@@ -477,6 +490,18 @@ export function App() {
         }));
         if (importedKlines) {
           setKlinesState(importedKlines);
+        }
+        const paperHistory = await loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId);
+        if (manualSelectionVersionRef.current !== importVersion) {
+          return;
+        }
+        setPaperExecutionRecord(paperHistory.execution ?? null);
+        if (paperHistory.execution) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Paper execution history loaded",
+            error: undefined
+          }));
         }
         setActiveModuleId("workflow");
         setActiveLoopStepId("backtest");

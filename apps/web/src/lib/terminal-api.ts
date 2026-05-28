@@ -510,6 +510,24 @@ export async function loadResearchRunPaperExecutions(
   }
 }
 
+export async function loadLatestResearchRunPaperExecution(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PaperExecutionResult> {
+  const result = await loadResearchRunPaperExecutions(baseUrl, runId, fetcher);
+  if (result.source === "fallback") {
+    return {
+      source: "fallback",
+      error: result.error
+    };
+  }
+  return {
+    execution: result.executions[0],
+    source: "core"
+  };
+}
+
 export async function loadMarketKlines(
   baseUrl: string,
   params: MarketKlinesParams,

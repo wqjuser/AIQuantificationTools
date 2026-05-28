@@ -14,6 +14,7 @@ import {
   loadMarketSearch,
   loadResearchRunDetail,
   loadResearchRunExport,
+  loadLatestResearchRunPaperExecution,
   submitResearchRunPaperExecution,
   importResearchRunExport,
   marketKlinesFromResearchRunAudit,
@@ -783,6 +784,66 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.execution?.orders[0]?.status).toBe("filled");
     expect(result.execution?.gates[2]?.passed).toBe(false);
+  });
+
+  test("loads the latest paper execution for an audited research run", async () => {
+    const calls: string[] = [];
+    const result = await loadLatestResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          executions: [
+            {
+              executionId: "paper-latest",
+              runId: "run-new",
+              createdAt: "2026-05-26T08:20:00+00:00",
+              mode: "paper_only",
+              account: { cash: 80680, positions: { "600000": 2100 }, equity: 100000 },
+              orders: [
+                {
+                  orderId: "order-latest",
+                  symbol: "600000",
+                  side: "buy",
+                  quantity: 2100,
+                  price: 9.2,
+                  status: "filled",
+                  reason: "filled_immediately",
+                  timestamp: "2026-05-26T08:20:00+00:00"
+                }
+              ],
+              gates: []
+            },
+            {
+              executionId: "paper-older",
+              runId: "run-new",
+              createdAt: "2026-05-26T08:10:00+00:00",
+              mode: "paper_only",
+              account: { cash: 90000, positions: {}, equity: 90000 },
+              orders: [],
+              gates: []
+            }
+          ]
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-new/paper-executions"]);
+    expect(result.source).toBe("core");
+    expect(result.execution?.executionId).toBe("paper-latest");
+    expect(result.execution?.orders[0]?.orderId).toBe("order-latest");
+  });
+
+  test("returns core without execution when a run has no paper execution history", async () => {
+    const result = await loadLatestResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ executions: [] })
+    }));
+
+    expect(result.source).toBe("core");
+    expect(result.execution).toBeUndefined();
   });
 
   test("returns fallback when paper execution payload is malformed", async () => {
