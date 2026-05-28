@@ -704,6 +704,44 @@ export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioR
 }
 
 export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradingRow[] {
+  if (!workspace.researchRun) {
+    return [
+      {
+        id: "paper-order",
+        symbol: workspace.selectedInstrument.symbol,
+        side: "BUY",
+        quantity: "-",
+        price: "-",
+        notional: "-",
+        status: "blocked",
+        reason: "Run Pipeline before staging a paper order.",
+        tone: "warning"
+      },
+      {
+        id: "risk-check",
+        symbol: workspace.selectedInstrument.symbol,
+        side: "RISK",
+        quantity: "-",
+        price: "-",
+        notional: "-",
+        status: "blocked",
+        reason: "No audited research run is bound; paper route remains blocked.",
+        tone: "warning"
+      },
+      {
+        id: "account-sync",
+        symbol: "PAPER",
+        side: "SYNC",
+        quantity: "-",
+        price: "-",
+        notional: "0.00",
+        status: "paper",
+        reason: "Local paper account only; broker account synchronization is not connected.",
+        tone: "neutral"
+      }
+    ];
+  }
+
   const price = resolvePaperOrderPrice(workspace);
   const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
@@ -718,7 +756,7 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
       price: price.toFixed(2),
       notional: notional.toFixed(2),
       status: "queued",
-      reason: `Paper order staged from ${workspace.strategy.name}; no live route is used.`,
+      reason: `Paper order staged from ${workspace.strategy.name} using audited run ${workspace.researchRun.runId}; no live route is used.`,
       tone: "positive"
     },
     {
@@ -750,6 +788,23 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
 
 export function buildPaperPositionRows(workspace: TerminalWorkspace): PaperPositionRow[] {
   const price = resolvePaperOrderPrice(workspace);
+  if (!workspace.researchRun) {
+    return [
+      {
+        id: "selected-paper-position",
+        symbol: workspace.selectedInstrument.symbol,
+        quantity: "0",
+        avgCost: "-",
+        markPrice: price.toFixed(2),
+        marketValue: "0.00",
+        unrealizedPnl: "-",
+        returnPct: "N/A",
+        status: "blocked",
+        tone: "warning"
+      }
+    ];
+  }
+
   const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
   const marketValue = quantity * price;
   const returnMetric = metricValue(workspace, "Return", "N/A");

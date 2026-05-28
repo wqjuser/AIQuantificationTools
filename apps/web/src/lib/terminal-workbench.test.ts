@@ -224,10 +224,41 @@ describe("terminal workbench model", () => {
     expect(rows[2].tone).toBe("warning");
   });
 
-  test("derives paper trading rows with sizing and live gate rejection", () => {
+  test("blocks paper trading rows until an audited research run is bound", () => {
     const rows = buildPaperTradingRows(buildTerminalWorkspace());
 
     expect(rows.map((row) => row.id)).toEqual(["paper-order", "risk-check", "account-sync"]);
+    expect(rows[0]).toMatchObject({
+      symbol: "600000",
+      side: "BUY",
+      quantity: "-",
+      price: "-",
+      notional: "-",
+      status: "blocked",
+      reason: "Run Pipeline before staging a paper order.",
+      tone: "warning"
+    });
+    expect(rows[1]).toMatchObject({
+      side: "RISK",
+      status: "blocked",
+      reason: "No audited research run is bound; paper route remains blocked.",
+      tone: "warning"
+    });
+  });
+
+  test("derives paper trading rows with sizing and live gate rejection after audit", () => {
+    const rows = buildPaperTradingRows({
+      ...buildTerminalWorkspace(),
+      researchRun: {
+        runId: "run-paper-ready",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        timeframe: "1d",
+        strategyRevision: "rev-paper-ready",
+        dataRows: 240,
+        executionMode: "paper_only"
+      }
+    });
+
     expect(rows[0]).toMatchObject({
       symbol: "600000",
       side: "BUY",
@@ -235,6 +266,7 @@ describe("terminal workbench model", () => {
       price: "8.66",
       notional: "19918.00",
       status: "queued",
+      reason: "Paper order staged from SMA Trend / Bank Sector using audited run run-paper-ready; no live route is used.",
       tone: "positive"
     });
     expect(rows[1]).toMatchObject({
@@ -245,10 +277,36 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("derives paper position rows from sizing and audited return", () => {
+  test("blocks paper position rows until audited return is bound", () => {
     const rows = buildPaperPositionRows(buildTerminalWorkspace());
 
     expect(rows.map((row) => row.id)).toEqual(["selected-paper-position"]);
+    expect(rows[0]).toMatchObject({
+      symbol: "600000",
+      quantity: "0",
+      avgCost: "-",
+      markPrice: "8.66",
+      marketValue: "0.00",
+      unrealizedPnl: "-",
+      returnPct: "N/A",
+      status: "blocked",
+      tone: "warning"
+    });
+  });
+
+  test("derives paper position rows from sizing and audited return", () => {
+    const rows = buildPaperPositionRows({
+      ...buildTerminalWorkspace(),
+      researchRun: {
+        runId: "run-position-ready",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        timeframe: "1d",
+        strategyRevision: "rev-position-ready",
+        dataRows: 240,
+        executionMode: "paper_only"
+      }
+    });
+
     expect(rows[0]).toMatchObject({
       symbol: "600000",
       quantity: "2300",

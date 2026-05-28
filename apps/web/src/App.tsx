@@ -2136,6 +2136,16 @@ function paperReasonLabel(i18n: AppI18n, reason: string): string {
   if (i18n.locale === "en-US") {
     return reason;
   }
+  if (reason === "Run Pipeline before staging a paper order.") {
+    return "请先运行流水线生成审计结果，再创建模拟委托。";
+  }
+  if (reason === "No audited research run is bound; paper route remains blocked.") {
+    return "当前没有绑定审计研究运行；模拟通道保持阻断。";
+  }
+  const stagedAuditedOrder = reason.match(/^Paper order staged from (.+) using audited run (.+); no live route is used\.$/);
+  if (stagedAuditedOrder) {
+    return `已从 ${i18n.strategyText(stagedAuditedOrder[1])} 基于审计运行 ${stagedAuditedOrder[2]} 生成模拟委托；不使用实盘通道。`;
+  }
   const stagedOrder = reason.match(/^Paper order staged from (.+); no live route is used\.$/);
   if (stagedOrder) {
     return `已从 ${i18n.strategyText(stagedOrder[1])} 生成模拟委托；不使用实盘通道。`;
