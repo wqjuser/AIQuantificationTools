@@ -146,4 +146,13 @@ describe("terminal layout css", () => {
     expect(cssBlock(".history-panel")).not.toContain("overflow: hidden;");
     expect(cssBlock(".history-panel-body")).not.toContain("overflow: auto;");
   });
+
+  test("keeps history replay and export as separate compact row actions", () => {
+    expect(appSource).toContain("onExport={onExport}");
+    expect(appSource).toContain('className="history-row-actions"');
+    expect(appSource).toContain('i18n.t("history.export")');
+    expect(cssBlock(".history-row")).toContain("cursor: default;");
+    expect(cssBlock(".history-row-actions")).toContain("display: flex;");
+    expect(cssBlock(".history-row-actions button")).toContain("min-height: 28px;");
+  });
 });

@@ -937,6 +937,141 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(response.status, 404)
         self.assertEqual(payload, {"error": "research_run_not_found", "runId": "run-missing"})
 
+    def test_research_run_export_api_returns_reproducible_package(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            store.record(
+                ResearchRunAudit(
+                    run_id="run-export",
+                    created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+                    market="ashare",
+                    symbol="600000",
+                    timeframe="1d",
+                    strategy_name="SMA trend demo",
+                    strategy_revision="rev-export",
+                    data_rows=2,
+                    metrics={"total_return_pct": 3.4, "max_drawdown_pct": 1.2, "win_rate_pct": 50, "trade_count": 1},
+                    decisions=[{"agent": "AI Summary", "message": "Export ready", "tone": "ai"}],
+                    execution_mode="paper_only",
+                    ai_report={
+                        "summary": "Export package summary",
+                        "risks": ["Export risk"],
+                        "improvements": ["Export improvement"],
+                        "disclaimer": "No investment advice",
+                    },
+                    data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+                    data_snapshot={
+                        "source": "tencent",
+                        "isComplete": True,
+                        "warnings": [],
+                        "rows": 2,
+                        "start": "2026-05-26T08:00:00+00:00",
+                        "end": "2026-05-27T08:00:00+00:00",
+                        "hash": "snapshot-export",
+                        "bars": [
+                            {
+                                "timestamp": "2026-05-26T08:00:00+00:00",
+                                "timestampMs": 1779782400000,
+                                "open": 9.1,
+                                "high": 9.3,
+                                "low": 9.0,
+                                "close": 9.2,
+                                "volume": 1200000,
+                            },
+                            {
+                                "timestamp": "2026-05-27T08:00:00+00:00",
+                                "timestampMs": 1779868800000,
+                                "open": 9.2,
+                                "high": 9.4,
+                                "low": 9.1,
+                                "close": 9.3,
+                                "volume": 1300000,
+                            },
+                        ],
+                    },
+                    strategy_config={
+                        "name": "SMA trend demo",
+                        "revision": "rev-export",
+                        "market": "ashare",
+                        "symbols": ["600000"],
+                        "timeframe": "1d",
+                        "version": 1,
+                        "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                        "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                        "risk": {"positionPct": 0.8, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2},
+                    },
+                    backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
+                    backtest_trades=[
+                        {
+                            "id": "trade-1",
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "symbol": "600000",
+                            "side": "BUY",
+                            "status": "filled",
+                            "price": "9.20",
+                            "quantity": "2100",
+                            "exposure": "19.32%",
+                            "pnl": "-",
+                            "reason": "entry_conditions",
+                            "tone": "neutral",
+                        }
+                    ],
+                    backtest_equity_curve=[
+                        {"timestamp": "2026-05-26T08:00:00+00:00", "equity": 250000.0},
+                        {"timestamp": "2026-05-27T08:00:00+00:00", "equity": 253000.0},
+                    ],
+                    backtest_diagnostics=[
+                        {
+                            "id": "return-profile",
+                            "label": "Return profile",
+                            "value": "+3.40%",
+                            "detail": "Total return over 2 bars",
+                            "tone": "positive",
+                        }
+                    ],
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                run_store = store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/runs/run-export/export")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        export = payload["export"]
+        self.assertEqual(export["kind"], "aiqt.researchRun.export")
+        self.assertEqual(export["packageVersion"], 1)
+        self.assertEqual(export["manifest"]["runId"], "run-export")
+        self.assertEqual(export["manifest"]["dataHash"], "snapshot-export")
+        self.assertEqual(export["manifest"]["artifactCounts"]["bars"], 2)
+        self.assertEqual(export["manifest"]["artifactCounts"]["trades"], 1)
+        self.assertFalse(export["manifest"]["liveTradingAllowed"])
+        self.assertTrue(export["manifest"]["paperOnly"])
+        self.assertEqual(export["researchRun"]["dataSnapshot"]["bars"][1]["close"], 9.3)
+        self.assertEqual(export["executionHandoff"]["mode"], "paper_only")
+        self.assertEqual(export["executionHandoff"]["requiredGates"][0]["id"], "adapter-certified")
+        self.assertFalse(export["executionHandoff"]["requiredGates"][0]["passed"])
+
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 

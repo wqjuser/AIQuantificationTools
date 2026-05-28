@@ -4,7 +4,7 @@ import json
 import sqlite3
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -349,6 +349,65 @@ def research_run_audit_to_payload(audit: ResearchRunAudit, *, include_data_snaps
 
 def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, Any]:
     return {"runs": [research_run_audit_to_payload(audit) for audit in audits]}
+
+
+def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: datetime | None = None) -> dict[str, Any]:
+    exported = exported_at or datetime.now(timezone.utc)
+    run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
+    data_snapshot = run_payload.get("dataSnapshot", {})
+    ai_report = run_payload.get("aiReport", {})
+    artifact_counts = {
+        "bars": len(data_snapshot.get("bars", [])) if isinstance(data_snapshot, dict) else 0,
+        "trades": len(run_payload.get("backtestTrades", [])),
+        "equityPoints": len(run_payload.get("backtestEquityCurve", [])),
+        "decisions": len(run_payload.get("decisions", [])),
+        "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
+    }
+    return {
+        "kind": "aiqt.researchRun.export",
+        "packageVersion": 1,
+        "exportedAt": exported.isoformat(),
+        "manifest": {
+            "runId": audit.run_id,
+            "createdAt": audit.created_at.isoformat(),
+            "market": audit.market,
+            "symbol": audit.symbol,
+            "timeframe": audit.timeframe,
+            "strategyRevision": audit.strategy_revision,
+            "dataHash": data_snapshot.get("hash", "") if isinstance(data_snapshot, dict) else "",
+            "dataRows": audit.data_rows,
+            "executionMode": audit.execution_mode,
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "artifactCounts": artifact_counts,
+        },
+        "researchRun": run_payload,
+        "executionHandoff": {
+            "mode": audit.execution_mode,
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "requiredGates": [
+                {
+                    "id": "adapter-certified",
+                    "label": "Adapter certified",
+                    "passed": False,
+                    "reason": "No certified live adapter is bound to this audited run.",
+                },
+                {
+                    "id": "risk-approved",
+                    "label": "Risk approved",
+                    "passed": False,
+                    "reason": "Risk approval must be rerun before any live route.",
+                },
+                {
+                    "id": "human-confirmed",
+                    "label": "Human confirmed",
+                    "passed": False,
+                    "reason": "Human confirmation is required for execution.",
+                },
+            ],
+        },
+    }
 
 
 def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRunAudit:

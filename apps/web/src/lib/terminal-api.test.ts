@@ -3,6 +3,7 @@ import { buildTerminalWorkspace, workspaceWithBacktestAssumption, workspaceWithS
 import {
   buildResearchRunUrl,
   buildResearchRunDetailUrl,
+  buildResearchRunExportUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -10,6 +11,7 @@ import {
   loadMarketKlines,
   loadMarketSearch,
   loadResearchRunDetail,
+  loadResearchRunExport,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   buildWorkspaceUrl,
@@ -77,6 +79,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run detail URL with an encoded run id", () => {
     expect(buildResearchRunDetailUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
       "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1"
+    );
+  });
+
+  test("builds the research run export URL with an encoded run id", () => {
+    expect(buildResearchRunExportUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/export"
     );
   });
 
@@ -399,6 +407,118 @@ describe("terminal workspace API client", () => {
     expect(result.run?.strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
     expect(result.run?.strategyConfig?.risk.positionPct).toBe(0.8);
     expect(result.run?.backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
+  });
+
+  test("loads one research run export package from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadResearchRunExport("http://127.0.0.1:8765", "run-new", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          export: {
+            kind: "aiqt.researchRun.export",
+            packageVersion: 1,
+            exportedAt: "2026-05-26T08:05:00+00:00",
+            manifest: {
+              runId: "run-new",
+              createdAt: "2026-05-26T08:00:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyRevision: "rev123",
+              dataHash: "snapshot-detail",
+              dataRows: 2,
+              executionMode: "paper_only",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              artifactCounts: { bars: 2, trades: 1, equityPoints: 2, decisions: 0, aiRisks: 1 }
+            },
+            researchRun: {
+              runId: "run-new",
+              createdAt: "2026-05-26T08:00:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyName: "SMA trend demo",
+              strategyRevision: "rev123",
+              dataRows: 2,
+              metrics: { total_return_pct: 3.4, trade_count: 8 },
+              decisions: [],
+              executionMode: "paper_only",
+              dataSnapshot: {
+                source: "tencent",
+                isComplete: true,
+                warnings: [],
+                rows: 2,
+                start: "2026-05-26T08:00:00+00:00",
+                end: "2026-05-27T08:00:00+00:00",
+                hash: "snapshot-detail",
+                bars: [
+                  {
+                    timestamp: "2026-05-26T08:00:00+00:00",
+                    timestampMs: 1779782400000,
+                    open: 9.1,
+                    high: 9.3,
+                    low: 9,
+                    close: 9.2,
+                    volume: 1200000
+                  },
+                  {
+                    timestamp: "2026-05-27T08:00:00+00:00",
+                    timestampMs: 1779868800000,
+                    open: 9.2,
+                    high: 9.4,
+                    low: 9.1,
+                    close: 9.3,
+                    volume: 1300000
+                  }
+                ]
+              }
+            },
+            executionHandoff: {
+              mode: "paper_only",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              requiredGates: [
+                {
+                  id: "adapter-certified",
+                  label: "Adapter certified",
+                  passed: false,
+                  reason: "No certified live adapter is bound to this audited run."
+                }
+              ]
+            }
+          }
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-new/export"]);
+    expect(result.source).toBe("core");
+    expect(result.exportPackage?.manifest.dataHash).toBe("snapshot-detail");
+    expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
+    expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
+    expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
+  });
+
+  test("returns fallback when research run export package is malformed", async () => {
+    const result = await loadResearchRunExport("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        export: {
+          kind: "aiqt.researchRun.export",
+          packageVersion: 1,
+          manifest: { runId: "run-new" },
+          researchRun: { runId: "run-new" },
+          executionHandoff: { liveTradingAllowed: true }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.exportPackage).toBeUndefined();
+    expect(result.error).toBe("Invalid research run export contract");
   });
 
   test("returns fallback when the research run detail payload is invalid", async () => {

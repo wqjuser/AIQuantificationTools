@@ -33,6 +33,56 @@ export interface ResearchRunDetailResult {
   error?: string;
 }
 
+export interface ResearchRunExportManifest {
+  runId: string;
+  createdAt: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  strategyRevision: string;
+  dataHash: string;
+  dataRows: number;
+  executionMode: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  artifactCounts: {
+    bars: number;
+    trades: number;
+    equityPoints: number;
+    decisions: number;
+    aiRisks: number;
+  };
+}
+
+export interface ResearchRunExecutionGateExport {
+  id: string;
+  label: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface ResearchRunExecutionHandoff {
+  mode: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  requiredGates: ResearchRunExecutionGateExport[];
+}
+
+export interface ResearchRunExportPackage {
+  kind: "aiqt.researchRun.export";
+  packageVersion: number;
+  exportedAt: string;
+  manifest: ResearchRunExportManifest;
+  researchRun: ResearchRunAudit;
+  executionHandoff: ResearchRunExecutionHandoff;
+}
+
+export interface ResearchRunExportResult {
+  exportPackage?: ResearchRunExportPackage;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -148,6 +198,11 @@ export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
 export function buildResearchRunDetailUrl(baseUrl: string, runId: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(`api/research/runs/${encodeURIComponent(runId)}`, normalizedBase).toString();
+}
+
+export function buildResearchRunExportUrl(baseUrl: string, runId: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(`api/research/runs/${encodeURIComponent(runId)}/export`, normalizedBase).toString();
 }
 
 export function buildMarketKlinesUrl(
@@ -272,6 +327,32 @@ export async function loadResearchRunDetail(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run detail error"
+    };
+  }
+}
+
+export async function loadResearchRunExport(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchRunExportResult> {
+  try {
+    const response = await fetcher(buildResearchRunExportUrl(baseUrl, runId));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isResearchRunExportPayload(payload)) {
+      throw new Error("Invalid research run export contract");
+    }
+    return {
+      exportPackage: payload.export,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research run export error"
     };
   }
 }
@@ -447,6 +528,84 @@ function isResearchRunDetailPayload(value: unknown): value is { run: ResearchRun
   }
   const payload = value as { run?: unknown };
   return isResearchRunAudit(payload.run);
+}
+
+function isResearchRunExportPayload(value: unknown): value is { export: ResearchRunExportPackage } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { export?: unknown };
+  return isResearchRunExportPackage(payload.export);
+}
+
+function isResearchRunExportPackage(value: unknown): value is ResearchRunExportPackage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const exportPackage = value as Partial<ResearchRunExportPackage>;
+  return (
+    exportPackage.kind === "aiqt.researchRun.export" &&
+    typeof exportPackage.packageVersion === "number" &&
+    typeof exportPackage.exportedAt === "string" &&
+    isResearchRunExportManifest(exportPackage.manifest) &&
+    isResearchRunAudit(exportPackage.researchRun) &&
+    Boolean(exportPackage.researchRun.dataSnapshot) &&
+    isResearchRunExecutionHandoff(exportPackage.executionHandoff)
+  );
+}
+
+function isResearchRunExportManifest(value: unknown): value is ResearchRunExportManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const manifest = value as Partial<ResearchRunExportManifest>;
+  const counts = manifest.artifactCounts as Partial<ResearchRunExportManifest["artifactCounts"]> | undefined;
+  return (
+    typeof manifest.runId === "string" &&
+    typeof manifest.createdAt === "string" &&
+    isMarket(manifest.market) &&
+    typeof manifest.symbol === "string" &&
+    isTimeframe(manifest.timeframe) &&
+    typeof manifest.strategyRevision === "string" &&
+    typeof manifest.dataHash === "string" &&
+    typeof manifest.dataRows === "number" &&
+    typeof manifest.executionMode === "string" &&
+    typeof manifest.paperOnly === "boolean" &&
+    typeof manifest.liveTradingAllowed === "boolean" &&
+    Boolean(counts) &&
+    typeof counts?.bars === "number" &&
+    typeof counts?.trades === "number" &&
+    typeof counts?.equityPoints === "number" &&
+    typeof counts?.decisions === "number" &&
+    typeof counts?.aiRisks === "number"
+  );
+}
+
+function isResearchRunExecutionHandoff(value: unknown): value is ResearchRunExecutionHandoff {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const handoff = value as Partial<ResearchRunExecutionHandoff>;
+  return (
+    typeof handoff.mode === "string" &&
+    typeof handoff.paperOnly === "boolean" &&
+    typeof handoff.liveTradingAllowed === "boolean" &&
+    Array.isArray(handoff.requiredGates) &&
+    handoff.requiredGates.every(isResearchRunExecutionGateExport)
+  );
+}
+
+function isResearchRunExecutionGateExport(value: unknown): value is ResearchRunExecutionGateExport {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const gate = value as Partial<ResearchRunExecutionGateExport>;
+  return (
+    typeof gate.id === "string" &&
+    typeof gate.label === "string" &&
+    typeof gate.passed === "boolean" &&
+    typeof gate.reason === "string"
+  );
 }
 
 function isMarketKlinesPayload(value: unknown): value is Omit<MarketKlinesResult, "source" | "error"> {

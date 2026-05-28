@@ -2104,8 +2104,20 @@ em {
   border-radius: 7px;
   background: #151f2d;
   color: #dce6ee;
-  cursor: pointer;
+  cursor: default;
   padding: 9px 10px;
+  text-align: left;
+}
+
+.history-row-main {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
   text-align: left;
 }
 
@@ -2134,6 +2146,39 @@ em {
   padding: 4px 7px;
   color: #71dfc5;
   font-weight: 900;
+}
+
+.history-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.history-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid #2a3b51;
+  border-radius: 6px;
+  background: #101927;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 4px 7px;
+}
+
+.history-row-actions button:hover {
+  border-color: #2b6f62;
+  background: #122b27;
+}
+
+.history-row-actions small {
+  border: 0;
+  padding: 0;
 }
 
 .history-row:hover,

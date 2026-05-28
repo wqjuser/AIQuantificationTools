@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Cable,
   Database,
+  Download,
   GitBranch,
   Languages,
   Maximize2,
@@ -23,6 +24,7 @@ import {
   loadMarketKlines,
   loadMarketSearch,
   loadResearchRunDetail,
+  loadResearchRunExport,
   loadResearchRunHistory,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
@@ -392,6 +394,35 @@ export function App() {
     },
     []
   );
+
+  const exportRun = useCallback(async (run: ResearchRunAudit) => {
+    const result = await loadResearchRunExport(quantCoreBaseUrl, run.runId);
+    if (result.source === "fallback" || !result.exportPackage) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research run export failed",
+        error: result.error ?? "Research run export failed"
+      }));
+      return;
+    }
+
+    const fileName = `${run.runId}-research-export.json`;
+    const objectUrl = URL.createObjectURL(
+      new Blob([JSON.stringify(result.exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Research run export ready",
+      error: undefined
+    }));
+  }, []);
 
   const selectInstrument = useCallback(
     (instrument: TerminalWorkspace["selectedInstrument"]) => {
@@ -879,6 +910,7 @@ export function App() {
               <RunHistoryPanel
                 className="watchlist-history-panel"
                 i18n={i18n}
+                onExport={exportRun}
                 onReplay={replayRun}
                 runComparisonRows={runComparisonRows}
                 runHistory={runHistory}
@@ -1280,6 +1312,7 @@ function DecisionLogPanel({
 function RunHistoryPanel({
   className,
   i18n,
+  onExport,
   onReplay,
   runComparisonRows,
   runHistory,
@@ -1287,6 +1320,7 @@ function RunHistoryPanel({
 }: {
   className?: string;
   i18n: AppI18n;
+  onExport: (run: ResearchRunAudit) => void;
   onReplay: (run: ResearchRunAudit) => void;
   runComparisonRows: ResearchRunComparisonRow[];
   runHistory: ResearchRunAudit[];
@@ -1304,6 +1338,7 @@ function RunHistoryPanel({
                 i18n={i18n}
                 run={run}
                 isActive={workspace.researchRun?.runId === run.runId}
+                onExport={onExport}
                 onReplay={onReplay}
               />
             ))
@@ -2351,26 +2386,37 @@ function Panel({
 function RunHistoryRow({
   run,
   isActive,
+  onExport,
   onReplay,
   i18n
 }: {
   run: ResearchRunAudit;
   isActive: boolean;
+  onExport: (run: ResearchRunAudit) => void;
   onReplay: (run: ResearchRunAudit) => void;
   i18n: AppI18n;
 }) {
   return (
-    <button
+    <article
       aria-current={isActive ? "true" : undefined}
       className={`history-row ${isActive ? "active" : ""}`}
-      onClick={() => onReplay(run)}
-      type="button"
     >
-      <strong>{i18n.researchRunHistoryLabel(run)}</strong>
-      <span>{historyRunDetailLabel(i18n, run)}</span>
-      <span>{run.runId}</span>
-      <small>{isActive ? i18n.t("history.active") : i18n.t("history.replay")}</small>
-    </button>
+      <button className="history-row-main" onClick={() => onReplay(run)} type="button">
+        <strong>{i18n.researchRunHistoryLabel(run)}</strong>
+        <span>{historyRunDetailLabel(i18n, run)}</span>
+        <span>{run.runId}</span>
+      </button>
+      <div className="history-row-actions">
+        <button onClick={() => onReplay(run)} type="button">
+          <Play size={13} />
+          <small>{isActive ? i18n.t("history.active") : i18n.t("history.replay")}</small>
+        </button>
+        <button onClick={() => onExport(run)} type="button">
+          <Download size={13} />
+          <small>{i18n.t("history.export")}</small>
+        </button>
+      </div>
+    </article>
   );
 }
 
