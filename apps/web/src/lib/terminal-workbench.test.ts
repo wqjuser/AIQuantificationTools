@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   agentRoleLabels,
   buildAgentCommitteeRounds,
+  buildAiActionWorkflowState,
   buildAiEvidenceCards,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
@@ -483,6 +484,35 @@ describe("terminal workbench model", () => {
       detail: "Adapter certified, Risk approved, Human confirmed",
       tone: "warning"
     });
+  });
+
+  test("builds a visible workflow trail for generated strategy drafts", () => {
+    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
+    const state = buildAiActionWorkflowState(workspace, "strategy-draft");
+
+    expect(state.activeStageId).toBe("factor");
+    expect(state.completedStageIds).toEqual(["data"]);
+    expect(state.log.map((entry) => [entry.stageId, entry.level])).toEqual([
+      ["data", "success"],
+      ["factor", "warning"]
+    ]);
+    expect(state.log[1].message).toBe("Strategy draft staged: 600000 1d AI draft; audit required before backtest.");
+  });
+
+  test("builds a visible workflow trail for AI explanation and debate actions", () => {
+    const workspace = buildTerminalWorkspace();
+
+    const explainState = buildAiActionWorkflowState(workspaceWithAiAction(workspace, "explain"), "explain");
+    expect(explainState.activeStageId).toBe("agent");
+    expect(explainState.completedStageIds).toEqual(["data", "factor", "backtest"]);
+    expect(explainState.log.at(-1)?.message).toBe(
+      "AI explanation generated for 600000: return +12.4%, max drawdown 5.8%; no guaranteed outcome."
+    );
+
+    const debateState = buildAiActionWorkflowState(workspaceWithAiAction(workspace, "debate"), "debate");
+    expect(debateState.activeStageId).toBe("agent");
+    expect(debateState.completedStageIds).toEqual(["data", "factor", "backtest"]);
+    expect(debateState.log.at(-1)?.message).toBe("AI debate generated for 600000; bull, bear, and risk notes updated.");
   });
 
   test("adds a TradingAgents-style debate note to the decision log", () => {

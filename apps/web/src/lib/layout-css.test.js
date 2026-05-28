@@ -108,6 +108,8 @@ describe("terminal layout css", () => {
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');
+    expect(appSource).toContain('renderWorkflowNodesPanel("workflow-nodes-panel")');
+    expect(appSource).toContain("buildWorkflowStages(workspace, workflowRunState)");
     expect(appSource).toContain('className="workflow-backtest-panel"');
     expect(appSource).toContain('executionClassName="workflow-execution-panel"');
     expect(appSource).toContain('"workflow-agent-panel"');
@@ -121,6 +123,7 @@ describe("terminal layout css", () => {
     expect(
       hasCssBlockWith(".strategy-layout", [
         '"chart strategy"',
+        '"workflow strategy"',
         '"ai strategy"',
         '"decision strategy"'
       ])

@@ -1278,6 +1278,66 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
   };
 }
 
+export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action: AiWorkbenchAction): WorkflowRunState {
+  const context = `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`;
+  if (action === "strategy-draft") {
+    return {
+      activeStageId: "factor",
+      completedStageIds: ["data"],
+      log: [
+        {
+          id: `ai-action-${workspace.selectedInstrument.symbol}-data`,
+          stageId: "data",
+          level: "success",
+          message: `Research context selected: ${context}`
+        },
+        {
+          id: `ai-action-${workspace.selectedInstrument.symbol}-factor`,
+          stageId: "factor",
+          level: "warning",
+          message: `Strategy draft staged: ${workspace.strategy.name}; audit required before backtest.`
+        }
+      ]
+    };
+  }
+
+  const returnMetric = metricValue(workspace, "Return", "N/A");
+  const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
+  const actionMessage =
+    action === "explain"
+      ? `AI explanation generated for ${workspace.selectedInstrument.symbol}: return ${returnMetric}, max drawdown ${drawdownMetric}; no guaranteed outcome.`
+      : `AI debate generated for ${workspace.selectedInstrument.symbol}; bull, bear, and risk notes updated.`;
+
+  return {
+    activeStageId: "agent",
+    completedStageIds: ["data", "factor", "backtest"],
+    log: [
+      {
+        id: `ai-action-${workspace.selectedInstrument.symbol}-data`,
+        stageId: "data",
+        level: workspace.researchRun ? "success" : "warning",
+        message: workspace.researchRun
+          ? `Research context bound to ${workspace.researchRun.runId}: ${context}`
+          : `Research context selected without an audited run: ${context}`
+      },
+      {
+        id: `ai-action-${workspace.selectedInstrument.symbol}-backtest`,
+        stageId: "backtest",
+        level: workspace.researchRun ? "success" : "warning",
+        message: workspace.researchRun
+          ? `Backtest evidence available: ${workspace.researchRun.dataRows} bars`
+          : "Backtest evidence is local workspace state; run Pipeline for an audited snapshot."
+      },
+      {
+        id: `ai-action-${workspace.selectedInstrument.symbol}-agent`,
+        stageId: "agent",
+        level: "success",
+        message: actionMessage
+      }
+    ]
+  };
+}
+
 function clearAuditedResearchResults(workspace: TerminalWorkspace): TerminalWorkspace {
   return {
     ...workspace,
