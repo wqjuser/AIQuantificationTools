@@ -27,6 +27,11 @@ export interface QuantLoopNavigationTarget {
   workflowStageId: string;
 }
 
+export interface QuantLoopSelection {
+  stepId: string;
+  target: QuantLoopNavigationTarget;
+}
+
 export interface TerminalPanel {
   id: PanelId;
   title: string;
@@ -534,6 +539,27 @@ export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigat
     paper: { moduleId: "portfolio", workflowStageId: "execution" }
   };
   return targets[stepId] ?? targets.research;
+}
+
+export function resolveQuantLoopSelection(
+  workspace: TerminalWorkspace,
+  requestedStepId: string,
+  fallbackStepId = activeQuantLoopStepId(workspace)
+): QuantLoopSelection {
+  const supportedStepIds = new Set<string>(primaryQuantLoopStepDefinitions.map((step) => step.id));
+  const supportedSteps = workspace.quantLoop.filter((step) => supportedStepIds.has(step.id));
+  const requestedStep = supportedSteps.find((step) => step.id === requestedStepId);
+  const fallbackStep = supportedSteps.find((step) => step.id === fallbackStepId && step.status !== "locked");
+  const selectedStep =
+    requestedStep && requestedStep.status !== "locked"
+      ? requestedStep
+      : fallbackStep ?? supportedSteps.find((step) => step.status !== "locked");
+  const stepId = selectedStep?.id ?? "research";
+
+  return {
+    stepId,
+    target: buildQuantLoopNavigationTarget(stepId)
+  };
 }
 
 export function visiblePanels(workspace: TerminalWorkspace): PanelId[] {

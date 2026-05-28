@@ -14,6 +14,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioRiskRows,
   buildQuantLoopNavigationTarget,
+  resolveQuantLoopSelection,
   buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
@@ -124,6 +125,47 @@ describe("terminal workbench model", () => {
       "locked"
     );
     expect(quantLoopStatuses(workspaceWithBacktestAssumption(auditedWorkspace, "feeBps", 8)).paper).toBe("locked");
+  });
+
+  test("falls back to the active research step when a locked quant loop step is requested", () => {
+    const selection = resolveQuantLoopSelection(buildTerminalWorkspace(), "paper");
+
+    expect(selection).toEqual({
+      stepId: "research",
+      target: {
+        moduleId: "watchlist",
+        workflowStageId: "data"
+      }
+    });
+  });
+
+  test("allows paper quant loop navigation after an audited run is bound", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-paper-nav",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Run loaded", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    expect(resolveQuantLoopSelection(workspace, "paper")).toEqual({
+      stepId: "paper",
+      target: {
+        moduleId: "portfolio",
+        workflowStageId: "execution"
+      }
+    });
   });
 
   test("maps quant loop steps to concrete workspace navigation targets", () => {

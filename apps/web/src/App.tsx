@@ -53,13 +53,13 @@ import {
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
-  buildQuantLoopNavigationTarget,
   buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
+  resolveQuantLoopSelection,
   AiWorkbenchAction,
   AiEvidenceCard,
   Market,
@@ -149,6 +149,13 @@ function resolveInitialWorkflowStepId(fallback: string): string {
     : fallback;
 }
 
+function resolveInitialWorkflowSelection(workspace: TerminalWorkspace) {
+  return resolveQuantLoopSelection(
+    workspace,
+    resolveInitialWorkflowStepId(workspace.quantLoop[0]?.id ?? "research")
+  );
+}
+
 function createWorkflowRunState(): WorkflowRunState {
   return {
     activeStageId: "data",
@@ -183,10 +190,10 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
-  const [activeLoopStepId, setActiveLoopStepId] = useState(() =>
-    resolveInitialWorkflowStepId(workspace.quantLoop[0]?.id ?? "research")
+  const [activeLoopStepId, setActiveLoopStepId] = useState(() => resolveInitialWorkflowSelection(workspace).stepId);
+  const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(
+    () => resolveInitialWorkflowSelection(workspace).target.workflowStageId
   );
-  const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(workspace.workflowNodes[0]?.id ?? "data");
   const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>(() => createWorkflowRunState());
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
@@ -642,11 +649,14 @@ export function App() {
     setIsSubmittingPaperExecution(false);
   }, [workspace.researchRun?.runId]);
 
-  const selectQuantLoopStep = useCallback((stepId: string) => {
-    const target = buildQuantLoopNavigationTarget(stepId);
-    setActiveLoopStepId(stepId);
-    setActiveWorkflowStageId(target.workflowStageId);
-  }, []);
+  const selectQuantLoopStep = useCallback(
+    (stepId: string) => {
+      const selection = resolveQuantLoopSelection(workspace, stepId, activeLoopStepId);
+      setActiveLoopStepId(selection.stepId);
+      setActiveWorkflowStageId(selection.target.workflowStageId);
+    },
+    [activeLoopStepId, workspace]
+  );
 
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
