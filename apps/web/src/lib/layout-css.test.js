@@ -54,6 +54,9 @@ describe("terminal layout css", () => {
   test("uses the left rail for actionable workflows instead of passive module switching", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
 
+    expect(appSource).toContain("resolveInitialWorkflowStepId");
+    expect(appSource).toContain('new URLSearchParams(window.location.search).get("workflow")');
+    expect(appSource).toContain("url.searchParams.set(\"workflow\", activeLoopStepId)");
     expect(leftRailSource).toContain('className="workflow-next-action"');
     expect(leftRailSource).toContain('activeLoopStepId === step.id ? "selected active" : ""');
     expect(leftRailSource).toContain('step.status === "locked" ? "locked" : ""');
@@ -73,7 +76,25 @@ describe("terminal layout css", () => {
     expect(cssBlock(".left-rail")).not.toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).not.toContain("max-height: 100vh;");
     expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
-    expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto auto auto auto;");
+    expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto;");
+  });
+
+  test("keeps market context in one compact desktop band above the workflow", () => {
+    expect(appSource).toContain('className="terminal-overview-grid"');
+    expect(cssBlock(".terminal-overview-grid")).toContain(
+      "grid-template-columns: minmax(260px, 0.78fr) minmax(480px, 1.45fr) minmax(320px, 0.95fr);"
+    );
+    expect(cssBlock(".terminal-overview-grid")).toContain("align-items: stretch;");
+    expect(cssBlock(".terminal-overview-grid .watchlist-strip")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(cssBlock(".terminal-overview-grid .metrics-row")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 54px;");
+    expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 54px;");
+    expect(
+      hasCssBlockWith("  .terminal-overview-grid", [
+        "grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);"
+      ])
+    ).toBe(true);
+    expect(hasCssBlockWith("  .terminal-overview-grid .metrics-row", ["grid-row: 1 / span 2;"])).toBe(true);
   });
 
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
@@ -87,33 +108,37 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-panel")).toContain("grid-template-rows: auto auto;");
     expect(cssBlock(".terminal-panel")).toContain("min-height: auto;");
     expect(cssBlock(".terminal-panel")).not.toContain("min-height: 0;");
-    expect(cssBlock(".workflow-layout")).toContain("grid-template-columns:");
+    expect(cssBlock(".workflow-layout")).toContain("grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);");
     expect(cssBlock(".strategy-layout")).toContain("grid-template-areas:");
     expect(
       hasCssBlockWith(".strategy-layout", [
         '"chart strategy"',
-        '"ai ai"',
-        '"decision decision"'
+        '"ai strategy"',
+        '"decision strategy"'
       ])
     ).toBe(true);
-    expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"workflow decision"'])).toBe(true);
-    expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history ai"'])).toBe(true);
+    expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"decision workflow"'])).toBe(true);
+    expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith(".paper-layout", ['"execution execution"', '"portfolio broker"'])).toBe(true);
     expect(cssBlock(".workflow-backtest-panel")).toContain("grid-area: backtest;");
     expect(cssBlock(".workflow-nodes-panel")).toContain("grid-area: workflow;");
     expect(cssBlock(".workflow-agent-panel")).toContain("grid-area: ai;");
+    expect(cssBlock(".workflow-scanner-panel .scanner-head")).toContain("display: none;");
+    expect(cssBlock(".workflow-scanner-panel .scanner-row")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".workflow-broker-panel .broker-adapter-head")).toContain("display: none;");
+    expect(cssBlock(".workflow-broker-panel .broker-adapter-row")).toContain("grid-template-columns: minmax(0, 1fr);");
     expect(cssBlock(".workflow-decision-panel")).toContain("grid-area: decision;");
     expect(cssBlock(".workflow-history-panel")).toContain("grid-area: history;");
     expect(cssBlock(".center-grid")).toContain("align-content: start;");
     expect(cssBlock(".workflow-execution-panel")).toContain("grid-area: execution;");
-    expect(cssBlock(".chart-panel")).not.toContain("height: clamp(380px, 48vh, 560px);");
-    expect(cssBlock(".chart-panel")).toContain("min-height: clamp(520px, 56vh, 720px);");
+    expect(cssBlock(".chart-panel")).not.toContain("min-height: clamp(520px, 56vh, 720px);");
+    expect(cssBlock(".chart-panel")).toContain("min-height: clamp(400px, 44vh, 560px);");
     expect(cssBlock(".chart-panel")).toContain("grid-area: chart;");
     expect(cssBlock(".chart-panel")).toContain("grid-template-rows: auto minmax(0, 1fr);");
-    expect(cssBlock(".strategy-panel")).not.toContain("height: clamp(380px, 48vh, 560px);");
-    expect(cssBlock(".strategy-panel")).toContain("min-height: clamp(520px, 56vh, 720px);");
+    expect(cssBlock(".research-layout .workflow-chart-panel")).toContain("align-self: stretch;");
+    expect(cssBlock(".strategy-panel")).not.toContain("min-height: clamp(520px, 56vh, 720px);");
+    expect(cssBlock(".strategy-panel")).toContain("align-self: start;");
     expect(cssBlock(".strategy-panel")).toContain("grid-area: strategy;");
-    expect(cssBlock(".strategy-panel")).toContain("align-self: stretch;");
     expect(cssBlock(".strategy-panel")).toContain("grid-template-rows: auto auto;");
     expect(cssBlock(".strategy-panel")).not.toContain("overflow: hidden;");
     expect(cssBlock(".strategy-panel .strategy-workbench")).not.toContain("overflow: auto;");
@@ -126,6 +151,22 @@ describe("terminal layout css", () => {
       true
     );
     expect(cssBlock(".watchlist-ai-panel .agent-rounds-title")).toContain("grid-column: 1 / -1;");
+  });
+
+  test("collapses the terminal and workflow grid before cards become squeezed", () => {
+    expect(styles).toContain("@media (max-width: 1180px)");
+    expect(
+      hasCssBlockWith("@media (max-width: 1180px) {\n  .terminal-shell", [
+        "grid-template-columns: 1fr;",
+        "height: auto;"
+      ])
+    ).toBe(true);
+    expect(hasCssBlockWith("  .left-rail", ["height: auto;", "position: static;"])).toBe(true);
+    expect(hasCssDeclaration("  .loop-nav", "grid-template-columns: repeat(4, minmax(0, 1fr));")).toBe(true);
+    expect(hasCssBlockWith("  .loop-step", ["min-height: 54px;", "padding: 7px;"])).toBe(true);
+    expect(hasCssBlockWith("  .loop-step small,\n  .workflow-next-action,\n  .left-rail .workspace-card", ["display: none;"])).toBe(true);
+    expect(hasCssBlockWith("  .terminal-topbar", ["min-height: auto;", "padding: 8px 10px;"])).toBe(true);
+    expect(hasCssDeclaration("  .center-grid,\n  .workflow-layout", "grid-template-columns: 1fr;")).toBe(true);
   });
 
   test("keeps AI review inside workflow pages instead of a separate global strip", () => {

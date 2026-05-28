@@ -132,6 +132,17 @@ const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
   backtest: "ai",
   paper: "execution"
 };
+const workflowStepIds = ["research", "strategy", "backtest", "paper"] as const;
+
+function resolveInitialWorkflowStepId(fallback: string): string {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  const workflowParam = new URLSearchParams(window.location.search).get("workflow");
+  return workflowParam && workflowStepIds.includes(workflowParam as (typeof workflowStepIds)[number])
+    ? workflowParam
+    : fallback;
+}
 
 function createWorkflowRunState(): WorkflowRunState {
   return {
@@ -167,7 +178,9 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
-  const [activeLoopStepId, setActiveLoopStepId] = useState(workspace.quantLoop[0]?.id ?? "research");
+  const [activeLoopStepId, setActiveLoopStepId] = useState(() =>
+    resolveInitialWorkflowStepId(workspace.quantLoop[0]?.id ?? "research")
+  );
   const [, setActiveWorkflowStageId] = useState(workspace.workflowNodes[0]?.id ?? "data");
   const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>(() => createWorkflowRunState());
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
@@ -681,6 +694,15 @@ export function App() {
   }, [locale]);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("workflow") === activeLoopStepId) {
+      return;
+    }
+    url.searchParams.set("workflow", activeLoopStepId);
+    window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
+  }, [activeLoopStepId]);
+
+  useEffect(() => {
     skipNextSymbolSearchRef.current = true;
     setMarketDraft(workspace.selectedInstrument.market);
     setSymbolDraft(workspace.selectedInstrument.symbol);
@@ -1034,50 +1056,52 @@ export function App() {
           </div>
         </header>
 
-        <section className="watchlist-strip">
-          {workspace.watchlist.map((instrument) => (
-            <button
-              className={`ticker ${
-                workspace.selectedInstrument.symbol === instrument.symbol &&
-                workspace.selectedInstrument.market === instrument.market
-                  ? "active"
-                  : ""
-              }`}
-              key={`${instrument.market}-${instrument.symbol}`}
-              onClick={() => selectInstrument(instrument)}
-            >
-              <span>{i18n.marketLabel(instrument.market)}</span>
-              <strong>{instrument.symbol}</strong>
-              <span className="ticker-price">{formatInstrumentPrice(instrument.price)}</span>
-              <em className={instrument.changePct >= 0 ? "up" : "down"}>
-                {instrument.changePct >= 0 ? "+" : ""}
-                {instrument.changePct.toFixed(2)}%
-              </em>
+        <section className="terminal-overview-grid">
+          <section className={`module-focus-card ${activeWorkflowAccent}`}>
+            <div>
+              <span className="section-label">{i18n.t("moduleFocus.label")}</span>
+              <strong>
+                {i18n.quantLoopLabel(activeLoopStep?.id ?? "research", activeLoopStep?.label ?? "Market Research")}
+              </strong>
+              <p>{i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}</p>
+            </div>
+            <button className="run-button compact" disabled={isWorkflowActionDisabled} onClick={runActiveWorkflowAction} type="button">
+              {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
+              {workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
             </button>
-          ))}
-        </section>
+          </section>
 
-        <section className={`module-focus-card ${activeWorkflowAccent}`}>
-          <div>
-            <span className="section-label">{i18n.t("moduleFocus.label")}</span>
-            <strong>
-              {i18n.quantLoopLabel(activeLoopStep?.id ?? "research", activeLoopStep?.label ?? "Market Research")}
-            </strong>
-            <p>{i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}</p>
-          </div>
-          <button className="run-button compact" disabled={isWorkflowActionDisabled} onClick={runActiveWorkflowAction} type="button">
-            {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
-            {workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
-          </button>
-        </section>
+          <section className="watchlist-strip">
+            {workspace.watchlist.map((instrument) => (
+              <button
+                className={`ticker ${
+                  workspace.selectedInstrument.symbol === instrument.symbol &&
+                  workspace.selectedInstrument.market === instrument.market
+                    ? "active"
+                    : ""
+                }`}
+                key={`${instrument.market}-${instrument.symbol}`}
+                onClick={() => selectInstrument(instrument)}
+              >
+                <span>{i18n.marketLabel(instrument.market)}</span>
+                <strong>{instrument.symbol}</strong>
+                <span className="ticker-price">{formatInstrumentPrice(instrument.price)}</span>
+                <em className={instrument.changePct >= 0 ? "up" : "down"}>
+                  {instrument.changePct >= 0 ? "+" : ""}
+                  {instrument.changePct.toFixed(2)}%
+                </em>
+              </button>
+            ))}
+          </section>
 
-        <section className="metrics-row">
-          {workspace.metrics.map((metric) => (
-            <article className={`metric-card ${metric.tone}`} key={metric.label}>
-              <span>{i18n.metricLabel(metric.label)}</span>
-              <strong>{metric.value}</strong>
-            </article>
-          ))}
+          <section className="metrics-row">
+            {workspace.metrics.map((metric) => (
+              <article className={`metric-card ${metric.tone}`} key={metric.label}>
+                <span>{i18n.metricLabel(metric.label)}</span>
+                <strong>{metric.value}</strong>
+              </article>
+            ))}
+          </section>
         </section>
 
         <section className={`center-grid workflow-layout ${activeLoopStepId}-layout`}>
