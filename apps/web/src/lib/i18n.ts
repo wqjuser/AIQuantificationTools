@@ -1,10 +1,20 @@
-import type { ExecutionState, Market, ResearchRunAudit, ResearchRunSummary } from "./terminal-workbench";
+import type {
+  ExecutionState,
+  Market,
+  ProductWorkArea,
+  ProductWorkAreaStatus,
+  ResearchRunAudit,
+  ResearchRunSummary
+} from "./terminal-workbench";
 
 export type Locale = "zh-CN" | "en-US";
 export type TranslationKey = keyof typeof messages["en-US"];
 type WorkflowNodeTranslation = readonly [string, string];
 type LocalizedLabelMap = {
   markets: Record<Market, string>;
+  productWorkAreas: Record<string, string>;
+  productWorkAreaDescriptions: Record<string, string>;
+  productWorkAreaStatuses: Record<ProductWorkAreaStatus, string>;
   quantLoop: Record<string, string>;
   modules: Record<string, string>;
   agents: Record<string, string>;
@@ -301,6 +311,33 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       us: "US",
       crypto: "Crypto"
     },
+    productWorkAreas: {
+      market: "Market Center",
+      research: "Research Terminal",
+      strategy: "Strategy Lab",
+      backtest: "Backtest Lab",
+      "ai-review": "AI Review Board",
+      portfolio: "Portfolio & Risk",
+      execution: "Execution Center",
+      audit: "Audit & Replay",
+      settings: "Settings"
+    },
+    productWorkAreaDescriptions: {
+      market: "Search, quotes, K-lines, source health",
+      research: "Chart, factors, notes, context",
+      strategy: "Rules, versions, risk configuration",
+      backtest: "Assumptions, trades, reproducible run",
+      "ai-review": "Evidence-locked agent committee",
+      portfolio: "Exposure, positions, live gates",
+      execution: "Paper orders and adapter readiness",
+      audit: "Run history, import, export, replay",
+      settings: "Data sources, API keys, safety gates"
+    },
+    productWorkAreaStatuses: {
+      ready: "Ready",
+      needs_run: "Run",
+      blocked: "Blocked"
+    },
     quantLoop: {
       research: "Market Research",
       idea: "Idea Lab",
@@ -395,6 +432,33 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       ashare: "A 股",
       us: "美股",
       crypto: "加密货币"
+    },
+    productWorkAreas: {
+      market: "行情中心",
+      research: "研究工作台",
+      strategy: "策略工坊",
+      backtest: "回测实验室",
+      "ai-review": "AI 评审",
+      portfolio: "组合风控",
+      execution: "执行中心",
+      audit: "审计回放",
+      settings: "设置"
+    },
+    productWorkAreaDescriptions: {
+      market: "搜索、报价、K线、数据源健康",
+      research: "图表、因子、笔记、研究上下文",
+      strategy: "规则、版本、风控配置",
+      backtest: "假设、交易流水、可复现运行",
+      "ai-review": "绑定证据的智能体委员会",
+      portfolio: "敞口、持仓、实盘闸门",
+      execution: "模拟委托和适配器状态",
+      audit: "运行历史、导入、导出、回放",
+      settings: "数据源、API Key、安全闸门"
+    },
+    productWorkAreaStatuses: {
+      ready: "就绪",
+      needs_run: "待运行",
+      blocked: "阻断"
     },
     quantLoop: {
       research: "行情研究",
@@ -539,6 +603,15 @@ export function createI18n(locale: Locale) {
     },
     marketLabel(market: Market) {
       return labels.markets[market];
+    },
+    productWorkAreaLabel(area: ProductWorkArea) {
+      return valueOf(labels.productWorkAreas, area.id, area.label);
+    },
+    productWorkAreaDescription(area: ProductWorkArea) {
+      return valueOf(labels.productWorkAreaDescriptions, area.id, area.description);
+    },
+    productWorkAreaStatus(status: ProductWorkAreaStatus) {
+      return valueOf(labels.productWorkAreaStatuses, status, status);
     },
     quantLoopLabel(id: string, fallback: string) {
       return valueOf(labels.quantLoop, id, fallback);

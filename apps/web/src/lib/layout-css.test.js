@@ -51,21 +51,32 @@ function sourceBetween(startMarker, endMarker) {
 }
 
 describe("terminal layout css", () => {
-  test("uses the left rail for actionable workflows instead of passive module switching", () => {
+  test("uses product work areas as the primary left navigation", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
 
-    expect(appSource).toContain("resolveInitialWorkflowStepId");
-    expect(appSource).toContain('new URLSearchParams(window.location.search).get("workflow")');
-    expect(appSource).toContain('"agent-review"');
-    expect(appSource).toContain("url.searchParams.set(\"workflow\", activeLoopStepId)");
-    expect(leftRailSource).toContain('className="loop-step-copy"');
-    expect(leftRailSource).toContain("title={`${i18n.quantLoopLabel");
-    expect(leftRailSource).toContain('className="workflow-next-action"');
-    expect(leftRailSource).toContain('activeLoopStepId === step.id ? "selected active" : ""');
-    expect(leftRailSource).toContain('step.status === "locked" ? "locked" : ""');
+    expect(appSource).toContain("buildProductWorkAreas(workspace)");
+    expect(appSource).toContain("resolveInitialWorkAreaId");
+    expect(appSource).toContain('new URLSearchParams(window.location.search).get("workspace")');
+    expect(appSource).toContain("productWorkAreas.map");
+    expect(leftRailSource).toContain('className={`work-area-button');
+    expect(leftRailSource).toContain("i18n.productWorkAreaLabel");
+    expect(leftRailSource).toContain("i18n.productWorkAreaDescription");
+    expect(leftRailSource).not.toContain("workspace.quantLoop.map");
+  });
+
+  test("uses the left rail for actionable product work areas instead of passive module switching", () => {
+    const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
+
+    expect(appSource).toContain("resolveInitialWorkAreaId");
+    expect(appSource).toContain('url.searchParams.set("workspace", activeWorkAreaId)');
+    expect(appSource).toContain('url.searchParams.delete("workflow")');
+    expect(leftRailSource).toContain('className="work-area-index"');
+    expect(leftRailSource).toContain('className="work-area-copy"');
+    expect(leftRailSource).toContain('className="work-area-status"');
+    expect(leftRailSource).toContain('activeWorkAreaId === area.id ? "selected active" : ""');
     expect(leftRailSource).not.toContain('i18n.t("section.terminalModules")');
     expect(leftRailSource).not.toContain('className="module-list"');
-    expect(appSource).toContain("renderActiveWorkflow()");
+    expect(appSource).toContain("renderActiveProductWorkspace()");
   });
 
   test("uses the document as the single desktop scroll surface", () => {
@@ -81,14 +92,16 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto;");
     expect(cssBlock(".brand > div")).toContain("display: block;");
-    expect(cssBlock(".loop-step")).toContain("grid-template-columns: auto minmax(0, 1fr);");
-    expect(cssBlock(".loop-step-copy")).toContain("display: block;");
-    expect(hasCssDeclaration(".loop-step-copy small", "display: none;")).toBe(true);
+    expect(cssBlock(".work-area-button")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+    expect(cssBlock(".work-area-copy")).toContain("display: block;");
+    expect(hasCssDeclaration(".work-area-copy small", "display: none;")).toBe(true);
   });
 
-  test("treats locked workflow steps as disabled navigation controls", () => {
-    expect(appSource).toContain('disabled={step.status === "locked"}');
-    expect(cssBlock(".loop-step:disabled")).toContain("cursor: not-allowed;");
+  test("keeps blocked product work areas clickable so users can inspect gate reasons", () => {
+    const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
+
+    expect(leftRailSource).not.toContain('disabled={area.status === "blocked"}');
+    expect(cssBlock(".work-area-button.blocked")).toContain("border-color: #7a3a32;");
   });
 
   test("resets the active workflow when timeframe changes invalidate audited context", () => {
@@ -192,6 +205,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".watchlist-ai-panel .agent-rounds-title")).toContain("grid-column: 1 / -1;");
   });
 
+  test("renders distinct product work-area compositions", () => {
+    expect(appSource).toContain("renderActiveProductWorkspace()");
+    expect(appSource).toContain('activeWorkAreaId === "market"');
+    expect(appSource).toContain('activeWorkAreaId === "settings"');
+    expect(appSource).toContain("MarketDataHealthPanel");
+    expect(appSource).toContain("PlatformSettingsPanel");
+    expect(cssBlock(".product-workspace-layout")).toContain("display: grid;");
+  });
+
   test("collapses the terminal and workflow grid before cards become squeezed", () => {
     expect(styles).toContain("@media (max-width: 1180px)");
     expect(
@@ -202,7 +224,12 @@ describe("terminal layout css", () => {
     ).toBe(true);
     expect(hasCssBlockWith("  .left-rail", ["position: sticky;", "height: 100vh;"])).toBe(true);
     expect(hasCssBlockWith("  .loop-step", ["min-height: 50px;", "padding: 7px 5px;"])).toBe(true);
-    expect(hasCssBlockWith("  .loop-step-copy,\n  .workflow-next-action,\n  .left-rail .workspace-card", ["display: none;"])).toBe(true);
+    expect(
+      hasCssBlockWith(
+        "  .loop-step-copy,\n  .work-area-copy,\n  .work-area-status,\n  .workflow-next-action,\n  .left-rail .workspace-card",
+        ["display: none;"]
+      )
+    ).toBe(true);
     expect(hasCssBlockWith("  .terminal-topbar", ["min-height: auto;", "padding: 8px 10px;"])).toBe(true);
     expect(hasCssDeclaration("  .center-grid,\n  .workflow-layout", "grid-template-columns: 1fr;")).toBe(true);
   });

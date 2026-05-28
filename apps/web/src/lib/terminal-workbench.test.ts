@@ -13,8 +13,10 @@ import {
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
+  buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
   resolveQuantLoopSelection,
+  resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
@@ -48,6 +50,68 @@ function activeQuantLoopStep(workspace: TerminalWorkspace): string | undefined {
 }
 
 describe("terminal workbench model", () => {
+  test("builds the P0 product work areas in platform order", () => {
+    const areas = buildProductWorkAreas(buildTerminalWorkspace());
+
+    expect(areas.map((area) => area.id)).toEqual([
+      "market",
+      "research",
+      "strategy",
+      "backtest",
+      "ai-review",
+      "portfolio",
+      "execution",
+      "audit",
+      "settings"
+    ]);
+    expect(areas.find((area) => area.id === "execution")).toMatchObject({
+      quantLoopStepId: "paper",
+      workflowStageId: "execution",
+      status: "blocked"
+    });
+  });
+
+  test("marks evidence-dependent work areas ready after an audited run is bound", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-product-area",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-product",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    const statuses = Object.fromEntries(buildProductWorkAreas(workspace).map((area) => [area.id, area.status]));
+
+    expect(statuses["ai-review"]).toBe("ready");
+    expect(statuses.portfolio).toBe("ready");
+    expect(statuses.execution).toBe("ready");
+    expect(statuses.audit).toBe("ready");
+  });
+
+  test("resolves product work-area navigation without hiding blocked execution pages", () => {
+    expect(resolveProductWorkAreaSelection(buildTerminalWorkspace(), "execution")).toEqual({
+      areaId: "execution",
+      quantLoopStepId: "paper",
+      workflowStageId: "execution"
+    });
+    expect(resolveProductWorkAreaSelection(buildTerminalWorkspace(), "missing", "strategy")).toEqual({
+      areaId: "strategy",
+      quantLoopStepId: "strategy",
+      workflowStageId: "factor"
+    });
+  });
+
   test("builds a complete terminal shell with quant loop and terminal panels", () => {
     const workspace = buildTerminalWorkspace();
 

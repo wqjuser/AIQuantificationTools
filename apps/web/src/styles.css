@@ -110,6 +110,7 @@ button {
 }
 
 .loop-nav,
+.work-area-nav,
 .module-list,
 .ai-actions,
 .gate-list,
@@ -121,6 +122,7 @@ button {
 }
 
 .loop-step,
+.work-area-button,
 .module-button,
 .run-button,
 .panel-icon-button,
@@ -224,6 +226,118 @@ button {
 
 .loop-step:disabled {
   cursor: not-allowed;
+}
+
+.work-area-nav {
+  display: grid;
+  gap: 8px;
+}
+
+.work-area-button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.work-area-button svg {
+  color: #8fa0b2;
+}
+
+.work-area-index {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 6px;
+  background: #243449;
+  color: #94a8bb;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.work-area-copy {
+  display: block;
+  min-width: 0;
+}
+
+.work-area-copy strong,
+.work-area-copy small {
+  display: block;
+  min-width: 0;
+}
+
+.work-area-copy strong {
+  color: #dce6ee;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.work-area-copy small {
+  display: none;
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.work-area-status {
+  justify-self: end;
+  border: 1px solid #2a3b51;
+  border-radius: 999px;
+  color: #8fa0b2;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.work-area-button:hover,
+.work-area-button.selected {
+  border-color: #2b6f62;
+  background: #122b27;
+}
+
+.work-area-button.selected .work-area-index {
+  background: #4cc9ad;
+  color: #07120f;
+}
+
+.work-area-button.selected svg,
+.work-area-button.selected strong {
+  color: #71dfc5;
+}
+
+.work-area-button.ai {
+  border-color: #403968;
+}
+
+.work-area-button.strategy {
+  border-color: #614e20;
+}
+
+.work-area-button.execution {
+  border-color: #2d6e61;
+}
+
+.work-area-button.needs_run .work-area-status {
+  border-color: #614e20;
+  color: #e8be62;
+}
+
+.work-area-button.blocked {
+  border-color: #7a3a32;
+}
+
+.work-area-button.blocked .work-area-status {
+  border-color: #7a3a32;
+  color: #ffad9f;
 }
 
 .module-button {
@@ -824,6 +938,10 @@ em {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
 }
 
+.product-workspace-layout {
+  display: grid;
+}
+
 .workflow-layout .module-workspace-panel {
   grid-column: auto;
 }
@@ -832,6 +950,13 @@ em {
   grid-template-areas:
     "chart scanner"
     "decision workflow";
+}
+
+.market-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-areas:
+    "chart data"
+    "scanner workflow";
 }
 
 .strategy-layout {
@@ -855,10 +980,43 @@ em {
     "decision history";
 }
 
+.ai-review-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-areas:
+    "ai workflow"
+    "decision history";
+}
+
 .paper-layout {
   grid-template-columns: minmax(720px, 1.15fr) minmax(380px, 0.65fr) minmax(320px, 0.45fr);
   grid-template-areas:
     "execution portfolio broker";
+}
+
+.portfolio-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-areas:
+    "portfolio decision"
+    "execution decision";
+}
+
+.execution-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-areas:
+    "execution broker";
+}
+
+.audit-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-areas:
+    "history workflow"
+    "decision workflow";
+}
+
+.settings-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-areas:
+    "settings broker";
 }
 
 .workflow-chart-panel {
@@ -871,6 +1029,11 @@ em {
 
 .workflow-scanner-panel {
   grid-area: scanner;
+}
+
+.workflow-data-panel {
+  align-self: start;
+  grid-area: data;
 }
 
 .workflow-scanner-panel .scanner-head {
@@ -992,6 +1155,66 @@ em {
 .workflow-broker-panel {
   align-self: start;
   grid-area: broker;
+}
+
+.workflow-settings-panel {
+  align-self: start;
+  grid-area: settings;
+}
+
+.health-grid,
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.health-grid article,
+.settings-grid article {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.health-grid article.positive,
+.settings-grid article.positive {
+  border-left-color: #4cc9ad;
+}
+
+.health-grid article.warning,
+.settings-grid article.warning {
+  border-left-color: #e8be62;
+}
+
+.health-grid article.risk,
+.settings-grid article.risk {
+  border-left-color: #ff7f6d;
+}
+
+.health-grid article span,
+.settings-grid article span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.health-grid article strong,
+.settings-grid article strong {
+  display: block;
+  margin-top: 6px;
+  color: #dce6ee;
+  font-size: 15px;
+}
+
+.health-grid article p,
+.settings-grid article p {
+  margin: 7px 0 0;
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .workflow-broker-panel .broker-adapter-head {
@@ -2664,7 +2887,16 @@ em {
     text-align: center;
   }
 
-  .loop-step .workflow-step-index {
+  .work-area-button {
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-height: 50px;
+    padding: 7px 5px;
+    text-align: center;
+  }
+
+  .loop-step .workflow-step-index,
+  .work-area-index {
     position: absolute;
     top: 5px;
     left: 5px;
@@ -2680,6 +2912,8 @@ em {
   }
 
   .loop-step-copy,
+  .work-area-copy,
+  .work-area-status,
   .workflow-next-action,
   .left-rail .workspace-card {
     display: none;
@@ -2771,6 +3005,14 @@ em {
       "decision";
   }
 
+  .market-layout {
+    grid-template-areas:
+      "chart"
+      "data"
+      "scanner"
+      "workflow";
+  }
+
   .strategy-layout {
     grid-template-areas:
       "chart"
@@ -2796,6 +3038,14 @@ em {
       "history";
   }
 
+  .ai-review-layout {
+    grid-template-areas:
+      "ai"
+      "workflow"
+      "decision"
+      "history";
+  }
+
   .paper-layout {
     grid-template-areas:
       "execution"
@@ -2803,8 +3053,39 @@ em {
       "broker";
   }
 
+  .portfolio-layout {
+    grid-template-areas:
+      "portfolio"
+      "execution"
+      "decision";
+  }
+
+  .execution-layout {
+    grid-template-areas:
+      "execution"
+      "broker";
+  }
+
+  .audit-layout {
+    grid-template-areas:
+      "history"
+      "workflow"
+      "decision";
+  }
+
+  .settings-layout {
+    grid-template-areas:
+      "settings"
+      "broker";
+  }
+
   .workflow-agent-panel .agent-panel-body,
   .workflow-history-panel .history-panel-body {
+    grid-template-columns: 1fr;
+  }
+
+  .health-grid,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2870,6 +3151,14 @@ em {
       "decision";
   }
 
+  .market-layout {
+    grid-template-areas:
+      "chart"
+      "data"
+      "scanner"
+      "workflow";
+  }
+
   .strategy-layout {
     grid-template-areas:
       "chart"
@@ -2895,10 +3184,44 @@ em {
       "history";
   }
 
+  .ai-review-layout {
+    grid-template-areas:
+      "ai"
+      "workflow"
+      "decision"
+      "history";
+  }
+
   .paper-layout {
     grid-template-areas:
       "execution"
       "portfolio"
+      "broker";
+  }
+
+  .portfolio-layout {
+    grid-template-areas:
+      "portfolio"
+      "execution"
+      "decision";
+  }
+
+  .execution-layout {
+    grid-template-areas:
+      "execution"
+      "broker";
+  }
+
+  .audit-layout {
+    grid-template-areas:
+      "history"
+      "workflow"
+      "decision";
+  }
+
+  .settings-layout {
+    grid-template-areas:
+      "settings"
       "broker";
   }
 
@@ -2959,6 +3282,11 @@ em {
   .module-focus-card {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .health-grid,
+  .settings-grid {
+    grid-template-columns: 1fr;
   }
 
   .chart-modal-backdrop {

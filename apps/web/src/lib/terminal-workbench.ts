@@ -22,6 +22,35 @@ export interface TerminalModule {
   accent: "market" | "strategy" | "ai" | "execution";
 }
 
+export type ProductWorkAreaId =
+  | "market"
+  | "research"
+  | "strategy"
+  | "backtest"
+  | "ai-review"
+  | "portfolio"
+  | "execution"
+  | "audit"
+  | "settings";
+
+export type ProductWorkAreaStatus = "ready" | "needs_run" | "blocked";
+
+export interface ProductWorkArea {
+  id: ProductWorkAreaId;
+  label: string;
+  description: string;
+  accent: TerminalModule["accent"];
+  quantLoopStepId: string;
+  workflowStageId: string;
+  status: ProductWorkAreaStatus;
+}
+
+export interface ProductWorkAreaSelection {
+  areaId: ProductWorkAreaId;
+  quantLoopStepId: string;
+  workflowStageId: string;
+}
+
 export interface QuantLoopNavigationTarget {
   moduleId: string;
   workflowStageId: string;
@@ -396,6 +425,81 @@ const primaryQuantLoopStepDefinitions = [
   { id: "paper", label: "Paper Trading" }
 ] as const;
 
+const productWorkAreaDefinitions = [
+  {
+    id: "market",
+    label: "Market Center",
+    description: "Search, quotes, K-lines, source health",
+    accent: "market",
+    quantLoopStepId: "research",
+    workflowStageId: "data"
+  },
+  {
+    id: "research",
+    label: "Research Terminal",
+    description: "Chart, factors, notes, context",
+    accent: "market",
+    quantLoopStepId: "research",
+    workflowStageId: "data"
+  },
+  {
+    id: "strategy",
+    label: "Strategy Lab",
+    description: "Rules, versions, risk configuration",
+    accent: "strategy",
+    quantLoopStepId: "strategy",
+    workflowStageId: "factor"
+  },
+  {
+    id: "backtest",
+    label: "Backtest Lab",
+    description: "Assumptions, trades, reproducible run",
+    accent: "ai",
+    quantLoopStepId: "backtest",
+    workflowStageId: "backtest"
+  },
+  {
+    id: "ai-review",
+    label: "AI Review Board",
+    description: "Evidence-locked agent committee",
+    accent: "ai",
+    quantLoopStepId: "agent-review",
+    workflowStageId: "agent"
+  },
+  {
+    id: "portfolio",
+    label: "Portfolio & Risk",
+    description: "Exposure, positions, live gates",
+    accent: "execution",
+    quantLoopStepId: "paper",
+    workflowStageId: "execution"
+  },
+  {
+    id: "execution",
+    label: "Execution Center",
+    description: "Paper orders and adapter readiness",
+    accent: "execution",
+    quantLoopStepId: "paper",
+    workflowStageId: "execution"
+  },
+  {
+    id: "audit",
+    label: "Audit & Replay",
+    description: "Run history, import, export, replay",
+    accent: "ai",
+    quantLoopStepId: "backtest",
+    workflowStageId: "backtest"
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    description: "Data sources, API keys, safety gates",
+    accent: "execution",
+    quantLoopStepId: "research",
+    workflowStageId: "data"
+  }
+] as const satisfies readonly Omit<ProductWorkArea, "status">[];
+
 function buildPrimaryQuantLoopSteps(activeStepId = "research", hasAuditedRun = false): QuantLoopStep[] {
   return primaryQuantLoopStepDefinitions.map((step) => ({
     ...step,
@@ -539,6 +643,49 @@ export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigat
     paper: { moduleId: "portfolio", workflowStageId: "execution" }
   };
   return targets[stepId] ?? targets.research;
+}
+
+export function buildProductWorkAreas(workspace: TerminalWorkspace): ProductWorkArea[] {
+  const hasAuditedRun = Boolean(workspace.researchRun?.runId);
+
+  return productWorkAreaDefinitions.map((area) => ({
+    ...area,
+    status: productWorkAreaStatus(area.id, hasAuditedRun, workspace)
+  }));
+}
+
+export function resolveProductWorkAreaSelection(
+  workspace: TerminalWorkspace,
+  requestedAreaId: string,
+  fallbackAreaId: ProductWorkAreaId = "research"
+): ProductWorkAreaSelection {
+  const areas = buildProductWorkAreas(workspace);
+  const requestedArea = areas.find((area) => area.id === requestedAreaId);
+  const fallbackArea = areas.find((area) => area.id === fallbackAreaId) ?? areas[0];
+  const selectedArea = requestedArea ?? fallbackArea;
+
+  return {
+    areaId: selectedArea.id,
+    quantLoopStepId: selectedArea.quantLoopStepId,
+    workflowStageId: selectedArea.workflowStageId
+  };
+}
+
+function productWorkAreaStatus(
+  areaId: ProductWorkAreaId,
+  hasAuditedRun: boolean,
+  workspace: TerminalWorkspace
+): ProductWorkAreaStatus {
+  if (areaId === "execution") {
+    return hasAuditedRun ? "ready" : "blocked";
+  }
+  if (areaId === "portfolio" || areaId === "ai-review" || areaId === "audit") {
+    return hasAuditedRun ? "ready" : "needs_run";
+  }
+  if (areaId === "backtest") {
+    return workspace.metrics.some((metric) => metric.value !== "N/A" && metric.value !== "0") ? "ready" : "needs_run";
+  }
+  return "ready";
 }
 
 export function resolveQuantLoopSelection(

@@ -53,13 +53,14 @@ import {
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
+  buildProductWorkAreas,
   buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
-  resolveQuantLoopSelection,
+  resolveProductWorkAreaSelection,
   AiWorkbenchAction,
   AiEvidenceCard,
   Market,
@@ -71,6 +72,8 @@ import {
   PaperPositionRow,
   PaperTradingRow,
   PortfolioRiskRow,
+  ProductWorkArea,
+  ProductWorkAreaId,
   ResearchRunAudit,
   ResearchRunComparisonRow,
   ScannerCandidate,
@@ -130,6 +133,18 @@ const workflowIcons: Record<string, typeof BarChart3> = {
   paper: WalletCards
 };
 
+const workAreaIcons: Record<ProductWorkAreaId, typeof BarChart3> = {
+  market: Database,
+  research: Radar,
+  strategy: GitBranch,
+  backtest: BarChart3,
+  "ai-review": BrainCircuit,
+  portfolio: ShieldCheck,
+  execution: WalletCards,
+  audit: Download,
+  settings: Languages
+};
+
 const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
   research: "market",
   strategy: "strategy",
@@ -138,22 +153,41 @@ const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
   paper: "execution"
 };
 const workflowStepIds = ["research", "strategy", "backtest", "agent-review", "paper"] as const;
+const productWorkAreaIds: ProductWorkAreaId[] = [
+  "market",
+  "research",
+  "strategy",
+  "backtest",
+  "ai-review",
+  "portfolio",
+  "execution",
+  "audit",
+  "settings"
+];
 
-function resolveInitialWorkflowStepId(fallback: string): string {
+function resolveInitialWorkAreaId(fallback: ProductWorkAreaId): ProductWorkAreaId {
   if (typeof window === "undefined") {
     return fallback;
   }
+  const workspaceParam = new URLSearchParams(window.location.search).get("workspace");
+  if (workspaceParam && productWorkAreaIds.includes(workspaceParam as ProductWorkAreaId)) {
+    return workspaceParam as ProductWorkAreaId;
+  }
   const workflowParam = new URLSearchParams(window.location.search).get("workflow");
+  const legacyWorkflowMap: Record<string, ProductWorkAreaId> = {
+    research: "research",
+    strategy: "strategy",
+    backtest: "backtest",
+    "agent-review": "ai-review",
+    paper: "execution"
+  };
   return workflowParam && workflowStepIds.includes(workflowParam as (typeof workflowStepIds)[number])
-    ? workflowParam
+    ? legacyWorkflowMap[workflowParam] ?? fallback
     : fallback;
 }
 
-function resolveInitialWorkflowSelection(workspace: TerminalWorkspace) {
-  return resolveQuantLoopSelection(
-    workspace,
-    resolveInitialWorkflowStepId(workspace.quantLoop[0]?.id ?? "research")
-  );
+function resolveInitialWorkAreaSelection(workspace: TerminalWorkspace) {
+  return resolveProductWorkAreaSelection(workspace, resolveInitialWorkAreaId("research"));
 }
 
 function createWorkflowRunState(): WorkflowRunState {
@@ -190,9 +224,11 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
-  const [activeLoopStepId, setActiveLoopStepId] = useState(() => resolveInitialWorkflowSelection(workspace).stepId);
+  const initialWorkAreaSelection = resolveInitialWorkAreaSelection(workspace);
+  const [activeWorkAreaId, setActiveWorkAreaId] = useState<ProductWorkAreaId>(() => initialWorkAreaSelection.areaId);
+  const [activeLoopStepId, setActiveLoopStepId] = useState(() => initialWorkAreaSelection.quantLoopStepId);
   const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(
-    () => resolveInitialWorkflowSelection(workspace).target.workflowStageId
+    () => initialWorkAreaSelection.workflowStageId
   );
   const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>(() => createWorkflowRunState());
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
@@ -215,8 +251,11 @@ export function App() {
   const symbolSearchRequestIdRef = useRef(0);
   const skipNextSymbolSearchRef = useRef(false);
   const i18n = createI18n(locale);
+  const productWorkAreas = buildProductWorkAreas(workspace);
+  const activeWorkArea =
+    productWorkAreas.find((area) => area.id === activeWorkAreaId) ?? productWorkAreas.find((area) => area.id === "research");
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
-  const activeWorkflowAccent = workflowAccentByStep[activeLoopStep?.id ?? "research"] ?? "market";
+  const activeWorkflowAccent = activeWorkArea?.accent ?? workflowAccentByStep[activeLoopStep?.id ?? "research"] ?? "market";
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
@@ -343,6 +382,7 @@ export function App() {
       log = [...log, createWorkflowLogEntry(runId, log.length + 1, stageId, level, message)];
     };
 
+    setActiveWorkAreaId("backtest");
     setActiveLoopStepId("backtest");
     setIsRunning(true);
     setPaperExecutionRecord(null);
@@ -437,6 +477,7 @@ export function App() {
           error: undefined
         }));
       }
+      setActiveWorkAreaId("audit");
       setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");
       setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
@@ -525,6 +566,7 @@ export function App() {
             error: undefined
           }));
         }
+        setActiveWorkAreaId("audit");
         setActiveLoopStepId("backtest");
         setActiveWorkflowStageId("execution");
         setWorkflowRunState(buildAuditReplayWorkflowState(result.run));
@@ -554,6 +596,7 @@ export function App() {
         source: "core",
         statusLabel: "Instrument selected"
       }));
+      setActiveWorkAreaId("research");
       setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
@@ -572,6 +615,7 @@ export function App() {
         source: "core",
         statusLabel: "Timeframe selected"
       }));
+      setActiveWorkAreaId("research");
       setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
@@ -588,6 +632,7 @@ export function App() {
       source: "core",
       statusLabel: "AI action generated"
     });
+    setActiveWorkAreaId(action === "strategy-draft" ? "strategy" : "ai-review");
     setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "agent-review");
     setActiveWorkflowStageId(nextWorkflowState.activeStageId);
     setWorkflowRunState(nextWorkflowState);
@@ -600,6 +645,7 @@ export function App() {
       source: "core",
       statusLabel: "Strategy edited"
     }));
+    setActiveWorkAreaId("strategy");
     setActiveLoopStepId("strategy");
     setActiveWorkflowStageId("factor");
   }, []);
@@ -612,6 +658,7 @@ export function App() {
       source: "core",
       statusLabel: "Backtest assumptions edited"
     }));
+    setActiveWorkAreaId("backtest");
     setActiveLoopStepId("backtest");
     setActiveWorkflowStageId("backtest");
   }, []);
@@ -645,18 +692,20 @@ export function App() {
       statusLabel: "Paper execution recorded",
       error: undefined
     }));
+    setActiveWorkAreaId("execution");
     setActiveLoopStepId("paper");
     setActiveWorkflowStageId("execution");
     setIsSubmittingPaperExecution(false);
   }, [workspace.researchRun?.runId]);
 
-  const selectQuantLoopStep = useCallback(
-    (stepId: string) => {
-      const selection = resolveQuantLoopSelection(workspace, stepId, activeLoopStepId);
-      setActiveLoopStepId(selection.stepId);
-      setActiveWorkflowStageId(selection.target.workflowStageId);
+  const selectProductWorkArea = useCallback(
+    (areaId: ProductWorkAreaId) => {
+      const selection = resolveProductWorkAreaSelection(workspace, areaId, activeWorkAreaId);
+      setActiveWorkAreaId(selection.areaId);
+      setActiveLoopStepId(selection.quantLoopStepId);
+      setActiveWorkflowStageId(selection.workflowStageId);
     },
-    [activeLoopStepId, workspace]
+    [activeWorkAreaId, workspace]
   );
 
   const submitSymbol = useCallback(
@@ -716,12 +765,13 @@ export function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get("workflow") === activeLoopStepId) {
+    if (url.searchParams.get("workspace") === activeWorkAreaId && !url.searchParams.has("workflow")) {
       return;
     }
-    url.searchParams.set("workflow", activeLoopStepId);
+    url.searchParams.set("workspace", activeWorkAreaId);
+    url.searchParams.delete("workflow");
     window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
-  }, [activeLoopStepId]);
+  }, [activeWorkAreaId]);
 
   useEffect(() => {
     skipNextSymbolSearchRef.current = true;
@@ -861,8 +911,24 @@ export function App() {
     </Panel>
   );
 
-  const renderActiveWorkflow = () => {
-    if (activeLoopStepId === "strategy") {
+  const renderActiveProductWorkspace = () => {
+    if (activeWorkAreaId === "market") {
+      return (
+        <>
+          {renderChartPanel("chart-panel workflow-chart-panel")}
+          <MarketDataHealthPanel className="workflow-data-panel" i18n={i18n} state={klinesState} workspace={workspace} />
+          <ScannerWorkspace
+            candidates={scannerCandidates}
+            className="workflow-scanner-panel"
+            i18n={i18n}
+            onSelectInstrument={selectInstrument}
+          />
+          {renderWorkflowNodesPanel("workflow-nodes-panel")}
+        </>
+      );
+    }
+
+    if (activeWorkAreaId === "strategy") {
       return (
         <>
           {renderChartPanel("chart-panel workflow-chart-panel")}
@@ -874,7 +940,7 @@ export function App() {
       );
     }
 
-    if (activeLoopStepId === "backtest") {
+    if (activeWorkAreaId === "backtest") {
       return (
         <>
           <BacktestReplayPanel
@@ -900,7 +966,7 @@ export function App() {
       );
     }
 
-    if (activeLoopStepId === "agent-review") {
+    if (activeWorkAreaId === "ai-review") {
       return (
         <>
           {renderAgentPanel("workflow-agent-panel")}
@@ -920,7 +986,7 @@ export function App() {
       );
     }
 
-    if (activeLoopStepId === "paper") {
+    if (activeWorkAreaId === "portfolio") {
       return (
         <>
           <PortfolioWorkspace
@@ -932,6 +998,56 @@ export function App() {
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
             rows={portfolioRiskRows}
+            workspace={workspace}
+          />
+          <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+        </>
+      );
+    }
+
+    if (activeWorkAreaId === "execution") {
+      return (
+        <>
+          <ExecutionPanel
+            className="workflow-execution-panel"
+            i18n={i18n}
+            isSubmitting={isSubmittingPaperExecution}
+            onSubmit={submitPaperExecution}
+            rows={visiblePaperTradingRows}
+            workspace={workspace}
+          />
+          <BrokerAdapterPanel adapterRows={brokerAdapterRows} className="workflow-broker-panel" i18n={i18n} />
+        </>
+      );
+    }
+
+    if (activeWorkAreaId === "audit") {
+      return (
+        <>
+          <RunHistoryPanel
+            className="workflow-history-panel"
+            i18n={i18n}
+            onExport={exportRun}
+            onImportFile={importRunExportFile}
+            onReplay={replayRun}
+            runComparisonRows={runComparisonRows}
+            runHistory={runHistory}
+            workspace={workspace}
+          />
+          {renderWorkflowNodesPanel("workflow-nodes-panel")}
+          <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+        </>
+      );
+    }
+
+    if (activeWorkAreaId === "settings") {
+      return (
+        <>
+          <PlatformSettingsPanel
+            adapterRows={brokerAdapterRows}
+            className="workflow-settings-panel"
+            i18n={i18n}
+            state={klinesState}
             workspace={workspace}
           />
           <BrokerAdapterPanel adapterRows={brokerAdapterRows} className="workflow-broker-panel" i18n={i18n} />
@@ -967,27 +1083,26 @@ export function App() {
 
         <section className="rail-section">
           <p className="section-label">{i18n.t("section.quantLoop")}</p>
-          <nav className="loop-nav">
-            {workspace.quantLoop.map((step, index) => {
-              const Icon = workflowIcons[step.id] ?? Radar;
+          <nav className="work-area-nav">
+            {productWorkAreas.map((area, index) => {
+              const Icon = workAreaIcons[area.id] ?? Radar;
               return (
                 <button
-                  className={`loop-step ${step.status === "locked" ? "locked" : ""} ${
-                    activeLoopStepId === step.id ? "selected active" : ""
+                  className={`work-area-button ${area.accent} ${area.status} ${
+                    activeWorkAreaId === area.id ? "selected active" : ""
                   }`}
-                  disabled={step.status === "locked"}
-                  key={step.id}
-                  onClick={() => selectQuantLoopStep(step.id)}
-                  title={`${i18n.quantLoopLabel(step.id, step.label)} · ${workflowNextActionLabel(i18n, step.id)}`}
+                  key={area.id}
+                  onClick={() => selectProductWorkArea(area.id)}
+                  title={`${i18n.productWorkAreaLabel(area)} · ${i18n.productWorkAreaDescription(area)}`}
                   type="button"
                 >
-                  <span className="workflow-step-index">{index + 1}</span>
+                  <span className="work-area-index">{index + 1}</span>
                   <Icon size={15} />
-                  <span className="loop-step-copy">
-                    <strong>{i18n.quantLoopLabel(step.id, step.label)}</strong>
-                    <small>{i18n.quantLoopFocus(step.id, { symbol: workspace.selectedInstrument.symbol })}</small>
+                  <span className="work-area-copy">
+                    <strong>{i18n.productWorkAreaLabel(area)}</strong>
+                    <small>{i18n.productWorkAreaDescription(area)}</small>
                   </span>
-                  <em className="workflow-next-action">{workflowNextActionLabel(i18n, step.id)}</em>
+                  <em className="work-area-status">{i18n.productWorkAreaStatus(area.status)}</em>
                 </button>
               );
             })}
@@ -1116,9 +1231,13 @@ export function App() {
             <div>
               <span className="section-label">{i18n.t("moduleFocus.label")}</span>
               <strong>
-                {i18n.quantLoopLabel(activeLoopStep?.id ?? "research", activeLoopStep?.label ?? "Market Research")}
+                {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : i18n.quantLoopLabel(activeLoopStep?.id ?? "research", activeLoopStep?.label ?? "Market Research")}
               </strong>
-              <p>{i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}</p>
+              <p>
+                {activeWorkArea
+                  ? i18n.productWorkAreaDescription(activeWorkArea)
+                  : i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}
+              </p>
             </div>
             <button className="run-button compact" disabled={isWorkflowActionDisabled} onClick={runActiveWorkflowAction} type="button">
               {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
@@ -1159,8 +1278,8 @@ export function App() {
           </section>
         </section>
 
-        <section className={`center-grid workflow-layout ${activeLoopStepId}-layout`}>
-          {renderActiveWorkflow()}
+        <section className={`center-grid workflow-layout product-workspace-layout ${activeLoopStepId}-layout ${activeWorkAreaId}-layout`}>
+          {renderActiveProductWorkspace()}
         </section>
       </main>
 
@@ -1392,6 +1511,95 @@ function BacktestReplayPanel({
             </article>
           ))}
         </div>
+      </div>
+    </Panel>
+  );
+}
+
+function MarketDataHealthPanel({
+  className,
+  i18n,
+  state,
+  workspace
+}: {
+  className?: string;
+  i18n: AppI18n;
+  state: MarketKlinesResult;
+  workspace: TerminalWorkspace;
+}) {
+  const warnings = state.quality.warnings.length ? state.quality.warnings : ["No source warnings reported."];
+  const freshness = state.quality.isComplete ? "Complete" : "Needs review";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "数据源健康" : "Data Source Health"}
+      subtitle={`${i18n.marketLabel(workspace.selectedInstrument.market)} · ${workspace.selectedInstrument.symbol}`}
+      className={className}
+    >
+      <div className="health-grid">
+        <article className={state.quality.isComplete ? "positive" : "warning"}>
+          <span>{i18n.locale === "zh-CN" ? "数据源" : "Source"}</span>
+          <strong>{state.quality.source}</strong>
+          <p>{i18n.locale === "zh-CN" ? "当前图表和研究流水线共用这个数据上下文。" : "Chart and research pipeline share this data context."}</p>
+        </article>
+        <article className="neutral">
+          <span>{i18n.locale === "zh-CN" ? "数据行数" : "Rows"}</span>
+          <strong>{state.quality.rows || state.bars.length}</strong>
+          <p>{`${state.timeframe} · ${state.symbol}`}</p>
+        </article>
+        <article className={state.quality.isComplete ? "positive" : "risk"}>
+          <span>{i18n.locale === "zh-CN" ? "质量状态" : "Quality"}</span>
+          <strong>{i18n.locale === "zh-CN" ? (state.quality.isComplete ? "完整" : "需复核") : freshness}</strong>
+          <p>{warnings[0]}</p>
+        </article>
+      </div>
+    </Panel>
+  );
+}
+
+function PlatformSettingsPanel({
+  adapterRows,
+  className,
+  i18n,
+  state,
+  workspace
+}: {
+  adapterRows: BrokerAdapterRow[];
+  className?: string;
+  i18n: AppI18n;
+  state: MarketKlinesResult;
+  workspace: TerminalWorkspace;
+}) {
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  const liveAdapterCount = adapterRows.filter((row) => row.route === "live").length;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "平台设置" : "Platform Settings"}
+      subtitle={i18n.locale === "zh-CN" ? "数据源、API Key、安全闸门" : "Data sources, API keys, safety gates"}
+      className={className}
+    >
+      <div className="settings-grid">
+        <article className="positive">
+          <span>{i18n.locale === "zh-CN" ? "行情源" : "Market data"}</span>
+          <strong>{state.quality.source}</strong>
+          <p>{i18n.locale === "zh-CN" ? "A 股 / 美股 / 加密货币通过统一 OHLCV schema 接入。" : "A shares, US equities, and crypto use the shared OHLCV schema."}</p>
+        </article>
+        <article className="warning">
+          <span>{i18n.locale === "zh-CN" ? "API Key" : "API keys"}</span>
+          <strong>{i18n.locale === "zh-CN" ? "本地配置" : "Local config"}</strong>
+          <p>{i18n.locale === "zh-CN" ? "无 Key 源可体验，有 Key 源通过本地环境增强稳定性。" : "No-key sources work for trials; local keys improve coverage."}</p>
+        </article>
+        <article className="risk">
+          <span>{i18n.locale === "zh-CN" ? "实盘闸门" : "Live gates"}</span>
+          <strong>{blockedGateCount}</strong>
+          <p>{i18n.locale === "zh-CN" ? "适配器认证、风控审批、人工确认缺一不可。" : "Adapter certification, risk approval, and human confirmation are all required."}</p>
+        </article>
+        <article className="neutral">
+          <span>{i18n.locale === "zh-CN" ? "适配器" : "Adapters"}</span>
+          <strong>{liveAdapterCount}</strong>
+          <p>{i18n.locale === "zh-CN" ? "实盘适配器目前仅保留接口和认证状态。" : "Live adapters currently expose contracts and certification state only."}</p>
+        </article>
       </div>
     </Panel>
   );
