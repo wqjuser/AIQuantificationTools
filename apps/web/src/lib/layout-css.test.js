@@ -70,7 +70,7 @@ describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
     expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
-    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 76px minmax(0, 1fr);");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 132px minmax(0, 1fr);");
     expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
     expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
     expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
@@ -79,18 +79,22 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-main")).not.toContain("max-height: 100vh;");
     expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto;");
+    expect(cssBlock(".brand > div")).toContain("display: block;");
+    expect(cssBlock(".loop-step")).toContain("grid-template-columns: auto minmax(0, 1fr);");
+    expect(cssBlock(".loop-step-copy")).toContain("display: block;");
+    expect(hasCssDeclaration(".loop-step-copy small", "display: none;")).toBe(true);
   });
 
   test("keeps market context in one compact desktop band above the workflow", () => {
     expect(appSource).toContain('className="terminal-overview-grid market-tape"');
     expect(cssBlock(".terminal-overview-grid")).toContain(
-      "grid-template-columns: minmax(240px, 0.72fr) minmax(440px, 1.7fr) minmax(260px, 0.85fr);"
+      "grid-template-columns: minmax(220px, 0.65fr) minmax(500px, 1.7fr) minmax(300px, 0.9fr);"
     );
     expect(cssBlock(".terminal-overview-grid")).toContain("align-items: stretch;");
     expect(cssBlock(".terminal-overview-grid .watchlist-strip")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(cssBlock(".terminal-overview-grid .metrics-row")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
-    expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 50px;");
-    expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 50px;");
+    expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 42px;");
+    expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 42px;");
     expect(
       hasCssBlockWith("  .terminal-overview-grid", [
         "grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);"
@@ -121,14 +125,25 @@ describe("terminal layout css", () => {
     ).toBe(true);
     expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"decision workflow"'])).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
-    expect(hasCssBlockWith(".paper-layout", ['"execution execution"', '"portfolio broker"'])).toBe(true);
+    expect(cssBlock(".paper-layout")).toContain(
+      "grid-template-columns: minmax(720px, 1.15fr) minmax(380px, 0.65fr) minmax(320px, 0.45fr);"
+    );
+    expect(hasCssBlockWith(".paper-layout", ['"execution portfolio broker"'])).toBe(true);
     expect(cssBlock(".workflow-backtest-panel")).toContain("grid-area: backtest;");
     expect(cssBlock(".workflow-nodes-panel")).toContain("grid-area: workflow;");
     expect(cssBlock(".workflow-agent-panel")).toContain("grid-area: ai;");
     expect(cssBlock(".workflow-scanner-panel .scanner-head")).toContain("display: none;");
     expect(cssBlock(".workflow-scanner-panel .scanner-row")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".workflow-broker-panel .broker-adapter-head")).toContain("display: none;");
-    expect(cssBlock(".workflow-broker-panel .broker-adapter-row")).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(cssBlock(".workflow-broker-panel .broker-adapter-row")).toContain(
+      "grid-template-columns: minmax(0, 1fr) auto;"
+    );
+    expect(cssBlock(".workflow-portfolio-panel .paper-position-row")).toContain(
+      "grid-template-columns: minmax(72px, 0.9fr) minmax(46px, 0.48fr) minmax(48px, 0.5fr) minmax(58px, 0.58fr) minmax(48px, 0.5fr);"
+    );
+    expect(cssBlock(".workflow-portfolio-panel .paper-position-row span:nth-child(3),\n.workflow-portfolio-panel .paper-position-row span:nth-child(5),\n.workflow-portfolio-panel .paper-position-row span:nth-child(6)")).toContain(
+      "display: none;"
+    );
     expect(cssBlock(".workflow-decision-panel")).toContain("grid-area: decision;");
     expect(cssBlock(".workflow-history-panel")).toContain("grid-area: history;");
     expect(cssBlock(".center-grid")).toContain("align-content: start;");
