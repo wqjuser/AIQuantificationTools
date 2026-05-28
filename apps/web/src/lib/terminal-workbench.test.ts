@@ -509,10 +509,69 @@ describe("terminal workbench model", () => {
     const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
 
     expect(workspace.strategy.name).toBe("600000 1d AI draft");
-    expect(workspace.strategy.entry).toBe("Momentum confirmation plus AI committee agreement");
-    expect(workspace.strategy.risk).toBe("Paper only; require adapter certification, risk approval, and human confirmation");
+    expect(workspace.strategy.entry).toBe("Close above SMA20 with volume confirmation after 1d research context");
+    expect(workspace.strategy.risk).toBe("Stop -8%, drawdown guard 12%, paper only");
     expect(workspace.decisionLog[0]).toMatchObject({
       agent: "Strategy Drafter",
+      tone: "warning"
+    });
+  });
+
+  test("invalidates stale audit results when a strategy draft is generated", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only",
+      backtestTrades: [
+        {
+          id: "old-trade",
+          timestamp: "T+0",
+          symbol: "600000",
+          side: "BUY",
+          status: "filled",
+          price: "8.66",
+          quantity: "2100",
+          exposure: "20%",
+          pnl: "+8.20%",
+          reason: "previous strategy",
+          tone: "positive"
+        }
+      ],
+      backtestEquityCurve: [{ timestamp: "2026-05-26T08:00:00+00:00", equity: 108200 }],
+      backtestDiagnostics: [
+        {
+          id: "old-diagnostic",
+          label: "Old diagnostic",
+          value: "stale",
+          detail: "Previous run diagnostic",
+          tone: "neutral"
+        }
+      ]
+    });
+
+    const workspace = workspaceWithAiAction(auditedWorkspace, "strategy-draft");
+
+    expect(workspace.researchRun).toBeNull();
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(workspace.backtestTrades).toEqual([]);
+    expect(workspace.backtestEquityCurve).toEqual([]);
+    expect(workspace.backtestDiagnostics).toEqual([]);
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "Strategy Drafter",
+      message: "Strategy draft generated for 600000 from run-history. Run Pipeline to audit the new rules before backtest or paper execution.",
       tone: "warning"
     });
   });

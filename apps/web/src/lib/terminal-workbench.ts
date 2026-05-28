@@ -1220,24 +1220,32 @@ function buildWorkflowStageArtifacts(workspace: TerminalWorkspace, stageId: stri
 
 export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWorkbenchAction): TerminalWorkspace {
   if (action === "strategy-draft") {
-    return {
+    const previousRunId = workspace.researchRun?.runId;
+    const note = previousRunId
+      ? `Strategy draft generated for ${workspace.selectedInstrument.symbol} from ${previousRunId}. Run Pipeline to audit the new rules before backtest or paper execution.`
+      : `Strategy draft generated for ${workspace.selectedInstrument.symbol}. Run Pipeline to audit the new rules before backtest or paper execution.`;
+    return clearAuditedResearchResults({
       ...workspace,
       strategy: {
         name: `${workspace.selectedInstrument.symbol} ${workspace.selectedTimeframe} AI draft`,
-        entry: "Momentum confirmation plus AI committee agreement",
+        entry: `Close above SMA20 with volume confirmation after ${workspace.selectedTimeframe} research context`,
         exit: "Close below trend support or risk manager downgrade",
-        position: "Start with paper sizing and cap exposure before audited replay",
-        risk: "Paper only; require adapter certification, risk approval, and human confirmation"
+        position: isPendingStrategyText(workspace.strategy.position)
+          ? "20% cap per instrument until audited sizing is rerun"
+          : workspace.strategy.position,
+        risk: isPendingStrategyText(workspace.strategy.risk)
+          ? "Paper only; require adapter certification, risk approval, and human confirmation"
+          : workspace.strategy.risk
       },
       decisionLog: [
         {
           agent: "Strategy Drafter",
-          message: `Strategy draft generated for ${workspace.selectedInstrument.symbol}: keep paper-only execution until data, risk, and human gates pass.`,
+          message: note,
           tone: "warning"
         },
         ...workspace.decisionLog
       ]
-    };
+    });
   }
 
   if (action === "explain") {
@@ -1267,6 +1275,22 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
       },
       ...workspace.decisionLog
     ]
+  };
+}
+
+function clearAuditedResearchResults(workspace: TerminalWorkspace): TerminalWorkspace {
+  return {
+    ...workspace,
+    metrics: [
+      { label: "Return", value: "N/A", tone: "neutral" },
+      { label: "Max DD", value: "N/A", tone: "warning" },
+      { label: "Win Rate", value: "N/A", tone: "neutral" },
+      { label: "Trades", value: "0", tone: "neutral" }
+    ],
+    backtestTrades: [],
+    backtestEquityCurve: [],
+    backtestDiagnostics: [],
+    researchRun: null
   };
 }
 
