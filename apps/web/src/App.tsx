@@ -58,6 +58,7 @@ import {
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   buildResearchRunComparisonRows,
+  buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
@@ -84,6 +85,8 @@ import {
   ProductWorkAreaId,
   ResearchRunAudit,
   ResearchRunComparisonRow,
+  RiskApprovalGate,
+  RiskApprovalSummary,
   ScannerCandidate,
   StrategyRuleDraft,
   StrategyRuleDraftField,
@@ -271,6 +274,7 @@ export function App() {
   const aiReviewDossier = buildAiReviewDossier(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
+  const riskApprovalSummary = buildRiskApprovalSummary(workspace);
   const paperPositionRows = buildPaperPositionRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
   const persistedPaperTradingRows =
@@ -1014,6 +1018,7 @@ export function App() {
             onSubmitPaperExecution={submitPaperExecution}
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
+            riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
             workspace={workspace}
           />
@@ -1030,6 +1035,7 @@ export function App() {
             i18n={i18n}
             isSubmitting={isSubmittingPaperExecution}
             onSubmit={submitPaperExecution}
+            approval={riskApprovalSummary}
             rows={visiblePaperTradingRows}
             workspace={workspace}
           />
@@ -1982,6 +1988,7 @@ function RunHistoryPanel({
 }
 
 function ExecutionPanel({
+  approval,
   className,
   i18n,
   isSubmitting = false,
@@ -1989,6 +1996,7 @@ function ExecutionPanel({
   rows,
   workspace
 }: {
+  approval: RiskApprovalSummary;
   className?: string;
   i18n: AppI18n;
   isSubmitting?: boolean;
@@ -2005,7 +2013,7 @@ function ExecutionPanel({
         onSubmit ? (
           <button
             className="run-button compact"
-            disabled={isSubmitting || !workspace.researchRun?.runId}
+            disabled={isSubmitting || approval.status === "blocked"}
             onClick={onSubmit}
             title={i18n.t("execution.submitPaper")}
             type="button"
@@ -2016,6 +2024,7 @@ function ExecutionPanel({
         ) : undefined
       }
     >
+      <RiskApprovalBoard approval={approval} i18n={i18n} />
       <div className="execution-grid">
         <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
         <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
@@ -2116,6 +2125,7 @@ function PortfolioWorkspace({
   onSubmitPaperExecution,
   paperRows,
   positionRows,
+  riskApproval,
   rows,
   workspace
 }: {
@@ -2126,6 +2136,7 @@ function PortfolioWorkspace({
   onSubmitPaperExecution?: () => void;
   paperRows: PaperTradingRow[];
   positionRows: PaperPositionRow[];
+  riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
   workspace: TerminalWorkspace;
 }) {
@@ -2173,6 +2184,7 @@ function PortfolioWorkspace({
         </div>
       </Panel>
       <ExecutionPanel
+        approval={riskApproval}
         className={executionClassName}
         i18n={i18n}
         isSubmitting={isSubmittingPaperExecution}
@@ -2190,6 +2202,7 @@ function BrokerWorkspace({
   i18n,
   isSubmittingPaperExecution,
   onSubmitPaperExecution,
+  riskApproval,
   workspace
 }: {
   adapterRows: BrokerAdapterRow[];
@@ -2197,12 +2210,14 @@ function BrokerWorkspace({
   i18n: AppI18n;
   isSubmittingPaperExecution: boolean;
   onSubmitPaperExecution: () => void;
+  riskApproval: RiskApprovalSummary;
   workspace: TerminalWorkspace;
 }) {
   return (
     <>
       <BrokerAdapterPanel adapterRows={adapterRows} className="module-workspace-panel" i18n={i18n} />
       <ExecutionPanel
+        approval={riskApproval}
         i18n={i18n}
         isSubmitting={isSubmittingPaperExecution}
         onSubmit={onSubmitPaperExecution}
@@ -2482,6 +2497,97 @@ function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
   return row.detail;
 }
 
+function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {
+  if (i18n.locale === "en-US") {
+    return approval.headline;
+  }
+  return {
+    "Risk approval blocked": "风控审批阻断",
+    "Paper execution approved": "模拟执行已批准",
+    "Certified live route ready": "认证实盘通道就绪"
+  }[approval.headline] ?? approval.headline;
+}
+
+function riskApprovalSummaryText(i18n: AppI18n, approval: RiskApprovalSummary): string {
+  if (i18n.locale === "en-US") {
+    return approval.summary;
+  }
+  const paperReady = approval.summary.match(
+    /^Audited run (.+) can stage paper orders; live trading remains blocked until (\d+) gates pass\.$/
+  );
+  if (paperReady) {
+    return `审计运行 ${paperReady[1]} 可创建模拟委托；实盘仍需 ${paperReady[2]} 个闸门通过。`;
+  }
+  const liveReady = approval.summary.match(/^Audited run (.+) can route through certified live execution\.$/);
+  if (liveReady) {
+    return `审计运行 ${liveReady[1]} 可进入认证实盘通道。`;
+  }
+  const blockedRun = approval.summary.match(/^Audited run (.+) needs risk review before staging execution\.$/);
+  if (blockedRun) {
+    return `审计运行 ${blockedRun[1]} 需要风控复核后才能进入执行。`;
+  }
+  return approval.summary.replace("Bind an audited run before paper or live execution.", "先绑定审计运行，再进入模拟或实盘执行。");
+}
+
+function riskApprovalGateLabel(i18n: AppI18n, gate: RiskApprovalGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.label;
+  }
+  return {
+    "audited-run": "审计运行",
+    "ai-evidence": "AI 证据",
+    "position-limit": "仓位上限",
+    "drawdown-limit": "回撤闸门",
+    "execution-route": "执行通道"
+  }[gate.id];
+}
+
+function riskApprovalGateValue(i18n: AppI18n, gate: RiskApprovalGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.value;
+  }
+  return gate.value
+    .replace("No audited run", "缺少审计运行")
+    .replace("Evidence dossier blocked", "证据包阻断")
+    .replace("Evidence locked", "证据已锁定")
+    .replace("paper blocked", "模拟阻断")
+    .replace("paper only", "仅模拟盘")
+    .replace("certified live", "认证实盘")
+    .replace("cap", "上限")
+    .replace("guard", "闸门");
+}
+
+function riskApprovalGateStatus(i18n: AppI18n, status: RiskApprovalGate["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { passed: "通过", blocked: "阻断", review: "复核" }[status];
+}
+
+function riskApprovalGateDetail(i18n: AppI18n, gate: RiskApprovalGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.detail;
+  }
+  const liveBlocked = gate.detail.match(/^Paper route can stage; (\d+) live gates still blocked\.$/);
+  if (liveBlocked) {
+    return `模拟通道可创建委托；仍有 ${liveBlocked[1]} 个实盘闸门阻断。`;
+  }
+  return gate.detail
+    .replace("Run Pipeline must produce a reproducible research run before execution.", "执行前必须先由流水线生成可复现研究运行。")
+    .replace("Run Pipeline before agent debate, explanation, or strategy promotion.", "先运行流水线，再进行智能体辩论、解释或策略晋级。")
+    .replace("Position cap is parsed but cannot be approved without audited evidence.", "已解析仓位上限，但缺少审计证据时不能批准。")
+    .replace("Drawdown is provisional until a run snapshot is bound.", "绑定运行快照前，回撤仅作为临时参考。")
+    .replace("Paper route waits for audited evidence; live route remains gated.", "模拟通道等待审计证据；实盘通道继续受闸门限制。")
+    .replace("Sizing uses the current strategy position guardrail.", "下单规模使用当前策略仓位护栏。")
+    .replace("Audited drawdown is inside the configured guardrail.", "审计回撤位于已配置护栏内。")
+    .replace("Audited drawdown breaches the configured guardrail.", "审计回撤突破已配置护栏。")
+    .replace("All execution gates passed; live route is available after human confirmation.", "全部执行闸门已通过；人工确认后可使用实盘通道。")
+    .replace("bars", "根K线")
+    .replace("paper_only", "仅模拟盘")
+    .replace("certified_live", "认证实盘")
+    .replace("blocked_live", "实盘阻断");
+}
+
 function paperPositionStatusLabel(i18n: AppI18n, status: PaperPositionRow["status"]): string {
   if (i18n.locale === "en-US") {
     return status;
@@ -2686,6 +2792,12 @@ function paperReasonLabel(i18n: AppI18n, reason: string): string {
   }
   if (reason === "No audited research run is bound; paper route remains blocked.") {
     return "当前没有绑定审计研究运行；模拟通道保持阻断。";
+  }
+  if (reason === "Risk approval blocked before staging paper execution.") {
+    return "风控审批阻断，不能创建模拟委托。";
+  }
+  if (reason === "Audited drawdown breaches the configured guardrail.") {
+    return "审计回撤突破已配置护栏。";
   }
   const stagedAuditedOrder = reason.match(/^Paper order staged from (.+) using audited run (.+); no live route is used\.$/);
   if (stagedAuditedOrder) {
@@ -3045,6 +3157,28 @@ function RunComparisonBoard({ i18n, rows }: { i18n: AppI18n; rows: ResearchRunCo
         ))}
       </div>
     </div>
+  );
+}
+
+function RiskApprovalBoard({ approval, i18n }: { approval: RiskApprovalSummary; i18n: AppI18n }) {
+  return (
+    <section className={`risk-approval ${approval.status}`}>
+      <div className="risk-approval-head">
+        <span>{i18n.locale === "en-US" ? "Execution approval" : "执行前审批"}</span>
+        <strong>{riskApprovalHeadline(i18n, approval)}</strong>
+        <p>{riskApprovalSummaryText(i18n, approval)}</p>
+      </div>
+      <div className="risk-approval-grid">
+        {approval.gates.map((gate) => (
+          <article className={`risk-approval-gate ${gate.tone}`} key={gate.id}>
+            <span>{riskApprovalGateLabel(i18n, gate)}</span>
+            <strong>{riskApprovalGateValue(i18n, gate)}</strong>
+            <em>{riskApprovalGateStatus(i18n, gate.status)}</em>
+            <p>{riskApprovalGateDetail(i18n, gate)}</p>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

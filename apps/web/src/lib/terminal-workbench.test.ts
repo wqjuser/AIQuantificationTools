@@ -21,6 +21,7 @@ import {
   resolveQuantLoopSelection,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
+  buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
@@ -658,6 +659,76 @@ describe("terminal workbench model", () => {
     expect(rows[2].tone).toBe("warning");
   });
 
+  test("blocks execution approval until audited evidence is bound", () => {
+    const approval = buildRiskApprovalSummary(buildTerminalWorkspace());
+
+    expect(approval.status).toBe("blocked");
+    expect(approval.headline).toBe("Risk approval blocked");
+    expect(approval.gates.map((gate) => gate.id)).toEqual([
+      "audited-run",
+      "ai-evidence",
+      "position-limit",
+      "drawdown-limit",
+      "execution-route"
+    ]);
+    expect(approval.gates[0]).toMatchObject({
+      value: "No audited run",
+      status: "blocked",
+      tone: "risk"
+    });
+    expect(approval.gates[1]).toMatchObject({
+      value: "Evidence dossier blocked",
+      status: "blocked"
+    });
+    expect(approval.gates[4]).toMatchObject({
+      value: "paper blocked",
+      status: "blocked"
+    });
+  });
+
+  test("approves paper execution while live gates remain closed after audited evidence", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-risk-ready",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-risk-ready",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
+    });
+
+    const approval = buildRiskApprovalSummary(workspace);
+
+    expect(approval.status).toBe("paper_ready");
+    expect(approval.headline).toBe("Paper execution approved");
+    expect(approval.summary).toBe(
+      "Audited run run-risk-ready can stage paper orders; live trading remains blocked until 3 gates pass."
+    );
+    expect(approval.gates.map((gate) => gate.status)).toEqual(["passed", "passed", "passed", "passed", "review"]);
+    expect(approval.gates[2]).toMatchObject({
+      value: "20% cap",
+      tone: "positive"
+    });
+    expect(approval.gates[3]).toMatchObject({
+      value: "5.8% / 12% guard",
+      tone: "positive"
+    });
+    expect(approval.gates[4]).toMatchObject({
+      value: "paper only",
+      detail: "Paper route can stage; 3 live gates still blocked."
+    });
+  });
+
   test("blocks paper trading rows until an audited research run is bound", () => {
     const rows = buildPaperTradingRows(buildTerminalWorkspace());
 
@@ -708,6 +779,44 @@ describe("terminal workbench model", () => {
       status: "blocked",
       reason: "3 live gates blocked; paper route remains available.",
       tone: "warning"
+    });
+  });
+
+  test("keeps paper orders blocked when the approval drawdown gate fails", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-risk-blocked",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-risk-blocked",
+      dataRows: 240,
+      metrics: { total_return_pct: -4.2, max_drawdown_pct: 18.5, win_rate_pct: 44, trade_count: 18 },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    const approval = buildRiskApprovalSummary(workspace);
+    const rows = buildPaperTradingRows(workspace);
+
+    expect(approval.status).toBe("blocked");
+    expect(approval.gates.find((gate) => gate.id === "drawdown-limit")).toMatchObject({
+      status: "blocked",
+      value: "18.5% / 12% guard"
+    });
+    expect(rows[0]).toMatchObject({
+      symbol: "600000",
+      side: "BUY",
+      status: "blocked",
+      reason: "Risk approval blocked before staging paper execution.",
+      tone: "risk"
+    });
+    expect(rows[1]).toMatchObject({
+      side: "RISK",
+      status: "blocked",
+      reason: "Audited drawdown breaches the configured guardrail.",
+      tone: "risk"
     });
   });
 

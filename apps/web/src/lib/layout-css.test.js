@@ -286,6 +286,18 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".ai-dossier-card");
   });
 
+  test("renders execution approval as a shared risk gate before paper orders", () => {
+    expect(appSource).toContain("buildRiskApprovalSummary(workspace)");
+    expect(appSource).toContain("<RiskApprovalBoard");
+    expect(appSource).toContain("approval={riskApprovalSummary}");
+    expect(appSource).toContain('className={`risk-approval');
+    expect(appSource).toContain('className="risk-approval-grid"');
+    expect(appSource).toContain('className={`risk-approval-gate');
+    expect(styles).toContain(".risk-approval");
+    expect(styles).toContain(".risk-approval-grid");
+    expect(styles).toContain(".risk-approval-gate");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

@@ -291,6 +291,24 @@ export interface PortfolioRiskRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type RiskApprovalStatus = "blocked" | "paper_ready" | "live_ready";
+
+export interface RiskApprovalGate {
+  id: "audited-run" | "ai-evidence" | "position-limit" | "drawdown-limit" | "execution-route";
+  label: string;
+  value: string;
+  detail: string;
+  status: "passed" | "blocked" | "review";
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
+export interface RiskApprovalSummary {
+  status: RiskApprovalStatus;
+  headline: string;
+  summary: string;
+  gates: RiskApprovalGate[];
+}
+
 export interface PaperPositionRow {
   id: string;
   symbol: string;
@@ -1039,6 +1057,136 @@ export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioR
   ];
 }
 
+export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskApprovalSummary {
+  const aiDossier = buildAiReviewDossier(workspace);
+  const strategyDraft = buildStrategyRuleDraft(workspace);
+  const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+  const drawdownMetric = parsePercentMetric(metricValue(workspace, "Max DD", "N/A"));
+  const drawdownValue = drawdownMetric === null ? "N/A" : `${formatPercentValue(drawdownMetric)}%`;
+  const drawdownLimit = `${formatPercentValue(strategyDraft.maxDrawdownPct)}%`;
+  const drawdownPassed = drawdownMetric !== null && drawdownMetric <= strategyDraft.maxDrawdownPct;
+  const paperCanStage = Boolean(workspace.researchRun) && aiDossier.status === "ready" && drawdownPassed;
+  const liveCanRoute = paperCanStage && workspace.execution.liveEnabled && blockedGateCount === 0;
+
+  if (!workspace.researchRun) {
+    return {
+      status: "blocked",
+      headline: "Risk approval blocked",
+      summary: "Bind an audited run before paper or live execution.",
+      gates: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: "No audited run",
+          detail: "Run Pipeline must produce a reproducible research run before execution.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "ai-evidence",
+          label: "AI evidence",
+          value: "Evidence dossier blocked",
+          detail: aiDossier.summary,
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "position-limit",
+          label: "Position limit",
+          value: `${formatPercentValue(strategyDraft.positionPct)}% cap`,
+          detail: "Position cap is parsed but cannot be approved without audited evidence.",
+          status: "review",
+          tone: "warning"
+        },
+        {
+          id: "drawdown-limit",
+          label: "Drawdown guard",
+          value: `${drawdownValue} / ${drawdownLimit} guard`,
+          detail: "Drawdown is provisional until a run snapshot is bound.",
+          status: "review",
+          tone: "warning"
+        },
+        {
+          id: "execution-route",
+          label: "Execution route",
+          value: "paper blocked",
+          detail: "Paper route waits for audited evidence; live route remains gated.",
+          status: "blocked",
+          tone: "risk"
+        }
+      ]
+    };
+  }
+
+  const executionRouteGate: RiskApprovalGate = liveCanRoute
+    ? {
+        id: "execution-route",
+        label: "Execution route",
+        value: "certified live",
+        detail: "All execution gates passed; live route is available after human confirmation.",
+        status: "passed",
+        tone: "positive"
+      }
+    : {
+        id: "execution-route",
+        label: "Execution route",
+        value: "paper only",
+        detail: `Paper route can stage; ${blockedGateCount} live gates still blocked.`,
+        status: "review",
+        tone: "warning"
+      };
+
+  const status: RiskApprovalStatus = liveCanRoute ? "live_ready" : paperCanStage ? "paper_ready" : "blocked";
+  return {
+    status,
+    headline:
+      status === "live_ready" ? "Certified live route ready" : status === "paper_ready" ? "Paper execution approved" : "Risk approval blocked",
+    summary:
+      status === "live_ready"
+        ? `Audited run ${workspace.researchRun.runId} can route through certified live execution.`
+        : status === "paper_ready"
+          ? `Audited run ${workspace.researchRun.runId} can stage paper orders; live trading remains blocked until ${blockedGateCount} gates pass.`
+          : `Audited run ${workspace.researchRun.runId} needs risk review before staging execution.`,
+    gates: [
+      {
+        id: "audited-run",
+        label: "Audited run",
+        value: workspace.researchRun.runId,
+        detail: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars · ${workspace.researchRun.executionMode}`,
+        status: "passed",
+        tone: "positive"
+      },
+      {
+        id: "ai-evidence",
+        label: "AI evidence",
+        value: aiDossier.status === "ready" ? "Evidence locked" : "Evidence dossier blocked",
+        detail: aiDossier.headline,
+        status: aiDossier.status === "ready" ? "passed" : "blocked",
+        tone: aiDossier.status === "ready" ? "ai" : "risk"
+      },
+      {
+        id: "position-limit",
+        label: "Position limit",
+        value: `${formatPercentValue(strategyDraft.positionPct)}% cap`,
+        detail: "Sizing uses the current strategy position guardrail.",
+        status: "passed",
+        tone: strategyDraft.positionPct <= 30 ? "positive" : "warning"
+      },
+      {
+        id: "drawdown-limit",
+        label: "Drawdown guard",
+        value: `${drawdownValue} / ${drawdownLimit} guard`,
+        detail: drawdownPassed
+          ? "Audited drawdown is inside the configured guardrail."
+          : "Audited drawdown breaches the configured guardrail.",
+        status: drawdownPassed ? "passed" : "blocked",
+        tone: drawdownPassed ? "positive" : "risk"
+      },
+      executionRouteGate
+    ]
+  };
+}
+
 export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradingRow[] {
   if (!workspace.researchRun) {
     return [
@@ -1082,6 +1230,46 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
   const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const notional = quantity * price;
+  const approval = buildRiskApprovalSummary(workspace);
+  const blockedApprovalGate = approval.gates.find((gate) => gate.status === "blocked");
+
+  if (approval.status === "blocked") {
+    return [
+      {
+        id: "paper-order",
+        symbol: workspace.selectedInstrument.symbol,
+        side: "BUY",
+        quantity: String(quantity),
+        price: price.toFixed(2),
+        notional: notional.toFixed(2),
+        status: "blocked",
+        reason: "Risk approval blocked before staging paper execution.",
+        tone: "risk"
+      },
+      {
+        id: "risk-check",
+        symbol: workspace.selectedInstrument.symbol,
+        side: "RISK",
+        quantity: "-",
+        price: "-",
+        notional: "-",
+        status: "blocked",
+        reason: blockedApprovalGate?.detail ?? "Risk approval blocked before staging paper execution.",
+        tone: "risk"
+      },
+      {
+        id: "account-sync",
+        symbol: "PAPER",
+        side: "SYNC",
+        quantity: "-",
+        price: "-",
+        notional: "0.00",
+        status: "paper",
+        reason: "Local paper account only; broker account synchronization is not connected.",
+        tone: "neutral"
+      }
+    ];
+  }
 
   return [
     {
