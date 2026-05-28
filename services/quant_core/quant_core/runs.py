@@ -363,7 +363,7 @@ def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: date
         "decisions": len(run_payload.get("decisions", [])),
         "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
     }
-    return {
+    export_package = {
         "kind": "aiqt.researchRun.export",
         "packageVersion": 1,
         "exportedAt": exported.isoformat(),
@@ -408,6 +408,8 @@ def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: date
             ],
         },
     }
+    export_package["integrity"] = {"algorithm": "sha256", "hash": _export_package_hash(export_package)}
+    return export_package
 
 
 def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
@@ -428,6 +430,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         raise ValueError("research_run_must_be_object")
     if not isinstance(handoff, dict):
         raise ValueError("execution_handoff_must_be_object")
+    _validate_export_integrity(export_package)
     if bool(manifest.get("liveTradingAllowed")) or bool(handoff.get("liveTradingAllowed")):
         raise ValueError("live_trading_exports_cannot_be_imported")
 
@@ -435,6 +438,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     data_snapshot = research_run.get("dataSnapshot")
     if not isinstance(data_snapshot, dict):
         raise ValueError("data_snapshot_must_be_object")
+    _validate_manifest_consistency(manifest, research_run, data_snapshot, handoff)
 
     created_at_raw = _required_text(research_run, "createdAt")
     try:
@@ -501,6 +505,100 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
     )
 
 
+def _export_package_hash(export_package: dict[str, Any]) -> str:
+    payload = {key: value for key, value in export_package.items() if key not in {"integrity", "exportedAt"}}
+    raw = json.dumps(_canonical_integrity_value(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _canonical_integrity_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _canonical_integrity_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_canonical_integrity_value(item) for item in value]
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        return _canonical_integrity_text(value)
+    return value
+
+
+def _canonical_integrity_text(value: str) -> str:
+    if "T" not in value:
+        return value
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is None:
+        return value
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _validate_export_integrity(export_package: dict[str, Any]) -> None:
+    integrity = export_package.get("integrity")
+    if integrity is None:
+        return
+    if not isinstance(integrity, dict):
+        raise ValueError("integrity_must_be_object")
+    if integrity.get("algorithm") != "sha256":
+        raise ValueError("integrity_algorithm_must_be_sha256")
+    supplied_hash = str(integrity.get("hash") or "").lower()
+    if supplied_hash != _export_package_hash(export_package):
+        raise ValueError("integrity_hash_mismatch")
+
+
+def _validate_manifest_consistency(
+    manifest: dict[str, Any],
+    research_run: dict[str, Any],
+    data_snapshot: dict[str, Any],
+    handoff: dict[str, Any],
+) -> None:
+    for manifest_key, run_key, error_code in [
+        ("runId", "runId", "manifest_run_id_mismatch"),
+        ("createdAt", "createdAt", "manifest_created_at_mismatch"),
+        ("market", "market", "manifest_market_mismatch"),
+        ("symbol", "symbol", "manifest_symbol_mismatch"),
+        ("timeframe", "timeframe", "manifest_timeframe_mismatch"),
+        ("strategyRevision", "strategyRevision", "manifest_strategy_revision_mismatch"),
+        ("executionMode", "executionMode", "manifest_execution_mode_mismatch"),
+    ]:
+        if str(manifest.get(manifest_key) or "") != str(research_run.get(run_key) or ""):
+            raise ValueError(error_code)
+    if str(handoff.get("mode") or "") != str(research_run.get("executionMode") or ""):
+        raise ValueError("execution_handoff_mode_mismatch")
+
+    bars = data_snapshot.get("bars")
+    if not isinstance(bars, list):
+        raise ValueError("data_snapshot_bars_must_be_array")
+    manifest_hash = str(manifest.get("dataHash") or "")
+    snapshot_hash = str(data_snapshot.get("hash") or "")
+    if manifest_hash != snapshot_hash:
+        raise ValueError("data_hash_mismatch")
+
+    bar_count = len(bars)
+    manifest_rows = int(_number_or_default(manifest.get("dataRows"), -1))
+    run_rows = int(_number_or_default(research_run.get("dataRows"), -1))
+    snapshot_rows = int(_number_or_default(data_snapshot.get("rows"), -1))
+    if manifest_rows != run_rows or run_rows != snapshot_rows or snapshot_rows != bar_count:
+        raise ValueError("data_rows_mismatch")
+
+    counts = manifest.get("artifactCounts")
+    if not isinstance(counts, dict):
+        raise ValueError("artifact_counts_must_be_object")
+    expected_counts = {
+        "bars": bar_count,
+        "trades": len(_list_of_dicts(research_run.get("backtestTrades"))),
+        "equityPoints": len(_list_of_dicts(research_run.get("backtestEquityCurve"))),
+        "decisions": len(_list_of_dicts(research_run.get("decisions"))),
+        "aiRisks": len(_safe_string_list(_dict_or_empty(research_run.get("aiReport")).get("risks"))),
+    }
+    for key, expected in expected_counts.items():
+        actual = int(_number_or_default(counts.get(key), -1))
+        if actual != expected:
+            raise ValueError(f"artifact_count_{_camel_to_snake(key)}_mismatch")
+
+
 def _required_text(mapping: dict[str, Any], key: str) -> str:
     value = mapping.get(key)
     text = str(value).strip() if value is not None else ""
@@ -517,6 +615,23 @@ def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _safe_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _camel_to_snake(value: str) -> str:
+    result = []
+    for character in value:
+        if character.isupper():
+            result.append("_")
+            result.append(character.lower())
+        else:
+            result.append(character)
+    return "".join(result).lstrip("_")
 
 
 def _normalize_ai_report(value: dict[str, Any] | None) -> dict[str, Any]:

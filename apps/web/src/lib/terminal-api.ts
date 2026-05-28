@@ -68,10 +68,16 @@ export interface ResearchRunExecutionHandoff {
   requiredGates: ResearchRunExecutionGateExport[];
 }
 
+export interface ResearchRunExportIntegrity {
+  algorithm: "sha256";
+  hash: string;
+}
+
 export interface ResearchRunExportPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
   exportedAt: string;
+  integrity?: ResearchRunExportIntegrity;
   manifest: ResearchRunExportManifest;
   researchRun: ResearchRunAudit;
   executionHandoff: ResearchRunExecutionHandoff;
@@ -596,11 +602,20 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
     exportPackage.kind === "aiqt.researchRun.export" &&
     typeof exportPackage.packageVersion === "number" &&
     typeof exportPackage.exportedAt === "string" &&
+    (exportPackage.integrity === undefined || isResearchRunExportIntegrity(exportPackage.integrity)) &&
     isResearchRunExportManifest(exportPackage.manifest) &&
     isResearchRunAudit(exportPackage.researchRun) &&
     Boolean(exportPackage.researchRun.dataSnapshot) &&
     isResearchRunExecutionHandoff(exportPackage.executionHandoff)
   );
+}
+
+function isResearchRunExportIntegrity(value: unknown): value is ResearchRunExportIntegrity {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const integrity = value as Partial<ResearchRunExportIntegrity>;
+  return integrity.algorithm === "sha256" && typeof integrity.hash === "string" && /^[a-f0-9]{64}$/i.test(integrity.hash);
 }
 
 function isResearchRunExportManifest(value: unknown): value is ResearchRunExportManifest {

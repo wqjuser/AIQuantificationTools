@@ -428,6 +428,10 @@ describe("terminal workspace API client", () => {
             kind: "aiqt.researchRun.export",
             packageVersion: 1,
             exportedAt: "2026-05-26T08:05:00+00:00",
+            integrity: {
+              algorithm: "sha256",
+              hash: "a".repeat(64)
+            },
             manifest: {
               runId: "run-new",
               createdAt: "2026-05-26T08:00:00+00:00",
@@ -504,6 +508,7 @@ describe("terminal workspace API client", () => {
 
     expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-new/export"]);
     expect(result.source).toBe("core");
+    expect(result.exportPackage?.integrity?.algorithm).toBe("sha256");
     expect(result.exportPackage?.manifest.dataHash).toBe("snapshot-detail");
     expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
@@ -526,6 +531,76 @@ describe("terminal workspace API client", () => {
 
     expect(result.source).toBe("fallback");
     expect(result.exportPackage).toBeUndefined();
+    expect(result.error).toBe("Invalid research run export contract");
+  });
+
+  test("returns fallback when research run export integrity is malformed", async () => {
+    const result = await loadResearchRunExport("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        export: {
+          kind: "aiqt.researchRun.export",
+          packageVersion: 1,
+          exportedAt: "2026-05-26T08:05:00+00:00",
+          integrity: { algorithm: "md5", hash: "abc" },
+          manifest: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyRevision: "rev123",
+            dataHash: "snapshot-detail",
+            dataRows: 1,
+            executionMode: "paper_only",
+            paperOnly: true,
+            liveTradingAllowed: false,
+            artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
+          },
+          researchRun: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyName: "SMA trend demo",
+            strategyRevision: "rev123",
+            dataRows: 1,
+            metrics: { total_return_pct: 3.4, trade_count: 0 },
+            decisions: [],
+            executionMode: "paper_only",
+            dataSnapshot: {
+              source: "tencent",
+              isComplete: true,
+              warnings: [],
+              rows: 1,
+              start: null,
+              end: null,
+              hash: "snapshot-detail",
+              bars: [
+                {
+                  timestamp: "2026-05-26T08:00:00+00:00",
+                  timestampMs: 1779782400000,
+                  open: 9.1,
+                  high: 9.3,
+                  low: 9,
+                  close: 9.2,
+                  volume: 1200000
+                }
+              ]
+            }
+          },
+          executionHandoff: {
+            mode: "paper_only",
+            paperOnly: true,
+            liveTradingAllowed: false,
+            requiredGates: []
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
     expect(result.error).toBe("Invalid research run export contract");
   });
 

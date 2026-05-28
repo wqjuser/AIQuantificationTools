@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 class QuantCoreContractTest(unittest.TestCase):
@@ -1062,6 +1062,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export["kind"], "aiqt.researchRun.export")
         self.assertEqual(export["packageVersion"], 1)
         self.assertEqual(export["manifest"]["runId"], "run-export")
+        self.assertEqual(export["integrity"]["algorithm"], "sha256")
+        self.assertEqual(len(export["integrity"]["hash"]), 64)
         self.assertEqual(export["manifest"]["dataHash"], "snapshot-export")
         self.assertEqual(export["manifest"]["artifactCounts"]["bars"], 2)
         self.assertEqual(export["manifest"]["artifactCounts"]["trades"], 1)
@@ -1071,6 +1073,211 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export["executionHandoff"]["mode"], "paper_only")
         self.assertEqual(export["executionHandoff"]["requiredGates"][0]["id"], "adapter-certified")
         self.assertFalse(export["executionHandoff"]["requiredGates"][0]["passed"])
+
+    def test_research_run_import_rejects_tampered_integrity_hash(self):
+        import copy
+
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        audit = ResearchRunAudit(
+            run_id="run-integrity",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-integrity",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Original", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={"summary": "Original", "risks": ["Risk"], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-26T08:00:00+00:00",
+                "hash": "snapshot-integrity",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000.0}],
+        )
+        export_package = research_run_export_to_payload(audit)
+        tampered_package = copy.deepcopy(export_package)
+        tampered_package["researchRun"]["metrics"]["total_return_pct"] = 99.9
+
+        with self.assertRaisesRegex(ValueError, "integrity_hash_mismatch"):
+            research_run_import_to_audit(tampered_package)
+
+    def test_research_run_import_accepts_browser_json_number_round_trip(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        def browser_number_round_trip(value):
+            if isinstance(value, dict):
+                return {key: browser_number_round_trip(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [browser_number_round_trip(item) for item in value]
+            if isinstance(value, float) and value.is_integer():
+                return int(value)
+            return value
+
+        audit = ResearchRunAudit(
+            run_id="run-browser-json",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-browser-json",
+            data_rows=1,
+            metrics={"total_return_pct": 1.0, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Browser", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-browser-json",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.0,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000.0,
+                    }
+                ],
+            },
+            backtest_trades=[],
+            backtest_equity_curve=[],
+        )
+        export_package = browser_number_round_trip(research_run_export_to_payload(audit))
+
+        imported = research_run_import_to_audit(export_package)
+
+        self.assertEqual(imported.run_id, "run-browser-json")
+        self.assertEqual(imported.data_snapshot["bars"][0]["open"], 9)
+
+    def test_research_run_import_accepts_timezone_equivalent_json_round_trip(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        def local_timezone_round_trip(value):
+            if isinstance(value, dict):
+                return {key: local_timezone_round_trip(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [local_timezone_round_trip(item) for item in value]
+            if isinstance(value, str) and "T" in value:
+                try:
+                    parsed = datetime.fromisoformat(value)
+                except ValueError:
+                    return value
+                if parsed.tzinfo is not None:
+                    return parsed.astimezone(timezone(timedelta(hours=8))).isoformat()
+            return value
+
+        audit = ResearchRunAudit(
+            run_id="run-timezone-json",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-timezone-json",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Timezone", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-26T08:00:00+00:00",
+                "hash": "snapshot-timezone-json",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_trades=[],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000.0}],
+        )
+        export_package = local_timezone_round_trip(research_run_export_to_payload(audit))
+
+        imported = research_run_import_to_audit(export_package)
+
+        self.assertEqual(imported.run_id, "run-timezone-json")
+        self.assertEqual(imported.created_at.astimezone(timezone.utc), datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc))
+
+    def test_research_run_import_rejects_manifest_artifact_count_mismatch(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        audit = ResearchRunAudit(
+            run_id="run-counts",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-counts",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Counts", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-counts",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_trades=[],
+            backtest_equity_curve=[],
+        )
+        export_package = research_run_export_to_payload(audit)
+        export_package.pop("integrity", None)
+        export_package["manifest"]["artifactCounts"]["bars"] = 2
+
+        with self.assertRaisesRegex(ValueError, "artifact_count_bars_mismatch"):
+            research_run_import_to_audit(export_package)
 
     def test_research_run_import_api_persists_export_package_for_replay(self):
         import json
@@ -1097,7 +1304,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "executionMode": "paper_only",
                 "paperOnly": True,
                 "liveTradingAllowed": False,
-                "artifactCounts": {"bars": 2, "trades": 1, "equityPoints": 2, "decisions": 1, "aiRisks": 1},
+                "artifactCounts": {"bars": 2, "trades": 1, "equityPoints": 1, "decisions": 1, "aiRisks": 1},
             },
             "researchRun": {
                 "runId": "run-import",
