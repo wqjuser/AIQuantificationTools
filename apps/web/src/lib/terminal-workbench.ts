@@ -189,6 +189,22 @@ export interface BacktestAssumptionRow {
   step: number;
 }
 
+export interface BacktestEvidenceCard {
+  id: "run" | "strategy" | "costs" | "diagnostics";
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export interface BacktestReadinessGate {
+  id: "data" | "strategy" | "costs" | "execution";
+  label: string;
+  status: "passed" | "blocked" | "review";
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -1258,6 +1274,119 @@ export function buildBacktestAssumptionRows(workspace: TerminalWorkspace): Backt
     ...backtestAssumptionSpecs[field],
     value: assumptions[field]
   }));
+}
+
+export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): BacktestEvidenceCard[] {
+  const assumptions = resolveBacktestAssumptions(workspace);
+  const diagnostics = workspace.backtestDiagnostics ?? [];
+  const firstDiagnostic = diagnostics[0];
+  const run = workspace.researchRun;
+
+  return [
+    run
+      ? {
+          id: "run",
+          label: "Run package",
+          value: run.runId,
+          detail: `${run.dataRows} ${run.timeframe} bars · ${run.executionMode}`,
+          tone: "positive"
+        }
+      : {
+          id: "run",
+          label: "Run package",
+          value: "Draft workspace",
+          detail: "Run Pipeline to bind a reproducible run id.",
+          tone: "warning"
+        },
+    {
+      id: "strategy",
+      label: "Strategy revision",
+      value: run?.strategyRevision ?? "Local draft",
+      detail: workspace.strategy.name,
+      tone: run ? "positive" : "warning"
+    },
+    {
+      id: "costs",
+      label: "Cost model",
+      value: `${assumptions.feeBps} bps / ${assumptions.slippageBps} bps`,
+      detail: `Cash ${formatAssumptionCurrency(assumptions.initialCash)}`,
+      tone: "neutral"
+    },
+    {
+      id: "diagnostics",
+      label: "Diagnostics",
+      value: diagnostics.length === 1 ? "1 check" : `${diagnostics.length} checks`,
+      detail: firstDiagnostic
+        ? `${firstDiagnostic.label}: ${firstDiagnostic.detail}`
+        : "No core diagnostics supplied yet.",
+      tone: firstDiagnostic?.tone ?? "warning"
+    }
+  ];
+}
+
+export function buildBacktestReadinessGates(workspace: TerminalWorkspace): BacktestReadinessGate[] {
+  const assumptions = resolveBacktestAssumptions(workspace);
+  const hasAuditedRun = Boolean(workspace.researchRun?.runId);
+  const strategyIsParseable =
+    !isPendingStrategyText(workspace.strategy.entry) &&
+    !isPendingStrategyText(workspace.strategy.exit) &&
+    !isPendingStrategyText(workspace.strategy.position) &&
+    !isPendingStrategyText(workspace.strategy.risk);
+
+  return [
+    hasAuditedRun
+      ? {
+          id: "data",
+          label: "Data snapshot",
+          status: "passed",
+          detail: `Audited ${workspace.researchRun?.dataRows ?? 0} ${workspace.selectedTimeframe} bars are bound.`,
+          tone: "positive"
+        }
+      : {
+          id: "data",
+          label: "Data snapshot",
+          status: "blocked",
+          detail: "Run Pipeline to bind a reproducible OHLCV snapshot.",
+          tone: "risk"
+        },
+    strategyIsParseable
+      ? {
+          id: "strategy",
+          label: "Strategy schema",
+          status: "passed",
+          detail: `${workspace.strategy.name} is parseable.`,
+          tone: "positive"
+        }
+      : {
+          id: "strategy",
+          label: "Strategy schema",
+          status: "blocked",
+          detail: "Complete entry, exit, position, and risk rules before audit.",
+          tone: "risk"
+        },
+    {
+      id: "costs",
+      label: "Cost model",
+      status: "passed",
+      detail: `Cash ${formatAssumptionCurrency(assumptions.initialCash)} · fee ${assumptions.feeBps} bps · slippage ${assumptions.slippageBps} bps.`,
+      tone: "neutral"
+    },
+    hasAuditedRun
+      ? {
+          id: "execution",
+          label: "Execution promotion",
+          status: "review",
+          detail: "Paper execution can be staged; live adapters remain gated.",
+          tone: "warning"
+        }
+      : {
+          id: "execution",
+          label: "Execution promotion",
+          status: "blocked",
+          detail: "Paper execution waits for an audited run id.",
+          tone: "risk"
+        }
+  ];
 }
 
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {

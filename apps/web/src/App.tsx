@@ -48,6 +48,8 @@ import {
   buildAiEvidenceCards,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
+  buildBacktestEvidenceCards,
+  buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
   buildPaperPositionRows,
@@ -68,6 +70,8 @@ import {
   AgentCommitteeRound,
   BacktestAssumptionField,
   BacktestAssumptionRow,
+  BacktestEvidenceCard,
+  BacktestReadinessGate,
   BacktestTradeRow,
   BrokerAdapterRow,
   PaperPositionRow,
@@ -273,6 +277,8 @@ export function App() {
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
+  const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
+  const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
@@ -950,8 +956,10 @@ export function App() {
           <BacktestReplayPanel
             assumptionRows={backtestAssumptionRows}
             className="workflow-backtest-panel"
+            evidenceCards={backtestEvidenceCards}
             i18n={i18n}
             onUpdateAssumption={updateBacktestAssumption}
+            readinessGates={backtestReadinessGates}
             rows={backtestTradeRows}
           />
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
@@ -1516,19 +1524,51 @@ function StrategyNumberField({
 function BacktestReplayPanel({
   assumptionRows,
   className,
+  evidenceCards,
   i18n,
   onUpdateAssumption,
+  readinessGates,
   rows
 }: {
   assumptionRows: BacktestAssumptionRow[];
   className?: string;
+  evidenceCards: BacktestEvidenceCard[];
   i18n: AppI18n;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
+  readinessGates: BacktestReadinessGate[];
   rows: BacktestTradeRow[];
 }) {
+  const diagnosticCard = evidenceCards.find((card) => card.id === "diagnostics");
+  const reportCards = evidenceCards.filter((card) => card.id !== "diagnostics");
+
   return (
     <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")} className={className}>
       <div className="backtest-replay">
+        <div className="backtest-evidence-grid">
+          {reportCards.map((card) => (
+            <article className={card.tone} key={card.id}>
+              <span>{backtestEvidenceLabel(i18n, card)}</span>
+              <strong>{backtestEvidenceValue(i18n, card)}</strong>
+              <p>{backtestEvidenceDetail(i18n, card)}</p>
+            </article>
+          ))}
+        </div>
+        <div className="backtest-readiness-list">
+          {readinessGates.map((gate) => (
+            <article className={gate.tone} key={gate.id}>
+              <span>{backtestGateLabel(i18n, gate)}</span>
+              <strong>{backtestGateStatusLabel(i18n, gate.status)}</strong>
+              <p>{backtestGateDetail(i18n, gate.detail)}</p>
+            </article>
+          ))}
+        </div>
+        {diagnosticCard ? (
+          <div className="backtest-diagnostic-strip" data-tone={diagnosticCard.tone}>
+            <span>{backtestEvidenceLabel(i18n, diagnosticCard)}</span>
+            <strong>{backtestEvidenceValue(i18n, diagnosticCard)}</strong>
+            <p>{backtestEvidenceDetail(i18n, diagnosticCard)}</p>
+          </div>
+        ) : null}
         <div className="backtest-assumptions">
           <div className="backtest-replay-title">
             <span>{i18n.t("backtest.assumptions")}</span>
@@ -2300,6 +2340,86 @@ function backtestAssumptionSuffixLabel(i18n: AppI18n, suffix: string): string {
     return suffix === "CNY" ? "资金" : "基点";
   }
   return suffix;
+}
+
+function backtestEvidenceLabel(i18n: AppI18n, card: BacktestEvidenceCard): string {
+  if (i18n.locale === "en-US") {
+    return card.label;
+  }
+  return (
+    {
+      run: "运行包",
+      strategy: "策略版本",
+      costs: "费用模型",
+      diagnostics: "诊断"
+    }[card.id] ?? card.label
+  );
+}
+
+function backtestEvidenceValue(i18n: AppI18n, card: BacktestEvidenceCard): string {
+  if (i18n.locale === "en-US") {
+    return card.value;
+  }
+  if (card.value === "Draft workspace") {
+    return "本地草稿";
+  }
+  if (card.value === "Local draft") {
+    return "本地版本";
+  }
+  return card.value.replace(/checks?/u, "项检查").replaceAll("bps", "基点");
+}
+
+function backtestEvidenceDetail(i18n: AppI18n, card: BacktestEvidenceCard): string {
+  if (i18n.locale === "en-US") {
+    return card.detail;
+  }
+  return card.detail
+    .replace("Run Pipeline to bind a reproducible run id.", "运行流水线以绑定可复现运行编号。")
+    .replace("No core diagnostics supplied yet.", "核心服务尚未返回诊断。")
+    .replace("Cash", "资金")
+    .replace("bars", "根K线")
+    .replace("paper_only", "仅模拟盘")
+    .replace("certified_live", "认证实盘")
+    .replace("blocked_live", "实盘阻断");
+}
+
+function backtestGateLabel(i18n: AppI18n, gate: BacktestReadinessGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.label;
+  }
+  return (
+    {
+      data: "数据快照",
+      strategy: "策略结构",
+      costs: "费用模型",
+      execution: "执行晋级"
+    }[gate.id] ?? gate.label
+  );
+}
+
+function backtestGateStatusLabel(i18n: AppI18n, status: BacktestReadinessGate["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { passed: "通过", blocked: "阻断", review: "复核" }[status];
+}
+
+function backtestGateDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("Run Pipeline to bind a reproducible OHLCV snapshot.", "运行流水线以绑定可复现 OHLCV 快照。")
+    .replace("Complete entry, exit, position, and risk rules before audit.", "审计前需要补齐入场、出场、仓位和风控规则。")
+    .replace("Paper execution waits for an audited run id.", "模拟执行等待可审计运行编号。")
+    .replace("Paper execution can be staged; live adapters remain gated.", "可以创建模拟执行；实盘适配器仍受闸门限制。")
+    .replace("is parseable.", "已可解析。")
+    .replace("Audited", "已审计")
+    .replace("bars are bound.", "根K线已绑定。")
+    .replace("Cash", "资金")
+    .replace("fee", "手续费")
+    .replace("slippage", "滑点")
+    .replaceAll("bps", "基点");
 }
 
 function portfolioRiskLabel(i18n: AppI18n, row: PortfolioRiskRow): string {

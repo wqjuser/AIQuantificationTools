@@ -1735,6 +1735,87 @@ em {
   color: #dce6ee;
 }
 
+.backtest-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backtest-evidence-grid article,
+.backtest-readiness-list article,
+.backtest-diagnostic-strip {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.backtest-evidence-grid article.positive,
+.backtest-readiness-list article.positive,
+.backtest-diagnostic-strip[data-tone="positive"] {
+  border-left-color: #4cc9ad;
+}
+
+.backtest-evidence-grid article.warning,
+.backtest-readiness-list article.warning,
+.backtest-diagnostic-strip[data-tone="warning"] {
+  border-left-color: #e8be62;
+}
+
+.backtest-evidence-grid article.risk,
+.backtest-readiness-list article.risk,
+.backtest-diagnostic-strip[data-tone="risk"] {
+  border-left-color: #ff7f6d;
+}
+
+.backtest-evidence-grid span,
+.backtest-readiness-list span,
+.backtest-diagnostic-strip span {
+  display: block;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.backtest-evidence-grid strong,
+.backtest-readiness-list strong,
+.backtest-diagnostic-strip strong {
+  display: block;
+  margin-top: 5px;
+  color: #dce6ee;
+  font-size: 14px;
+}
+
+.backtest-evidence-grid p,
+.backtest-readiness-list p,
+.backtest-diagnostic-strip p {
+  margin: 5px 0 0;
+  color: #a9b6c5;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.backtest-readiness-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backtest-diagnostic-strip {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.22fr) minmax(80px, 0.16fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.backtest-diagnostic-strip strong,
+.backtest-diagnostic-strip p {
+  margin-top: 0;
+}
+
 .backtest-assumptions {
   border: 1px solid #27364a;
   border-radius: 7px;
@@ -3257,6 +3338,9 @@ em {
   .strategy-editor,
   .strategy-draft-grid,
   .strategy-generated-snapshot,
+  .backtest-evidence-grid,
+  .backtest-readiness-list,
+  .backtest-diagnostic-strip,
   .backtest-row,
   .workflow-artifact-grid,
   .workflow-canvas-large {

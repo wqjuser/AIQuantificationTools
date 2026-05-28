@@ -223,6 +223,19 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".strategy-generated-snapshot");
   });
 
+  test("renders the backtest lab as an auditable evidence report", () => {
+    expect(appSource).toContain("buildBacktestEvidenceCards(workspace)");
+    expect(appSource).toContain("buildBacktestReadinessGates(workspace)");
+    expect(appSource).toContain("evidenceCards={backtestEvidenceCards}");
+    expect(appSource).toContain("readinessGates={backtestReadinessGates}");
+    expect(appSource).toContain('className="backtest-evidence-grid"');
+    expect(appSource).toContain('className="backtest-readiness-list"');
+    expect(appSource).toContain('className="backtest-diagnostic-strip"');
+    expect(styles).toContain(".backtest-evidence-grid");
+    expect(styles).toContain(".backtest-readiness-list");
+    expect(styles).toContain(".backtest-diagnostic-strip");
+  });
+
   test("collapses the terminal and workflow grid before cards become squeezed", () => {
     expect(styles).toContain("@media (max-width: 1180px)");
     expect(

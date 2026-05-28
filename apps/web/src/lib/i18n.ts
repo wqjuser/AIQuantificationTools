@@ -586,7 +586,12 @@ const strategyTextMaps: Record<Locale, Record<string, string>> = {
       "仅模拟盘；需要适配器认证、风控审批和人工确认",
     "Pending audited backtest": "等待可审计回测",
     "Pending risk sizing": "等待风控定仓",
-    "Paper only until a new audited run is available": "生成新的审计运行前仅允许模拟盘"
+    "Paper only until a new audited run is available": "生成新的审计运行前仅允许模拟盘",
+    "Ready for pipeline run": "等待流水线运行",
+    "Latest audited metric for the selected context.": "当前上下文的最新审计指标。",
+    "Backtest capital assumption.": "回测资金假设。",
+    "Round-trip fee assumption in basis points.": "以基点计的双边手续费假设。",
+    "Execution slippage assumption in basis points.": "以基点计的执行滑点假设。"
   }
 };
 
@@ -712,6 +717,10 @@ function translateStrategyText(locale: Locale, text: string): string {
   const barsReplayed = text.match(/^(\d+) bars replayed$/);
   if (barsReplayed) {
     return `已回放 ${barsReplayed[1]} 根K线`;
+  }
+  const basisPoints = text.match(/^(\d+(?:\.\d+)?) bps$/);
+  if (basisPoints) {
+    return `${basisPoints[1]} 基点`;
   }
   const closeAboveSma = text.match(/^Close > SMA(\d+)$/);
   if (closeAboveSma) {

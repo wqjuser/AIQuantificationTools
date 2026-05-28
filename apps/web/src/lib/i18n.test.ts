@@ -129,6 +129,12 @@ describe("i18n", () => {
     expect(zh.strategyText("Stop -8%, take profit +16%, drawdown guard 12%, paper only")).toBe(
       "止损 -8%，止盈 +16%，回撤保护 12%，仅模拟盘"
     );
+    expect(zh.strategyText("Ready for pipeline run")).toBe("等待流水线运行");
+    expect(zh.strategyText("Latest audited metric for the selected context.")).toBe("当前上下文的最新审计指标。");
+    expect(zh.strategyText("Backtest capital assumption.")).toBe("回测资金假设。");
+    expect(zh.strategyText("Round-trip fee assumption in basis points.")).toBe("以基点计的双边手续费假设。");
+    expect(zh.strategyText("Execution slippage assumption in basis points.")).toBe("以基点计的执行滑点假设。");
+    expect(zh.strategyText("3 bps")).toBe("3 基点");
     expect(zh.decisionMessage("自定义中文研究结论")).toBe("自定义中文研究结论");
   });
 });

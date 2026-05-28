@@ -6,6 +6,8 @@ import {
   buildAiEvidenceCards,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
+  buildBacktestEvidenceCards,
+  buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
   buildInstrumentFromSymbol,
@@ -760,6 +762,108 @@ describe("terminal workbench model", () => {
     };
 
     expect(buildBacktestTradeRows(workspace)).toEqual(workspace.backtestTrades);
+  });
+
+  test("builds an audited backtest evidence package from the bound research run", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-backtest-package",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-backtest-package",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+      backtestDiagnostics: [
+        {
+          id: "turnover",
+          label: "Turnover",
+          value: "18.2%",
+          detail: "Turnover remains inside portfolio risk limits.",
+          tone: "positive"
+        }
+      ]
+    });
+
+    expect(buildBacktestEvidenceCards(workspace)).toEqual([
+      {
+        id: "run",
+        label: "Run package",
+        value: "run-backtest-package",
+        detail: "240 1d bars · paper_only",
+        tone: "positive"
+      },
+      {
+        id: "strategy",
+        label: "Strategy revision",
+        value: "rev-backtest-package",
+        detail: "SMA trend demo",
+        tone: "positive"
+      },
+      {
+        id: "costs",
+        label: "Cost model",
+        value: "8 bps / 4 bps",
+        detail: "Cash 250,000",
+        tone: "neutral"
+      },
+      {
+        id: "diagnostics",
+        label: "Diagnostics",
+        value: "1 check",
+        detail: "Turnover: Turnover remains inside portfolio risk limits.",
+        tone: "positive"
+      }
+    ]);
+  });
+
+  test("marks backtest readiness gates blocked until evidence is reproducible", () => {
+    const draftWorkspace = buildTerminalWorkspace();
+
+    expect(buildBacktestEvidenceCards(draftWorkspace)[0]).toMatchObject({
+      id: "run",
+      value: "Draft workspace",
+      tone: "warning"
+    });
+    expect(buildBacktestReadinessGates(draftWorkspace)).toEqual([
+      {
+        id: "data",
+        label: "Data snapshot",
+        status: "blocked",
+        detail: "Run Pipeline to bind a reproducible OHLCV snapshot.",
+        tone: "risk"
+      },
+      {
+        id: "strategy",
+        label: "Strategy schema",
+        status: "passed",
+        detail: "SMA Trend / Bank Sector is parseable.",
+        tone: "positive"
+      },
+      {
+        id: "costs",
+        label: "Cost model",
+        status: "passed",
+        detail: "Cash 100,000 · fee 3 bps · slippage 2 bps.",
+        tone: "neutral"
+      },
+      {
+        id: "execution",
+        label: "Execution promotion",
+        status: "blocked",
+        detail: "Paper execution waits for an audited run id.",
+        tone: "risk"
+      }
+    ]);
   });
 
   test("derives module news events from local market, audit, execution, and agent evidence", () => {
