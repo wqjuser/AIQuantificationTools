@@ -318,13 +318,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             quant_loop_labels(workspace),
             [
-                "Idea Lab",
-                "Data & Factor",
-                "Strategy Builder",
-                "Backtest Lab",
-                "Agent Review",
+                "Market Research",
+                "Strategy Lab",
+                "Backtest Review",
                 "Paper Trading",
-                "Broker Center",
             ],
         )
         self.assertEqual(

@@ -1,8 +1,6 @@
 import {
-  Activity,
   BarChart3,
   BrainCircuit,
-  Cable,
   Database,
   Download,
   GitBranch,
@@ -51,7 +49,6 @@ import {
   buildBacktestAssumptionRows,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
-  buildModuleNewsEvents,
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
@@ -59,7 +56,6 @@ import {
   buildResearchRunComparisonRows,
   buildScannerCandidates,
   buildStrategyRuleRows,
-  buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
   AiWorkbenchAction,
@@ -70,7 +66,6 @@ import {
   BacktestAssumptionRow,
   BacktestTradeRow,
   BrokerAdapterRow,
-  ModuleNewsEvent,
   PaperPositionRow,
   PaperTradingRow,
   PortfolioRiskRow,
@@ -84,7 +79,6 @@ import {
   TerminalWorkspace,
   WorkflowRunLogEntry,
   WorkflowRunState,
-  WorkflowStageView,
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
@@ -125,11 +119,18 @@ const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
 const workflowStepDelayMs = 180;
 
-const moduleIcons: Record<TerminalModule["accent"], typeof BarChart3> = {
-  market: Radar,
+const workflowIcons: Record<string, typeof BarChart3> = {
+  research: Radar,
   strategy: GitBranch,
-  ai: BrainCircuit,
-  execution: WalletCards
+  backtest: BarChart3,
+  paper: WalletCards
+};
+
+const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
+  research: "market",
+  strategy: "strategy",
+  backtest: "ai",
+  paper: "execution"
 };
 
 function createWorkflowRunState(): WorkflowRunState {
@@ -166,9 +167,8 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
-  const [activeLoopStepId, setActiveLoopStepId] = useState(workspace.quantLoop[0]?.id ?? "idea");
-  const [activeModuleId, setActiveModuleId] = useState(workspace.modules[0]?.id ?? "watchlist");
-  const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(workspace.workflowNodes[0]?.id ?? "data");
+  const [activeLoopStepId, setActiveLoopStepId] = useState(workspace.quantLoop[0]?.id ?? "research");
+  const [, setActiveWorkflowStageId] = useState(workspace.workflowNodes[0]?.id ?? "data");
   const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>(() => createWorkflowRunState());
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
   const [symbolDraft, setSymbolDraft] = useState(workspace.selectedInstrument.symbol);
@@ -190,7 +190,7 @@ export function App() {
   const skipNextSymbolSearchRef = useRef(false);
   const i18n = createI18n(locale);
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
-  const activeModule = workspace.modules.find((module) => module.id === activeModuleId) ?? workspace.modules[0];
+  const activeWorkflowAccent = workflowAccentByStep[activeLoopStep?.id ?? "research"] ?? "market";
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
@@ -207,9 +207,6 @@ export function App() {
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
-  const moduleNewsEvents = buildModuleNewsEvents(workspace);
-  const workflowStages = buildWorkflowStages(workspace, workflowRunState);
-  const activeWorkflowStage = workflowStages.find((stage) => stage.id === activeWorkflowStageId) ?? workflowStages[0];
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
 
   useEffect(() => {
@@ -320,7 +317,7 @@ export function App() {
       log = [...log, createWorkflowLogEntry(runId, log.length + 1, stageId, level, message)];
     };
 
-    setActiveModuleId("workflow");
+    setActiveLoopStepId("backtest");
     setIsRunning(true);
     setPaperExecutionRecord(null);
     appendLog("data", "info", `Data snapshot prepared for ${selectedContext}`);
@@ -414,7 +411,6 @@ export function App() {
           error: undefined
         }));
       }
-      setActiveModuleId("workflow");
       setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");
       setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
@@ -503,7 +499,6 @@ export function App() {
             error: undefined
           }));
         }
-        setActiveModuleId("workflow");
         setActiveLoopStepId("backtest");
         setActiveWorkflowStageId("execution");
         setWorkflowRunState(buildAuditReplayWorkflowState(result.run));
@@ -533,6 +528,7 @@ export function App() {
         source: "core",
         statusLabel: "Instrument selected"
       }));
+      setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
     },
@@ -563,7 +559,7 @@ export function App() {
       source: "core",
       statusLabel: "AI action generated"
     }));
-    setActiveModuleId(action === "strategy-draft" ? "watchlist" : "news");
+    setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "backtest");
   }, []);
 
   const updateStrategyField = useCallback((field: StrategyField, value: string) => {
@@ -574,7 +570,6 @@ export function App() {
       statusLabel: "Strategy edited"
     }));
     setActiveLoopStepId("strategy");
-    setActiveModuleId("watchlist");
     setActiveWorkflowStageId("factor");
   }, []);
 
@@ -587,7 +582,6 @@ export function App() {
       statusLabel: "Backtest assumptions edited"
     }));
     setActiveLoopStepId("backtest");
-    setActiveModuleId("watchlist");
     setActiveWorkflowStageId("backtest");
   }, []);
 
@@ -620,7 +614,6 @@ export function App() {
       statusLabel: "Paper execution recorded",
       error: undefined
     }));
-    setActiveModuleId("broker");
     setActiveLoopStepId("paper");
     setActiveWorkflowStageId("execution");
     setIsSubmittingPaperExecution(false);
@@ -629,7 +622,6 @@ export function App() {
   const selectQuantLoopStep = useCallback((stepId: string) => {
     const target = buildQuantLoopNavigationTarget(stepId);
     setActiveLoopStepId(stepId);
-    setActiveModuleId(target.moduleId);
     setActiveWorkflowStageId(target.workflowStageId);
   }, []);
 
@@ -654,7 +646,6 @@ export function App() {
       selectInstrument(instrument);
       setSearchSuggestions([]);
       setIsSearchOpen(false);
-      setActiveModuleId("watchlist");
     },
     [marketDraft, searchSuggestions, selectInstrument, symbolDraft]
   );
@@ -672,7 +663,6 @@ export function App() {
         market: suggestion.market,
         changePct: 0
       });
-      setActiveModuleId("watchlist");
     },
     [selectInstrument]
   );
@@ -743,6 +733,154 @@ export function App() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [isChartExpanded]);
 
+  const runActiveWorkflowAction = useCallback(() => {
+    if (activeLoopStepId === "strategy") {
+      runAiWorkbenchAction("strategy-draft");
+      return;
+    }
+    if (activeLoopStepId === "paper") {
+      void submitPaperExecution();
+      return;
+    }
+    void runPipeline();
+  }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, submitPaperExecution]);
+
+  const isWorkflowActionDisabled =
+    isRefreshing ||
+    isRunning ||
+    (activeLoopStepId === "paper" && (isSubmittingPaperExecution || !workspace.researchRun?.runId));
+
+  const renderChartPanel = (className = "chart-panel") => (
+    <Panel
+      title={i18n.t("panel.chart.title")}
+      subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
+      className={className}
+      action={
+        <button
+          aria-label={i18n.t("chart.expand")}
+          className="panel-icon-button"
+          onClick={() => setIsChartExpanded(true)}
+          title={i18n.t("chart.expand")}
+          type="button"
+        >
+          <Maximize2 size={16} />
+        </button>
+      }
+    >
+      <div className="chart-panel-body">
+        <KlineChartCanvas
+          key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
+          bars={klinesState.bars}
+          locale={locale}
+          market={klinesState.market}
+          onLoadHistorical={loadHistoricalKlines}
+          symbol={klinesState.symbol}
+          timeframe={klinesState.timeframe}
+        />
+        {!klinesState.bars.length && !isChartLoading ? <div className="chart-empty">{i18n.t("chart.noData")}</div> : null}
+        <ChartDataStrip i18n={i18n} latestChartBar={latestChartBar} state={klinesState} />
+      </div>
+    </Panel>
+  );
+
+  const renderStrategyPanel = (className = "strategy-panel") => (
+    <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)} className={className}>
+      <StrategySummary
+        i18n={i18n}
+        onUpdateStrategyField={updateStrategyField}
+        rows={strategyRuleRows}
+        workspace={workspace}
+      />
+    </Panel>
+  );
+
+  const renderAgentPanel = (className = "watchlist-ai-panel") => (
+    <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className={className}>
+      <div className="agent-panel-body">
+        <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
+        <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
+      </div>
+    </Panel>
+  );
+
+  const renderWorkflowNodesPanel = (className = "watchlist-workflow-panel") => (
+    <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")} className={className}>
+      <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
+    </Panel>
+  );
+
+  const renderActiveWorkflow = () => {
+    if (activeLoopStepId === "strategy") {
+      return (
+        <>
+          {renderChartPanel("chart-panel workflow-chart-panel")}
+          {renderStrategyPanel("strategy-panel workflow-strategy-panel")}
+          {renderAgentPanel("workflow-agent-panel")}
+          <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+        </>
+      );
+    }
+
+    if (activeLoopStepId === "backtest") {
+      return (
+        <>
+          <BacktestReplayPanel
+            assumptionRows={backtestAssumptionRows}
+            className="workflow-backtest-panel"
+            i18n={i18n}
+            onUpdateAssumption={updateBacktestAssumption}
+            rows={backtestTradeRows}
+          />
+          {renderWorkflowNodesPanel("workflow-nodes-panel")}
+          <RunHistoryPanel
+            className="workflow-history-panel"
+            i18n={i18n}
+            onExport={exportRun}
+            onImportFile={importRunExportFile}
+            onReplay={replayRun}
+            runComparisonRows={runComparisonRows}
+            runHistory={runHistory}
+            workspace={workspace}
+          />
+          {renderAgentPanel("workflow-agent-panel")}
+        </>
+      );
+    }
+
+    if (activeLoopStepId === "paper") {
+      return (
+        <>
+          <PortfolioWorkspace
+            className="workflow-portfolio-panel"
+            executionClassName="workflow-execution-panel"
+            i18n={i18n}
+            isSubmittingPaperExecution={isSubmittingPaperExecution}
+            onSubmitPaperExecution={submitPaperExecution}
+            paperRows={visiblePaperTradingRows}
+            positionRows={paperPositionRows}
+            rows={portfolioRiskRows}
+            workspace={workspace}
+          />
+          <BrokerAdapterPanel adapterRows={brokerAdapterRows} className="workflow-broker-panel" i18n={i18n} />
+        </>
+      );
+    }
+
+    return (
+      <>
+        {renderChartPanel("chart-panel workflow-chart-panel")}
+        <ScannerWorkspace
+          candidates={scannerCandidates}
+          className="workflow-scanner-panel"
+          i18n={i18n}
+          onSelectInstrument={selectInstrument}
+        />
+        {renderWorkflowNodesPanel("workflow-nodes-panel")}
+        <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+      </>
+    );
+  };
+
   return (
     <div className="terminal-shell">
       <aside className="left-rail">
@@ -757,38 +895,26 @@ export function App() {
         <section className="rail-section">
           <p className="section-label">{i18n.t("section.quantLoop")}</p>
           <nav className="loop-nav">
-            {workspace.quantLoop.map((step, index) => (
-              <button
-                className={`loop-step ${step.status} ${activeLoopStepId === step.id ? "selected" : ""}`}
-                key={step.id}
-                onClick={() => selectQuantLoopStep(step.id)}
-                type="button"
-              >
-                <span>{index + 1}</span>
-                {i18n.quantLoopLabel(step.id, step.label)}
-              </button>
-            ))}
-          </nav>
-        </section>
-
-        <section className="rail-section">
-          <p className="section-label">{i18n.t("section.terminalModules")}</p>
-          <div className="module-list">
-            {workspace.modules.map((module) => {
-              const Icon = moduleIcons[module.accent];
+            {workspace.quantLoop.map((step, index) => {
+              const Icon = workflowIcons[step.id] ?? Radar;
               return (
                 <button
-                  className={`module-button ${module.accent} ${activeModuleId === module.id ? "active" : ""}`}
-                  key={module.id}
-                  onClick={() => setActiveModuleId(module.id)}
+                  className={`loop-step ${step.status === "locked" ? "locked" : ""} ${
+                    activeLoopStepId === step.id ? "selected active" : ""
+                  }`}
+                  key={step.id}
+                  onClick={() => selectQuantLoopStep(step.id)}
                   type="button"
                 >
-                  <Icon size={16} />
-                  {i18n.moduleLabel(module.id, module.label)}
+                  <span className="workflow-step-index">{index + 1}</span>
+                  <Icon size={15} />
+                  <strong>{i18n.quantLoopLabel(step.id, step.label)}</strong>
+                  <small>{i18n.quantLoopFocus(step.id, { symbol: workspace.selectedInstrument.symbol })}</small>
+                  <em className="workflow-next-action">{workflowNextActionLabel(i18n, step.id)}</em>
                 </button>
               );
             })}
-          </div>
+          </nav>
         </section>
 
         <section className="workspace-card">
@@ -931,24 +1057,18 @@ export function App() {
           ))}
         </section>
 
-        <section className={`module-focus-card ${activeModule?.accent ?? "market"}`}>
+        <section className={`module-focus-card ${activeWorkflowAccent}`}>
           <div>
             <span className="section-label">{i18n.t("moduleFocus.label")}</span>
             <strong>
-              {i18n.moduleLabel(activeModule?.id ?? "watchlist", activeModule?.label ?? "Watchlist")} ·{" "}
-              {i18n.quantLoopLabel(activeLoopStep?.id ?? "idea", activeLoopStep?.label ?? "Idea Lab")}
+              {i18n.quantLoopLabel(activeLoopStep?.id ?? "research", activeLoopStep?.label ?? "Market Research")}
             </strong>
-            <p>
-              {i18n.moduleFocus(activeModule?.id ?? "watchlist", {
-                market: i18n.marketLabel(workspace.selectedInstrument.market),
-                symbol: workspace.selectedInstrument.symbol
-              })}
-            </p>
-            <p>{i18n.quantLoopFocus(activeLoopStep?.id ?? "idea", { symbol: workspace.selectedInstrument.symbol })}</p>
+            <p>{i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}</p>
           </div>
-          <span className="module-focus-symbol">
-            {i18n.t("moduleFocus.instrument")} · {workspace.selectedInstrument.symbol}
-          </span>
+          <button className="run-button compact" disabled={isWorkflowActionDisabled} onClick={runActiveWorkflowAction} type="button">
+            {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
+            {workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
+          </button>
         </section>
 
         <section className="metrics-row">
@@ -960,144 +1080,8 @@ export function App() {
           ))}
         </section>
 
-        <AssistantCommandStrip i18n={i18n} onRunAiAction={runAiWorkbenchAction} workspace={workspace} />
-
-        <section className={`center-grid ${activeModuleId === "watchlist" ? "watchlist-layout" : "module-workspace-grid"}`}>
-          {activeModuleId === "watchlist" ? (
-            <>
-              <Panel
-                title={i18n.t("panel.chart.title")}
-                subtitle={i18n.t("panel.chart.subtitle", { timeframe: workspace.selectedTimeframe })}
-                className="chart-panel"
-                action={
-                  <button
-                    aria-label={i18n.t("chart.expand")}
-                    className="panel-icon-button"
-                    onClick={() => setIsChartExpanded(true)}
-                    title={i18n.t("chart.expand")}
-                    type="button"
-                  >
-                    <Maximize2 size={16} />
-                  </button>
-                }
-              >
-                <div className="chart-panel-body">
-                  <KlineChartCanvas
-                    key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
-                    bars={klinesState.bars}
-                    locale={locale}
-                    market={klinesState.market}
-                    onLoadHistorical={loadHistoricalKlines}
-                    symbol={klinesState.symbol}
-                    timeframe={klinesState.timeframe}
-                  />
-                  {!klinesState.bars.length && !isChartLoading ? (
-                    <div className="chart-empty">{i18n.t("chart.noData")}</div>
-                  ) : null}
-                  <ChartDataStrip i18n={i18n} latestChartBar={latestChartBar} state={klinesState} />
-                </div>
-              </Panel>
-
-              <Panel
-                title={i18n.t("panel.strategy.title")}
-                subtitle={i18n.strategyText(workspace.strategy.name)}
-                className="strategy-panel"
-              >
-                <StrategySummary
-                  i18n={i18n}
-                  onUpdateStrategyField={updateStrategyField}
-                  rows={strategyRuleRows}
-                  workspace={workspace}
-                />
-              </Panel>
-
-              <BacktestReplayPanel
-                assumptionRows={backtestAssumptionRows}
-                className="watchlist-backtest-panel"
-                i18n={i18n}
-                onUpdateAssumption={updateBacktestAssumption}
-                rows={backtestTradeRows}
-              />
-
-              <Panel
-                title={i18n.t("panel.nodeWorkflow.title")}
-                subtitle={i18n.t("panel.nodeWorkflow.subtitle")}
-                className="watchlist-workflow-panel"
-              >
-                <CompactWorkflowNodes i18n={i18n} workspace={workspace} />
-              </Panel>
-
-              <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className="watchlist-ai-panel">
-                <div className="agent-panel-body">
-                  <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
-                  <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
-                </div>
-              </Panel>
-
-              <DecisionLogPanel className="watchlist-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
-
-              <ExecutionPanel
-                i18n={i18n}
-                isSubmitting={isSubmittingPaperExecution}
-                onSubmit={submitPaperExecution}
-                rows={visiblePaperTradingRows}
-                workspace={workspace}
-                className="watchlist-execution-panel"
-              />
-
-              <RunHistoryPanel
-                className="watchlist-history-panel"
-                i18n={i18n}
-                onExport={exportRun}
-                onImportFile={importRunExportFile}
-                onReplay={replayRun}
-                runComparisonRows={runComparisonRows}
-                runHistory={runHistory}
-                workspace={workspace}
-              />
-            </>
-          ) : null}
-
-          {activeModuleId === "scanner" ? (
-            <ScannerWorkspace candidates={scannerCandidates} i18n={i18n} onSelectInstrument={selectInstrument} />
-          ) : null}
-
-          {activeModuleId === "portfolio" ? (
-            <PortfolioWorkspace
-              i18n={i18n}
-              paperRows={visiblePaperTradingRows}
-              positionRows={paperPositionRows}
-              rows={portfolioRiskRows}
-              workspace={workspace}
-            />
-          ) : null}
-
-          {activeModuleId === "news" ? (
-            <NewsWorkspace events={moduleNewsEvents} i18n={i18n} />
-          ) : null}
-
-          {activeModuleId === "broker" ? (
-            <BrokerWorkspace
-              adapterRows={brokerAdapterRows}
-              executionRows={visiblePaperTradingRows}
-              i18n={i18n}
-              isSubmittingPaperExecution={isSubmittingPaperExecution}
-              onSubmitPaperExecution={submitPaperExecution}
-              workspace={workspace}
-            />
-          ) : null}
-
-          {activeModuleId === "workflow" ? (
-            <WorkflowWorkspace
-              activeStage={activeWorkflowStage}
-              i18n={i18n}
-              isRunning={isRunning}
-              onRunPipeline={runPipeline}
-              onSelectStage={setActiveWorkflowStageId}
-              runState={workflowRunState}
-              stages={workflowStages}
-            />
-          ) : null}
+        <section className={`center-grid workflow-layout ${activeLoopStepId}-layout`}>
+          {renderActiveWorkflow()}
         </section>
       </main>
 
@@ -1147,6 +1131,16 @@ export function App() {
 
 type AppI18n = ReturnType<typeof createI18n>;
 
+function workflowNextActionLabel(i18n: AppI18n, stepId: string): string {
+  if (stepId === "strategy") {
+    return i18n.t("aiAction.strategyDraft");
+  }
+  if (stepId === "paper") {
+    return i18n.t("execution.submitPaper");
+  }
+  return i18n.t("action.runPipeline");
+}
+
 function ChartDataStrip({
   i18n,
   latestChartBar,
@@ -1164,52 +1158,6 @@ function ChartDataStrip({
       <span>{i18n.t("chart.source")}: {state.quality.source}</span>
       <span>{i18n.t("chart.bars", { count: state.bars.length })}</span>
     </div>
-  );
-}
-
-function AssistantCommandStrip({
-  i18n,
-  onRunAiAction,
-  workspace
-}: {
-  i18n: AppI18n;
-  onRunAiAction: (action: AiWorkbenchAction) => void;
-  workspace: TerminalWorkspace;
-}) {
-  return (
-    <section className="assistant-command-strip">
-      <Panel title={i18n.t("panel.agentRoles.title")} subtitle={i18n.t("panel.agentRoles.subtitle")} className="agent-panel">
-        <div className="agent-grid">
-          {workspace.agents.map((agent) => (
-            <span className={`agent-role ${agent.stance}`} key={agent.id}>
-              {i18n.agentLabel(agent.id, agent.label)}
-            </span>
-          ))}
-        </div>
-      </Panel>
-
-      <Panel title={i18n.t("panel.aiActions.title")} subtitle={i18n.t("panel.aiActions.subtitle")}>
-        <div className="ai-actions">
-          <button onClick={() => onRunAiAction("debate")} type="button">
-            <BrainCircuit size={15} />
-            {i18n.t("aiAction.debate")}
-          </button>
-          <button onClick={() => onRunAiAction("explain")} type="button">
-            <BarChart3 size={15} />
-            {i18n.t("aiAction.explain")}
-          </button>
-          <button onClick={() => onRunAiAction("strategy-draft")} type="button">
-            <Cable size={15} />
-            {i18n.t("aiAction.strategyDraft")}
-          </button>
-        </div>
-      </Panel>
-
-      <footer className="safety-footer">
-        <Activity size={16} />
-        <span>{i18n.t("safety.footer")}</span>
-      </footer>
-    </section>
   );
 }
 
@@ -1595,15 +1543,17 @@ function ExecutionPanel({
 
 function ScannerWorkspace({
   candidates,
+  className = "module-workspace-panel",
   i18n,
   onSelectInstrument
 }: {
   candidates: ScannerCandidate[];
+  className?: string;
   i18n: AppI18n;
   onSelectInstrument: (instrument: TerminalWorkspace["selectedInstrument"]) => void;
 }) {
   return (
-    <Panel title={i18n.t("module.scanner.title")} subtitle={i18n.t("module.scanner.subtitle")} className="module-workspace-panel">
+    <Panel title={i18n.t("module.scanner.title")} subtitle={i18n.t("module.scanner.subtitle")} className={className}>
       <div className="module-toolbar">
         <span>{i18n.t("module.scanner.filters")}: watchlist · momentum · risk</span>
         <strong>{candidates.length}</strong>
@@ -1640,13 +1590,21 @@ function ScannerWorkspace({
 }
 
 function PortfolioWorkspace({
+  className = "module-workspace-panel",
+  executionClassName,
   i18n,
+  isSubmittingPaperExecution = false,
+  onSubmitPaperExecution,
   paperRows,
   positionRows,
   rows,
   workspace
 }: {
+  className?: string;
+  executionClassName?: string;
   i18n: AppI18n;
+  isSubmittingPaperExecution?: boolean;
+  onSubmitPaperExecution?: () => void;
   paperRows: PaperTradingRow[];
   positionRows: PaperPositionRow[];
   rows: PortfolioRiskRow[];
@@ -1654,7 +1612,7 @@ function PortfolioWorkspace({
 }) {
   return (
     <>
-      <Panel title={i18n.t("module.portfolio.title")} subtitle={i18n.t("module.portfolio.subtitle")} className="module-workspace-panel">
+      <Panel title={i18n.t("module.portfolio.title")} subtitle={i18n.t("module.portfolio.subtitle")} className={className}>
         <div className="risk-ledger">
           {rows.map((row) => (
             <article className={`risk-ledger-row ${row.tone}`} key={row.id}>
@@ -1695,27 +1653,15 @@ function PortfolioWorkspace({
           </div>
         </div>
       </Panel>
-      <ExecutionPanel i18n={i18n} rows={paperRows} workspace={workspace} />
+      <ExecutionPanel
+        className={executionClassName}
+        i18n={i18n}
+        isSubmitting={isSubmittingPaperExecution}
+        onSubmit={onSubmitPaperExecution}
+        rows={paperRows}
+        workspace={workspace}
+      />
     </>
-  );
-}
-
-function NewsWorkspace({ events, i18n }: { events: ModuleNewsEvent[]; i18n: AppI18n }) {
-  return (
-    <Panel title={i18n.t("module.news.title")} subtitle={i18n.t("module.news.subtitle")} className="module-workspace-panel">
-      <div className="module-toolbar">
-        <span>{i18n.t("module.news.context")}</span>
-      </div>
-      <div className="event-stream">
-        {events.map((event) => (
-          <article className={`event-row ${event.impact}`} key={event.id}>
-            <span>{eventSourceLabel(i18n, event)}</span>
-            <strong>{eventTitleLabel(i18n, event)}</strong>
-            <p>{eventDetailLabel(i18n, event)}</p>
-          </article>
-        ))}
-      </div>
-    </Panel>
   );
 }
 
@@ -1736,28 +1682,7 @@ function BrokerWorkspace({
 }) {
   return (
     <>
-      <Panel title={i18n.t("module.broker.title")} subtitle={i18n.t("module.broker.subtitle")} className="module-workspace-panel">
-        <div className="broker-adapter-table">
-          <div className="broker-adapter-row broker-adapter-head">
-            <span>{i18n.t("broker.adapter")}</span>
-            <span>{i18n.t("broker.market")}</span>
-            <span>{i18n.t("broker.route")}</span>
-            <span>{i18n.t("broker.status")}</span>
-            <span>{i18n.t("broker.certification")}</span>
-            <span>{i18n.t("broker.nextStep")}</span>
-          </div>
-          {adapterRows.map((row) => (
-            <article className={`broker-adapter-row ${row.tone}`} key={row.id}>
-              <span>{brokerAdapterName(i18n, row)}</span>
-              <span>{i18n.marketLabel(row.market)}</span>
-              <span>{brokerRouteLabel(i18n, row.route)}</span>
-              <span>{brokerStatusLabel(i18n, row.status)}</span>
-              <span>{brokerCertificationLabel(i18n, row.certification)}</span>
-              <span>{brokerNextStepLabel(i18n, row.nextStep)}</span>
-            </article>
-          ))}
-        </div>
-      </Panel>
+      <BrokerAdapterPanel adapterRows={adapterRows} className="module-workspace-panel" i18n={i18n} />
       <ExecutionPanel
         i18n={i18n}
         isSubmitting={isSubmittingPaperExecution}
@@ -1769,96 +1694,39 @@ function BrokerWorkspace({
   );
 }
 
-function WorkflowWorkspace({
-  activeStage,
-  i18n,
-  isRunning,
-  onRunPipeline,
-  onSelectStage,
-  runState,
-  stages
+function BrokerAdapterPanel({
+  adapterRows,
+  className,
+  i18n
 }: {
-  activeStage?: WorkflowStageView;
+  adapterRows: BrokerAdapterRow[];
+  className?: string;
   i18n: AppI18n;
-  isRunning: boolean;
-  onRunPipeline: () => void;
-  onSelectStage: (stageId: string) => void;
-  runState: WorkflowRunState;
-  stages: WorkflowStageView[];
 }) {
-  const stageLabelById = new Map(stages.map((stage) => [stage.id, workflowStageLabel(i18n, stage).label]));
-  const visibleLog = runState.log.slice(-6);
-
   return (
-    <>
-      <Panel title={i18n.t("module.workflow.title")} subtitle={i18n.t("module.workflow.subtitle")} className="module-workspace-panel workflow-workspace">
-        <div className="workflow-canvas-label">{i18n.t("module.workflow.canvas")}</div>
-        <div className="workflow-canvas-large">
-          {stages.map((stage, index) => (
-            <button
-              className={`workflow-stage ${stage.status} ${activeStage?.id === stage.id ? "selected" : ""}`}
-              key={stage.id}
-              onClick={() => onSelectStage(stage.id)}
-              type="button"
-            >
-              <small>{String(index + 1).padStart(2, "0")}</small>
-              <strong>{workflowStageLabel(i18n, stage).label}</strong>
-              <span>{workflowStageLabel(i18n, stage).detail}</span>
-            </button>
-          ))}
+    <Panel title={i18n.t("module.broker.title")} subtitle={i18n.t("module.broker.subtitle")} className={className}>
+      <div className="broker-adapter-table">
+        <div className="broker-adapter-row broker-adapter-head">
+          <span>{i18n.t("broker.adapter")}</span>
+          <span>{i18n.t("broker.market")}</span>
+          <span>{i18n.t("broker.route")}</span>
+          <span>{i18n.t("broker.status")}</span>
+          <span>{i18n.t("broker.certification")}</span>
+          <span>{i18n.t("broker.nextStep")}</span>
         </div>
-      </Panel>
-      <Panel
-        title={activeStage ? workflowStageLabel(i18n, activeStage).label : i18n.t("module.workflow.output")}
-        subtitle={workflowStatusLabel(i18n, activeStage?.status ?? "ready")}
-        action={
-          <button className="run-button compact" disabled={isRunning} onClick={onRunPipeline} type="button">
-            {isRunning ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
-            {i18n.t("module.workflow.run")}
-          </button>
-        }
-      >
-        <div className="workflow-output">
-          <span>{i18n.t("module.workflow.output")}</span>
-          <strong>{workflowOutputLabel(i18n, activeStage?.output ?? "Ready for pipeline run")}</strong>
-          <p>{activeStage ? workflowStageLabel(i18n, activeStage).detail : ""}</p>
-        </div>
-        {activeStage?.artifacts.length ? (
-          <div className="workflow-artifacts">
-            <span>{i18n.t("module.workflow.artifacts")}</span>
-            <div className="workflow-artifact-grid">
-              {activeStage.artifacts.map((artifact) => (
-                <article className={`workflow-artifact ${artifact.tone}`} key={`${artifact.label}-${artifact.value}`}>
-                  <span>{workflowArtifactLabel(i18n, artifact)}</span>
-                  <strong>{workflowArtifactValue(i18n, artifact)}</strong>
-                  <p>{workflowArtifactDetail(i18n, artifact)}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="workflow-log">
-          <span>{i18n.t("module.workflow.log")}</span>
-          {visibleLog.length ? (
-            <div className="workflow-log-list">
-              {visibleLog.map((entry) => (
-                <p className={`workflow-log-entry ${entry.level}`} key={entry.id}>
-                  <small>{stageLabelById.get(entry.stageId) ?? entry.stageId}</small>
-                  <span>{workflowOutputLabel(i18n, entry.message)}</span>
-                </p>
-              ))}
-            </div>
-          ) : (
-            <p className="workflow-log-empty">{i18n.t("module.workflow.idle")}</p>
-          )}
-        </div>
-      </Panel>
-    </>
+        {adapterRows.map((row) => (
+          <article className={`broker-adapter-row ${row.tone}`} key={row.id}>
+            <span>{brokerAdapterName(i18n, row)}</span>
+            <span>{i18n.marketLabel(row.market)}</span>
+            <span>{brokerRouteLabel(i18n, row.route)}</span>
+            <span>{brokerStatusLabel(i18n, row.status)}</span>
+            <span>{brokerCertificationLabel(i18n, row.certification)}</span>
+            <span>{brokerNextStepLabel(i18n, row.nextStep)}</span>
+          </article>
+        ))}
+      </div>
+    </Panel>
   );
-}
-
-function workflowStageLabel(i18n: AppI18n, stage: WorkflowStageView): { label: string; detail: string } {
-  return i18n.workflowNode(stage.id, stage.label, stage.detail);
 }
 
 function scannerSignalLabel(i18n: AppI18n, signal: ScannerCandidate["signal"]): string {
@@ -2241,224 +2109,6 @@ function agentEvidenceDetail(i18n: AppI18n, card: AiEvidenceCard): string {
     .replace("Adapter certified: passed", "适配器认证：通过")
     .replace("Risk approved: passed", "风控审批：通过")
     .replace("Human confirmed: passed", "人工确认：通过");
-}
-
-function eventSourceLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
-  if (i18n.locale === "en-US") {
-    return event.source;
-  }
-  return (
-    {
-      "AI committee": "智能体委员会",
-      "Market data": "行情数据",
-      "Audit log": "审计日志",
-      "Risk engine": "风控引擎"
-    }[event.source] ?? event.source
-  );
-}
-
-function eventTitleLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
-  if (i18n.locale === "en-US") {
-    return event.title;
-  }
-  const quoteUpdate = event.title.match(/^(.+) quote (.+) from (.+)$/);
-  if (quoteUpdate) {
-    return `${quoteUpdate[1]} 报价 ${quoteUpdate[2]} · ${quoteUpdate[3]}`;
-  }
-  const quoteMissing = event.title.match(/^(.+) quote unavailable$/);
-  if (quoteMissing) {
-    return `${quoteMissing[1]} 报价暂不可用`;
-  }
-  const auditRun = event.title.match(/^Run (.+) bound to (.+)$/);
-  if (auditRun) {
-    return `审计运行 ${auditRun[1]} 已绑定 ${auditRun[2]}`;
-  }
-  const auditNeeded = event.title.match(/^(.+) needs a fresh audited run$/);
-  if (auditNeeded) {
-    return `${auditNeeded[1]} 需要新的审计运行`;
-  }
-  const blockedGates = event.title.match(/^(\d+) execution gates blocked$/);
-  if (blockedGates) {
-    return `${blockedGates[1]} 个执行闸门阻断`;
-  }
-  if (event.title === "Live execution gates open") {
-    return "实盘执行闸门已开启";
-  }
-  const separatorIndex = event.title.indexOf(": ");
-  if (separatorIndex > 0) {
-    const agent = event.title.slice(0, separatorIndex);
-    const message = event.title.slice(separatorIndex + 2);
-    return `${i18n.decisionAgent(agent)}: ${i18n.decisionMessage(message)}`;
-  }
-  return i18n.decisionMessage(event.title);
-}
-
-function eventDetailLabel(i18n: AppI18n, event: ModuleNewsEvent): string {
-  if (i18n.locale === "en-US") {
-    return event.detail;
-  }
-  const quoteDetail = event.detail.match(/^As of (.+) · change (.+)$/);
-  if (quoteDetail) {
-    return `截至 ${quoteDetail[1]} · 涨跌幅 ${quoteDetail[2]}`;
-  }
-  const auditRun = event.detail.match(/^(.+) (.+) bars · revision (.+) · (.+)$/);
-  if (auditRun) {
-    return `${auditRun[1]} 根 ${auditRun[2]} K线 · 版本 ${auditRun[3]} · ${auditRun[4].replace("paper_only", "模拟盘")}`;
-  }
-  if (event.detail === "Run Pipeline to bind data, backtest, agent review, and execution gates.") {
-    return "运行流水线以绑定数据、回测、智能体评审和执行闸门。";
-  }
-  if (event.detail === "Refresh workspace or configure a market data adapter.") {
-    return "刷新工作区或配置行情数据适配器。";
-  }
-  return event.detail
-    .replace("Linked to ", "已关联 ")
-    .replace(" research context.", " 研究上下文。")
-    .replace("Adapter certified: blocked", "适配器认证：阻断")
-    .replace("Risk approved: blocked", "风控审批：阻断")
-    .replace("Human confirmed: blocked", "人工确认：阻断")
-    .replace("Adapter certified: passed", "适配器认证：通过")
-    .replace("Risk approved: passed", "风控审批：通过")
-    .replace("Human confirmed: passed", "人工确认：通过");
-}
-
-function workflowStatusLabel(i18n: AppI18n, status: WorkflowStageView["status"]): string {
-  if (i18n.locale === "en-US") {
-    return {
-      active: "Active",
-      ready: "Ready",
-      blocked: "Blocked",
-      running: "Running",
-      completed: "Completed",
-      failed: "Failed"
-    }[status];
-  }
-  return { active: "运行中", ready: "就绪", blocked: "阻断", running: "运行中", completed: "已完成", failed: "失败" }[
-    status
-  ];
-}
-
-function workflowOutputLabel(i18n: AppI18n, output: string): string {
-  if (i18n.locale === "en-US") {
-    return output;
-  }
-  const dataSnapshot = output.match(/^Data snapshot prepared for (.+)$/);
-  if (dataSnapshot) {
-    return `已准备数据快照：${dataSnapshot[1]}`;
-  }
-  const backtestReceived = output.match(/^Audited backtest received: (.+) bars · (.+)$/);
-  if (backtestReceived) {
-    return `已收到审计回测：${backtestReceived[1]} 根K线 · ${backtestReceived[2].replace("paper_only", "模拟盘")}`;
-  }
-  const replayLoaded = output.match(/^Audit replay loaded: (.+) bars · (.+)$/);
-  if (replayLoaded) {
-    return `已加载审计回放：${replayLoaded[1]} 根K线 · ${replayLoaded[2].replace("paper_only", "模拟盘")}`;
-  }
-  const restoredData = output.match(/^Audit data snapshot restored: (.+) · (.+) · (.+) bars$/);
-  if (restoredData) {
-    return `已恢复审计数据快照：${restoredData[1]} · ${restoredData[2]} · ${restoredData[3]} 根K线`;
-  }
-  const restoredRevision = output.match(/^Strategy revision restored: (.+)$/);
-  if (restoredRevision) {
-    return `已恢复策略版本：${restoredRevision[1]}`;
-  }
-  const restoredDecisions = output.match(/^Decision notes restored: (.+)$/);
-  if (restoredDecisions) {
-    return `已恢复决策记录：${restoredDecisions[1]} 条`;
-  }
-  const restoredExecution = output.match(/^Execution mode restored: (.+); live gates remain controlled locally$/);
-  if (restoredExecution) {
-    return `已恢复执行模式：${restoredExecution[1].replace("paper_only", "模拟盘")}；实盘闸门仍由本地控制`;
-  }
-  const failedBacktest = output.match(/^Pipeline failed before audited backtest: (.+)$/);
-  if (failedBacktest) {
-    return `审计回测前流水线失败：${failedBacktest[1]}`;
-  }
-  return output
-    .replace("Paper execution only", "仅模拟盘执行")
-    .replace("Ready for pipeline run", "等待运行流水线")
-    .replace("Factor set staged: SMA / RSI / volume", "因子集已准备：SMA / RSI / 成交量")
-    .replace("Backtest request sent to local core", "回测请求已发送到本地核心")
-    .replace("Audited backtest received", "已收到审计回测")
-    .replace("Agent committee report received", "智能体委员会报告已收到")
-    .replace("Live execution remains blocked; paper review is ready", "实盘执行保持阻断；模拟复盘已就绪");
-}
-
-function workflowArtifactLabel(i18n: AppI18n, artifact: WorkflowStageView["artifacts"][number]): string {
-  if (i18n.locale === "en-US") {
-    return artifact.label;
-  }
-  const directLabel = {
-    Instrument: "标的",
-    Timeframe: "周期",
-    Rows: "数据行",
-    Entry: "入场",
-    Exit: "出场",
-    Risk: "风控",
-    "Initial cash": "初始资金",
-    Fee: "手续费",
-    Slippage: "滑点",
-    Mode: "模式",
-    "Live gates": "实盘闸门"
-  }[artifact.label];
-  if (directLabel) {
-    return directLabel;
-  }
-  const metricLabel = i18n.metricLabel(artifact.label);
-  return metricLabel === artifact.label ? i18n.decisionAgent(artifact.label) : metricLabel;
-}
-
-function workflowArtifactValue(i18n: AppI18n, artifact: WorkflowStageView["artifacts"][number]): string {
-  if (i18n.locale === "en-US") {
-    return artifact.value;
-  }
-  if (artifact.label === "Rows") {
-    return artifact.value.replace("Pending run", "等待运行").replace("bars", "根K线");
-  }
-  if (artifact.label === "Mode") {
-    return artifact.value.replace("paper_only", "模拟盘").replace("certified_live", "认证实盘").replace("blocked_live", "实盘阻断");
-  }
-  if (artifact.label === "Live gates") {
-    return artifact.value.replace("blocked", "个阻断").replace("open", "已开启");
-  }
-  if (artifact.label === "Initial cash") {
-    return `${artifact.value} 资金`;
-  }
-  if (artifact.label === "Fee" || artifact.label === "Slippage") {
-    return artifact.value.replace("bps", "基点");
-  }
-  if (artifact.label === "Entry" || artifact.label === "Exit" || artifact.label === "Risk") {
-    return i18n.strategyText(artifact.value);
-  }
-  if (
-    !["Instrument", "Timeframe", "Return", "Max DD", "Win Rate", "Trades", "Initial cash", "Fee", "Slippage"].includes(
-      artifact.label
-    )
-  ) {
-    return i18n.decisionMessage(artifact.value);
-  }
-  return artifact.value;
-}
-
-function workflowArtifactDetail(i18n: AppI18n, artifact: WorkflowStageView["artifacts"][number]): string {
-  if (i18n.locale === "en-US") {
-    return artifact.detail;
-  }
-  return artifact.detail
-    .replace("Selected research interval", "当前研究周期")
-    .replace("Run Pipeline to bind an audited data snapshot.", "运行流水线后绑定可审计数据快照。")
-    .replace(/^Bound to audited run (.+)\.$/, "已绑定审计运行 $1。")
-    .replace("Signal gate", "信号闸门")
-    .replace("Invalidation rule", "失效规则")
-    .replace("Sizing and guardrail", "仓位与保护")
-    .replace("Latest audited metric for the selected context.", "当前上下文的最新审计指标。")
-    .replace("Backtest capital assumption.", "回测初始资金假设。")
-    .replace("Round-trip fee assumption in basis points.", "以基点表示的往返手续费假设。")
-    .replace("Execution slippage assumption in basis points.", "以基点表示的成交滑点假设。")
-    .replace("AI research note from supplied workspace context.", "来自当前工作台上下文的 AI 研究记录。")
-    .replace("Paper route only.", "仅模拟盘路径。")
-    .replace("Certified live route is available.", "已具备认证实盘路径。")
-    .replace("Adapter certified, Risk approved, Human confirmed", "适配器认证、风控审批、人工确认");
 }
 
 function KlineChartCanvas({

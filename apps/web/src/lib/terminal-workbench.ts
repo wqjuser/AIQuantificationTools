@@ -383,6 +383,20 @@ export const defaultBacktestAssumptions: BacktestAssumptions = {
   slippageBps: 2
 };
 
+const primaryQuantLoopStepDefinitions = [
+  { id: "research", label: "Market Research" },
+  { id: "strategy", label: "Strategy Lab" },
+  { id: "backtest", label: "Backtest Review" },
+  { id: "paper", label: "Paper Trading" }
+] as const;
+
+function buildPrimaryQuantLoopSteps(activeStepId = "research"): QuantLoopStep[] {
+  return primaryQuantLoopStepDefinitions.map((step) => ({
+    ...step,
+    status: step.id === activeStepId ? "active" : "ready"
+  }));
+}
+
 const backtestAssumptionSpecs: Record<
   BacktestAssumptionField,
   { label: string; suffix: string; min: number; step: number }
@@ -409,15 +423,7 @@ export function buildTerminalWorkspace(): TerminalWorkspace {
       { symbol: "AAPL", name: "Apple", market: "us", changePct: -0.36, price: 191.2 },
       { symbol: "BTC/USDT", name: "Bitcoin", market: "crypto", changePct: 2.81, price: 68200 }
     ],
-    quantLoop: [
-      { id: "idea", label: "Idea Lab", status: "active" },
-      { id: "data", label: "Data & Factor", status: "ready" },
-      { id: "strategy", label: "Strategy Builder", status: "ready" },
-      { id: "backtest", label: "Backtest Lab", status: "ready" },
-      { id: "agent-review", label: "Agent Review", status: "ready" },
-      { id: "paper", label: "Paper Trading", status: "ready" },
-      { id: "broker", label: "Broker Center", status: "locked" }
-    ],
+    quantLoop: buildPrimaryQuantLoopSteps(),
     modules: [
       { id: "watchlist", label: "Watchlist", accent: "market" },
       { id: "scanner", label: "Market Scanner", accent: "market" },
@@ -504,17 +510,24 @@ export function quantLoopLabels(workspace: TerminalWorkspace): string[] {
   return workspace.quantLoop.map((step) => step.label);
 }
 
+export function workspaceWithPrimaryWorkflows(workspace: TerminalWorkspace): TerminalWorkspace {
+  const supportedStepIds = new Set<string>(primaryQuantLoopStepDefinitions.map((step) => step.id));
+  const activeStepId =
+    workspace.quantLoop.find((step) => supportedStepIds.has(step.id) && step.status === "active")?.id ?? "research";
+  return {
+    ...workspace,
+    quantLoop: buildPrimaryQuantLoopSteps(activeStepId)
+  };
+}
+
 export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigationTarget {
   const targets: Record<string, QuantLoopNavigationTarget> = {
-    idea: { moduleId: "watchlist", workflowStageId: "data" },
-    data: { moduleId: "workflow", workflowStageId: "data" },
+    research: { moduleId: "watchlist", workflowStageId: "data" },
     strategy: { moduleId: "watchlist", workflowStageId: "factor" },
     backtest: { moduleId: "workflow", workflowStageId: "backtest" },
-    "agent-review": { moduleId: "workflow", workflowStageId: "agent" },
-    paper: { moduleId: "portfolio", workflowStageId: "execution" },
-    broker: { moduleId: "broker", workflowStageId: "execution" }
+    paper: { moduleId: "portfolio", workflowStageId: "execution" }
   };
-  return targets[stepId] ?? targets.idea;
+  return targets[stepId] ?? targets.research;
 }
 
 export function visiblePanels(workspace: TerminalWorkspace): PanelId[] {

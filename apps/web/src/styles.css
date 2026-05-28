@@ -44,7 +44,7 @@ button {
   align-self: start;
   border-width: 0 1px 0 0;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px;
   height: 100vh;
   overflow: hidden;
@@ -121,17 +121,19 @@ button {
 }
 
 .loop-step {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 9px;
+  row-gap: 5px;
   width: 100%;
-  min-height: 37px;
-  padding: 8px;
+  min-height: 82px;
+  padding: 9px;
   text-align: left;
   font-size: 12px;
 }
 
-.loop-step span {
+.loop-step .workflow-step-index {
   display: grid;
   place-items: center;
   width: 20px;
@@ -143,12 +145,51 @@ button {
   font-weight: 800;
 }
 
+.loop-step svg {
+  margin-top: 2px;
+  color: #8fa0b2;
+}
+
+.loop-step strong,
+.loop-step small,
+.loop-step em {
+  min-width: 0;
+  grid-column: 3;
+}
+
+.loop-step strong {
+  display: block;
+  color: #dce6ee;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.loop-step small {
+  display: block;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.workflow-next-action {
+  justify-self: start;
+  border: 1px solid #2b6f62;
+  border-radius: 6px;
+  background: #122b27;
+  color: #71dfc5;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.1;
+  padding: 4px 6px;
+}
+
 .loop-step.active {
   border-color: #c59b4c;
   background: #263247;
 }
 
-.loop-step.active span {
+.loop-step.active .workflow-step-index {
   background: #e4b75d;
   color: #111722;
 }
@@ -159,9 +200,14 @@ button {
   background: #122b27;
 }
 
-.loop-step.selected span {
+.loop-step.selected .workflow-step-index {
   background: #4cc9ad;
   color: #07120f;
+}
+
+.loop-step.selected svg,
+.loop-step.selected strong {
+  color: #71dfc5;
 }
 
 .loop-step.locked {
@@ -669,6 +715,86 @@ em {
   align-items: start;
   gap: 12px;
   min-height: 0;
+}
+
+.workflow-layout {
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.75fr);
+}
+
+.workflow-layout .module-workspace-panel {
+  grid-column: auto;
+}
+
+.research-layout {
+  grid-template-areas:
+    "chart scanner"
+    "workflow decision";
+}
+
+.strategy-layout {
+  grid-template-areas:
+    "chart strategy"
+    "ai ai"
+    "decision decision";
+}
+
+.backtest-layout {
+  grid-template-areas:
+    "backtest workflow"
+    "history ai";
+}
+
+.paper-layout {
+  grid-template-areas:
+    "execution execution"
+    "portfolio broker";
+}
+
+.workflow-chart-panel {
+  grid-area: chart;
+}
+
+.workflow-scanner-panel {
+  grid-area: scanner;
+}
+
+.workflow-strategy-panel {
+  grid-area: strategy;
+}
+
+.workflow-backtest-panel {
+  grid-area: backtest;
+}
+
+.workflow-nodes-panel {
+  align-self: start;
+  grid-area: workflow;
+}
+
+.workflow-agent-panel {
+  grid-area: ai;
+}
+
+.workflow-decision-panel {
+  align-self: start;
+  grid-area: decision;
+}
+
+.workflow-history-panel {
+  grid-area: history;
+}
+
+.workflow-execution-panel {
+  grid-area: execution;
+}
+
+.workflow-portfolio-panel {
+  grid-area: portfolio;
+}
+
+.workflow-broker-panel {
+  align-self: start;
+  grid-area: broker;
 }
 
 .watchlist-layout {
@@ -2306,6 +2432,37 @@ em {
       "decision"
       "execution"
       "history";
+  }
+
+  .research-layout {
+    grid-template-areas:
+      "chart"
+      "scanner"
+      "workflow"
+      "decision";
+  }
+
+  .strategy-layout {
+    grid-template-areas:
+      "chart"
+      "strategy"
+      "ai"
+      "decision";
+  }
+
+  .backtest-layout {
+    grid-template-areas:
+      "backtest"
+      "workflow"
+      "history"
+      "ai";
+  }
+
+  .paper-layout {
+    grid-template-areas:
+      "execution"
+      "portfolio"
+      "broker";
   }
 
   .watchlist-ai-panel .agent-panel-body,

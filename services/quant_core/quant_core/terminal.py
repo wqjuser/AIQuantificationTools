@@ -182,13 +182,10 @@ def build_terminal_workspace() -> TerminalWorkspace:
             Instrument(symbol="BTC/USDT", name="Bitcoin", market="crypto", change_pct=2.81, price=68200.0),
         ],
         quant_loop=[
-            QuantLoopStep(id="idea", label="Idea Lab", status="active"),
-            QuantLoopStep(id="data", label="Data & Factor", status="ready"),
-            QuantLoopStep(id="strategy", label="Strategy Builder", status="ready"),
-            QuantLoopStep(id="backtest", label="Backtest Lab", status="ready"),
-            QuantLoopStep(id="agent-review", label="Agent Review", status="ready"),
+            QuantLoopStep(id="research", label="Market Research", status="active"),
+            QuantLoopStep(id="strategy", label="Strategy Lab", status="ready"),
+            QuantLoopStep(id="backtest", label="Backtest Review", status="ready"),
             QuantLoopStep(id="paper", label="Paper Trading", status="ready"),
-            QuantLoopStep(id="broker", label="Broker Center", status="locked"),
         ],
         modules=[
             TerminalModule(id="watchlist", label="Watchlist", accent="market"),

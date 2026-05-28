@@ -41,13 +41,10 @@ describe("terminal workbench model", () => {
     const workspace = buildTerminalWorkspace();
 
     expect(quantLoopLabels(workspace)).toEqual([
-      "Idea Lab",
-      "Data & Factor",
-      "Strategy Builder",
-      "Backtest Lab",
-      "Agent Review",
-      "Paper Trading",
-      "Broker Center"
+      "Market Research",
+      "Strategy Lab",
+      "Backtest Review",
+      "Paper Trading"
     ]);
     expect(visiblePanels(workspace)).toEqual([
       "watchlist",
@@ -62,12 +59,8 @@ describe("terminal workbench model", () => {
   });
 
   test("maps quant loop steps to concrete workspace navigation targets", () => {
-    expect(buildQuantLoopNavigationTarget("idea")).toEqual({
+    expect(buildQuantLoopNavigationTarget("research")).toEqual({
       moduleId: "watchlist",
-      workflowStageId: "data"
-    });
-    expect(buildQuantLoopNavigationTarget("data")).toEqual({
-      moduleId: "workflow",
       workflowStageId: "data"
     });
     expect(buildQuantLoopNavigationTarget("strategy")).toEqual({
@@ -78,16 +71,8 @@ describe("terminal workbench model", () => {
       moduleId: "workflow",
       workflowStageId: "backtest"
     });
-    expect(buildQuantLoopNavigationTarget("agent-review")).toEqual({
-      moduleId: "workflow",
-      workflowStageId: "agent"
-    });
     expect(buildQuantLoopNavigationTarget("paper")).toEqual({
       moduleId: "portfolio",
-      workflowStageId: "execution"
-    });
-    expect(buildQuantLoopNavigationTarget("broker")).toEqual({
-      moduleId: "broker",
       workflowStageId: "execution"
     });
   });

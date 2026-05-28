@@ -1,6 +1,7 @@
 import {
   buildTerminalWorkspace,
   resolveBacktestAssumptions,
+  workspaceWithPrimaryWorkflows,
   Market,
   ResearchRunAudit,
   TerminalWorkspace,
@@ -334,7 +335,7 @@ export async function loadTerminalWorkspace(
       throw new Error("Invalid terminal workspace contract");
     }
     return {
-      workspace: payload,
+      workspace: workspaceWithPrimaryWorkflows(payload),
       source: "core",
       statusLabel: "Core connected"
     };
@@ -673,7 +674,7 @@ export async function runTerminalResearch(
       throw new Error("Invalid terminal research contract");
     }
     return {
-      workspace: payload,
+      workspace: workspaceWithPrimaryWorkflows(payload),
       source: "core",
       statusLabel: "Research run complete"
     };

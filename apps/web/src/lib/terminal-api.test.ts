@@ -172,6 +172,34 @@ describe("terminal workspace API client", () => {
     expect(result.workspace.selectedInstrument.symbol).toBe("AAPL");
   });
 
+  test("normalizes older core workspace navigation to the workflow-first contract", async () => {
+    const remoteWorkspace = {
+      ...buildTerminalWorkspace(),
+      quantLoop: [
+        { id: "idea", label: "Idea Lab", status: "active" },
+        { id: "data", label: "Data & Factor", status: "ready" },
+        { id: "strategy", label: "Strategy Builder", status: "ready" },
+        { id: "backtest", label: "Backtest Lab", status: "ready" },
+        { id: "agent-review", label: "Agent Review", status: "ready" },
+        { id: "paper", label: "Paper Trading", status: "ready" },
+        { id: "broker", label: "Broker Center", status: "locked" }
+      ]
+    };
+
+    const result = await loadTerminalWorkspace("http://127.0.0.1:8765", async () => ({
+      ok: true,
+      json: async () => remoteWorkspace
+    }));
+
+    expect(result.workspace.quantLoop.map((step) => step.id)).toEqual(["research", "strategy", "backtest", "paper"]);
+    expect(result.workspace.quantLoop.map((step) => step.label)).toEqual([
+      "Market Research",
+      "Strategy Lab",
+      "Backtest Review",
+      "Paper Trading"
+    ]);
+  });
+
   test("falls back to the bundled workspace when the Python core is unavailable", async () => {
     const result = await loadTerminalWorkspace("http://127.0.0.1:8765", async () => {
       throw new Error("offline");
@@ -187,6 +215,15 @@ describe("terminal workspace API client", () => {
     const remoteWorkspace = {
       ...buildTerminalWorkspace(),
       schemaVersion: 1,
+      quantLoop: [
+        { id: "idea", label: "Idea Lab", status: "active" },
+        { id: "data", label: "Data & Factor", status: "ready" },
+        { id: "strategy", label: "Strategy Builder", status: "ready" },
+        { id: "backtest", label: "Backtest Lab", status: "ready" },
+        { id: "agent-review", label: "Agent Review", status: "ready" },
+        { id: "paper", label: "Paper Trading", status: "ready" },
+        { id: "broker", label: "Broker Center", status: "locked" }
+      ],
       metrics: [
         { label: "Return", value: "+3.20%", tone: "positive" },
         { label: "Max DD", value: "1.10%", tone: "warning" },
@@ -230,6 +267,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Research run complete");
     expect(result.workspace.metrics[0].value).toBe("+3.20%");
+    expect(result.workspace.quantLoop.map((step) => step.id)).toEqual(["research", "strategy", "backtest", "paper"]);
   });
 
   test("keeps the current workspace when research run fails", async () => {

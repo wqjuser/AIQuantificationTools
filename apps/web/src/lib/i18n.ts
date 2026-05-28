@@ -29,7 +29,7 @@ const messages = {
     "aria.timeframe": "Research timeframe",
     "aria.symbolSwitcher": "Symbol switcher",
     "brand.subtitle": "Local-first quant OS",
-    "section.quantLoop": "Quant Loop",
+    "section.quantLoop": "Research Workflows",
     "section.terminalModules": "Terminal Modules",
     "section.auditTrail": "Audit Trail",
     "topbar.eyebrow": "Professional Quant Workbench",
@@ -40,7 +40,7 @@ const messages = {
     "symbol.source": "Source",
     "action.switchSymbol": "Switch",
     "action.runPipeline": "Run Pipeline",
-    "moduleFocus.label": "Active Focus",
+    "moduleFocus.label": "Current Task",
     "moduleFocus.instrument": "Instrument",
     "panel.chart.title": "Chart & Factor Overlays",
     "panel.chart.subtitle": "Price · SMA20 · Trades · {timeframe}",
@@ -165,7 +165,7 @@ const messages = {
     "aria.timeframe": "研究周期",
     "aria.symbolSwitcher": "标的切换",
     "brand.subtitle": "本地优先量化系统",
-    "section.quantLoop": "量化闭环",
+    "section.quantLoop": "研究工作流",
     "section.terminalModules": "终端模块",
     "section.auditTrail": "审计轨迹",
     "topbar.eyebrow": "专业量化工作台",
@@ -176,7 +176,7 @@ const messages = {
     "symbol.source": "来源",
     "action.switchSymbol": "查询",
     "action.runPipeline": "运行流水线",
-    "moduleFocus.label": "当前焦点",
+    "moduleFocus.label": "当前任务",
     "moduleFocus.instrument": "标的",
     "panel.chart.title": "图表与因子叠加",
     "panel.chart.subtitle": "价格 · SMA20 · 交易 · {timeframe}",
@@ -302,10 +302,11 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       crypto: "Crypto"
     },
     quantLoop: {
+      research: "Market Research",
       idea: "Idea Lab",
       data: "Data & Factor",
-      strategy: "Strategy Builder",
-      backtest: "Backtest Lab",
+      strategy: "Strategy Lab",
+      backtest: "Backtest Review",
       "agent-review": "Agent Review",
       paper: "Paper Trading",
       broker: "Broker Center"
@@ -344,10 +345,11 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       workflow: "Node workflow is staging data, factor, backtest, agent review, and execution for {symbol}."
     },
     quantLoopFocus: {
+      research: "Load quotes and inspect the chart before promoting {symbol} into a strategy.",
       idea: "Capture the research hypothesis for {symbol}.",
       data: "Prepare market data, factors, and quality checks for {symbol}.",
-      strategy: "Configure entry, exit, position, and risk rules for {symbol}.",
-      backtest: "Replay the selected timeframe and calculate audited metrics.",
+      strategy: "Configure rules and ask the AI committee to draft improvements for {symbol}.",
+      backtest: "Run an audited replay, compare history, and explain the result for {symbol}.",
       "agent-review": "Ask the AI committee to explain results and risks from supplied data only.",
       paper: "Route validated ideas into paper trading and risk logs.",
       broker: "Live broker adapters stay locked until certification and human confirmation."
@@ -395,10 +397,11 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       crypto: "加密货币"
     },
     quantLoop: {
+      research: "行情研究",
       idea: "想法实验室",
       data: "数据与因子",
-      strategy: "策略构建",
-      backtest: "回测实验室",
+      strategy: "策略工坊",
+      backtest: "回测复盘",
       "agent-review": "智能体评审",
       paper: "模拟交易",
       broker: "券商中心"
@@ -437,10 +440,11 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       workflow: "节点工作流正在围绕 {symbol} 串联数据、因子、回测、智能体评审和执行。"
     },
     quantLoopFocus: {
+      research: "先加载 {symbol} 的行情和图表，再决定是否进入策略工坊。",
       idea: "记录 {symbol} 的研究假设。",
       data: "准备 {symbol} 的行情、因子和质量检查。",
-      strategy: "配置 {symbol} 的入场、出场、仓位和风控规则。",
-      backtest: "回放所选周期并计算可审计指标。",
+      strategy: "配置 {symbol} 的规则，并让 AI 委员会生成改进草稿。",
+      backtest: "运行 {symbol} 的可审计回放，对比历史并解释结果。",
       "agent-review": "让 AI 委员会只基于传入数据解释结果和风险。",
       paper: "把通过校验的想法送入模拟交易和风控日志。",
       broker: "实盘券商适配器在认证和人工确认前保持锁定。"

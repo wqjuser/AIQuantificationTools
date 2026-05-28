@@ -12,7 +12,9 @@ describe("i18n", () => {
     const zh = createI18n("zh-CN");
 
     expect(zh.t("topbar.eyebrow")).toBe("专业量化工作台");
-    expect(zh.quantLoopLabel("agent-review", "Agent Review")).toBe("智能体评审");
+    expect(zh.quantLoopLabel("research", "Market Research")).toBe("行情研究");
+    expect(zh.quantLoopLabel("strategy", "Strategy Lab")).toBe("策略工坊");
+    expect(zh.quantLoopLabel("backtest", "Backtest Review")).toBe("回测复盘");
     expect(zh.moduleLabel("portfolio", "Portfolio Risk")).toBe("组合风险");
     expect(zh.agentLabel("risk", "Risk Manager")).toBe("风险经理");
     expect(zh.decisionAgent("Technical")).toBe("技术分析");
