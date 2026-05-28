@@ -57,6 +57,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("resolveInitialWorkflowStepId");
     expect(appSource).toContain('new URLSearchParams(window.location.search).get("workflow")');
     expect(appSource).toContain("url.searchParams.set(\"workflow\", activeLoopStepId)");
+    expect(leftRailSource).toContain('className="loop-step-copy"');
+    expect(leftRailSource).toContain("title={`${i18n.quantLoopLabel");
     expect(leftRailSource).toContain('className="workflow-next-action"');
     expect(leftRailSource).toContain('activeLoopStepId === step.id ? "selected active" : ""');
     expect(leftRailSource).toContain('step.status === "locked" ? "locked" : ""');
@@ -68,7 +70,7 @@ describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
     expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
-    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 224px minmax(0, 1fr);");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 76px minmax(0, 1fr);");
     expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
     expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
     expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
@@ -80,15 +82,15 @@ describe("terminal layout css", () => {
   });
 
   test("keeps market context in one compact desktop band above the workflow", () => {
-    expect(appSource).toContain('className="terminal-overview-grid"');
+    expect(appSource).toContain('className="terminal-overview-grid market-tape"');
     expect(cssBlock(".terminal-overview-grid")).toContain(
-      "grid-template-columns: minmax(260px, 0.78fr) minmax(480px, 1.45fr) minmax(320px, 0.95fr);"
+      "grid-template-columns: minmax(240px, 0.72fr) minmax(440px, 1.7fr) minmax(260px, 0.85fr);"
     );
     expect(cssBlock(".terminal-overview-grid")).toContain("align-items: stretch;");
     expect(cssBlock(".terminal-overview-grid .watchlist-strip")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(cssBlock(".terminal-overview-grid .metrics-row")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
-    expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 54px;");
-    expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 54px;");
+    expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 50px;");
+    expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 50px;");
     expect(
       hasCssBlockWith("  .terminal-overview-grid", [
         "grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);"
@@ -157,14 +159,13 @@ describe("terminal layout css", () => {
     expect(styles).toContain("@media (max-width: 1180px)");
     expect(
       hasCssBlockWith("@media (max-width: 1180px) {\n  .terminal-shell", [
-        "grid-template-columns: 1fr;",
+        "grid-template-columns: 68px minmax(0, 1fr);",
         "height: auto;"
       ])
     ).toBe(true);
-    expect(hasCssBlockWith("  .left-rail", ["height: auto;", "position: static;"])).toBe(true);
-    expect(hasCssDeclaration("  .loop-nav", "grid-template-columns: repeat(4, minmax(0, 1fr));")).toBe(true);
-    expect(hasCssBlockWith("  .loop-step", ["min-height: 54px;", "padding: 7px;"])).toBe(true);
-    expect(hasCssBlockWith("  .loop-step small,\n  .workflow-next-action,\n  .left-rail .workspace-card", ["display: none;"])).toBe(true);
+    expect(hasCssBlockWith("  .left-rail", ["position: sticky;", "height: 100vh;"])).toBe(true);
+    expect(hasCssBlockWith("  .loop-step", ["min-height: 50px;", "padding: 7px 5px;"])).toBe(true);
+    expect(hasCssBlockWith("  .loop-step-copy,\n  .workflow-next-action,\n  .left-rail .workspace-card", ["display: none;"])).toBe(true);
     expect(hasCssBlockWith("  .terminal-topbar", ["min-height: auto;", "padding: 8px 10px;"])).toBe(true);
     expect(hasCssDeclaration("  .center-grid,\n  .workflow-layout", "grid-template-columns: 1fr;")).toBe(true);
   });

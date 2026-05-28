@@ -926,12 +926,15 @@ export function App() {
                   }`}
                   key={step.id}
                   onClick={() => selectQuantLoopStep(step.id)}
+                  title={`${i18n.quantLoopLabel(step.id, step.label)} · ${workflowNextActionLabel(i18n, step.id)}`}
                   type="button"
                 >
                   <span className="workflow-step-index">{index + 1}</span>
                   <Icon size={15} />
-                  <strong>{i18n.quantLoopLabel(step.id, step.label)}</strong>
-                  <small>{i18n.quantLoopFocus(step.id, { symbol: workspace.selectedInstrument.symbol })}</small>
+                  <span className="loop-step-copy">
+                    <strong>{i18n.quantLoopLabel(step.id, step.label)}</strong>
+                    <small>{i18n.quantLoopFocus(step.id, { symbol: workspace.selectedInstrument.symbol })}</small>
+                  </span>
                   <em className="workflow-next-action">{workflowNextActionLabel(i18n, step.id)}</em>
                 </button>
               );
@@ -1056,7 +1059,7 @@ export function App() {
           </div>
         </header>
 
-        <section className="terminal-overview-grid">
+        <section className="terminal-overview-grid market-tape">
           <section className={`module-focus-card ${activeWorkflowAccent}`}>
             <div>
               <span className="section-label">{i18n.t("moduleFocus.label")}</span>
