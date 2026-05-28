@@ -507,6 +507,7 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Boolean(run.metrics) &&
     Array.isArray(run.decisions) &&
     Boolean(run.executionMode) &&
+    (run.aiReport === undefined || isResearchRunAiReport(run.aiReport)) &&
     (run.dataQuality === undefined || isResearchRunDataQuality(run.dataQuality)) &&
     (run.strategyConfig === undefined || isResearchRunStrategyConfig(run.strategyConfig)) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
@@ -516,6 +517,21 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
       (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint))) &&
     (run.backtestDiagnostics === undefined ||
       (Array.isArray(run.backtestDiagnostics) && run.backtestDiagnostics.every(isBacktestDiagnostic)))
+  );
+}
+
+function isResearchRunAiReport(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const report = value as Record<string, unknown>;
+  return (
+    typeof report.summary === "string" &&
+    Array.isArray(report.risks) &&
+    report.risks.every((risk) => typeof risk === "string") &&
+    Array.isArray(report.improvements) &&
+    report.improvements.every((improvement) => typeof improvement === "string") &&
+    typeof report.disclaimer === "string"
   );
 }
 

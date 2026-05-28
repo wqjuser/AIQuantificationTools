@@ -101,6 +101,7 @@ def run_terminal_research(
         metrics=asdict(backtest.metrics),
         decisions=[asdict(entry) for entry in decision_log],
         execution_mode="paper_only",
+        ai_report=asdict(report),
         data_quality=_data_quality_payload(quality),
         strategy_config=_strategy_config_payload(strategy),
         backtest_assumptions={

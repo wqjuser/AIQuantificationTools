@@ -416,6 +416,12 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 1.2, "trade_count": 6},
             decisions=[{"agent": "AI Summary", "message": "研究完成", "tone": "ai"}],
             execution_mode="paper_only",
+            ai_report={
+                "summary": "AI summary for audited storage",
+                "risks": ["Risk note"],
+                "improvements": ["Compare against benchmark"],
+                "disclaimer": "Not investment advice",
+            },
             data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
             strategy_config={
                 "name": "SMA trend demo",
@@ -469,6 +475,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].created_at, created_at)
         self.assertEqual(latest[0].metrics["trade_count"], 6)
         self.assertEqual(latest[0].decisions[0]["agent"], "AI Summary")
+        self.assertEqual(latest[0].ai_report["summary"], "AI summary for audited storage")
+        self.assertEqual(latest[0].ai_report["risks"], ["Risk note"])
+        self.assertEqual(latest[0].ai_report["improvements"], ["Compare against benchmark"])
+        self.assertEqual(latest[0].ai_report["disclaimer"], "Not investment advice")
         self.assertEqual(latest[0].data_quality, {"source": "tencent", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(latest[0].strategy_config["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(latest[0].strategy_config["risk"]["positionPct"], 0.8)
@@ -506,6 +516,12 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 3.4, "trade_count": 8},
             decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
             execution_mode="paper_only",
+            ai_report={
+                "summary": "Single detail AI summary",
+                "risks": ["Single detail risk"],
+                "improvements": ["Single detail improvement"],
+                "disclaimer": "No direct trading advice",
+            },
             data_quality={"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 240},
             strategy_config={
                 "name": "SMA trend demo",
@@ -557,6 +573,10 @@ class QuantCoreContractTest(unittest.TestCase):
         assert restored is not None
         self.assertEqual(restored.run_id, "run-newer")
         self.assertEqual(restored.symbol, "AAPL")
+        self.assertEqual(restored.ai_report["summary"], "Single detail AI summary")
+        self.assertEqual(restored.ai_report["risks"], ["Single detail risk"])
+        self.assertEqual(restored.ai_report["improvements"], ["Single detail improvement"])
+        self.assertEqual(restored.ai_report["disclaimer"], "No direct trading advice")
         self.assertEqual(
             restored.data_quality,
             {"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 240},
@@ -597,6 +617,12 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 3.4, "trade_count": 8},
             decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
             execution_mode="paper_only",
+            ai_report={
+                "summary": "History AI summary",
+                "risks": ["History risk"],
+                "improvements": ["History improvement"],
+                "disclaimer": "No investment promise",
+            },
             data_quality={"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120},
             strategy_config={
                 "name": "SMA trend demo",
@@ -645,6 +671,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["runId"], "run-new")
         self.assertEqual(payload["runs"][0]["createdAt"], "2026-05-26T08:00:00+00:00")
         self.assertEqual(payload["runs"][0]["strategyRevision"], "rev-new")
+        self.assertEqual(payload["runs"][0]["aiReport"]["summary"], "History AI summary")
+        self.assertEqual(payload["runs"][0]["aiReport"]["risks"], ["History risk"])
+        self.assertEqual(payload["runs"][0]["aiReport"]["improvements"], ["History improvement"])
+        self.assertEqual(payload["runs"][0]["aiReport"]["disclaimer"], "No investment promise")
         self.assertEqual(payload["runs"][0]["dataQuality"], {"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(payload["runs"][0]["strategyConfig"]["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(payload["runs"][0]["strategyConfig"]["risk"]["positionPct"], 0.8)
@@ -687,6 +717,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].strategy_config["revision"], latest[0].strategy_revision)
         self.assertEqual(latest[0].strategy_config["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(latest[0].strategy_config["risk"]["positionPct"], 0.8)
+        self.assertIn("SMA trend demo", latest[0].ai_report["summary"])
+        self.assertTrue(latest[0].ai_report["risks"])
+        self.assertTrue(latest[0].ai_report["improvements"])
+        self.assertIn("不构成投资建议", latest[0].ai_report["disclaimer"])
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
         self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
@@ -716,6 +750,12 @@ class QuantCoreContractTest(unittest.TestCase):
                     metrics={"total_return_pct": 3.4, "trade_count": 8},
                     decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
                     execution_mode="paper_only",
+                    ai_report={
+                        "summary": "Detail endpoint AI summary",
+                        "risks": ["Detail endpoint risk"],
+                        "improvements": ["Detail endpoint improvement"],
+                        "disclaimer": "No investment advice",
+                    },
                     data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
                     strategy_config={
                         "name": "SMA trend demo",
@@ -752,6 +792,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["run"]["runId"], "run-detail")
         self.assertEqual(payload["run"]["strategyRevision"], "rev-detail")
+        self.assertEqual(payload["run"]["aiReport"]["summary"], "Detail endpoint AI summary")
+        self.assertEqual(payload["run"]["aiReport"]["risks"], ["Detail endpoint risk"])
+        self.assertEqual(payload["run"]["aiReport"]["improvements"], ["Detail endpoint improvement"])
+        self.assertEqual(payload["run"]["aiReport"]["disclaimer"], "No investment advice")
         self.assertEqual(payload["run"]["dataQuality"], {"source": "tencent", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(payload["run"]["strategyConfig"]["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(payload["run"]["strategyConfig"]["risk"]["positionPct"], 0.8)

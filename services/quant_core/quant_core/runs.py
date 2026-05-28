@@ -10,6 +10,16 @@ from typing import Any
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
 DEFAULT_DATA_QUALITY = {"source": "unknown", "isComplete": False, "warnings": [], "rows": 0}
+DEFAULT_AI_REPORT = {"summary": "", "risks": [], "improvements": [], "disclaimer": ""}
+
+
+def _default_ai_report() -> dict[str, Any]:
+    return {
+        "summary": DEFAULT_AI_REPORT["summary"],
+        "risks": [],
+        "improvements": [],
+        "disclaimer": DEFAULT_AI_REPORT["disclaimer"],
+    }
 
 
 @dataclass(frozen=True)
@@ -25,6 +35,7 @@ class ResearchRunAudit:
     metrics: dict[str, Any]
     decisions: list[dict[str, Any]]
     execution_mode: str
+    ai_report: dict[str, Any] = field(default_factory=_default_ai_report)
     data_quality: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DATA_QUALITY))
     strategy_config: dict[str, Any] | None = None
     backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
@@ -59,6 +70,7 @@ class ResearchRunStore:
                     metrics_json text not null,
                     decisions_json text not null,
                     execution_mode text not null,
+                    ai_report_json text not null default '{"summary": "", "risks": [], "improvements": [], "disclaimer": ""}',
                     data_quality_json text not null default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}',
                     strategy_config_json text not null default '{}',
                     backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
@@ -69,6 +81,14 @@ class ResearchRunStore:
                 """
             )
             columns = {row[1] for row in connection.execute("pragma table_info(research_runs)").fetchall()}
+            if "ai_report_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column ai_report_json text not null
+                    default '{"summary": "", "risks": [], "improvements": [], "disclaimer": ""}'
+                    """
+                )
             if "backtest_assumptions_json" not in columns:
                 connection.execute(
                     """
@@ -138,6 +158,7 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
+                    ai_report_json,
                     data_quality_json,
                     strategy_config_json,
                     backtest_assumptions_json,
@@ -145,7 +166,7 @@ class ResearchRunStore:
                     backtest_equity_curve_json,
                     backtest_diagnostics_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -157,6 +178,7 @@ class ResearchRunStore:
                     metrics_json = excluded.metrics_json,
                     decisions_json = excluded.decisions_json,
                     execution_mode = excluded.execution_mode,
+                    ai_report_json = excluded.ai_report_json,
                     data_quality_json = excluded.data_quality_json,
                     strategy_config_json = excluded.strategy_config_json,
                     backtest_assumptions_json = excluded.backtest_assumptions_json,
@@ -176,6 +198,7 @@ class ResearchRunStore:
                     json.dumps(audit.metrics, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.decisions, ensure_ascii=False, sort_keys=True),
                     audit.execution_mode,
+                    json.dumps(_normalize_ai_report(audit.ai_report), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_data_quality(audit.data_quality, data_rows=audit.data_rows), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_strategy_config(audit.strategy_config, audit=audit), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
@@ -205,6 +228,7 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
+                    ai_report_json,
                     data_quality_json,
                     strategy_config_json,
                     backtest_assumptions_json,
@@ -239,6 +263,7 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
+                    ai_report_json,
                     data_quality_json,
                     strategy_config_json,
                     backtest_assumptions_json,
@@ -270,6 +295,7 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "metrics": audit.metrics,
         "decisions": audit.decisions,
         "executionMode": audit.execution_mode,
+        "aiReport": _normalize_ai_report(audit.ai_report),
         "dataQuality": _normalize_data_quality(audit.data_quality, data_rows=audit.data_rows),
         "strategyConfig": _normalize_strategy_config(audit.strategy_config, audit=audit),
         "backtestAssumptions": _normalize_backtest_assumptions(audit.backtest_assumptions),
@@ -296,9 +322,10 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         metrics=json.loads(row[8]),
         decisions=json.loads(row[9]),
         execution_mode=row[10],
-        data_quality=_normalize_data_quality(json.loads(row[11]), data_rows=row[7]),
+        ai_report=_normalize_ai_report(json.loads(row[11])),
+        data_quality=_normalize_data_quality(json.loads(row[12]), data_rows=row[7]),
         strategy_config=_normalize_strategy_config(
-            json.loads(row[12]),
+            json.loads(row[13]),
             audit_fields={
                 "strategy_name": row[5],
                 "strategy_revision": row[6],
@@ -307,11 +334,27 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
                 "timeframe": row[4],
             },
         ),
-        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[13])),
-        backtest_trades=json.loads(row[14]),
-        backtest_equity_curve=json.loads(row[15]),
-        backtest_diagnostics=json.loads(row[16]),
+        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[14])),
+        backtest_trades=json.loads(row[15]),
+        backtest_equity_curve=json.loads(row[16]),
+        backtest_diagnostics=json.loads(row[17]),
     )
+
+
+def _normalize_ai_report(value: dict[str, Any] | None) -> dict[str, Any]:
+    report = value or {}
+    risks = report.get("risks")
+    improvements = report.get("improvements")
+    if not isinstance(risks, list):
+        risks = []
+    if not isinstance(improvements, list):
+        improvements = []
+    return {
+        "summary": str(report.get("summary") or DEFAULT_AI_REPORT["summary"]),
+        "risks": [str(risk) for risk in risks],
+        "improvements": [str(improvement) for improvement in improvements],
+        "disclaimer": str(report.get("disclaimer") or DEFAULT_AI_REPORT["disclaimer"]),
+    }
 
 
 def _normalize_data_quality(value: dict[str, Any] | None, *, data_rows: int) -> dict[str, Any]:

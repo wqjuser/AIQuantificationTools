@@ -865,6 +865,56 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("replays audited AI report into the decision log when raw decisions are absent", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-report",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-report",
+      dataRows: 180,
+      metrics: {
+        total_return_pct: 6.2,
+        max_drawdown_pct: 2.4,
+        win_rate_pct: 55,
+        trade_count: 7
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      aiReport: {
+        summary: "Audited AI summary grounded in backtest metrics.",
+        risks: ["Volume confirmation is still weak."],
+        improvements: ["Compare against sector benchmark before paper execution."],
+        disclaimer: "This is research context only, not investment advice."
+      }
+    });
+
+    expect(workspace.decisionLog).toEqual([
+      {
+        agent: "AI Summary",
+        message: "Audited AI summary grounded in backtest metrics.",
+        tone: "ai"
+      },
+      {
+        agent: "Risk Manager",
+        message: "Volume confirmation is still weak.",
+        tone: "risk"
+      },
+      {
+        agent: "Portfolio Manager",
+        message: "Compare against sector benchmark before paper execution.",
+        tone: "warning"
+      },
+      {
+        agent: "AI Boundary",
+        message: "This is research context only, not investment advice.",
+        tone: "ai"
+      }
+    ]);
+  });
+
   test("builds a full workflow state when an audited run is replayed", () => {
     const state = buildAuditReplayWorkflowState({
       runId: "run-history",

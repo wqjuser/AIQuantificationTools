@@ -297,6 +297,13 @@ export interface ResearchRunStrategyConfig {
   risk: ResearchRunStrategyRisk;
 }
 
+export interface ResearchRunAiReport {
+  summary: string;
+  risks: string[];
+  improvements: string[];
+  disclaimer: string;
+}
+
 export interface ResearchRunAudit {
   runId: string;
   createdAt: string;
@@ -309,6 +316,7 @@ export interface ResearchRunAudit {
   metrics: Record<string, number>;
   decisions: DecisionLogEntry[];
   executionMode: string;
+  aiReport?: ResearchRunAiReport;
   dataQuality?: ResearchRunDataQuality;
   strategyConfig?: ResearchRunStrategyConfig;
   backtestAssumptions?: BacktestAssumptions;
@@ -1374,9 +1382,7 @@ export function workspaceFromResearchRunAudit(
       { label: "Win Rate", value: formatPct(run.metrics.win_rate_pct), tone: "neutral" },
       { label: "Trades", value: String(run.metrics.trade_count ?? 0), tone: "neutral" }
     ],
-    decisionLog: run.decisions.length
-      ? run.decisions
-      : [{ agent: "Audit", message: "No decision entries recorded for this run.", tone: "warning" }],
+    decisionLog: decisionLogFromAudit(run),
     backtestTrades: run.backtestTrades ?? [],
     backtestEquityCurve: run.backtestEquityCurve ?? [],
     backtestDiagnostics: run.backtestDiagnostics ?? [],
@@ -1389,6 +1395,32 @@ export function workspaceFromResearchRunAudit(
       executionMode: run.executionMode
     }
   };
+}
+
+function decisionLogFromAudit(run: ResearchRunAudit): DecisionLogEntry[] {
+  if (run.decisions.length) {
+    return run.decisions;
+  }
+  const report = run.aiReport;
+  if (!report) {
+    return [{ agent: "Audit", message: "No decision entries recorded for this run.", tone: "warning" }];
+  }
+
+  const entries: DecisionLogEntry[] = [];
+  if (report.summary.trim()) {
+    entries.push({ agent: "AI Summary", message: report.summary, tone: "ai" });
+  }
+  report.risks
+    .filter((risk) => risk.trim())
+    .forEach((risk) => entries.push({ agent: "Risk Manager", message: risk, tone: "risk" }));
+  report.improvements
+    .filter((improvement) => improvement.trim())
+    .forEach((improvement) => entries.push({ agent: "Portfolio Manager", message: improvement, tone: "warning" }));
+  if (report.disclaimer.trim()) {
+    entries.push({ agent: "AI Boundary", message: report.disclaimer, tone: "ai" });
+  }
+
+  return entries.length ? entries : [{ agent: "Audit", message: "No decision entries recorded for this run.", tone: "warning" }];
 }
 
 function strategySnapshotFromAudit(run: ResearchRunAudit): StrategySnapshot {

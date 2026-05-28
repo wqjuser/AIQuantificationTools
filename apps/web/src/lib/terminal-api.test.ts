@@ -243,6 +243,12 @@ describe("terminal workspace API client", () => {
               metrics: { total_return_pct: 3.4, trade_count: 8 },
               decisions: [],
               executionMode: "paper_only",
+              aiReport: {
+                summary: "SMA trend demo research summary",
+                risks: ["Sample risk"],
+                improvements: ["Compare benchmark"],
+                disclaimer: "No investment advice"
+              },
               dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 120 },
               strategyConfig: {
                 name: "SMA trend demo",
@@ -294,6 +300,10 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.runs[0].runId).toBe("run-new");
     expect(result.runs[0].metrics.trade_count).toBe(8);
+    expect(result.runs[0].aiReport?.summary).toBe("SMA trend demo research summary");
+    expect(result.runs[0].aiReport?.risks[0]).toBe("Sample risk");
+    expect(result.runs[0].aiReport?.improvements[0]).toBe("Compare benchmark");
+    expect(result.runs[0].aiReport?.disclaimer).toBe("No investment advice");
     expect(result.runs[0].dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
     expect(result.runs[0].strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
     expect(result.runs[0].strategyConfig?.risk.positionPct).toBe(0.8);
@@ -322,6 +332,12 @@ describe("terminal workspace API client", () => {
             metrics: { total_return_pct: 3.4, trade_count: 8 },
             decisions: [],
             executionMode: "paper_only",
+            aiReport: {
+              summary: "SMA trend detail research summary",
+              risks: ["Detail risk"],
+              improvements: ["Review slippage"],
+              disclaimer: "No investment advice"
+            },
             dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 120 },
             strategyConfig: {
               name: "SMA trend demo",
@@ -343,6 +359,10 @@ describe("terminal workspace API client", () => {
     expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-new"]);
     expect(result.source).toBe("core");
     expect(result.run?.runId).toBe("run-new");
+    expect(result.run?.aiReport?.summary).toBe("SMA trend detail research summary");
+    expect(result.run?.aiReport?.risks[0]).toBe("Detail risk");
+    expect(result.run?.aiReport?.improvements[0]).toBe("Review slippage");
+    expect(result.run?.aiReport?.disclaimer).toBe("No investment advice");
     expect(result.run?.dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
     expect(result.run?.strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
     expect(result.run?.strategyConfig?.risk.positionPct).toBe(0.8);
@@ -413,6 +433,37 @@ describe("terminal workspace API client", () => {
           decisions: [],
           executionMode: "paper_only",
           dataQuality: { source: "tencent", isComplete: "yes", warnings: [], rows: 120 }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.run).toBeUndefined();
+    expect(result.error).toBe("Invalid research run detail contract");
+  });
+
+  test("returns fallback when research run AI report is malformed", async () => {
+    const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        run: {
+          runId: "run-new",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyName: "SMA trend demo",
+          strategyRevision: "rev123",
+          dataRows: 120,
+          metrics: { total_return_pct: 3.4, trade_count: 8 },
+          decisions: [],
+          executionMode: "paper_only",
+          aiReport: {
+            summary: "Malformed research summary",
+            risks: "risk should be a list",
+            improvements: [],
+            disclaimer: "No investment advice"
+          }
         }
       })
     }));
