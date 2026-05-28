@@ -334,6 +334,46 @@ export interface PaperTradingRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PaperExecutionSnapshotOrder {
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  status: "filled" | "rejected";
+  reason: string;
+  timestamp: string;
+}
+
+export interface PaperExecutionSnapshotGate {
+  id: string;
+  label: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface PaperExecutionSnapshot {
+  executionId: string;
+  runId: string;
+  createdAt: string;
+  mode: string;
+  account: {
+    cash: number;
+    equity: number;
+    positions: Record<string, number>;
+  };
+  orders: PaperExecutionSnapshotOrder[];
+  gates: PaperExecutionSnapshotGate[];
+}
+
+export interface PaperExecutionSummaryTile {
+  id: "account-sync" | "paper-positions" | "risk-gates";
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface BrokerAdapterRow {
   id: string;
   market: Market;
@@ -1310,7 +1350,99 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
   ];
 }
 
-export function buildPaperPositionRows(workspace: TerminalWorkspace): PaperPositionRow[] {
+export function buildPaperExecutionSummaryTiles(
+  workspace: TerminalWorkspace,
+  execution: PaperExecutionSnapshot | null | undefined
+): PaperExecutionSummaryTile[] {
+  if (!execution) {
+    const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
+    return [
+      {
+        id: "account-sync",
+        label: "Account sync",
+        value: "No paper execution",
+        detail: "Run Pipeline and submit a paper order to create a local account snapshot.",
+        tone: "warning"
+      },
+      {
+        id: "paper-positions",
+        label: "Paper positions",
+        value: "0 paper / 0 live",
+        detail: "No filled paper positions are linked to the active audited run.",
+        tone: "neutral"
+      },
+      {
+        id: "risk-gates",
+        label: "Risk gates",
+        value: workspace.execution.liveEnabled ? "live route enabled" : `${blockedGateCount} live gates blocked`,
+        detail: workspace.execution.gates.map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`).join(" · "),
+        tone: workspace.execution.liveEnabled ? "positive" : "warning"
+      }
+    ];
+  }
+
+  const paperPositions = Object.entries(execution.account.positions).filter(([, quantity]) => quantity > 0);
+  const passedGates = execution.gates.filter((gate) => gate.passed).length;
+  const blockedGates = execution.gates.length - passedGates;
+  return [
+    {
+      id: "account-sync",
+      label: "Account sync",
+      value: `Cash ${formatAssumptionCurrency(execution.account.cash)} / Equity ${formatAssumptionCurrency(execution.account.equity)}`,
+      detail: `Snapshot ${execution.executionId} · ${execution.mode}`,
+      tone: "positive"
+    },
+    {
+      id: "paper-positions",
+      label: "Paper positions",
+      value: `${paperPositions.length} paper / 0 live`,
+      detail: paperPositions.length
+        ? paperPositions.map(([symbol, quantity]) => `${symbol}: ${formatQuantity(quantity)}`).join(" · ")
+        : "No filled paper positions are linked to the active audited run.",
+      tone: paperPositions.length ? "positive" : "neutral"
+    },
+    {
+      id: "risk-gates",
+      label: "Risk gates",
+      value: `${passedGates} passed / ${blockedGates} blocked`,
+      detail: execution.gates.map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`).join(" · "),
+      tone: blockedGates ? "warning" : "positive"
+    }
+  ];
+}
+
+export function buildPaperPositionRows(
+  workspace: TerminalWorkspace,
+  execution?: PaperExecutionSnapshot | null
+): PaperPositionRow[] {
+  if (execution) {
+    const positionRows = Object.entries(execution.account.positions)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([symbol, quantity]) => {
+        const avgCost = averageFilledPrice(execution.orders, symbol);
+        const markPrice = resolveExecutionMarkPrice(workspace, execution, symbol, avgCost);
+        const marketValue = quantity * markPrice;
+        const costBasis = quantity * avgCost;
+        const unrealizedPnl = marketValue - costBasis;
+        const returnPct = costBasis > 0 ? (unrealizedPnl / costBasis) * 100 : 0;
+        return {
+          id: `paper-position-${symbol}`,
+          symbol,
+          quantity: formatQuantity(quantity),
+          avgCost: avgCost.toFixed(2),
+          markPrice: markPrice.toFixed(2),
+          marketValue: marketValue.toFixed(2),
+          unrealizedPnl: formatSignedCurrency(unrealizedPnl),
+          returnPct: formatSignedPct(returnPct),
+          status: "paper" as const,
+          tone: returnPct > 0 ? ("positive" as const) : returnPct < 0 ? ("warning" as const) : ("neutral" as const)
+        };
+      });
+    if (positionRows.length) {
+      return positionRows;
+    }
+  }
+
   const price = resolvePaperOrderPrice(workspace);
   if (!workspace.researchRun) {
     return [
@@ -1840,6 +1972,10 @@ function formatSignedCurrency(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
+function formatQuantity(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "");
+}
+
 function formatAssumptionCurrency(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
@@ -1879,6 +2015,33 @@ function calculatePaperQuantity(market: Market, price: number): number {
     return Math.max(1, Math.floor(rawQuantity));
   }
   return rawQuantity;
+}
+
+function averageFilledPrice(orders: PaperExecutionSnapshotOrder[], symbol: string): number {
+  const filledOrders = orders.filter((order) => order.symbol === symbol && order.status === "filled" && order.quantity > 0);
+  const totalQuantity = filledOrders.reduce((sum, order) => sum + order.quantity, 0);
+  if (totalQuantity <= 0) {
+    return 0;
+  }
+  return filledOrders.reduce((sum, order) => sum + order.quantity * order.price, 0) / totalQuantity;
+}
+
+function resolveExecutionMarkPrice(
+  workspace: TerminalWorkspace,
+  execution: PaperExecutionSnapshot,
+  symbol: string,
+  fallback: number
+): number {
+  if (workspace.selectedInstrument.symbol === symbol) {
+    const selectedPrice = workspace.selectedInstrument.price;
+    if (typeof selectedPrice === "number" && Number.isFinite(selectedPrice) && selectedPrice > 0) {
+      return selectedPrice;
+    }
+  }
+  const latestOrder = [...execution.orders]
+    .reverse()
+    .find((order) => order.symbol === symbol && order.status === "filled" && order.price > 0);
+  return latestOrder?.price ?? fallback;
 }
 
 function findDecisionMessage(workspace: TerminalWorkspace, agent: string): string {

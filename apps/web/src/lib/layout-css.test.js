@@ -298,6 +298,17 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".risk-approval-gate");
   });
 
+  test("renders paper execution account summaries from persisted execution records", () => {
+    expect(appSource).toContain("buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord)");
+    expect(appSource).toContain("buildPaperPositionRows(workspace, activePaperExecutionRecord)");
+    expect(appSource).toContain("summaryTiles={paperExecutionSummaryTiles}");
+    expect(appSource).toContain("paperExecutionTileValue");
+    expect(appSource).not.toContain('value={i18n.t("execution.paperAccount")}');
+    expect(cssBlock(".execution-tile p")).toContain("overflow-wrap: anywhere;");
+    expect(cssBlock(".execution-tile.positive")).toContain("border-left-color: #4cc9ad;");
+    expect(cssBlock(".execution-tile.warning")).toContain("border-left-color: #e8be62;");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

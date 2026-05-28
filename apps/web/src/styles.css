@@ -1935,9 +1935,22 @@ em {
 .workflow-node,
 .execution-tile {
   border: 1px solid #2a3b51;
+  border-left: 3px solid #2a3b51;
   border-radius: 7px;
   background: #151f2d;
   padding: 10px;
+}
+
+.execution-tile.positive {
+  border-left-color: #4cc9ad;
+}
+
+.execution-tile.warning {
+  border-left-color: #e8be62;
+}
+
+.execution-tile.risk {
+  border-left-color: #ff7f6d;
 }
 
 .workflow-node strong,
@@ -1953,6 +1966,14 @@ em {
   color: #8fa0b2;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.execution-tile p {
+  margin: 7px 0 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .execution-grid {

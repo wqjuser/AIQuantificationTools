@@ -53,6 +53,7 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
@@ -79,6 +80,7 @@ import {
   BacktestTradeRow,
   BrokerAdapterRow,
   PaperPositionRow,
+  PaperExecutionSummaryTile,
   PaperTradingRow,
   PortfolioRiskRow,
   ProductWorkArea,
@@ -275,12 +277,14 @@ export function App() {
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
-  const paperPositionRows = buildPaperPositionRows(workspace);
+  const activePaperExecutionRecord =
+    paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId ? paperExecutionRecord : null;
+  const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
+  const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
-  const persistedPaperTradingRows =
-    paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId
-      ? paperTradingRowsFromExecutionRecord(paperExecutionRecord)
-      : null;
+  const persistedPaperTradingRows = activePaperExecutionRecord
+    ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
+    : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
@@ -1020,6 +1024,7 @@ export function App() {
             positionRows={paperPositionRows}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
+            summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
           />
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
@@ -1037,6 +1042,7 @@ export function App() {
             onSubmit={submitPaperExecution}
             approval={riskApprovalSummary}
             rows={visiblePaperTradingRows}
+            summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
           />
           <BrokerAdapterPanel adapterRows={brokerAdapterRows} className="workflow-broker-panel" i18n={i18n} />
@@ -1994,6 +2000,7 @@ function ExecutionPanel({
   isSubmitting = false,
   onSubmit,
   rows,
+  summaryTiles,
   workspace
 }: {
   approval: RiskApprovalSummary;
@@ -2002,6 +2009,7 @@ function ExecutionPanel({
   isSubmitting?: boolean;
   onSubmit?: () => void;
   rows: PaperTradingRow[];
+  summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
   return (
@@ -2026,9 +2034,16 @@ function ExecutionPanel({
     >
       <RiskApprovalBoard approval={approval} i18n={i18n} />
       <div className="execution-grid">
-        <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
-        <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
-        <ExecutionTile icon={ShieldCheck} label={i18n.t("execution.riskState")} value={i18n.t("execution.liveBlocked")} />
+        {summaryTiles.map((tile) => (
+          <ExecutionTile
+            detail={paperExecutionTileDetail(i18n, tile)}
+            icon={paperExecutionTileIcon(tile.id)}
+            key={tile.id}
+            label={paperExecutionTileLabel(i18n, tile)}
+            tone={tile.tone}
+            value={paperExecutionTileValue(i18n, tile)}
+          />
+        ))}
       </div>
       <div className="gate-list">
         {workspace.execution.gates.map((gate) => (
@@ -2127,6 +2142,7 @@ function PortfolioWorkspace({
   positionRows,
   riskApproval,
   rows,
+  summaryTiles,
   workspace
 }: {
   className?: string;
@@ -2138,6 +2154,7 @@ function PortfolioWorkspace({
   positionRows: PaperPositionRow[];
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
+  summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
   return (
@@ -2190,6 +2207,7 @@ function PortfolioWorkspace({
         isSubmitting={isSubmittingPaperExecution}
         onSubmit={onSubmitPaperExecution}
         rows={paperRows}
+        summaryTiles={summaryTiles}
         workspace={workspace}
       />
     </>
@@ -2203,6 +2221,7 @@ function BrokerWorkspace({
   isSubmittingPaperExecution,
   onSubmitPaperExecution,
   riskApproval,
+  summaryTiles,
   workspace
 }: {
   adapterRows: BrokerAdapterRow[];
@@ -2211,6 +2230,7 @@ function BrokerWorkspace({
   isSubmittingPaperExecution: boolean;
   onSubmitPaperExecution: () => void;
   riskApproval: RiskApprovalSummary;
+  summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
   return (
@@ -2222,6 +2242,7 @@ function BrokerWorkspace({
         isSubmitting={isSubmittingPaperExecution}
         onSubmit={onSubmitPaperExecution}
         rows={executionRows}
+        summaryTiles={summaryTiles}
         workspace={workspace}
       />
     </>
@@ -2586,6 +2607,66 @@ function riskApprovalGateDetail(i18n: AppI18n, gate: RiskApprovalGate): string {
     .replace("paper_only", "仅模拟盘")
     .replace("certified_live", "认证实盘")
     .replace("blocked_live", "实盘阻断");
+}
+
+function paperExecutionTileIcon(id: PaperExecutionSummaryTile["id"]): typeof Database {
+  if (id === "account-sync") {
+    return Database;
+  }
+  if (id === "paper-positions") {
+    return WalletCards;
+  }
+  return ShieldCheck;
+}
+
+function paperExecutionTileLabel(i18n: AppI18n, tile: PaperExecutionSummaryTile): string {
+  if (i18n.locale === "en-US") {
+    return tile.label;
+  }
+  return {
+    "account-sync": "账户同步",
+    "paper-positions": "模拟持仓",
+    "risk-gates": "执行闸门"
+  }[tile.id];
+}
+
+function paperExecutionTileValue(i18n: AppI18n, tile: PaperExecutionSummaryTile): string {
+  if (i18n.locale === "en-US") {
+    return tile.value;
+  }
+  const liveGatesBlocked = tile.value.match(/^(\d+) live gates blocked$/);
+  if (liveGatesBlocked) {
+    return `${liveGatesBlocked[1]} 个实盘闸门阻断`;
+  }
+  return tile.value
+    .replace("No paper execution", "尚无模拟执行")
+    .replace("Cash", "现金")
+    .replace("Equity", "权益")
+    .replace("paper", "模拟")
+    .replace("live", "实盘")
+    .replace("passed", "通过")
+    .replace("blocked", "阻断")
+    .replace("live route enabled", "实盘通道已开启");
+}
+
+function paperExecutionTileDetail(i18n: AppI18n, tile: PaperExecutionSummaryTile): string {
+  if (i18n.locale === "en-US") {
+    return tile.detail;
+  }
+  return tile.detail
+    .replace("Run Pipeline and submit a paper order to create a local account snapshot.", "运行流水线并提交模拟委托后，会生成本地账户快照。")
+    .replace("No filled paper positions are linked to the active audited run.", "当前审计运行尚未绑定已成交模拟持仓。")
+    .replace("Snapshot", "快照")
+    .replace("paper_only", "仅模拟盘")
+    .replace("Adapter certified: blocked", "适配器认证：阻断")
+    .replace("Risk approved: blocked", "风控审批：阻断")
+    .replace("Human confirmed: blocked", "人工确认：阻断")
+    .replace("Adapter certified: passed", "适配器认证：通过")
+    .replace("Risk approved: passed", "风控审批：通过")
+    .replace("Human confirmed: passed", "人工确认：通过")
+    .replace("Audit run bound: passed", "审计运行绑定：通过")
+    .replace("Paper risk check: passed", "模拟风控检查：通过")
+    .replace("Live route blocked: blocked", "实盘通道：阻断");
 }
 
 function paperPositionStatusLabel(i18n: AppI18n, status: PaperPositionRow["status"]): string {
@@ -3233,19 +3314,24 @@ function historyComparisonValue(i18n: AppI18n, value: string): string {
 }
 
 function ExecutionTile({
+  detail,
   icon: Icon,
   label,
+  tone,
   value
 }: {
+  detail: string;
   icon: typeof Database;
   label: string;
+  tone: PaperExecutionSummaryTile["tone"];
   value: string;
 }) {
   return (
-    <article className="execution-tile">
+    <article className={`execution-tile ${tone}`}>
       <Icon size={17} />
       <span>{label}</span>
       <strong>{value}</strong>
+      <p>{detail}</p>
     </article>
   );
 }

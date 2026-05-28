@@ -13,6 +13,7 @@ import {
   buildBrokerAdapterRows,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
+  buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioRiskRows,
@@ -818,6 +819,102 @@ describe("terminal workbench model", () => {
       reason: "Audited drawdown breaches the configured guardrail.",
       tone: "risk"
     });
+  });
+
+  test("summarizes paper execution account state before any execution record exists", () => {
+    const tiles = buildPaperExecutionSummaryTiles(buildTerminalWorkspace(), null);
+
+    expect(tiles.map((tile) => tile.id)).toEqual(["account-sync", "paper-positions", "risk-gates"]);
+    expect(tiles[0]).toMatchObject({
+      label: "Account sync",
+      value: "No paper execution",
+      detail: "Run Pipeline and submit a paper order to create a local account snapshot.",
+      tone: "warning"
+    });
+    expect(tiles[1]).toMatchObject({
+      value: "0 paper / 0 live",
+      detail: "No filled paper positions are linked to the active audited run."
+    });
+    expect(tiles[2]).toMatchObject({
+      value: "3 live gates blocked",
+      tone: "warning"
+    });
+  });
+
+  test("summarizes paper execution account, positions, and gates from persisted execution", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-paper-account",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-paper-account",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const execution = {
+      executionId: "paper-summary",
+      runId: "run-paper-account",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      mode: "paper_only",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-paper-summary",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+
+    const tiles = buildPaperExecutionSummaryTiles(workspace, execution);
+    const positions = buildPaperPositionRows(workspace, execution);
+
+    expect(tiles[0]).toMatchObject({
+      value: "Cash 80,659 / Equity 100,000",
+      detail: "Snapshot paper-summary · paper_only",
+      tone: "positive"
+    });
+    expect(tiles[1]).toMatchObject({
+      value: "1 paper / 0 live",
+      detail: "600000: 2100"
+    });
+    expect(tiles[2]).toMatchObject({
+      value: "2 passed / 1 blocked",
+      detail: "Audit run bound: passed · Paper risk check: passed · Live route blocked: blocked",
+      tone: "warning"
+    });
+    expect(positions).toEqual([
+      {
+        id: "paper-position-600000",
+        symbol: "600000",
+        quantity: "2100",
+        avgCost: "9.21",
+        markPrice: "8.66",
+        marketValue: "18186.00",
+        unrealizedPnl: "-1155.00",
+        returnPct: "-5.97%",
+        status: "paper",
+        tone: "warning"
+      }
+    ]);
   });
 
   test("blocks paper position rows until audited return is bound", () => {
