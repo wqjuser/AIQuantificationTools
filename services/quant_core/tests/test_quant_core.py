@@ -1072,6 +1072,143 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export["executionHandoff"]["requiredGates"][0]["id"], "adapter-certified")
         self.assertFalse(export["executionHandoff"]["requiredGates"][0]["passed"])
 
+    def test_research_run_import_api_persists_export_package_for_replay(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunStore
+
+        export_package = {
+            "kind": "aiqt.researchRun.export",
+            "packageVersion": 1,
+            "exportedAt": "2026-05-26T08:05:00+00:00",
+            "manifest": {
+                "runId": "run-import",
+                "createdAt": "2026-05-26T08:00:00+00:00",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyRevision": "rev-import",
+                "dataHash": "snapshot-import",
+                "dataRows": 2,
+                "executionMode": "paper_only",
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "artifactCounts": {"bars": 2, "trades": 1, "equityPoints": 2, "decisions": 1, "aiRisks": 1},
+            },
+            "researchRun": {
+                "runId": "run-import",
+                "createdAt": "2026-05-26T08:00:00+00:00",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyName": "Imported SMA trend",
+                "strategyRevision": "rev-import",
+                "dataRows": 2,
+                "metrics": {"total_return_pct": 4.2, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 1},
+                "decisions": [{"agent": "AI Summary", "message": "Imported evidence only", "tone": "ai"}],
+                "executionMode": "paper_only",
+                "aiReport": {
+                    "summary": "Imported package summary",
+                    "risks": ["Imported risk"],
+                    "improvements": ["Imported improvement"],
+                    "disclaimer": "No investment advice",
+                },
+                "dataQuality": {"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+                "dataSnapshot": {
+                    "source": "tencent",
+                    "isComplete": True,
+                    "warnings": [],
+                    "rows": 2,
+                    "start": "2026-05-26T08:00:00+00:00",
+                    "end": "2026-05-27T08:00:00+00:00",
+                    "hash": "snapshot-import",
+                    "bars": [
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "timestampMs": 1779782400000,
+                            "open": 9.1,
+                            "high": 9.3,
+                            "low": 9.0,
+                            "close": 9.2,
+                            "volume": 1200000,
+                        },
+                        {
+                            "timestamp": "2026-05-27T08:00:00+00:00",
+                            "timestampMs": 1779868800000,
+                            "open": 9.2,
+                            "high": 9.4,
+                            "low": 9.1,
+                            "close": 9.3,
+                            "volume": 1300000,
+                        },
+                    ],
+                },
+                "strategyConfig": {
+                    "name": "Imported SMA trend",
+                    "revision": "rev-import",
+                    "market": "ashare",
+                    "symbols": ["600000"],
+                    "timeframe": "1d",
+                    "version": 1,
+                    "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                    "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                    "risk": {"positionPct": 0.8, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2},
+                },
+                "backtestAssumptions": {"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
+                "backtestTrades": [{"id": "trade-import", "side": "BUY", "price": "9.20"}],
+                "backtestEquityCurve": [{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 250000.0}],
+                "backtestDiagnostics": [{"id": "return-profile", "label": "Return profile", "value": "+4.20%"}],
+            },
+            "executionHandoff": {
+                "mode": "paper_only",
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "requiredGates": [{"id": "adapter-certified", "label": "Adapter certified", "passed": False, "reason": "Blocked"}],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                run_store = store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(export_package).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", "/api/research/runs/run-import")
+                detail_response = connection.getresponse()
+                detail_payload = json.loads(detail_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["run"]["runId"], "run-import")
+        self.assertEqual(payload["run"]["dataSnapshot"]["hash"], "snapshot-import")
+        self.assertEqual(payload["run"]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
+        self.assertEqual(detail_response.status, 200)
+        self.assertEqual(detail_payload["run"]["strategyConfig"]["revision"], "rev-import")
+        self.assertEqual(detail_payload["run"]["dataSnapshot"]["bars"][1]["close"], 9.3)
+        self.assertEqual(detail_payload["run"]["executionMode"], "paper_only")
+
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 

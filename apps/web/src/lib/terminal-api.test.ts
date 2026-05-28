@@ -4,6 +4,7 @@ import {
   buildResearchRunUrl,
   buildResearchRunDetailUrl,
   buildResearchRunExportUrl,
+  buildResearchRunImportUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -12,6 +13,7 @@ import {
   loadMarketSearch,
   loadResearchRunDetail,
   loadResearchRunExport,
+  importResearchRunExport,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   buildWorkspaceUrl,
@@ -85,6 +87,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run export URL with an encoded run id", () => {
     expect(buildResearchRunExportUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
       "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/export"
+    );
+  });
+
+  test("builds the research run import URL", () => {
+    expect(buildResearchRunImportUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/import"
     );
   });
 
@@ -519,6 +527,121 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.exportPackage).toBeUndefined();
     expect(result.error).toBe("Invalid research run export contract");
+  });
+
+  test("imports one research run export package into the Python core", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await importResearchRunExport(
+      "http://127.0.0.1:8765",
+      {
+        kind: "aiqt.researchRun.export",
+        packageVersion: 1,
+        exportedAt: "2026-05-26T08:05:00+00:00",
+        manifest: {
+          runId: "run-import",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyRevision: "rev-import",
+          dataHash: "snapshot-import",
+          dataRows: 2,
+          executionMode: "paper_only",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          artifactCounts: { bars: 2, trades: 1, equityPoints: 1, decisions: 1, aiRisks: 1 }
+        },
+        researchRun: {
+          runId: "run-import",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyName: "Imported SMA trend",
+          strategyRevision: "rev-import",
+          dataRows: 2,
+          metrics: { total_return_pct: 4.2, trade_count: 1 },
+          decisions: [{ agent: "AI Summary", message: "Imported evidence only", tone: "ai" }],
+          executionMode: "paper_only",
+          dataSnapshot: {
+            source: "tencent",
+            isComplete: true,
+            warnings: [],
+            rows: 2,
+            start: "2026-05-26T08:00:00+00:00",
+            end: "2026-05-27T08:00:00+00:00",
+            hash: "snapshot-import",
+            bars: [
+              {
+                timestamp: "2026-05-26T08:00:00+00:00",
+                timestampMs: 1779782400000,
+                open: 9.1,
+                high: 9.3,
+                low: 9,
+                close: 9.2,
+                volume: 1200000
+              }
+            ]
+          }
+        },
+        executionHandoff: {
+          mode: "paper_only",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+        }
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            run: {
+              runId: "run-import",
+              createdAt: "2026-05-26T08:00:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyName: "Imported SMA trend",
+              strategyRevision: "rev-import",
+              dataRows: 2,
+              metrics: { total_return_pct: 4.2, trade_count: 1 },
+              decisions: [{ agent: "AI Summary", message: "Imported evidence only", tone: "ai" }],
+              executionMode: "paper_only",
+              dataSnapshot: {
+                source: "tencent",
+                isComplete: true,
+                warnings: [],
+                rows: 1,
+                start: "2026-05-26T08:00:00+00:00",
+                end: "2026-05-26T08:00:00+00:00",
+                hash: "snapshot-import",
+                bars: [
+                  {
+                    timestamp: "2026-05-26T08:00:00+00:00",
+                    timestampMs: 1779782400000,
+                    open: 9.1,
+                    high: 9.3,
+                    low: 9,
+                    close: 9.2,
+                    volume: 1200000
+                  }
+                ]
+              }
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/research/runs/import");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init?.body)).kind).toBe("aiqt.researchRun.export");
+    expect(result.source).toBe("core");
+    expect(result.run?.runId).toBe("run-import");
+    expect(result.run?.dataSnapshot?.hash).toBe("snapshot-import");
   });
 
   test("returns fallback when the research run detail payload is invalid", async () => {

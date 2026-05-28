@@ -21,6 +21,7 @@ from quant_core.runs import (
     research_run_audit_to_payload,
     research_run_audits_to_payload,
     research_run_export_to_payload,
+    research_run_import_to_audit,
 )
 from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 
@@ -49,6 +50,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/research/runs/import":
+            try:
+                payload = self._read_json_body()
+                audit = research_run_import_to_audit(payload)
+            except ValueError as error:
+                self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
+                return
+            self.run_store.record(audit)
+            self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
+            return
+        self._send_json({"error": "not_found"}, status=404)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -187,11 +202,26 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _read_json_body(self) -> dict[str, object]:
+        content_length = int(self.headers.get("Content-Length", "0") or "0")
+        if content_length <= 0:
+            raise ValueError("request_body_required")
+        if content_length > 10_000_000:
+            raise ValueError("request_body_too_large")
+        raw = self.rfile.read(content_length)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError as error:
+            raise ValueError("request_body_must_be_json") from error
+        if not isinstance(payload, dict):
+            raise ValueError("request_body_must_be_object")
+        return payload
 
     def log_message(self, format: str, *args) -> None:
         return

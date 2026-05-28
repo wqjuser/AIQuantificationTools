@@ -410,6 +410,64 @@ def research_run_export_to_payload(audit: ResearchRunAudit, *, exported_at: date
     }
 
 
+def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    if export_package.get("kind") != "aiqt.researchRun.export":
+        raise ValueError("unsupported_export_kind")
+    if int(_number_or_default(export_package.get("packageVersion"), 0)) != 1:
+        raise ValueError("unsupported_export_package_version")
+
+    manifest = export_package.get("manifest")
+    research_run = export_package.get("researchRun")
+    handoff = export_package.get("executionHandoff")
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest_must_be_object")
+    if not isinstance(research_run, dict):
+        raise ValueError("research_run_must_be_object")
+    if not isinstance(handoff, dict):
+        raise ValueError("execution_handoff_must_be_object")
+    if bool(manifest.get("liveTradingAllowed")) or bool(handoff.get("liveTradingAllowed")):
+        raise ValueError("live_trading_exports_cannot_be_imported")
+
+    run_id = _required_text(research_run, "runId")
+    data_snapshot = research_run.get("dataSnapshot")
+    if not isinstance(data_snapshot, dict):
+        raise ValueError("data_snapshot_must_be_object")
+
+    created_at_raw = _required_text(research_run, "createdAt")
+    try:
+        created_at = datetime.fromisoformat(created_at_raw)
+    except ValueError as error:
+        raise ValueError("created_at_must_be_iso_datetime") from error
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+
+    data_rows = int(_number_or_default(research_run.get("dataRows"), data_snapshot.get("rows", 0)))
+    return ResearchRunAudit(
+        run_id=run_id,
+        created_at=created_at,
+        market=_required_text(research_run, "market"),
+        symbol=_required_text(research_run, "symbol"),
+        timeframe=_required_text(research_run, "timeframe"),
+        strategy_name=_required_text(research_run, "strategyName"),
+        strategy_revision=_required_text(research_run, "strategyRevision"),
+        data_rows=max(0, data_rows),
+        metrics=_dict_or_empty(research_run.get("metrics")),
+        decisions=_list_of_dicts(research_run.get("decisions")),
+        execution_mode=str(research_run.get("executionMode") or manifest.get("executionMode") or "paper_only"),
+        ai_report=_dict_or_empty(research_run.get("aiReport")),
+        data_quality=_dict_or_empty(research_run.get("dataQuality")),
+        data_snapshot=data_snapshot,
+        strategy_config=_dict_or_empty(research_run.get("strategyConfig")),
+        backtest_assumptions=_dict_or_empty(research_run.get("backtestAssumptions")),
+        backtest_trades=_list_of_dicts(research_run.get("backtestTrades")),
+        backtest_equity_curve=_list_of_dicts(research_run.get("backtestEquityCurve")),
+        backtest_diagnostics=_list_of_dicts(research_run.get("backtestDiagnostics")),
+    )
+
+
 def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRunAudit:
     return ResearchRunAudit(
         run_id=row[0],
@@ -441,6 +499,24 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         backtest_equity_curve=json.loads(row[17]),
         backtest_diagnostics=json.loads(row[18]),
     )
+
+
+def _required_text(mapping: dict[str, Any], key: str) -> str:
+    value = mapping.get(key)
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        raise ValueError(f"{key}_is_required")
+    return text
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
 
 
 def _normalize_ai_report(value: dict[str, Any] | None) -> dict[str, Any]:

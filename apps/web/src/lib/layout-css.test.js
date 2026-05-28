@@ -155,4 +155,13 @@ describe("terminal layout css", () => {
     expect(cssBlock(".history-row-actions")).toContain("display: flex;");
     expect(cssBlock(".history-row-actions button")).toContain("min-height: 28px;");
   });
+
+  test("keeps research run import as a compact history panel action", () => {
+    expect(appSource).toContain('i18n.t("history.import")');
+    expect(appSource).toContain('className="history-import-input"');
+    expect(appSource).toContain('type="file"');
+    expect(cssBlock(".history-panel-actions")).toContain("display: flex;");
+    expect(cssBlock(".history-import-button")).toContain("min-height: 30px;");
+    expect(cssBlock(".history-import-input")).toContain("display: none;");
+  });
 });

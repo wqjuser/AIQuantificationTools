@@ -14,13 +14,15 @@ import {
   Search,
   ShieldCheck,
   Timer,
+  Upload,
   WalletCards,
   X
 } from "lucide-react";
 import { ActionType, dispose, init, LoadDataType, type Chart, type KLineData } from "klinecharts";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import {
   buildLoadingMarketKlinesResult,
+  importResearchRunExport,
   loadMarketKlines,
   loadMarketSearch,
   loadResearchRunDetail,
@@ -33,6 +35,7 @@ import {
   MarketSearchSuggestion,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  ResearchRunExportPackage,
   ResearchRunHistoryResult,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
@@ -423,6 +426,64 @@ export function App() {
       error: undefined
     }));
   }, []);
+
+  const importRunExportFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) {
+        return;
+      }
+
+      const importVersion = manualSelectionVersionRef.current + 1;
+      manualSelectionVersionRef.current = importVersion;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
+
+      try {
+        const parsed = JSON.parse(await file.text()) as ResearchRunExportPackage | { export?: ResearchRunExportPackage };
+        const exportPackage = "export" in parsed && parsed.export ? parsed.export : parsed;
+        const result = await importResearchRunExport(quantCoreBaseUrl, exportPackage as ResearchRunExportPackage);
+        if (manualSelectionVersionRef.current !== importVersion) {
+          return;
+        }
+        if (result.source === "fallback" || !result.run) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Research run import failed",
+            error: result.error ?? "Research run import failed"
+          }));
+          return;
+        }
+        const importedKlines = marketKlinesFromResearchRunAudit(result.run);
+        setWorkspaceState((current) => ({
+          workspace: workspaceFromResearchRunAudit(current.workspace, result.run as ResearchRunAudit),
+          source: "core",
+          statusLabel: "Research run import ready",
+          error: undefined
+        }));
+        if (importedKlines) {
+          setKlinesState(importedKlines);
+        }
+        setActiveModuleId("workflow");
+        setActiveLoopStepId("backtest");
+        setActiveWorkflowStageId("execution");
+        setWorkflowRunState(buildAuditReplayWorkflowState(result.run));
+        await refreshRunHistory();
+      } catch (importError) {
+        if (manualSelectionVersionRef.current !== importVersion) {
+          return;
+        }
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research run import failed",
+          error: importError instanceof Error ? importError.message : "Research run import failed"
+        }));
+      }
+    },
+    [refreshRunHistory]
+  );
 
   const selectInstrument = useCallback(
     (instrument: TerminalWorkspace["selectedInstrument"]) => {
@@ -911,6 +972,7 @@ export function App() {
                 className="watchlist-history-panel"
                 i18n={i18n}
                 onExport={exportRun}
+                onImportFile={importRunExportFile}
                 onReplay={replayRun}
                 runComparisonRows={runComparisonRows}
                 runHistory={runHistory}
@@ -1313,6 +1375,7 @@ function RunHistoryPanel({
   className,
   i18n,
   onExport,
+  onImportFile,
   onReplay,
   runComparisonRows,
   runHistory,
@@ -1321,13 +1384,34 @@ function RunHistoryPanel({
   className?: string;
   i18n: AppI18n;
   onExport: (run: ResearchRunAudit) => void;
+  onImportFile: (event: ChangeEvent<HTMLInputElement>) => void;
   onReplay: (run: ResearchRunAudit) => void;
   runComparisonRows: ResearchRunComparisonRow[];
   runHistory: ResearchRunAudit[];
   workspace: TerminalWorkspace;
 }) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   return (
-    <Panel title={i18n.t("panel.history.title")} subtitle={i18n.t("panel.history.subtitle")} className={className}>
+    <Panel
+      title={i18n.t("panel.history.title")}
+      subtitle={i18n.t("panel.history.subtitle")}
+      className={className}
+      action={
+        <div className="history-panel-actions">
+          <input
+            accept="application/json,.json"
+            className="history-import-input"
+            onChange={onImportFile}
+            ref={importInputRef}
+            type="file"
+          />
+          <button className="history-import-button" onClick={() => importInputRef.current?.click()} type="button">
+            <Upload size={13} />
+            <span>{i18n.t("history.import")}</span>
+          </button>
+        </div>
+      }
+    >
       <div className="history-panel-body">
         {runComparisonRows.length ? <RunComparisonBoard i18n={i18n} rows={runComparisonRows} /> : null}
         <div className="run-history">

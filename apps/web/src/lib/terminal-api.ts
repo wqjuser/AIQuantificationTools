@@ -83,6 +83,12 @@ export interface ResearchRunExportResult {
   error?: string;
 }
 
+export interface ResearchRunImportResult {
+  run?: ResearchRunAudit;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -133,7 +139,7 @@ export interface WorkspaceResponse {
   json: () => Promise<unknown>;
 }
 
-export type WorkspaceFetcher = (url: string) => Promise<WorkspaceResponse>;
+export type WorkspaceFetcher = (url: string, init?: RequestInit) => Promise<WorkspaceResponse>;
 
 export interface TerminalResearchParams {
   market: Market;
@@ -146,7 +152,7 @@ export interface MarketKlinesParams extends TerminalResearchParams {
   end?: string;
 }
 
-const defaultFetcher: WorkspaceFetcher = async (url) => fetch(url);
+const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
 
 export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): string {
   const configured = env.VITE_QUANT_API_BASE?.trim();
@@ -203,6 +209,11 @@ export function buildResearchRunDetailUrl(baseUrl: string, runId: string): strin
 export function buildResearchRunExportUrl(baseUrl: string, runId: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(`api/research/runs/${encodeURIComponent(runId)}/export`, normalizedBase).toString();
+}
+
+export function buildResearchRunImportUrl(baseUrl: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL("api/research/runs/import", normalizedBase).toString();
 }
 
 export function buildMarketKlinesUrl(
@@ -353,6 +364,36 @@ export async function loadResearchRunExport(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run export error"
+    };
+  }
+}
+
+export async function importResearchRunExport(
+  baseUrl: string,
+  exportPackage: ResearchRunExportPackage,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchRunImportResult> {
+  try {
+    const response = await fetcher(buildResearchRunImportUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(exportPackage)
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isResearchRunImportPayload(payload)) {
+      throw new Error("Invalid research run import contract");
+    }
+    return {
+      run: payload.run,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research run import error"
     };
   }
 }
@@ -536,6 +577,14 @@ function isResearchRunExportPayload(value: unknown): value is { export: Research
   }
   const payload = value as { export?: unknown };
   return isResearchRunExportPackage(payload.export);
+}
+
+function isResearchRunImportPayload(value: unknown): value is { run: ResearchRunAudit } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { run?: unknown };
+  return isResearchRunAudit(payload.run) && Boolean(payload.run.dataSnapshot);
 }
 
 function isResearchRunExportPackage(value: unknown): value is ResearchRunExportPackage {
