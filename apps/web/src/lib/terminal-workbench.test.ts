@@ -25,6 +25,7 @@ import {
   researchRunLabel,
   quantLoopLabels,
   resolveBacktestAssumptions,
+  type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
   workspaceWithAiAction,
@@ -36,6 +37,10 @@ import {
   workspaceWithSelectedInstrument,
   workspaceFromResearchRunAudit
 } from "./terminal-workbench";
+
+function quantLoopStatuses(workspace: TerminalWorkspace): Record<string, string> {
+  return Object.fromEntries(workspace.quantLoop.map((step) => [step.id, step.status]));
+}
 
 describe("terminal workbench model", () => {
   test("builds a complete terminal shell with quant loop and terminal panels", () => {
@@ -58,6 +63,67 @@ describe("terminal workbench model", () => {
       "agent-committee"
     ]);
     expect(workspace.selectedTimeframe).toBe("1d");
+  });
+
+  test("locks paper trading in the quant loop until an audited run is bound", () => {
+    const workspace = buildTerminalWorkspace();
+
+    expect(quantLoopStatuses(workspace)).toEqual({
+      research: "active",
+      strategy: "ready",
+      backtest: "ready",
+      "agent-review": "ready",
+      paper: "locked"
+    });
+  });
+
+  test("unlocks paper trading after an audited research run is bound", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-quant-loop",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Run loaded", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    expect(quantLoopStatuses(workspace).paper).toBe("ready");
+  });
+
+  test("locks paper trading again when local strategy or backtest edits invalidate the audit", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-stale",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Run loaded", tone: "ai" }],
+      executionMode: "paper_only"
+    });
+
+    expect(quantLoopStatuses(workspaceWithStrategyField(auditedWorkspace, "entry", "RSI rebound")).paper).toBe(
+      "locked"
+    );
+    expect(quantLoopStatuses(workspaceWithBacktestAssumption(auditedWorkspace, "feeBps", 8)).paper).toBe("locked");
   });
 
   test("maps quant loop steps to concrete workspace navigation targets", () => {

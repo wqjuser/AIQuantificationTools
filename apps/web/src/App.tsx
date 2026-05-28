@@ -964,6 +964,7 @@ export function App() {
                   className={`loop-step ${step.status === "locked" ? "locked" : ""} ${
                     activeLoopStepId === step.id ? "selected active" : ""
                   }`}
+                  disabled={step.status === "locked"}
                   key={step.id}
                   onClick={() => selectQuantLoopStep(step.id)}
                   title={`${i18n.quantLoopLabel(step.id, step.label)} · ${workflowNextActionLabel(i18n, step.id)}`}

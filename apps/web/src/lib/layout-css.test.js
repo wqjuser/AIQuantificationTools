@@ -86,6 +86,11 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration(".loop-step-copy small", "display: none;")).toBe(true);
   });
 
+  test("treats locked workflow steps as disabled navigation controls", () => {
+    expect(appSource).toContain('disabled={step.status === "locked"}');
+    expect(cssBlock(".loop-step:disabled")).toContain("cursor: not-allowed;");
+  });
+
   test("keeps market context in one compact desktop band above the workflow", () => {
     expect(appSource).toContain('className="terminal-overview-grid market-tape"');
     expect(cssBlock(".terminal-overview-grid")).toContain(

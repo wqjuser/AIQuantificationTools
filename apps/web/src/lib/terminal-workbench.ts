@@ -391,11 +391,18 @@ const primaryQuantLoopStepDefinitions = [
   { id: "paper", label: "Paper Trading" }
 ] as const;
 
-function buildPrimaryQuantLoopSteps(activeStepId = "research"): QuantLoopStep[] {
+function buildPrimaryQuantLoopSteps(activeStepId = "research", hasAuditedRun = false): QuantLoopStep[] {
   return primaryQuantLoopStepDefinitions.map((step) => ({
     ...step,
-    status: step.id === activeStepId ? "active" : "ready"
+    status: step.id === "paper" && !hasAuditedRun ? "locked" : step.id === activeStepId ? "active" : "ready"
   }));
+}
+
+function activeQuantLoopStepId(workspace: TerminalWorkspace): string {
+  const supportedStepIds = new Set<string>(primaryQuantLoopStepDefinitions.map((step) => step.id));
+  return (
+    workspace.quantLoop.find((step) => supportedStepIds.has(step.id) && step.status === "active")?.id ?? "research"
+  );
 }
 
 const backtestAssumptionSpecs: Record<
@@ -512,12 +519,9 @@ export function quantLoopLabels(workspace: TerminalWorkspace): string[] {
 }
 
 export function workspaceWithPrimaryWorkflows(workspace: TerminalWorkspace): TerminalWorkspace {
-  const supportedStepIds = new Set<string>(primaryQuantLoopStepDefinitions.map((step) => step.id));
-  const activeStepId =
-    workspace.quantLoop.find((step) => supportedStepIds.has(step.id) && step.status === "active")?.id ?? "research";
   return {
     ...workspace,
-    quantLoop: buildPrimaryQuantLoopSteps(activeStepId)
+    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(workspace), Boolean(workspace.researchRun))
   };
 }
 
@@ -1398,6 +1402,7 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
 function clearAuditedResearchResults(workspace: TerminalWorkspace): TerminalWorkspace {
   return {
     ...workspace,
+    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(workspace), false),
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },
@@ -1542,10 +1547,19 @@ export function workspaceFromResearchRunAudit(
     market: run.market,
     changePct: 0
   };
+  const researchRun: ResearchRunSummary = {
+    runId: run.runId,
+    createdAt: run.createdAt,
+    timeframe: run.timeframe,
+    strategyRevision: run.strategyRevision,
+    dataRows: run.dataRows,
+    executionMode: run.executionMode
+  };
   return {
     ...currentWorkspace,
     selectedInstrument: instrument,
     selectedTimeframe: run.timeframe,
+    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), true),
     backtestAssumptions: normalizeBacktestAssumptions(run.backtestAssumptions),
     strategy: strategySnapshotFromAudit(run),
     metrics: [
@@ -1562,14 +1576,7 @@ export function workspaceFromResearchRunAudit(
     backtestTrades: run.backtestTrades ?? [],
     backtestEquityCurve: run.backtestEquityCurve ?? [],
     backtestDiagnostics: run.backtestDiagnostics ?? [],
-    researchRun: {
-      runId: run.runId,
-      createdAt: run.createdAt,
-      timeframe: run.timeframe,
-      strategyRevision: run.strategyRevision,
-      dataRows: run.dataRows,
-      executionMode: run.executionMode
-    }
+    researchRun
   };
 }
 
@@ -1742,6 +1749,7 @@ export function workspaceWithStrategyField(
       ...currentWorkspace.strategy,
       [field]: value
     },
+    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), false),
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },
@@ -1775,6 +1783,7 @@ export function workspaceWithBacktestAssumption(
   return {
     ...currentWorkspace,
     backtestAssumptions: nextAssumptions,
+    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), false),
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },
@@ -1816,6 +1825,10 @@ export function workspaceWithPreservedInteractiveState(
     backtestAssumptions: resolveBacktestAssumptions(currentWorkspace),
     metrics: currentWorkspace.metrics,
     decisionLog: currentWorkspace.decisionLog,
+    quantLoop: buildPrimaryQuantLoopSteps(
+      activeQuantLoopStepId(currentWorkspace),
+      Boolean(currentWorkspace.researchRun)
+    ),
     researchRun: currentWorkspace.researchRun
   };
 }
@@ -1829,6 +1842,7 @@ function freshResearchContext(
     ...currentWorkspace,
     selectedInstrument: instrument,
     selectedTimeframe: timeframe,
+    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), false),
     strategy: {
       name: `${instrument.symbol} ${timeframe} research context`,
       entry: "Run Pipeline to generate entry rules from the selected context",
