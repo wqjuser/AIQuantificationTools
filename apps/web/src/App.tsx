@@ -25,6 +25,7 @@ import {
   loadResearchRunDetail,
   loadResearchRunHistory,
   loadTerminalWorkspace,
+  marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   MarketKlinesResult,
   MarketSearchSuggestion,
@@ -375,11 +376,15 @@ export function App() {
         return;
       }
       const auditedRun = detail.run ?? run;
+      const auditedKlines = marketKlinesFromResearchRunAudit(auditedRun);
       setWorkspaceState((current) => ({
         workspace: workspaceFromResearchRunAudit(current.workspace, auditedRun),
         source: "core",
         statusLabel: detail.source === "core" ? "Audit detail loaded" : "Audit replay loaded"
       }));
+      if (auditedKlines) {
+        setKlinesState(auditedKlines);
+      }
       setActiveModuleId("workflow");
       setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");

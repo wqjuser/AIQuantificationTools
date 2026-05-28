@@ -273,6 +273,27 @@ export interface ResearchRunDataQuality {
   rows: number;
 }
 
+export interface ResearchRunDataSnapshotBar {
+  timestamp: string;
+  timestampMs: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface ResearchRunDataSnapshot {
+  source: string;
+  isComplete: boolean;
+  warnings: string[];
+  rows: number;
+  start: string | null;
+  end: string | null;
+  hash: string;
+  bars: ResearchRunDataSnapshotBar[];
+}
+
 export interface ResearchRunStrategyCondition {
   kind: string;
   params: Record<string, string | number | boolean | null>;
@@ -318,6 +339,7 @@ export interface ResearchRunAudit {
   executionMode: string;
   aiReport?: ResearchRunAiReport;
   dataQuality?: ResearchRunDataQuality;
+  dataSnapshot?: ResearchRunDataSnapshot;
   strategyConfig?: ResearchRunStrategyConfig;
   backtestAssumptions?: BacktestAssumptions;
   backtestTrades?: BacktestTradeRow[];

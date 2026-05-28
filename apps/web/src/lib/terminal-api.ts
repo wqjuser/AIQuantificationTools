@@ -314,6 +314,26 @@ export async function loadMarketKlines(
   }
 }
 
+export function marketKlinesFromResearchRunAudit(run: ResearchRunAudit): MarketKlinesResult | null {
+  const snapshot = run.dataSnapshot;
+  if (!snapshot || !snapshot.bars.length) {
+    return null;
+  }
+  return {
+    market: run.market,
+    symbol: run.symbol,
+    timeframe: run.timeframe,
+    bars: snapshot.bars.map((bar) => ({ ...bar })),
+    quality: {
+      source: snapshot.source,
+      isComplete: snapshot.isComplete,
+      warnings: [...snapshot.warnings],
+      rows: snapshot.rows
+    },
+    source: "core"
+  };
+}
+
 export function mergeMarketKlines(current: MarketKlinesResult, incoming: MarketKlinesResult): MarketKlinesResult {
   if (
     current.market !== incoming.market ||
@@ -509,6 +529,7 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Boolean(run.executionMode) &&
     (run.aiReport === undefined || isResearchRunAiReport(run.aiReport)) &&
     (run.dataQuality === undefined || isResearchRunDataQuality(run.dataQuality)) &&
+    (run.dataSnapshot === undefined || isResearchRunDataSnapshot(run.dataSnapshot)) &&
     (run.strategyConfig === undefined || isResearchRunStrategyConfig(run.strategyConfig)) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
     (run.backtestTrades === undefined ||
@@ -517,6 +538,25 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
       (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint))) &&
     (run.backtestDiagnostics === undefined ||
       (Array.isArray(run.backtestDiagnostics) && run.backtestDiagnostics.every(isBacktestDiagnostic)))
+  );
+}
+
+function isResearchRunDataSnapshot(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const snapshot = value as Record<string, unknown>;
+  return (
+    typeof snapshot.source === "string" &&
+    typeof snapshot.isComplete === "boolean" &&
+    Array.isArray(snapshot.warnings) &&
+    snapshot.warnings.every((warning) => typeof warning === "string") &&
+    typeof snapshot.rows === "number" &&
+    (snapshot.start === null || typeof snapshot.start === "string") &&
+    (snapshot.end === null || typeof snapshot.end === "string") &&
+    typeof snapshot.hash === "string" &&
+    Array.isArray(snapshot.bars) &&
+    snapshot.bars.every(isMarketKlineBar)
   );
 }
 

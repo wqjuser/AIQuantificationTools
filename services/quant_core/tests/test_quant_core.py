@@ -422,6 +422,35 @@ class QuantCoreContractTest(unittest.TestCase):
                 "improvements": ["Compare against benchmark"],
                 "disclaimer": "Not investment advice",
             },
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 2,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-27T08:00:00+00:00",
+                "hash": "snapshot-test",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    },
+                    {
+                        "timestamp": "2026-05-27T08:00:00+00:00",
+                        "timestampMs": 1779868800000,
+                        "open": 9.2,
+                        "high": 9.4,
+                        "low": 9.1,
+                        "close": 9.3,
+                        "volume": 1300000,
+                    },
+                ],
+            },
             data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
             strategy_config={
                 "name": "SMA trend demo",
@@ -479,6 +508,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].ai_report["risks"], ["Risk note"])
         self.assertEqual(latest[0].ai_report["improvements"], ["Compare against benchmark"])
         self.assertEqual(latest[0].ai_report["disclaimer"], "Not investment advice")
+        self.assertEqual(latest[0].data_snapshot["source"], "tencent")
+        self.assertEqual(latest[0].data_snapshot["rows"], 2)
+        self.assertEqual(latest[0].data_snapshot["hash"], "snapshot-test")
+        self.assertEqual(latest[0].data_snapshot["bars"][0]["close"], 9.2)
         self.assertEqual(latest[0].data_quality, {"source": "tencent", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(latest[0].strategy_config["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(latest[0].strategy_config["risk"]["positionPct"], 0.8)
@@ -521,6 +554,26 @@ class QuantCoreContractTest(unittest.TestCase):
                 "risks": ["Single detail risk"],
                 "improvements": ["Single detail improvement"],
                 "disclaimer": "No direct trading advice",
+            },
+            data_snapshot={
+                "source": "yfinance",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-26T08:00:00+00:00",
+                "hash": "snapshot-newer",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 191.0,
+                        "high": 193.0,
+                        "low": 190.0,
+                        "close": 192.0,
+                        "volume": 1000000,
+                    }
+                ],
             },
             data_quality={"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 240},
             strategy_config={
@@ -577,6 +630,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(restored.ai_report["risks"], ["Single detail risk"])
         self.assertEqual(restored.ai_report["improvements"], ["Single detail improvement"])
         self.assertEqual(restored.ai_report["disclaimer"], "No direct trading advice")
+        self.assertEqual(restored.data_snapshot["hash"], "snapshot-newer")
+        self.assertEqual(restored.data_snapshot["bars"][0]["close"], 192.0)
         self.assertEqual(
             restored.data_quality,
             {"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 240},
@@ -622,6 +677,26 @@ class QuantCoreContractTest(unittest.TestCase):
                 "risks": ["History risk"],
                 "improvements": ["History improvement"],
                 "disclaimer": "No investment promise",
+            },
+            data_snapshot={
+                "source": "yahoo",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-26T08:00:00+00:00",
+                "hash": "snapshot-history",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 191.0,
+                        "high": 193.0,
+                        "low": 190.0,
+                        "close": 192.0,
+                        "volume": 1000000,
+                    }
+                ],
             },
             data_quality={"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120},
             strategy_config={
@@ -675,6 +750,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["aiReport"]["risks"], ["History risk"])
         self.assertEqual(payload["runs"][0]["aiReport"]["improvements"], ["History improvement"])
         self.assertEqual(payload["runs"][0]["aiReport"]["disclaimer"], "No investment promise")
+        self.assertNotIn("dataSnapshot", payload["runs"][0])
         self.assertEqual(payload["runs"][0]["dataQuality"], {"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(payload["runs"][0]["strategyConfig"]["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(payload["runs"][0]["strategyConfig"]["risk"]["positionPct"], 0.8)
@@ -721,6 +797,11 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(latest[0].ai_report["risks"])
         self.assertTrue(latest[0].ai_report["improvements"])
         self.assertIn("不构成投资建议", latest[0].ai_report["disclaimer"])
+        self.assertEqual(latest[0].data_snapshot["source"], "demo")
+        self.assertEqual(latest[0].data_snapshot["rows"], latest[0].data_rows)
+        self.assertEqual(len(latest[0].data_snapshot["bars"]), latest[0].data_rows)
+        self.assertTrue(latest[0].data_snapshot["hash"])
+        self.assertEqual(latest[0].data_snapshot["bars"][-1]["timestamp"], latest[0].backtest_equity_curve[-1]["timestamp"])
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
         self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
@@ -755,6 +836,26 @@ class QuantCoreContractTest(unittest.TestCase):
                         "risks": ["Detail endpoint risk"],
                         "improvements": ["Detail endpoint improvement"],
                         "disclaimer": "No investment advice",
+                    },
+                    data_snapshot={
+                        "source": "tencent",
+                        "isComplete": True,
+                        "warnings": [],
+                        "rows": 1,
+                        "start": "2026-05-26T08:00:00+00:00",
+                        "end": "2026-05-26T08:00:00+00:00",
+                        "hash": "snapshot-detail",
+                        "bars": [
+                            {
+                                "timestamp": "2026-05-26T08:00:00+00:00",
+                                "timestampMs": 1779782400000,
+                                "open": 9.1,
+                                "high": 9.3,
+                                "low": 9.0,
+                                "close": 9.2,
+                                "volume": 1200000,
+                            }
+                        ],
                     },
                     data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
                     strategy_config={
@@ -796,6 +897,9 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["run"]["aiReport"]["risks"], ["Detail endpoint risk"])
         self.assertEqual(payload["run"]["aiReport"]["improvements"], ["Detail endpoint improvement"])
         self.assertEqual(payload["run"]["aiReport"]["disclaimer"], "No investment advice")
+        self.assertEqual(payload["run"]["dataSnapshot"]["source"], "tencent")
+        self.assertEqual(payload["run"]["dataSnapshot"]["hash"], "snapshot-detail")
+        self.assertEqual(payload["run"]["dataSnapshot"]["bars"][0]["close"], 9.2)
         self.assertEqual(payload["run"]["dataQuality"], {"source": "tencent", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(payload["run"]["strategyConfig"]["entryConditions"][0]["params"], {"window": 20})
         self.assertEqual(payload["run"]["strategyConfig"]["risk"]["positionPct"], 0.8)

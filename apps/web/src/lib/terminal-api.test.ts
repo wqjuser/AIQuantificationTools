@@ -10,6 +10,7 @@ import {
   loadMarketKlines,
   loadMarketSearch,
   loadResearchRunDetail,
+  marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   buildWorkspaceUrl,
   loadResearchRunHistory,
@@ -338,6 +339,35 @@ describe("terminal workspace API client", () => {
               improvements: ["Review slippage"],
               disclaimer: "No investment advice"
             },
+            dataSnapshot: {
+              source: "tencent",
+              isComplete: true,
+              warnings: [],
+              rows: 2,
+              start: "2026-05-26T08:00:00+00:00",
+              end: "2026-05-27T08:00:00+00:00",
+              hash: "snapshot-detail",
+              bars: [
+                {
+                  timestamp: "2026-05-26T08:00:00+00:00",
+                  timestampMs: 1779782400000,
+                  open: 9.1,
+                  high: 9.3,
+                  low: 9,
+                  close: 9.2,
+                  volume: 1200000
+                },
+                {
+                  timestamp: "2026-05-27T08:00:00+00:00",
+                  timestampMs: 1779868800000,
+                  open: 9.2,
+                  high: 9.4,
+                  low: 9.1,
+                  close: 9.3,
+                  volume: 1300000
+                }
+              ]
+            },
             dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 120 },
             strategyConfig: {
               name: "SMA trend demo",
@@ -363,6 +393,8 @@ describe("terminal workspace API client", () => {
     expect(result.run?.aiReport?.risks[0]).toBe("Detail risk");
     expect(result.run?.aiReport?.improvements[0]).toBe("Review slippage");
     expect(result.run?.aiReport?.disclaimer).toBe("No investment advice");
+    expect(result.run?.dataSnapshot?.hash).toBe("snapshot-detail");
+    expect(result.run?.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.run?.dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
     expect(result.run?.strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
     expect(result.run?.strategyConfig?.risk.positionPct).toBe(0.8);
@@ -471,6 +503,114 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.run).toBeUndefined();
     expect(result.error).toBe("Invalid research run detail contract");
+  });
+
+  test("returns fallback when research run data snapshot is malformed", async () => {
+    const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        run: {
+          runId: "run-new",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyName: "SMA trend demo",
+          strategyRevision: "rev123",
+          dataRows: 120,
+          metrics: { total_return_pct: 3.4, trade_count: 8 },
+          decisions: [],
+          executionMode: "paper_only",
+          dataSnapshot: {
+            source: "tencent",
+            isComplete: true,
+            warnings: [],
+            rows: 1,
+            start: "2026-05-26T08:00:00+00:00",
+            end: "2026-05-26T08:00:00+00:00",
+            hash: "snapshot-bad",
+            bars: [{ timestamp: "2026-05-26T08:00:00+00:00", close: 9.2 }]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.run).toBeUndefined();
+    expect(result.error).toBe("Invalid research run detail contract");
+  });
+
+  test("builds chart klines from an audited research run data snapshot", () => {
+    const klines = marketKlinesFromResearchRunAudit({
+      runId: "run-snapshot",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 2,
+      metrics: { total_return_pct: 3.4, trade_count: 8 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-chart",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 9.1,
+            high: 9.3,
+            low: 9,
+            close: 9.2,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            timestampMs: 1779868800000,
+            open: 9.2,
+            high: 9.4,
+            low: 9.1,
+            close: 9.3,
+            volume: 1300000
+          }
+        ]
+      }
+    });
+
+    expect(klines).toEqual({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      source: "core",
+      quality: { source: "tencent", isComplete: true, warnings: [], rows: 2 },
+      bars: [
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          timestampMs: 1779782400000,
+          open: 9.1,
+          high: 9.3,
+          low: 9,
+          close: 9.2,
+          volume: 1200000
+        },
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          timestampMs: 1779868800000,
+          open: 9.2,
+          high: 9.4,
+          low: 9.1,
+          close: 9.3,
+          volume: 1300000
+        }
+      ]
+    });
   });
 
   test("loads market klines from the Python core", async () => {

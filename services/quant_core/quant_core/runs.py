@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,16 @@ from typing import Any
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
 DEFAULT_DATA_QUALITY = {"source": "unknown", "isComplete": False, "warnings": [], "rows": 0}
 DEFAULT_AI_REPORT = {"summary": "", "risks": [], "improvements": [], "disclaimer": ""}
+DEFAULT_DATA_SNAPSHOT = {
+    "source": "unknown",
+    "isComplete": False,
+    "warnings": [],
+    "rows": 0,
+    "start": None,
+    "end": None,
+    "hash": "",
+    "bars": [],
+}
 
 
 def _default_ai_report() -> dict[str, Any]:
@@ -19,6 +30,19 @@ def _default_ai_report() -> dict[str, Any]:
         "risks": [],
         "improvements": [],
         "disclaimer": DEFAULT_AI_REPORT["disclaimer"],
+    }
+
+
+def _default_data_snapshot() -> dict[str, Any]:
+    return {
+        "source": DEFAULT_DATA_SNAPSHOT["source"],
+        "isComplete": DEFAULT_DATA_SNAPSHOT["isComplete"],
+        "warnings": [],
+        "rows": DEFAULT_DATA_SNAPSHOT["rows"],
+        "start": DEFAULT_DATA_SNAPSHOT["start"],
+        "end": DEFAULT_DATA_SNAPSHOT["end"],
+        "hash": DEFAULT_DATA_SNAPSHOT["hash"],
+        "bars": [],
     }
 
 
@@ -37,6 +61,7 @@ class ResearchRunAudit:
     execution_mode: str
     ai_report: dict[str, Any] = field(default_factory=_default_ai_report)
     data_quality: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DATA_QUALITY))
+    data_snapshot: dict[str, Any] = field(default_factory=_default_data_snapshot)
     strategy_config: dict[str, Any] | None = None
     backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
     backtest_trades: list[dict[str, Any]] = field(default_factory=list)
@@ -72,6 +97,7 @@ class ResearchRunStore:
                     execution_mode text not null,
                     ai_report_json text not null default '{"summary": "", "risks": [], "improvements": [], "disclaimer": ""}',
                     data_quality_json text not null default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}',
+                    data_snapshot_json text not null default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0, "start": null, "end": null, "hash": "", "bars": []}',
                     strategy_config_json text not null default '{}',
                     backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
                     backtest_trades_json text not null default '[]',
@@ -103,6 +129,14 @@ class ResearchRunStore:
                     alter table research_runs
                     add column data_quality_json text not null
                     default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}'
+                    """
+                )
+            if "data_snapshot_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column data_snapshot_json text not null
+                    default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0, "start": null, "end": null, "hash": "", "bars": []}'
                     """
                 )
             if "strategy_config_json" not in columns:
@@ -160,13 +194,14 @@ class ResearchRunStore:
                     execution_mode,
                     ai_report_json,
                     data_quality_json,
+                    data_snapshot_json,
                     strategy_config_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
                     backtest_diagnostics_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -180,6 +215,7 @@ class ResearchRunStore:
                     execution_mode = excluded.execution_mode,
                     ai_report_json = excluded.ai_report_json,
                     data_quality_json = excluded.data_quality_json,
+                    data_snapshot_json = excluded.data_snapshot_json,
                     strategy_config_json = excluded.strategy_config_json,
                     backtest_assumptions_json = excluded.backtest_assumptions_json,
                     backtest_trades_json = excluded.backtest_trades_json,
@@ -200,6 +236,7 @@ class ResearchRunStore:
                     audit.execution_mode,
                     json.dumps(_normalize_ai_report(audit.ai_report), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_data_quality(audit.data_quality, data_rows=audit.data_rows), ensure_ascii=False, sort_keys=True),
+                    json.dumps(_normalize_data_snapshot(audit.data_snapshot), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_strategy_config(audit.strategy_config, audit=audit), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
@@ -230,6 +267,7 @@ class ResearchRunStore:
                     execution_mode,
                     ai_report_json,
                     data_quality_json,
+                    data_snapshot_json,
                     strategy_config_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
@@ -265,6 +303,7 @@ class ResearchRunStore:
                     execution_mode,
                     ai_report_json,
                     data_quality_json,
+                    data_snapshot_json,
                     strategy_config_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
@@ -282,8 +321,8 @@ class ResearchRunStore:
         return _row_to_research_run_audit(row) if row else None
 
 
-def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
-    return {
+def research_run_audit_to_payload(audit: ResearchRunAudit, *, include_data_snapshot: bool = False) -> dict[str, Any]:
+    payload = {
         "runId": audit.run_id,
         "createdAt": audit.created_at.isoformat(),
         "market": audit.market,
@@ -303,6 +342,9 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "backtestEquityCurve": audit.backtest_equity_curve,
         "backtestDiagnostics": audit.backtest_diagnostics,
     }
+    if include_data_snapshot:
+        payload["dataSnapshot"] = _normalize_data_snapshot(audit.data_snapshot)
+    return payload
 
 
 def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, Any]:
@@ -324,8 +366,9 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         execution_mode=row[10],
         ai_report=_normalize_ai_report(json.loads(row[11])),
         data_quality=_normalize_data_quality(json.loads(row[12]), data_rows=row[7]),
+        data_snapshot=_normalize_data_snapshot(json.loads(row[13])),
         strategy_config=_normalize_strategy_config(
-            json.loads(row[13]),
+            json.loads(row[14]),
             audit_fields={
                 "strategy_name": row[5],
                 "strategy_revision": row[6],
@@ -334,10 +377,10 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
                 "timeframe": row[4],
             },
         ),
-        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[14])),
-        backtest_trades=json.loads(row[15]),
-        backtest_equity_curve=json.loads(row[16]),
-        backtest_diagnostics=json.loads(row[17]),
+        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[15])),
+        backtest_trades=json.loads(row[16]),
+        backtest_equity_curve=json.loads(row[17]),
+        backtest_diagnostics=json.loads(row[18]),
     )
 
 
@@ -355,6 +398,53 @@ def _normalize_ai_report(value: dict[str, Any] | None) -> dict[str, Any]:
         "improvements": [str(improvement) for improvement in improvements],
         "disclaimer": str(report.get("disclaimer") or DEFAULT_AI_REPORT["disclaimer"]),
     }
+
+
+def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
+    snapshot = value or {}
+    bars = snapshot.get("bars")
+    if not isinstance(bars, list):
+        bars = []
+    normalized_bars = [_normalize_snapshot_bar(bar) for bar in bars if isinstance(bar, dict)]
+    normalized_bars = [bar for bar in normalized_bars if bar is not None]
+    warnings = snapshot.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    rows = int(_number_or_default(snapshot.get("rows"), len(normalized_bars)))
+    source = str(snapshot.get("source") or DEFAULT_DATA_SNAPSHOT["source"]).strip() or DEFAULT_DATA_SNAPSHOT["source"]
+    digest = str(snapshot.get("hash") or "").strip() or _snapshot_hash(normalized_bars)
+    return {
+        "source": source,
+        "isComplete": bool(snapshot.get("isComplete", snapshot.get("is_complete", DEFAULT_DATA_SNAPSHOT["isComplete"]))),
+        "warnings": [str(warning) for warning in warnings],
+        "rows": max(0, rows),
+        "start": _nullable_string(snapshot.get("start")),
+        "end": _nullable_string(snapshot.get("end")),
+        "hash": digest,
+        "bars": normalized_bars,
+    }
+
+
+def _normalize_snapshot_bar(value: dict[str, Any]) -> dict[str, Any] | None:
+    timestamp = value.get("timestamp")
+    if not timestamp:
+        return None
+    return {
+        "timestamp": str(timestamp),
+        "timestampMs": int(_number_or_default(value.get("timestampMs"), 0)),
+        "open": _number_or_default(value.get("open"), 0),
+        "high": _number_or_default(value.get("high"), 0),
+        "low": _number_or_default(value.get("low"), 0),
+        "close": _number_or_default(value.get("close"), 0),
+        "volume": _number_or_default(value.get("volume"), 0),
+    }
+
+
+def _snapshot_hash(bars: list[dict[str, Any]]) -> str:
+    if not bars:
+        return ""
+    raw = json.dumps(bars, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def _normalize_data_quality(value: dict[str, Any] | None, *, data_rows: int) -> dict[str, Any]:
@@ -431,6 +521,13 @@ def _nullable_number(value: Any) -> int | float | None:
         return None
     parsed = _number_or_default(value, 0)
     return parsed
+
+
+def _nullable_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _number_or_default(value: Any, default: int | float) -> int | float:

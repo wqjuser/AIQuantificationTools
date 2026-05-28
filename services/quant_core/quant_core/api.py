@@ -124,7 +124,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             if not audit:
                 self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
                 return
-            self._send_json({"run": research_run_audit_to_payload(audit)})
+            self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)})
             return
         if parsed.path == "/api/research/runs":
             query = parse_qs(parsed.query)

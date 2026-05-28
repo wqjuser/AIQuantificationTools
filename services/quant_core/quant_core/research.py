@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from inspect import Parameter, signature
@@ -23,6 +25,7 @@ from quant_core.domain import (
     StrategyConfig,
     Timeframe,
 )
+from quant_core.market_klines import bar_to_payload
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestAssumptions,
@@ -103,6 +106,7 @@ def run_terminal_research(
         execution_mode="paper_only",
         ai_report=asdict(report),
         data_quality=_data_quality_payload(quality),
+        data_snapshot=_data_snapshot_payload(bars, quality),
         strategy_config=_strategy_config_payload(strategy),
         backtest_assumptions={
             "initialCash": backtest_engine.initial_cash,
@@ -194,6 +198,27 @@ def _data_quality_payload(quality: DataQuality) -> dict[str, object]:
         "warnings": list(quality.warnings),
         "rows": quality.rows,
     }
+
+
+def _data_snapshot_payload(bars: list[OHLCVBar], quality: DataQuality) -> dict[str, object]:
+    payload_bars = [bar_to_payload(bar) for bar in bars]
+    return {
+        "source": quality.source,
+        "isComplete": quality.is_complete,
+        "warnings": list(quality.warnings),
+        "rows": len(payload_bars),
+        "start": payload_bars[0]["timestamp"] if payload_bars else None,
+        "end": payload_bars[-1]["timestamp"] if payload_bars else None,
+        "hash": _bars_hash(payload_bars),
+        "bars": payload_bars,
+    }
+
+
+def _bars_hash(bars: list[dict[str, object]]) -> str:
+    if not bars:
+        return ""
+    raw = json.dumps(bars, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def _strategy_config_payload(strategy: StrategyConfig) -> dict[str, object]:
