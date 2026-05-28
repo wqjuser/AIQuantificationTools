@@ -416,6 +416,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 1.2, "trade_count": 6},
             decisions=[{"agent": "AI Summary", "message": "研究完成", "tone": "ai"}],
             execution_mode="paper_only",
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
             backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
             backtest_trades=[
                 {
@@ -457,6 +458,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].created_at, created_at)
         self.assertEqual(latest[0].metrics["trade_count"], 6)
         self.assertEqual(latest[0].decisions[0]["agent"], "AI Summary")
+        self.assertEqual(latest[0].data_quality, {"source": "tencent", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades[0]["id"], "trade-1")
         self.assertEqual(latest[0].backtest_trades[0]["side"], "BUY")
@@ -491,6 +493,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 3.4, "trade_count": 8},
             decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
             execution_mode="paper_only",
+            data_quality={"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 240},
             backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
             backtest_trades=[
                 {
@@ -530,6 +533,10 @@ class QuantCoreContractTest(unittest.TestCase):
         assert restored is not None
         self.assertEqual(restored.run_id, "run-newer")
         self.assertEqual(restored.symbol, "AAPL")
+        self.assertEqual(
+            restored.data_quality,
+            {"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 240},
+        )
         self.assertEqual(restored.backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(restored.backtest_trades[0]["id"], "trade-1")
         self.assertEqual(restored.backtest_equity_curve[0]["equity"], 250000.0)
@@ -564,6 +571,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 3.4, "trade_count": 8},
             decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
             execution_mode="paper_only",
+            data_quality={"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120},
             backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
             backtest_trades=[
                 {
@@ -600,6 +608,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["runId"], "run-new")
         self.assertEqual(payload["runs"][0]["createdAt"], "2026-05-26T08:00:00+00:00")
         self.assertEqual(payload["runs"][0]["strategyRevision"], "rev-new")
+        self.assertEqual(payload["runs"][0]["dataQuality"], {"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(payload["runs"][0]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(payload["runs"][0]["backtestTrades"][0]["symbol"], "AAPL")
         self.assertEqual(payload["runs"][0]["backtestTrades"][0]["side"], "BUY")
@@ -634,6 +643,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["researchRun"]["dataRows"], latest[0].data_rows)
         self.assertEqual(payload["researchRun"]["executionMode"], "paper_only")
         self.assertEqual(payload["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
+        self.assertEqual(latest[0].data_quality["source"], "demo")
+        self.assertEqual(latest[0].data_quality["rows"], latest[0].data_rows)
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
         self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
@@ -663,6 +674,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     metrics={"total_return_pct": 3.4, "trade_count": 8},
                     decisions=[{"agent": "AI Summary", "message": "Done", "tone": "ai"}],
                     execution_mode="paper_only",
+                    data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
                     backtest_assumptions={"initialCash": 250000, "feeBps": 8, "slippageBps": 4},
                 )
             )
@@ -687,6 +699,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["run"]["runId"], "run-detail")
         self.assertEqual(payload["run"]["strategyRevision"], "rev-detail")
+        self.assertEqual(payload["run"]["dataQuality"], {"source": "tencent", "isComplete": True, "warnings": [], "rows": 120})
         self.assertEqual(payload["run"]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
 
     def test_research_run_detail_api_returns_404_for_missing_run(self):

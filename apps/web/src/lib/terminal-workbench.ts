@@ -266,6 +266,13 @@ export interface ResearchRunSummary {
   executionMode: string;
 }
 
+export interface ResearchRunDataQuality {
+  source: string;
+  isComplete: boolean;
+  warnings: string[];
+  rows: number;
+}
+
 export interface ResearchRunAudit {
   runId: string;
   createdAt: string;
@@ -278,6 +285,7 @@ export interface ResearchRunAudit {
   metrics: Record<string, number>;
   decisions: DecisionLogEntry[];
   executionMode: string;
+  dataQuality?: ResearchRunDataQuality;
   backtestAssumptions?: BacktestAssumptions;
   backtestTrades?: BacktestTradeRow[];
   backtestEquityCurve?: BacktestEquityPoint[];
@@ -1372,8 +1380,8 @@ export function buildAuditReplayWorkflowState(run: ResearchRunAudit): WorkflowRu
       {
         id: `replay-${run.runId}-data`,
         stageId: "data",
-        level: "success",
-        message: `Audit data snapshot restored: ${run.symbol} · ${run.timeframe} · ${run.dataRows} bars`
+        level: run.dataQuality && !run.dataQuality.isComplete ? "warning" : "success",
+        message: auditDataSnapshotMessage(run)
       },
       {
         id: `replay-${run.runId}-factor`,
@@ -1401,6 +1409,18 @@ export function buildAuditReplayWorkflowState(run: ResearchRunAudit): WorkflowRu
       }
     ]
   };
+}
+
+function auditDataSnapshotMessage(run: ResearchRunAudit): string {
+  const base = `Audit data snapshot restored: ${run.symbol} · ${run.timeframe} · ${run.dataRows} bars`;
+  if (!run.dataQuality) {
+    return base;
+  }
+  const warningCount = run.dataQuality.warnings.length;
+  const warningLabel = warningCount === 1 ? "1 warning" : `${warningCount} warnings`;
+  return warningCount > 0
+    ? `${base} · source ${run.dataQuality.source} · ${warningLabel}`
+    : `${base} · source ${run.dataQuality.source}`;
 }
 
 export function workspaceWithSelectedInstrument(

@@ -9,6 +9,7 @@ from typing import Any
 
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
+DEFAULT_DATA_QUALITY = {"source": "unknown", "isComplete": False, "warnings": [], "rows": 0}
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class ResearchRunAudit:
     metrics: dict[str, Any]
     decisions: list[dict[str, Any]]
     execution_mode: str
+    data_quality: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_DATA_QUALITY))
     backtest_assumptions: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_BACKTEST_ASSUMPTIONS))
     backtest_trades: list[dict[str, Any]] = field(default_factory=list)
     backtest_equity_curve: list[dict[str, Any]] = field(default_factory=list)
@@ -56,6 +58,7 @@ class ResearchRunStore:
                     metrics_json text not null,
                     decisions_json text not null,
                     execution_mode text not null,
+                    data_quality_json text not null default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}',
                     backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
                     backtest_trades_json text not null default '[]',
                     backtest_equity_curve_json text not null default '[]',
@@ -70,6 +73,14 @@ class ResearchRunStore:
                     alter table research_runs
                     add column backtest_assumptions_json text not null
                     default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}'
+                    """
+                )
+            if "data_quality_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column data_quality_json text not null
+                    default '{"source": "unknown", "isComplete": false, "warnings": [], "rows": 0}'
                     """
                 )
             if "backtest_trades_json" not in columns:
@@ -117,12 +128,13 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
+                    data_quality_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
                     backtest_diagnostics_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -134,6 +146,7 @@ class ResearchRunStore:
                     metrics_json = excluded.metrics_json,
                     decisions_json = excluded.decisions_json,
                     execution_mode = excluded.execution_mode,
+                    data_quality_json = excluded.data_quality_json,
                     backtest_assumptions_json = excluded.backtest_assumptions_json,
                     backtest_trades_json = excluded.backtest_trades_json,
                     backtest_equity_curve_json = excluded.backtest_equity_curve_json,
@@ -151,6 +164,7 @@ class ResearchRunStore:
                     json.dumps(audit.metrics, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.decisions, ensure_ascii=False, sort_keys=True),
                     audit.execution_mode,
+                    json.dumps(_normalize_data_quality(audit.data_quality, data_rows=audit.data_rows), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_equity_curve, ensure_ascii=False, sort_keys=True),
@@ -178,6 +192,7 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
+                    data_quality_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
@@ -210,6 +225,7 @@ class ResearchRunStore:
                     metrics_json,
                     decisions_json,
                     execution_mode,
+                    data_quality_json,
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
@@ -239,6 +255,7 @@ def research_run_audit_to_payload(audit: ResearchRunAudit) -> dict[str, Any]:
         "metrics": audit.metrics,
         "decisions": audit.decisions,
         "executionMode": audit.execution_mode,
+        "dataQuality": _normalize_data_quality(audit.data_quality, data_rows=audit.data_rows),
         "backtestAssumptions": _normalize_backtest_assumptions(audit.backtest_assumptions),
         "backtestTrades": audit.backtest_trades,
         "backtestEquityCurve": audit.backtest_equity_curve,
@@ -263,11 +280,26 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         metrics=json.loads(row[8]),
         decisions=json.loads(row[9]),
         execution_mode=row[10],
-        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[11])),
-        backtest_trades=json.loads(row[12]),
-        backtest_equity_curve=json.loads(row[13]),
-        backtest_diagnostics=json.loads(row[14]),
+        data_quality=_normalize_data_quality(json.loads(row[11]), data_rows=row[7]),
+        backtest_assumptions=_normalize_backtest_assumptions(json.loads(row[12])),
+        backtest_trades=json.loads(row[13]),
+        backtest_equity_curve=json.loads(row[14]),
+        backtest_diagnostics=json.loads(row[15]),
     )
+
+
+def _normalize_data_quality(value: dict[str, Any] | None, *, data_rows: int) -> dict[str, Any]:
+    quality = value or {}
+    source = str(quality.get("source") or DEFAULT_DATA_QUALITY["source"]).strip() or DEFAULT_DATA_QUALITY["source"]
+    warnings = quality.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    return {
+        "source": source,
+        "isComplete": bool(quality.get("isComplete", quality.get("is_complete", DEFAULT_DATA_QUALITY["isComplete"]))),
+        "warnings": [str(warning) for warning in warnings],
+        "rows": max(0, int(_number_or_default(quality.get("rows"), data_rows))),
+    }
 
 
 def _normalize_backtest_assumptions(value: dict[str, Any] | None) -> dict[str, Any]:

@@ -507,6 +507,7 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Boolean(run.metrics) &&
     Array.isArray(run.decisions) &&
     Boolean(run.executionMode) &&
+    (run.dataQuality === undefined || isResearchRunDataQuality(run.dataQuality)) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
     (run.backtestTrades === undefined ||
       (Array.isArray(run.backtestTrades) && run.backtestTrades.every(isBacktestTradeRow))) &&
@@ -514,6 +515,20 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
       (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint))) &&
     (run.backtestDiagnostics === undefined ||
       (Array.isArray(run.backtestDiagnostics) && run.backtestDiagnostics.every(isBacktestDiagnostic)))
+  );
+}
+
+function isResearchRunDataQuality(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const quality = value as Record<string, unknown>;
+  return (
+    typeof quality.source === "string" &&
+    typeof quality.isComplete === "boolean" &&
+    Array.isArray(quality.warnings) &&
+    quality.warnings.every((warning) => typeof warning === "string") &&
+    typeof quality.rows === "number"
   );
 }
 

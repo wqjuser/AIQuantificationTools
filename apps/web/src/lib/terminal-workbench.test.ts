@@ -858,6 +858,38 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("surfaces audited run data quality in the replay workflow state", () => {
+    const state = buildAuditReplayWorkflowState({
+      runId: "run-quality",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1m",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-quality",
+      dataRows: 160,
+      metrics: {
+        total_return_pct: 2.4,
+        max_drawdown_pct: 1.2,
+        win_rate_pct: 50,
+        trade_count: 4
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "demo-fallback",
+        isComplete: false,
+        warnings: ["upstream minute data unavailable"],
+        rows: 160
+      }
+    });
+
+    expect(state.log[0]).toMatchObject({
+      level: "warning",
+      message: "Audit data snapshot restored: 600000 · 1m · 160 bars · source demo-fallback · 1 warning"
+    });
+  });
+
   test("selects a watchlist instrument as a fresh research context", () => {
     const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-history",

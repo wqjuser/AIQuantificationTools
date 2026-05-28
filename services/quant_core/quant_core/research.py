@@ -101,6 +101,7 @@ def run_terminal_research(
         metrics=asdict(backtest.metrics),
         decisions=[asdict(entry) for entry in decision_log],
         execution_mode="paper_only",
+        data_quality=_data_quality_payload(quality),
         backtest_assumptions={
             "initialCash": backtest_engine.initial_cash,
             "feeBps": round(backtest_engine.fee_rate * 10_000, 4),
@@ -182,6 +183,15 @@ def _backtest_trade_replay_rows(backtest: BacktestRun, *, initial_cash: float) -
             )
         )
     return rows
+
+
+def _data_quality_payload(quality: DataQuality) -> dict[str, object]:
+    return {
+        "source": quality.source,
+        "isComplete": quality.is_complete,
+        "warnings": list(quality.warnings),
+        "rows": quality.rows,
+    }
 
 
 def _backtest_equity_curve_rows(backtest: BacktestRun) -> list[BacktestEquityPointReplay]:
