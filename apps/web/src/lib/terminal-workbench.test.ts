@@ -43,6 +43,10 @@ function quantLoopStatuses(workspace: TerminalWorkspace): Record<string, string>
   return Object.fromEntries(workspace.quantLoop.map((step) => [step.id, step.status]));
 }
 
+function activeQuantLoopStep(workspace: TerminalWorkspace): string | undefined {
+  return workspace.quantLoop.find((step) => step.status === "active")?.id;
+}
+
 describe("terminal workbench model", () => {
   test("builds a complete terminal shell with quant loop and terminal panels", () => {
     const workspace = buildTerminalWorkspace();
@@ -125,6 +129,80 @@ describe("terminal workbench model", () => {
       "locked"
     );
     expect(quantLoopStatuses(workspaceWithBacktestAssumption(auditedWorkspace, "feeBps", 8)).paper).toBe("locked");
+  });
+
+  test("moves back to research when a selected paper workflow is invalidated by a fresh market context", () => {
+    const paperWorkspace = workspaceFromResearchRunAudit(
+      {
+        ...buildTerminalWorkspace(),
+        quantLoop: [
+          { id: "research", label: "Market Research", status: "ready" },
+          { id: "strategy", label: "Strategy Lab", status: "ready" },
+          { id: "backtest", label: "Backtest Review", status: "ready" },
+          { id: "agent-review", label: "Agent Review", status: "ready" },
+          { id: "paper", label: "Paper Trading", status: "active" }
+        ]
+      },
+      {
+        runId: "run-paper-active",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "SMA trend demo",
+        strategyRevision: "rev123",
+        dataRows: 120,
+        metrics: {
+          total_return_pct: 8.2,
+          max_drawdown_pct: 3.1,
+          win_rate_pct: 55,
+          trade_count: 9
+        },
+        decisions: [{ agent: "AI Summary", message: "Run loaded", tone: "ai" }],
+        executionMode: "paper_only"
+      }
+    );
+
+    const workspace = workspaceWithSelectedTimeframe(paperWorkspace, "15m");
+
+    expect(activeQuantLoopStep(workspace)).toBe("research");
+    expect(quantLoopStatuses(workspace).paper).toBe("locked");
+  });
+
+  test("keeps strategy and backtest edits on their matching unlocked workflow steps", () => {
+    const paperWorkspace = workspaceFromResearchRunAudit(
+      {
+        ...buildTerminalWorkspace(),
+        quantLoop: [
+          { id: "research", label: "Market Research", status: "ready" },
+          { id: "strategy", label: "Strategy Lab", status: "ready" },
+          { id: "backtest", label: "Backtest Review", status: "ready" },
+          { id: "agent-review", label: "Agent Review", status: "ready" },
+          { id: "paper", label: "Paper Trading", status: "active" }
+        ]
+      },
+      {
+        runId: "run-paper-active",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "SMA trend demo",
+        strategyRevision: "rev123",
+        dataRows: 120,
+        metrics: {
+          total_return_pct: 8.2,
+          max_drawdown_pct: 3.1,
+          win_rate_pct: 55,
+          trade_count: 9
+        },
+        decisions: [{ agent: "AI Summary", message: "Run loaded", tone: "ai" }],
+        executionMode: "paper_only"
+      }
+    );
+
+    expect(activeQuantLoopStep(workspaceWithStrategyField(paperWorkspace, "entry", "RSI rebound"))).toBe("strategy");
+    expect(activeQuantLoopStep(workspaceWithBacktestAssumption(paperWorkspace, "feeBps", 8))).toBe("backtest");
   });
 
   test("falls back to the active research step when a locked quant loop step is requested", () => {

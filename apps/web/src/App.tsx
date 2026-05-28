@@ -572,6 +572,7 @@ export function App() {
         source: "core",
         statusLabel: "Timeframe selected"
       }));
+      setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
     },

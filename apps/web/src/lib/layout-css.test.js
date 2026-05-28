@@ -91,6 +91,13 @@ describe("terminal layout css", () => {
     expect(cssBlock(".loop-step:disabled")).toContain("cursor: not-allowed;");
   });
 
+  test("resets the active workflow when timeframe changes invalidate audited context", () => {
+    const selectTimeframeSource = sourceBetween("const selectTimeframe = useCallback", "setWorkflowRunState(createWorkflowRunState());");
+
+    expect(selectTimeframeSource).toContain('setActiveLoopStepId("research");');
+    expect(selectTimeframeSource).toContain('setActiveWorkflowStageId("data");');
+  });
+
   test("keeps market context in one compact desktop band above the workflow", () => {
     expect(appSource).toContain('className="terminal-overview-grid market-tape"');
     expect(cssBlock(".terminal-overview-grid")).toContain(

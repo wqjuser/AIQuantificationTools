@@ -1311,28 +1311,31 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
     const note = previousRunId
       ? `Strategy draft generated for ${workspace.selectedInstrument.symbol} from ${previousRunId}. Run Pipeline to audit the new rules before backtest or paper execution.`
       : `Strategy draft generated for ${workspace.selectedInstrument.symbol}. Run Pipeline to audit the new rules before backtest or paper execution.`;
-    return clearAuditedResearchResults({
-      ...workspace,
-      strategy: {
-        name: `${workspace.selectedInstrument.symbol} ${workspace.selectedTimeframe} AI draft`,
-        entry: `Close above SMA20 with volume confirmation after ${workspace.selectedTimeframe} research context`,
-        exit: "Close below trend support or risk manager downgrade",
-        position: isPendingStrategyText(workspace.strategy.position)
-          ? "20% cap per instrument until audited sizing is rerun"
-          : workspace.strategy.position,
-        risk: isPendingStrategyText(workspace.strategy.risk)
-          ? "Paper only; require adapter certification, risk approval, and human confirmation"
-          : workspace.strategy.risk
-      },
-      decisionLog: [
-        {
-          agent: "Strategy Drafter",
-          message: note,
-          tone: "warning"
+    return clearAuditedResearchResults(
+      {
+        ...workspace,
+        strategy: {
+          name: `${workspace.selectedInstrument.symbol} ${workspace.selectedTimeframe} AI draft`,
+          entry: `Close above SMA20 with volume confirmation after ${workspace.selectedTimeframe} research context`,
+          exit: "Close below trend support or risk manager downgrade",
+          position: isPendingStrategyText(workspace.strategy.position)
+            ? "20% cap per instrument until audited sizing is rerun"
+            : workspace.strategy.position,
+          risk: isPendingStrategyText(workspace.strategy.risk)
+            ? "Paper only; require adapter certification, risk approval, and human confirmation"
+            : workspace.strategy.risk
         },
-        ...workspace.decisionLog
-      ]
-    });
+        decisionLog: [
+          {
+            agent: "Strategy Drafter",
+            message: note,
+            tone: "warning"
+          },
+          ...workspace.decisionLog
+        ]
+      },
+      "strategy"
+    );
   }
 
   if (action === "explain") {
@@ -1425,10 +1428,13 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
   };
 }
 
-function clearAuditedResearchResults(workspace: TerminalWorkspace): TerminalWorkspace {
+function clearAuditedResearchResults(
+  workspace: TerminalWorkspace,
+  activeStepId = activeQuantLoopStepId(workspace)
+): TerminalWorkspace {
   return {
     ...workspace,
-    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(workspace), false),
+    quantLoop: buildPrimaryQuantLoopSteps(activeStepId, false),
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },
@@ -1775,7 +1781,7 @@ export function workspaceWithStrategyField(
       ...currentWorkspace.strategy,
       [field]: value
     },
-    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), false),
+    quantLoop: buildPrimaryQuantLoopSteps("strategy", false),
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },
@@ -1809,7 +1815,7 @@ export function workspaceWithBacktestAssumption(
   return {
     ...currentWorkspace,
     backtestAssumptions: nextAssumptions,
-    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), false),
+    quantLoop: buildPrimaryQuantLoopSteps("backtest", false),
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },
@@ -1868,7 +1874,7 @@ function freshResearchContext(
     ...currentWorkspace,
     selectedInstrument: instrument,
     selectedTimeframe: timeframe,
-    quantLoop: buildPrimaryQuantLoopSteps(activeQuantLoopStepId(currentWorkspace), false),
+    quantLoop: buildPrimaryQuantLoopSteps("research", false),
     strategy: {
       name: `${instrument.symbol} ${timeframe} research context`,
       entry: "Run Pipeline to generate entry rules from the selected context",
