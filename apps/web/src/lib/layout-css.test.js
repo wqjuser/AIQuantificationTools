@@ -70,7 +70,7 @@ describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
     expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
-    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 132px minmax(0, 1fr);");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 184px minmax(0, 1fr);");
     expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
     expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
     expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
@@ -95,6 +95,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-overview-grid .metrics-row")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 42px;");
     expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 42px;");
+    expect(cssBlock(".terminal-overview-grid .module-focus-card .run-button.compact")).toContain("white-space: nowrap;");
+    expect(cssBlock(".terminal-overview-grid .metric-card span")).toContain("white-space: nowrap;");
     expect(
       hasCssBlockWith("  .terminal-overview-grid", [
         "grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);"
