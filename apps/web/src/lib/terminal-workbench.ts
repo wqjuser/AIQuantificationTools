@@ -105,6 +105,30 @@ export interface StrategySnapshot {
 
 export type StrategyField = keyof StrategySnapshot;
 
+export type StrategyConditionKind = "close_above_sma" | "close_below_sma";
+
+export type StrategyRuleDraftField =
+  | "name"
+  | "entryWindow"
+  | "exitWindow"
+  | "positionPct"
+  | "stopLossPct"
+  | "takeProfitPct"
+  | "maxDrawdownPct";
+
+export interface StrategyRuleDraft {
+  name: string;
+  entryKind: StrategyConditionKind;
+  entryWindow: number;
+  exitKind: StrategyConditionKind;
+  exitWindow: number;
+  positionPct: number;
+  stopLossPct: number;
+  takeProfitPct: number;
+  maxDrawdownPct: number;
+  paperOnly: boolean;
+}
+
 export interface StrategyRuleRow {
   id: string;
   group: "entry" | "exit" | "position" | "risk";
@@ -415,6 +439,19 @@ export const defaultBacktestAssumptions: BacktestAssumptions = {
   initialCash: 100_000,
   feeBps: 3,
   slippageBps: 2
+};
+
+const defaultStrategyRuleDraft: StrategyRuleDraft = {
+  name: "SMA trend demo",
+  entryKind: "close_above_sma",
+  entryWindow: 20,
+  exitKind: "close_below_sma",
+  exitWindow: 20,
+  positionPct: 20,
+  stopLossPct: 8,
+  takeProfitPct: 18,
+  maxDrawdownPct: 12,
+  paperOnly: true
 };
 
 const primaryQuantLoopStepDefinitions = [
@@ -1054,13 +1091,14 @@ export function buildBrokerAdapterRows(workspace: TerminalWorkspace): BrokerAdap
 }
 
 export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRuleRow[] {
+  const draft = buildStrategyRuleDraft(workspace);
   return [
     {
       id: "entry-rule",
       group: "entry",
       label: "Entry signal",
       condition: workspace.strategy.entry,
-      parameter: inferStrategyParameter(workspace.strategy.entry, "SMA20 / relative strength"),
+      parameter: `SMA${draft.entryWindow}`,
       status: isPendingStrategyText(workspace.strategy.entry) ? "pending" : "active",
       tone: isPendingStrategyText(workspace.strategy.entry) ? "warning" : "positive"
     },
@@ -1069,7 +1107,7 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
       group: "exit",
       label: "Exit signal",
       condition: workspace.strategy.exit,
-      parameter: inferStrategyParameter(workspace.strategy.exit, "Trend support / risk downgrade"),
+      parameter: `SMA${draft.exitWindow}`,
       status: isPendingStrategyText(workspace.strategy.exit) ? "pending" : "active",
       tone: "warning"
     },
@@ -1078,7 +1116,7 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
       group: "position",
       label: "Position sizing",
       condition: workspace.strategy.position,
-      parameter: inferStrategyParameter(workspace.strategy.position, "Exposure cap / paper sizing"),
+      parameter: `${formatPercentValue(draft.positionPct)}% exposure cap`,
       status: isPendingStrategyText(workspace.strategy.position) ? "pending" : "active",
       tone: isPendingStrategyText(workspace.strategy.position) ? "warning" : "neutral"
     },
@@ -1087,11 +1125,54 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
       group: "risk",
       label: "Risk guardrail",
       condition: workspace.strategy.risk,
-      parameter: "Stop / drawdown / execution mode",
+      parameter: "Stop / take profit / drawdown / execution mode",
       status: "guardrail",
       tone: "risk"
     }
   ];
+}
+
+export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRuleDraft {
+  const strategy = workspace.strategy;
+  const entryWindow = inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
+  const exitWindow = inferSmaWindow(strategy.exit, defaultStrategyRuleDraft.exitWindow);
+
+  return {
+    name: strategy.name.trim() || defaultStrategyRuleDraft.name,
+    entryKind: inferSmaConditionKind(strategy.entry, "close_above_sma"),
+    entryWindow,
+    exitKind: inferSmaConditionKind(strategy.exit, "close_below_sma"),
+    exitWindow,
+    positionPct: inferPercent(strategy.position, defaultStrategyRuleDraft.positionPct),
+    stopLossPct: inferPercentNearKeywords(strategy.risk, ["stop", "止损"], defaultStrategyRuleDraft.stopLossPct),
+    takeProfitPct: inferPercentNearKeywords(
+      strategy.risk,
+      ["take profit", "take-profit", "止盈"],
+      defaultStrategyRuleDraft.takeProfitPct
+    ),
+    maxDrawdownPct: inferPercentNearKeywords(
+      strategy.risk,
+      ["drawdown", "回撤"],
+      defaultStrategyRuleDraft.maxDrawdownPct
+    ),
+    paperOnly: !/\blive\b|实盘/u.test(strategy.risk.toLowerCase()) || /paper only|模拟/u.test(strategy.risk.toLowerCase())
+  };
+}
+
+export function strategySnapshotFromRuleDraft(draft: StrategyRuleDraft): StrategySnapshot {
+  const normalizedDraft = normalizeStrategyRuleDraft(draft);
+  return {
+    name: normalizedDraft.name,
+    entry: `${conditionOperatorLabel(normalizedDraft.entryKind)} SMA${normalizedDraft.entryWindow}`,
+    exit: `${conditionOperatorLabel(normalizedDraft.exitKind)} SMA${normalizedDraft.exitWindow}`,
+    position: `${formatPercentValue(normalizedDraft.positionPct)}% max capital allocation`,
+    risk: [
+      `Stop -${formatPercentValue(normalizedDraft.stopLossPct)}%`,
+      `take profit +${formatPercentValue(normalizedDraft.takeProfitPct)}%`,
+      `drawdown guard ${formatPercentValue(normalizedDraft.maxDrawdownPct)}%`,
+      normalizedDraft.paperOnly ? "paper only" : "live gated"
+    ].join(", ")
+  };
 }
 
 export function buildBacktestTradeRows(workspace: TerminalWorkspace): BacktestTradeRow[] {
@@ -1237,17 +1318,74 @@ export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsE
   return [...localEvents, ...committeeEvents];
 }
 
-function inferStrategyParameter(condition: string, fallback: string): string {
-  if (condition.includes("support") || condition.includes("downgrade")) {
-    return "Trend support / risk downgrade";
+function inferSmaConditionKind(text: string, fallback: StrategyConditionKind): StrategyConditionKind {
+  const normalized = text.toLowerCase();
+  if (normalized.includes("below") || text.includes("<")) {
+    return "close_below_sma";
   }
-  if (condition.includes("SMA20") || condition.includes("relative strength")) {
-    return "SMA20 / relative strength";
-  }
-  if (condition.includes("20%") || condition.includes("paper sizing") || condition.includes("cap exposure")) {
-    return "Exposure cap / paper sizing";
+  if (normalized.includes("above") || text.includes(">")) {
+    return "close_above_sma";
   }
   return fallback;
+}
+
+function inferSmaWindow(text: string, fallback: number): number {
+  const match = text.match(/sma\s*(\d+)/iu);
+  return normalizeStrategyWindow(match ? Number(match[1]) : fallback);
+}
+
+function inferPercent(text: string, fallback: number): number {
+  const match = text.match(/(\d+(?:\.\d+)?)\s*%/u);
+  return normalizeStrategyPercent(match ? Number(match[1]) : fallback, fallback);
+}
+
+function inferPercentNearKeywords(text: string, keywords: string[], fallback: number): number {
+  const normalized = text.toLowerCase();
+  for (const match of normalized.matchAll(/([+-]?\d+(?:\.\d+)?)\s*%/gu)) {
+    const index = match.index ?? 0;
+    const prefix = normalized.slice(Math.max(0, index - 36), index);
+    if (keywords.some((keyword) => prefix.includes(keyword))) {
+      return normalizeStrategyPercent(Math.abs(Number(match[1])), fallback);
+    }
+  }
+  return normalizeStrategyPercent(fallback, fallback);
+}
+
+function normalizeStrategyRuleDraft(draft: StrategyRuleDraft): StrategyRuleDraft {
+  return {
+    name: draft.name.trim() || defaultStrategyRuleDraft.name,
+    entryKind: draft.entryKind,
+    entryWindow: normalizeStrategyWindow(draft.entryWindow),
+    exitKind: draft.exitKind,
+    exitWindow: normalizeStrategyWindow(draft.exitWindow),
+    positionPct: normalizeStrategyPercent(draft.positionPct, defaultStrategyRuleDraft.positionPct),
+    stopLossPct: normalizeStrategyPercent(draft.stopLossPct, defaultStrategyRuleDraft.stopLossPct),
+    takeProfitPct: normalizeStrategyPercent(draft.takeProfitPct, defaultStrategyRuleDraft.takeProfitPct),
+    maxDrawdownPct: normalizeStrategyPercent(draft.maxDrawdownPct, defaultStrategyRuleDraft.maxDrawdownPct),
+    paperOnly: draft.paperOnly
+  };
+}
+
+function normalizeStrategyWindow(value: number): number {
+  if (!Number.isFinite(value)) {
+    return defaultStrategyRuleDraft.entryWindow;
+  }
+  return Math.max(1, Math.min(Math.round(value), 250));
+}
+
+function normalizeStrategyPercent(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(Number(value.toFixed(2)), 100));
+}
+
+function conditionOperatorLabel(kind: StrategyConditionKind): string {
+  return kind === "close_below_sma" ? "Close <" : "Close >";
+}
+
+function formatPercentValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/u, "").replace(/\.$/u, "");
 }
 
 function isPendingStrategyText(text: string): boolean {
@@ -1987,6 +2125,39 @@ export function workspaceWithStrategyField(
     ],
     decisionLog: [note, ...existingLog],
     researchRun: null
+  };
+}
+
+export function workspaceWithStrategyRuleDraftField(
+  currentWorkspace: TerminalWorkspace,
+  field: StrategyRuleDraftField,
+  value: number | string
+): TerminalWorkspace {
+  const currentDraft = buildStrategyRuleDraft(currentWorkspace);
+  const nextDraft = normalizeStrategyRuleDraft({
+    ...currentDraft,
+    [field]: field === "name" ? String(value) : Number(value)
+  });
+  const nextStrategy = strategySnapshotFromRuleDraft(nextDraft);
+  const note: DecisionLogEntry = {
+    agent: "Strategy Builder",
+    message: `Structured strategy field ${field} updated locally. Run Pipeline to generate a fresh audited backtest.`,
+    tone: "warning"
+  };
+  const existingLog =
+    currentWorkspace.decisionLog[0]?.agent === "Strategy Builder"
+      ? currentWorkspace.decisionLog.slice(1)
+      : currentWorkspace.decisionLog;
+
+  return {
+    ...clearAuditedResearchResults(
+      {
+        ...currentWorkspace,
+        strategy: nextStrategy,
+        decisionLog: [note, ...existingLog]
+      },
+      "strategy"
+    )
   };
 }
 

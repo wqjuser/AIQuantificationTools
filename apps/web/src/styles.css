@@ -1517,6 +1517,125 @@ em {
   outline: none;
 }
 
+.strategy-structured-editor {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.strategy-builder-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.strategy-builder-title strong {
+  color: #4cc9ad;
+}
+
+.strategy-structured-editor > label,
+.strategy-draft-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.strategy-structured-editor span,
+.strategy-draft-field span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.strategy-structured-editor input,
+.strategy-draft-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #151f2d;
+  color: #dce6ee;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 9px;
+}
+
+.strategy-structured-editor input:focus,
+.strategy-draft-field input:focus {
+  border-color: #2b6f62;
+  outline: none;
+}
+
+.strategy-draft-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-draft-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #151f2d;
+}
+
+.strategy-draft-field > div input {
+  border: 0;
+  background: transparent;
+}
+
+.strategy-draft-field em {
+  color: #4cc9ad;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  padding-right: 8px;
+}
+
+.strategy-draft-field small {
+  color: #75869a;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.strategy-generated-snapshot {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  border-top: 1px solid #27364a;
+  padding-top: 9px;
+}
+
+.strategy-generated-snapshot span {
+  grid-row: span 2;
+  color: #e8be62;
+}
+
+.strategy-generated-snapshot strong,
+.strategy-generated-snapshot small {
+  min-width: 0;
+  color: #dce6ee;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.strategy-generated-snapshot small {
+  grid-column: 2 / -1;
+  color: #8fa0b2;
+}
+
 .strategy-rule-board {
   border: 1px solid #27364a;
   border-radius: 7px;
@@ -3085,8 +3204,19 @@ em {
   }
 
   .health-grid,
+  .strategy-draft-grid,
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .strategy-generated-snapshot {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-generated-snapshot span,
+  .strategy-generated-snapshot small {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .safety-footer {
@@ -3125,6 +3255,8 @@ em {
   .event-stream,
   .strategy-rule-row,
   .strategy-editor,
+  .strategy-draft-grid,
+  .strategy-generated-snapshot,
   .backtest-row,
   .workflow-artifact-grid,
   .workflow-canvas-large {

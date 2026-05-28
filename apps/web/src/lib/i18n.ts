@@ -138,6 +138,15 @@ const messages = {
     "strategy.condition": "Condition",
     "strategy.parameter": "Parameter",
     "strategy.status": "Status",
+    "strategy.builder": "Structured builder",
+    "strategy.auditRequired": "audit required",
+    "strategy.entryWindow": "Entry SMA",
+    "strategy.exitWindow": "Exit SMA",
+    "strategy.positionPct": "Position cap",
+    "strategy.stopLossPct": "Stop loss",
+    "strategy.takeProfitPct": "Take profit",
+    "strategy.maxDrawdownPct": "Max drawdown",
+    "strategy.generatedSnapshot": "Auditable snapshot",
     "backtest.replay": "Trade replay",
     "backtest.assumptions": "Backtest assumptions",
     "backtest.initialCash": "Initial cash",
@@ -274,6 +283,15 @@ const messages = {
     "strategy.condition": "条件",
     "strategy.parameter": "参数",
     "strategy.status": "状态",
+    "strategy.builder": "结构化构建器",
+    "strategy.auditRequired": "待审计",
+    "strategy.entryWindow": "入场 SMA",
+    "strategy.exitWindow": "出场 SMA",
+    "strategy.positionPct": "仓位上限",
+    "strategy.stopLossPct": "止损",
+    "strategy.takeProfitPct": "止盈",
+    "strategy.maxDrawdownPct": "最大回撤",
+    "strategy.generatedSnapshot": "可审计快照",
     "backtest.replay": "交易回放",
     "backtest.assumptions": "回测假设",
     "backtest.initialCash": "初始资金",
@@ -694,6 +712,24 @@ function translateStrategyText(locale: Locale, text: string): string {
   const barsReplayed = text.match(/^(\d+) bars replayed$/);
   if (barsReplayed) {
     return `已回放 ${barsReplayed[1]} 根K线`;
+  }
+  const closeAboveSma = text.match(/^Close > SMA(\d+)$/);
+  if (closeAboveSma) {
+    return `收盘价 > SMA${closeAboveSma[1]}`;
+  }
+  const closeBelowSma = text.match(/^Close < SMA(\d+)$/);
+  if (closeBelowSma) {
+    return `收盘价 < SMA${closeBelowSma[1]}`;
+  }
+  const maxCapital = text.match(/^(\d+(?:\.\d+)?)% max capital allocation$/);
+  if (maxCapital) {
+    return `最大资金占用 ${maxCapital[1]}%`;
+  }
+  const structuredRisk = text.match(
+    /^Stop -(\d+(?:\.\d+)?)%, take profit \+(\d+(?:\.\d+)?)%, drawdown guard (\d+(?:\.\d+)?)%, paper only$/
+  );
+  if (structuredRisk) {
+    return `止损 -${structuredRisk[1]}%，止盈 +${structuredRisk[2]}%，回撤保护 ${structuredRisk[3]}%，仅模拟盘`;
   }
   const revision = text.match(/^Strategy revision (.+); execution (.+)$/);
   if (revision) {

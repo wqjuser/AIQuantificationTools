@@ -19,6 +19,7 @@ import {
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
   buildScannerCandidates,
+  buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildTerminalWorkspace,
   buildWorkflowStages,
@@ -35,6 +36,7 @@ import {
   workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
+  workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument,
@@ -110,6 +112,84 @@ describe("terminal workbench model", () => {
       quantLoopStepId: "strategy",
       workflowStageId: "factor"
     });
+  });
+
+  test("builds a structured SMA strategy draft from the editable snapshot", () => {
+    const workspace = workspaceWithStrategyField(
+      workspaceWithStrategyField(
+        workspaceWithStrategyField(buildTerminalWorkspace(), "entry", "Close > SMA5"),
+        "exit",
+        "Close < SMA13"
+      ),
+      "risk",
+      "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+    );
+
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      name: "SMA Trend / Bank Sector",
+      entryKind: "close_above_sma",
+      entryWindow: 5,
+      exitKind: "close_below_sma",
+      exitWindow: 13,
+      positionPct: 20,
+      stopLossPct: 6,
+      takeProfitPct: 12,
+      maxDrawdownPct: 9,
+      paperOnly: true
+    });
+  });
+
+  test("updates structured strategy draft fields as canonical auditable strategy text", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-structured-editor",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-structured",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    const updatedWorkspace = workspaceWithStrategyRuleDraftField(
+      workspaceWithStrategyRuleDraftField(
+        workspaceWithStrategyRuleDraftField(auditedWorkspace, "entryWindow", 7),
+        "positionPct",
+        35
+      ),
+      "takeProfitPct",
+      16
+    );
+
+    expect(updatedWorkspace.strategy.entry).toBe("Close > SMA7");
+    expect(updatedWorkspace.strategy.exit).toBe("Close < SMA20");
+    expect(updatedWorkspace.strategy.position).toBe("35% max capital allocation");
+    expect(updatedWorkspace.strategy.risk).toBe("Stop -8%, take profit +16%, drawdown guard 12%, paper only");
+    expect(updatedWorkspace.researchRun).toBeNull();
+    expect(quantLoopStatuses(updatedWorkspace).paper).toBe("locked");
+    expect(updatedWorkspace.decisionLog[0]).toMatchObject({
+      agent: "Strategy Builder",
+      tone: "warning"
+    });
+  });
+
+  test("keeps strategy rule matrix parameters aligned with structured edits", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 7);
+
+    expect(buildStrategyRuleRows(workspace).map((row) => row.parameter)).toEqual([
+      "SMA7",
+      "SMA20",
+      "20% exposure cap",
+      "Stop / take profit / drawdown / execution mode"
+    ]);
   });
 
   test("builds a complete terminal shell with quant loop and terminal panels", () => {
@@ -598,18 +678,18 @@ describe("terminal workbench model", () => {
       group: "entry",
       label: "Entry signal",
       condition: "Close > SMA20 and relative strength improving",
-      parameter: "SMA20 / relative strength",
+      parameter: "SMA20",
       status: "active",
       tone: "positive"
     });
     expect(rows[1]).toMatchObject({
       group: "exit",
-      parameter: "Trend support / risk downgrade"
+      parameter: "SMA20"
     });
     expect(rows.at(-1)).toMatchObject({
       group: "risk",
       label: "Risk guardrail",
-      parameter: "Stop / drawdown / execution mode",
+      parameter: "Stop / take profit / drawdown / execution mode",
       status: "guardrail",
       tone: "risk"
     });

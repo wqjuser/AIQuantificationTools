@@ -214,6 +214,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".product-workspace-layout")).toContain("display: grid;");
   });
 
+  test("renders the strategy lab as a structured rule builder", () => {
+    expect(appSource).toContain("buildStrategyRuleDraft(workspace)");
+    expect(appSource).toContain("workspaceWithStrategyRuleDraftField");
+    expect(appSource).toContain("strategy-draft-grid");
+    expect(appSource).toContain("strategy-generated-snapshot");
+    expect(styles).toContain(".strategy-draft-grid");
+    expect(styles).toContain(".strategy-generated-snapshot");
+  });
+
   test("collapses the terminal and workflow grid before cards become squeezed", () => {
     expect(styles).toContain("@media (max-width: 1180px)");
     expect(

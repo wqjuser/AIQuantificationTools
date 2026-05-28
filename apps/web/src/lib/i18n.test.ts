@@ -123,6 +123,12 @@ describe("i18n", () => {
     expect(
       zh.decisionMessage("Strategy field entry updated locally. Run Pipeline to generate a fresh audited backtest.")
     ).toBe("策略字段 入场 已本地更新。运行流水线以生成新的可审计回测。");
+    expect(zh.strategyText("Close > SMA7")).toBe("收盘价 > SMA7");
+    expect(zh.strategyText("Close < SMA13")).toBe("收盘价 < SMA13");
+    expect(zh.strategyText("35% max capital allocation")).toBe("最大资金占用 35%");
+    expect(zh.strategyText("Stop -8%, take profit +16%, drawdown guard 12%, paper only")).toBe(
+      "止损 -8%，止盈 +16%，回撤保护 12%，仅模拟盘"
+    );
     expect(zh.decisionMessage("自定义中文研究结论")).toBe("自定义中文研究结论");
   });
 });

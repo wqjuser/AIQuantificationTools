@@ -56,6 +56,7 @@ import {
   buildProductWorkAreas,
   buildResearchRunComparisonRows,
   buildScannerCandidates,
+  buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
@@ -77,8 +78,9 @@ import {
   ResearchRunAudit,
   ResearchRunComparisonRow,
   ScannerCandidate,
+  StrategyRuleDraft,
+  StrategyRuleDraftField,
   StrategyRuleRow,
-  StrategyField,
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
@@ -89,7 +91,7 @@ import {
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
-  workspaceWithStrategyField,
+  workspaceWithStrategyRuleDraftField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
@@ -268,6 +270,7 @@ export function App() {
       ? paperTradingRowsFromExecutionRecord(paperExecutionRecord)
       : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
+  const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
@@ -638,12 +641,12 @@ export function App() {
     setWorkflowRunState(nextWorkflowState);
   }, [workspace]);
 
-  const updateStrategyField = useCallback((field: StrategyField, value: string) => {
+  const updateStrategyRuleDraftField = useCallback((field: StrategyRuleDraftField, value: number | string) => {
     manualSelectionVersionRef.current += 1;
     setWorkspaceState((current) => ({
-      workspace: workspaceWithStrategyField(current.workspace, field, value),
+      workspace: workspaceWithStrategyRuleDraftField(current.workspace, field, value),
       source: "core",
-      statusLabel: "Strategy edited"
+      statusLabel: "Strategy rules edited"
     }));
     setActiveWorkAreaId("strategy");
     setActiveLoopStepId("strategy");
@@ -883,8 +886,9 @@ export function App() {
   const renderStrategyPanel = (className = "strategy-panel") => (
     <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)} className={className}>
       <StrategySummary
+        draft={strategyRuleDraft}
         i18n={i18n}
-        onUpdateStrategyField={updateStrategyField}
+        onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
         rows={strategyRuleRows}
         workspace={workspace}
       />
@@ -1363,57 +1367,88 @@ function ChartDataStrip({
 }
 
 function StrategySummary({
+  draft,
   i18n,
-  onUpdateStrategyField,
+  onUpdateStrategyRuleDraftField,
   rows,
   workspace
 }: {
+  draft: StrategyRuleDraft;
   i18n: AppI18n;
-  onUpdateStrategyField: (field: StrategyField, value: string) => void;
+  onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string) => void;
   rows: StrategyRuleRow[];
   workspace: TerminalWorkspace;
 }) {
   return (
     <div className="strategy-workbench">
-      <div className="strategy-editor">
+      <div className="strategy-structured-editor">
+        <div className="strategy-builder-title">
+          <span>{i18n.t("strategy.builder")}</span>
+          <strong>{workspace.researchRun ? workspace.researchRun.strategyRevision : i18n.t("strategy.auditRequired")}</strong>
+        </div>
         <label>
           <span>{i18n.t("strategy.name")}</span>
           <input
-            onChange={(event) => onUpdateStrategyField("name", event.currentTarget.value)}
-            value={workspace.strategy.name}
+            onChange={(event) => onUpdateStrategyRuleDraftField("name", event.currentTarget.value)}
+            value={draft.name}
           />
         </label>
-        <label>
-          <span>{i18n.t("strategy.entry")}</span>
-          <textarea
-            onChange={(event) => onUpdateStrategyField("entry", event.currentTarget.value)}
-            rows={2}
-            value={workspace.strategy.entry}
+        <div className="strategy-draft-grid">
+          <StrategyNumberField
+            field="entryWindow"
+            i18n={i18n}
+            label={i18n.t("strategy.entryWindow")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            suffix="SMA"
+            value={draft.entryWindow}
           />
-        </label>
-        <label>
-          <span>{i18n.t("strategy.exit")}</span>
-          <textarea
-            onChange={(event) => onUpdateStrategyField("exit", event.currentTarget.value)}
-            rows={2}
-            value={workspace.strategy.exit}
+          <StrategyNumberField
+            field="exitWindow"
+            i18n={i18n}
+            label={i18n.t("strategy.exitWindow")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            suffix="SMA"
+            value={draft.exitWindow}
           />
-        </label>
-        <label>
-          <span>{i18n.t("strategy.position")}</span>
-          <input
-            onChange={(event) => onUpdateStrategyField("position", event.currentTarget.value)}
-            value={workspace.strategy.position}
+          <StrategyNumberField
+            field="positionPct"
+            i18n={i18n}
+            label={i18n.t("strategy.positionPct")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            suffix="%"
+            value={draft.positionPct}
           />
-        </label>
-        <label>
-          <span>{i18n.t("strategy.risk")}</span>
-          <textarea
-            onChange={(event) => onUpdateStrategyField("risk", event.currentTarget.value)}
-            rows={2}
-            value={workspace.strategy.risk}
+          <StrategyNumberField
+            field="stopLossPct"
+            i18n={i18n}
+            label={i18n.t("strategy.stopLossPct")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            suffix="%"
+            value={draft.stopLossPct}
           />
-        </label>
+          <StrategyNumberField
+            field="takeProfitPct"
+            i18n={i18n}
+            label={i18n.t("strategy.takeProfitPct")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            suffix="%"
+            value={draft.takeProfitPct}
+          />
+          <StrategyNumberField
+            field="maxDrawdownPct"
+            i18n={i18n}
+            label={i18n.t("strategy.maxDrawdownPct")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            suffix="%"
+            value={draft.maxDrawdownPct}
+          />
+        </div>
+        <div className="strategy-generated-snapshot">
+          <span>{i18n.t("strategy.generatedSnapshot")}</span>
+          <strong>{i18n.strategyText(workspace.strategy.entry)}</strong>
+          <strong>{i18n.strategyText(workspace.strategy.exit)}</strong>
+          <small>{i18n.strategyText(workspace.strategy.risk)}</small>
+        </div>
       </div>
       <div className="strategy-rule-board">
         <div className="strategy-rule-title">
@@ -1441,6 +1476,40 @@ function StrategySummary({
         </div>
       </div>
     </div>
+  );
+}
+
+function StrategyNumberField({
+  field,
+  i18n,
+  label,
+  onUpdate,
+  suffix,
+  value
+}: {
+  field: StrategyRuleDraftField;
+  i18n: AppI18n;
+  label: string;
+  onUpdate: (field: StrategyRuleDraftField, value: number | string) => void;
+  suffix: string;
+  value: number;
+}) {
+  return (
+    <label className="strategy-draft-field">
+      <span>{label}</span>
+      <div>
+        <input
+          min={field === "entryWindow" || field === "exitWindow" ? 1 : 0}
+          max={field === "entryWindow" || field === "exitWindow" ? 250 : 100}
+          onChange={(event) => onUpdate(field, Number(event.currentTarget.value))}
+          step={1}
+          type="number"
+          value={value}
+        />
+        <em>{suffix}</em>
+      </div>
+      <small>{strategyDraftHint(i18n, field)}</small>
+    </label>
   );
 }
 
@@ -2154,11 +2223,16 @@ function strategyRuleParameterLabel(i18n: AppI18n, parameter: string): string {
   if (i18n.locale === "en-US") {
     return parameter;
   }
+  const exposureCap = parameter.match(/^(\d+(?:\.\d+)?)% exposure cap$/);
+  if (exposureCap) {
+    return `${exposureCap[1]}% 暴露上限`;
+  }
   return parameter
     .replace("SMA20 / relative strength", "SMA20 / 相对强度")
     .replace("Trend support / risk downgrade", "趋势支撑 / 风险下调")
     .replace("Exposure cap / paper sizing", "暴露上限 / 模拟定仓")
-    .replace("Stop / drawdown / execution mode", "止损 / 回撤 / 执行模式");
+    .replace("Stop / drawdown / execution mode", "止损 / 回撤 / 执行模式")
+    .replace("Stop / take profit / drawdown / execution mode", "止损 / 止盈 / 回撤 / 执行模式");
 }
 
 function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"]): string {
@@ -2166,6 +2240,29 @@ function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"
     return status;
   }
   return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
+}
+
+function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string {
+  if (i18n.locale === "en-US") {
+    return {
+      name: "Strategy version name",
+      entryWindow: "Entry: close above SMA",
+      exitWindow: "Exit: close below SMA",
+      positionPct: "Capital cap per run",
+      stopLossPct: "Trade-level stop",
+      takeProfitPct: "Trade-level target",
+      maxDrawdownPct: "Backtest drawdown guard"
+    }[field];
+  }
+  return {
+    name: "策略版本名称",
+    entryWindow: "入场：收盘价上穿 SMA",
+    exitWindow: "出场：收盘价跌破 SMA",
+    positionPct: "单次资金上限",
+    stopLossPct: "单笔止损",
+    takeProfitPct: "单笔止盈",
+    maxDrawdownPct: "回测回撤保护"
+  }[field];
 }
 
 function backtestSideLabel(i18n: AppI18n, side: BacktestTradeRow["side"]): string {
