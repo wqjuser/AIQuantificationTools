@@ -219,6 +219,107 @@ def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[s
     }
 
 
+def build_promotion_candidate(audit: Any, paper_executions: list[PaperExecutionRecord]) -> dict[str, Any]:
+    executions = [execution for execution in paper_executions if execution.run_id == str(getattr(audit, "run_id", ""))]
+    executions.sort(key=lambda execution: execution.created_at, reverse=True)
+    latest_execution = executions[0] if executions else None
+    filled_orders = [order for execution in executions for order in execution.orders if order.status == "filled"]
+    passed_paper_risk_checks = sum(
+        1
+        for execution in executions
+        if any(gate.get("id") == "paper-risk-check" and bool(gate.get("passed")) for gate in execution.gates)
+    )
+    paper_passed = bool(filled_orders) and passed_paper_risk_checks > 0
+    status = "certification_pending" if paper_passed else "paper_pending"
+    headline = "Live promotion pending certification" if paper_passed else "Paper execution required"
+    summary = (
+        "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass."
+        if paper_passed
+        else "The audited run is risk-approved for paper trading, but no filled paper execution is bound yet."
+    )
+    filled_value = _count_label(len(filled_orders), "filled order")
+
+    return {
+        "candidateId": f"promotion-{getattr(audit, 'run_id', '')}",
+        "runId": str(getattr(audit, "run_id", "")),
+        "createdAt": (latest_execution.created_at if latest_execution else getattr(audit, "created_at")).isoformat(),
+        "market": str(getattr(audit, "market", "")),
+        "symbol": str(getattr(audit, "symbol", "")),
+        "timeframe": str(getattr(audit, "timeframe", "")),
+        "strategyRevision": str(getattr(audit, "strategy_revision", "")),
+        "latestPaperExecutionId": latest_execution.execution_id if latest_execution else None,
+        "status": status,
+        "headline": headline,
+        "summary": summary,
+        "liveTradingAllowed": False,
+        "evidence": {
+            "paperExecutions": len(executions),
+            "filledOrders": len(filled_orders),
+            "passedPaperRiskChecks": passed_paper_risk_checks,
+        },
+        "stages": [
+            {
+                "id": "audited-run",
+                "label": "Audited run",
+                "value": str(getattr(audit, "run_id", "")),
+                "detail": f"{getattr(audit, 'data_rows', 0)} {getattr(audit, 'timeframe', '')} bars are bound to the promotion queue.",
+                "status": "passed" if bool(getattr(audit, "run_id", "")) else "blocked",
+                "tone": "positive" if bool(getattr(audit, "run_id", "")) else "risk",
+                "passed": bool(getattr(audit, "run_id", "")),
+                "reason": f"{getattr(audit, 'data_rows', 0)} {getattr(audit, 'timeframe', '')} bars are bound to the promotion queue.",
+            },
+            {
+                "id": "risk-approval",
+                "label": "Risk approval",
+                "value": "paper approved",
+                "detail": "Audited evidence can enter paper-to-live promotion review; live routing remains blocked.",
+                "status": "passed",
+                "tone": "positive",
+                "passed": True,
+                "reason": "Audited evidence can enter paper-to-live promotion review; live routing remains blocked.",
+            },
+            {
+                "id": "paper-execution",
+                "label": "Paper execution",
+                "value": filled_value if paper_passed else "No paper fill",
+                "detail": (
+                    f"Paper snapshot {latest_execution.execution_id} passed local risk checks before live promotion."
+                    if paper_passed and latest_execution
+                    else "Submit a paper order from the active audited run before live promotion review."
+                ),
+                "status": "passed" if paper_passed else "blocked",
+                "tone": "positive" if paper_passed else "warning",
+                "passed": paper_passed,
+                "reason": (
+                    f"Paper snapshot {latest_execution.execution_id} passed local risk checks before live promotion."
+                    if paper_passed and latest_execution
+                    else "Submit a paper order from the active audited run before live promotion review."
+                ),
+            },
+            {
+                "id": "adapter-certification",
+                "label": "Adapter certification",
+                "value": "0 certified live adapters",
+                "detail": "Live adapters remain interface-only or configuration-required until certification passes.",
+                "status": "blocked",
+                "tone": "risk",
+                "passed": False,
+                "reason": "Live adapters remain interface-only or configuration-required until certification passes.",
+            },
+            {
+                "id": "human-confirmation",
+                "label": "Human confirmation",
+                "value": "manual approval required",
+                "detail": "Live promotion requires explicit human confirmation after adapter certification.",
+                "status": "blocked",
+                "tone": "warning",
+                "passed": False,
+                "reason": "Live promotion requires explicit human confirmation after adapter certification.",
+            },
+        ],
+    }
+
+
 def paper_execution_payload_to_record(payload: dict[str, Any]) -> PaperExecutionRecord:
     account_payload = payload.get("account")
     orders_payload = payload.get("orders")
@@ -333,6 +434,10 @@ def _normalize_gates(gates: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return normalized
+
+
+def _count_label(count: int, singular: str) -> str:
+    return f"{count} {singular}" if count == 1 else f"{count} {singular}s"
 
 
 def _row_to_paper_execution(row: sqlite3.Row | tuple[Any, ...]) -> PaperExecutionRecord:

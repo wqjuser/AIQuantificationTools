@@ -14,6 +14,7 @@ from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
 from quant_core.execution import (
     PaperExecutionStore,
+    build_promotion_candidate,
     create_paper_execution_from_audit,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
@@ -89,7 +90,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_paper_execution", "detail": str(error)}, status=400)
                 return
             self.paper_execution_store.record(execution)
-            self._send_json({"execution": paper_execution_record_to_payload(execution)}, status=201)
+            executions = self.paper_execution_store.list_by_run(run_id, limit=20)
+            self._send_json(
+                {
+                    "execution": paper_execution_record_to_payload(execution),
+                    "promotion": build_promotion_candidate(audit, executions),
+                },
+                status=201,
+            )
             return
         self._send_json({"error": "not_found"}, status=404)
 
@@ -175,6 +183,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             executions = self.paper_execution_store.list_by_run(run_id, limit=20)
             self._send_json({"executions": [paper_execution_record_to_payload(execution) for execution in executions]})
             return
+        if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/promotion"):
+            run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/promotion")).strip()
+            audit = self.run_store.get(run_id) if run_id else None
+            if not audit:
+                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
+                return
+            executions = self.paper_execution_store.list_by_run(run_id, limit=20)
+            self._send_json({"promotion": build_promotion_candidate(audit, executions)})
+            return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/export"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/export")).strip()
             audit = self.run_store.get(run_id) if run_id else None
@@ -185,7 +202,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 paper_execution_record_to_payload(execution)
                 for execution in self.paper_execution_store.list_by_run(run_id, limit=20)
             ]
-            self._send_json({"export": research_run_export_to_payload(audit, paper_executions=executions)})
+            promotion_candidate = build_promotion_candidate(audit, self.paper_execution_store.list_by_run(run_id, limit=20))
+            self._send_json(
+                {
+                    "export": research_run_export_to_payload(
+                        audit,
+                        paper_executions=executions,
+                        promotion_candidate=promotion_candidate,
+                    )
+                }
+            )
             return
         if parsed.path.startswith("/api/research/runs/"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/")).strip()

@@ -311,6 +311,9 @@ describe("terminal layout css", () => {
 
   test("renders execution promotion readiness as a separate queue after paper execution", () => {
     expect(appSource).toContain("buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows)");
+    expect(appSource).toContain("loadResearchRunPromotion(quantCoreBaseUrl");
+    expect(appSource).toContain("setPromotionCandidateRecord(result.promotion ?? null)");
+    expect(appSource).toContain("activePromotionCandidateRecord ?? buildPromotionReadiness");
     expect(appSource).toContain("<PromotionQueuePanel");
     expect(appSource).toContain("readiness={promotionReadiness}");
     expect(appSource).toContain('className="promotion-stage-list"');

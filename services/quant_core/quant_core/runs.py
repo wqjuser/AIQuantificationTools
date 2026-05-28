@@ -356,12 +356,14 @@ def research_run_export_to_payload(
     *,
     exported_at: datetime | None = None,
     paper_executions: list[dict[str, Any]] | None = None,
+    promotion_candidate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     exported = exported_at or datetime.now(timezone.utc)
     run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
     data_snapshot = run_payload.get("dataSnapshot", {})
     ai_report = run_payload.get("aiReport", {})
     paper_execution_payloads = _normalize_paper_execution_payloads(paper_executions, run_id=audit.run_id)
+    normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
     artifact_counts = {
         "bars": len(data_snapshot.get("bars", [])) if isinstance(data_snapshot, dict) else 0,
         "trades": len(run_payload.get("backtestTrades", [])),
@@ -369,6 +371,7 @@ def research_run_export_to_payload(
         "decisions": len(run_payload.get("decisions", [])),
         "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
         "paperExecutions": len(paper_execution_payloads),
+        "promotionCandidates": 1 if normalized_promotion_candidate else 0,
     }
     export_package = {
         "kind": "aiqt.researchRun.export",
@@ -390,6 +393,7 @@ def research_run_export_to_payload(
         },
         "researchRun": run_payload,
         "paperExecutions": paper_execution_payloads,
+        "promotionCandidate": normalized_promotion_candidate,
         "executionHandoff": {
             "mode": audit.execution_mode,
             "paperOnly": True,
@@ -676,6 +680,32 @@ def _normalize_paper_execution_payloads(value: list[dict[str, Any]] | None, *, r
             }
         )
     return normalized
+
+
+def _normalize_promotion_candidate(value: dict[str, Any] | None, *, run_id: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return None
+    candidate_run_id = str(value.get("runId") or "")
+    if candidate_run_id != run_id:
+        return None
+    return {
+        "candidateId": str(value.get("candidateId") or f"promotion-{run_id}"),
+        "runId": candidate_run_id,
+        "createdAt": str(value.get("createdAt") or ""),
+        "market": str(value.get("market") or ""),
+        "symbol": str(value.get("symbol") or ""),
+        "timeframe": str(value.get("timeframe") or ""),
+        "strategyRevision": str(value.get("strategyRevision") or ""),
+        "latestPaperExecutionId": value.get("latestPaperExecutionId"),
+        "status": str(value.get("status") or "paper_pending"),
+        "headline": str(value.get("headline") or ""),
+        "summary": str(value.get("summary") or ""),
+        "liveTradingAllowed": bool(value.get("liveTradingAllowed")),
+        "evidence": _dict_or_empty(value.get("evidence")),
+        "stages": _list_of_dicts(value.get("stages")),
+    }
 
 
 def _safe_string_list(value: Any) -> list[str]:

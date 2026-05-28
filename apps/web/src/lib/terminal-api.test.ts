@@ -6,6 +6,7 @@ import {
   buildResearchRunExportUrl,
   buildResearchRunImportUrl,
   buildResearchRunPaperExecutionsUrl,
+  buildResearchRunPromotionUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -15,6 +16,7 @@ import {
   loadResearchRunDetail,
   loadResearchRunExport,
   loadLatestResearchRunPaperExecution,
+  loadResearchRunPromotion,
   submitResearchRunPaperExecution,
   importResearchRunExport,
   marketKlinesFromResearchRunAudit,
@@ -102,6 +104,12 @@ describe("terminal workspace API client", () => {
   test("builds the paper execution URL with an encoded run id", () => {
     expect(buildResearchRunPaperExecutionsUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
       "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/paper-executions"
+    );
+  });
+
+  test("builds the promotion candidate URL with an encoded run id", () => {
+    expect(buildResearchRunPromotionUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/promotion"
     );
   });
 
@@ -504,7 +512,15 @@ describe("terminal workspace API client", () => {
               executionMode: "paper_only",
               paperOnly: true,
               liveTradingAllowed: false,
-              artifactCounts: { bars: 2, trades: 1, equityPoints: 2, decisions: 0, aiRisks: 1, paperExecutions: 1 }
+              artifactCounts: {
+                bars: 2,
+                trades: 1,
+                equityPoints: 2,
+                decisions: 0,
+                aiRisks: 1,
+                paperExecutions: 1,
+                promotionCandidates: 1
+              }
             },
             researchRun: {
               runId: "run-new",
@@ -589,7 +605,34 @@ describe("terminal workspace API client", () => {
                   }
                 ]
               }
-            ]
+            ],
+            promotionCandidate: {
+              candidateId: "promotion-run-new",
+              runId: "run-new",
+              createdAt: "2026-05-26T08:20:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyRevision: "rev123",
+              latestPaperExecutionId: "paper-exported",
+              status: "certification_pending",
+              headline: "Live promotion pending certification",
+              summary: "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass.",
+              liveTradingAllowed: false,
+              evidence: { paperExecutions: 1, filledOrders: 1, passedPaperRiskChecks: 1 },
+              stages: [
+                {
+                  id: "paper-execution",
+                  label: "Paper execution",
+                  value: "1 filled order",
+                  detail: "Paper snapshot paper-exported passed local risk checks before live promotion.",
+                  status: "passed",
+                  tone: "positive",
+                  passed: true,
+                  reason: "Paper snapshot paper-exported passed local risk checks before live promotion."
+                }
+              ]
+            }
           }
         })
       };
@@ -601,9 +644,11 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.manifest.dataHash).toBe("snapshot-detail");
     expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
     expect(result.exportPackage?.manifest.artifactCounts.paperExecutions).toBe(1);
+    expect(result.exportPackage?.manifest.artifactCounts.promotionCandidates).toBe(1);
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
+    expect(result.exportPackage?.promotionCandidate?.status).toBe("certification_pending");
   });
 
   test("returns fallback when research run export package is malformed", async () => {
@@ -856,6 +901,33 @@ describe("terminal workspace API client", () => {
                 reason: "Live execution is blocked; this record is paper-only."
               }
             ]
+          },
+          promotion: {
+            candidateId: "promotion-run-new",
+            runId: "run-new",
+            createdAt: "2026-05-26T08:10:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyRevision: "rev123",
+            latestPaperExecutionId: "paper-123",
+            status: "certification_pending",
+            headline: "Live promotion pending certification",
+            summary: "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass.",
+            liveTradingAllowed: false,
+            evidence: { paperExecutions: 1, filledOrders: 1, passedPaperRiskChecks: 1 },
+            stages: [
+              {
+                id: "paper-execution",
+                label: "Paper execution",
+                value: "1 filled order",
+                detail: "Paper snapshot paper-123 passed local risk checks before live promotion.",
+                status: "passed",
+                tone: "positive",
+                passed: true,
+                reason: "Paper snapshot paper-123 passed local risk checks before live promotion."
+              }
+            ]
           }
         })
       };
@@ -866,6 +938,54 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.execution?.orders[0]?.status).toBe("filled");
     expect(result.execution?.gates[2]?.passed).toBe(false);
+    expect(result.promotion?.runId).toBe("run-new");
+    expect(result.promotion?.status).toBe("certification_pending");
+    expect(result.promotion?.stages[0]?.status).toBe("passed");
+  });
+
+  test("loads a promotion candidate for an audited research run", async () => {
+    const calls: string[] = [];
+    const result = await loadResearchRunPromotion("http://127.0.0.1:8765", "run-new", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          promotion: {
+            candidateId: "promotion-run-new",
+            runId: "run-new",
+            createdAt: "2026-05-26T08:20:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyRevision: "rev123",
+            latestPaperExecutionId: "paper-latest",
+            status: "certification_pending",
+            headline: "Live promotion pending certification",
+            summary: "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass.",
+            liveTradingAllowed: false,
+            evidence: { paperExecutions: 1, filledOrders: 1, passedPaperRiskChecks: 1 },
+            stages: [
+              {
+                id: "paper-execution",
+                label: "Paper execution",
+                value: "1 filled order",
+                detail: "Paper snapshot paper-latest passed local risk checks before live promotion.",
+                status: "passed",
+                tone: "positive",
+                passed: true,
+                reason: "Paper snapshot paper-latest passed local risk checks before live promotion."
+              }
+            ]
+          }
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-new/promotion"]);
+    expect(result.source).toBe("core");
+    expect(result.promotion?.latestPaperExecutionId).toBe("paper-latest");
+    expect(result.promotion?.evidence.filledOrders).toBe(1);
   });
 
   test("loads the latest paper execution for an audited research run", async () => {

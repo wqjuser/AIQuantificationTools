@@ -193,6 +193,64 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["gates"][0]["passed"])
         self.assertFalse(payload["gates"][2]["passed"])
 
+    def test_promotion_candidate_tracks_paper_to_live_readiness(self):
+        from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
+        from quant_core.runs import ResearchRunAudit
+
+        audit = ResearchRunAudit(
+            run_id="run-promotion-candidate",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-promotion-candidate",
+            data_rows=1,
+            metrics={"total_return_pct": 12.4, "max_drawdown_pct": 5.8, "trade_count": 12},
+            decisions=[],
+            execution_mode="paper_only",
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-promotion-candidate",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+
+        pending = build_promotion_candidate(audit, [])
+        execution = create_paper_execution_from_audit(audit, created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc))
+        candidate = build_promotion_candidate(audit, [execution])
+
+        self.assertEqual(pending["status"], "paper_pending")
+        self.assertEqual(pending["headline"], "Paper execution required")
+        self.assertEqual(pending["evidence"]["paperExecutions"], 0)
+        self.assertEqual(candidate["candidateId"], "promotion-run-promotion-candidate")
+        self.assertEqual(candidate["status"], "certification_pending")
+        self.assertEqual(candidate["headline"], "Live promotion pending certification")
+        self.assertEqual(candidate["runId"], "run-promotion-candidate")
+        self.assertEqual(candidate["latestPaperExecutionId"], execution.execution_id)
+        self.assertEqual(candidate["evidence"], {"paperExecutions": 1, "filledOrders": 1, "passedPaperRiskChecks": 1})
+        self.assertEqual(
+            [stage["id"] for stage in candidate["stages"]],
+            ["audited-run", "risk-approval", "paper-execution", "adapter-certification", "human-confirmation"],
+        )
+        self.assertEqual(candidate["stages"][2]["value"], "1 filled order")
+        self.assertTrue(candidate["stages"][2]["passed"])
+        self.assertFalse(candidate["liveTradingAllowed"])
+
     def test_research_run_paper_execution_api_records_order_for_run(self):
         import json
         from http.client import HTTPConnection
@@ -266,8 +324,92 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(response.status, 201)
         self.assertEqual(payload["execution"]["runId"], "run-paper-api")
         self.assertEqual(payload["execution"]["orders"][0]["status"], "filled")
+        self.assertEqual(payload["promotion"]["runId"], "run-paper-api")
+        self.assertEqual(payload["promotion"]["status"], "certification_pending")
+        self.assertEqual(payload["promotion"]["latestPaperExecutionId"], payload["execution"]["executionId"])
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
+
+    def test_research_run_promotion_api_and_export_include_candidate(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-promotion-api",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-promotion-api",
+            data_rows=1,
+            metrics={"total_return_pct": 12.4, "max_drawdown_pct": 5.8, "trade_count": 12},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Paper", "risks": ["No live adapter"], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-promotion-api",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000}],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            research_store.record(audit)
+            paper_store.record(create_paper_execution_from_audit(audit))
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                paper_execution_store = paper_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/runs/run-promotion-api/promotion")
+                promotion_response = connection.getresponse()
+                promotion_payload = json.loads(promotion_response.read().decode("utf-8"))
+                connection.request("GET", "/api/research/runs/run-promotion-api/export")
+                export_response = connection.getresponse()
+                export_payload = json.loads(export_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(promotion_response.status, 200)
+        self.assertEqual(promotion_payload["promotion"]["status"], "certification_pending")
+        self.assertEqual(promotion_payload["promotion"]["evidence"]["filledOrders"], 1)
+        self.assertEqual(export_response.status, 200)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["promotionCandidates"], 1)
+        self.assertEqual(export_payload["export"]["promotionCandidate"]["runId"], "run-promotion-api")
+        self.assertEqual(export_payload["export"]["promotionCandidate"]["status"], "certification_pending")
 
     def test_research_run_paper_execution_api_returns_404_for_missing_run(self):
         import json

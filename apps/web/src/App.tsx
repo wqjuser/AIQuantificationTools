@@ -27,12 +27,14 @@ import {
   loadResearchRunDetail,
   loadResearchRunExport,
   loadResearchRunHistory,
+  loadResearchRunPromotion,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
+  PromotionCandidateRecord,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunExportPackage,
@@ -260,6 +262,7 @@ export function App() {
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
+  const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -282,6 +285,10 @@ export function App() {
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
   const activePaperExecutionRecord =
     paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId ? paperExecutionRecord : null;
+  const activePromotionCandidateRecord =
+    promotionCandidateRecord?.runId && promotionCandidateRecord.runId === workspace.researchRun?.runId
+      ? promotionCandidateRecord
+      : null;
   const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
@@ -296,7 +303,8 @@ export function App() {
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
-  const promotionReadiness = buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows);
+  const promotionReadiness =
+    activePromotionCandidateRecord ?? buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
 
   useEffect(() => {
@@ -411,6 +419,7 @@ export function App() {
     setActiveLoopStepId("backtest");
     setIsRunning(true);
     setPaperExecutionRecord(null);
+    setPromotionCandidateRecord(null);
     appendLog("data", "info", `Data snapshot prepared for ${selectedContext}`);
     publishStage("data", []);
     await waitForWorkflowStep();
@@ -476,6 +485,7 @@ export function App() {
       workflowRunIdRef.current += 1;
       setIsRunning(false);
       setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
       const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
@@ -490,11 +500,15 @@ export function App() {
       if (auditedKlines) {
         setKlinesState(auditedKlines);
       }
-      const paperHistory = await loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId);
+      const [paperHistory, promotionHistory] = await Promise.all([
+        loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId),
+        loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId)
+      ]);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
       }
       setPaperExecutionRecord(paperHistory.execution ?? null);
+      setPromotionCandidateRecord(promotionHistory.promotion ?? null);
       if (paperHistory.execution) {
         setWorkspaceState((current) => ({
           ...current,
@@ -553,6 +567,7 @@ export function App() {
       workflowRunIdRef.current += 1;
       setIsRunning(false);
       setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
 
       try {
         const parsed = JSON.parse(await file.text()) as ResearchRunExportPackage | { export?: ResearchRunExportPackage };
@@ -579,11 +594,15 @@ export function App() {
         if (importedKlines) {
           setKlinesState(importedKlines);
         }
-        const paperHistory = await loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId);
+        const [paperHistory, promotionHistory] = await Promise.all([
+          loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
+          loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId)
+        ]);
         if (manualSelectionVersionRef.current !== importVersion) {
           return;
         }
         setPaperExecutionRecord(paperHistory.execution ?? null);
+        setPromotionCandidateRecord(promotionHistory.promotion ?? null);
         if (paperHistory.execution) {
           setWorkspaceState((current) => ({
             ...current,
@@ -616,6 +635,7 @@ export function App() {
       workflowRunIdRef.current += 1;
       setIsRunning(false);
       setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
@@ -635,6 +655,7 @@ export function App() {
       workflowRunIdRef.current += 1;
       setIsRunning(false);
       setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
         source: "core",
@@ -678,6 +699,7 @@ export function App() {
   const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
     manualSelectionVersionRef.current += 1;
     setPaperExecutionRecord(null);
+    setPromotionCandidateRecord(null);
     setWorkspaceState((current) => ({
       workspace: workspaceWithBacktestAssumption(current.workspace, field, value),
       source: "core",
@@ -712,6 +734,7 @@ export function App() {
     }
 
     setPaperExecutionRecord(result.execution);
+    setPromotionCandidateRecord(result.promotion ?? null);
     setWorkspaceState((current) => ({
       ...current,
       statusLabel: "Paper execution recorded",

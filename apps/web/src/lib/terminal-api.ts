@@ -3,6 +3,7 @@ import {
   resolveBacktestAssumptions,
   workspaceWithPrimaryWorkflows,
   Market,
+  PromotionReadiness,
   ResearchRunAudit,
   TerminalWorkspace,
   Timeframe,
@@ -53,6 +54,7 @@ export interface ResearchRunExportManifest {
     decisions: number;
     aiRisks: number;
     paperExecutions?: number;
+    promotionCandidates?: number;
   };
 }
 
@@ -84,6 +86,7 @@ export interface ResearchRunExportPackage {
   researchRun: ResearchRunAudit;
   executionHandoff: ResearchRunExecutionHandoff;
   paperExecutions?: PaperExecutionRecord[];
+  promotionCandidate?: PromotionCandidateRecord | null;
 }
 
 export interface ResearchRunExportResult {
@@ -132,14 +135,40 @@ export interface PaperExecutionRecord {
   gates: PaperExecutionGate[];
 }
 
+export interface PromotionCandidateEvidence {
+  paperExecutions: number;
+  filledOrders: number;
+  passedPaperRiskChecks: number;
+}
+
+export interface PromotionCandidateRecord extends PromotionReadiness {
+  candidateId: string;
+  runId: string;
+  createdAt: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  strategyRevision: string;
+  latestPaperExecutionId?: string | null;
+  liveTradingAllowed: boolean;
+  evidence: PromotionCandidateEvidence;
+}
+
 export interface PaperExecutionResult {
   execution?: PaperExecutionRecord;
+  promotion?: PromotionCandidateRecord;
   source: WorkspaceSource;
   error?: string;
 }
 
 export interface PaperExecutionHistoryResult {
   executions: PaperExecutionRecord[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface PromotionCandidateResult {
+  promotion?: PromotionCandidateRecord;
   source: WorkspaceSource;
   error?: string;
 }
@@ -274,6 +303,11 @@ export function buildResearchRunImportUrl(baseUrl: string): string {
 export function buildResearchRunPaperExecutionsUrl(baseUrl: string, runId: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(`api/research/runs/${encodeURIComponent(runId)}/paper-executions`, normalizedBase).toString();
+}
+
+export function buildResearchRunPromotionUrl(baseUrl: string, runId: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(`api/research/runs/${encodeURIComponent(runId)}/promotion`, normalizedBase).toString();
 }
 
 export function buildMarketKlinesUrl(
@@ -476,12 +510,39 @@ export async function submitResearchRunPaperExecution(
     }
     return {
       execution: payload.execution,
+      promotion: payload.promotion,
       source: "core"
     };
   } catch (error) {
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown paper execution error"
+    };
+  }
+}
+
+export async function loadResearchRunPromotion(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PromotionCandidateResult> {
+  try {
+    const response = await fetcher(buildResearchRunPromotionUrl(baseUrl, runId));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPromotionCandidatePayload(payload)) {
+      throw new Error("Invalid promotion candidate contract");
+    }
+    return {
+      promotion: payload.promotion,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown promotion candidate error"
     };
   }
 }
@@ -720,12 +781,12 @@ function isResearchRunImportPayload(value: unknown): value is { run: ResearchRun
   return isResearchRunAudit(payload.run) && Boolean(payload.run.dataSnapshot);
 }
 
-function isPaperExecutionPayload(value: unknown): value is { execution: PaperExecutionRecord } {
+function isPaperExecutionPayload(value: unknown): value is { execution: PaperExecutionRecord; promotion?: PromotionCandidateRecord } {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { execution?: unknown };
-  return isPaperExecutionRecord(payload.execution);
+  const payload = value as { execution?: unknown; promotion?: unknown };
+  return isPaperExecutionRecord(payload.execution) && (payload.promotion === undefined || isPromotionCandidateRecord(payload.promotion));
 }
 
 function isPaperExecutionHistoryPayload(value: unknown): value is { executions: PaperExecutionRecord[] } {
@@ -734,6 +795,73 @@ function isPaperExecutionHistoryPayload(value: unknown): value is { executions: 
   }
   const payload = value as { executions?: unknown };
   return Array.isArray(payload.executions) && payload.executions.every(isPaperExecutionRecord);
+}
+
+function isPromotionCandidatePayload(value: unknown): value is { promotion: PromotionCandidateRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { promotion?: unknown };
+  return isPromotionCandidateRecord(payload.promotion);
+}
+
+function isPromotionCandidateRecord(value: unknown): value is PromotionCandidateRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<PromotionCandidateRecord>;
+  return (
+    typeof candidate.candidateId === "string" &&
+    typeof candidate.runId === "string" &&
+    typeof candidate.createdAt === "string" &&
+    isMarket(candidate.market) &&
+    typeof candidate.symbol === "string" &&
+    isTimeframe(candidate.timeframe) &&
+    typeof candidate.strategyRevision === "string" &&
+    (candidate.latestPaperExecutionId === undefined ||
+      candidate.latestPaperExecutionId === null ||
+      typeof candidate.latestPaperExecutionId === "string") &&
+    isPromotionReadinessStatus(candidate.status) &&
+    typeof candidate.headline === "string" &&
+    typeof candidate.summary === "string" &&
+    typeof candidate.liveTradingAllowed === "boolean" &&
+    isPromotionCandidateEvidence(candidate.evidence) &&
+    Array.isArray(candidate.stages) &&
+    candidate.stages.every(isPromotionCandidateStage)
+  );
+}
+
+function isPromotionReadinessStatus(value: unknown): value is PromotionCandidateRecord["status"] {
+  return value === "blocked" || value === "paper_pending" || value === "certification_pending" || value === "live_ready";
+}
+
+function isPromotionCandidateEvidence(value: unknown): value is PromotionCandidateEvidence {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const evidence = value as Partial<PromotionCandidateEvidence>;
+  return (
+    typeof evidence.paperExecutions === "number" &&
+    typeof evidence.filledOrders === "number" &&
+    typeof evidence.passedPaperRiskChecks === "number"
+  );
+}
+
+function isPromotionCandidateStage(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const stage = value as Record<string, unknown>;
+  return (
+    typeof stage.id === "string" &&
+    typeof stage.label === "string" &&
+    typeof stage.value === "string" &&
+    typeof stage.detail === "string" &&
+    (stage.status === "passed" || stage.status === "blocked" || stage.status === "review") &&
+    (stage.tone === "positive" || stage.tone === "warning" || stage.tone === "neutral" || stage.tone === "risk") &&
+    (stage.passed === undefined || typeof stage.passed === "boolean") &&
+    (stage.reason === undefined || typeof stage.reason === "string")
+  );
 }
 
 function isPaperExecutionRecord(value: unknown): value is PaperExecutionRecord {
@@ -813,7 +941,10 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
     Boolean(exportPackage.researchRun.dataSnapshot) &&
     isResearchRunExecutionHandoff(exportPackage.executionHandoff) &&
     (exportPackage.paperExecutions === undefined ||
-      (Array.isArray(exportPackage.paperExecutions) && exportPackage.paperExecutions.every(isPaperExecutionRecord)))
+      (Array.isArray(exportPackage.paperExecutions) && exportPackage.paperExecutions.every(isPaperExecutionRecord))) &&
+    (exportPackage.promotionCandidate === undefined ||
+      exportPackage.promotionCandidate === null ||
+      isPromotionCandidateRecord(exportPackage.promotionCandidate))
   );
 }
 
