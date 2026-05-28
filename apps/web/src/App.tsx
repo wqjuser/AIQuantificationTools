@@ -33,10 +33,12 @@ import {
   mergeMarketKlines,
   MarketKlinesResult,
   MarketSearchSuggestion,
+  PaperExecutionRecord,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
+  submitResearchRunPaperExecution,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
@@ -175,7 +177,9 @@ export function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(false);
   const [isSymbolSearching, setIsSymbolSearching] = useState(false);
+  const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
+  const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -193,6 +197,11 @@ export function App() {
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const paperPositionRows = buildPaperPositionRows(workspace);
   const paperTradingRows = buildPaperTradingRows(workspace);
+  const persistedPaperTradingRows =
+    paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId
+      ? paperTradingRowsFromExecutionRecord(paperExecutionRecord)
+      : null;
+  const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
@@ -312,6 +321,7 @@ export function App() {
 
     setActiveModuleId("workflow");
     setIsRunning(true);
+    setPaperExecutionRecord(null);
     appendLog("data", "info", `Data snapshot prepared for ${selectedContext}`);
     publishStage("data", []);
     await waitForWorkflowStep();
@@ -376,6 +386,7 @@ export function App() {
       manualSelectionVersionRef.current = replayVersion;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
+      setPaperExecutionRecord(null);
       const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
@@ -440,6 +451,7 @@ export function App() {
       manualSelectionVersionRef.current = importVersion;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
+      setPaperExecutionRecord(null);
 
       try {
         const parsed = JSON.parse(await file.text()) as ResearchRunExportPackage | { export?: ResearchRunExportPackage };
@@ -490,6 +502,7 @@ export function App() {
       manualSelectionVersionRef.current += 1;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
+      setPaperExecutionRecord(null);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
@@ -506,6 +519,7 @@ export function App() {
       manualSelectionVersionRef.current += 1;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
+      setPaperExecutionRecord(null);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
         source: "core",
@@ -541,6 +555,7 @@ export function App() {
 
   const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
     manualSelectionVersionRef.current += 1;
+    setPaperExecutionRecord(null);
     setWorkspaceState((current) => ({
       workspace: workspaceWithBacktestAssumption(current.workspace, field, value),
       source: "core",
@@ -550,6 +565,41 @@ export function App() {
     setActiveModuleId("watchlist");
     setActiveWorkflowStageId("backtest");
   }, []);
+
+  const submitPaperExecution = useCallback(async () => {
+    const runId = workspace.researchRun?.runId;
+    if (!runId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Paper execution failed",
+        error: "Run the pipeline before submitting a paper execution."
+      }));
+      return;
+    }
+
+    setIsSubmittingPaperExecution(true);
+    const result = await submitResearchRunPaperExecution(quantCoreBaseUrl, runId);
+    if (result.source === "fallback" || !result.execution) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Paper execution failed",
+        error: result.error ?? "Paper execution failed"
+      }));
+      setIsSubmittingPaperExecution(false);
+      return;
+    }
+
+    setPaperExecutionRecord(result.execution);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Paper execution recorded",
+      error: undefined
+    }));
+    setActiveModuleId("broker");
+    setActiveLoopStepId("paper");
+    setActiveWorkflowStageId("execution");
+    setIsSubmittingPaperExecution(false);
+  }, [workspace.researchRun?.runId]);
 
   const selectQuantLoopStep = useCallback((stepId: string) => {
     const target = buildQuantLoopNavigationTarget(stepId);
@@ -963,7 +1013,9 @@ export function App() {
 
               <ExecutionPanel
                 i18n={i18n}
-                rows={paperTradingRows}
+                isSubmitting={isSubmittingPaperExecution}
+                onSubmit={submitPaperExecution}
+                rows={visiblePaperTradingRows}
                 workspace={workspace}
                 className="watchlist-execution-panel"
               />
@@ -988,7 +1040,7 @@ export function App() {
           {activeModuleId === "portfolio" ? (
             <PortfolioWorkspace
               i18n={i18n}
-              paperRows={paperTradingRows}
+              paperRows={visiblePaperTradingRows}
               positionRows={paperPositionRows}
               rows={portfolioRiskRows}
               workspace={workspace}
@@ -1002,8 +1054,10 @@ export function App() {
           {activeModuleId === "broker" ? (
             <BrokerWorkspace
               adapterRows={brokerAdapterRows}
-              executionRows={paperTradingRows}
+              executionRows={visiblePaperTradingRows}
               i18n={i18n}
+              isSubmittingPaperExecution={isSubmittingPaperExecution}
+              onSubmitPaperExecution={submitPaperExecution}
               workspace={workspace}
             />
           ) : null}
@@ -1438,16 +1492,38 @@ function RunHistoryPanel({
 function ExecutionPanel({
   className,
   i18n,
+  isSubmitting = false,
+  onSubmit,
   rows,
   workspace
 }: {
   className?: string;
   i18n: AppI18n;
+  isSubmitting?: boolean;
+  onSubmit?: () => void;
   rows: PaperTradingRow[];
   workspace: TerminalWorkspace;
 }) {
   return (
-    <Panel title={i18n.t("panel.execution.title")} subtitle={i18n.t("panel.execution.subtitle")} className={className}>
+    <Panel
+      title={i18n.t("panel.execution.title")}
+      subtitle={i18n.t("panel.execution.subtitle")}
+      className={className}
+      action={
+        onSubmit ? (
+          <button
+            className="run-button compact"
+            disabled={isSubmitting || !workspace.researchRun?.runId}
+            onClick={onSubmit}
+            title={i18n.t("execution.submitPaper")}
+            type="button"
+          >
+            {isSubmitting ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
+            {i18n.t("execution.submitPaper")}
+          </button>
+        ) : undefined
+      }
+    >
       <div className="execution-grid">
         <ExecutionTile icon={Database} label={i18n.t("execution.accountSync")} value={i18n.t("execution.paperAccount")} />
         <ExecutionTile icon={WalletCards} label={i18n.t("execution.positions")} value={i18n.t("execution.positionsValue")} />
@@ -1622,11 +1698,15 @@ function BrokerWorkspace({
   adapterRows,
   executionRows,
   i18n,
+  isSubmittingPaperExecution,
+  onSubmitPaperExecution,
   workspace
 }: {
   adapterRows: BrokerAdapterRow[];
   executionRows: PaperTradingRow[];
   i18n: AppI18n;
+  isSubmittingPaperExecution: boolean;
+  onSubmitPaperExecution: () => void;
   workspace: TerminalWorkspace;
 }) {
   return (
@@ -1653,7 +1733,13 @@ function BrokerWorkspace({
           ))}
         </div>
       </Panel>
-      <ExecutionPanel i18n={i18n} rows={executionRows} workspace={workspace} />
+      <ExecutionPanel
+        i18n={i18n}
+        isSubmitting={isSubmittingPaperExecution}
+        onSubmit={onSubmitPaperExecution}
+        rows={executionRows}
+        workspace={workspace}
+      />
     </>
   );
 }
@@ -1940,6 +2026,34 @@ function agentRoundEvidence(i18n: AppI18n, evidence: string): string {
     .replace("No audited run is bound to this research context yet.", "当前研究上下文尚未绑定审计运行。");
 }
 
+function paperTradingRowsFromExecutionRecord(record: PaperExecutionRecord): PaperTradingRow[] {
+  const orderRows = record.orders.map((order) => ({
+    id: order.orderId,
+    symbol: order.symbol,
+    side: order.side === "sell" ? "SELL" : "BUY",
+    quantity: String(order.quantity),
+    price: order.price.toFixed(2),
+    notional: (order.quantity * order.price).toFixed(2),
+    status: order.status === "filled" ? "filled" : "blocked",
+    reason: order.reason,
+    tone: order.status === "filled" ? "positive" : "risk"
+  })) satisfies PaperTradingRow[];
+
+  const gateRows = record.gates.map((gate) => ({
+    id: `gate-${gate.id}`,
+    symbol: "PAPER",
+    side: "RISK",
+    quantity: "-",
+    price: "-",
+    notional: "-",
+    status: gate.passed ? "paper" : "blocked",
+    reason: `${gate.label}: ${gate.reason}`,
+    tone: gate.passed ? "neutral" : "warning"
+  })) satisfies PaperTradingRow[];
+
+  return [...orderRows, ...gateRows];
+}
+
 function paperSideLabel(i18n: AppI18n, side: PaperTradingRow["side"]): string {
   if (i18n.locale === "en-US") {
     return side;
@@ -1974,6 +2088,14 @@ function paperReasonLabel(i18n: AppI18n, reason: string): string {
     return `${blockedGate[1]} 个实盘闸门阻断；模拟盘通道可用。`;
   }
   return reason
+    .replace("filled_immediately", "已模拟成交")
+    .replace("max_position_value_exceeded", "超过单标的模拟仓位上限")
+    .replace("insufficient_cash", "模拟现金不足")
+    .replace("Audit run bound: ", "审计运行绑定：")
+    .replace("Paper risk check: ", "模拟风控检查：")
+    .replace("Live route blocked: ", "实盘通道阻断：")
+    .replace(/^Paper execution is linked to audited run (.+)\.$/, "模拟执行已绑定审计运行 $1。")
+    .replace("Live execution is blocked; this record is paper-only.", "实盘执行已阻断；该记录仅用于模拟盘。")
     .replace("Certified live route is available but this run stays paper-first.", "认证实盘通道可用，但本次仍优先模拟盘。")
     .replace("Local paper account only; broker account synchronization is not connected.", "仅本地模拟账户；尚未连接券商账户同步。");
 }

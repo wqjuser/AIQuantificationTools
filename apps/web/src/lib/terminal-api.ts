@@ -95,6 +95,52 @@ export interface ResearchRunImportResult {
   error?: string;
 }
 
+export interface PaperExecutionAccount {
+  cash: number;
+  positions: Record<string, number>;
+  equity: number;
+}
+
+export interface PaperExecutionOrder {
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  status: "filled" | "rejected";
+  reason: string;
+  timestamp: string;
+}
+
+export interface PaperExecutionGate {
+  id: string;
+  label: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface PaperExecutionRecord {
+  executionId: string;
+  runId: string;
+  createdAt: string;
+  mode: string;
+  account: PaperExecutionAccount;
+  orders: PaperExecutionOrder[];
+  gates: PaperExecutionGate[];
+}
+
+export interface PaperExecutionResult {
+  execution?: PaperExecutionRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface PaperExecutionHistoryResult {
+  executions: PaperExecutionRecord[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -220,6 +266,11 @@ export function buildResearchRunExportUrl(baseUrl: string, runId: string): strin
 export function buildResearchRunImportUrl(baseUrl: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL("api/research/runs/import", normalizedBase).toString();
+}
+
+export function buildResearchRunPaperExecutionsUrl(baseUrl: string, runId: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(`api/research/runs/${encodeURIComponent(runId)}/paper-executions`, normalizedBase).toString();
 }
 
 export function buildMarketKlinesUrl(
@@ -400,6 +451,61 @@ export async function importResearchRunExport(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run import error"
+    };
+  }
+}
+
+export async function submitResearchRunPaperExecution(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PaperExecutionResult> {
+  try {
+    const response = await fetcher(buildResearchRunPaperExecutionsUrl(baseUrl, runId), {
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPaperExecutionPayload(payload)) {
+      throw new Error("Invalid paper execution contract");
+    }
+    return {
+      execution: payload.execution,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown paper execution error"
+    };
+  }
+}
+
+export async function loadResearchRunPaperExecutions(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PaperExecutionHistoryResult> {
+  try {
+    const response = await fetcher(buildResearchRunPaperExecutionsUrl(baseUrl, runId));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPaperExecutionHistoryPayload(payload)) {
+      throw new Error("Invalid paper execution history contract");
+    }
+    return {
+      executions: payload.executions,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      executions: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown paper execution history error"
     };
   }
 }
@@ -591,6 +697,84 @@ function isResearchRunImportPayload(value: unknown): value is { run: ResearchRun
   }
   const payload = value as { run?: unknown };
   return isResearchRunAudit(payload.run) && Boolean(payload.run.dataSnapshot);
+}
+
+function isPaperExecutionPayload(value: unknown): value is { execution: PaperExecutionRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { execution?: unknown };
+  return isPaperExecutionRecord(payload.execution);
+}
+
+function isPaperExecutionHistoryPayload(value: unknown): value is { executions: PaperExecutionRecord[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { executions?: unknown };
+  return Array.isArray(payload.executions) && payload.executions.every(isPaperExecutionRecord);
+}
+
+function isPaperExecutionRecord(value: unknown): value is PaperExecutionRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const execution = value as Partial<PaperExecutionRecord>;
+  return (
+    typeof execution.executionId === "string" &&
+    typeof execution.runId === "string" &&
+    typeof execution.createdAt === "string" &&
+    typeof execution.mode === "string" &&
+    isPaperExecutionAccount(execution.account) &&
+    Array.isArray(execution.orders) &&
+    execution.orders.every(isPaperExecutionOrder) &&
+    Array.isArray(execution.gates) &&
+    execution.gates.every(isPaperExecutionGate)
+  );
+}
+
+function isPaperExecutionAccount(value: unknown): value is PaperExecutionAccount {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const account = value as Partial<PaperExecutionAccount>;
+  return (
+    typeof account.cash === "number" &&
+    typeof account.equity === "number" &&
+    Boolean(account.positions) &&
+    typeof account.positions === "object" &&
+    Object.values(account.positions).every((quantity) => typeof quantity === "number")
+  );
+}
+
+function isPaperExecutionOrder(value: unknown): value is PaperExecutionOrder {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const order = value as Partial<PaperExecutionOrder>;
+  return (
+    typeof order.orderId === "string" &&
+    typeof order.symbol === "string" &&
+    (order.side === "buy" || order.side === "sell") &&
+    typeof order.quantity === "number" &&
+    typeof order.price === "number" &&
+    (order.status === "filled" || order.status === "rejected") &&
+    typeof order.reason === "string" &&
+    typeof order.timestamp === "string"
+  );
+}
+
+function isPaperExecutionGate(value: unknown): value is PaperExecutionGate {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const gate = value as Partial<PaperExecutionGate>;
+  return (
+    typeof gate.id === "string" &&
+    typeof gate.label === "string" &&
+    typeof gate.passed === "boolean" &&
+    typeof gate.reason === "string"
+  );
 }
 
 function isResearchRunExportPackage(value: unknown): value is ResearchRunExportPackage {

@@ -12,6 +12,11 @@ from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
+from quant_core.execution import (
+    PaperExecutionStore,
+    create_paper_execution_from_audit,
+    paper_execution_record_to_payload,
+)
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
@@ -44,6 +49,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     assistant = LocalResearchAssistant()
     engine = BacktestEngine()
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
+    paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -62,6 +68,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self.run_store.record(audit)
             self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
+            return
+        if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):
+            run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/paper-executions")).strip()
+            audit = self.run_store.get(run_id) if run_id else None
+            if not audit:
+                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
+                return
+            try:
+                execution = create_paper_execution_from_audit(audit)
+            except ValueError as error:
+                self._send_json({"error": "invalid_paper_execution", "detail": str(error)}, status=400)
+                return
+            self.paper_execution_store.record(execution)
+            self._send_json({"execution": paper_execution_record_to_payload(execution)}, status=201)
             return
         self._send_json({"error": "not_found"}, status=404)
 
@@ -137,6 +157,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 strategy_snapshot=_strategy_snapshot_from_query(query),
             )
             self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):
+            run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/paper-executions")).strip()
+            audit = self.run_store.get(run_id) if run_id else None
+            if not audit:
+                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
+                return
+            executions = self.paper_execution_store.list_by_run(run_id, limit=20)
+            self._send_json({"executions": [paper_execution_record_to_payload(execution) for execution in executions]})
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/export"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/export")).strip()

@@ -5,6 +5,7 @@ import {
   buildResearchRunDetailUrl,
   buildResearchRunExportUrl,
   buildResearchRunImportUrl,
+  buildResearchRunPaperExecutionsUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -13,6 +14,7 @@ import {
   loadMarketSearch,
   loadResearchRunDetail,
   loadResearchRunExport,
+  submitResearchRunPaperExecution,
   importResearchRunExport,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
@@ -93,6 +95,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run import URL", () => {
     expect(buildResearchRunImportUrl("http://127.0.0.1:8765/")).toBe(
       "http://127.0.0.1:8765/api/research/runs/import"
+    );
+  });
+
+  test("builds the paper execution URL with an encoded run id", () => {
+    expect(buildResearchRunPaperExecutionsUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/paper-executions"
     );
   });
 
@@ -717,6 +725,76 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.run?.runId).toBe("run-import");
     expect(result.run?.dataSnapshot?.hash).toBe("snapshot-import");
+  });
+
+  test("submits a paper execution for an audited research run", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await submitResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          execution: {
+            executionId: "paper-123",
+            runId: "run-new",
+            createdAt: "2026-05-26T08:10:00+00:00",
+            mode: "paper_only",
+            account: { cash: 80680, positions: { "600000": 2100 }, equity: 100000 },
+            orders: [
+              {
+                orderId: "order-1",
+                symbol: "600000",
+                side: "buy",
+                quantity: 2100,
+                price: 9.2,
+                status: "filled",
+                reason: "filled_immediately",
+                timestamp: "2026-05-26T08:10:00+00:00"
+              }
+            ],
+            gates: [
+              {
+                id: "audit-run-bound",
+                label: "Audit run bound",
+                passed: true,
+                reason: "Paper execution is linked to audited run run-new."
+              },
+              {
+                id: "paper-risk-check",
+                label: "Paper risk check",
+                passed: true,
+                reason: "filled_immediately"
+              },
+              {
+                id: "live-route-blocked",
+                label: "Live route blocked",
+                passed: false,
+                reason: "Live execution is blocked; this record is paper-only."
+              }
+            ]
+          }
+        })
+      };
+    });
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/research/runs/run-new/paper-executions");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(result.source).toBe("core");
+    expect(result.execution?.orders[0]?.status).toBe("filled");
+    expect(result.execution?.gates[2]?.passed).toBe(false);
+  });
+
+  test("returns fallback when paper execution payload is malformed", async () => {
+    const result = await submitResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ execution: { runId: "run-new", orders: [] } })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.execution).toBeUndefined();
+    expect(result.error).toBe("Invalid paper execution contract");
   });
 
   test("returns fallback when the research run detail payload is invalid", async () => {

@@ -137,6 +137,173 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(accepted.status, "filled")
         self.assertEqual(paper.account().positions["600000"], 100)
 
+    def test_paper_execution_store_persists_orders_bound_to_research_run(self):
+        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit, paper_execution_record_to_payload
+        from quant_core.runs import ResearchRunAudit
+
+        audit = ResearchRunAudit(
+            run_id="run-paper-store",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-paper-store",
+            data_rows=1,
+            metrics={"total_return_pct": 2.4, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-paper-store",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2}
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            store.record(create_paper_execution_from_audit(audit))
+            payload = paper_execution_record_to_payload(store.list_by_run("run-paper-store")[0])
+
+        self.assertEqual(payload["runId"], "run-paper-store")
+        self.assertEqual(payload["orders"][0]["symbol"], "600000")
+        self.assertEqual(payload["orders"][0]["side"], "buy")
+        self.assertEqual(payload["orders"][0]["quantity"], 2100)
+        self.assertEqual(payload["orders"][0]["status"], "filled")
+        self.assertEqual(payload["account"]["positions"], {"600000": 2100})
+        self.assertEqual([gate["id"] for gate in payload["gates"]], ["audit-run-bound", "paper-risk-check", "live-route-blocked"])
+        self.assertTrue(payload["gates"][0]["passed"])
+        self.assertFalse(payload["gates"][2]["passed"])
+
+    def test_research_run_paper_execution_api_records_order_for_run(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-paper-api",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-paper-api",
+            data_rows=1,
+            metrics={"total_return_pct": 2.4, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-paper-api",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                paper_execution_store = paper_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/research/runs/run-paper-api/paper-executions")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", "/api/research/runs/run-paper-api/paper-executions")
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["execution"]["runId"], "run-paper-api")
+        self.assertEqual(payload["execution"]["orders"][0]["status"], "filled")
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
+
+    def test_research_run_paper_execution_api_returns_404_for_missing_run(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                paper_execution_store = paper_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/research/runs/run-missing/paper-executions")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 404)
+        self.assertEqual(payload["error"], "research_run_not_found")
+
     def test_terminal_workspace_contract_keeps_ai_and_execution_gates_traceable(self):
         from quant_core.terminal import (
             agent_role_labels,
