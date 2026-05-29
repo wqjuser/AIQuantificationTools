@@ -223,6 +223,17 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".strategy-generated-snapshot");
   });
 
+  test("renders strategy library save and reload controls", () => {
+    expect(appSource).toContain("loadStrategyLibrary");
+    expect(appSource).toContain("saveStrategySnapshot");
+    expect(appSource).toContain("saveCurrentStrategyVersion");
+    expect(appSource).toContain("loadSavedStrategyVersion");
+    expect(appSource).toContain('className="strategy-library-list"');
+    expect(appSource).toContain('className="strategy-library-actions"');
+    expect(styles).toContain(".strategy-library-list");
+    expect(styles).toContain(".strategy-library-card");
+  });
+
   test("renders the backtest lab as an auditable evidence report", () => {
     expect(appSource).toContain("buildBacktestEvidenceCards(workspace)");
     expect(appSource).toContain("buildBacktestReadinessGates(workspace)");

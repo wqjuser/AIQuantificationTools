@@ -28,6 +28,7 @@ import {
   loadResearchRunExport,
   loadResearchRunHistory,
   loadResearchRunPromotion,
+  loadStrategyLibrary,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
@@ -39,6 +40,9 @@ import {
   runTerminalResearch,
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
+  saveStrategySnapshot,
+  StrategyLibraryItem,
+  StrategyLibraryResult,
   submitResearchRunPaperExecution,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
@@ -108,6 +112,7 @@ import {
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
+  workspaceWithStrategyField,
   workspaceWithStrategyRuleDraftField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
@@ -136,6 +141,10 @@ const initialKlinesState: MarketKlinesResult = {
     warnings: [],
     rows: 0
   },
+  source: "fallback"
+};
+const initialStrategyLibraryState: StrategyLibraryResult = {
+  strategies: [],
   source: "fallback"
 };
 
@@ -239,6 +248,7 @@ function waitForWorkflowStep() {
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
+  const [strategyLibraryState, setStrategyLibraryState] = useState<StrategyLibraryResult>(initialStrategyLibraryState);
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
@@ -259,6 +269,7 @@ export function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(false);
   const [isSymbolSearching, setIsSymbolSearching] = useState(false);
+  const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
@@ -298,6 +309,9 @@ export function App() {
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
+  const visibleStrategyLibrary = strategyLibraryState.strategies.filter(
+    (item) => item.market === workspace.selectedInstrument.market && item.symbol === workspace.selectedInstrument.symbol
+  );
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
@@ -314,6 +328,16 @@ export function App() {
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
   }, []);
+
+  const refreshStrategyLibrary = useCallback(async () => {
+    setStrategyLibraryState(
+      await loadStrategyLibrary(quantCoreBaseUrl, {
+        market: workspace.selectedInstrument.market,
+        symbol: workspace.selectedInstrument.symbol,
+        limit: 8
+      })
+    );
+  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol]);
 
   const refreshWorkspace = useCallback(async () => {
     const startedSelectionVersion = manualSelectionVersionRef.current;
@@ -696,6 +720,60 @@ export function App() {
     setActiveWorkflowStageId("factor");
   }, []);
 
+  const saveCurrentStrategyVersion = useCallback(async () => {
+    setIsSavingStrategy(true);
+    const result = await saveStrategySnapshot(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      auditRunId: workspace.researchRun?.runId ?? null,
+      strategy: workspace.strategy
+    });
+    if (result.strategy) {
+      setStrategyLibraryState((current) => ({
+        strategies: [result.strategy!, ...current.strategies.filter((item) => item.revision !== result.strategy!.revision)],
+        source: "core",
+        error: undefined
+      }));
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Strategy version saved",
+        error: undefined
+      }));
+    } else {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Strategy version save failed",
+        error: result.error ?? "Strategy version save failed"
+      }));
+    }
+    setIsSavingStrategy(false);
+  }, [workspace.researchRun?.runId, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe, workspace.strategy]);
+
+  const loadSavedStrategyVersion = useCallback((strategy: StrategyLibraryItem) => {
+    manualSelectionVersionRef.current += 1;
+    workflowRunIdRef.current += 1;
+    setIsRunning(false);
+    setPaperExecutionRecord(null);
+    setPromotionCandidateRecord(null);
+    setWorkspaceState((current) => {
+      const fields = ["name", "entry", "exit", "position", "risk"] as const;
+      const nextWorkspace = fields.reduce(
+        (draftWorkspace, field) => workspaceWithStrategyField(draftWorkspace, field, strategy.strategySnapshot[field]),
+        current.workspace
+      );
+      return {
+        workspace: nextWorkspace,
+        source: "core",
+        statusLabel: "Strategy version loaded"
+      };
+    });
+    setActiveWorkAreaId("strategy");
+    setActiveLoopStepId("strategy");
+    setActiveWorkflowStageId("factor");
+    setWorkflowRunState(createWorkflowRunState());
+  }, []);
+
   const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
     manualSelectionVersionRef.current += 1;
     setPaperExecutionRecord(null);
@@ -805,6 +883,10 @@ export function App() {
   useEffect(() => {
     void refreshChart();
   }, [refreshChart]);
+
+  useEffect(() => {
+    void refreshStrategyLibrary();
+  }, [refreshStrategyLibrary]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -933,6 +1015,10 @@ export function App() {
       <StrategySummary
         draft={strategyRuleDraft}
         i18n={i18n}
+        isSavingStrategy={isSavingStrategy}
+        library={visibleStrategyLibrary}
+        onLoadStrategyVersion={loadSavedStrategyVersion}
+        onSaveStrategyVersion={saveCurrentStrategyVersion}
         onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
         rows={strategyRuleRows}
         workspace={workspace}
@@ -1426,12 +1512,20 @@ function ChartDataStrip({
 function StrategySummary({
   draft,
   i18n,
+  isSavingStrategy,
+  library,
+  onLoadStrategyVersion,
+  onSaveStrategyVersion,
   onUpdateStrategyRuleDraftField,
   rows,
   workspace
 }: {
   draft: StrategyRuleDraft;
   i18n: AppI18n;
+  isSavingStrategy: boolean;
+  library: StrategyLibraryItem[];
+  onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
+  onSaveStrategyVersion: () => void;
   onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string) => void;
   rows: StrategyRuleRow[];
   workspace: TerminalWorkspace;
@@ -1506,6 +1600,12 @@ function StrategySummary({
           <strong>{i18n.strategyText(workspace.strategy.exit)}</strong>
           <small>{i18n.strategyText(workspace.strategy.risk)}</small>
         </div>
+        <div className="strategy-library-actions">
+          <button disabled={isSavingStrategy} onClick={onSaveStrategyVersion} type="button">
+            <GitBranch size={15} />
+            <span>{isSavingStrategy ? i18n.t("strategy.saving") : i18n.t("strategy.saveVersion")}</span>
+          </button>
+        </div>
       </div>
       <div className="strategy-rule-board">
         <div className="strategy-rule-title">
@@ -1531,6 +1631,28 @@ function StrategySummary({
             </article>
           ))}
         </div>
+      </div>
+      <div className="strategy-library-list">
+        <div className="strategy-rule-title">
+          <span>{i18n.t("strategy.library")}</span>
+          <strong>{library.length}</strong>
+        </div>
+        {library.length ? (
+          library.map((item) => (
+            <article className={`strategy-library-card ${item.status}`} key={item.revision}>
+              <span>
+                <strong>{item.name}</strong>
+                <em>{item.revision}</em>
+              </span>
+              <span>{strategyLibraryStatusLabel(i18n, item.status)}</span>
+              <button onClick={() => onLoadStrategyVersion(item)} type="button">
+                {i18n.t("strategy.loadVersion")}
+              </button>
+            </article>
+          ))
+        ) : (
+          <p className="strategy-library-empty">{i18n.t("strategy.libraryEmpty")}</p>
+        )}
       </div>
     </div>
   );
@@ -2522,6 +2644,13 @@ function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"
     return status;
   }
   return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
+}
+
+function strategyLibraryStatusLabel(i18n: AppI18n, status: StrategyLibraryItem["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { draft: "草稿", audited: "已审计" }[status];
 }
 
 function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string {

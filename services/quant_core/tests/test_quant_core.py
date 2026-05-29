@@ -23,6 +23,94 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(restored.revision, strategy.revision)
         self.assertEqual(restored.version, 1)
 
+    def test_strategy_library_store_persists_stable_strategy_versions(self):
+        from quant_core.research import strategy_config_from_snapshot
+        from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload
+        from quant_core.terminal import StrategySnapshot
+
+        snapshot = StrategySnapshot(
+            name="Saved SMA risk plan",
+            entry="Close > SMA5",
+            exit="Close < SMA13",
+            position="35% cap per instrument",
+            risk="Stop -7%, take profit +14%, drawdown guard 10%, paper only",
+        )
+        strategy = strategy_config_from_snapshot(snapshot, market="ashare", symbol="600000", timeframe="1d")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            first = store.save(strategy, audit_run_id="run-strategy-audit")
+            second = store.save(strategy)
+            latest = store.list_recent(market="ashare", symbol="600000", limit=5)
+            payload = strategy_library_record_to_payload(store.get(strategy.revision))
+
+        self.assertEqual(first.revision, strategy.revision)
+        self.assertEqual(second.revision, strategy.revision)
+        self.assertEqual([record.revision for record in latest], [strategy.revision])
+        self.assertEqual(payload["strategyId"], f"strategy-{strategy.revision}")
+        self.assertEqual(payload["status"], "audited")
+        self.assertEqual(payload["auditRunId"], "run-strategy-audit")
+        self.assertEqual(payload["strategyConfig"]["entryConditions"][0]["params"], {"window": 5})
+        self.assertEqual(payload["strategySnapshot"]["entry"], "Close > SMA5")
+
+    def test_strategy_library_api_saves_lists_and_returns_strategy_versions(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "auditRunId": "run-strategy-api",
+                    "strategy": {
+                        "name": "API saved SMA plan",
+                        "entry": "Close > SMA8",
+                        "exit": "Close < SMA21",
+                        "position": "40% cap per instrument",
+                        "risk": "Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+                    },
+                }
+            ).encode("utf-8")
+            try:
+                connection.request("POST", "/api/strategies", body=body, headers={"Content-Type": "application/json"})
+                save_response = connection.getresponse()
+                save_payload = json.loads(save_response.read().decode("utf-8"))
+                revision = save_payload["strategy"]["revision"]
+                connection.request("GET", "/api/strategies?market=ashare&symbol=600000&limit=5")
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request("GET", f"/api/strategies/{revision}")
+                detail_response = connection.getresponse()
+                detail_payload = json.loads(detail_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(save_response.status, 201)
+        self.assertEqual(save_payload["strategy"]["status"], "audited")
+        self.assertEqual(save_payload["strategy"]["auditRunId"], "run-strategy-api")
+        self.assertEqual(save_payload["strategy"]["strategySnapshot"]["entry"], "Close > SMA8")
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual([item["revision"] for item in list_payload["strategies"]], [revision])
+        self.assertEqual(detail_response.status, 200)
+        self.assertEqual(detail_payload["strategy"]["strategyConfig"]["risk"]["positionPct"], 0.4)
+
     def test_sqlite_cache_upserts_and_reads_ohlcv_in_time_order(self):
         from quant_core.cache import MarketDataCache
         from quant_core.domain import OHLCVBar

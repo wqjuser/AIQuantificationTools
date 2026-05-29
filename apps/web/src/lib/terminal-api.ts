@@ -173,6 +173,57 @@ export interface PromotionCandidateResult {
   error?: string;
 }
 
+export type StrategyLibraryStatus = "draft" | "audited";
+
+export interface StrategyLibraryConfig {
+  name: string;
+  revision: string;
+  market: Market;
+  symbols: string[];
+  timeframe: ResearchTimeframe;
+  version: number;
+  entryConditions: Array<{ kind: string; params: Record<string, unknown> }>;
+  exitConditions: Array<{ kind: string; params: Record<string, unknown> }>;
+  risk: {
+    positionPct: number | null;
+    stopLossPct: number | null;
+    takeProfitPct: number | null;
+    maxDrawdownPct: number | null;
+  };
+}
+
+export interface StrategyLibraryItem {
+  strategyId: string;
+  createdAt: string;
+  name: string;
+  revision: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  version: number;
+  status: StrategyLibraryStatus;
+  auditRunId?: string | null;
+  strategySnapshot: StrategySnapshot;
+  strategyConfig: StrategyLibraryConfig;
+}
+
+export interface StrategyLibraryResult {
+  strategies: StrategyLibraryItem[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface StrategySaveParams extends TerminalResearchParams {
+  strategy: StrategySnapshot;
+  auditRunId?: string | null;
+}
+
+export interface StrategySaveResult {
+  strategy?: StrategyLibraryItem;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -308,6 +359,27 @@ export function buildResearchRunPaperExecutionsUrl(baseUrl: string, runId: strin
 export function buildResearchRunPromotionUrl(baseUrl: string, runId: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(`api/research/runs/${encodeURIComponent(runId)}/promotion`, normalizedBase).toString();
+}
+
+export function buildStrategiesUrl(
+  baseUrl: string,
+  params: { market?: Market; symbol?: string; limit?: number } = {}
+): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const url = new URL("api/strategies", normalizedBase);
+  if (params.market) {
+    url.searchParams.set("market", params.market);
+  }
+  if (params.symbol?.trim()) {
+    url.searchParams.set("symbol", params.symbol.trim());
+  }
+  url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit ?? 20, 50))));
+  return url.toString();
+}
+
+export function buildStrategyDetailUrl(baseUrl: string, revision: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(`api/strategies/${encodeURIComponent(revision)}`, normalizedBase).toString();
 }
 
 export function buildMarketKlinesUrl(
@@ -543,6 +615,96 @@ export async function loadResearchRunPromotion(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown promotion candidate error"
+    };
+  }
+}
+
+export async function saveStrategySnapshot(
+  baseUrl: string,
+  params: StrategySaveParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategySaveResult> {
+  try {
+    const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+    const response = await fetcher(new URL("api/strategies", normalizedBase).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        market: params.market,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        auditRunId: params.auditRunId ?? null,
+        strategy: params.strategy
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStrategyLibraryItemPayload(payload)) {
+      throw new Error("Invalid strategy library save contract");
+    }
+    return {
+      strategy: payload.strategy,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy save error"
+    };
+  }
+}
+
+export async function loadStrategyLibrary(
+  baseUrl: string,
+  params: { market?: Market; symbol?: string; limit?: number } = {},
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyLibraryResult> {
+  try {
+    const response = await fetcher(buildStrategiesUrl(baseUrl, params));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStrategyLibraryPayload(payload)) {
+      throw new Error("Invalid strategy library contract");
+    }
+    return {
+      strategies: payload.strategies,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      strategies: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy library error"
+    };
+  }
+}
+
+export async function loadStrategyDetail(
+  baseUrl: string,
+  revision: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategySaveResult> {
+  try {
+    const response = await fetcher(buildStrategyDetailUrl(baseUrl, revision));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStrategyLibraryItemPayload(payload)) {
+      throw new Error("Invalid strategy detail contract");
+    }
+    return {
+      strategy: payload.strategy,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy detail error"
     };
   }
 }
@@ -803,6 +965,57 @@ function isPromotionCandidatePayload(value: unknown): value is { promotion: Prom
   }
   const payload = value as { promotion?: unknown };
   return isPromotionCandidateRecord(payload.promotion);
+}
+
+function isStrategyLibraryPayload(value: unknown): value is { strategies: StrategyLibraryItem[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { strategies?: unknown };
+  return Array.isArray(payload.strategies) && payload.strategies.every(isStrategyLibraryItem);
+}
+
+function isStrategyLibraryItemPayload(value: unknown): value is { strategy: StrategyLibraryItem } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { strategy?: unknown };
+  return isStrategyLibraryItem(payload.strategy);
+}
+
+function isStrategyLibraryItem(value: unknown): value is StrategyLibraryItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const strategy = value as Partial<StrategyLibraryItem>;
+  return (
+    typeof strategy.strategyId === "string" &&
+    typeof strategy.createdAt === "string" &&
+    typeof strategy.name === "string" &&
+    typeof strategy.revision === "string" &&
+    isMarket(strategy.market) &&
+    typeof strategy.symbol === "string" &&
+    isTimeframe(strategy.timeframe) &&
+    typeof strategy.version === "number" &&
+    (strategy.status === "draft" || strategy.status === "audited") &&
+    (strategy.auditRunId === undefined || strategy.auditRunId === null || typeof strategy.auditRunId === "string") &&
+    isStrategySnapshot(strategy.strategySnapshot) &&
+    isResearchRunStrategyConfig(strategy.strategyConfig)
+  );
+}
+
+function isStrategySnapshot(value: unknown): value is StrategySnapshot {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const snapshot = value as Partial<StrategySnapshot>;
+  return (
+    typeof snapshot.name === "string" &&
+    typeof snapshot.entry === "string" &&
+    typeof snapshot.exit === "string" &&
+    typeof snapshot.position === "string" &&
+    typeof snapshot.risk === "string"
+  );
 }
 
 function isPromotionCandidateRecord(value: unknown): value is PromotionCandidateRecord {

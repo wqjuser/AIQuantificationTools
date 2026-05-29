@@ -7,6 +7,8 @@ import {
   buildResearchRunImportUrl,
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
+  buildStrategiesUrl,
+  buildStrategyDetailUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -17,7 +19,9 @@ import {
   loadResearchRunExport,
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
+  loadStrategyLibrary,
   submitResearchRunPaperExecution,
+  saveStrategySnapshot,
   importResearchRunExport,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
@@ -110,6 +114,15 @@ describe("terminal workspace API client", () => {
   test("builds the promotion candidate URL with an encoded run id", () => {
     expect(buildResearchRunPromotionUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
       "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/promotion"
+    );
+  });
+
+  test("builds strategy library URLs for context and detail lookup", () => {
+    expect(buildStrategiesUrl("http://127.0.0.1:8765/", { market: "ashare", symbol: "600000", limit: 5 })).toBe(
+      "http://127.0.0.1:8765/api/strategies?market=ashare&symbol=600000&limit=5"
+    );
+    expect(buildStrategyDetailUrl("http://127.0.0.1:8765/", "rev 你好/1")).toBe(
+      "http://127.0.0.1:8765/api/strategies/rev%20%E4%BD%A0%E5%A5%BD%2F1"
     );
   });
 
@@ -986,6 +999,138 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.promotion?.latestPaperExecutionId).toBe("paper-latest");
     expect(result.promotion?.evidence.filledOrders).toBe(1);
+  });
+
+  test("saves the current strategy snapshot to the strategy library", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await saveStrategySnapshot(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        auditRunId: "run-strategy-api",
+        strategy: {
+          name: "API saved SMA plan",
+          entry: "Close > SMA8",
+          exit: "Close < SMA21",
+          position: "40% cap per instrument",
+          risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+        }
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            strategy: {
+              strategyId: "strategy-rev123",
+              createdAt: "2026-05-29T08:00:00+00:00",
+              name: "API saved SMA plan",
+              revision: "rev123",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              version: 1,
+              status: "audited",
+              auditRunId: "run-strategy-api",
+              strategySnapshot: {
+                name: "API saved SMA plan",
+                entry: "Close > SMA8",
+                exit: "Close < SMA21",
+                position: "40% cap per instrument",
+                risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+              },
+              strategyConfig: {
+                name: "API saved SMA plan",
+                revision: "rev123",
+                market: "ashare",
+                symbols: ["600000"],
+                timeframe: "1d",
+                version: 1,
+                entryConditions: [{ kind: "close_above_sma", params: { window: 8 } }],
+                exitConditions: [{ kind: "close_below_sma", params: { window: 21 } }],
+                risk: {
+                  positionPct: 0.4,
+                  stopLossPct: 0.06,
+                  takeProfitPct: 0.12,
+                  maxDrawdownPct: 0.09
+                }
+              }
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/strategies");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init?.body)).strategy.entry).toBe("Close > SMA8");
+    expect(result.source).toBe("core");
+    expect(result.strategy?.revision).toBe("rev123");
+    expect(result.strategy?.status).toBe("audited");
+    expect(result.strategy?.strategyConfig.risk.positionPct).toBe(0.4);
+  });
+
+  test("loads strategy library versions for the selected instrument", async () => {
+    const calls: string[] = [];
+    const result = await loadStrategyLibrary(
+      "http://127.0.0.1:8765",
+      { market: "ashare", symbol: "600000", limit: 5 },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            strategies: [
+              {
+                strategyId: "strategy-rev123",
+                createdAt: "2026-05-29T08:00:00+00:00",
+                name: "Saved SMA plan",
+                revision: "rev123",
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                version: 1,
+                status: "draft",
+                auditRunId: null,
+                strategySnapshot: {
+                  name: "Saved SMA plan",
+                  entry: "Close > SMA8",
+                  exit: "Close < SMA21",
+                  position: "40% cap per instrument",
+                  risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+                },
+                strategyConfig: {
+                  name: "Saved SMA plan",
+                  revision: "rev123",
+                  market: "ashare",
+                  symbols: ["600000"],
+                  timeframe: "1d",
+                  version: 1,
+                  entryConditions: [{ kind: "close_above_sma", params: { window: 8 } }],
+                  exitConditions: [{ kind: "close_below_sma", params: { window: 21 } }],
+                  risk: {
+                    positionPct: 0.4,
+                    stopLossPct: 0.06,
+                    takeProfitPct: 0.12,
+                    maxDrawdownPct: 0.09
+                  }
+                }
+              }
+            ]
+          })
+        };
+      }
+    );
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/strategies?market=ashare&symbol=600000&limit=5"]);
+    expect(result.source).toBe("core");
+    expect(result.strategies).toHaveLength(1);
+    expect(result.strategies[0]?.strategySnapshot.entry).toBe("Close > SMA8");
   });
 
   test("loads the latest paper execution for an audited research run", async () => {

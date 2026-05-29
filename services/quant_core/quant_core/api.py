@@ -22,7 +22,7 @@ from quant_core.execution import (
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
-from quant_core.research import run_terminal_research
+from quant_core.research import run_terminal_research, strategy_config_from_snapshot
 from quant_core.runs import (
     ResearchRunStore,
     research_run_audit_to_payload,
@@ -30,6 +30,11 @@ from quant_core.runs import (
     research_run_export_to_payload,
     research_run_import_paper_executions,
     research_run_import_to_audit,
+)
+from quant_core.strategy_library import (
+    StrategyLibraryStore,
+    strategy_library_record_to_payload,
+    strategy_library_records_to_payload,
 )
 from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 
@@ -53,6 +58,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     engine = BacktestEngine()
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
+    strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -62,6 +68,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/strategies":
+            try:
+                payload = self._read_json_body()
+                market = str(payload.get("market") or "ashare")
+                symbol = str(payload.get("symbol") or "600000")
+                timeframe = str(payload.get("timeframe") or "1d")
+                snapshot = _strategy_snapshot_from_payload(payload.get("strategy"))
+                strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
+                audit_run_id = str(payload.get("auditRunId") or "").strip() or None
+                record = self.strategy_store.save(strategy, audit_run_id=audit_run_id)
+            except ValueError as error:
+                self._send_json({"error": "invalid_strategy", "detail": str(error)}, status=400)
+                return
+            self._send_json({"strategy": strategy_library_record_to_payload(record)}, status=201)
+            return
         if parsed.path == "/api/research/runs/import":
             try:
                 payload = self._read_json_body()
@@ -157,6 +178,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
             self.cache.upsert_bars(bars)
             self._send_json(market_klines_to_payload(market, symbol, timeframe, bars, quality))
+            return
+        if parsed.path == "/api/strategies":
+            query = parse_qs(parsed.query)
+            market = query.get("market", [""])[0].strip() or None
+            symbol = query.get("symbol", [""])[0].strip() or None
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            records = self.strategy_store.list_recent(market=market, symbol=symbol, limit=limit)
+            self._send_json(strategy_library_records_to_payload(records))
+            return
+        if parsed.path.startswith("/api/strategies/"):
+            revision = unquote(parsed.path.removeprefix("/api/strategies/")).strip()
+            record = self.strategy_store.get(revision)
+            if not record:
+                self._send_json({"error": "strategy_not_found", "revision": revision}, status=404)
+                return
+            self._send_json({"strategy": strategy_library_record_to_payload(record)})
             return
         if parsed.path == "/api/research/run":
             query = parse_qs(parsed.query)
@@ -335,6 +372,20 @@ def _strategy_snapshot_from_query(query: dict[str, list[str]]) -> StrategySnapsh
         or "Close < SMA20, stop loss, take profit, or end of backtest",
         position=query.get("strategyPosition", ["80% max capital allocation"])[0].strip() or "80% max capital allocation",
         risk=query.get("strategyRisk", ["Stop -8%, take profit +18%, drawdown guard 20%, paper only"])[0].strip()
+        or "Stop -8%, take profit +18%, drawdown guard 20%, paper only",
+    )
+
+
+def _strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
+    if not isinstance(value, dict):
+        raise ValueError("strategy_payload_required")
+    return StrategySnapshot(
+        name=str(value.get("name") or "SMA trend demo").strip() or "SMA trend demo",
+        entry=str(value.get("entry") or "Close > SMA20").strip() or "Close > SMA20",
+        exit=str(value.get("exit") or "Close < SMA20, stop loss, take profit, or end of backtest").strip()
+        or "Close < SMA20, stop loss, take profit, or end of backtest",
+        position=str(value.get("position") or "80% max capital allocation").strip() or "80% max capital allocation",
+        risk=str(value.get("risk") or "Stop -8%, take profit +18%, drawdown guard 20%, paper only").strip()
         or "Stop -8%, take profit +18%, drawdown guard 20%, paper only",
     )
 

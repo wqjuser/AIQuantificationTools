@@ -67,7 +67,7 @@ def run_terminal_research(
     market_cache.upsert_bars(bars)
 
     snapshot = strategy_snapshot or _default_strategy_snapshot()
-    strategy = _strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
+    strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
     backtest = backtest_engine.run(strategy, bars)
     report = research_assistant.analyze(
         AiResearchRequest(
@@ -107,7 +107,7 @@ def run_terminal_research(
         ai_report=asdict(report),
         data_quality=_data_quality_payload(quality),
         data_snapshot=_data_snapshot_payload(bars, quality),
-        strategy_config=_strategy_config_payload(strategy),
+        strategy_config=strategy_config_to_payload(strategy),
         backtest_assumptions={
             "initialCash": backtest_engine.initial_cash,
             "feeBps": round(backtest_engine.fee_rate * 10_000, 4),
@@ -221,7 +221,7 @@ def _bars_hash(bars: list[dict[str, object]]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def _strategy_config_payload(strategy: StrategyConfig) -> dict[str, object]:
+def strategy_config_to_payload(strategy: StrategyConfig) -> dict[str, object]:
     return {
         "name": strategy.name,
         "revision": strategy.revision,
@@ -295,7 +295,7 @@ def _default_strategy_snapshot() -> StrategySnapshot:
     )
 
 
-def _strategy_config_from_snapshot(
+def strategy_config_from_snapshot(
     snapshot: StrategySnapshot,
     *,
     market: Market,
