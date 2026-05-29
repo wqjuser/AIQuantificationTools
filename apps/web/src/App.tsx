@@ -60,6 +60,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
+  buildBacktestParameterScanRows,
   buildBacktestReport,
   buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
@@ -89,6 +90,7 @@ import {
   BacktestAssumptionField,
   BacktestAssumptionRow,
   BacktestEvidenceCard,
+  BacktestParameterScanRow,
   BacktestReport,
   BacktestReadinessGate,
   BacktestTradeRow,
@@ -327,6 +329,7 @@ export function App() {
   );
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
+  const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
   const backtestReport = buildBacktestReport(workspace);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
@@ -1211,6 +1214,7 @@ export function App() {
             i18n={i18n}
             onExportMarkdown={exportBacktestReportMarkdown}
             onUpdateAssumption={updateBacktestAssumption}
+            parameterScanRows={backtestParameterScanRows}
             report={backtestReport}
             readinessGates={backtestReadinessGates}
             rows={backtestTradeRows}
@@ -1836,6 +1840,7 @@ function BacktestReportPanel({
   i18n,
   onExportMarkdown,
   onUpdateAssumption,
+  parameterScanRows,
   report,
   readinessGates,
   rows
@@ -1846,6 +1851,7 @@ function BacktestReportPanel({
   i18n: AppI18n;
   onExportMarkdown?: () => void;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
+  parameterScanRows: BacktestParameterScanRow[];
   report: BacktestReport;
   readinessGates: BacktestReadinessGate[];
   rows: BacktestTradeRow[];
@@ -2020,6 +2026,43 @@ function BacktestReportPanel({
             ))}
           </div>
         </div>
+
+        <section className="backtest-report-section parameter-scan-section">
+          <div className="backtest-replay-title">
+            <span>{i18n.t("backtest.parameterScan")}</span>
+            <strong>{parameterScanRows.length}</strong>
+          </div>
+          {parameterScanRows.length ? (
+            <div className="parameter-scan-table">
+              <div className="parameter-scan-row parameter-scan-head">
+                <span>{i18n.t("backtest.entrySma")}</span>
+                <span>{i18n.t("backtest.exitSma")}</span>
+                <span>{i18n.metricLabel("Return")}</span>
+                <span>{i18n.metricLabel("Max DD")}</span>
+                <span>{i18n.metricLabel("Trades")}</span>
+                <span>{i18n.locale === "zh-CN" ? "较当前" : "Delta"}</span>
+                <span>{i18n.t("execution.status")}</span>
+              </div>
+              {parameterScanRows.map((row) => (
+                <article className={`parameter-scan-row ${row.tone}`} key={row.id}>
+                  <span>SMA{row.entryWindow}</span>
+                  <span>SMA{row.exitWindow}</span>
+                  <span>{row.returnPct}</span>
+                  <span>{row.maxDrawdownPct}</span>
+                  <span>{row.tradeCount}</span>
+                  <span>{row.alphaVsCurrent}</span>
+                  <span>{parameterScanStatusLabel(i18n, row.status)}</span>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="parameter-scan-empty">
+              {i18n.locale === "zh-CN"
+                ? "运行流水线并绑定审计 K 线后，才会生成参数敏感性扫描。"
+                : "Run Pipeline with an audited K-line snapshot to generate parameter sensitivity."}
+            </div>
+          )}
+        </section>
 
         <div className="backtest-replay-title">
           <span>{i18n.t("backtest.replay")}</span>
@@ -3001,6 +3044,13 @@ function backtestStatusLabel(i18n: AppI18n, status: BacktestTradeRow["status"]):
     return status;
   }
   return { filled: "已成交", open: "观察中", review: "复核", blocked: "已阻断" }[status];
+}
+
+function parameterScanStatusLabel(i18n: AppI18n, status: BacktestParameterScanRow["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { current: "当前", candidate: "候选" }[status];
 }
 
 function backtestExposureLabel(i18n: AppI18n, exposure: string): string {

@@ -54,6 +54,7 @@ describe("i18n", () => {
     expect(zh.t("strategy.name")).toBe("名称");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
     expect(zh.t("backtest.assumptions")).toBe("回测假设");
+    expect(zh.t("backtest.parameterScan")).toBe("参数敏感性");
     expect(zh.t("aiReview.exportMarkdown")).toBe("导出 AI 报告");
     expect(zh.t("history.replay")).toBe("回放");
     expect(zh.t("history.comparison")).toBe("运行对比");
@@ -69,6 +70,7 @@ describe("i18n", () => {
     expect(zh.t("module.news.context")).toBe("本地证据流");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
     expect(en.t("backtest.replay")).toBe("Trade replay");
+    expect(en.t("backtest.parameterScan")).toBe("Parameter sensitivity");
     expect(en.t("backtest.initialCash")).toBe("Initial cash");
     expect(en.t("aiReview.exportMarkdown")).toBe("Export AI report");
     expect(en.t("portfolio.unrealizedPnl")).toBe("Unrealized P&L");

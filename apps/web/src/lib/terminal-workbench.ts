@@ -238,6 +238,22 @@ export interface BacktestReport {
   diagnosticCount: number;
 }
 
+export interface BacktestParameterScanRow {
+  id: string;
+  runId: string;
+  source: string;
+  condition: string;
+  entryWindow: number;
+  exitWindow: number;
+  returnPct: string;
+  maxDrawdownPct: string;
+  tradeCount: number;
+  alphaVsCurrent: string;
+  status: "current" | "candidate";
+  tone: "positive" | "warning" | "neutral" | "risk";
+  dataRows: number;
+}
+
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -2200,6 +2216,49 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
   };
 }
 
+export function buildBacktestParameterScanRows(workspace: TerminalWorkspace): BacktestParameterScanRow[] {
+  const run = workspace.researchRun;
+  const bars = run?.dataSnapshot?.bars
+    .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
+    .slice()
+    .sort((left, right) => left.timestampMs - right.timestampMs);
+
+  if (!run || !bars || bars.length < 2) {
+    return [];
+  }
+
+  const draft = buildStrategyRuleDraft(workspace);
+  const entryWindows = parameterScanWindows(draft.entryWindow);
+  const exitWindows = parameterScanWindows(draft.exitWindow);
+  const currentMetricReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
+  const currentScan = simulateSmaParameterScan(workspace, bars, draft.entryWindow, draft.exitWindow);
+  const currentReturn = currentMetricReturn ?? currentScan.totalReturnPct;
+
+  return entryWindows.flatMap((entryWindow) =>
+    exitWindows.map((exitWindow) => {
+      const result = simulateSmaParameterScan(workspace, bars, entryWindow, exitWindow);
+      const delta = result.totalReturnPct - currentReturn;
+      const isCurrent = entryWindow === draft.entryWindow && exitWindow === draft.exitWindow;
+      const breachesDrawdown = result.maxDrawdownPct > draft.maxDrawdownPct;
+      return {
+        id: `scan-entry-${entryWindow}-exit-${exitWindow}`,
+        runId: run.runId,
+        source: run.dataSnapshot?.hash ?? run.dataSnapshot?.source ?? "audited snapshot",
+        condition: `SMA${entryWindow} / SMA${exitWindow}`,
+        entryWindow,
+        exitWindow,
+        returnPct: formatSignedPct(result.totalReturnPct),
+        maxDrawdownPct: formatPct(result.maxDrawdownPct),
+        tradeCount: result.tradeCount,
+        alphaVsCurrent: formatSignedPointDelta(delta),
+        status: isCurrent ? "current" : "candidate",
+        tone: isCurrent ? "neutral" : breachesDrawdown ? "risk" : delta >= 0 ? "positive" : "warning",
+        dataRows: bars.length
+      };
+    })
+  );
+}
+
 export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): string | null {
   const run = workspace.researchRun;
   if (!run) {
@@ -2217,6 +2276,15 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
     ["Alpha", report.benchmark.alpha]
   ];
   const assumptionRows = report.assumptionRows.map((row) => [row.label, `${row.value} ${row.suffix}`]);
+  const parameterScanRows = buildBacktestParameterScanRows(workspace).map((row) => [
+    row.entryWindow,
+    row.exitWindow,
+    row.returnPct,
+    row.maxDrawdownPct,
+    row.tradeCount,
+    row.alphaVsCurrent,
+    row.status
+  ]);
   const gateRows = report.readinessGates.map((gate) => [gate.label, gate.status, gate.detail]);
   const aiCitationRows = aiDossier.citations.map((citation) => [
     citation.label,
@@ -2273,6 +2341,12 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
     "## Backtest Assumptions",
     "",
     markdownTable(["Assumption", "Value"], assumptionRows),
+    "",
+    "## Parameter Sensitivity",
+    "",
+    parameterScanRows.length
+      ? markdownTable(["Entry SMA", "Exit SMA", "Return", "Max drawdown", "Trades", "Delta", "Status"], parameterScanRows)
+      : "Parameter sensitivity requires an audited data snapshot.",
     "",
     "## AI Evidence Boundary",
     "",
@@ -2346,6 +2420,112 @@ export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBe
     sampleBars: bars.length,
     source: snapshot?.source ?? "unknown"
   };
+}
+
+function parameterScanWindows(currentWindow: number): number[] {
+  return Array.from(
+    new Set([currentWindow - 5, currentWindow, currentWindow + 5].map((window) => normalizeStrategyWindow(window)))
+  ).sort((left, right) => left - right);
+}
+
+function simulateSmaParameterScan(
+  workspace: TerminalWorkspace,
+  bars: ResearchRunDataSnapshotBar[],
+  entryWindow: number,
+  exitWindow: number
+): { totalReturnPct: number; maxDrawdownPct: number; tradeCount: number } {
+  const assumptions = resolveBacktestAssumptions(workspace);
+  const draft = buildStrategyRuleDraft(workspace);
+  const feeRate = assumptions.feeBps / 10_000;
+  const slippageRate = assumptions.slippageBps / 10_000;
+  const positionPct = Math.max(0, Math.min(draft.positionPct / 100, 1));
+  const stopLossPct = draft.stopLossPct / 100;
+  const takeProfitPct = draft.takeProfitPct / 100;
+  const closes = bars.map((bar) => bar.close);
+  let cash = assumptions.initialCash;
+  let quantity = 0;
+  let entryPrice = 0;
+  let tradeCount = 0;
+  const equityValues: number[] = [];
+
+  bars.forEach((bar, index) => {
+    if (quantity <= 0 && closeAboveSma(closes, index, entryWindow)) {
+      const budget = cash * positionPct;
+      const executionPrice = bar.close * (1 + slippageRate);
+      const nextQuantity = executionPrice > 0 ? budget / executionPrice : 0;
+      const fee = budget * feeRate;
+      if (nextQuantity > 0 && budget + fee <= cash) {
+        cash -= budget + fee;
+        quantity = nextQuantity;
+        entryPrice = executionPrice;
+        tradeCount += 1;
+      }
+    } else if (quantity > 0) {
+      const shouldExit =
+        bar.close <= entryPrice * (1 - stopLossPct) ||
+        bar.close >= entryPrice * (1 + takeProfitPct) ||
+        closeBelowSma(closes, index, exitWindow);
+      if (shouldExit) {
+        const executionPrice = bar.close * (1 - slippageRate);
+        const gross = quantity * executionPrice;
+        cash += gross - gross * feeRate;
+        quantity = 0;
+        entryPrice = 0;
+        tradeCount += 1;
+      }
+    }
+
+    equityValues.push(cash + quantity * bar.close);
+  });
+
+  if (quantity > 0) {
+    const lastClose = bars[bars.length - 1].close;
+    const executionPrice = lastClose * (1 - slippageRate);
+    const gross = quantity * executionPrice;
+    cash += gross - gross * feeRate;
+    quantity = 0;
+    tradeCount += 1;
+    equityValues[equityValues.length - 1] = cash;
+  }
+
+  return {
+    totalReturnPct: ((cash / assumptions.initialCash) - 1) * 100,
+    maxDrawdownPct: maxDrawdownFromEquity(equityValues),
+    tradeCount
+  };
+}
+
+function closeAboveSma(closes: number[], index: number, window: number): boolean {
+  const average = smaAt(closes, index, window);
+  return average !== null && closes[index] > average;
+}
+
+function closeBelowSma(closes: number[], index: number, window: number): boolean {
+  const average = smaAt(closes, index, window);
+  return average !== null && closes[index] < average;
+}
+
+function smaAt(values: number[], index: number, window: number): number | null {
+  if (window <= 0 || index + 1 < window) {
+    return null;
+  }
+  const slice = values.slice(index + 1 - window, index + 1);
+  return slice.reduce((sum, value) => sum + value, 0) / window;
+}
+
+function maxDrawdownFromEquity(equityValues: number[]): number {
+  if (!equityValues.length) {
+    return 0;
+  }
+  let peak = equityValues[0];
+  let maxDrawdown = 0;
+  equityValues.forEach((equity) => {
+    peak = Math.max(peak, equity);
+    if (peak > 0) {
+      maxDrawdown = Math.max(maxDrawdown, ((peak - equity) / peak) * 100);
+    }
+  });
+  return maxDrawdown;
 }
 
 function markdownTable(headers: string[], rows: Array<Array<string | number | boolean | null | undefined>>): string {
@@ -2440,7 +2620,7 @@ function inferSmaConditionKind(text: string, fallback: StrategyConditionKind): S
 }
 
 function inferSmaWindow(text: string, fallback: number): number {
-  const match = text.match(/sma\s*(\d+)/iu);
+  const match = text.match(/sma\s*(\d+)/iu) ?? text.match(/window\s*=\s*(\d+)/iu);
   return normalizeStrategyWindow(match ? Number(match[1]) : fallback);
 }
 

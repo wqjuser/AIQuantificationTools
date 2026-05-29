@@ -250,6 +250,7 @@ describe("terminal layout css", () => {
 
   test("renders the backtest lab as an auditable evidence report", () => {
     expect(appSource).toContain("buildBacktestReport(workspace)");
+    expect(appSource).toContain("buildBacktestParameterScanRows(workspace)");
     expect(appSource).toContain("buildBacktestReportMarkdown(workspace)");
     expect(appSource).toContain("<BacktestReportPanel");
     expect(appSource).toContain("onExportMarkdown={exportBacktestReportMarkdown}");
@@ -259,6 +260,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="backtest-benchmark-strip"');
     expect(appSource).toContain('className="backtest-report-grid"');
     expect(appSource).toContain('className="backtest-report-section"');
+    expect(appSource).toContain('className="backtest-report-section parameter-scan-section"');
+    expect(appSource).toContain('className="parameter-scan-table"');
     expect(appSource).toContain("buildBacktestEvidenceCards(workspace)");
     expect(appSource).toContain("buildBacktestReadinessGates(workspace)");
     expect(appSource).toContain("evidenceCards={backtestEvidenceCards}");
@@ -273,6 +276,8 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".backtest-report-hero");
     expect(styles).toContain(".backtest-benchmark-strip");
     expect(styles).toContain(".backtest-report-grid");
+    expect(styles).toContain(".parameter-scan-table");
+    expect(styles).toContain(".parameter-scan-row");
     expect(styles).toContain(".report-export-button");
   });
 
