@@ -5,6 +5,7 @@ import {
   buildAiActionWorkflowState,
   buildAiEvidenceCards,
   buildAiReviewDossier,
+  buildAiReviewReportMarkdown,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -810,6 +811,87 @@ describe("terminal workbench model", () => {
         }
       ]
     });
+  });
+
+  test("builds a portable AI review markdown report from audited evidence", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-report-md",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-report-md",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [
+        { agent: "Technical", message: "Trend improved after the audit run.", tone: "positive" },
+        { agent: "Risk", message: "Keep paper-only gates closed for live routing.", tone: "risk" }
+      ],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      },
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-ai-report-md",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            timestampMs: 1779868800000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      },
+      researchNote: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "关注银行板块相对强度，等待放量确认。",
+        updatedAt: "2026-05-29T07:55:00+00:00"
+      }
+    });
+
+    const markdown = buildAiReviewReportMarkdown(workspace);
+
+    expect(markdown).toContain("# AIQuant Evidence-Locked AI Review");
+    expect(markdown).toContain("Run ID: `run-ai-report-md`");
+    expect(markdown).toContain("Strategy revision: `rev-ai-report-md`");
+    expect(markdown).toContain("| Benchmark alpha | +3.20pp |");
+    expect(markdown).toContain("| Technical Analyst | support | 64% | Trend improved after the audit run. |");
+    expect(markdown).toContain("| Risk Manager | risk | 82% | Keep paper-only gates closed for live routing. |");
+    expect(markdown).toContain("关注银行板块相对强度");
+    expect(markdown).toContain("AI must not output buy/sell instructions or guaranteed returns.");
+  });
+
+  test("does not export an AI review report before audited evidence exists", () => {
+    expect(buildAiReviewReportMarkdown(buildTerminalWorkspace())).toBeNull();
   });
 
   test("derives scanner candidates from the active watchlist", () => {

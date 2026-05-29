@@ -317,6 +317,9 @@ describe("terminal layout css", () => {
 
   test("renders AI review as an evidence-locked dossier", () => {
     expect(appSource).toContain("buildAiReviewDossier(workspace)");
+    expect(appSource).toContain("buildAiReviewReportMarkdown(workspace)");
+    expect(appSource).toContain("exportAiReviewMarkdown");
+    expect(appSource).toContain('i18n.t("aiReview.exportMarkdown")');
     expect(appSource).toContain("<AiReviewDossierBoard");
     expect(appSource).toContain('"benchmark": "基准 Alpha"');
     expect(appSource).toContain('className="ai-dossier"');

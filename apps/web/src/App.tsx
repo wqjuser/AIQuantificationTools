@@ -56,6 +56,7 @@ import {
   buildAiActionWorkflowState,
   buildAiEvidenceCards,
   buildAiReviewDossier,
+  buildAiReviewReportMarkdown,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -628,6 +629,33 @@ export function App() {
     }));
   }, [workspace]);
 
+  const exportAiReviewMarkdown = useCallback(() => {
+    const markdown = buildAiReviewReportMarkdown(workspace);
+    const runId = workspace.researchRun?.runId;
+    if (!markdown || !runId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "AI review export failed",
+        error: "Run Pipeline before exporting an AI review report"
+      }));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `${runId}-ai-review.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "AI review export ready",
+      error: undefined
+    }));
+  }, [workspace]);
+
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
@@ -1108,7 +1136,23 @@ export function App() {
   );
 
   const renderAgentPanel = (className = "watchlist-ai-panel") => (
-    <Panel title={i18n.t("panel.agent.title")} subtitle={i18n.t("panel.agent.subtitle")} className={className}>
+    <Panel
+      title={i18n.t("panel.agent.title")}
+      subtitle={i18n.t("panel.agent.subtitle")}
+      action={
+        <button
+          className="report-export-button"
+          disabled={!workspace.researchRun}
+          onClick={exportAiReviewMarkdown}
+          title={i18n.t("aiReview.exportMarkdown")}
+          type="button"
+        >
+          <Download size={13} />
+          <span>{i18n.t("aiReview.exportMarkdown")}</span>
+        </button>
+      }
+      className={className}
+    >
       <div className="agent-panel-body">
         <AiReviewDossierBoard dossier={aiReviewDossier} i18n={i18n} />
         <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />

@@ -1152,6 +1152,87 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
   };
 }
 
+export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): string | null {
+  const run = workspace.researchRun;
+  if (!run) {
+    return null;
+  }
+
+  const dossier = buildAiReviewDossier(workspace);
+  if (dossier.status !== "ready") {
+    return null;
+  }
+
+  const rounds = buildAgentCommitteeRounds(workspace);
+  const benchmark = buildBacktestBenchmark(workspace);
+  const researchNote = normalizedResearchNote(run.researchNote);
+  const citationRows = dossier.citations.map((citation) => [citation.label, citation.value, citation.detail]);
+  const committeeRows = rounds.map((round) => [
+    round.agent,
+    round.verdict,
+    `${round.confidence}%`,
+    round.thesis,
+    round.evidence
+  ]);
+  const decisionRows = workspace.decisionLog.map((entry) => [entry.agent, entry.tone, entry.message]);
+
+  return [
+    "# AIQuant Evidence-Locked AI Review",
+    "",
+    `Run ID: \`${run.runId}\``,
+    `Market: \`${workspace.selectedInstrument.market}\``,
+    `Symbol: \`${workspace.selectedInstrument.symbol}\``,
+    `Timeframe: \`${run.timeframe}\``,
+    `Strategy revision: \`${run.strategyRevision}\``,
+    `Execution mode: \`${run.executionMode}\``,
+    "",
+    "## Review Scope",
+    "",
+    dossier.headline,
+    "",
+    dossier.summary,
+    "",
+    "## Evidence Citations",
+    "",
+    markdownTable(["Citation", "Value", "Evidence"], citationRows),
+    "",
+    "## Benchmark Context",
+    "",
+    benchmark.detail,
+    "",
+    markdownTable(
+      ["Measure", "Value"],
+      [
+        ["Strategy return", benchmark.strategyReturn],
+        ["Benchmark buy and hold", benchmark.benchmarkReturn],
+        ["Benchmark alpha", benchmark.alpha]
+      ]
+    ),
+    "",
+    researchNote ? "## Locked Research Note" : "",
+    researchNote ? "" : "",
+    researchNote ? researchNote.body : "",
+    researchNote ? "" : "",
+    "## Committee Rounds",
+    "",
+    markdownTable(["Agent", "Verdict", "Confidence", "Thesis", "Evidence"], committeeRows),
+    "",
+    "## Decision Log",
+    "",
+    decisionRows.length ? markdownTable(["Agent", "Tone", "Message"], decisionRows) : "No decision log entries are attached.",
+    "",
+    "## AI Boundary",
+    "",
+    "AI must not output buy/sell instructions or guaranteed returns.",
+    "",
+    "This report can explain only the audited run, locked strategy revision, data snapshot, benchmark comparison, and risk gates above."
+  ]
+    .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+    .join("\n")
+    .trimEnd()
+    .concat("\n");
+}
+
 function normalizedResearchNote(note: ResearchRunNote | null | undefined): ResearchRunNote | null {
   if (!note || !note.body.trim()) {
     return null;
