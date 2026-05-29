@@ -13,6 +13,7 @@ Scope:
 - Mark AI review readiness separately from execution handoff readiness.
 - Replace the Backtest Lab replay-only panel with a report surface while keeping editable assumptions and trade replay.
 - Carry the audited data snapshot in `researchRun` workspace summaries so the report can compute a same-symbol buy-and-hold baseline without a second data source.
+- Feed that benchmark alpha into AI review evidence cards, the dossier citation list, and the structured backtest explanation action.
 - Keep the report tied to existing audited run and fallback workspace contracts; no new backend endpoint in this slice.
 
 Out of scope:
@@ -27,6 +28,7 @@ Progress:
 - [x] Layout contract for the Backtest Lab report structure.
 - [x] `buildBacktestReport` model in the terminal workbench library.
 - [x] Same-snapshot buy-and-hold benchmark return and alpha are included in the report.
+- [x] AI review evidence, dossier citations, and backtest explanation logs now cite the same benchmark alpha.
 - [x] Backtest Lab panel now renders an auditable report, evidence package, readiness gates, equity/diagnostic summary, assumptions, and trade replay.
 - [x] `/api/research/run` workspace summaries now carry the audited data snapshot for immediate benchmark calculation.
 - [x] Product plan and architecture documentation updated.

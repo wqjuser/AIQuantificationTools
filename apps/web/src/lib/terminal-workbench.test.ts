@@ -243,6 +243,35 @@ describe("terminal workbench model", () => {
       strategyName: "SMA trend demo",
       strategyRevision: "rev123",
       dataRows: 120,
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-25T08:00:00Z",
+        end: "2026-05-26T08:00:00Z",
+        hash: "snapshot-quant-loop",
+        bars: [
+          {
+            timestamp: "2026-05-25T08:00:00Z",
+            timestampMs: 1779696000000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1000
+          },
+          {
+            timestamp: "2026-05-26T08:00:00Z",
+            timestampMs: 1779782400000,
+            open: 10.2,
+            high: 10.6,
+            low: 10.1,
+            close: 10.5,
+            volume: 1200
+          }
+        ]
+      },
       metrics: {
         total_return_pct: 8.2,
         max_drawdown_pct: 3.1,
@@ -266,6 +295,35 @@ describe("terminal workbench model", () => {
       strategyName: "SMA trend demo",
       strategyRevision: "rev123",
       dataRows: 120,
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-25T08:00:00Z",
+        end: "2026-05-26T08:00:00Z",
+        hash: "snapshot-stale",
+        bars: [
+          {
+            timestamp: "2026-05-25T08:00:00Z",
+            timestampMs: 1779696000000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1000
+          },
+          {
+            timestamp: "2026-05-26T08:00:00Z",
+            timestampMs: 1779782400000,
+            open: 10.2,
+            high: 10.6,
+            low: 10.1,
+            close: 10.5,
+            volume: 1200
+          }
+        ]
+      },
       metrics: {
         total_return_pct: 8.2,
         max_drawdown_pct: 3.1,
@@ -525,7 +583,36 @@ describe("terminal workbench model", () => {
         trade_count: 9
       },
       decisions: [{ agent: "AI Summary", message: "Replay loaded", tone: "ai" }],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-evidence",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            timestampMs: 1779868800000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      }
     });
 
     expect(buildAiEvidenceCards(workspace)[1]).toEqual({
@@ -533,6 +620,13 @@ describe("terminal workbench model", () => {
       label: "Backtest evidence",
       value: "240 5m bars",
       detail: "Audited run run-evidence · revision rev123",
+      tone: "positive"
+    });
+    expect(buildAiEvidenceCards(workspace).find((card) => card.id === "benchmark")).toEqual({
+      id: "benchmark",
+      label: "Benchmark alpha",
+      value: "+3.20pp",
+      detail: "Strategy +8.20% vs buy-and-hold +5.00% over 2 audited bars.",
       tone: "positive"
     });
   });
@@ -634,6 +728,35 @@ describe("terminal workbench model", () => {
         isComplete: true,
         warnings: [],
         rows: 240
+      },
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-dossier",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            timestampMs: 1779868800000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
       }
     });
 
@@ -654,6 +777,13 @@ describe("terminal workbench model", () => {
           label: "Backtest metrics",
           value: "+8.20% / 3.10% / 9 trades",
           detail: "Win rate 55.00%; no guaranteed outcome.",
+          tone: "positive"
+        },
+        {
+          id: "benchmark",
+          label: "Benchmark alpha",
+          value: "+3.20pp",
+          detail: "Strategy +8.20% vs buy-and-hold +5.00% over 2 audited bars.",
           tone: "positive"
         },
         {
@@ -1657,7 +1787,36 @@ describe("terminal workbench model", () => {
         trade_count: 9
       },
       decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-explain",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            timestampMs: 1779868800000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      }
     });
     const workspace = workspaceWithAiAction(auditedWorkspace, "debate");
 
@@ -1679,6 +1838,35 @@ describe("terminal workbench model", () => {
       strategyName: "SMA trend demo",
       strategyRevision: "rev123",
       dataRows: 120,
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-25T08:00:00Z",
+        end: "2026-05-26T08:00:00Z",
+        hash: "snapshot-ai-explain",
+        bars: [
+          {
+            timestamp: "2026-05-25T08:00:00Z",
+            timestampMs: 1779696000000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1000
+          },
+          {
+            timestamp: "2026-05-26T08:00:00Z",
+            timestampMs: 1779782400000,
+            open: 10.2,
+            high: 10.6,
+            low: 10.1,
+            close: 10.5,
+            volume: 1200
+          }
+        ]
+      },
       metrics: {
         total_return_pct: 8.2,
         max_drawdown_pct: 3.1,
@@ -1693,6 +1881,8 @@ describe("terminal workbench model", () => {
     expect(workspace.decisionLog[0].agent).toBe("AI Summary");
     expect(workspace.decisionLog[0].message).toContain("using audited run run-ai-explain");
     expect(workspace.decisionLog[0].message).toContain("return +8.20%");
+    expect(workspace.decisionLog[0].message).toContain("benchmark +5.00%");
+    expect(workspace.decisionLog[0].message).toContain("alpha +3.20pp");
     expect(workspace.decisionLog[0].message).toContain("no guaranteed outcome");
   });
 

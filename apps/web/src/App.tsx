@@ -3344,6 +3344,7 @@ function aiCitationLabel(i18n: AppI18n, citation: AiReviewCitation): string {
     {
       run: "运行编号",
       metrics: "回测指标",
+      "benchmark": "基准 Alpha",
       strategy: "策略版本",
       "data-quality": "数据质量",
       "research-note": "研究笔记",
@@ -3379,6 +3380,13 @@ function aiCitationValue(i18n: AppI18n, citation: AiReviewCitation): string {
 function aiCitationDetail(i18n: AppI18n, detail: string): string {
   if (i18n.locale === "en-US") {
     return detail;
+  }
+  const benchmark = detail.match(/^Strategy (.+) vs buy-and-hold (.+) over (\d+) audited bars\.$/);
+  if (benchmark) {
+    return `策略 ${benchmark[1]} 对比买入持有 ${benchmark[2]} · ${benchmark[3]} 根审计K线`;
+  }
+  if (detail === "Benchmark comparison waits for an audited data snapshot.") {
+    return "基准对比等待审计数据快照。";
   }
   return detail
     .replace("No reproducible backtest is bound to this context.", "当前上下文尚未绑定可复现回测。")
@@ -3560,6 +3568,7 @@ function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {
     {
       context: "研究上下文",
       backtest: "回测证据",
+      "benchmark": "基准 Alpha",
       "research-note": "研究笔记",
       risk: "风控闸门",
       safety: "AI 边界"
@@ -3603,6 +3612,13 @@ function agentEvidenceDetail(i18n: AppI18n, card: AiEvidenceCard): string {
   }
   if (card.detail === "AI can explain supplied evidence only; no guaranteed outcome.") {
     return "AI 只能解释已提供证据；不保证结果。";
+  }
+  const benchmark = card.detail.match(/^Strategy (.+) vs buy-and-hold (.+) over (\d+) audited bars\.$/);
+  if (benchmark) {
+    return `策略 ${benchmark[1]} 对比买入持有 ${benchmark[2]} · ${benchmark[3]} 根审计K线`;
+  }
+  if (card.detail === "Benchmark comparison waits for an audited data snapshot.") {
+    return "基准对比等待审计数据快照。";
   }
   return card.detail
     .replace("Adapter certified: blocked", "适配器认证：阻断")

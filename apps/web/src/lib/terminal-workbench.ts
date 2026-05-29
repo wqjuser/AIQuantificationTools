@@ -256,7 +256,7 @@ export interface AgentCommitteeRound {
 }
 
 export interface AiEvidenceCard {
-  id: "context" | "backtest" | "research-note" | "risk" | "safety";
+  id: "context" | "backtest" | "benchmark" | "research-note" | "risk" | "safety";
   label: string;
   value: string;
   detail: string;
@@ -264,7 +264,7 @@ export interface AiEvidenceCard {
 }
 
 export interface AiReviewCitation {
-  id: "run" | "metrics" | "strategy" | "data-quality" | "research-note" | "risk-gates";
+  id: "run" | "metrics" | "benchmark" | "strategy" | "data-quality" | "research-note" | "risk-gates";
   label: string;
   value: string;
   detail: string;
@@ -1001,6 +1001,17 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
         },
   ];
 
+  if (workspace.researchRun) {
+    const benchmark = buildBacktestBenchmark(workspace);
+    cards.push({
+      id: "benchmark",
+      label: "Benchmark alpha",
+      value: benchmark.alpha,
+      detail: aiBenchmarkDetail(benchmark),
+      tone: benchmark.tone
+    });
+  }
+
   if (researchNote) {
     cards.push({
       id: "research-note",
@@ -1075,6 +1086,14 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
   const tradeMetric = metricValue(workspace, "Trades", "0");
   const dataQuality = run.dataQuality;
   const researchNote = normalizedResearchNote(run.researchNote);
+  const benchmark = buildBacktestBenchmark(workspace);
+  const benchmarkCitation: AiReviewCitation = {
+    id: "benchmark",
+    label: "Benchmark alpha",
+    value: benchmark.alpha,
+    detail: aiBenchmarkDetail(benchmark),
+    tone: benchmark.tone
+  };
   const noteCitation: AiReviewCitation | null = researchNote
     ? {
         id: "research-note",
@@ -1104,6 +1123,7 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
         detail: `Win rate ${winRateMetric}; no guaranteed outcome.`,
         tone: returnMetric.startsWith("-") ? "warning" : "positive"
       },
+      benchmarkCitation,
       {
         id: "strategy",
         label: "Strategy revision",
@@ -2141,6 +2161,13 @@ export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBe
   };
 }
 
+function aiBenchmarkDetail(benchmark: BacktestBenchmark): string {
+  if (benchmark.sampleBars <= 0 || benchmark.benchmarkReturn === "Pending snapshot") {
+    return "Benchmark comparison waits for an audited data snapshot.";
+  }
+  return `Strategy ${benchmark.strategyReturn} vs buy-and-hold ${benchmark.benchmarkReturn} over ${benchmark.sampleBars} audited bars.`;
+}
+
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {
   const selectedInstrument = workspace.selectedInstrument;
   const selectedSymbol = selectedInstrument.symbol;
@@ -2558,12 +2585,17 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
     const returnMetric = workspace.metrics.find((metric) => metric.label === "Return")?.value ?? "N/A";
     const drawdownMetric = workspace.metrics.find((metric) => metric.label === "Max DD")?.value ?? "N/A";
     const tradeMetric = workspace.metrics.find((metric) => metric.label === "Trades")?.value ?? "0";
+    const benchmark = buildBacktestBenchmark(workspace);
+    const benchmarkClause =
+      benchmark.sampleBars > 0 && benchmark.benchmarkReturn !== "Pending snapshot"
+        ? `, benchmark ${benchmark.benchmarkReturn}, alpha ${benchmark.alpha}`
+        : "";
     return {
       ...workspace,
       decisionLog: [
         {
           agent: "AI Summary",
-          message: `Backtest explanation for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: return ${returnMetric}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
+          message: `Backtest explanation for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: return ${returnMetric}${benchmarkClause}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
           tone: "ai"
         },
         ...workspace.decisionLog
@@ -2609,6 +2641,7 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
 
   const returnMetric = metricValue(workspace, "Return", "N/A");
   const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
+  const benchmark = buildBacktestBenchmark(workspace);
   if (!workspace.researchRun) {
     const actionLabel = action === "explain" ? "explanation" : "debate";
     const blockedMessage = `AI ${actionLabel} blocked for ${workspace.selectedInstrument.symbol}: run Pipeline to create an audited backtest first.`;
@@ -2646,7 +2679,13 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
 
   const actionMessage =
     action === "explain"
-      ? `AI explanation generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: return ${returnMetric}, max drawdown ${drawdownMetric}; no guaranteed outcome.`
+      ? `AI explanation generated for ${workspace.selectedInstrument.symbol} using audited run ${
+          workspace.researchRun.runId
+        }: return ${returnMetric}${
+          benchmark.sampleBars > 0 && benchmark.benchmarkReturn !== "Pending snapshot"
+            ? `, benchmark ${benchmark.benchmarkReturn}, alpha ${benchmark.alpha}`
+            : ""
+        }, max drawdown ${drawdownMetric}; no guaranteed outcome.`
       : `AI debate generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}; bull, bear, and risk notes updated.`;
 
   return {
