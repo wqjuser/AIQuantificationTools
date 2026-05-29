@@ -69,6 +69,7 @@ export interface ResearchRunExportManifest {
     aiRisks: number;
     paperExecutions?: number;
     promotionCandidates?: number;
+    researchNotes?: number;
   };
 }
 
@@ -1308,7 +1309,8 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     typeof counts?.trades === "number" &&
     typeof counts?.equityPoints === "number" &&
     typeof counts?.decisions === "number" &&
-    typeof counts?.aiRisks === "number"
+    typeof counts?.aiRisks === "number" &&
+    (counts?.researchNotes === undefined || typeof counts.researchNotes === "number")
   );
 }
 
@@ -1420,6 +1422,7 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     (run.aiReport === undefined || isResearchRunAiReport(run.aiReport)) &&
     (run.dataQuality === undefined || isResearchRunDataQuality(run.dataQuality)) &&
     (run.dataSnapshot === undefined || isResearchRunDataSnapshot(run.dataSnapshot)) &&
+    (run.researchNote === undefined || isResearchRunNote(run.researchNote)) &&
     (run.strategyConfig === undefined || isResearchRunStrategyConfig(run.strategyConfig)) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
     (run.backtestTrades === undefined ||
@@ -1428,6 +1431,20 @@ function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
       (Array.isArray(run.backtestEquityCurve) && run.backtestEquityCurve.every(isBacktestEquityPoint))) &&
     (run.backtestDiagnostics === undefined ||
       (Array.isArray(run.backtestDiagnostics) && run.backtestDiagnostics.every(isBacktestDiagnostic)))
+  );
+}
+
+function isResearchRunNote(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const note = value as Record<string, unknown>;
+  return (
+    isMarket(note.market) &&
+    typeof note.symbol === "string" &&
+    isTimeframe(note.timeframe) &&
+    typeof note.body === "string" &&
+    (note.updatedAt === null || typeof note.updatedAt === "string")
   );
 }
 

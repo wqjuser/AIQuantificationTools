@@ -12,6 +12,7 @@ from typing import Any
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
 DEFAULT_DATA_QUALITY = {"source": "unknown", "isComplete": False, "warnings": [], "rows": 0}
 DEFAULT_AI_REPORT = {"summary": "", "risks": [], "improvements": [], "disclaimer": ""}
+DEFAULT_RESEARCH_NOTE = {"market": "", "symbol": "", "timeframe": "", "body": "", "updatedAt": None}
 DEFAULT_DATA_SNAPSHOT = {
     "source": "unknown",
     "isComplete": False,
@@ -31,6 +32,10 @@ def _default_ai_report() -> dict[str, Any]:
         "improvements": [],
         "disclaimer": DEFAULT_AI_REPORT["disclaimer"],
     }
+
+
+def _default_research_note() -> dict[str, Any]:
+    return dict(DEFAULT_RESEARCH_NOTE)
 
 
 def _default_data_snapshot() -> dict[str, Any]:
@@ -67,6 +72,7 @@ class ResearchRunAudit:
     backtest_trades: list[dict[str, Any]] = field(default_factory=list)
     backtest_equity_curve: list[dict[str, Any]] = field(default_factory=list)
     backtest_diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    research_note: dict[str, Any] = field(default_factory=_default_research_note)
 
 
 class ResearchRunStore:
@@ -102,7 +108,8 @@ class ResearchRunStore:
                     backtest_assumptions_json text not null default '{"initialCash": 100000, "feeBps": 3, "slippageBps": 2}',
                     backtest_trades_json text not null default '[]',
                     backtest_equity_curve_json text not null default '[]',
-                    backtest_diagnostics_json text not null default '[]'
+                    backtest_diagnostics_json text not null default '[]',
+                    research_note_json text not null default '{"market": "", "symbol": "", "timeframe": "", "body": "", "updatedAt": null}'
                 )
                 """
             )
@@ -171,6 +178,15 @@ class ResearchRunStore:
                     default '[]'
                     """
                 )
+            columns = {row[1] for row in connection.execute("pragma table_info(research_runs)").fetchall()}
+            if "research_note_json" not in columns:
+                connection.execute(
+                    """
+                    alter table research_runs
+                    add column research_note_json text not null
+                    default '{"market": "", "symbol": "", "timeframe": "", "body": "", "updatedAt": null}'
+                    """
+                )
             connection.commit()
         finally:
             connection.close()
@@ -199,9 +215,10 @@ class ResearchRunStore:
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
-                    backtest_diagnostics_json
+                    backtest_diagnostics_json,
+                    research_note_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     market = excluded.market,
@@ -220,7 +237,8 @@ class ResearchRunStore:
                     backtest_assumptions_json = excluded.backtest_assumptions_json,
                     backtest_trades_json = excluded.backtest_trades_json,
                     backtest_equity_curve_json = excluded.backtest_equity_curve_json,
-                    backtest_diagnostics_json = excluded.backtest_diagnostics_json
+                    backtest_diagnostics_json = excluded.backtest_diagnostics_json,
+                    research_note_json = excluded.research_note_json
                 """,
                 (
                     audit.run_id,
@@ -242,6 +260,7 @@ class ResearchRunStore:
                     json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_equity_curve, ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_diagnostics, ensure_ascii=False, sort_keys=True),
+                    json.dumps(_normalize_research_note(audit.research_note, audit=audit), ensure_ascii=False, sort_keys=True),
                 ),
             )
             connection.commit()
@@ -272,7 +291,8 @@ class ResearchRunStore:
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
-                    backtest_diagnostics_json
+                    backtest_diagnostics_json,
+                    research_note_json
                 from research_runs
                 order by created_at desc
                 limit ?
@@ -308,7 +328,8 @@ class ResearchRunStore:
                     backtest_assumptions_json,
                     backtest_trades_json,
                     backtest_equity_curve_json,
-                    backtest_diagnostics_json
+                    backtest_diagnostics_json,
+                    research_note_json
                 from research_runs
                 where run_id = ?
                 limit 1
@@ -341,6 +362,7 @@ def research_run_audit_to_payload(audit: ResearchRunAudit, *, include_data_snaps
         "backtestTrades": audit.backtest_trades,
         "backtestEquityCurve": audit.backtest_equity_curve,
         "backtestDiagnostics": audit.backtest_diagnostics,
+        "researchNote": _normalize_research_note(audit.research_note, audit=audit),
     }
     if include_data_snapshot:
         payload["dataSnapshot"] = _normalize_data_snapshot(audit.data_snapshot)
@@ -362,6 +384,7 @@ def research_run_export_to_payload(
     run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
     data_snapshot = run_payload.get("dataSnapshot", {})
     ai_report = run_payload.get("aiReport", {})
+    research_note = _dict_or_empty(run_payload.get("researchNote"))
     paper_execution_payloads = _normalize_paper_execution_payloads(paper_executions, run_id=audit.run_id)
     normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
     artifact_counts = {
@@ -372,6 +395,7 @@ def research_run_export_to_payload(
         "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
         "paperExecutions": len(paper_execution_payloads),
         "promotionCandidates": 1 if normalized_promotion_candidate else 0,
+        "researchNotes": 1 if _research_note_has_body(research_note) else 0,
     }
     export_package = {
         "kind": "aiqt.researchRun.export",
@@ -488,12 +512,15 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         created_at = created_at.replace(tzinfo=timezone.utc)
 
     data_rows = int(_number_or_default(research_run.get("dataRows"), data_snapshot.get("rows", 0)))
+    market = _required_text(research_run, "market")
+    symbol = _required_text(research_run, "symbol")
+    timeframe = _required_text(research_run, "timeframe")
     return ResearchRunAudit(
         run_id=run_id,
         created_at=created_at,
-        market=_required_text(research_run, "market"),
-        symbol=_required_text(research_run, "symbol"),
-        timeframe=_required_text(research_run, "timeframe"),
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
         strategy_name=_required_text(research_run, "strategyName"),
         strategy_revision=_required_text(research_run, "strategyRevision"),
         data_rows=max(0, data_rows),
@@ -508,6 +535,10 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         backtest_trades=_list_of_dicts(research_run.get("backtestTrades")),
         backtest_equity_curve=_list_of_dicts(research_run.get("backtestEquityCurve")),
         backtest_diagnostics=_list_of_dicts(research_run.get("backtestDiagnostics")),
+        research_note=_normalize_research_note(
+            _dict_or_empty(research_run.get("researchNote")),
+            audit_fields={"market": market, "symbol": symbol, "timeframe": timeframe},
+        ),
     )
 
 
@@ -541,6 +572,10 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         backtest_trades=json.loads(row[16]),
         backtest_equity_curve=json.loads(row[17]),
         backtest_diagnostics=json.loads(row[18]),
+        research_note=_normalize_research_note(
+            json.loads(row[19]),
+            audit_fields={"market": row[2], "symbol": row[3], "timeframe": row[4]},
+        ),
     )
 
 
@@ -636,6 +671,16 @@ def _validate_manifest_consistency(
     }
     if "paperExecutions" in counts or paper_executions:
         expected_counts["paperExecutions"] = len(paper_executions or [])
+    research_note = _normalize_research_note(
+        _dict_or_empty(research_run.get("researchNote")),
+        audit_fields={
+            "market": str(research_run.get("market") or ""),
+            "symbol": str(research_run.get("symbol") or ""),
+            "timeframe": str(research_run.get("timeframe") or ""),
+        },
+    )
+    if "researchNotes" in counts or _research_note_has_body(research_note):
+        expected_counts["researchNotes"] = 1 if _research_note_has_body(research_note) else 0
     for key, expected in expected_counts.items():
         actual = int(_number_or_default(counts.get(key), -1))
         if actual != expected:
@@ -652,6 +697,32 @@ def _required_text(mapping: dict[str, Any], key: str) -> str:
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _normalize_research_note(
+    value: dict[str, Any] | None,
+    *,
+    audit: ResearchRunAudit | None = None,
+    audit_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    note = _dict_or_empty(value)
+    fields = audit_fields or {}
+    market = str(note.get("market") or fields.get("market") or (audit.market if audit else "") or "").strip()
+    symbol = str(note.get("symbol") or fields.get("symbol") or (audit.symbol if audit else "") or "").strip()
+    timeframe = str(note.get("timeframe") or fields.get("timeframe") or (audit.timeframe if audit else "") or "").strip()
+    updated_at = note.get("updatedAt", note.get("updated_at"))
+    updated_at_text = str(updated_at).strip() if updated_at is not None else ""
+    return {
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "body": str(note.get("body") or "").strip(),
+        "updatedAt": updated_at_text or None,
+    }
+
+
+def _research_note_has_body(value: dict[str, Any]) -> bool:
+    return bool(str(value.get("body") or "").strip())
 
 
 def _list_of_dicts(value: Any) -> list[dict[str, Any]]:

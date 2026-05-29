@@ -536,6 +536,49 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("adds locked research notes to the AI evidence boundary", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-note-evidence",
+      createdAt: "2026-05-29T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-note",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      researchNote: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "关注银行板块相对强度，等待放量确认。",
+        updatedAt: "2026-05-29T07:55:00+00:00"
+      }
+    });
+
+    expect(buildAiEvidenceCards(workspace).find((card) => card.id === "research-note")).toEqual({
+      id: "research-note",
+      label: "Research note",
+      value: "Locked note snapshot",
+      detail: "关注银行板块相对强度，等待放量确认。",
+      tone: "ai"
+    });
+    expect(buildAiReviewDossier(workspace).citations.find((citation) => citation.id === "research-note")).toEqual({
+      id: "research-note",
+      label: "Research note",
+      value: "Locked note snapshot",
+      detail: "关注银行板块相对强度，等待放量确认。",
+      tone: "ai"
+    });
+  });
+
   test("blocks the AI review dossier until an audited run is bound", () => {
     expect(buildAiReviewDossier(buildTerminalWorkspace())).toEqual({
       status: "blocked",

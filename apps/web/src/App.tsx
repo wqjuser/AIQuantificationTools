@@ -3188,6 +3188,7 @@ function aiCitationLabel(i18n: AppI18n, citation: AiReviewCitation): string {
       metrics: "回测指标",
       strategy: "策略版本",
       "data-quality": "数据质量",
+      "research-note": "研究笔记",
       "risk-gates": "风控闸门"
     }[citation.id] ?? citation.label
   );
@@ -3205,6 +3206,9 @@ function aiCitationValue(i18n: AppI18n, citation: AiReviewCitation): string {
   }
   if (citation.value === "Not attached") {
     return "未附加";
+  }
+  if (citation.value === "Locked note snapshot") {
+    return "已锁定笔记快照";
   }
   return citation.value
     .replace("Live gates open", "实盘闸门已开启")
@@ -3398,6 +3402,7 @@ function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {
     {
       context: "研究上下文",
       backtest: "回测证据",
+      "research-note": "研究笔记",
       risk: "风控闸门",
       safety: "AI 边界"
     }[card.id] ?? card.label
@@ -3416,6 +3421,9 @@ function agentEvidenceValue(i18n: AppI18n, card: AiEvidenceCard): string {
   }
   if (card.value === "Live gates open") {
     return "实盘闸门已开启";
+  }
+  if (card.value === "Locked note snapshot") {
+    return "已锁定笔记快照";
   }
   return card.value.replace("bars", "根K线").replace("blocked gates", "个阻断闸门");
 }

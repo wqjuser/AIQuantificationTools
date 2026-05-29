@@ -223,7 +223,7 @@ export interface AgentCommitteeRound {
 }
 
 export interface AiEvidenceCard {
-  id: "context" | "backtest" | "risk" | "safety";
+  id: "context" | "backtest" | "research-note" | "risk" | "safety";
   label: string;
   value: string;
   detail: string;
@@ -231,7 +231,7 @@ export interface AiEvidenceCard {
 }
 
 export interface AiReviewCitation {
-  id: "run" | "metrics" | "strategy" | "data-quality" | "risk-gates";
+  id: "run" | "metrics" | "strategy" | "data-quality" | "research-note" | "risk-gates";
   label: string;
   value: string;
   detail: string;
@@ -430,6 +430,15 @@ export interface ResearchRunSummary {
   dataRows: number;
   executionMode: string;
   dataQuality?: ResearchRunDataQuality;
+  researchNote?: ResearchRunNote;
+}
+
+export interface ResearchRunNote {
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  body: string;
+  updatedAt: string | null;
 }
 
 export interface ResearchRunDataQuality {
@@ -506,6 +515,7 @@ export interface ResearchRunAudit {
   aiReport?: ResearchRunAiReport;
   dataQuality?: ResearchRunDataQuality;
   dataSnapshot?: ResearchRunDataSnapshot;
+  researchNote?: ResearchRunNote;
   strategyConfig?: ResearchRunStrategyConfig;
   backtestAssumptions?: BacktestAssumptions;
   backtestTrades?: BacktestTradeRow[];
@@ -931,8 +941,8 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
   const gateDetail = workspace.execution.gates
     .map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`)
     .join(" · ");
-
-  return [
+  const researchNote = normalizedResearchNote(workspace.researchRun?.researchNote);
+  const cards: AiEvidenceCard[] = [
     {
       id: "context",
       label: "Research context",
@@ -955,6 +965,19 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
           detail: "Run Pipeline before trusting AI review.",
           tone: "warning"
         },
+  ];
+
+  if (researchNote) {
+    cards.push({
+      id: "research-note",
+      label: "Research note",
+      value: "Locked note snapshot",
+      detail: compactResearchNoteDetail(researchNote.body),
+      tone: "ai"
+    });
+  }
+
+  cards.push(
     {
       id: "risk",
       label: "Risk gates",
@@ -969,7 +992,9 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
       detail: "AI can explain supplied evidence only; no guaranteed outcome.",
       tone: "ai"
     }
-  ];
+  );
+
+  return cards;
 }
 
 export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDossier {
@@ -1015,6 +1040,16 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
   const winRateMetric = metricValue(workspace, "Win Rate", "N/A");
   const tradeMetric = metricValue(workspace, "Trades", "0");
   const dataQuality = run.dataQuality;
+  const researchNote = normalizedResearchNote(run.researchNote);
+  const noteCitation: AiReviewCitation | null = researchNote
+    ? {
+        id: "research-note",
+        label: "Research note",
+        value: "Locked note snapshot",
+        detail: compactResearchNoteDetail(researchNote.body),
+        tone: "ai"
+      }
+    : null;
 
   return {
     status: "ready",
@@ -1057,9 +1092,25 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
             detail: "Run metadata did not include data quality details.",
             tone: "warning"
           },
+      ...(noteCitation ? [noteCitation] : []),
       riskGateCitation
     ]
   };
+}
+
+function normalizedResearchNote(note: ResearchRunNote | null | undefined): ResearchRunNote | null {
+  if (!note || !note.body.trim()) {
+    return null;
+  }
+  return {
+    ...note,
+    body: note.body.trim()
+  };
+}
+
+function compactResearchNoteDetail(body: string): string {
+  const trimmed = body.trim();
+  return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
 }
 
 export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCandidate[] {
@@ -2648,7 +2699,8 @@ export function workspaceFromResearchRunAudit(
     strategyRevision: run.strategyRevision,
     dataRows: run.dataRows,
     executionMode: run.executionMode,
-    dataQuality: run.dataQuality
+    dataQuality: run.dataQuality,
+    researchNote: run.researchNote
   };
   return {
     ...currentWorkspace,

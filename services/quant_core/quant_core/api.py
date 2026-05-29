@@ -226,10 +226,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/research/run":
             query = parse_qs(parsed.query)
+            market = query.get("market", ["ashare"])[0]
+            symbol = query.get("symbol", ["600000"])[0]
+            timeframe = query.get("timeframe", ["1d"])[0]
+            research_note = research_note_to_payload(
+                self.note_store.get(market=market, symbol=symbol, timeframe=timeframe)
+            )
             workspace = run_terminal_research(
-                market=query.get("market", ["ashare"])[0],
-                symbol=query.get("symbol", ["600000"])[0],
-                timeframe=query.get("timeframe", ["1d"])[0],
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
                 adapter=self.kline_adapter,
                 assistant=self.assistant,
                 engine=_backtest_engine_from_query(query),
@@ -237,6 +243,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 run_store=self.run_store,
                 data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
                 strategy_snapshot=_strategy_snapshot_from_query(query),
+                research_note=research_note,
             )
             if workspace.research_run:
                 strategy = strategy_config_from_snapshot(

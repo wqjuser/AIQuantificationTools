@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from inspect import Parameter, signature
 from pathlib import Path
 import re
+from typing import Any
 from uuid import uuid4
 
 from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
@@ -54,6 +55,7 @@ def run_terminal_research(
     run_store: ResearchRunStore | None = None,
     data_limit: int = 500,
     strategy_snapshot: StrategySnapshot | None = None,
+    research_note: dict[str, Any] | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -116,6 +118,7 @@ def run_terminal_research(
         backtest_trades=[asdict(row) for row in backtest_trade_rows],
         backtest_equity_curve=[asdict(row) for row in backtest_equity_curve],
         backtest_diagnostics=[asdict(row) for row in backtest_diagnostics],
+        research_note=research_note or {},
     )
     audit_store.record(audit)
 
@@ -153,6 +156,7 @@ def run_terminal_research(
             strategy_revision=strategy.revision,
             data_rows=quality.rows,
             execution_mode="paper_only",
+            research_note=research_note or None,
         ),
     )
 

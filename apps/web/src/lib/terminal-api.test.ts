@@ -541,7 +541,8 @@ describe("terminal workspace API client", () => {
                 decisions: 0,
                 aiRisks: 1,
                 paperExecutions: 1,
-                promotionCandidates: 1
+                promotionCandidates: 1,
+                researchNotes: 1
               }
             },
             researchRun: {
@@ -556,6 +557,13 @@ describe("terminal workspace API client", () => {
               metrics: { total_return_pct: 3.4, trade_count: 8 },
               decisions: [],
               executionMode: "paper_only",
+              researchNote: {
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                body: "关注银行板块相对强度，等待放量确认。",
+                updatedAt: "2026-05-29T07:55:00+00:00"
+              },
               dataSnapshot: {
                 source: "tencent",
                 isComplete: true,
@@ -667,6 +675,8 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
     expect(result.exportPackage?.manifest.artifactCounts.paperExecutions).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.promotionCandidates).toBe(1);
+    expect(result.exportPackage?.manifest.artifactCounts.researchNotes).toBe(1);
+    expect(result.exportPackage?.researchRun.researchNote?.body).toBe("关注银行板块相对强度，等待放量确认。");
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");

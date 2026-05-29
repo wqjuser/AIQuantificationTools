@@ -826,6 +826,79 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(read_response.status, 200)
         self.assertEqual(read_payload["note"], save_payload["note"])
 
+    def test_research_run_api_locks_current_note_into_audit_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.ai import LocalResearchAssistant
+        from quant_core.api import QuantApiHandler
+        from quant_core.backtest import BacktestEngine
+        from quant_core.cache import MarketDataCache
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunStore
+
+        class DemoKlineAdapter:
+            source = "demo-test"
+
+            def __init__(self):
+                self.delegate = DemoMarketDataAdapter()
+
+            def fetch_ohlcv(self, request, limit=160):
+                return self.delegate.fetch_ohlcv(request)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                assistant = LocalResearchAssistant()
+                engine = BacktestEngine()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                note_store = ResearchNoteStore(f"{tmp}/notes.sqlite")
+                kline_adapter = DemoKlineAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/research/notes",
+                    body=json.dumps(
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "body": "关注银行板块相对强度，等待放量确认。",
+                        },
+                        ensure_ascii=False,
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                note_response = connection.getresponse()
+                note_response.read()
+                connection.request("GET", "/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=120")
+                run_response = connection.getresponse()
+                run_payload = json.loads(run_response.read().decode("utf-8"))
+                run_id = run_payload["researchRun"]["runId"]
+                connection.request("GET", f"/api/research/runs/{run_id}")
+                detail_response = connection.getresponse()
+                detail_payload = json.loads(detail_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(note_response.status, 201)
+        self.assertEqual(run_response.status, 200)
+        self.assertEqual(run_payload["researchRun"]["researchNote"]["body"], "关注银行板块相对强度，等待放量确认。")
+        self.assertEqual(run_payload["researchRun"]["researchNote"]["symbol"], "600000")
+        self.assertEqual(detail_response.status, 200)
+        self.assertEqual(detail_payload["run"]["researchNote"]["body"], "关注银行板块相对强度，等待放量确认。")
+
     def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
         from quant_core.research import run_terminal_research
         from quant_core.terminal import terminal_workspace_to_payload
@@ -1581,6 +1654,71 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export["executionHandoff"]["mode"], "paper_only")
         self.assertEqual(export["executionHandoff"]["requiredGates"][0]["id"], "adapter-certified")
         self.assertFalse(export["executionHandoff"]["requiredGates"][0]["passed"])
+
+    def test_research_run_export_import_preserves_research_note_evidence(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        audit = ResearchRunAudit(
+            run_id="run-note-export",
+            created_at=datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-note-export",
+            data_rows=2,
+            metrics={"total_return_pct": 3.4, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Note evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={"summary": "Note locked", "risks": ["Volume not confirmed"], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 2,
+                "start": "2026-05-28T08:00:00+00:00",
+                "end": "2026-05-29T08:00:00+00:00",
+                "hash": "snapshot-note-export",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-28T08:00:00+00:00",
+                        "timestampMs": 1779955200000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    },
+                    {
+                        "timestamp": "2026-05-29T08:00:00+00:00",
+                        "timestampMs": 1780041600000,
+                        "open": 9.2,
+                        "high": 9.5,
+                        "low": 9.1,
+                        "close": 9.4,
+                        "volume": 1500000,
+                    },
+                ],
+            },
+            research_note={
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "body": "关注银行板块相对强度，等待放量确认。",
+                "updatedAt": "2026-05-29T07:55:00+00:00",
+            },
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-29T08:00:00+00:00", "equity": 103400.0}],
+        )
+
+        export_package = research_run_export_to_payload(audit)
+        imported = research_run_import_to_audit(export_package)
+
+        self.assertEqual(export_package["manifest"]["artifactCounts"]["researchNotes"], 1)
+        self.assertEqual(export_package["researchRun"]["researchNote"]["body"], "关注银行板块相对强度，等待放量确认。")
+        self.assertEqual(export_package["researchRun"]["researchNote"]["updatedAt"], "2026-05-29T07:55:00+00:00")
+        self.assertEqual(imported.research_note["body"], "关注银行板块相对强度，等待放量确认。")
+        self.assertEqual(imported.research_note["symbol"], "600000")
 
     def test_research_run_import_rejects_tampered_integrity_hash(self):
         import copy
