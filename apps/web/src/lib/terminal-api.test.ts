@@ -313,6 +313,102 @@ describe("terminal workspace API client", () => {
     ]);
   });
 
+  test("hydrates research run detail when the run workspace omits its data snapshot", async () => {
+    const remoteWorkspace = {
+      ...buildTerminalWorkspace(),
+      schemaVersion: 1,
+      researchRun: {
+        runId: "run-needs-detail",
+        createdAt: "2026-05-29T08:00:00+00:00",
+        timeframe: "1d",
+        strategyRevision: "rev-snapshot",
+        dataRows: 2,
+        executionMode: "paper_only"
+      },
+      metrics: [
+        { label: "Return", value: "+8.20%", tone: "positive" },
+        { label: "Max DD", value: "3.10%", tone: "warning" },
+        { label: "Win Rate", value: "55.00%", tone: "neutral" },
+        { label: "Trades", value: "9", tone: "neutral" }
+      ]
+    };
+    const calls: string[] = [];
+    const result = await runTerminalResearch(
+      "http://127.0.0.1:8765",
+      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      buildTerminalWorkspace(),
+      async (url) => {
+        calls.push(url);
+        if (url.endsWith("/api/research/runs/run-needs-detail")) {
+          return {
+            ok: true,
+            json: async () => ({
+              run: {
+                runId: "run-needs-detail",
+                createdAt: "2026-05-29T08:00:00+00:00",
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                strategyName: "SMA trend demo",
+                strategyRevision: "rev-snapshot",
+                dataRows: 2,
+                metrics: {
+                  total_return_pct: 8.2,
+                  max_drawdown_pct: 3.1,
+                  win_rate_pct: 55,
+                  trade_count: 9
+                },
+                decisions: [],
+                executionMode: "paper_only",
+                dataSnapshot: {
+                  source: "tencent",
+                  isComplete: true,
+                  warnings: [],
+                  rows: 2,
+                  start: "2026-05-28T08:00:00Z",
+                  end: "2026-05-29T08:00:00Z",
+                  hash: "snapshot-hydrated",
+                  bars: [
+                    {
+                      timestamp: "2026-05-28T08:00:00Z",
+                      timestampMs: 1779955200000,
+                      open: 10,
+                      high: 10.2,
+                      low: 9.9,
+                      close: 10,
+                      volume: 1000
+                    },
+                    {
+                      timestamp: "2026-05-29T08:00:00Z",
+                      timestampMs: 1780041600000,
+                      open: 10.2,
+                      high: 10.6,
+                      low: 10.1,
+                      close: 10.5,
+                      volume: 1200
+                    }
+                  ]
+                }
+              }
+            })
+          };
+        }
+        return {
+          ok: true,
+          json: async () => remoteWorkspace
+        };
+      }
+    );
+
+    const runUrl = new URL(calls[0]);
+    expect(runUrl.pathname).toBe("/api/research/run");
+    expect(runUrl.searchParams.get("symbol")).toBe("600000");
+    expect(calls[1]).toBe("http://127.0.0.1:8765/api/research/runs/run-needs-detail");
+    expect(result.source).toBe("core");
+    expect(result.workspace.researchRun?.dataSnapshot?.hash).toBe("snapshot-hydrated");
+    expect(result.workspace.researchRun?.dataSnapshot?.bars).toHaveLength(2);
+  });
+
   test("keeps the current workspace when research run fails", async () => {
     const currentWorkspace = buildTerminalWorkspace();
     const result = await runTerminalResearch(

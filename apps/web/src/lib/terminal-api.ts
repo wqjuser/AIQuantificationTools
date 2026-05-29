@@ -1,6 +1,7 @@
 import {
   buildTerminalWorkspace,
   resolveBacktestAssumptions,
+  workspaceFromResearchRunAudit,
   workspaceWithPrimaryWorkflows,
   Market,
   PromotionReadiness,
@@ -991,8 +992,13 @@ export async function runTerminalResearch(
     if (!isTerminalWorkspace(payload)) {
       throw new Error("Invalid terminal research contract");
     }
+    const workspace = await hydrateResearchRunSnapshotIfNeeded(
+      baseUrl,
+      workspaceWithPrimaryWorkflows(payload),
+      fetcher
+    );
     return {
-      workspace: workspaceWithPrimaryWorkflows(payload),
+      workspace,
       source: "core",
       statusLabel: "Research run complete"
     };
@@ -1003,6 +1009,32 @@ export async function runTerminalResearch(
       statusLabel: "Research run failed",
       error: error instanceof Error ? error.message : "Unknown research run error"
     };
+  }
+}
+
+async function hydrateResearchRunSnapshotIfNeeded(
+  baseUrl: string,
+  workspace: TerminalWorkspace,
+  fetcher: WorkspaceFetcher
+): Promise<TerminalWorkspace> {
+  const runId = workspace.researchRun?.runId;
+  const snapshot = workspace.researchRun?.dataSnapshot;
+  if (!runId || (snapshot && snapshot.bars.length > 0)) {
+    return workspace;
+  }
+
+  try {
+    const response = await fetcher(buildResearchRunDetailUrl(baseUrl, runId));
+    if (!response.ok) {
+      return workspace;
+    }
+    const payload = await response.json();
+    if (!isResearchRunDetailPayload(payload) || !payload.run.dataSnapshot?.bars.length) {
+      return workspace;
+    }
+    return workspaceWithPrimaryWorkflows(workspaceFromResearchRunAudit(workspace, payload.run));
+  } catch {
+    return workspace;
   }
 }
 
