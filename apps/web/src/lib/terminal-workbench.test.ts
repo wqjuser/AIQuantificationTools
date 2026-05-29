@@ -8,6 +8,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
+  buildBacktestReport,
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
@@ -1296,6 +1297,83 @@ describe("terminal workbench model", () => {
         tone: "positive"
       }
     ]);
+  });
+
+  test("builds an auditable backtest report for AI review and execution handoff", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-report",
+      createdAt: "2026-05-29T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-report",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+      backtestTrades: [
+        {
+          id: "trade-1",
+          timestamp: "2026-05-29T08:00:00+00:00",
+          symbol: "600000",
+          side: "BUY",
+          status: "filled",
+          price: "9.20",
+          quantity: "2100",
+          exposure: "20%",
+          pnl: "+8.20%",
+          reason: "Close > SMA20",
+          tone: "positive"
+        }
+      ],
+      backtestEquityCurve: [
+        { timestamp: "2026-05-28T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-29T08:00:00+00:00", equity: 108200 }
+      ],
+      backtestDiagnostics: [
+        {
+          id: "coverage",
+          label: "Data coverage",
+          value: "240 bars",
+          detail: "Data snapshot is complete.",
+          tone: "positive"
+        }
+      ]
+    });
+
+    expect(buildBacktestReport(workspace)).toMatchObject({
+      status: "ready",
+      headline: "Backtest report bound to run-report",
+      summary: "240 1d bars · 9 trades · AI review ready",
+      runId: "run-report",
+      aiReviewReady: true,
+      executionReady: true,
+      assumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+      tradeCount: 1,
+      equityPointCount: 2,
+      diagnosticCount: 1
+    });
+  });
+
+  test("blocks the backtest report until a reproducible run exists", () => {
+    const report = buildBacktestReport(buildTerminalWorkspace());
+
+    expect(report).toMatchObject({
+      status: "blocked",
+      headline: "Backtest report needs an audited run",
+      summary: "Run Pipeline to create a reproducible backtest before AI review or execution.",
+      runId: null,
+      aiReviewReady: false,
+      executionReady: false
+    });
+    expect(report.readinessGates.find((gate) => gate.id === "data")).toMatchObject({ status: "blocked" });
   });
 
   test("marks backtest readiness gates blocked until evidence is reproducible", () => {

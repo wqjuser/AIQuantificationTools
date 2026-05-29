@@ -205,6 +205,26 @@ export interface BacktestReadinessGate {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface BacktestReport {
+  status: "ready" | "blocked";
+  headline: string;
+  summary: string;
+  runId: string | null;
+  aiReviewReady: boolean;
+  executionReady: boolean;
+  assumptions: BacktestAssumptions;
+  assumptionRows: BacktestAssumptionRow[];
+  evidenceCards: BacktestEvidenceCard[];
+  readinessGates: BacktestReadinessGate[];
+  metrics: BacktestMetric[];
+  trades: BacktestTradeRow[];
+  diagnostics: BacktestDiagnostic[];
+  equityCurve: BacktestEquityPoint[];
+  tradeCount: number;
+  equityPointCount: number;
+  diagnosticCount: number;
+}
+
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -2001,6 +2021,65 @@ export function buildBacktestReadinessGates(workspace: TerminalWorkspace): Backt
           tone: "risk"
         }
   ];
+}
+
+export function buildBacktestReport(workspace: TerminalWorkspace): BacktestReport {
+  const assumptions = resolveBacktestAssumptions(workspace);
+  const assumptionRows = buildBacktestAssumptionRows(workspace);
+  const evidenceCards = buildBacktestEvidenceCards(workspace);
+  const readinessGates = buildBacktestReadinessGates(workspace);
+  const trades = buildBacktestTradeRows(workspace);
+  const diagnostics = workspace.backtestDiagnostics ?? [];
+  const equityCurve = workspace.backtestEquityCurve ?? [];
+  const run = workspace.researchRun;
+  const blockedGates = readinessGates.filter((gate) => gate.status === "blocked");
+  const aiReviewReady = Boolean(run) && !blockedGates.some((gate) => gate.id === "data" || gate.id === "strategy");
+  const executionReady = Boolean(run) && !blockedGates.length;
+  const metricTradeCount = metricValue(workspace, "Trades", "0");
+
+  if (!run) {
+    return {
+      status: "blocked",
+      headline: "Backtest report needs an audited run",
+      summary: "Run Pipeline to create a reproducible backtest before AI review or execution.",
+      runId: null,
+      aiReviewReady: false,
+      executionReady: false,
+      assumptions,
+      assumptionRows,
+      evidenceCards,
+      readinessGates,
+      metrics: workspace.metrics,
+      trades,
+      diagnostics,
+      equityCurve,
+      tradeCount: trades.length,
+      equityPointCount: equityCurve.length,
+      diagnosticCount: diagnostics.length
+    };
+  }
+
+  return {
+    status: aiReviewReady ? "ready" : "blocked",
+    headline: `Backtest report bound to ${run.runId}`,
+    summary: `${run.dataRows} ${run.timeframe} bars · ${metricTradeCount} trades · ${
+      aiReviewReady ? "AI review ready" : "AI review blocked"
+    }`,
+    runId: run.runId,
+    aiReviewReady,
+    executionReady,
+    assumptions,
+    assumptionRows,
+    evidenceCards,
+    readinessGates,
+    metrics: workspace.metrics,
+    trades,
+    diagnostics,
+    equityCurve,
+    tradeCount: trades.length,
+    equityPointCount: equityCurve.length,
+    diagnosticCount: diagnostics.length
+  };
 }
 
 export function buildModuleNewsEvents(workspace: TerminalWorkspace): ModuleNewsEvent[] {

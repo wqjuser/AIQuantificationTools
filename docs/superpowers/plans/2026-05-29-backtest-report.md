@@ -1,0 +1,35 @@
+# Backtest Report Implementation Plan
+
+Goal: promote the Backtest Lab from a replay table into an auditable report that can be handed to AI review and paper execution without losing evidence boundaries.
+
+P0 mapping:
+- Product work area: Backtest Lab.
+- Golden path step: strategy + data snapshot -> reproducible backtest -> AI review -> paper execution.
+- User task: inspect whether a run has enough audited evidence before asking AI to explain it or staging simulated execution.
+
+Scope:
+- Add a `BacktestReport` frontend model that joins run id, assumptions, metrics, trades, equity curve, diagnostics, evidence cards, and readiness gates.
+- Block the report when no reproducible run exists.
+- Mark AI review readiness separately from execution handoff readiness.
+- Replace the Backtest Lab replay-only panel with a report surface while keeping editable assumptions and trade replay.
+- Keep the report tied to existing audited run and fallback workspace contracts; no new backend endpoint in this slice.
+
+Out of scope:
+- Multi-symbol portfolio backtesting.
+- Parameter scans and optimizer output.
+- Benchmark comparison charts.
+- PDF/HTML report export.
+- Backend persistence changes.
+
+Progress:
+- [x] Contract tests for ready and blocked `BacktestReport` states.
+- [x] Layout contract for the Backtest Lab report structure.
+- [x] `buildBacktestReport` model in the terminal workbench library.
+- [x] Backtest Lab panel now renders an auditable report, evidence package, readiness gates, equity/diagnostic summary, assumptions, and trade replay.
+- [x] Product plan and architecture documentation updated.
+
+Verification:
+- Targeted frontend tests for `terminal-workbench` and layout contracts.
+- Full Python + frontend test suite.
+- Production build.
+- Browser smoke check on the Backtest workspace.

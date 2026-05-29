@@ -59,6 +59,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
+  buildBacktestReport,
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
@@ -86,6 +87,7 @@ import {
   BacktestAssumptionField,
   BacktestAssumptionRow,
   BacktestEvidenceCard,
+  BacktestReport,
   BacktestReadinessGate,
   BacktestTradeRow,
   BrokerAdapterRow,
@@ -323,6 +325,7 @@ export function App() {
   );
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
+  const backtestReport = buildBacktestReport(workspace);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
@@ -1129,12 +1132,13 @@ export function App() {
     if (activeWorkAreaId === "backtest") {
       return (
         <>
-          <BacktestReplayPanel
+          <BacktestReportPanel
             assumptionRows={backtestAssumptionRows}
             className="workflow-backtest-panel"
             evidenceCards={backtestEvidenceCards}
             i18n={i18n}
             onUpdateAssumption={updateBacktestAssumption}
+            report={backtestReport}
             readinessGates={backtestReadinessGates}
             rows={backtestTradeRows}
           />
@@ -1752,12 +1756,13 @@ function StrategyNumberField({
   );
 }
 
-function BacktestReplayPanel({
+function BacktestReportPanel({
   assumptionRows,
   className,
   evidenceCards,
   i18n,
   onUpdateAssumption,
+  report,
   readinessGates,
   rows
 }: {
@@ -1766,44 +1771,121 @@ function BacktestReplayPanel({
   evidenceCards: BacktestEvidenceCard[];
   i18n: AppI18n;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
+  report: BacktestReport;
   readinessGates: BacktestReadinessGate[];
   rows: BacktestTradeRow[];
 }) {
   const diagnosticCard = evidenceCards.find((card) => card.id === "diagnostics");
   const reportCards = evidenceCards.filter((card) => card.id !== "diagnostics");
+  const diagnostics = report.diagnostics.length ? report.diagnostics : [];
+  const equityStart = report.equityCurve[0]?.equity ?? null;
+  const equityEnd = report.equityCurve.at(-1)?.equity ?? null;
 
   return (
     <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")} className={className}>
-      <div className="backtest-replay">
-        <div className="backtest-evidence-grid">
-          {reportCards.map((card) => (
-            <article className={card.tone} key={card.id}>
-              <span>{backtestEvidenceLabel(i18n, card)}</span>
-              <strong>{backtestEvidenceValue(i18n, card)}</strong>
-              <p>{backtestEvidenceDetail(i18n, card)}</p>
-            </article>
-          ))}
-        </div>
-        <div className="backtest-readiness-list">
-          {readinessGates.map((gate) => (
-            <article className={gate.tone} key={gate.id}>
-              <span>{backtestGateLabel(i18n, gate)}</span>
-              <strong>{backtestGateStatusLabel(i18n, gate.status)}</strong>
-              <p>{backtestGateDetail(i18n, gate.detail)}</p>
-            </article>
-          ))}
-        </div>
-        {diagnosticCard ? (
-          <div className="backtest-diagnostic-strip" data-tone={diagnosticCard.tone}>
-            <span>{backtestEvidenceLabel(i18n, diagnosticCard)}</span>
-            <strong>{backtestEvidenceValue(i18n, diagnosticCard)}</strong>
-            <p>{backtestEvidenceDetail(i18n, diagnosticCard)}</p>
+      <div className="backtest-report">
+        <div className="backtest-report-hero" data-status={report.status}>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "审计回测报告" : "Audited Backtest Report"}</span>
+            <strong>{backtestReportHeadline(i18n, report)}</strong>
+            <p>{backtestReportSummary(i18n, report)}</p>
           </div>
-        ) : null}
+          <em>{report.runId ?? (i18n.locale === "zh-CN" ? "等待运行编号" : "No run id")}</em>
+        </div>
+
+        <div className="backtest-report-grid">
+          {report.metrics.map((metric) => (
+            <article className={metric.tone} key={metric.label}>
+              <span>{i18n.metricLabel(metric.label)}</span>
+              <strong>{metric.value}</strong>
+              <p>{i18n.locale === "zh-CN" ? "来自当前审计回测。" : "From the current audited backtest."}</p>
+            </article>
+          ))}
+          <article className={report.aiReviewReady ? "positive" : "risk"}>
+            <span>{i18n.locale === "zh-CN" ? "AI 评审准备" : "AI review readiness"}</span>
+            <strong>{report.aiReviewReady ? (i18n.locale === "zh-CN" ? "已就绪" : "Ready") : i18n.locale === "zh-CN" ? "阻断" : "Blocked"}</strong>
+            <p>{i18n.locale === "zh-CN" ? "AI 只能引用这份已审计报告。" : "AI may cite only this audited report."}</p>
+          </article>
+          <article className={report.executionReady ? "positive" : "warning"}>
+            <span>{i18n.locale === "zh-CN" ? "执行交接" : "Execution handoff"}</span>
+            <strong>{report.executionReady ? (i18n.locale === "zh-CN" ? "可交接" : "Ready") : i18n.locale === "zh-CN" ? "需复核" : "Review"}</strong>
+            <p>{i18n.locale === "zh-CN" ? "实盘仍必须通过后续闸门。" : "Live trading still requires downstream gates."}</p>
+          </article>
+        </div>
+
+        <section className="backtest-report-section">
+          <div className="backtest-replay-title">
+            <span>{i18n.locale === "zh-CN" ? "证据包" : "Evidence package"}</span>
+            <strong>{reportCards.length}</strong>
+          </div>
+          <div className="backtest-evidence-grid">
+            {reportCards.map((card) => (
+              <article className={card.tone} key={card.id}>
+                <span>{backtestEvidenceLabel(i18n, card)}</span>
+                <strong>{backtestEvidenceValue(i18n, card)}</strong>
+                <p>{backtestEvidenceDetail(i18n, card)}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="backtest-report-section">
+          <div className="backtest-replay-title">
+            <span>{i18n.locale === "zh-CN" ? "准备闸门" : "Readiness gates"}</span>
+            <strong>{readinessGates.length}</strong>
+          </div>
+          <div className="backtest-readiness-list">
+            {readinessGates.map((gate) => (
+              <article className={gate.tone} key={gate.id}>
+                <span>{backtestGateLabel(i18n, gate)}</span>
+                <strong>{backtestGateStatusLabel(i18n, gate.status)}</strong>
+                <p>{backtestGateDetail(i18n, gate.detail)}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="backtest-report-section">
+          <div className="backtest-replay-title">
+            <span>{i18n.locale === "zh-CN" ? "权益与诊断" : "Equity and diagnostics"}</span>
+            <strong>{report.equityPointCount} / {report.diagnosticCount}</strong>
+          </div>
+          <div className="backtest-report-grid compact">
+            <article className="neutral">
+              <span>{i18n.locale === "zh-CN" ? "权益起点" : "Equity start"}</span>
+              <strong>{equityStart === null ? "N/A" : equityStart.toLocaleString("en-US")}</strong>
+              <p>{report.equityCurve[0]?.timestamp ?? (i18n.locale === "zh-CN" ? "等待权益曲线" : "Pending equity curve")}</p>
+            </article>
+            <article className={equityEnd !== null && equityStart !== null && equityEnd >= equityStart ? "positive" : "warning"}>
+              <span>{i18n.locale === "zh-CN" ? "权益终点" : "Equity end"}</span>
+              <strong>{equityEnd === null ? "N/A" : equityEnd.toLocaleString("en-US")}</strong>
+              <p>{report.equityCurve.at(-1)?.timestamp ?? (i18n.locale === "zh-CN" ? "等待权益曲线" : "Pending equity curve")}</p>
+            </article>
+          </div>
+          {diagnosticCard ? (
+            <div className="backtest-diagnostic-strip" data-tone={diagnosticCard.tone}>
+              <span>{backtestEvidenceLabel(i18n, diagnosticCard)}</span>
+              <strong>{backtestEvidenceValue(i18n, diagnosticCard)}</strong>
+              <p>{backtestEvidenceDetail(i18n, diagnosticCard)}</p>
+            </div>
+          ) : null}
+          {diagnostics.length ? (
+            <div className="backtest-diagnostic-list">
+              {diagnostics.map((diagnostic) => (
+                <article className={diagnostic.tone} key={diagnostic.id}>
+                  <span>{diagnostic.label}</span>
+                  <strong>{diagnostic.value}</strong>
+                  <p>{diagnostic.detail}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
         <div className="backtest-assumptions">
           <div className="backtest-replay-title">
             <span>{i18n.t("backtest.assumptions")}</span>
-            <strong>{assumptionRows.length}</strong>
+            <strong>{report.assumptionRows.length}</strong>
           </div>
           <div className="backtest-assumption-grid">
             {assumptionRows.map((row) => (
@@ -1823,6 +1905,7 @@ function BacktestReplayPanel({
             ))}
           </div>
         </div>
+
         <div className="backtest-replay-title">
           <span>{i18n.t("backtest.replay")}</span>
           <strong>{rows.length}</strong>
@@ -2826,6 +2909,31 @@ function backtestAssumptionSuffixLabel(i18n: AppI18n, suffix: string): string {
     return suffix === "CNY" ? "资金" : "基点";
   }
   return suffix;
+}
+
+function backtestReportHeadline(i18n: AppI18n, report: BacktestReport): string {
+  if (i18n.locale === "en-US") {
+    return report.headline;
+  }
+  if (report.headline === "Backtest report needs an audited run") {
+    return "回测报告需要审计运行";
+  }
+  const bound = report.headline.match(/^Backtest report bound to (.+)$/);
+  return bound ? `回测报告已绑定 ${bound[1]}` : report.headline;
+}
+
+function backtestReportSummary(i18n: AppI18n, report: BacktestReport): string {
+  if (i18n.locale === "en-US") {
+    return report.summary;
+  }
+  if (report.summary === "Run Pipeline to create a reproducible backtest before AI review or execution.") {
+    return "先运行流水线生成可复现回测，再进入 AI 评审或执行。";
+  }
+  return report.summary
+    .replace("bars", "根K线")
+    .replace("trades", "笔交易")
+    .replace("AI review ready", "AI 评审已就绪")
+    .replace("AI review blocked", "AI 评审已阻断");
 }
 
 function backtestEvidenceLabel(i18n: AppI18n, card: BacktestEvidenceCard): string {

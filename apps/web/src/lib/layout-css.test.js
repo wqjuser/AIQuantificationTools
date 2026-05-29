@@ -249,6 +249,12 @@ describe("terminal layout css", () => {
   });
 
   test("renders the backtest lab as an auditable evidence report", () => {
+    expect(appSource).toContain("buildBacktestReport(workspace)");
+    expect(appSource).toContain("<BacktestReportPanel");
+    expect(appSource).toContain('className="backtest-report"');
+    expect(appSource).toContain('className="backtest-report-hero"');
+    expect(appSource).toContain('className="backtest-report-grid"');
+    expect(appSource).toContain('className="backtest-report-section"');
     expect(appSource).toContain("buildBacktestEvidenceCards(workspace)");
     expect(appSource).toContain("buildBacktestReadinessGates(workspace)");
     expect(appSource).toContain("evidenceCards={backtestEvidenceCards}");
@@ -259,6 +265,9 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".backtest-evidence-grid");
     expect(styles).toContain(".backtest-readiness-list");
     expect(styles).toContain(".backtest-diagnostic-strip");
+    expect(styles).toContain(".backtest-report");
+    expect(styles).toContain(".backtest-report-hero");
+    expect(styles).toContain(".backtest-report-grid");
   });
 
   test("collapses the terminal and workflow grid before cards become squeezed", () => {
