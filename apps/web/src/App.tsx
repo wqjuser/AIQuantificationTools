@@ -1793,6 +1793,28 @@ function BacktestReportPanel({
           <em>{report.runId ?? (i18n.locale === "zh-CN" ? "等待运行编号" : "No run id")}</em>
         </div>
 
+        <div className="backtest-benchmark-strip" data-tone={report.benchmark.tone}>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "基准对比" : "Benchmark comparison"}</span>
+            <strong>{backtestBenchmarkLabel(i18n, report.benchmark.label)}</strong>
+            <p>{backtestBenchmarkDetail(i18n, report.benchmark.detail)}</p>
+          </div>
+          <dl>
+            <div>
+              <dt>{i18n.locale === "zh-CN" ? "策略" : "Strategy"}</dt>
+              <dd>{report.benchmark.strategyReturn}</dd>
+            </div>
+            <div>
+              <dt>{i18n.locale === "zh-CN" ? "持有" : "Hold"}</dt>
+              <dd>{backtestBenchmarkValue(i18n, report.benchmark.benchmarkReturn)}</dd>
+            </div>
+            <div>
+              <dt>Alpha</dt>
+              <dd>{report.benchmark.alpha}</dd>
+            </div>
+          </dl>
+        </div>
+
         <div className="backtest-report-grid">
           {report.metrics.map((metric) => (
             <article className={metric.tone} key={metric.label}>
@@ -2909,6 +2931,34 @@ function backtestAssumptionSuffixLabel(i18n: AppI18n, suffix: string): string {
     return suffix === "CNY" ? "资金" : "基点";
   }
   return suffix;
+}
+
+function backtestBenchmarkLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return label === "Buy and hold" ? "同标的买入持有" : label;
+}
+
+function backtestBenchmarkValue(i18n: AppI18n, value: string): string {
+  if (i18n.locale === "en-US" || value !== "Pending snapshot") {
+    return value;
+  }
+  return "等待快照";
+}
+
+function backtestBenchmarkDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  const auditedBars = detail.match(/^(\d+) audited bars from (.+) · (.+) to (.+)\.$/);
+  if (auditedBars) {
+    return `${auditedBars[1]} 根审计K线 · 来源 ${auditedBars[2]} · ${auditedBars[3]} 至 ${auditedBars[4]}`;
+  }
+  if (detail === "Run Pipeline must include a data snapshot before benchmark comparison.") {
+    return "先运行流水线并锁定数据快照，再计算基准对比。";
+  }
+  return detail;
 }
 
 function backtestReportHeadline(i18n: AppI18n, report: BacktestReport): string {

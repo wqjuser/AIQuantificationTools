@@ -1255,6 +1255,35 @@ describe("terminal workbench model", () => {
       },
       decisions: [],
       executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-28T08:00:00+00:00",
+        end: "2026-05-29T08:00:00+00:00",
+        hash: "snapshot-report",
+        bars: [
+          {
+            timestamp: "2026-05-28T08:00:00+00:00",
+            timestampMs: 1779955200000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-29T08:00:00+00:00",
+            timestampMs: 1780041600000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      },
       backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
       backtestDiagnostics: [
         {
@@ -1317,6 +1346,35 @@ describe("terminal workbench model", () => {
       },
       decisions: [],
       executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-28T08:00:00+00:00",
+        end: "2026-05-29T08:00:00+00:00",
+        hash: "snapshot-report",
+        bars: [
+          {
+            timestamp: "2026-05-28T08:00:00+00:00",
+            timestampMs: 1779955200000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-29T08:00:00+00:00",
+            timestampMs: 1780041600000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      },
       backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
       backtestTrades: [
         {
@@ -1356,6 +1414,16 @@ describe("terminal workbench model", () => {
       aiReviewReady: true,
       executionReady: true,
       assumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+      benchmark: {
+        label: "Buy and hold",
+        symbol: "600000",
+        strategyReturn: "+8.20%",
+        benchmarkReturn: "+5.00%",
+        alpha: "+3.20pp",
+        sampleBars: 2,
+        source: "tencent",
+        tone: "positive"
+      },
       tradeCount: 1,
       equityPointCount: 2,
       diagnosticCount: 1
@@ -1371,7 +1439,13 @@ describe("terminal workbench model", () => {
       summary: "Run Pipeline to create a reproducible backtest before AI review or execution.",
       runId: null,
       aiReviewReady: false,
-      executionReady: false
+      executionReady: false,
+      benchmark: {
+        benchmarkReturn: "Pending snapshot",
+        alpha: "N/A",
+        sampleBars: 0,
+        tone: "warning"
+      }
     });
     expect(report.readinessGates.find((gate) => gate.id === "data")).toMatchObject({ status: "blocked" });
   });

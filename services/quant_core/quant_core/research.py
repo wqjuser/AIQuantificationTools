@@ -156,6 +156,7 @@ def run_terminal_research(
             strategy_revision=strategy.revision,
             data_rows=quality.rows,
             execution_mode="paper_only",
+            data_snapshot=_data_snapshot_payload(bars, quality),
             research_note=research_note or None,
         ),
     )

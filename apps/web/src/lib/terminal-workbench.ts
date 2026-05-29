@@ -205,6 +205,18 @@ export interface BacktestReadinessGate {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface BacktestBenchmark {
+  label: string;
+  symbol: string;
+  strategyReturn: string;
+  benchmarkReturn: string;
+  alpha: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral";
+  sampleBars: number;
+  source: string;
+}
+
 export interface BacktestReport {
   status: "ready" | "blocked";
   headline: string;
@@ -216,6 +228,7 @@ export interface BacktestReport {
   assumptionRows: BacktestAssumptionRow[];
   evidenceCards: BacktestEvidenceCard[];
   readinessGates: BacktestReadinessGate[];
+  benchmark: BacktestBenchmark;
   metrics: BacktestMetric[];
   trades: BacktestTradeRow[];
   diagnostics: BacktestDiagnostic[];
@@ -450,6 +463,7 @@ export interface ResearchRunSummary {
   dataRows: number;
   executionMode: string;
   dataQuality?: ResearchRunDataQuality;
+  dataSnapshot?: ResearchRunDataSnapshot;
   researchNote?: ResearchRunNote;
 }
 
@@ -2032,6 +2046,7 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
   const diagnostics = workspace.backtestDiagnostics ?? [];
   const equityCurve = workspace.backtestEquityCurve ?? [];
   const run = workspace.researchRun;
+  const benchmark = buildBacktestBenchmark(workspace);
   const blockedGates = readinessGates.filter((gate) => gate.status === "blocked");
   const aiReviewReady = Boolean(run) && !blockedGates.some((gate) => gate.id === "data" || gate.id === "strategy");
   const executionReady = Boolean(run) && !blockedGates.length;
@@ -2049,6 +2064,7 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
       assumptionRows,
       evidenceCards,
       readinessGates,
+      benchmark,
       metrics: workspace.metrics,
       trades,
       diagnostics,
@@ -2072,6 +2088,7 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
     assumptionRows,
     evidenceCards,
     readinessGates,
+    benchmark,
     metrics: workspace.metrics,
     trades,
     diagnostics,
@@ -2079,6 +2096,48 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
     tradeCount: trades.length,
     equityPointCount: equityCurve.length,
     diagnosticCount: diagnostics.length
+  };
+}
+
+export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBenchmark {
+  const run = workspace.researchRun;
+  const snapshot = run?.dataSnapshot;
+  const bars = snapshot?.bars.filter((bar) => Number.isFinite(bar.close) && bar.close > 0) ?? [];
+  const strategyReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
+  const formattedStrategyReturn = strategyReturn === null ? "N/A" : formatSignedPct(strategyReturn);
+
+  if (!run || bars.length < 2) {
+    return {
+      label: "Buy and hold",
+      symbol: workspace.selectedInstrument.symbol,
+      strategyReturn: formattedStrategyReturn,
+      benchmarkReturn: "Pending snapshot",
+      alpha: "N/A",
+      detail: "Run Pipeline must include a data snapshot before benchmark comparison.",
+      tone: "warning",
+      sampleBars: 0,
+      source: snapshot?.source ?? "missing snapshot"
+    };
+  }
+
+  const firstClose = bars[0].close;
+  const lastClose = bars[bars.length - 1].close;
+  const benchmarkReturn = ((lastClose - firstClose) / firstClose) * 100;
+  const alpha = strategyReturn === null ? null : strategyReturn - benchmarkReturn;
+  const tone = alpha === null ? "neutral" : alpha >= 0 ? "positive" : "warning";
+
+  return {
+    label: "Buy and hold",
+    symbol: workspace.selectedInstrument.symbol,
+    strategyReturn: formattedStrategyReturn,
+    benchmarkReturn: formatSignedPct(benchmarkReturn),
+    alpha: alpha === null ? "N/A" : formatSignedPointDelta(alpha),
+    detail: `${bars.length} audited bars from ${snapshot?.source ?? "unknown"} · ${bars[0].timestamp} to ${
+      bars[bars.length - 1].timestamp
+    }.`,
+    tone,
+    sampleBars: bars.length,
+    source: snapshot?.source ?? "unknown"
   };
 }
 
@@ -2779,6 +2838,7 @@ export function workspaceFromResearchRunAudit(
     dataRows: run.dataRows,
     executionMode: run.executionMode,
     dataQuality: run.dataQuality,
+    dataSnapshot: run.dataSnapshot,
     researchNote: run.researchNote
   };
   return {

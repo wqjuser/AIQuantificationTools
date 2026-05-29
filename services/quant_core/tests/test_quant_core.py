@@ -929,6 +929,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["decisionLog"][0]["agent"], "AI Summary")
         self.assertEqual(payload["execution"]["mode"], "paper_only")
         self.assertFalse(payload["execution"]["liveEnabled"])
+        self.assertEqual(payload["researchRun"]["dataSnapshot"]["source"], "demo")
+        self.assertGreater(len(payload["researchRun"]["dataSnapshot"]["bars"]), 0)
+        self.assertEqual(
+            payload["researchRun"]["dataSnapshot"]["bars"][-1]["timestamp"],
+            payload["backtestEquityCurve"][-1]["timestamp"],
+        )
 
     def test_terminal_research_run_builds_strategy_from_submitted_snapshot(self):
         from quant_core.backtest import BacktestEngine

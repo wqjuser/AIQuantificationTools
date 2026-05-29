@@ -146,6 +146,7 @@ class ResearchRunSummary:
     strategy_revision: str
     data_rows: int
     execution_mode: str
+    data_snapshot: dict[str, Any] | None = None
     research_note: dict[str, Any] | None = None
 
 

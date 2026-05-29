@@ -253,6 +253,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("<BacktestReportPanel");
     expect(appSource).toContain('className="backtest-report"');
     expect(appSource).toContain('className="backtest-report-hero"');
+    expect(appSource).toContain('className="backtest-benchmark-strip"');
     expect(appSource).toContain('className="backtest-report-grid"');
     expect(appSource).toContain('className="backtest-report-section"');
     expect(appSource).toContain("buildBacktestEvidenceCards(workspace)");
@@ -267,6 +268,7 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".backtest-diagnostic-strip");
     expect(styles).toContain(".backtest-report");
     expect(styles).toContain(".backtest-report-hero");
+    expect(styles).toContain(".backtest-benchmark-strip");
     expect(styles).toContain(".backtest-report-grid");
   });
 
