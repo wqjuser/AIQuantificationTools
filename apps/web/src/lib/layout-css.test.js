@@ -157,7 +157,7 @@ describe("terminal layout css", () => {
         '"decision strategy"'
       ])
     ).toBe(true);
-    expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"decision workflow"'])).toBe(true);
+    expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"chart note"', '"decision workflow"'])).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith(".agent-review-layout", ['"ai workflow"', '"decision history"'])).toBe(true);
     expect(cssBlock(".paper-layout")).toContain(
@@ -235,6 +235,17 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="strategy-library-actions"');
     expect(styles).toContain(".strategy-library-list");
     expect(styles).toContain(".strategy-library-card");
+  });
+
+  test("renders a persistent research note panel for the selected context", () => {
+    expect(appSource).toContain("loadResearchNote");
+    expect(appSource).toContain("saveResearchNote");
+    expect(appSource).toContain("ResearchNotesPanel");
+    expect(appSource).toContain('className="workflow-note-panel"');
+    expect(appSource).toContain('className="research-note-editor"');
+    expect(styles).toContain(".workflow-note-panel");
+    expect(styles).toContain(".research-note-editor");
+    expect(styles).toContain(".research-note-meta");
   });
 
   test("renders the backtest lab as an auditable evidence report", () => {

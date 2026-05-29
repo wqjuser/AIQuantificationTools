@@ -23,6 +23,7 @@ from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
+from quant_core.research_notes import ResearchNoteStore, research_note_to_payload
 from quant_core.runs import (
     ResearchRunStore,
     research_run_audit_to_payload,
@@ -59,6 +60,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
+    note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -82,6 +84,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_strategy", "detail": str(error)}, status=400)
                 return
             self._send_json({"strategy": strategy_library_record_to_payload(record)}, status=201)
+            return
+        if parsed.path == "/api/research/notes":
+            try:
+                payload = self._read_json_body()
+                note = self.note_store.save(
+                    market=str(payload.get("market") or ""),
+                    symbol=str(payload.get("symbol") or ""),
+                    timeframe=str(payload.get("timeframe") or ""),
+                    body=str(payload.get("body") or ""),
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_research_note", "detail": str(error)}, status=400)
+                return
+            self._send_json({"note": research_note_to_payload(note)}, status=201)
             return
         if parsed.path == "/api/research/runs/import":
             try:
@@ -194,6 +210,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "strategy_not_found", "revision": revision}, status=404)
                 return
             self._send_json({"strategy": strategy_library_record_to_payload(record)})
+            return
+        if parsed.path == "/api/research/notes":
+            query = parse_qs(parsed.query)
+            try:
+                note = self.note_store.get(
+                    market=query.get("market", ["ashare"])[0],
+                    symbol=query.get("symbol", ["600000"])[0],
+                    timeframe=query.get("timeframe", ["1d"])[0],
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_research_note", "detail": str(error)}, status=400)
+                return
+            self._send_json({"note": research_note_to_payload(note)})
             return
         if parsed.path == "/api/research/run":
             query = parse_qs(parsed.query)

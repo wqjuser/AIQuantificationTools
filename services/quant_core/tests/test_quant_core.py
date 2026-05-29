@@ -771,6 +771,61 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(saved_strategy["auditRunId"], run_payload["researchRun"]["runId"])
         self.assertEqual(saved_strategy["strategySnapshot"]["entry"], "Close > SMA6")
 
+    def test_research_notes_api_persists_symbol_timeframe_notes(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.research_notes import ResearchNoteStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                note_store = ResearchNoteStore(f"{tmp}/notes.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/notes?market=ashare&symbol=600000&timeframe=1d")
+                empty_response = connection.getresponse()
+                empty_payload = json.loads(empty_response.read().decode("utf-8"))
+                connection.request(
+                    "POST",
+                    "/api/research/notes",
+                    body=json.dumps(
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "body": "关注银行板块相对强度，等待放量确认。",
+                        },
+                        ensure_ascii=False,
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                save_response = connection.getresponse()
+                save_payload = json.loads(save_response.read().decode("utf-8"))
+                connection.request("GET", "/api/research/notes?market=ashare&symbol=600000&timeframe=1d")
+                read_response = connection.getresponse()
+                read_payload = json.loads(read_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(empty_response.status, 200)
+        self.assertEqual(empty_payload["note"]["body"], "")
+        self.assertIsNone(empty_payload["note"]["updatedAt"])
+        self.assertEqual(save_response.status, 201)
+        self.assertEqual(save_payload["note"]["body"], "关注银行板块相对强度，等待放量确认。")
+        self.assertIsNotNone(save_payload["note"]["updatedAt"])
+        self.assertEqual(read_response.status, 200)
+        self.assertEqual(read_payload["note"], save_payload["note"])
+
     def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
         from quant_core.research import run_terminal_research
         from quant_core.terminal import terminal_workspace_to_payload

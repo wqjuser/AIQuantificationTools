@@ -28,6 +28,7 @@ import {
   loadResearchRunExport,
   loadResearchRunHistory,
   loadResearchRunPromotion,
+  loadResearchNote,
   loadStrategyLibrary,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
@@ -40,6 +41,8 @@ import {
   runTerminalResearch,
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
+  ResearchNoteResult,
+  saveResearchNote,
   saveStrategySnapshot,
   StrategyLibraryItem,
   StrategyLibraryResult,
@@ -147,6 +150,9 @@ const initialStrategyLibraryState: StrategyLibraryResult = {
   strategies: [],
   source: "fallback"
 };
+const initialResearchNoteState: ResearchNoteResult = {
+  source: "fallback"
+};
 
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
@@ -249,6 +255,8 @@ export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
   const [strategyLibraryState, setStrategyLibraryState] = useState<StrategyLibraryResult>(initialStrategyLibraryState);
+  const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
+  const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
@@ -270,6 +278,7 @@ export function App() {
   const [isChartLoading, setIsChartLoading] = useState(false);
   const [isSymbolSearching, setIsSymbolSearching] = useState(false);
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
+  const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
@@ -338,6 +347,16 @@ export function App() {
       })
     );
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol]);
+
+  const refreshResearchNote = useCallback(async () => {
+    const result = await loadResearchNote(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe
+    });
+    setResearchNoteState(result);
+    setResearchNoteDraft(result.note?.body ?? "");
+  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const refreshWorkspace = useCallback(async () => {
     const startedSelectionVersion = manualSelectionVersionRef.current;
@@ -751,6 +770,32 @@ export function App() {
     setIsSavingStrategy(false);
   }, [workspace.researchRun?.runId, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe, workspace.strategy]);
 
+  const saveCurrentResearchNote = useCallback(async () => {
+    setIsSavingResearchNote(true);
+    const result = await saveResearchNote(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      body: researchNoteDraft
+    });
+    setResearchNoteState(result);
+    if (result.note) {
+      setResearchNoteDraft(result.note.body);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research note saved",
+        error: undefined
+      }));
+    } else {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research note save failed",
+        error: result.error ?? "Research note save failed"
+      }));
+    }
+    setIsSavingResearchNote(false);
+  }, [researchNoteDraft, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+
   const loadSavedStrategyVersion = useCallback((strategy: StrategyLibraryItem) => {
     manualSelectionVersionRef.current += 1;
     workflowRunIdRef.current += 1;
@@ -888,6 +933,10 @@ export function App() {
   useEffect(() => {
     void refreshStrategyLibrary();
   }, [refreshStrategyLibrary]);
+
+  useEffect(() => {
+    void refreshResearchNote();
+  }, [refreshResearchNote]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -1211,6 +1260,16 @@ export function App() {
           className="workflow-scanner-panel"
           i18n={i18n}
           onSelectInstrument={selectInstrument}
+        />
+        <ResearchNotesPanel
+          className="workflow-note-panel"
+          draft={researchNoteDraft}
+          i18n={i18n}
+          isSaving={isSavingResearchNote}
+          note={researchNoteState}
+          onChange={setResearchNoteDraft}
+          onSave={saveCurrentResearchNote}
+          workspace={workspace}
         />
         {renderWorkflowNodesPanel("workflow-nodes-panel")}
         <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
@@ -1833,6 +1892,61 @@ function MarketDataHealthPanel({
           <strong>{i18n.locale === "zh-CN" ? (state.quality.isComplete ? "完整" : "需复核") : freshness}</strong>
           <p>{warnings[0]}</p>
         </article>
+      </div>
+    </Panel>
+  );
+}
+
+function ResearchNotesPanel({
+  className,
+  draft,
+  i18n,
+  isSaving,
+  note,
+  onChange,
+  onSave,
+  workspace
+}: {
+  className?: string;
+  draft: string;
+  i18n: AppI18n;
+  isSaving: boolean;
+  note: ResearchNoteResult;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  workspace: TerminalWorkspace;
+}) {
+  const updatedAt = note.note?.updatedAt
+    ? new Date(note.note.updatedAt).toLocaleString(i18n.locale === "zh-CN" ? "zh-CN" : "en-US")
+    : null;
+  const statusText = note.source === "core"
+    ? updatedAt ?? (i18n.locale === "zh-CN" ? "尚未保存" : "Not saved yet")
+    : note.error ?? (i18n.locale === "zh-CN" ? "本地核心不可用" : "Core unavailable");
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "研究笔记" : "Research Notes"}
+      subtitle={`${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`}
+      className={className}
+    >
+      <div className="research-note-editor">
+        <textarea
+          aria-label={i18n.locale === "zh-CN" ? "研究笔记" : "Research note"}
+          maxLength={20000}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={
+            i18n.locale === "zh-CN"
+              ? "记录这个标的、周期、数据质量、观察假设或后续验证点。"
+              : "Capture thesis, data quality, observations, or follow-up checks for this context."
+          }
+          value={draft}
+        />
+        <div className="research-note-meta">
+          <span>{statusText}</span>
+          <button disabled={isSaving} onClick={onSave} type="button">
+            {isSaving ? (i18n.locale === "zh-CN" ? "保存中" : "Saving") : i18n.locale === "zh-CN" ? "保存笔记" : "Save note"}
+          </button>
+        </div>
       </div>
     </Panel>
   );

@@ -949,6 +949,7 @@ em {
 .research-layout {
   grid-template-areas:
     "chart scanner"
+    "chart note"
     "decision workflow";
 }
 
@@ -1032,6 +1033,11 @@ em {
   grid-area: scanner;
 }
 
+.workflow-note-panel {
+  align-self: start;
+  grid-area: note;
+}
+
 .workflow-data-panel {
   align-self: start;
   grid-area: data;
@@ -1057,6 +1063,56 @@ em {
 .workflow-scanner-panel .scanner-row > button {
   grid-column: 2;
   justify-self: end;
+}
+
+.research-note-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.research-note-editor textarea {
+  width: 100%;
+  min-height: 138px;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  color: #dce6ee;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 10px 11px;
+}
+
+.research-note-editor textarea:focus {
+  border-color: #2b6f62;
+  outline: none;
+}
+
+.research-note-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.research-note-meta button {
+  border: 1px solid #1d7d69;
+  border-radius: 6px;
+  background: #0d4b3f;
+  color: #9cf1df;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 7px 10px;
+}
+
+.research-note-meta button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .workflow-strategy-panel {
@@ -3553,6 +3609,7 @@ em {
     grid-template-areas:
       "chart"
       "scanner"
+      "note"
       "workflow"
       "decision";
   }
@@ -3727,6 +3784,7 @@ em {
     grid-template-areas:
       "chart"
       "scanner"
+      "note"
       "workflow"
       "decision";
   }

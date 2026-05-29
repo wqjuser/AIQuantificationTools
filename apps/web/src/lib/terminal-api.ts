@@ -29,6 +29,20 @@ export interface ResearchRunHistoryResult {
   error?: string;
 }
 
+export interface ResearchNote {
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  body: string;
+  updatedAt: string | null;
+}
+
+export interface ResearchNoteResult {
+  note?: ResearchNote;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface ResearchRunDetailResult {
   run?: ResearchRunAudit;
   source: WorkspaceSource;
@@ -287,6 +301,10 @@ export interface MarketKlinesParams extends TerminalResearchParams {
   end?: string;
 }
 
+export interface ResearchNoteSaveParams extends TerminalResearchParams {
+  body: string;
+}
+
 const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
 
 export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): string {
@@ -349,6 +367,20 @@ export function buildResearchRunExportUrl(baseUrl: string, runId: string): strin
 export function buildResearchRunImportUrl(baseUrl: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL("api/research/runs/import", normalizedBase).toString();
+}
+
+export function buildResearchNoteUrl(
+  baseUrl: string,
+  market: Market,
+  symbol: string,
+  timeframe: ResearchTimeframe
+): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const url = new URL("api/research/notes", normalizedBase);
+  url.searchParams.set("market", market);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("timeframe", timeframe);
+  return url.toString();
 }
 
 export function buildResearchRunPaperExecutionsUrl(baseUrl: string, runId: string): string {
@@ -560,6 +592,68 @@ export async function importResearchRunExport(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run import error"
+    };
+  }
+}
+
+export async function loadResearchNote(
+  baseUrl: string,
+  params: TerminalResearchParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchNoteResult> {
+  try {
+    const response = await fetcher(buildResearchNoteUrl(baseUrl, params.market, params.symbol, params.timeframe));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isResearchNotePayload(payload)) {
+      throw new Error("Invalid research note contract");
+    }
+    return {
+      note: payload.note,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research note load error"
+    };
+  }
+}
+
+export async function saveResearchNote(
+  baseUrl: string,
+  params: ResearchNoteSaveParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchNoteResult> {
+  try {
+    const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+    const response = await fetcher(new URL("api/research/notes", normalizedBase).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        market: params.market,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        body: params.body
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isResearchNotePayload(payload)) {
+      throw new Error("Invalid research note contract");
+    }
+    return {
+      note: payload.note,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research note save error"
     };
   }
 }
@@ -941,6 +1035,28 @@ function isResearchRunImportPayload(value: unknown): value is { run: ResearchRun
   }
   const payload = value as { run?: unknown };
   return isResearchRunAudit(payload.run) && Boolean(payload.run.dataSnapshot);
+}
+
+function isResearchNotePayload(value: unknown): value is { note: ResearchNote } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { note?: unknown };
+  return isResearchNote(payload.note);
+}
+
+function isResearchNote(value: unknown): value is ResearchNote {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const note = value as Partial<ResearchNote>;
+  return (
+    isMarket(note.market) &&
+    typeof note.symbol === "string" &&
+    isTimeframe(note.timeframe) &&
+    typeof note.body === "string" &&
+    (note.updatedAt === null || typeof note.updatedAt === "string")
+  );
 }
 
 function isPaperExecutionPayload(value: unknown): value is { execution: PaperExecutionRecord; promotion?: PromotionCandidateRecord } {

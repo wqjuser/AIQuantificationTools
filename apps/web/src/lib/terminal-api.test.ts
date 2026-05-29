@@ -5,6 +5,7 @@ import {
   buildResearchRunDetailUrl,
   buildResearchRunExportUrl,
   buildResearchRunImportUrl,
+  buildResearchNoteUrl,
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
   buildStrategiesUrl,
@@ -19,8 +20,10 @@ import {
   loadResearchRunExport,
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
+  loadResearchNote,
   loadStrategyLibrary,
   submitResearchRunPaperExecution,
+  saveResearchNote,
   saveStrategySnapshot,
   importResearchRunExport,
   marketKlinesFromResearchRunAudit,
@@ -102,6 +105,12 @@ describe("terminal workspace API client", () => {
   test("builds the research run import URL", () => {
     expect(buildResearchRunImportUrl("http://127.0.0.1:8765/")).toBe(
       "http://127.0.0.1:8765/api/research/runs/import"
+    );
+  });
+
+  test("builds the research note URL for the selected context", () => {
+    expect(buildResearchNoteUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d")).toBe(
+      "http://127.0.0.1:8765/api/research/notes?market=ashare&symbol=600000&timeframe=1d"
     );
   });
 
@@ -999,6 +1008,59 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.promotion?.latestPaperExecutionId).toBe("paper-latest");
     expect(result.promotion?.evidence.filledOrders).toBe(1);
+  });
+
+  test("loads and saves a research note for the selected context", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: init?.method === "POST" ? 201 : 200,
+        json: async () => ({
+          note: {
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            body: "关注银行板块相对强度。",
+            updatedAt: "2026-05-29T08:00:00+00:00"
+          }
+        })
+      };
+    };
+
+    const loaded = await loadResearchNote(
+      "http://127.0.0.1:8765/",
+      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      fetcher
+    );
+    const saved = await saveResearchNote(
+      "http://127.0.0.1:8765/",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "关注银行板块相对强度。"
+      },
+      fetcher
+    );
+
+    expect(loaded.note?.body).toBe("关注银行板块相对强度。");
+    expect(saved.note?.updatedAt).toBe("2026-05-29T08:00:00+00:00");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/research/notes?market=ashare&symbol=600000&timeframe=1d");
+    expect(calls[1]).toMatchObject({
+      url: "http://127.0.0.1:8765/api/research/notes",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      }
+    });
+    expect(JSON.parse(String(calls[1].init?.body))).toMatchObject({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      body: "关注银行板块相对强度。"
+    });
   });
 
   test("saves the current strategy snapshot to the strategy library", async () => {
