@@ -713,6 +713,64 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["strategy"]["position"], "25% cap per instrument")
         self.assertEqual(payload["strategy"]["risk"], "Stop -6%, take profit +12%, drawdown guard 9%, paper only")
 
+    def test_research_api_binds_audited_strategy_to_strategy_library(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+        from urllib.parse import urlencode
+
+        from quant_core.ai import LocalResearchAssistant
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                assistant = LocalResearchAssistant()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            params = urlencode(
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "strategyName": "Audited SMA library plan",
+                    "strategyEntry": "Close > SMA6",
+                    "strategyExit": "Close < SMA18",
+                    "strategyPosition": "45% cap per instrument",
+                    "strategyRisk": "Stop -5%, take profit +11%, drawdown guard 8%, paper only",
+                }
+            )
+            try:
+                connection.request("GET", f"/api/research/run?{params}")
+                run_response = connection.getresponse()
+                run_payload = json.loads(run_response.read().decode("utf-8"))
+                connection.request("GET", "/api/strategies?market=ashare&symbol=600000&limit=3")
+                strategy_response = connection.getresponse()
+                strategy_payload = json.loads(strategy_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(run_response.status, 200)
+        self.assertEqual(strategy_response.status, 200)
+        self.assertEqual(len(strategy_payload["strategies"]), 1)
+        saved_strategy = strategy_payload["strategies"][0]
+        self.assertEqual(saved_strategy["revision"], run_payload["researchRun"]["strategyRevision"])
+        self.assertEqual(saved_strategy["status"], "audited")
+        self.assertEqual(saved_strategy["auditRunId"], run_payload["researchRun"]["runId"])
+        self.assertEqual(saved_strategy["strategySnapshot"]["entry"], "Close > SMA6")
+
     def test_terminal_research_run_updates_workspace_from_backtest_and_ai_report(self):
         from quant_core.research import run_terminal_research
         from quant_core.terminal import terminal_workspace_to_payload

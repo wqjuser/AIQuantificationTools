@@ -209,6 +209,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
                 strategy_snapshot=_strategy_snapshot_from_query(query),
             )
+            if workspace.research_run:
+                strategy = strategy_config_from_snapshot(
+                    workspace.strategy,
+                    market=workspace.selected_instrument.market,
+                    symbol=workspace.selected_instrument.symbol,
+                    timeframe=workspace.selected_timeframe,
+                )
+                self.strategy_store.save(strategy, audit_run_id=workspace.research_run.run_id)
             self._send_json(terminal_workspace_to_payload(workspace))
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):

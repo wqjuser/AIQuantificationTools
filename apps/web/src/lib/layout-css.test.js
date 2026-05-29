@@ -224,10 +224,13 @@ describe("terminal layout css", () => {
   });
 
   test("renders strategy library save and reload controls", () => {
+    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+
     expect(appSource).toContain("loadStrategyLibrary");
     expect(appSource).toContain("saveStrategySnapshot");
     expect(appSource).toContain("saveCurrentStrategyVersion");
     expect(appSource).toContain("loadSavedStrategyVersion");
+    expect(runPipelineSource).toContain("await refreshStrategyLibrary();");
     expect(appSource).toContain('className="strategy-library-list"');
     expect(appSource).toContain('className="strategy-library-actions"');
     expect(styles).toContain(".strategy-library-list");

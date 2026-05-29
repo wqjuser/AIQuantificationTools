@@ -499,8 +499,9 @@ export function App() {
     appendLog("execution", "warning", "Live execution remains blocked; paper review is ready");
     publishStage("execution", ["data", "factor", "backtest", "agent"]);
     await refreshRunHistory();
+    await refreshStrategyLibrary();
     setIsRunning(false);
-  }, [refreshRunHistory, workspace]);
+  }, [refreshRunHistory, refreshStrategyLibrary, workspace]);
 
   const replayRun = useCallback(
     async (run: ResearchRunAudit) => {
