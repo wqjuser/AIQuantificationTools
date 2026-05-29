@@ -60,6 +60,7 @@ import {
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
   buildBacktestReport,
+  buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
@@ -600,6 +601,33 @@ export function App() {
     }));
   }, []);
 
+  const exportBacktestReportMarkdown = useCallback(() => {
+    const markdown = buildBacktestReportMarkdown(workspace);
+    const runId = workspace.researchRun?.runId;
+    if (!markdown || !runId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Backtest report export failed",
+        error: "Run Pipeline before exporting an audited backtest report"
+      }));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `${runId}-backtest-report.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Backtest report export ready",
+      error: undefined
+    }));
+  }, [workspace]);
+
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
@@ -1137,6 +1165,7 @@ export function App() {
             className="workflow-backtest-panel"
             evidenceCards={backtestEvidenceCards}
             i18n={i18n}
+            onExportMarkdown={exportBacktestReportMarkdown}
             onUpdateAssumption={updateBacktestAssumption}
             report={backtestReport}
             readinessGates={backtestReadinessGates}
@@ -1761,6 +1790,7 @@ function BacktestReportPanel({
   className,
   evidenceCards,
   i18n,
+  onExportMarkdown,
   onUpdateAssumption,
   report,
   readinessGates,
@@ -1770,6 +1800,7 @@ function BacktestReportPanel({
   className?: string;
   evidenceCards: BacktestEvidenceCard[];
   i18n: AppI18n;
+  onExportMarkdown?: () => void;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
   report: BacktestReport;
   readinessGates: BacktestReadinessGate[];
@@ -1782,7 +1813,25 @@ function BacktestReportPanel({
   const equityEnd = report.equityCurve.at(-1)?.equity ?? null;
 
   return (
-    <Panel title={i18n.t("panel.backtest.title")} subtitle={i18n.t("panel.backtest.subtitle")} className={className}>
+    <Panel
+      title={i18n.t("panel.backtest.title")}
+      subtitle={i18n.t("panel.backtest.subtitle")}
+      className={className}
+      action={
+        onExportMarkdown ? (
+          <button
+            className="report-export-button"
+            disabled={!report.runId}
+            onClick={onExportMarkdown}
+            title={i18n.t("backtest.exportMarkdown")}
+            type="button"
+          >
+            <Download size={13} />
+            <span>{i18n.t("backtest.exportMarkdown")}</span>
+          </button>
+        ) : undefined
+      }
+    >
       <div className="backtest-report">
         <div className="backtest-report-hero" data-status={report.status}>
           <div>

@@ -15,6 +15,7 @@ Scope:
 - Carry the audited data snapshot in `researchRun` workspace summaries so the report can compute a same-symbol buy-and-hold baseline without a second data source.
 - Feed that benchmark alpha into AI review evidence cards, the dossier citation list, and the structured backtest explanation action.
 - If a core response returns only a run summary without `dataSnapshot`, hydrate it from `/api/research/runs/{runId}` before the UI computes report or AI evidence.
+- Generate a Markdown audit report from the active Backtest Report for human review and local archiving.
 - Keep the report tied to existing audited run and fallback workspace contracts; no new backend endpoint in this slice.
 
 Out of scope:
@@ -33,6 +34,7 @@ Progress:
 - [x] Backtest Lab panel now renders an auditable report, evidence package, readiness gates, equity/diagnostic summary, assumptions, and trade replay.
 - [x] `/api/research/run` workspace summaries now carry the audited data snapshot for immediate benchmark calculation.
 - [x] Frontend research runs now backfill missing snapshots from run detail to support older or lightweight core responses.
+- [x] Active Backtest Reports can be exported as Markdown with metrics, benchmark alpha, data snapshot, AI evidence boundary, gates, and trade replay.
 - [x] Product plan and architecture documentation updated.
 
 Verification:

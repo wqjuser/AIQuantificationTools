@@ -9,6 +9,7 @@ import {
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
   buildBacktestReport,
+  buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
@@ -1558,6 +1559,97 @@ describe("terminal workbench model", () => {
       equityPointCount: 2,
       diagnosticCount: 1
     });
+  });
+
+  test("builds a portable markdown report from audited backtest evidence", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-report-md",
+      createdAt: "2026-05-29T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-report-md",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Trend improved but benchmark still matters.", tone: "ai" }],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-28T08:00:00+00:00",
+        end: "2026-05-29T08:00:00+00:00",
+        hash: "snapshot-report-md",
+        bars: [
+          {
+            timestamp: "2026-05-28T08:00:00+00:00",
+            timestampMs: 1779955200000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-29T08:00:00+00:00",
+            timestampMs: 1780041600000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      },
+      backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
+      backtestTrades: [
+        {
+          id: "trade-1",
+          timestamp: "2026-05-29T08:00:00+00:00",
+          symbol: "600000",
+          side: "BUY",
+          status: "filled",
+          price: "9.20",
+          quantity: "2100",
+          exposure: "20%",
+          pnl: "+8.20%",
+          reason: "Close > SMA20",
+          tone: "positive"
+        }
+      ],
+      researchNote: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "关注银行板块相对强度，等待放量确认。",
+        updatedAt: "2026-05-29T07:55:00+00:00"
+      }
+    });
+
+    const markdown = buildBacktestReportMarkdown(workspace);
+
+    expect(markdown).toContain("# AIQuant Audited Backtest Report");
+    expect(markdown).toContain("Run ID: `run-report-md`");
+    expect(markdown).toContain("Strategy revision: `rev-report-md`");
+    expect(markdown).toContain("| Benchmark buy and hold | +5.00% |");
+    expect(markdown).toContain("| Alpha | +3.20pp |");
+    expect(markdown).toContain("snapshot-report-md");
+    expect(markdown).toContain("AI Evidence Boundary");
+    expect(markdown).toContain("No investment advice");
+    expect(markdown).toContain("关注银行板块相对强度");
+    expect(markdown).toContain("| BUY | filled | 9.20 | 2100 | +8.20% |");
+  });
+
+  test("does not build a markdown report before an audited run exists", () => {
+    expect(buildBacktestReportMarkdown(buildTerminalWorkspace())).toBeNull();
   });
 
   test("blocks the backtest report until a reproducible run exists", () => {

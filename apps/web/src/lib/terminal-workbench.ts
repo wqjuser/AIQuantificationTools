@@ -2119,6 +2119,112 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
   };
 }
 
+export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): string | null {
+  const run = workspace.researchRun;
+  if (!run) {
+    return null;
+  }
+
+  const report = buildBacktestReport(workspace);
+  const aiDossier = buildAiReviewDossier(workspace);
+  const snapshot = run.dataSnapshot;
+  const researchNote = normalizedResearchNote(run.researchNote);
+  const metricRows = report.metrics.map((metric) => [metric.label, metric.value, metric.tone]);
+  const benchmarkRows = [
+    ["Strategy", report.benchmark.strategyReturn],
+    ["Benchmark buy and hold", report.benchmark.benchmarkReturn],
+    ["Alpha", report.benchmark.alpha]
+  ];
+  const assumptionRows = report.assumptionRows.map((row) => [row.label, `${row.value} ${row.suffix}`]);
+  const gateRows = report.readinessGates.map((gate) => [gate.label, gate.status, gate.detail]);
+  const aiCitationRows = aiDossier.citations.map((citation) => [
+    citation.label,
+    citation.value,
+    citation.detail
+  ]);
+  const tradeRows = report.trades.map((trade) => [
+    trade.timestamp,
+    trade.side,
+    trade.status,
+    trade.price,
+    trade.quantity,
+    trade.pnl,
+    trade.reason
+  ]);
+
+  return [
+    "# AIQuant Audited Backtest Report",
+    "",
+    `Run ID: \`${run.runId}\``,
+    `Market: \`${workspace.selectedInstrument.market}\``,
+    `Symbol: \`${workspace.selectedInstrument.symbol}\``,
+    `Timeframe: \`${run.timeframe}\``,
+    `Strategy revision: \`${run.strategyRevision}\``,
+    `Execution mode: \`${run.executionMode}\``,
+    "",
+    "## Summary",
+    "",
+    report.summary,
+    "",
+    "## Metrics",
+    "",
+    markdownTable(["Metric", "Value", "Tone"], metricRows),
+    "",
+    "## Benchmark",
+    "",
+    report.benchmark.detail,
+    "",
+    markdownTable(["Item", "Value"], benchmarkRows),
+    "",
+    "## Data Snapshot",
+    "",
+    markdownTable(
+      ["Field", "Value"],
+      [
+        ["Source", snapshot?.source ?? "missing"],
+        ["Rows", String(snapshot?.rows ?? run.dataRows)],
+        ["Hash", snapshot?.hash ?? ""],
+        ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? "unknown"}`],
+        ["Quality", run.dataQuality ? `${run.dataQuality.source} · ${run.dataQuality.isComplete ? "complete" : "incomplete"}` : "not attached"]
+      ]
+    ),
+    "",
+    "## Backtest Assumptions",
+    "",
+    markdownTable(["Assumption", "Value"], assumptionRows),
+    "",
+    "## AI Evidence Boundary",
+    "",
+    "No investment advice. AI can explain supplied audited evidence only and must not promise returns.",
+    "",
+    markdownTable(["Citation", "Value", "Evidence"], aiCitationRows),
+    "",
+    researchNote ? "## Locked Research Note" : "",
+    researchNote ? "" : "",
+    researchNote ? researchNote.body : "",
+    researchNote ? "" : "",
+    "## Readiness Gates",
+    "",
+    markdownTable(["Gate", "Status", "Detail"], gateRows),
+    "",
+    "## Trade Replay",
+    "",
+    tradeRows.length
+      ? markdownTable(["Time", "Side", "Status", "Price", "Quantity", "PnL", "Reason"], tradeRows)
+      : "No trade rows are attached to this audited run.",
+    "",
+    "## Execution Boundary",
+    "",
+    report.executionReady
+      ? "Paper execution handoff is ready. Live execution still requires certified adapters, risk approval, and human confirmation."
+      : "Execution remains blocked until all readiness gates pass."
+  ]
+    .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+    .join("\n")
+    .trimEnd()
+    .concat("\n");
+}
+
 export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBenchmark {
   const run = workspace.researchRun;
   const snapshot = run?.dataSnapshot;
@@ -2159,6 +2265,21 @@ export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBe
     sampleBars: bars.length,
     source: snapshot?.source ?? "unknown"
   };
+}
+
+function markdownTable(headers: string[], rows: Array<Array<string | number | boolean | null | undefined>>): string {
+  return [
+    `| ${headers.map(markdownCell).join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...rows.map((row) => `| ${row.map(markdownCell).join(" | ")} |`)
+  ].join("\n");
+}
+
+function markdownCell(value: string | number | boolean | null | undefined): string {
+  return String(value ?? "")
+    .replace(/\r?\n+/gu, " ")
+    .replace(/\|/gu, "\\|")
+    .trim();
 }
 
 function aiBenchmarkDetail(benchmark: BacktestBenchmark): string {

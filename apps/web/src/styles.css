@@ -3430,6 +3430,31 @@ em {
   background: #15362f;
 }
 
+.report-export-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #122b27;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 9px;
+}
+
+.report-export-button:hover:not(:disabled) {
+  border-color: #4cc9ad;
+  background: #15362f;
+}
+
+.report-export-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .decision-entry {
   border-left: 3px solid #4cc9ad;
   border-radius: 6px;
