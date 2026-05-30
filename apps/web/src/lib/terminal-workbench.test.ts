@@ -153,6 +153,25 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("starts with canonical risk text that matches the structured editor defaults", () => {
+    const workspace = buildTerminalWorkspace();
+
+    expect(workspace.strategy.risk).toBe("Stop -8%, take profit +18%, drawdown guard 12%, paper only");
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      positionPct: 20,
+      stopLossPct: 8,
+      takeProfitPct: 18,
+      maxDrawdownPct: 12,
+      paperOnly: true
+    });
+    expect(buildStrategyReadinessGates(workspace).map((gate) => gate.status)).toEqual([
+      "passed",
+      "passed",
+      "passed",
+      "review"
+    ]);
+  });
+
   test("updates structured strategy draft fields as canonical auditable strategy text", () => {
     const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-structured-editor",
@@ -2351,7 +2370,7 @@ describe("terminal workbench model", () => {
 
     expect(workspace.strategy.name).toBe("600000 1d AI draft");
     expect(workspace.strategy.entry).toBe("Close above SMA20 with volume confirmation after 1d research context");
-    expect(workspace.strategy.risk).toBe("Stop -8%, drawdown guard 12%, paper only");
+    expect(workspace.strategy.risk).toBe("Stop -8%, take profit +18%, drawdown guard 12%, paper only");
     expect(workspace.decisionLog[0]).toMatchObject({
       agent: "Strategy Drafter",
       tone: "warning"

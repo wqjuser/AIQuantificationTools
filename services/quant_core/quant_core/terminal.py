@@ -230,7 +230,7 @@ def build_terminal_workspace() -> TerminalWorkspace:
             entry="Close > SMA20 and relative strength improving",
             exit="Close < SMA20 or risk manager downgrade",
             position="20% cap per instrument",
-            risk="Stop -8%, drawdown guard 12%, paper only",
+            risk="Stop -8%, take profit +18%, drawdown guard 12%, paper only",
         ),
         backtest_assumptions=BacktestAssumptions(initial_cash=100_000, fee_bps=3, slippage_bps=2),
         metrics=[

@@ -250,6 +250,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             market = query.get("market", ["ashare"])[0]
             symbol = query.get("symbol", ["600000"])[0]
             timeframe = query.get("timeframe", ["1d"])[0]
+            strategy_snapshot = _strategy_snapshot_from_query(query)
+            if strategy_snapshot:
+                validation = validate_strategy_snapshot(
+                    strategy_snapshot,
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
+                if validation.status == "blocked":
+                    self._send_json(
+                        {
+                            "error": "strategy_not_ready",
+                            "detail": "strategy_preflight_blocked",
+                            "validation": strategy_validation_to_payload(validation),
+                        },
+                        status=400,
+                    )
+                    return
             research_note = research_note_to_payload(
                 self.note_store.get(market=market, symbol=symbol, timeframe=timeframe)
             )
@@ -263,7 +281,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 cache=self.cache,
                 run_store=self.run_store,
                 data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
-                strategy_snapshot=_strategy_snapshot_from_query(query),
+                strategy_snapshot=strategy_snapshot,
                 research_note=research_note,
             )
             if workspace.research_run:

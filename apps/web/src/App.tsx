@@ -500,11 +500,44 @@ export function App() {
       log = [...log, createWorkflowLogEntry(runId, log.length + 1, stageId, level, message)];
     };
 
-    setActiveWorkAreaId("backtest");
-    setActiveLoopStepId("backtest");
+    setActiveWorkAreaId("strategy");
+    setActiveLoopStepId("strategy");
     setIsRunning(true);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
+    appendLog("factor", "info", "Strategy preflight sent to local core");
+    publishStage("factor", []);
+    const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      auditRunId: workspace.researchRun?.runId ?? null,
+      strategy: workspace.strategy
+    });
+    if (workflowRunIdRef.current !== runId) {
+      return;
+    }
+    setStrategyValidationState(preflight);
+    if (preflight.validation?.status === "blocked") {
+      const blockedGates = preflight.validation.gates
+        .filter((gate) => gate.status === "blocked")
+        .map((gate) => gate.id)
+        .join(", ");
+      appendLog("factor", "error", `Strategy preflight blocked: ${blockedGates || "readiness gate"}`);
+      publishStage("factor", [], "factor");
+      setIsRunning(false);
+      return;
+    }
+    appendLog(
+      "factor",
+      preflight.source === "core" ? "success" : "warning",
+      preflight.source === "core"
+        ? `Strategy preflight passed: ${preflight.validation?.status ?? "review"}`
+        : `Strategy preflight used local fallback: ${preflight.error ?? "core unavailable"}`
+    );
+
+    setActiveWorkAreaId("backtest");
+    setActiveLoopStepId("backtest");
     appendLog("data", "info", `Data snapshot prepared for ${selectedContext}`);
     publishStage("data", []);
     await waitForWorkflowStep();

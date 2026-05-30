@@ -196,6 +196,23 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["validation"]["gates"][1]["value"], "40% / 6% / 12% / 9%")
         self.assertEqual(payload["validation"]["strategyConfig"]["symbols"], ["600000"])
 
+    def test_default_terminal_strategy_is_preflight_ready_before_audit(self):
+        from quant_core.strategy_validation import validate_strategy_snapshot
+        from quant_core.terminal import build_terminal_workspace
+
+        workspace = build_terminal_workspace()
+
+        validation = validate_strategy_snapshot(
+            workspace.strategy,
+            market=workspace.selected_instrument.market,
+            symbol=workspace.selected_instrument.symbol,
+            timeframe=workspace.selected_timeframe,
+        )
+
+        self.assertEqual(workspace.strategy.risk, "Stop -8%, take profit +18%, drawdown guard 12%, paper only")
+        self.assertEqual(validation.status, "review")
+        self.assertEqual([gate.status for gate in validation.gates], ["passed", "passed", "passed", "review"])
+
     def test_sqlite_cache_upserts_and_reads_ohlcv_in_time_order(self):
         from quant_core.cache import MarketDataCache
         from quant_core.domain import OHLCVBar
@@ -797,6 +814,56 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["strategy"]["exit"], "Close < SMA7")
         self.assertEqual(payload["strategy"]["position"], "25% cap per instrument")
         self.assertEqual(payload["strategy"]["risk"], "Stop -6%, take profit +12%, drawdown guard 9%, paper only")
+
+    def test_research_api_rejects_blocked_strategy_snapshot_before_audit(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+        from urllib.parse import urlencode
+
+        from quant_core.ai import LocalResearchAssistant
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                assistant = LocalResearchAssistant()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            params = urlencode(
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "strategyName": "Incomplete risk plan",
+                    "strategyEntry": "Close > SMA5",
+                    "strategyExit": "Close < SMA7",
+                    "strategyPosition": "25% cap per instrument",
+                    "strategyRisk": "Stop -6%, drawdown guard 9%, paper only",
+                }
+            )
+            try:
+                connection.request("GET", f"/api/research/run?{params}")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "strategy_not_ready")
+        self.assertEqual(payload["validation"]["status"], "blocked")
+        self.assertEqual(payload["validation"]["gates"][1]["id"], "risk")
+        self.assertEqual(payload["validation"]["gates"][1]["status"], "blocked")
 
     def test_research_api_binds_audited_strategy_to_strategy_library(self):
         import json

@@ -231,6 +231,16 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".strategy-validation-source");
   });
 
+  test("preflights strategy readiness before launching the research pipeline", () => {
+    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+
+    expect(runPipelineSource).toContain("validateStrategySnapshot(quantCoreBaseUrl");
+    expect(runPipelineSource).toContain('preflight.validation?.status === "blocked"');
+    expect(runPipelineSource).toContain('setActiveWorkAreaId("strategy")');
+    expect(runPipelineSource).toContain("setStrategyValidationState(preflight)");
+    expect(runPipelineSource).toContain("Strategy preflight blocked");
+  });
+
   test("renders strategy library save and reload controls", () => {
     const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
 
