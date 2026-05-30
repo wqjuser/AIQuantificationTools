@@ -689,10 +689,16 @@ export async function submitResearchRunPaperExecution(
     const response = await fetcher(buildResearchRunPaperExecutionsUrl(baseUrl, runId), {
       method: "POST"
     });
+    const payload = await response.json();
     if (!response.ok) {
+      if (isCoreErrorPayload(payload)) {
+        return {
+          source: "core",
+          error: payload.detail ?? payload.error
+        };
+      }
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }
-    const payload = await response.json();
     if (!isPaperExecutionPayload(payload)) {
       throw new Error("Invalid paper execution contract");
     }
@@ -1209,6 +1215,14 @@ function isStrategyValidationErrorPayload(value: unknown): value is { error: str
   }
   const payload = value as { error?: unknown; validation?: unknown };
   return typeof payload.error === "string" && isStrategyValidation(payload.validation);
+}
+
+function isCoreErrorPayload(value: unknown): value is { error: string; detail?: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { error?: unknown; detail?: unknown };
+  return typeof payload.error === "string" && (payload.detail === undefined || typeof payload.detail === "string");
 }
 
 function isStrategyValidation(value: unknown): value is StrategyValidation {

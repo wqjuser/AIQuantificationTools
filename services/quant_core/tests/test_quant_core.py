@@ -536,6 +536,17 @@ class QuantCoreContractTest(unittest.TestCase):
                     }
                 ],
             },
+            strategy_config={
+                "name": "SMA trend demo",
+                "revision": "rev-paper-api",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
             backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
         )
 
@@ -573,6 +584,91 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["promotion"]["latestPaperExecutionId"], payload["execution"]["executionId"])
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
+
+    def test_research_run_paper_execution_api_rejects_incomplete_strategy_risk(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-paper-missing-risk",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Incomplete paper risk",
+            strategy_revision="rev-paper-missing-risk",
+            data_rows=1,
+            metrics={"total_return_pct": 2.4, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-paper-missing-risk",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "name": "Incomplete paper risk",
+                "revision": "rev-paper-missing-risk",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": None, "maxDrawdownPct": 0.12},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                paper_execution_store = paper_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/research/runs/run-paper-missing-risk/paper-executions")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            executions = paper_store.list_by_run("run-paper-missing-risk")
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "invalid_paper_execution")
+        self.assertEqual(payload["detail"], "paper_execution_strategy_risk_incomplete")
+        self.assertEqual(executions, [])
 
     def test_research_run_promotion_api_and_export_include_candidate(self):
         import json

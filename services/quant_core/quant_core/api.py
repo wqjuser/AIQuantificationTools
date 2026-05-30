@@ -18,6 +18,7 @@ from quant_core.execution import (
     create_paper_execution_from_audit,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
+    validate_paper_execution_handoff,
 )
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
@@ -160,6 +161,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
                 return
             try:
+                validate_paper_execution_handoff(audit)
                 execution = create_paper_execution_from_audit(audit)
             except ValueError as error:
                 self._send_json({"error": "invalid_paper_execution", "detail": str(error)}, status=400)

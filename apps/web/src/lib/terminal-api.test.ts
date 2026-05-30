@@ -1511,6 +1511,21 @@ describe("terminal workspace API client", () => {
     expect(result.error).toBe("Invalid paper execution contract");
   });
 
+  test("surfaces core paper execution gate rejections without treating them as offline fallback", async () => {
+    const result = await submitResearchRunPaperExecution("http://127.0.0.1:8765", "run-risk", async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: "invalid_paper_execution",
+        detail: "paper_execution_strategy_risk_incomplete"
+      })
+    }));
+
+    expect(result.source).toBe("core");
+    expect(result.execution).toBeUndefined();
+    expect(result.error).toBe("paper_execution_strategy_risk_incomplete");
+  });
+
   test("returns fallback when the research run detail payload is invalid", async () => {
     const result = await loadResearchRunDetail("http://127.0.0.1:8765", "run-new", async () => ({
       ok: true,

@@ -207,6 +207,14 @@ def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None
     )
 
 
+def validate_paper_execution_handoff(audit: Any) -> None:
+    strategy_config = getattr(audit, "strategy_config", None)
+    risk = strategy_config.get("risk") if isinstance(strategy_config, dict) else None
+    required_risk_fields = ("positionPct", "stopLossPct", "takeProfitPct", "maxDrawdownPct")
+    if not isinstance(risk, dict) or any(_strict_positive_number(risk.get(field)) is None for field in required_risk_fields):
+        raise ValueError("paper_execution_strategy_risk_incomplete")
+
+
 def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[str, Any]:
     return {
         "executionId": execution.execution_id,
@@ -398,6 +406,16 @@ def _positive_number(value: Any, fallback: float) -> float:
         return fallback
     if not math.isfinite(number) or number <= 0:
         return fallback
+    return number
+
+
+def _strict_positive_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
     return number
 
 
