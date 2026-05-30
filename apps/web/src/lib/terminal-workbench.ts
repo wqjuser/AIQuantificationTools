@@ -116,6 +116,15 @@ export interface StrategyLibraryDraftItem {
   strategySnapshot: StrategySnapshot;
 }
 
+export interface StrategyVersionDiffRow {
+  id: "context" | StrategyField;
+  label: string;
+  current: string;
+  saved: string;
+  changed: boolean;
+  tone: "neutral" | "warning";
+}
+
 export type StrategyConditionKind = "close_above_sma" | "close_below_sma";
 
 export type StrategyRuleDraftField =
@@ -1924,6 +1933,63 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
   ];
 }
 
+export function buildStrategyVersionDiffRows(
+  workspace: TerminalWorkspace,
+  item: StrategyLibraryDraftItem
+): StrategyVersionDiffRow[] {
+  const rows: Array<{ id: StrategyVersionDiffRow["id"]; label: string; current: string; saved: string }> = [
+    {
+      id: "context",
+      label: "Context",
+      current: strategyContextLabel(
+        workspace.selectedInstrument.market,
+        workspace.selectedInstrument.symbol,
+        workspace.selectedTimeframe
+      ),
+      saved: strategyContextLabel(item.market, item.symbol, item.timeframe)
+    },
+    {
+      id: "name",
+      label: "Name",
+      current: workspace.strategy.name,
+      saved: item.strategySnapshot.name
+    },
+    {
+      id: "entry",
+      label: "Entry",
+      current: workspace.strategy.entry,
+      saved: item.strategySnapshot.entry
+    },
+    {
+      id: "exit",
+      label: "Exit",
+      current: workspace.strategy.exit,
+      saved: item.strategySnapshot.exit
+    },
+    {
+      id: "position",
+      label: "Position",
+      current: workspace.strategy.position,
+      saved: item.strategySnapshot.position
+    },
+    {
+      id: "risk",
+      label: "Risk",
+      current: workspace.strategy.risk,
+      saved: item.strategySnapshot.risk
+    }
+  ];
+
+  return rows.map((row) => {
+    const changed = normalizeDiffValue(row.current) !== normalizeDiffValue(row.saved);
+    return {
+      ...row,
+      changed,
+      tone: changed ? "warning" : "neutral"
+    };
+  });
+}
+
 export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRuleDraft {
   const strategy = workspace.strategy;
   const entryWindow = inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
@@ -1949,6 +2015,14 @@ export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRu
     ),
     paperOnly: !/\blive\b|实盘/u.test(strategy.risk.toLowerCase()) || /paper only|模拟/u.test(strategy.risk.toLowerCase())
   };
+}
+
+function strategyContextLabel(market: Market, symbol: string, timeframe: Timeframe): string {
+  return `${market.toUpperCase()} · ${symbol} · ${timeframe}`;
+}
+
+function normalizeDiffValue(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 export function strategySnapshotFromRuleDraft(draft: StrategyRuleDraft): StrategySnapshot {

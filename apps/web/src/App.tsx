@@ -77,6 +77,7 @@ import {
   buildScannerCandidates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
+  buildStrategyVersionDiffRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
@@ -111,6 +112,7 @@ import {
   StrategyRuleDraft,
   StrategyRuleDraftField,
   StrategyRuleRow,
+  StrategyVersionDiffRow,
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
@@ -1788,6 +1790,8 @@ function StrategySummary({
         </div>
         {library.length ? (
           library.map((item) => {
+            const diffRows = buildStrategyVersionDiffRows(workspace, item);
+            const changedRows = diffRows.filter((row) => row.changed);
             const isCurrentDraft =
               item.market === workspace.selectedInstrument.market &&
               item.symbol === workspace.selectedInstrument.symbol &&
@@ -1809,6 +1813,19 @@ function StrategySummary({
                   <small>
                     {i18n.t("strategy.auditRun")}: {item.auditRunId ?? i18n.t("strategy.auditRequired")}
                   </small>
+                  <small>
+                    {i18n.t("strategy.diff")}:{" "}
+                    {changedRows.length
+                      ? i18n.t("strategy.diffChanged", { count: changedRows.length })
+                      : i18n.t("strategy.diffSame")}
+                  </small>
+                  <div className="strategy-library-diff" aria-label={i18n.t("strategy.diff")}>
+                    {(changedRows.length ? changedRows.slice(0, 3) : diffRows.slice(0, 2)).map((row) => (
+                      <span className={`strategy-diff-chip ${row.tone}`} key={row.id}>
+                        {strategyDiffRowLabel(i18n, row)}
+                      </span>
+                    ))}
+                  </div>
                 </span>
                 <span>{strategyLibraryStatusLabel(i18n, item.status)}</span>
                 <button disabled={isCurrentDraft} onClick={() => onLoadStrategyVersion(item)} type="button">
@@ -3036,6 +3053,21 @@ function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"
     return status;
   }
   return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
+}
+
+function strategyDiffRowLabel(i18n: AppI18n, row: StrategyVersionDiffRow): string {
+  const labels: Record<StrategyVersionDiffRow["id"], string> = {
+    context: i18n.t("strategy.context"),
+    name: i18n.t("strategy.name"),
+    entry: i18n.t("strategy.entry"),
+    exit: i18n.t("strategy.exit"),
+    position: i18n.t("strategy.position"),
+    risk: i18n.t("strategy.risk")
+  };
+  if (!row.changed) {
+    return i18n.locale === "zh-CN" ? `${labels[row.id]}一致` : `${labels[row.id]} same`;
+  }
+  return i18n.locale === "zh-CN" ? `${labels[row.id]}不同` : `${labels[row.id]} changed`;
 }
 
 function strategyLibraryStatusLabel(i18n: AppI18n, status: StrategyLibraryItem["status"]): string {

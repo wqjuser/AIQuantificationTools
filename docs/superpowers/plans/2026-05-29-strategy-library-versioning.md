@@ -15,6 +15,7 @@ Scope:
 - Bind successful audited `/api/research/run` outputs back into the strategy library with the run id, so research pipelines promote the exact tested strategy revision to `audited`.
 - Refresh the Strategy Lab version list after a successful frontend pipeline run.
 - Keep the Strategy Lab library as a recent global strategy list, not only the current symbol, and let a saved version switch the workspace back to its bound market/symbol/timeframe as a fresh draft.
+- Show a compact diff summary on each saved version so users can see context/name/entry/exit/position/risk differences before loading.
 
 Out of scope:
 - Parameter scans.
@@ -29,12 +30,14 @@ Progress:
 - [x] Audited research runs automatically update the matching strategy revision with `auditRunId`.
 - [x] Frontend pipeline refreshes the strategy library after a successful audited run.
 - [x] Loading a saved strategy version switches the research context to its saved market/symbol/timeframe, clears stale run evidence, and requires a new pipeline run before AI review or execution.
+- [x] Strategy version cards summarize differences against the active draft before users load them.
 
 Verification:
 - Backend unit and API tests for save/list/detail.
 - Backend API test that `/api/research/run` writes the audited strategy revision to the library.
 - Frontend API tests for URL builders, validation, save, and list.
 - Frontend workspace test that a saved strategy version restores the saved context and clears stale audited evidence.
+- Frontend workspace test for saved-version diff row generation.
 - Layout tests for Strategy Lab save/list affordances.
 - Layout test that the pipeline refreshes the strategy library after a successful run.
 - Full `npm test`, `npm run build`, and browser smoke check.

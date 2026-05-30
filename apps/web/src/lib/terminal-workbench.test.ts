@@ -31,6 +31,7 @@ import {
   buildScannerCandidates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
+  buildStrategyVersionDiffRows,
   buildTerminalWorkspace,
   buildWorkflowStages,
   executionModeLabel,
@@ -2935,6 +2936,77 @@ describe("terminal workbench model", () => {
         "Strategy revision rev-aapl-sma8 loaded for AAPL 5m. Archived audit run run-aapl-audited remains read-only; Run Pipeline to generate a fresh audited backtest.",
       tone: "warning"
     });
+  });
+
+  test("summarizes saved strategy version differences before loading", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 8);
+    const diffRows = buildStrategyVersionDiffRows(workspace, {
+      name: "AAPL breakout draft",
+      revision: "rev-aapl-diff",
+      market: "us",
+      symbol: "AAPL",
+      timeframe: "5m",
+      status: "draft",
+      auditRunId: null,
+      strategySnapshot: {
+        name: "AAPL breakout draft",
+        entry: "Close > SMA8",
+        exit: workspace.strategy.exit,
+        position: "35% max capital allocation",
+        risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+      }
+    });
+
+    expect(diffRows).toEqual([
+      {
+        id: "context",
+        label: "Context",
+        current: "ASHARE · 600000 · 1d",
+        saved: "US · AAPL · 5m",
+        changed: true,
+        tone: "warning"
+      },
+      {
+        id: "name",
+        label: "Name",
+        current: workspace.strategy.name,
+        saved: "AAPL breakout draft",
+        changed: true,
+        tone: "warning"
+      },
+      {
+        id: "entry",
+        label: "Entry",
+        current: "Close > SMA8",
+        saved: "Close > SMA8",
+        changed: false,
+        tone: "neutral"
+      },
+      {
+        id: "exit",
+        label: "Exit",
+        current: workspace.strategy.exit,
+        saved: workspace.strategy.exit,
+        changed: false,
+        tone: "neutral"
+      },
+      {
+        id: "position",
+        label: "Position",
+        current: workspace.strategy.position,
+        saved: "35% max capital allocation",
+        changed: true,
+        tone: "warning"
+      },
+      {
+        id: "risk",
+        label: "Risk",
+        current: workspace.strategy.risk,
+        saved: "Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+        changed: true,
+        tone: "warning"
+      }
+    ]);
   });
 
   test("edits backtest assumptions locally and invalidates stale audited results", () => {

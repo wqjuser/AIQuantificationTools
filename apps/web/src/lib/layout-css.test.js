@@ -228,11 +228,14 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("loadStrategyLibrary");
     expect(appSource).toContain("saveStrategySnapshot");
+    expect(appSource).toContain("buildStrategyVersionDiffRows");
     expect(appSource).toContain("saveCurrentStrategyVersion");
     expect(appSource).toContain("loadSavedStrategyVersion");
     expect(appSource).toContain("workspaceWithStrategyLibraryItem");
     expect(appSource).toContain('i18n.t("strategy.context")');
     expect(appSource).toContain('i18n.t("strategy.auditRun")');
+    expect(appSource).toContain('i18n.t("strategy.diff")');
+    expect(appSource).toContain('className="strategy-library-diff"');
     expect(appSource).toContain('i18n.t("strategy.loadedVersion")');
     expect(runPipelineSource).toContain("await refreshStrategyLibrary();");
     expect(appSource).toContain('className="strategy-library-list"');
@@ -240,6 +243,7 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".strategy-library-list");
     expect(styles).toContain(".strategy-library-card");
     expect(styles).toContain(".strategy-library-card small");
+    expect(styles).toContain(".strategy-diff-chip.warning");
   });
 
   test("renders a persistent research note panel for the selected context", () => {

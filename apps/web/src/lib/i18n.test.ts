@@ -56,6 +56,8 @@ describe("i18n", () => {
     expect(zh.t("strategy.context")).toBe("上下文");
     expect(zh.t("strategy.auditRun")).toBe("审计运行");
     expect(zh.t("strategy.loadedVersion")).toBe("已载入");
+    expect(zh.t("strategy.diff")).toBe("差异");
+    expect(zh.t("strategy.diffChanged", { count: 3 })).toBe("3 项差异");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
     expect(zh.t("backtest.assumptions")).toBe("回测假设");
     expect(zh.t("backtest.parameterScan")).toBe("参数敏感性");
@@ -79,6 +81,7 @@ describe("i18n", () => {
     expect(en.t("strategy.context")).toBe("Context");
     expect(en.t("strategy.auditRun")).toBe("Audit run");
     expect(en.t("strategy.loadedVersion")).toBe("Loaded");
+    expect(en.t("strategy.diffChanged", { count: 3 })).toBe("3 changes");
     expect(en.t("backtest.parameterScan")).toBe("Parameter sensitivity");
     expect(en.t("backtest.stageCandidate")).toBe("Stage");
     expect(en.t("backtest.initialCash")).toBe("Initial cash");
