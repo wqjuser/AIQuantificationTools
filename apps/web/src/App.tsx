@@ -75,6 +75,7 @@ import {
   buildResearchRunComparisonRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
+  buildStrategyReadinessGates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildStrategyVersionDiffRows,
@@ -111,6 +112,7 @@ import {
   ScannerCandidate,
   StrategyRuleDraft,
   StrategyRuleDraftField,
+  StrategyReadinessGate,
   StrategyRuleRow,
   StrategyVersionDiffRow,
   Timeframe,
@@ -326,6 +328,7 @@ export function App() {
     : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
+  const strategyReadinessGates = buildStrategyReadinessGates(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const visibleStrategyLibrary = strategyLibraryState.strategies;
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
@@ -1141,6 +1144,7 @@ export function App() {
         onLoadStrategyVersion={loadSavedStrategyVersion}
         onSaveStrategyVersion={saveCurrentStrategyVersion}
         onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
+        readinessGates={strategyReadinessGates}
         rows={strategyRuleRows}
         workspace={workspace}
       />
@@ -1668,6 +1672,7 @@ function StrategySummary({
   onLoadStrategyVersion,
   onSaveStrategyVersion,
   onUpdateStrategyRuleDraftField,
+  readinessGates,
   rows,
   workspace
 }: {
@@ -1678,6 +1683,7 @@ function StrategySummary({
   onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
   onSaveStrategyVersion: () => void;
   onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string) => void;
+  readinessGates: StrategyReadinessGate[];
   rows: StrategyRuleRow[];
   workspace: TerminalWorkspace;
 }) {
@@ -1750,6 +1756,22 @@ function StrategySummary({
           <strong>{i18n.strategyText(workspace.strategy.entry)}</strong>
           <strong>{i18n.strategyText(workspace.strategy.exit)}</strong>
           <small>{i18n.strategyText(workspace.strategy.risk)}</small>
+        </div>
+        <div className="strategy-readiness-list">
+          <div className="strategy-rule-title">
+            <span>{i18n.t("strategy.readiness")}</span>
+            <strong>{readinessGates.filter((gate) => gate.status === "passed").length}/{readinessGates.length}</strong>
+          </div>
+          {readinessGates.map((gate) => (
+            <article className={`strategy-readiness-gate ${gate.tone}`} data-status={gate.status} key={gate.id}>
+              <span>
+                {strategyReadinessGateLabel(i18n, gate.label)}
+                <em>{strategyReadinessGateStatusLabel(i18n, gate.status)}</em>
+              </span>
+              <strong>{i18n.strategyText(gate.value)}</strong>
+              <p>{i18n.strategyText(gate.detail)}</p>
+            </article>
+          ))}
         </div>
         <div className="strategy-library-actions">
           <button disabled={isSavingStrategy} onClick={onSaveStrategyVersion} type="button">
@@ -3053,6 +3075,25 @@ function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"
     return status;
   }
   return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
+}
+
+function strategyReadinessGateLabel(i18n: AppI18n, label: StrategyReadinessGate["label"]): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return {
+    "Strategy schema": "策略结构",
+    "Risk controls": "风控参数",
+    "Execution mode": "执行模式",
+    "Audit evidence": "审计证据"
+  }[label];
+}
+
+function strategyReadinessGateStatusLabel(i18n: AppI18n, status: StrategyReadinessGate["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { passed: "通过", review: "待复核", blocked: "阻断" }[status];
 }
 
 function strategyDiffRowLabel(i18n: AppI18n, row: StrategyVersionDiffRow): string {

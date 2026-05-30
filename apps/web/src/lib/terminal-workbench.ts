@@ -125,6 +125,15 @@ export interface StrategyVersionDiffRow {
   tone: "neutral" | "warning";
 }
 
+export interface StrategyReadinessGate {
+  id: "schema" | "risk" | "execution" | "audit";
+  label: "Strategy schema" | "Risk controls" | "Execution mode" | "Audit evidence";
+  value: string;
+  detail: string;
+  status: "passed" | "review" | "blocked";
+  tone: "positive" | "warning" | "risk";
+}
+
 export type StrategyConditionKind = "close_above_sma" | "close_below_sma";
 
 export type StrategyRuleDraftField =
@@ -1930,6 +1939,93 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
       status: "guardrail",
       tone: "risk"
     }
+  ];
+}
+
+export function buildStrategyReadinessGates(workspace: TerminalWorkspace): StrategyReadinessGate[] {
+  const draft = buildStrategyRuleDraft(workspace);
+  const schemaIsReady =
+    !isPendingStrategyText(workspace.strategy.entry) &&
+    !isPendingStrategyText(workspace.strategy.exit) &&
+    draft.entryWindow > 0 &&
+    draft.exitWindow > 0;
+  const riskIsReady =
+    !isPendingStrategyText(workspace.strategy.position) &&
+    !isPendingStrategyText(workspace.strategy.risk) &&
+    draft.positionPct > 0 &&
+    draft.stopLossPct > 0 &&
+    draft.takeProfitPct > 0 &&
+    draft.maxDrawdownPct > 0;
+  const auditIsReady = Boolean(workspace.researchRun?.runId);
+  const hasBlockedGate = !schemaIsReady || !riskIsReady;
+
+  return [
+    schemaIsReady
+      ? {
+          id: "schema",
+          label: "Strategy schema",
+          value: `SMA${draft.entryWindow} / SMA${draft.exitWindow}`,
+          detail: "Entry and exit conditions are structured.",
+          status: "passed",
+          tone: "positive"
+        }
+      : {
+          id: "schema",
+          label: "Strategy schema",
+          value: "pending",
+          detail: "Structured entry and exit rules are required before audit.",
+          status: "blocked",
+          tone: "risk"
+        },
+    riskIsReady
+      ? {
+          id: "risk",
+          label: "Risk controls",
+          value: [
+            `${formatPercentValue(draft.positionPct)}%`,
+            `${formatPercentValue(draft.stopLossPct)}%`,
+            `${formatPercentValue(draft.takeProfitPct)}%`,
+            `${formatPercentValue(draft.maxDrawdownPct)}%`
+          ].join(" / "),
+          detail: "Position, stop, take profit, and drawdown guards are parseable.",
+          status: "passed",
+          tone: "positive"
+        }
+      : {
+          id: "risk",
+          label: "Risk controls",
+          value: "pending",
+          detail: "Position sizing and risk guardrails must be explicit.",
+          status: "blocked",
+          tone: "risk"
+        },
+    {
+      id: "execution",
+      label: "Execution mode",
+      value: draft.paperOnly ? "paper only" : "live gated",
+      detail: "Live routing stays blocked until adapter, risk, and human gates pass.",
+      status: draft.paperOnly ? "passed" : "review",
+      tone: draft.paperOnly ? "positive" : "warning"
+    },
+    auditIsReady
+      ? {
+          id: "audit",
+          label: "Audit evidence",
+          value: workspace.researchRun?.runId ?? "bound",
+          detail: "This draft is bound to a reproducible audit run.",
+          status: "passed",
+          tone: "positive"
+        }
+      : {
+          id: "audit",
+          label: "Audit evidence",
+          value: hasBlockedGate ? "blocked" : "needs run",
+          detail: hasBlockedGate
+            ? "Fix blocked gates before running an audit pipeline."
+            : "Run Pipeline to bind this draft to a reproducible audit run.",
+          status: hasBlockedGate ? "blocked" : "review",
+          tone: hasBlockedGate ? "risk" : "warning"
+        }
   ];
 }
 

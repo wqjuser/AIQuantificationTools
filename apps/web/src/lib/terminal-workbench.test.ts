@@ -29,6 +29,7 @@ import {
   buildResearchRunComparisonRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
+  buildStrategyReadinessGates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildStrategyVersionDiffRows,
@@ -202,6 +203,90 @@ describe("terminal workbench model", () => {
       "SMA20",
       "20% exposure cap",
       "Stop / take profit / drawdown / execution mode"
+    ]);
+  });
+
+  test("summarizes Strategy Lab readiness gates before a new audit run", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 8);
+
+    expect(buildStrategyReadinessGates(workspace)).toEqual([
+      {
+        id: "schema",
+        label: "Strategy schema",
+        value: "SMA8 / SMA20",
+        detail: "Entry and exit conditions are structured.",
+        status: "passed",
+        tone: "positive"
+      },
+      {
+        id: "risk",
+        label: "Risk controls",
+        value: "20% / 8% / 18% / 12%",
+        detail: "Position, stop, take profit, and drawdown guards are parseable.",
+        status: "passed",
+        tone: "positive"
+      },
+      {
+        id: "execution",
+        label: "Execution mode",
+        value: "paper only",
+        detail: "Live routing stays blocked until adapter, risk, and human gates pass.",
+        status: "passed",
+        tone: "positive"
+      },
+      {
+        id: "audit",
+        label: "Audit evidence",
+        value: "needs run",
+        detail: "Run Pipeline to bind this draft to a reproducible audit run.",
+        status: "review",
+        tone: "warning"
+      }
+    ]);
+  });
+
+  test("blocks Strategy Lab readiness when the selected context has pending rules", () => {
+    const workspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
+      symbol: "300750",
+      name: "宁德时代",
+      market: "ashare",
+      changePct: 0,
+      price: 189.5
+    });
+
+    expect(buildStrategyReadinessGates(workspace)).toEqual([
+      {
+        id: "schema",
+        label: "Strategy schema",
+        value: "pending",
+        detail: "Structured entry and exit rules are required before audit.",
+        status: "blocked",
+        tone: "risk"
+      },
+      {
+        id: "risk",
+        label: "Risk controls",
+        value: "pending",
+        detail: "Position sizing and risk guardrails must be explicit.",
+        status: "blocked",
+        tone: "risk"
+      },
+      {
+        id: "execution",
+        label: "Execution mode",
+        value: "paper only",
+        detail: "Live routing stays blocked until adapter, risk, and human gates pass.",
+        status: "passed",
+        tone: "positive"
+      },
+      {
+        id: "audit",
+        label: "Audit evidence",
+        value: "blocked",
+        detail: "Fix blocked gates before running an audit pipeline.",
+        status: "blocked",
+        tone: "risk"
+      }
     ]);
   });
 
