@@ -44,6 +44,7 @@ import {
   visiblePanels,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
+  workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
   workspaceWithStrategyRuleDraftField,
@@ -1738,6 +1739,95 @@ describe("terminal workbench model", () => {
 
   test("does not build parameter scan rows without an audited data snapshot", () => {
     expect(buildBacktestParameterScanRows(buildTerminalWorkspace())).toEqual([]);
+  });
+
+  test("stages a parameter scan candidate as a fresh strategy draft", () => {
+    const workspace = workspaceFromResearchRunAudit(
+      {
+        ...buildTerminalWorkspace(),
+        strategy: {
+          name: "Short SMA audit",
+          entry: "Close > SMA3",
+          exit: "Close < SMA3",
+          position: "20% max capital allocation",
+          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
+        }
+      },
+      {
+        runId: "run-stage-parameter",
+        createdAt: "2026-05-28T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Short SMA audit",
+        strategyRevision: "rev-stage-parameter",
+        dataRows: 10,
+        metrics: {
+          total_return_pct: 4,
+          max_drawdown_pct: 2,
+          win_rate_pct: 50,
+          trade_count: 4
+        },
+        decisions: [],
+        executionMode: "paper_only",
+        strategyConfig: {
+          name: "Short SMA audit",
+          revision: "rev-stage-parameter",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [{ kind: "close_above_sma", params: { window: 3 } }],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
+          risk: {
+            positionPct: 0.2,
+            stopLossPct: 0.08,
+            takeProfitPct: 0.18,
+            maxDrawdownPct: 0.12
+          }
+        },
+        dataSnapshot: {
+          source: "unit-test",
+          isComplete: true,
+          warnings: [],
+          rows: 10,
+          start: "2026-05-01T00:00:00+00:00",
+          end: "2026-05-10T00:00:00+00:00",
+          hash: "snapshot-stage-parameter",
+          bars: [10, 11, 12, 11, 13, 14, 13, 15, 16, 17].map((close, index) => ({
+            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
+            timestampMs: 1777593600000 + index * 86_400_000,
+            open: close - 0.2,
+            high: close + 0.4,
+            low: close - 0.5,
+            close,
+            volume: 1_000_000 + index * 10_000
+          }))
+        }
+      }
+    );
+
+    const staged = workspaceWithBacktestParameterCandidate(workspace, "scan-entry-1-exit-1");
+
+    expect(staged.strategy).toMatchObject({
+      entry: "Close > SMA1",
+      exit: "Close < SMA1",
+      position: "20% max capital allocation"
+    });
+    expect(staged.researchRun).toBeNull();
+    expect(quantLoopStatuses(staged)).toMatchObject({
+      strategy: "active",
+      backtest: "ready",
+      "agent-review": "ready",
+      paper: "locked"
+    });
+    expect(staged.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(staged.backtestTrades).toEqual([]);
+    expect(staged.decisionLog[0]).toMatchObject({
+      agent: "Backtest Lab",
+      tone: "warning",
+      message: "Parameter candidate SMA1 / SMA1 staged from run run-stage-parameter. Run Pipeline to generate a fresh audited backtest."
+    });
   });
 
   test("builds a portable markdown report from audited backtest evidence", () => {

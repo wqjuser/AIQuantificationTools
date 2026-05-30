@@ -2238,7 +2238,7 @@ em {
   display: grid;
   grid-template-columns:
     minmax(54px, 0.58fr) minmax(54px, 0.58fr) minmax(70px, 0.7fr) minmax(76px, 0.76fr)
-    minmax(56px, 0.52fr) minmax(68px, 0.66fr) minmax(64px, 0.58fr);
+    minmax(56px, 0.52fr) minmax(68px, 0.66fr) minmax(64px, 0.58fr) minmax(72px, 0.62fr);
   gap: 8px;
   align-items: center;
   min-height: 36px;
@@ -2278,6 +2278,26 @@ em {
 .parameter-scan-row span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.parameter-scan-row button {
+  justify-self: start;
+  min-height: 28px;
+  border: 1px solid #315f55;
+  border-radius: 6px;
+  background: #0f3a32;
+  color: #8ff5df;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 5px 9px;
+}
+
+.parameter-scan-row button:disabled {
+  border-color: #27364a;
+  background: #121b29;
+  color: #647386;
+  cursor: not-allowed;
 }
 
 .parameter-scan-empty {

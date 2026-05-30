@@ -120,6 +120,7 @@ import {
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
+  workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
   workspaceWithStrategyField,
   workspaceWithStrategyRuleDraftField,
@@ -896,6 +897,23 @@ export function App() {
     setActiveWorkflowStageId("backtest");
   }, []);
 
+  const stageBacktestParameterCandidate = useCallback((candidateId: string) => {
+    manualSelectionVersionRef.current += 1;
+    workflowRunIdRef.current += 1;
+    setIsRunning(false);
+    setPaperExecutionRecord(null);
+    setPromotionCandidateRecord(null);
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithBacktestParameterCandidate(current.workspace, candidateId),
+      source: "core",
+      statusLabel: "Parameter candidate staged"
+    }));
+    setActiveWorkAreaId("strategy");
+    setActiveLoopStepId("strategy");
+    setActiveWorkflowStageId("factor");
+    setWorkflowRunState(createWorkflowRunState());
+  }, []);
+
   const submitPaperExecution = useCallback(async () => {
     const runId = workspace.researchRun?.runId;
     if (!runId) {
@@ -1213,6 +1231,7 @@ export function App() {
             evidenceCards={backtestEvidenceCards}
             i18n={i18n}
             onExportMarkdown={exportBacktestReportMarkdown}
+            onStageParameterCandidate={stageBacktestParameterCandidate}
             onUpdateAssumption={updateBacktestAssumption}
             parameterScanRows={backtestParameterScanRows}
             report={backtestReport}
@@ -1839,6 +1858,7 @@ function BacktestReportPanel({
   evidenceCards,
   i18n,
   onExportMarkdown,
+  onStageParameterCandidate,
   onUpdateAssumption,
   parameterScanRows,
   report,
@@ -1850,6 +1870,7 @@ function BacktestReportPanel({
   evidenceCards: BacktestEvidenceCard[];
   i18n: AppI18n;
   onExportMarkdown?: () => void;
+  onStageParameterCandidate: (candidateId: string) => void;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
   parameterScanRows: BacktestParameterScanRow[];
   report: BacktestReport;
@@ -2042,6 +2063,7 @@ function BacktestReportPanel({
                 <span>{i18n.metricLabel("Trades")}</span>
                 <span>{i18n.locale === "zh-CN" ? "较当前" : "Delta"}</span>
                 <span>{i18n.t("execution.status")}</span>
+                <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
               </div>
               {parameterScanRows.map((row) => (
                 <article className={`parameter-scan-row ${row.tone}`} key={row.id}>
@@ -2052,6 +2074,13 @@ function BacktestReportPanel({
                   <span>{row.tradeCount}</span>
                   <span>{row.alphaVsCurrent}</span>
                   <span>{parameterScanStatusLabel(i18n, row.status)}</span>
+                  <button
+                    disabled={row.status === "current"}
+                    onClick={() => onStageParameterCandidate(row.id)}
+                    type="button"
+                  >
+                    {i18n.t("backtest.stageCandidate")}
+                  </button>
                 </article>
               ))}
             </div>

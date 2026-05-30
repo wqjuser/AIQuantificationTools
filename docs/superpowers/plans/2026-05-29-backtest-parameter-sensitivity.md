@@ -13,6 +13,7 @@ Scope:
 - Re-run a deterministic long-only SMA scan against `researchRun.dataSnapshot.bars`.
 - Include return, max drawdown, trade count, delta vs current audited return, current/candidate status, run id, data hash, and row tone.
 - Render the scan inside Backtest Lab and include it in the Backtest Markdown report.
+- Allow a non-current candidate row to be staged as a Strategy Lab draft, clearing the old audited run and requiring a new pipeline run.
 - Keep the wording as sensitivity analysis, not optimizer or recommendation.
 
 Out of scope:
@@ -27,6 +28,7 @@ Progress:
 - [x] Blocked state returns no rows when no audited snapshot exists.
 - [x] Backtest Markdown report includes a Parameter Sensitivity section.
 - [x] Backtest Lab renders the parameter scan table.
+- [x] Parameter candidates can be staged back into Strategy Lab as fresh unaudited drafts.
 - [x] i18n labels and layout contracts updated.
 - [x] Product plan and architecture documentation updated.
 

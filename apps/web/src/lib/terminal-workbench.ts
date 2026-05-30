@@ -3535,6 +3535,43 @@ export function workspaceWithBacktestAssumption(
   };
 }
 
+export function workspaceWithBacktestParameterCandidate(
+  currentWorkspace: TerminalWorkspace,
+  candidateId: string
+): TerminalWorkspace {
+  const candidate = buildBacktestParameterScanRows(currentWorkspace).find((row) => row.id === candidateId);
+  if (!candidate || candidate.status === "current") {
+    return currentWorkspace;
+  }
+
+  const currentDraft = buildStrategyRuleDraft(currentWorkspace);
+  const nextStrategy = strategySnapshotFromRuleDraft({
+    ...currentDraft,
+    entryWindow: candidate.entryWindow,
+    exitWindow: candidate.exitWindow
+  });
+  const note: DecisionLogEntry = {
+    agent: "Backtest Lab",
+    message: `Parameter candidate ${candidate.condition} staged from run ${candidate.runId}. Run Pipeline to generate a fresh audited backtest.`,
+    tone: "warning"
+  };
+  const existingLog =
+    currentWorkspace.decisionLog[0]?.agent === "Backtest Lab"
+      ? currentWorkspace.decisionLog.slice(1)
+      : currentWorkspace.decisionLog;
+
+  return {
+    ...clearAuditedResearchResults(
+      {
+        ...currentWorkspace,
+        strategy: nextStrategy,
+        decisionLog: [note, ...existingLog]
+      },
+      "strategy"
+    )
+  };
+}
+
 export function workspaceWithPreservedSelection(
   refreshedWorkspace: TerminalWorkspace,
   currentWorkspace: TerminalWorkspace
