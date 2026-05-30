@@ -47,6 +47,7 @@ import {
   workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
+  workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
@@ -2848,6 +2849,90 @@ describe("terminal workbench model", () => {
     expect(workspace.decisionLog[0]).toEqual({
       agent: "Strategy Editor",
       message: "Strategy field entry updated locally. Run Pipeline to generate a fresh audited backtest.",
+      tone: "warning"
+    });
+  });
+
+  test("loads a saved strategy version as a fresh cross-context draft", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-history",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
+      executionMode: "paper_only",
+      backtestTrades: [
+        {
+          id: "trade-1",
+          timestamp: "T+0",
+          symbol: "600000",
+          side: "BUY",
+          status: "filled",
+          price: "9.20",
+          quantity: "2100",
+          exposure: "20%",
+          pnl: "+8.2%",
+          reason: "Close > SMA20",
+          tone: "positive"
+        }
+      ]
+    });
+
+    const workspace = workspaceWithStrategyLibraryItem(auditedWorkspace, {
+      name: "US momentum draft",
+      revision: "rev-aapl-sma8",
+      market: "us",
+      symbol: "AAPL",
+      timeframe: "5m",
+      status: "audited",
+      auditRunId: "run-aapl-audited",
+      strategySnapshot: {
+        name: "US momentum draft",
+        entry: "Close > SMA8",
+        exit: "Close < SMA21",
+        position: "35% max capital allocation",
+        risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+      }
+    });
+
+    expect(workspace.selectedInstrument).toMatchObject({
+      market: "us",
+      symbol: "AAPL",
+      name: "Apple"
+    });
+    expect(workspace.selectedTimeframe).toBe("5m");
+    expect(workspace.watchlist[0]).toMatchObject({ market: "us", symbol: "AAPL" });
+    expect(workspace.strategy).toEqual({
+      name: "US momentum draft",
+      entry: "Close > SMA8",
+      exit: "Close < SMA21",
+      position: "35% max capital allocation",
+      risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+    });
+    expect(workspace.researchRun).toBeNull();
+    expect(workspace.backtestTrades).toEqual([]);
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(quantLoopStatuses(workspace)).toEqual({
+      research: "ready",
+      strategy: "active",
+      backtest: "ready",
+      "agent-review": "ready",
+      paper: "locked"
+    });
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "Strategy Library",
+      message:
+        "Strategy revision rev-aapl-sma8 loaded for AAPL 5m. Archived audit run run-aapl-audited remains read-only; Run Pipeline to generate a fresh audited backtest.",
       tone: "warning"
     });
   });

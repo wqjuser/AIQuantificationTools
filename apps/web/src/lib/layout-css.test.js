@@ -230,11 +230,16 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("saveStrategySnapshot");
     expect(appSource).toContain("saveCurrentStrategyVersion");
     expect(appSource).toContain("loadSavedStrategyVersion");
+    expect(appSource).toContain("workspaceWithStrategyLibraryItem");
+    expect(appSource).toContain('i18n.t("strategy.context")');
+    expect(appSource).toContain('i18n.t("strategy.auditRun")');
+    expect(appSource).toContain('i18n.t("strategy.loadedVersion")');
     expect(runPipelineSource).toContain("await refreshStrategyLibrary();");
     expect(appSource).toContain('className="strategy-library-list"');
     expect(appSource).toContain('className="strategy-library-actions"');
     expect(styles).toContain(".strategy-library-list");
     expect(styles).toContain(".strategy-library-card");
+    expect(styles).toContain(".strategy-library-card small");
   });
 
   test("renders a persistent research note panel for the selected context", () => {

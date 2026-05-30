@@ -21,6 +21,7 @@ describe("i18n", () => {
     expect(zh.metricLabel("Max DD")).toBe("最大回撤");
     expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
     expect(zh.statusLabel("Strategy edited")).toBe("策略已编辑");
+    expect(zh.statusLabel("Strategy version loaded")).toBe("策略版本已载入");
     expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
     expect(zh.statusLabel("AI review export ready")).toBe("AI 评审报告导出完成");
   });
@@ -52,6 +53,9 @@ describe("i18n", () => {
 
     expect(zh.t("module.scanner.title")).toBe("市场扫描器");
     expect(zh.t("strategy.name")).toBe("名称");
+    expect(zh.t("strategy.context")).toBe("上下文");
+    expect(zh.t("strategy.auditRun")).toBe("审计运行");
+    expect(zh.t("strategy.loadedVersion")).toBe("已载入");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
     expect(zh.t("backtest.assumptions")).toBe("回测假设");
     expect(zh.t("backtest.parameterScan")).toBe("参数敏感性");
@@ -72,6 +76,9 @@ describe("i18n", () => {
     expect(zh.t("module.news.context")).toBe("本地证据流");
     expect(zh.t("module.workflow.canvas")).toBe("节点画布");
     expect(en.t("backtest.replay")).toBe("Trade replay");
+    expect(en.t("strategy.context")).toBe("Context");
+    expect(en.t("strategy.auditRun")).toBe("Audit run");
+    expect(en.t("strategy.loadedVersion")).toBe("Loaded");
     expect(en.t("backtest.parameterScan")).toBe("Parameter sensitivity");
     expect(en.t("backtest.stageCandidate")).toBe("Stage");
     expect(en.t("backtest.initialCash")).toBe("Initial cash");
@@ -117,6 +124,7 @@ describe("i18n", () => {
       )
     ).toBe("600000 回测解释：收益率 +12.4%，最大回撤 5.8%，交易数 42；不构成收益保证。");
     expect(zh.decisionAgent("AI Review Gate")).toBe("AI 评审闸门");
+    expect(zh.decisionAgent("Strategy Library")).toBe("策略库");
     expect(
       zh.decisionMessage(
         "Backtest explanation for 600000 using audited run run-1: return +8.20%, max drawdown 3.10%, trades 9; no guaranteed outcome."
@@ -131,6 +139,11 @@ describe("i18n", () => {
     expect(
       zh.decisionMessage("Strategy field entry updated locally. Run Pipeline to generate a fresh audited backtest.")
     ).toBe("策略字段 入场 已本地更新。运行流水线以生成新的可审计回测。");
+    expect(
+      zh.decisionMessage(
+        "Strategy revision rev-aapl-sma8 loaded for AAPL 5m. Archived audit run run-aapl-audited remains read-only; Run Pipeline to generate a fresh audited backtest."
+      )
+    ).toBe("策略版本 rev-aapl-sma8 已载入到 AAPL 5m。归档审计运行 run-aapl-audited 保持只读；运行流水线以生成新的可审计回测。");
     expect(zh.strategyText("Close > SMA7")).toBe("收盘价 > SMA7");
     expect(zh.strategyText("Close < SMA13")).toBe("收盘价 < SMA13");
     expect(zh.strategyText("35% max capital allocation")).toBe("最大资金占用 35%");

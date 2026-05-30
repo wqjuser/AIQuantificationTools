@@ -122,7 +122,7 @@ import {
   workspaceWithBacktestAssumption,
   workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
-  workspaceWithStrategyField,
+  workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
@@ -325,9 +325,7 @@ export function App() {
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyRuleRows = buildStrategyRuleRows(workspace);
-  const visibleStrategyLibrary = strategyLibraryState.strategies.filter(
-    (item) => item.market === workspace.selectedInstrument.market && item.symbol === workspace.selectedInstrument.symbol
-  );
+  const visibleStrategyLibrary = strategyLibraryState.strategies;
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
   const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
@@ -350,12 +348,10 @@ export function App() {
   const refreshStrategyLibrary = useCallback(async () => {
     setStrategyLibraryState(
       await loadStrategyLibrary(quantCoreBaseUrl, {
-        market: workspace.selectedInstrument.market,
-        symbol: workspace.selectedInstrument.symbol,
-        limit: 8
+        limit: 12
       })
     );
-  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol]);
+  }, []);
 
   const refreshResearchNote = useCallback(async () => {
     const result = await loadResearchNote(quantCoreBaseUrl, {
@@ -865,18 +861,11 @@ export function App() {
     setIsRunning(false);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
-    setWorkspaceState((current) => {
-      const fields = ["name", "entry", "exit", "position", "risk"] as const;
-      const nextWorkspace = fields.reduce(
-        (draftWorkspace, field) => workspaceWithStrategyField(draftWorkspace, field, strategy.strategySnapshot[field]),
-        current.workspace
-      );
-      return {
-        workspace: nextWorkspace,
-        source: "core",
-        statusLabel: "Strategy version loaded"
-      };
-    });
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithStrategyLibraryItem(current.workspace, strategy),
+      source: "core",
+      statusLabel: "Strategy version loaded"
+    }));
     setActiveWorkAreaId("strategy");
     setActiveLoopStepId("strategy");
     setActiveWorkflowStageId("factor");
@@ -1798,18 +1787,36 @@ function StrategySummary({
           <strong>{library.length}</strong>
         </div>
         {library.length ? (
-          library.map((item) => (
-            <article className={`strategy-library-card ${item.status}`} key={item.revision}>
-              <span>
-                <strong>{item.name}</strong>
-                <em>{item.revision}</em>
-              </span>
-              <span>{strategyLibraryStatusLabel(i18n, item.status)}</span>
-              <button onClick={() => onLoadStrategyVersion(item)} type="button">
-                {i18n.t("strategy.loadVersion")}
-              </button>
-            </article>
-          ))
+          library.map((item) => {
+            const isCurrentDraft =
+              item.market === workspace.selectedInstrument.market &&
+              item.symbol === workspace.selectedInstrument.symbol &&
+              item.timeframe === workspace.selectedTimeframe &&
+              item.strategySnapshot.name === workspace.strategy.name &&
+              item.strategySnapshot.entry === workspace.strategy.entry &&
+              item.strategySnapshot.exit === workspace.strategy.exit &&
+              item.strategySnapshot.position === workspace.strategy.position &&
+              item.strategySnapshot.risk === workspace.strategy.risk;
+
+            return (
+              <article className={`strategy-library-card ${item.status}`} key={item.revision}>
+                <span>
+                  <strong>{item.name}</strong>
+                  <em>{item.revision}</em>
+                  <small>
+                    {i18n.t("strategy.context")}: {item.market.toUpperCase()} · {item.symbol} · {item.timeframe}
+                  </small>
+                  <small>
+                    {i18n.t("strategy.auditRun")}: {item.auditRunId ?? i18n.t("strategy.auditRequired")}
+                  </small>
+                </span>
+                <span>{strategyLibraryStatusLabel(i18n, item.status)}</span>
+                <button disabled={isCurrentDraft} onClick={() => onLoadStrategyVersion(item)} type="button">
+                  {isCurrentDraft ? i18n.t("strategy.loadedVersion") : i18n.t("strategy.loadVersion")}
+                </button>
+              </article>
+            );
+          })
         ) : (
           <p className="strategy-library-empty">{i18n.t("strategy.libraryEmpty")}</p>
         )}

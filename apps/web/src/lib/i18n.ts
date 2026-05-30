@@ -150,8 +150,11 @@ const messages = {
     "strategy.saveVersion": "Save version",
     "strategy.saving": "Saving",
     "strategy.library": "Strategy library",
-    "strategy.libraryEmpty": "No saved versions for this instrument yet.",
+    "strategy.libraryEmpty": "No saved strategy versions yet.",
     "strategy.loadVersion": "Load",
+    "strategy.loadedVersion": "Loaded",
+    "strategy.context": "Context",
+    "strategy.auditRun": "Audit run",
     "backtest.replay": "Trade replay",
     "backtest.assumptions": "Backtest assumptions",
     "backtest.parameterScan": "Parameter sensitivity",
@@ -306,8 +309,11 @@ const messages = {
     "strategy.saveVersion": "保存版本",
     "strategy.saving": "保存中",
     "strategy.library": "策略库",
-    "strategy.libraryEmpty": "当前标的还没有保存的策略版本。",
+    "strategy.libraryEmpty": "还没有保存的策略版本。",
     "strategy.loadVersion": "载入",
+    "strategy.loadedVersion": "已载入",
+    "strategy.context": "上下文",
+    "strategy.auditRun": "审计运行",
     "backtest.replay": "交易回放",
     "backtest.assumptions": "回测假设",
     "backtest.parameterScan": "参数敏感性",
@@ -448,6 +454,9 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Research run complete": "Research run complete",
       "Research run failed": "Research run failed",
       "Audit replay loaded": "Audit replay loaded",
+      "Strategy version saved": "Strategy version saved",
+      "Strategy version save failed": "Strategy version save failed",
+      "Strategy version loaded": "Strategy version loaded",
       "Research run export ready": "Research run export ready",
       "Research run export failed": "Research run export failed",
       "Research run import ready": "Research run import ready",
@@ -575,6 +584,9 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "Research run complete": "研究运行完成",
       "Research run failed": "研究运行失败",
       "Audit replay loaded": "审计回放已加载",
+      "Strategy version saved": "策略版本已保存",
+      "Strategy version save failed": "策略版本保存失败",
+      "Strategy version loaded": "策略版本已载入",
       "Research run export ready": "研究运行导出完成",
       "Research run export failed": "研究运行导出失败",
       "Research run import ready": "研究运行导入完成",
@@ -840,6 +852,15 @@ function translateDecisionMessage(locale: Locale, message: string): string {
   if (strategyEdited) {
     return `策略字段 ${strategyFieldText(locale, strategyEdited[1])} 已本地更新。运行流水线以生成新的可审计回测。`;
   }
+  const strategyLibraryLoaded = message.match(
+    /^Strategy revision (.+) loaded for (.+) ((?:1d|1m|5m|15m|30m|60m))\. (?:Archived audit run (.+) remains read-only; )?Run Pipeline to generate a fresh audited backtest\.$/
+  );
+  if (strategyLibraryLoaded) {
+    const archivedRun = strategyLibraryLoaded[4]
+      ? `归档审计运行 ${strategyLibraryLoaded[4]} 保持只读；`
+      : "";
+    return `策略版本 ${strategyLibraryLoaded[1]} 已载入到 ${strategyLibraryLoaded[2]} ${strategyLibraryLoaded[3]}。${archivedRun}运行流水线以生成新的可审计回测。`;
+  }
   const backtestAssumptionEdited = message.match(
     /^Backtest assumption (.+) updated locally\. Run Pipeline to generate a fresh audited backtest\.$/
   );
@@ -894,7 +915,8 @@ function translateAgentName(locale: Locale, agent: string): string {
     Risk: "风险",
     "Portfolio Manager": "组合经理",
     "AI Debate": "AI 辩论",
-    "Strategy Drafter": "策略起草员"
+    "Strategy Drafter": "策略起草员",
+    "Strategy Library": "策略库"
   };
   return extra[agent] ?? agent;
 }

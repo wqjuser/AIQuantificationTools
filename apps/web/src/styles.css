@@ -1722,7 +1722,8 @@ em {
   padding: 6px 10px;
 }
 
-.strategy-library-actions button:disabled {
+.strategy-library-actions button:disabled,
+.strategy-library-card button:disabled {
   cursor: wait;
   opacity: 0.58;
 }
@@ -1767,15 +1768,23 @@ em {
 }
 
 .strategy-library-card strong,
-.strategy-library-card em {
+.strategy-library-card em,
+.strategy-library-card small {
   display: block;
 }
 
-.strategy-library-card em {
+.strategy-library-card em,
+.strategy-library-card small {
   margin-top: 2px;
   color: #8fa0b2;
   font-size: 10px;
   font-style: normal;
+}
+
+.strategy-library-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .strategy-library-empty {

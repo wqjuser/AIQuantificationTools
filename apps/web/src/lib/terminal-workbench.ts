@@ -105,6 +105,17 @@ export interface StrategySnapshot {
 
 export type StrategyField = keyof StrategySnapshot;
 
+export interface StrategyLibraryDraftItem {
+  name: string;
+  revision: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  status: "draft" | "audited";
+  auditRunId?: string | null;
+  strategySnapshot: StrategySnapshot;
+}
+
 export type StrategyConditionKind = "close_above_sma" | "close_below_sma";
 
 export type StrategyRuleDraftField =
@@ -3434,6 +3445,51 @@ export function workspaceWithSelectedTimeframe(
   timeframe: Timeframe
 ): TerminalWorkspace {
   return freshResearchContext(currentWorkspace, currentWorkspace.selectedInstrument, timeframe);
+}
+
+export function workspaceWithStrategyLibraryItem(
+  currentWorkspace: TerminalWorkspace,
+  item: StrategyLibraryDraftItem
+): TerminalWorkspace {
+  const existingInstrument = currentWorkspace.watchlist.find(
+    (candidate) => candidate.market === item.market && candidate.symbol === item.symbol
+  );
+  const selectedInstrument: Instrument = existingInstrument ?? {
+    market: item.market,
+    symbol: item.symbol,
+    name: item.name || item.symbol,
+    changePct: 0
+  };
+  const watchlist = [
+    selectedInstrument,
+    ...currentWorkspace.watchlist.filter(
+      (candidate) => candidate.market !== item.market || candidate.symbol !== item.symbol
+    )
+  ].slice(0, 8);
+  const auditDetail = item.auditRunId
+    ? `Archived audit run ${item.auditRunId} remains read-only; `
+    : "";
+  const note: DecisionLogEntry = {
+    agent: "Strategy Library",
+    message: `Strategy revision ${item.revision} loaded for ${item.symbol} ${item.timeframe}. ${auditDetail}Run Pipeline to generate a fresh audited backtest.`,
+    tone: "warning"
+  };
+  const existingLog =
+    currentWorkspace.decisionLog[0]?.agent === "Strategy Library"
+      ? currentWorkspace.decisionLog.slice(1)
+      : currentWorkspace.decisionLog;
+
+  return clearAuditedResearchResults(
+    {
+      ...currentWorkspace,
+      selectedInstrument,
+      selectedTimeframe: item.timeframe,
+      watchlist,
+      strategy: item.strategySnapshot,
+      decisionLog: [note, ...existingLog]
+    },
+    "strategy"
+  );
 }
 
 export function workspaceWithStrategyField(
