@@ -1575,7 +1575,7 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
   }
 
   const price = resolvePaperOrderPrice(workspace);
-  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
+  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price, resolvePaperTargetNotional(workspace));
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const notional = quantity * price;
   const approval = buildRiskApprovalSummary(workspace);
@@ -1769,7 +1769,7 @@ export function buildPaperPositionRows(
     ];
   }
 
-  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price);
+  const quantity = calculatePaperQuantity(workspace.selectedInstrument.market, price, resolvePaperTargetNotional(workspace));
   const marketValue = quantity * price;
   const returnMetric = metricValue(workspace, "Return", "N/A");
   const returnPct = parsePercentMetric(returnMetric);
@@ -2980,8 +2980,18 @@ function resolvePaperOrderPrice(workspace: TerminalWorkspace): number {
   return 1;
 }
 
-function calculatePaperQuantity(market: Market, price: number): number {
-  const targetNotional = 20_000;
+function resolvePaperTargetNotional(workspace: TerminalWorkspace): number {
+  const strategyDraft = buildStrategyRuleDraft(workspace);
+  const approvalRisk = buildRiskApprovalRisk(workspace, strategyDraft);
+  const assumptions = resolveBacktestAssumptions(workspace);
+  const positionPct =
+    approvalRisk.positionPct !== null && approvalRisk.positionPct > 0
+      ? approvalRisk.positionPct / 100
+      : strategyDraft.positionPct / 100;
+  return Math.max(1, Math.min(assumptions.initialCash * positionPct, 20_000));
+}
+
+function calculatePaperQuantity(market: Market, price: number, targetNotional = 20_000): number {
   const rawQuantity = Math.max(1, Math.floor(targetNotional / price));
   if (market === "ashare") {
     return Math.max(100, Math.floor(rawQuantity / 100) * 100);

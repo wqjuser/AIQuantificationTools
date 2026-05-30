@@ -1201,6 +1201,59 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("sizes paper trading previews from audited strategy position risk", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-paper-audited-sizing",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Audited sizing",
+      strategyRevision: "rev-paper-audited-sizing",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      strategyConfig: {
+        name: "Audited sizing",
+        revision: "rev-paper-audited-sizing",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+        risk: {
+          positionPct: 0.1,
+          stopLossPct: 0.08,
+          takeProfitPct: 0.18,
+          maxDrawdownPct: 0.2
+        }
+      },
+      backtestAssumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 }
+    });
+    const editedWorkspace = {
+      ...auditedWorkspace,
+      strategy: {
+        ...auditedWorkspace.strategy,
+        position: "80% cap per instrument"
+      }
+    };
+
+    const rows = buildPaperTradingRows(editedWorkspace);
+    const positions = buildPaperPositionRows(editedWorkspace);
+
+    expect(rows[0]).toMatchObject({
+      quantity: "1100",
+      price: "8.66",
+      notional: "9526.00"
+    });
+    expect(positions[0]).toMatchObject({
+      quantity: "1100",
+      marketValue: "9526.00"
+    });
+  });
+
   test("keeps paper orders blocked when the approval drawdown gate fails", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-risk-blocked",
