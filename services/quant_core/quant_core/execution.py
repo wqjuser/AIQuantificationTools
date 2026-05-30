@@ -237,14 +237,24 @@ def build_promotion_candidate(audit: Any, paper_executions: list[PaperExecutionR
         for execution in executions
         if any(gate.get("id") == "paper-risk-check" and bool(gate.get("passed")) for gate in execution.gates)
     )
+    try:
+        validate_paper_execution_handoff(audit)
+        risk_approved = True
+    except ValueError:
+        risk_approved = False
     paper_passed = bool(filled_orders) and passed_paper_risk_checks > 0
-    status = "certification_pending" if paper_passed else "paper_pending"
-    headline = "Live promotion pending certification" if paper_passed else "Paper execution required"
-    summary = (
-        "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass."
-        if paper_passed
-        else "The audited run is risk-approved for paper trading, but no filled paper execution is bound yet."
-    )
+    if not risk_approved:
+        status = "blocked"
+        headline = "Promotion queue blocked"
+        summary = "A strategy needs audited evidence and risk approval before it can enter execution promotion."
+    else:
+        status = "certification_pending" if paper_passed else "paper_pending"
+        headline = "Live promotion pending certification" if paper_passed else "Paper execution required"
+        summary = (
+            "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass."
+            if paper_passed
+            else "The audited run is risk-approved for paper trading, but no filled paper execution is bound yet."
+        )
     filled_value = _count_label(len(filled_orders), "filled order")
 
     return {
@@ -279,12 +289,20 @@ def build_promotion_candidate(audit: Any, paper_executions: list[PaperExecutionR
             {
                 "id": "risk-approval",
                 "label": "Risk approval",
-                "value": "paper approved",
-                "detail": "Audited evidence can enter paper-to-live promotion review; live routing remains blocked.",
-                "status": "passed",
-                "tone": "positive",
-                "passed": True,
-                "reason": "Audited evidence can enter paper-to-live promotion review; live routing remains blocked.",
+                "value": "paper approved" if risk_approved else "risk blocked",
+                "detail": (
+                    "Audited evidence can enter paper-to-live promotion review; live routing remains blocked."
+                    if risk_approved
+                    else "Audited strategy risk configuration is incomplete; paper-to-live promotion is blocked."
+                ),
+                "status": "passed" if risk_approved else "blocked",
+                "tone": "positive" if risk_approved else "risk",
+                "passed": risk_approved,
+                "reason": (
+                    "Audited evidence can enter paper-to-live promotion review; live routing remains blocked."
+                    if risk_approved
+                    else "Audited strategy risk configuration is incomplete; paper-to-live promotion is blocked."
+                ),
             },
             {
                 "id": "paper-execution",

@@ -3106,6 +3106,7 @@ function promotionStageDetail(i18n: AppI18n, detail: string): string {
   }
   return detail
     .replace("Run Pipeline before a strategy can enter the promotion queue.", "策略进入晋级队列前需要先运行流水线。")
+    .replace("Audited strategy risk configuration is incomplete; paper-to-live promotion is blocked.", "审计策略风控配置不完整，模拟到实盘晋级已阻断。")
     .replace("Paper execution exists, but a filled order and passing risk check are both required.", "已有模拟执行，但仍需要已成交委托和通过的风控检查。")
     .replace("Submit a paper order from the active audited run before live promotion review.", "实盘晋级评审前，请先基于当前审计运行提交模拟委托。")
     .replace("A certified live adapter is available for the selected market.", "当前市场已有可用的认证实盘适配器。")

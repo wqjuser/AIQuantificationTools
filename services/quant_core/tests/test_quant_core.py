@@ -471,6 +471,17 @@ class QuantCoreContractTest(unittest.TestCase):
                     }
                 ],
             },
+            strategy_config={
+                "name": "SMA trend demo",
+                "revision": "rev-promotion-candidate",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
             backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
         )
 
@@ -494,6 +505,66 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(candidate["stages"][2]["value"], "1 filled order")
         self.assertTrue(candidate["stages"][2]["passed"])
         self.assertFalse(candidate["liveTradingAllowed"])
+
+    def test_promotion_candidate_blocks_when_strategy_risk_is_incomplete(self):
+        from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
+        from quant_core.runs import ResearchRunAudit
+
+        audit = ResearchRunAudit(
+            run_id="run-promotion-missing-risk",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Incomplete promotion risk",
+            strategy_revision="rev-promotion-missing-risk",
+            data_rows=1,
+            metrics={"total_return_pct": 12.4, "max_drawdown_pct": 5.8, "trade_count": 12},
+            decisions=[],
+            execution_mode="paper_only",
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-promotion-missing-risk",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "name": "Incomplete promotion risk",
+                "revision": "rev-promotion-missing-risk",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": None, "maxDrawdownPct": 0.12},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+        execution = create_paper_execution_from_audit(audit, created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc))
+
+        candidate = build_promotion_candidate(audit, [execution])
+        risk_stage = next(stage for stage in candidate["stages"] if stage["id"] == "risk-approval")
+
+        self.assertEqual(candidate["status"], "blocked")
+        self.assertEqual(candidate["headline"], "Promotion queue blocked")
+        self.assertEqual(candidate["latestPaperExecutionId"], execution.execution_id)
+        self.assertEqual(risk_stage["value"], "risk blocked")
+        self.assertEqual(risk_stage["status"], "blocked")
+        self.assertFalse(risk_stage["passed"])
+        self.assertEqual(candidate["evidence"]["filledOrders"], 1)
 
     def test_research_run_paper_execution_api_records_order_for_run(self):
         import json
@@ -710,6 +781,17 @@ class QuantCoreContractTest(unittest.TestCase):
                         "volume": 1200000,
                     }
                 ],
+            },
+            strategy_config={
+                "name": "SMA trend demo",
+                "revision": "rev-promotion-api",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
             },
             backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
             backtest_trades=[{"id": "trade-1"}],
