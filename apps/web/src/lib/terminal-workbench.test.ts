@@ -1096,6 +1096,58 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("uses audited strategy risk for approval even when the visible draft changes", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-risk-locked",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Audited SMA plan",
+      strategyRevision: "rev-risk-locked",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      strategyConfig: {
+        name: "Audited SMA plan",
+        revision: "rev-risk-locked",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+        risk: {
+          positionPct: 0.1,
+          stopLossPct: 0.08,
+          takeProfitPct: 0.18,
+          maxDrawdownPct: 0.2
+        }
+      }
+    });
+    const editedWorkspace = {
+      ...auditedWorkspace,
+      strategy: {
+        ...auditedWorkspace.strategy,
+        position: "80% cap per instrument",
+        risk: "Stop -2%, take profit +3%, drawdown guard 2%, paper only"
+      }
+    };
+
+    const approval = buildRiskApprovalSummary(editedWorkspace);
+
+    expect(approval.status).toBe("paper_ready");
+    expect(approval.gates.find((gate) => gate.id === "position-limit")).toMatchObject({
+      value: "10% cap",
+      detail: "Sizing uses the audited strategy position guardrail."
+    });
+    expect(approval.gates.find((gate) => gate.id === "drawdown-limit")).toMatchObject({
+      value: "5.8% / 20% guard",
+      status: "passed"
+    });
+  });
+
   test("blocks paper trading rows until an audited research run is bound", () => {
     const rows = buildPaperTradingRows(buildTerminalWorkspace());
 

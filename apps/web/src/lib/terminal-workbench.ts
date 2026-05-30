@@ -510,6 +510,7 @@ export interface ResearchRunSummary {
   dataQuality?: ResearchRunDataQuality;
   dataSnapshot?: ResearchRunDataSnapshot;
   researchNote?: ResearchRunNote;
+  strategyConfig?: ResearchRunStrategyConfig;
 }
 
 export interface ResearchRunNote {
@@ -1349,12 +1350,22 @@ export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioR
 export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskApprovalSummary {
   const aiDossier = buildAiReviewDossier(workspace);
   const strategyDraft = buildStrategyRuleDraft(workspace);
+  const approvalRisk = buildRiskApprovalRisk(workspace, strategyDraft);
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const drawdownMetric = parsePercentMetric(metricValue(workspace, "Max DD", "N/A"));
   const drawdownValue = drawdownMetric === null ? "N/A" : `${formatPercentValue(drawdownMetric)}%`;
-  const drawdownLimit = `${formatPercentValue(strategyDraft.maxDrawdownPct)}%`;
-  const drawdownPassed = drawdownMetric !== null && drawdownMetric <= strategyDraft.maxDrawdownPct;
-  const paperCanStage = Boolean(workspace.researchRun) && aiDossier.status === "ready" && drawdownPassed;
+  const positionIsReady = approvalRisk.positionPct !== null && approvalRisk.positionPct > 0;
+  const drawdownIsReady = approvalRisk.maxDrawdownPct !== null && approvalRisk.maxDrawdownPct > 0;
+  const drawdownLimit = drawdownIsReady ? `${formatPercentValue(approvalRisk.maxDrawdownPct ?? 0)}%` : "N/A";
+  const drawdownPassed = drawdownMetric !== null && drawdownIsReady && drawdownMetric <= (approvalRisk.maxDrawdownPct ?? 0);
+  const riskIsComplete =
+    positionIsReady &&
+    drawdownIsReady &&
+    approvalRisk.stopLossPct !== null &&
+    approvalRisk.stopLossPct > 0 &&
+    approvalRisk.takeProfitPct !== null &&
+    approvalRisk.takeProfitPct > 0;
+  const paperCanStage = Boolean(workspace.researchRun) && aiDossier.status === "ready" && riskIsComplete && drawdownPassed;
   const liveCanRoute = paperCanStage && workspace.execution.liveEnabled && blockedGateCount === 0;
 
   if (!workspace.researchRun) {
@@ -1416,6 +1427,15 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
         status: "passed",
         tone: "positive"
       }
+    : !riskIsComplete
+      ? {
+          id: "execution-route",
+          label: "Execution route",
+          value: "risk blocked",
+          detail: "Audited strategy risk configuration is incomplete before execution staging.",
+          status: "blocked",
+          tone: "risk"
+        }
     : {
         id: "execution-route",
         label: "Execution route",
@@ -1456,24 +1476,63 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
       {
         id: "position-limit",
         label: "Position limit",
-        value: `${formatPercentValue(strategyDraft.positionPct)}% cap`,
-        detail: "Sizing uses the current strategy position guardrail.",
-        status: "passed",
-        tone: strategyDraft.positionPct <= 30 ? "positive" : "warning"
+        value: positionIsReady ? `${formatPercentValue(approvalRisk.positionPct ?? 0)}% cap` : "N/A cap",
+        detail: positionIsReady
+          ? approvalRisk.source === "audit"
+            ? "Sizing uses the audited strategy position guardrail."
+            : "Sizing uses the current strategy position guardrail."
+          : "Audited strategy position guardrail is missing.",
+        status: positionIsReady ? "passed" : "blocked",
+        tone: positionIsReady ? ((approvalRisk.positionPct ?? 0) <= 30 ? "positive" : "warning") : "risk"
       },
       {
         id: "drawdown-limit",
         label: "Drawdown guard",
         value: `${drawdownValue} / ${drawdownLimit} guard`,
-        detail: drawdownPassed
-          ? "Audited drawdown is inside the configured guardrail."
-          : "Audited drawdown breaches the configured guardrail.",
+        detail: !drawdownIsReady
+          ? "Audited strategy drawdown guardrail is missing."
+          : drawdownPassed
+            ? "Audited drawdown is inside the configured guardrail."
+            : "Audited drawdown breaches the configured guardrail.",
         status: drawdownPassed ? "passed" : "blocked",
         tone: drawdownPassed ? "positive" : "risk"
       },
       executionRouteGate
     ]
   };
+}
+
+function buildRiskApprovalRisk(
+  workspace: TerminalWorkspace,
+  strategyDraft: StrategyRuleDraft
+): {
+  positionPct: number | null;
+  stopLossPct: number | null;
+  takeProfitPct: number | null;
+  maxDrawdownPct: number | null;
+  source: "audit" | "draft";
+} {
+  const auditedRisk = workspace.researchRun?.strategyConfig?.risk;
+  if (auditedRisk) {
+    return {
+      positionPct: fractionToPercentOrNull(auditedRisk.positionPct),
+      stopLossPct: fractionToPercentOrNull(auditedRisk.stopLossPct),
+      takeProfitPct: fractionToPercentOrNull(auditedRisk.takeProfitPct),
+      maxDrawdownPct: fractionToPercentOrNull(auditedRisk.maxDrawdownPct),
+      source: "audit"
+    };
+  }
+  return {
+    positionPct: strategyDraft.positionPct,
+    stopLossPct: strategyDraft.stopLossPct,
+    takeProfitPct: strategyDraft.takeProfitPct,
+    maxDrawdownPct: strategyDraft.maxDrawdownPct,
+    source: "draft"
+  };
+}
+
+function fractionToPercentOrNull(value: number | null): number | null {
+  return value === null || !Number.isFinite(value) ? null : value * 100;
 }
 
 export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradingRow[] {
@@ -3441,7 +3500,8 @@ export function workspaceFromResearchRunAudit(
     executionMode: run.executionMode,
     dataQuality: run.dataQuality,
     dataSnapshot: run.dataSnapshot,
-    researchNote: run.researchNote
+    researchNote: run.researchNote,
+    strategyConfig: run.strategyConfig
   };
   return {
     ...currentWorkspace,
