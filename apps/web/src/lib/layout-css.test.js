@@ -241,6 +241,16 @@ describe("terminal layout css", () => {
     expect(runPipelineSource).toContain("Strategy preflight blocked");
   });
 
+  test("preflights strategy readiness before saving a strategy version", () => {
+    const saveStrategySource = sourceBetween("const saveCurrentStrategyVersion = useCallback", "const saveCurrentResearchNote");
+
+    expect(saveStrategySource).toContain("validateStrategySnapshot(quantCoreBaseUrl");
+    expect(saveStrategySource).toContain('preflight.validation?.status === "blocked"');
+    expect(saveStrategySource).toContain("setStrategyValidationState(preflight)");
+    expect(saveStrategySource).toContain("Strategy version blocked by readiness gates");
+    expect(saveStrategySource).toContain("saveStrategySnapshot(quantCoreBaseUrl");
+  });
+
   test("renders strategy library save and reload controls", () => {
     const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
 

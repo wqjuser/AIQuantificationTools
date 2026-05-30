@@ -98,8 +98,25 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 symbol = str(payload.get("symbol") or "600000")
                 timeframe = str(payload.get("timeframe") or "1d")
                 snapshot = _strategy_snapshot_from_payload(payload.get("strategy"))
-                strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
                 audit_run_id = str(payload.get("auditRunId") or "").strip() or None
+                validation = validate_strategy_snapshot(
+                    snapshot,
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    audit_run_id=audit_run_id,
+                )
+                if validation.status == "blocked":
+                    self._send_json(
+                        {
+                            "error": "strategy_not_ready",
+                            "detail": "strategy_preflight_blocked",
+                            "validation": strategy_validation_to_payload(validation),
+                        },
+                        status=400,
+                    )
+                    return
+                strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
                 record = self.strategy_store.save(strategy, audit_run_id=audit_run_id)
             except ValueError as error:
                 self._send_json({"error": "invalid_strategy", "detail": str(error)}, status=400)

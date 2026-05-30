@@ -237,6 +237,7 @@ export interface StrategySaveParams extends TerminalResearchParams {
 
 export interface StrategySaveResult {
   strategy?: StrategyLibraryItem;
+  validation?: StrategyValidation;
   source: WorkspaceSource;
   error?: string;
 }
@@ -752,10 +753,17 @@ export async function saveStrategySnapshot(
         strategy: params.strategy
       })
     });
+    const payload = await response.json();
     if (!response.ok) {
+      if (isStrategyValidationErrorPayload(payload)) {
+        return {
+          validation: payload.validation,
+          source: "core",
+          error: payload.error
+        };
+      }
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }
-    const payload = await response.json();
     if (!isStrategyLibraryItemPayload(payload)) {
       throw new Error("Invalid strategy library save contract");
     }
@@ -1193,6 +1201,14 @@ function isStrategyValidationPayload(value: unknown): value is { validation: Str
   }
   const payload = value as { validation?: unknown };
   return isStrategyValidation(payload.validation);
+}
+
+function isStrategyValidationErrorPayload(value: unknown): value is { error: string; validation: StrategyValidation } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { error?: unknown; validation?: unknown };
+  return typeof payload.error === "string" && isStrategyValidation(payload.validation);
 }
 
 function isStrategyValidation(value: unknown): value is StrategyValidation {

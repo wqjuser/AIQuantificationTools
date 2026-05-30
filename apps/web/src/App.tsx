@@ -871,6 +871,26 @@ export function App() {
 
   const saveCurrentStrategyVersion = useCallback(async () => {
     setIsSavingStrategy(true);
+    const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      auditRunId: workspace.researchRun?.runId ?? null,
+      strategy: workspace.strategy
+    });
+    setStrategyValidationState(preflight);
+    if (preflight.validation?.status === "blocked") {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Strategy version blocked by readiness gates",
+        error: "Strategy version blocked by readiness gates"
+      }));
+      setActiveWorkAreaId("strategy");
+      setActiveLoopStepId("strategy");
+      setActiveWorkflowStageId("factor");
+      setIsSavingStrategy(false);
+      return;
+    }
     const result = await saveStrategySnapshot(quantCoreBaseUrl, {
       market: workspace.selectedInstrument.market,
       symbol: workspace.selectedInstrument.symbol,
@@ -878,6 +898,13 @@ export function App() {
       auditRunId: workspace.researchRun?.runId ?? null,
       strategy: workspace.strategy
     });
+    if (result.validation) {
+      setStrategyValidationState({
+        validation: result.validation,
+        source: result.source,
+        error: result.error
+      });
+    }
     if (result.strategy) {
       setStrategyLibraryState((current) => ({
         strategies: [result.strategy!, ...current.strategies.filter((item) => item.revision !== result.strategy!.revision)],

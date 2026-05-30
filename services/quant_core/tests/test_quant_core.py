@@ -196,6 +196,60 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["validation"]["gates"][1]["value"], "40% / 6% / 12% / 9%")
         self.assertEqual(payload["validation"]["strategyConfig"]["symbols"], ["600000"])
 
+    def test_strategy_save_api_rejects_blocked_draft_before_library_write(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "strategy": {
+                        "name": "Blocked SMA plan",
+                        "entry": "Close > SMA8",
+                        "exit": "Close < SMA21",
+                        "position": "40% cap per instrument",
+                        "risk": "Stop -6%, drawdown guard 9%, paper only",
+                    },
+                }
+            ).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/strategies",
+                    body=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            saved = TestHandler.strategy_store.list_recent()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "strategy_not_ready")
+        self.assertEqual(payload["validation"]["status"], "blocked")
+        self.assertEqual(payload["validation"]["gates"][1]["status"], "blocked")
+        self.assertEqual(saved, [])
+
     def test_default_terminal_strategy_is_preflight_ready_before_audit(self):
         from quant_core.strategy_validation import validate_strategy_snapshot
         from quant_core.terminal import build_terminal_workspace

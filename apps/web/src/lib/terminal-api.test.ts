@@ -278,6 +278,68 @@ describe("terminal workspace API client", () => {
     expect(result.validation?.gates[0]).toMatchObject({ id: "schema", status: "passed" });
   });
 
+  test("surfaces blocked strategy save validation from the Python core", async () => {
+    const result = await saveStrategySnapshot(
+      "http://127.0.0.1:8765/",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategy: {
+          name: "Blocked SMA plan",
+          entry: "Close > SMA8",
+          exit: "Close < SMA21",
+          position: "40% cap per instrument",
+          risk: "Stop -6%, drawdown guard 9%, paper only"
+        }
+      },
+      async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: "strategy_not_ready",
+          detail: "strategy_preflight_blocked",
+          validation: {
+            status: "blocked",
+            revision: "rev-blocked",
+            gates: [
+              {
+                id: "risk",
+                label: "Risk controls",
+                value: "pending",
+                detail: "Position sizing and risk guardrails must be explicit.",
+                status: "blocked",
+                tone: "risk"
+              }
+            ],
+            strategyConfig: {
+              name: "Blocked SMA plan",
+              revision: "rev-blocked",
+              market: "ashare",
+              symbols: ["600000"],
+              timeframe: "1d",
+              version: 1,
+              entryConditions: [{ kind: "close_above_sma", params: { window: 8 } }],
+              exitConditions: [{ kind: "close_below_sma", params: { window: 21 } }],
+              risk: {
+                positionPct: 0.4,
+                stopLossPct: 0.06,
+                takeProfitPct: 0.18,
+                maxDrawdownPct: 0.09
+              }
+            }
+          }
+        })
+      })
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.strategy).toBeUndefined();
+    expect(result.error).toBe("strategy_not_ready");
+    expect(result.validation?.status).toBe("blocked");
+    expect(result.validation?.gates[0]).toMatchObject({ id: "risk", status: "blocked" });
+  });
+
   test("normalizes older core workspace navigation to the workflow-first contract", async () => {
     const remoteWorkspace = {
       ...buildTerminalWorkspace(),
