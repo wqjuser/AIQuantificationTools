@@ -46,7 +46,9 @@ import {
   saveStrategySnapshot,
   StrategyLibraryItem,
   StrategyLibraryResult,
+  StrategyValidationResult,
   submitResearchRunPaperExecution,
+  validateStrategySnapshot,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
@@ -161,6 +163,9 @@ const initialStrategyLibraryState: StrategyLibraryResult = {
   strategies: [],
   source: "fallback"
 };
+const initialStrategyValidationState: StrategyValidationResult = {
+  source: "fallback"
+};
 const initialResearchNoteState: ResearchNoteResult = {
   source: "fallback"
 };
@@ -266,6 +271,8 @@ export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
   const [strategyLibraryState, setStrategyLibraryState] = useState<StrategyLibraryResult>(initialStrategyLibraryState);
+  const [strategyValidationState, setStrategyValidationState] =
+    useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -297,6 +304,7 @@ export function App() {
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
+  const strategyValidationRequestIdRef = useRef(0);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -328,7 +336,8 @@ export function App() {
     : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
-  const strategyReadinessGates = buildStrategyReadinessGates(workspace);
+  const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
+  const strategyReadinessGates = strategyValidationState.validation?.gates ?? localStrategyReadinessGates;
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const visibleStrategyLibrary = strategyLibraryState.strategies;
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
@@ -345,6 +354,29 @@ export function App() {
   useEffect(() => {
     klinesStateRef.current = klinesState;
   }, [klinesState]);
+
+  useEffect(() => {
+    const requestId = strategyValidationRequestIdRef.current + 1;
+    strategyValidationRequestIdRef.current = requestId;
+    setStrategyValidationState(initialStrategyValidationState);
+    void validateStrategySnapshot(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      auditRunId: workspace.researchRun?.runId ?? null,
+      strategy: workspace.strategy
+    }).then((result) => {
+      if (strategyValidationRequestIdRef.current === requestId) {
+        setStrategyValidationState(result);
+      }
+    });
+  }, [
+    workspace.researchRun?.runId,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe,
+    workspace.strategy
+  ]);
 
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
@@ -1146,6 +1178,7 @@ export function App() {
         onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
         readinessGates={strategyReadinessGates}
         rows={strategyRuleRows}
+        validationSource={strategyValidationState.source}
         workspace={workspace}
       />
     </Panel>
@@ -1674,6 +1707,7 @@ function StrategySummary({
   onUpdateStrategyRuleDraftField,
   readinessGates,
   rows,
+  validationSource,
   workspace
 }: {
   draft: StrategyRuleDraft;
@@ -1685,6 +1719,7 @@ function StrategySummary({
   onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string) => void;
   readinessGates: StrategyReadinessGate[];
   rows: StrategyRuleRow[];
+  validationSource: WorkspaceLoadResult["source"];
   workspace: TerminalWorkspace;
 }) {
   return (
@@ -1760,7 +1795,10 @@ function StrategySummary({
         <div className="strategy-readiness-list">
           <div className="strategy-rule-title">
             <span>{i18n.t("strategy.readiness")}</span>
-            <strong>{readinessGates.filter((gate) => gate.status === "passed").length}/{readinessGates.length}</strong>
+            <strong>
+              {readinessGates.filter((gate) => gate.status === "passed").length}/{readinessGates.length}
+              <em className="strategy-validation-source">{strategyValidationSourceLabel(i18n, validationSource)}</em>
+            </strong>
           </div>
           {readinessGates.map((gate) => (
             <article className={`strategy-readiness-gate ${gate.tone}`} data-status={gate.status} key={gate.id}>
@@ -3094,6 +3132,13 @@ function strategyReadinessGateStatusLabel(i18n: AppI18n, status: StrategyReadine
     return status;
   }
   return { passed: "通过", review: "待复核", blocked: "阻断" }[status];
+}
+
+function strategyValidationSourceLabel(i18n: AppI18n, source: WorkspaceLoadResult["source"]): string {
+  if (i18n.locale === "en-US") {
+    return source === "core" ? "core validation" : "local fallback";
+  }
+  return source === "core" ? "核心校验" : "本地兜底";
 }
 
 function strategyDiffRowLabel(i18n: AppI18n, row: StrategyVersionDiffRow): string {

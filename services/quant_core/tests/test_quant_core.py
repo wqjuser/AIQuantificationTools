@@ -111,6 +111,91 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(detail_response.status, 200)
         self.assertEqual(detail_payload["strategy"]["strategyConfig"]["risk"]["positionPct"], 0.4)
 
+    def test_strategy_validation_summarizes_ready_and_blocked_gates(self):
+        from quant_core.strategy_validation import strategy_validation_to_payload, validate_strategy_snapshot
+        from quant_core.terminal import StrategySnapshot
+
+        ready = validate_strategy_snapshot(
+            StrategySnapshot(
+                name="Validated SMA plan",
+                entry="Close > SMA8",
+                exit="Close < SMA21",
+                position="40% cap per instrument",
+                risk="Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+            ),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+        )
+        blocked = validate_strategy_snapshot(
+            StrategySnapshot(
+                name="Pending context",
+                entry="Run Pipeline to generate entry rules from the selected context",
+                exit="Pending audited backtest",
+                position="Pending risk sizing",
+                risk="Paper only until a new audited run is available",
+            ),
+            market="ashare",
+            symbol="300750",
+            timeframe="1d",
+        )
+
+        self.assertEqual(ready.status, "review")
+        self.assertEqual([gate.status for gate in ready.gates], ["passed", "passed", "passed", "review"])
+        self.assertEqual(ready.gates[0].value, "SMA8 / SMA21")
+        self.assertEqual(ready.gates[1].value, "40% / 6% / 12% / 9%")
+        self.assertEqual(strategy_validation_to_payload(ready)["strategyConfig"]["revision"], ready.strategy.revision)
+        self.assertEqual(blocked.status, "blocked")
+        self.assertEqual([gate.status for gate in blocked.gates], ["blocked", "blocked", "passed", "blocked"])
+        self.assertEqual(blocked.gates[0].detail, "Structured entry and exit rules are required before audit.")
+
+    def test_strategy_validation_api_returns_preflight_contract(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        server = HTTPServer(("127.0.0.1", 0), QuantApiHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+        body = json.dumps(
+            {
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategy": {
+                    "name": "API validated SMA plan",
+                    "entry": "Close > SMA8",
+                    "exit": "Close < SMA21",
+                    "position": "40% cap per instrument",
+                    "risk": "Stop -6%, take profit +12%, drawdown guard 9%, paper only",
+                },
+            }
+        ).encode("utf-8")
+        try:
+            connection.request(
+                "POST",
+                "/api/strategies/validate",
+                body=body,
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["validation"]["status"], "review")
+        self.assertEqual(payload["validation"]["gates"][0]["id"], "schema")
+        self.assertEqual(payload["validation"]["gates"][1]["value"], "40% / 6% / 12% / 9%")
+        self.assertEqual(payload["validation"]["strategyConfig"]["symbols"], ["600000"])
+
     def test_sqlite_cache_upserts_and_reads_ohlcv_in_time_order(self):
         from quant_core.cache import MarketDataCache
         from quant_core.domain import OHLCVBar

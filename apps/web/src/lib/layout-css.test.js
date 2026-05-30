@@ -217,14 +217,18 @@ describe("terminal layout css", () => {
   test("renders the strategy lab as a structured rule builder", () => {
     expect(appSource).toContain("buildStrategyRuleDraft(workspace)");
     expect(appSource).toContain("buildStrategyReadinessGates(workspace)");
+    expect(appSource).toContain("validateStrategySnapshot");
     expect(appSource).toContain("workspaceWithStrategyRuleDraftField");
     expect(appSource).toContain("strategy-draft-grid");
     expect(appSource).toContain("strategy-generated-snapshot");
     expect(appSource).toContain("readinessGates={strategyReadinessGates}");
+    expect(appSource).toContain("validationSource={strategyValidationState.source}");
     expect(appSource).toContain('className="strategy-readiness-list"');
+    expect(appSource).toContain('className="strategy-validation-source"');
     expect(styles).toContain(".strategy-draft-grid");
     expect(styles).toContain(".strategy-generated-snapshot");
     expect(styles).toContain(".strategy-readiness-gate");
+    expect(styles).toContain(".strategy-validation-source");
   });
 
   test("renders strategy library save and reload controls", () => {

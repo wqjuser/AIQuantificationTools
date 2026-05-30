@@ -9,6 +9,7 @@ import {
   TerminalWorkspace,
   Timeframe,
   type BacktestAssumptions,
+  type StrategyReadinessGate,
   type StrategySnapshot
 } from "./terminal-workbench";
 
@@ -240,6 +241,19 @@ export interface StrategySaveResult {
   error?: string;
 }
 
+export interface StrategyValidation {
+  status: "ready" | "review" | "blocked";
+  revision: string;
+  gates: StrategyReadinessGate[];
+  strategyConfig: StrategyLibraryConfig;
+}
+
+export interface StrategyValidationResult {
+  validation?: StrategyValidation;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -414,6 +428,11 @@ export function buildStrategiesUrl(
 export function buildStrategyDetailUrl(baseUrl: string, revision: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(`api/strategies/${encodeURIComponent(revision)}`, normalizedBase).toString();
+}
+
+export function buildStrategyValidationUrl(baseUrl: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL("api/strategies/validate", normalizedBase).toString();
 }
 
 export function buildMarketKlinesUrl(
@@ -748,6 +767,42 @@ export async function saveStrategySnapshot(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown strategy save error"
+    };
+  }
+}
+
+export async function validateStrategySnapshot(
+  baseUrl: string,
+  params: StrategySaveParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyValidationResult> {
+  try {
+    const response = await fetcher(buildStrategyValidationUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        market: params.market,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        auditRunId: params.auditRunId ?? null,
+        strategy: params.strategy
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStrategyValidationPayload(payload)) {
+      throw new Error("Invalid strategy validation contract");
+    }
+    return {
+      validation: payload.validation,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy validation error"
     };
   }
 }
@@ -1130,6 +1185,46 @@ function isStrategyLibraryItemPayload(value: unknown): value is { strategy: Stra
   }
   const payload = value as { strategy?: unknown };
   return isStrategyLibraryItem(payload.strategy);
+}
+
+function isStrategyValidationPayload(value: unknown): value is { validation: StrategyValidation } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { validation?: unknown };
+  return isStrategyValidation(payload.validation);
+}
+
+function isStrategyValidation(value: unknown): value is StrategyValidation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const validation = value as Partial<StrategyValidation>;
+  return (
+    (validation.status === "ready" || validation.status === "review" || validation.status === "blocked") &&
+    typeof validation.revision === "string" &&
+    Array.isArray(validation.gates) &&
+    validation.gates.every(isStrategyReadinessGate) &&
+    isResearchRunStrategyConfig(validation.strategyConfig)
+  );
+}
+
+function isStrategyReadinessGate(value: unknown): value is StrategyReadinessGate {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const gate = value as Partial<StrategyReadinessGate>;
+  return (
+    (gate.id === "schema" || gate.id === "risk" || gate.id === "execution" || gate.id === "audit") &&
+    (gate.label === "Strategy schema" ||
+      gate.label === "Risk controls" ||
+      gate.label === "Execution mode" ||
+      gate.label === "Audit evidence") &&
+    typeof gate.value === "string" &&
+    typeof gate.detail === "string" &&
+    (gate.status === "passed" || gate.status === "review" || gate.status === "blocked") &&
+    (gate.tone === "positive" || gate.tone === "warning" || gate.tone === "risk")
+  );
 }
 
 function isStrategyLibraryItem(value: unknown): value is StrategyLibraryItem {

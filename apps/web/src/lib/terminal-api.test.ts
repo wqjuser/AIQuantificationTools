@@ -10,6 +10,7 @@ import {
   buildResearchRunPromotionUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
+  buildStrategyValidationUrl,
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -22,6 +23,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadStrategyLibrary,
+  validateStrategySnapshot,
   submitResearchRunPaperExecution,
   saveResearchNote,
   saveStrategySnapshot,
@@ -133,6 +135,9 @@ describe("terminal workspace API client", () => {
     expect(buildStrategyDetailUrl("http://127.0.0.1:8765/", "rev 你好/1")).toBe(
       "http://127.0.0.1:8765/api/strategies/rev%20%E4%BD%A0%E5%A5%BD%2F1"
     );
+    expect(buildStrategyValidationUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/strategies/validate"
+    );
   });
 
   test("builds the market klines URL with selected chart context", () => {
@@ -200,6 +205,77 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Core connected");
     expect(result.workspace.selectedInstrument.symbol).toBe("AAPL");
+  });
+
+  test("validates the active strategy draft through the Python core", async () => {
+    const calls: Array<{ url: string; body?: string }> = [];
+    const result = await validateStrategySnapshot(
+      "http://127.0.0.1:8765/",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategy: {
+          name: "Validated SMA plan",
+          entry: "Close > SMA8",
+          exit: "Close < SMA21",
+          position: "40% cap per instrument",
+          risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+        }
+      },
+      async (url, init) => {
+        calls.push({ url, body: String(init?.body ?? "") });
+        return {
+          ok: true,
+          json: async () => ({
+            validation: {
+              status: "review",
+              revision: "rev-validated",
+              gates: [
+                {
+                  id: "schema",
+                  label: "Strategy schema",
+                  value: "SMA8 / SMA21",
+                  detail: "Entry and exit conditions are structured.",
+                  status: "passed",
+                  tone: "positive"
+                },
+                {
+                  id: "audit",
+                  label: "Audit evidence",
+                  value: "needs run",
+                  detail: "Run Pipeline to bind this draft to a reproducible audit run.",
+                  status: "review",
+                  tone: "warning"
+                }
+              ],
+              strategyConfig: {
+                name: "Validated SMA plan",
+                revision: "rev-validated",
+                market: "ashare",
+                symbols: ["600000"],
+                timeframe: "1d",
+                version: 1,
+                entryConditions: [{ kind: "close_above_sma", params: { window: 8 } }],
+                exitConditions: [{ kind: "close_below_sma", params: { window: 21 } }],
+                risk: {
+                  positionPct: 0.4,
+                  stopLossPct: 0.06,
+                  takeProfitPct: 0.12,
+                  maxDrawdownPct: 0.09
+                }
+              }
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/strategies/validate");
+    expect(JSON.parse(calls[0].body ?? "{}").strategy.entry).toBe("Close > SMA8");
+    expect(result.source).toBe("core");
+    expect(result.validation?.status).toBe("review");
+    expect(result.validation?.gates[0]).toMatchObject({ id: "schema", status: "passed" });
   });
 
   test("normalizes older core workspace navigation to the workflow-first contract", async () => {
