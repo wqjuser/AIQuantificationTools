@@ -20,6 +20,9 @@ def build_settings_status(
     cache = Path(cache_path)
     stats = _normalize_cache_stats(cache_stats)
     generated_timestamp = generated_at or datetime.now(timezone.utc)
+    cache_context_payloads = [
+        _cache_context_to_payload(context, generated_at=generated_timestamp) for context in (cache_contexts or [])
+    ]
     finnhub_configured = bool((finnhub_api_key if finnhub_api_key is not None else os.getenv("FINNHUB_API_KEY", "")).strip())
     exchange = (ccxt_exchange if ccxt_exchange is not None else os.getenv("CCXT_DEFAULT_EXCHANGE", "binance")).strip() or "binance"
 
@@ -70,7 +73,8 @@ def build_settings_status(
             "rowCount": stats["row_count"],
             "contextCount": stats["context_count"],
             "latestTimestamp": stats["latest_timestamp"],
-            "contexts": [_cache_context_to_payload(context, generated_at=generated_timestamp) for context in (cache_contexts or [])],
+            "freshnessSummary": _cache_freshness_summary(cache_context_payloads),
+            "contexts": cache_context_payloads,
         },
         "executionAdapters": [
             {
@@ -151,6 +155,15 @@ def _cache_context_to_payload(context: dict[str, Any], *, generated_at: datetime
         "freshness": freshness,
         "ageHours": age_hours,
     }
+
+
+def _cache_freshness_summary(contexts: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {"fresh": 0, "stale": 0, "empty": 0}
+    for context in contexts:
+        freshness = context.get("freshness")
+        if freshness in summary:
+            summary[freshness] += 1
+    return summary
 
 
 def _cache_context_freshness(

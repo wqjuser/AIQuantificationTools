@@ -1346,6 +1346,11 @@ em {
   font-weight: 900;
 }
 
+.settings-cache-row .settings-cache-health {
+  color: #dce6ee;
+  font-weight: 900;
+}
+
 .settings-cache-contexts {
   display: grid;
   gap: 8px;

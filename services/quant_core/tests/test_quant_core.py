@@ -550,6 +550,7 @@ class QuantCoreContractTest(unittest.TestCase):
             )
 
         contexts = settings["cache"]["contexts"]
+        self.assertEqual(settings["cache"]["freshnessSummary"], {"fresh": 2, "stale": 1, "empty": 1})
         self.assertEqual(contexts[0]["freshness"], "fresh")
         self.assertEqual(contexts[0]["ageHours"], 48)
         self.assertEqual(contexts[1]["freshness"], "fresh")
@@ -1203,6 +1204,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.backtest import BacktestEngine
         from quant_core.cache import MarketDataCache
         from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         class FailingDemoAdapter:
             source = "demo"
@@ -1230,6 +1232,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 assistant = LocalResearchAssistant()
                 engine = BacktestEngine()
                 run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
                 kline_adapter = recording_adapter
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
@@ -1261,12 +1264,14 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
         from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         with tempfile.TemporaryDirectory() as tmp:
             class TestHandler(QuantApiHandler):
                 cache = MarketDataCache(f"{tmp}/market.sqlite")
                 assistant = LocalResearchAssistant()
                 run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -1480,6 +1485,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.cache import MarketDataCache
         from quant_core.research_notes import ResearchNoteStore
         from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         class DemoKlineAdapter:
             source = "demo-test"
@@ -1497,6 +1503,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 engine = BacktestEngine()
                 run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
                 note_store = ResearchNoteStore(f"{tmp}/notes.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
                 kline_adapter = DemoKlineAdapter()
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)

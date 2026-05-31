@@ -326,7 +326,14 @@ export interface PlatformSettingsCacheStatus {
   rowCount: number;
   contextCount: number;
   latestTimestamp: string | null;
+  freshnessSummary: PlatformSettingsCacheFreshnessSummary;
   contexts: PlatformSettingsCacheContext[];
+}
+
+export interface PlatformSettingsCacheFreshnessSummary {
+  fresh: number;
+  stale: number;
+  empty: number;
 }
 
 export interface PlatformSettingsCacheContext {
@@ -1509,9 +1516,18 @@ function isPlatformSettingsCacheStatus(value: unknown): value is PlatformSetting
     typeof cache.rowCount === "number" &&
     typeof cache.contextCount === "number" &&
     (cache.latestTimestamp === null || typeof cache.latestTimestamp === "string") &&
+    isPlatformSettingsCacheFreshnessSummary(cache.freshnessSummary) &&
     Array.isArray(cache.contexts) &&
     cache.contexts.every(isPlatformSettingsCacheContext)
   );
+}
+
+function isPlatformSettingsCacheFreshnessSummary(value: unknown): value is PlatformSettingsCacheFreshnessSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<PlatformSettingsCacheFreshnessSummary>;
+  return typeof summary.fresh === "number" && typeof summary.stale === "number" && typeof summary.empty === "number";
 }
 
 function isPlatformSettingsCacheContext(value: unknown): value is PlatformSettingsCacheContext {

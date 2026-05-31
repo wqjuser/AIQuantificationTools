@@ -2443,6 +2443,20 @@ function PlatformSettingsPanel({
           "en-US"
         )} contexts · latest ${cacheLatestLabel}`
     : "";
+  const cacheFreshnessSummary = cacheStatus?.freshnessSummary;
+  const cacheFreshnessSummaryLabel = cacheFreshnessSummary
+    ? i18n.locale === "zh-CN"
+      ? `新鲜 ${cacheFreshnessSummary.fresh.toLocaleString("zh-CN")} · 过期 ${cacheFreshnessSummary.stale.toLocaleString(
+          "zh-CN"
+        )} · 空 ${cacheFreshnessSummary.empty.toLocaleString("zh-CN")}`
+      : `Fresh ${cacheFreshnessSummary.fresh.toLocaleString("en-US")} · Stale ${cacheFreshnessSummary.stale.toLocaleString(
+          "en-US"
+        )} · Empty ${cacheFreshnessSummary.empty.toLocaleString("en-US")}`
+    : "";
+  const cacheRowTone =
+    cacheStatus && cacheStatus.exists && cacheFreshnessSummary && cacheFreshnessSummary.stale === 0 && cacheFreshnessSummary.empty === 0
+      ? "positive"
+      : "warning";
 
   return (
     <Panel
@@ -2507,11 +2521,12 @@ function PlatformSettingsPanel({
         ))}
       </div>
       {cacheStatus ? (
-        <div className={`settings-cache-row ${cacheStatus.exists ? "positive" : "warning"}`}>
+        <div className={`settings-cache-row ${cacheRowTone}`}>
           <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>
           <strong>{cacheStatus.engine} · {cacheStatus.scope}</strong>
           <p>{cacheStatus.path}</p>
           <p className="settings-cache-stats">{cacheStatsLabel}</p>
+          <p className="settings-cache-health">{cacheFreshnessSummaryLabel}</p>
         </div>
       ) : null}
       {cacheStatus?.contexts.length ? (
