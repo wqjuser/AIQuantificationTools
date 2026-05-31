@@ -146,8 +146,10 @@ class ResearchRunSummary:
     strategy_revision: str
     data_rows: int
     execution_mode: str
+    data_quality: dict[str, Any] | None = None
     data_snapshot: dict[str, Any] | None = None
     research_note: dict[str, Any] | None = None
+    strategy_config: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

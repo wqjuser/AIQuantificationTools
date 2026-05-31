@@ -157,8 +157,10 @@ def run_terminal_research(
             strategy_revision=strategy.revision,
             data_rows=quality.rows,
             execution_mode="paper_only",
+            data_quality=_data_quality_payload(quality),
             data_snapshot=_data_snapshot_payload(bars, quality),
             research_note=research_note or None,
+            strategy_config=strategy_config_to_payload(strategy),
         ),
     )
 

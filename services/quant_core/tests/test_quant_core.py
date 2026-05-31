@@ -2275,6 +2275,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["researchRun"]["strategyRevision"], latest[0].strategy_revision)
         self.assertEqual(payload["researchRun"]["dataRows"], latest[0].data_rows)
         self.assertEqual(payload["researchRun"]["executionMode"], "paper_only")
+        self.assertEqual(payload["researchRun"]["dataQuality"], latest[0].data_quality)
+        self.assertEqual(payload["researchRun"]["strategyConfig"], latest[0].strategy_config)
         self.assertEqual(payload["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].data_quality["source"], "demo")
         self.assertEqual(latest[0].data_quality["rows"], latest[0].data_rows)
