@@ -9,6 +9,7 @@ from typing import Any
 def build_settings_status(
     *,
     cache_path: str | Path,
+    cache_contexts: list[dict[str, Any]] | None = None,
     cache_stats: dict[str, Any] | None = None,
     finnhub_api_key: str | None = None,
     ccxt_exchange: str | None = None,
@@ -67,6 +68,7 @@ def build_settings_status(
             "rowCount": stats["row_count"],
             "contextCount": stats["context_count"],
             "latestTimestamp": stats["latest_timestamp"],
+            "contexts": [_cache_context_to_payload(context) for context in (cache_contexts or [])],
         },
         "executionAdapters": [
             {
@@ -125,6 +127,17 @@ def _normalize_cache_stats(cache_stats: dict[str, Any] | None) -> dict[str, int 
         "row_count": _non_negative_int(cache_stats.get("row_count")),
         "context_count": _non_negative_int(cache_stats.get("context_count")),
         "latest_timestamp": latest_timestamp if isinstance(latest_timestamp, str) else None,
+    }
+
+
+def _cache_context_to_payload(context: dict[str, Any]) -> dict[str, int | str | None]:
+    return {
+        "market": str(context.get("market") or ""),
+        "symbol": str(context.get("symbol") or ""),
+        "timeframe": str(context.get("timeframe") or ""),
+        "rowCount": _non_negative_int(context.get("row_count")),
+        "startTimestamp": context.get("start_timestamp") if isinstance(context.get("start_timestamp"), str) else None,
+        "endTimestamp": context.get("end_timestamp") if isinstance(context.get("end_timestamp"), str) else None,
     }
 
 

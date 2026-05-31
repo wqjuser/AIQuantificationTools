@@ -2514,6 +2514,25 @@ function PlatformSettingsPanel({
           <p className="settings-cache-stats">{cacheStatsLabel}</p>
         </div>
       ) : null}
+      {cacheStatus?.contexts.length ? (
+        <div className="settings-cache-contexts">
+          <span>{i18n.locale === "zh-CN" ? "缓存上下文" : "Cache contexts"}</span>
+          <div>
+            {cacheStatus.contexts.map((context) => (
+              <article key={`${context.market}-${context.symbol}-${context.timeframe}`}>
+                <strong>
+                  {i18n.marketLabel(context.market)} · {context.symbol} · {context.timeframe}
+                </strong>
+                <p>
+                  {i18n.locale === "zh-CN"
+                    ? `${context.rowCount.toLocaleString("zh-CN")} 行 · ${formatCacheContextRange(context.startTimestamp, context.endTimestamp)}`
+                    : `${context.rowCount.toLocaleString("en-US")} rows · ${formatCacheContextRange(context.startTimestamp, context.endTimestamp)}`}
+                </p>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -4239,6 +4258,15 @@ function toKlineChartData(bars: MarketKlinesResult["bars"]): KLineData[] {
 
 function formatChartDate(timestamp: string): string {
   return timestamp.slice(0, 10);
+}
+
+function formatCacheContextRange(startTimestamp: string | null, endTimestamp: string | null): string {
+  if (!startTimestamp || !endTimestamp) {
+    return "n/a";
+  }
+  const start = formatChartDate(startTimestamp);
+  const end = formatChartDate(endTimestamp);
+  return start === end ? end : `${start} -> ${end}`;
 }
 
 function Panel({

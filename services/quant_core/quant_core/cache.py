@@ -145,3 +145,32 @@ class MarketDataCache:
             "context_count": context_count,
             "latest_timestamp": latest_timestamp,
         }
+
+    def contexts(self, limit: int = 8) -> list[dict[str, int | str]]:
+        bounded_limit = max(1, min(limit, 50))
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select market, symbol, timeframe, count(*) as row_count, min(timestamp), max(timestamp)
+                from ohlcv
+                group by market, symbol, timeframe
+                order by max(timestamp) desc, market asc, symbol asc, timeframe asc
+                limit ?
+                """,
+                (bounded_limit,),
+            ).fetchall()
+        finally:
+            connection.close()
+
+        return [
+            {
+                "market": row[0],
+                "symbol": row[1],
+                "timeframe": row[2],
+                "row_count": int(row[3]),
+                "start_timestamp": row[4],
+                "end_timestamp": row[5],
+            }
+            for row in rows
+        ]

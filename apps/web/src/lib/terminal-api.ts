@@ -326,6 +326,16 @@ export interface PlatformSettingsCacheStatus {
   rowCount: number;
   contextCount: number;
   latestTimestamp: string | null;
+  contexts: PlatformSettingsCacheContext[];
+}
+
+export interface PlatformSettingsCacheContext {
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  rowCount: number;
+  startTimestamp: string | null;
+  endTimestamp: string | null;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -1496,7 +1506,24 @@ function isPlatformSettingsCacheStatus(value: unknown): value is PlatformSetting
     typeof cache.scope === "string" &&
     typeof cache.rowCount === "number" &&
     typeof cache.contextCount === "number" &&
-    (cache.latestTimestamp === null || typeof cache.latestTimestamp === "string")
+    (cache.latestTimestamp === null || typeof cache.latestTimestamp === "string") &&
+    Array.isArray(cache.contexts) &&
+    cache.contexts.every(isPlatformSettingsCacheContext)
+  );
+}
+
+function isPlatformSettingsCacheContext(value: unknown): value is PlatformSettingsCacheContext {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const context = value as Partial<PlatformSettingsCacheContext>;
+  return (
+    isMarket(context.market) &&
+    typeof context.symbol === "string" &&
+    isTimeframe(context.timeframe) &&
+    typeof context.rowCount === "number" &&
+    (context.startTimestamp === null || typeof context.startTimestamp === "string") &&
+    (context.endTimestamp === null || typeof context.endTimestamp === "string")
   );
 }
 

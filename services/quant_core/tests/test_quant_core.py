@@ -269,6 +269,27 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(settings["cache"]["rowCount"], 2)
         self.assertEqual(settings["cache"]["contextCount"], 2)
         self.assertEqual(settings["cache"]["latestTimestamp"], "2026-05-29T00:00:00+00:00")
+        self.assertEqual(
+            settings["cache"]["contexts"],
+            [
+                {
+                    "market": "crypto",
+                    "symbol": "BTC/USDT",
+                    "timeframe": "1d",
+                    "rowCount": 1,
+                    "startTimestamp": "2026-05-29T00:00:00+00:00",
+                    "endTimestamp": "2026-05-29T00:00:00+00:00",
+                },
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "rowCount": 1,
+                    "startTimestamp": "2026-05-28T00:00:00+00:00",
+                    "endTimestamp": "2026-05-28T00:00:00+00:00",
+                },
+            ],
+        )
         self.assertEqual(paper_adapter["route"], "paper")
         self.assertEqual(paper_adapter["status"], "paper_ready")
         self.assertFalse(settings["safety"]["liveTradingAllowed"])
@@ -425,6 +446,73 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(stats["row_count"], 3)
         self.assertEqual(stats["context_count"], 2)
         self.assertEqual(stats["latest_timestamp"], "2026-05-29T00:00:00+00:00")
+
+    def test_sqlite_cache_lists_contexts_by_latest_timestamp(self):
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+
+        bars = [
+            OHLCVBar(
+                symbol="600000",
+                market="ashare",
+                timeframe="1d",
+                timestamp=datetime(2026, 5, 27, tzinfo=timezone.utc),
+                open=9.0,
+                high=9.4,
+                low=8.9,
+                close=9.2,
+                volume=1000,
+            ),
+            OHLCVBar(
+                symbol="600000",
+                market="ashare",
+                timeframe="1d",
+                timestamp=datetime(2026, 5, 28, tzinfo=timezone.utc),
+                open=9.2,
+                high=9.5,
+                low=9.1,
+                close=9.3,
+                volume=1100,
+            ),
+            OHLCVBar(
+                symbol="AAPL",
+                market="us",
+                timeframe="1d",
+                timestamp=datetime(2026, 5, 29, tzinfo=timezone.utc),
+                open=190,
+                high=195,
+                low=188,
+                close=192,
+                volume=12_000,
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            cache.upsert_bars(bars)
+            contexts = cache.contexts(limit=2)
+
+        self.assertEqual(
+            contexts,
+            [
+                {
+                    "market": "us",
+                    "symbol": "AAPL",
+                    "timeframe": "1d",
+                    "row_count": 1,
+                    "start_timestamp": "2026-05-29T00:00:00+00:00",
+                    "end_timestamp": "2026-05-29T00:00:00+00:00",
+                },
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "row_count": 2,
+                    "start_timestamp": "2026-05-27T00:00:00+00:00",
+                    "end_timestamp": "2026-05-28T00:00:00+00:00",
+                },
+            ],
+        )
 
     def test_backtest_generates_metrics_and_trade_log_from_visual_strategy(self):
         from quant_core.backtest import BacktestEngine

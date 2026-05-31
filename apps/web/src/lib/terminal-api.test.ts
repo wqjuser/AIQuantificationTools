@@ -421,7 +421,17 @@ describe("terminal workspace API client", () => {
               scope: "ohlcv",
               rowCount: 1280,
               contextCount: 12,
-              latestTimestamp: "2026-05-29T00:00:00+00:00"
+              latestTimestamp: "2026-05-29T00:00:00+00:00",
+              contexts: [
+                {
+                  market: "ashare",
+                  symbol: "600000",
+                  timeframe: "1d",
+                  rowCount: 500,
+                  startTimestamp: "2025-09-12T00:00:00+08:00",
+                  endTimestamp: "2026-05-29T00:00:00+08:00"
+                }
+              ]
             },
             executionAdapters: [
               {
@@ -456,10 +466,15 @@ describe("terminal workspace API client", () => {
     expect((result.settings?.cache as unknown as { latestTimestamp?: string | null }).latestTimestamp).toBe(
       "2026-05-29T00:00:00+00:00"
     );
+    expect((result.settings?.cache as unknown as { contexts?: unknown[] }).contexts?.[0]).toMatchObject({
+      market: "ashare",
+      symbol: "600000",
+      rowCount: 500
+    });
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
   });
 
-  test("rejects settings status when cache stats are missing", async () => {
+  test("rejects settings status when cache contexts are missing", async () => {
     const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
       ok: true,
       json: async () => ({
@@ -482,7 +497,10 @@ describe("terminal workspace API client", () => {
             engine: "sqlite",
             path: "data/market.sqlite",
             exists: true,
-            scope: "ohlcv"
+            scope: "ohlcv",
+            rowCount: 1280,
+            contextCount: 12,
+            latestTimestamp: "2026-05-29T00:00:00+00:00"
           },
           executionAdapters: [
             {

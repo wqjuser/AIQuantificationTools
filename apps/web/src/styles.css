@@ -1346,6 +1346,46 @@ em {
   font-weight: 900;
 }
 
+.settings-cache-contexts {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-cache-contexts > span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.settings-cache-contexts > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-cache-contexts article {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #101927;
+  padding: 9px 10px;
+}
+
+.settings-cache-contexts strong {
+  display: block;
+  color: #dce6ee;
+  font-size: 13px;
+}
+
+.settings-cache-contexts p {
+  margin: 5px 0 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .settings-source-row em {
   color: #7ee4d2;
   display: block;
@@ -4222,6 +4262,7 @@ em {
   .strategy-readiness-list,
   .settings-source-list,
   .settings-source-list.adapters,
+  .settings-cache-contexts > div,
   .settings-grid {
     grid-template-columns: 1fr;
   }
