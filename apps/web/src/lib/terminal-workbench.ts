@@ -3387,6 +3387,16 @@ export function researchRunLabel(summary: ResearchRunSummary | null | undefined)
   return `${summary.runId} · ${summary.dataRows} ${summary.timeframe} bars · ${summary.executionMode}`;
 }
 
+export function researchRunEvidenceLogLabel(summary: ResearchRunSummary | null | undefined): string {
+  if (!summary) {
+    return "Audited backtest received";
+  }
+  const dataQuality = summary.dataQuality
+    ? `${summary.dataQuality.source} ${summary.dataQuality.isComplete ? "complete" : "review"} · ${formatWarningCount(summary.dataQuality.warnings.length)}`
+    : "data quality not attached";
+  return `Audited backtest received: ${summary.dataRows} ${summary.timeframe} bars · ${dataQuality} · strategy ${summary.strategyRevision} · ${summary.executionMode}`;
+}
+
 export function researchRunHistoryLabel(run: ResearchRunAudit): string {
   const totalReturn = run.metrics.total_return_pct;
   const tradeCount = run.metrics.trade_count ?? 0;

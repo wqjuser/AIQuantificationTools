@@ -89,6 +89,7 @@ import {
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
+  researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
   AiWorkbenchAction,
   AiEvidenceCard,
@@ -709,9 +710,7 @@ export function App() {
     appendLog(
       "backtest",
       "success",
-      researchSummary
-        ? `Audited backtest received: ${researchSummary.dataRows} bars · ${researchSummary.executionMode}`
-        : "Audited backtest received"
+      researchRunEvidenceLogLabel(researchSummary)
     );
     publishStage("agent", ["data", "factor", "backtest"]);
     await waitForWorkflowStep();

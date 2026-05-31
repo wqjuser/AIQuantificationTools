@@ -37,6 +37,7 @@ import {
   buildWorkflowStages,
   executionModeLabel,
   formatInstrumentPrice,
+  researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
@@ -2553,6 +2554,38 @@ describe("terminal workbench model", () => {
       })
     ).toBe("run-abc123 · 120 1d bars · paper_only");
     expect(researchRunLabel(undefined)).toBe("No audited run yet");
+  });
+
+  test("formats research run evidence for workflow logs", () => {
+    expect(
+      researchRunEvidenceLogLabel({
+        runId: "run-abc123",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        timeframe: "5m",
+        strategyRevision: "rev-audit",
+        dataRows: 240,
+        executionMode: "paper_only",
+        dataQuality: {
+          source: "local-cache",
+          isComplete: true,
+          warnings: ["research upstream unavailable"],
+          rows: 240
+        }
+      })
+    ).toBe("Audited backtest received: 240 5m bars · local-cache complete · 1 warning · strategy rev-audit · paper_only");
+
+    expect(
+      researchRunEvidenceLogLabel({
+        runId: "run-old",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        timeframe: "1d",
+        strategyRevision: "rev-old",
+        dataRows: 120,
+        executionMode: "paper_only"
+      })
+    ).toBe("Audited backtest received: 120 1d bars · data quality not attached · strategy rev-old · paper_only");
+
+    expect(researchRunEvidenceLogLabel(null)).toBe("Audited backtest received");
   });
 
   test("formats research run history rows for dense terminal display", () => {
