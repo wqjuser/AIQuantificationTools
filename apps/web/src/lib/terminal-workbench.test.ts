@@ -2429,6 +2429,92 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("builds parameter scan rows for volume confirmation windows", () => {
+    const workspace = workspaceFromResearchRunAudit(
+      {
+        ...buildTerminalWorkspace(),
+        strategy: {
+          name: "Volume confirmed SMA audit",
+          entry: "Close > SMA5 AND Volume > VOL10",
+          exit: "Close < SMA5",
+          position: "20% max capital allocation",
+          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
+        }
+      },
+      {
+        runId: "run-volume-parameter-scan",
+        createdAt: "2026-05-28T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Volume confirmed SMA audit",
+        strategyRevision: "rev-volume-parameter-scan",
+        dataRows: 20,
+        metrics: {
+          total_return_pct: 4,
+          max_drawdown_pct: 2,
+          win_rate_pct: 50,
+          trade_count: 4
+        },
+        decisions: [],
+        executionMode: "paper_only",
+        strategyConfig: {
+          name: "Volume confirmed SMA audit",
+          revision: "rev-volume-parameter-scan",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [
+            { kind: "close_above_sma", params: { window: 5 } },
+            { kind: "volume_above_sma", params: { window: 10 } }
+          ],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 5 } }],
+          risk: {
+            positionPct: 0.2,
+            stopLossPct: 0.08,
+            takeProfitPct: 0.18,
+            maxDrawdownPct: 0.12
+          }
+        },
+        dataSnapshot: {
+          source: "unit-test",
+          isComplete: true,
+          warnings: [],
+          rows: 20,
+          start: "2026-05-01T00:00:00+00:00",
+          end: "2026-05-20T00:00:00+00:00",
+          hash: "snapshot-volume-parameter-scan",
+          bars: [
+            10, 11, 12, 11, 13, 14, 13, 15, 16, 17, 16, 18, 19, 18, 20, 21, 20, 22, 23, 24
+          ].map((close, index) => ({
+            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
+            timestampMs: 1777593600000 + index * 86_400_000,
+            open: close - 0.2,
+            high: close + 0.4,
+            low: close - 0.5,
+            close,
+            volume: 1_000_000 + (index % 5) * 80_000 + index * 10_000
+          }))
+        }
+      }
+    );
+
+    const rows = buildBacktestParameterScanRows(workspace);
+
+    expect(rows).toHaveLength(27);
+    expect(Array.from(new Set(rows.map((row) => row.entryVolumeWindow)))).toEqual([5, 10, 15]);
+    expect(rows.find((row) => row.status === "current")).toMatchObject({
+      id: "scan-entry-5-exit-5-vol-10",
+      entryWindow: 5,
+      exitWindow: 5,
+      entryVolumeWindow: 10,
+      condition: "SMA5 / SMA5 / VOL10",
+      dataRows: 20,
+      runId: "run-volume-parameter-scan"
+    });
+  });
+
   test("does not build parameter scan rows without an audited data snapshot", () => {
     expect(buildBacktestParameterScanRows(buildTerminalWorkspace())).toEqual([]);
   });
@@ -2606,6 +2692,93 @@ describe("terminal workbench model", () => {
       tone: "warning",
       message:
         "Parameter candidate SMA1 / SMA1 / RSI>50 staged from run run-stage-rsi-parameter. Run Pipeline to generate a fresh audited backtest."
+    });
+  });
+
+  test("stages a volume window parameter candidate as a fresh strategy draft", () => {
+    const workspace = workspaceFromResearchRunAudit(
+      {
+        ...buildTerminalWorkspace(),
+        strategy: {
+          name: "Volume confirmed SMA audit",
+          entry: "Close > SMA5 AND Volume > VOL10",
+          exit: "Close < SMA5",
+          position: "20% max capital allocation",
+          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
+        }
+      },
+      {
+        runId: "run-stage-volume-parameter",
+        createdAt: "2026-05-28T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Volume confirmed SMA audit",
+        strategyRevision: "rev-stage-volume-parameter",
+        dataRows: 20,
+        metrics: {
+          total_return_pct: 4,
+          max_drawdown_pct: 2,
+          win_rate_pct: 50,
+          trade_count: 4
+        },
+        decisions: [],
+        executionMode: "paper_only",
+        strategyConfig: {
+          name: "Volume confirmed SMA audit",
+          revision: "rev-stage-volume-parameter",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [
+            { kind: "close_above_sma", params: { window: 5 } },
+            { kind: "volume_above_sma", params: { window: 10 } }
+          ],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 5 } }],
+          risk: {
+            positionPct: 0.2,
+            stopLossPct: 0.08,
+            takeProfitPct: 0.18,
+            maxDrawdownPct: 0.12
+          }
+        },
+        dataSnapshot: {
+          source: "unit-test",
+          isComplete: true,
+          warnings: [],
+          rows: 20,
+          start: "2026-05-01T00:00:00+00:00",
+          end: "2026-05-20T00:00:00+00:00",
+          hash: "snapshot-stage-volume-parameter",
+          bars: [
+            10, 11, 12, 11, 13, 14, 13, 15, 16, 17, 16, 18, 19, 18, 20, 21, 20, 22, 23, 24
+          ].map((close, index) => ({
+            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
+            timestampMs: 1777593600000 + index * 86_400_000,
+            open: close - 0.2,
+            high: close + 0.4,
+            low: close - 0.5,
+            close,
+            volume: 1_000_000 + (index % 5) * 80_000 + index * 10_000
+          }))
+        }
+      }
+    );
+
+    const staged = workspaceWithBacktestParameterCandidate(workspace, "scan-entry-1-exit-1-vol-5");
+
+    expect(staged.strategy).toMatchObject({
+      entry: "Close > SMA1 AND Volume > VOL5",
+      exit: "Close < SMA1",
+      position: "20% max capital allocation"
+    });
+    expect(staged.researchRun).toBeNull();
+    expect(staged.decisionLog[0]).toMatchObject({
+      agent: "Backtest Lab",
+      tone: "warning",
+      message:
+        "Parameter candidate SMA1 / SMA1 / VOL5 staged from run run-stage-volume-parameter. Run Pipeline to generate a fresh audited backtest."
     });
   });
 

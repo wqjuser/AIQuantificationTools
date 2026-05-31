@@ -300,6 +300,7 @@ export interface BacktestParameterScanRow {
   entryWindow: number;
   exitWindow: number;
   entryRsiThreshold: number | null;
+  entryVolumeWindow: number | null;
   returnPct: string;
   maxDrawdownPct: string;
   tradeCount: number;
@@ -2672,39 +2673,62 @@ export function buildBacktestParameterScanRows(workspace: TerminalWorkspace): Ba
     draft.entryRsiConfirm && !isRsiConditionKind(draft.entryKind)
       ? parameterScanThresholds(draft.entryRsiThreshold)
       : [null];
+  const entryVolumeWindows: Array<number | null> = draft.entryVolumeConfirm
+    ? parameterScanWindows(draft.entryVolumeWindow)
+    : [null];
   const currentMetricReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
-  const currentScan = simulateSmaParameterScan(workspace, bars, draft.entryWindow, draft.exitWindow, draft.entryRsiThreshold);
+  const currentScan = simulateSmaParameterScan(
+    workspace,
+    bars,
+    draft.entryWindow,
+    draft.exitWindow,
+    draft.entryRsiThreshold,
+    draft.entryVolumeWindow
+  );
   const currentReturn = currentMetricReturn ?? currentScan.totalReturnPct;
 
   return entryWindows.flatMap((entryWindow) =>
     exitWindows.flatMap((exitWindow) =>
-      entryRsiThresholds.map((entryRsiThreshold) => {
-        const result = simulateSmaParameterScan(workspace, bars, entryWindow, exitWindow, entryRsiThreshold);
-        const delta = result.totalReturnPct - currentReturn;
-        const isCurrent =
-          entryWindow === draft.entryWindow &&
-          exitWindow === draft.exitWindow &&
-          (!draft.entryRsiConfirm || entryRsiThreshold === draft.entryRsiThreshold);
-        const breachesDrawdown = result.maxDrawdownPct > draft.maxDrawdownPct;
-        const rsiCondition = entryRsiThreshold === null ? "" : ` / RSI>${formatConditionNumber(entryRsiThreshold)}`;
-        const rsiId = entryRsiThreshold === null ? "" : `-rsi-${formatConditionNumber(entryRsiThreshold)}`;
-        return {
-          id: `scan-entry-${entryWindow}-exit-${exitWindow}${rsiId}`,
-          runId: run.runId,
-          source: run.dataSnapshot?.hash ?? run.dataSnapshot?.source ?? "audited snapshot",
-          condition: `SMA${entryWindow} / SMA${exitWindow}${rsiCondition}`,
-          entryWindow,
-          exitWindow,
-          entryRsiThreshold,
-          returnPct: formatSignedPct(result.totalReturnPct),
-          maxDrawdownPct: formatPct(result.maxDrawdownPct),
-          tradeCount: result.tradeCount,
-          alphaVsCurrent: formatSignedPointDelta(delta),
-          status: isCurrent ? "current" : "candidate",
-          tone: isCurrent ? "neutral" : breachesDrawdown ? "risk" : delta >= 0 ? "positive" : "warning",
-          dataRows: bars.length
-        };
-      })
+      entryRsiThresholds.flatMap((entryRsiThreshold) =>
+        entryVolumeWindows.map((entryVolumeWindow) => {
+          const result = simulateSmaParameterScan(
+            workspace,
+            bars,
+            entryWindow,
+            exitWindow,
+            entryRsiThreshold,
+            entryVolumeWindow
+          );
+          const delta = result.totalReturnPct - currentReturn;
+          const isCurrent =
+            entryWindow === draft.entryWindow &&
+            exitWindow === draft.exitWindow &&
+            (!draft.entryRsiConfirm || entryRsiThreshold === draft.entryRsiThreshold) &&
+            (!draft.entryVolumeConfirm || entryVolumeWindow === draft.entryVolumeWindow);
+          const breachesDrawdown = result.maxDrawdownPct > draft.maxDrawdownPct;
+          const rsiCondition = entryRsiThreshold === null ? "" : ` / RSI>${formatConditionNumber(entryRsiThreshold)}`;
+          const rsiId = entryRsiThreshold === null ? "" : `-rsi-${formatConditionNumber(entryRsiThreshold)}`;
+          const volumeCondition = entryVolumeWindow === null ? "" : ` / VOL${entryVolumeWindow}`;
+          const volumeId = entryVolumeWindow === null ? "" : `-vol-${entryVolumeWindow}`;
+          return {
+            id: `scan-entry-${entryWindow}-exit-${exitWindow}${rsiId}${volumeId}`,
+            runId: run.runId,
+            source: run.dataSnapshot?.hash ?? run.dataSnapshot?.source ?? "audited snapshot",
+            condition: `SMA${entryWindow} / SMA${exitWindow}${rsiCondition}${volumeCondition}`,
+            entryWindow,
+            exitWindow,
+            entryRsiThreshold,
+            entryVolumeWindow,
+            returnPct: formatSignedPct(result.totalReturnPct),
+            maxDrawdownPct: formatPct(result.maxDrawdownPct),
+            tradeCount: result.tradeCount,
+            alphaVsCurrent: formatSignedPointDelta(delta),
+            status: isCurrent ? "current" : "candidate",
+            tone: isCurrent ? "neutral" : breachesDrawdown ? "risk" : delta >= 0 ? "positive" : "warning",
+            dataRows: bars.length
+          };
+        })
+      )
     )
   );
 }
@@ -2892,7 +2916,8 @@ function simulateSmaParameterScan(
   bars: ResearchRunDataSnapshotBar[],
   entryWindow: number,
   exitWindow: number,
-  entryRsiThreshold: number | null = null
+  entryRsiThreshold: number | null = null,
+  entryVolumeWindow: number | null = null
 ): { totalReturnPct: number; maxDrawdownPct: number; tradeCount: number } {
   const assumptions = resolveBacktestAssumptions(workspace);
   const draft = buildStrategyRuleDraft(workspace);
@@ -2913,7 +2938,8 @@ function simulateSmaParameterScan(
     const passesRsi =
       !draft.entryRsiConfirm ||
       rsiAbove(closes, index, draft.entryRsiWindow, entryRsiThreshold ?? draft.entryRsiThreshold);
-    const passesVolume = !draft.entryVolumeConfirm || volumeAboveSma(volumes, index, draft.entryVolumeWindow);
+    const passesVolume =
+      !draft.entryVolumeConfirm || volumeAboveSma(volumes, index, entryVolumeWindow ?? draft.entryVolumeWindow);
     if (quantity <= 0 && closeAboveSma(closes, index, entryWindow) && passesRsi && passesVolume) {
       const budget = cash * positionPct;
       const executionPrice = bar.close * (1 + slippageRate);
@@ -4280,7 +4306,8 @@ export function workspaceWithBacktestParameterCandidate(
     ...currentDraft,
     entryWindow: candidate.entryWindow,
     exitWindow: candidate.exitWindow,
-    entryRsiThreshold: candidate.entryRsiThreshold ?? currentDraft.entryRsiThreshold
+    entryRsiThreshold: candidate.entryRsiThreshold ?? currentDraft.entryRsiThreshold,
+    entryVolumeWindow: candidate.entryVolumeWindow ?? currentDraft.entryVolumeWindow
   });
   const note: DecisionLogEntry = {
     agent: "Backtest Lab",
