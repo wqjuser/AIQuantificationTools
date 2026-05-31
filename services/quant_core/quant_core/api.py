@@ -125,6 +125,35 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"strategy": strategy_library_record_to_payload(record)}, status=201)
             return
+        if parsed.path == "/api/cache/refresh":
+            try:
+                payload = self._read_json_body()
+                market = str(payload.get("market") or "ashare")
+                symbol = str(payload.get("symbol") or "600000")
+                timeframe = str(payload.get("timeframe") or "1d")
+                limit = _parse_kline_limit(str(payload.get("limit") or "160"))
+                request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe)
+                bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                upserted_rows = self.cache.upsert_bars(bars)
+            except ValueError as error:
+                self._send_json({"error": "invalid_cache_refresh", "detail": str(error)}, status=400)
+                return
+            quality_payload = asdict(quality)
+            quality_payload["isComplete"] = quality_payload.pop("is_complete")
+            self._send_json(
+                {
+                    "refresh": {
+                        "market": market,
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "requestedLimit": limit,
+                        "upsertedRows": upserted_rows,
+                        "quality": quality_payload,
+                    },
+                    "settings": self._settings_status_payload(),
+                }
+            )
+            return
         if parsed.path == "/api/research/notes":
             try:
                 payload = self._read_json_body()
@@ -198,16 +227,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(terminal_workspace_to_payload(workspace))
             return
         if parsed.path == "/api/settings/status":
-            self._send_json(
-                {
-                    "settings": build_settings_status(
-                        cache_path=self.cache.path,
-                        cache_contexts=self.cache.contexts(limit=8),
-                        cache_stats=self.cache.stats(),
-                        finnhub_api_key=getattr(self.quote_adapter, "finnhub_api_key", ""),
-                    )
-                }
-            )
+            self._send_json({"settings": self._settings_status_payload()})
             return
         if parsed.path == "/api/market/quotes":
             query = parse_qs(parsed.query)
@@ -441,6 +461,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("request_body_must_be_object")
         return payload
+
+    def _settings_status_payload(self) -> dict[str, object]:
+        return build_settings_status(
+            cache_path=self.cache.path,
+            cache_contexts=self.cache.contexts(limit=8),
+            cache_stats=self.cache.stats(),
+            finnhub_api_key=getattr(self.quote_adapter, "finnhub_api_key", ""),
+        )
 
     def log_message(self, format: str, *args) -> None:
         return

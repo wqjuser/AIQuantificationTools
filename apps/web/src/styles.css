@@ -1412,6 +1412,39 @@ em {
   padding: 4px 7px;
 }
 
+.settings-cache-context-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 7px;
+}
+
+.settings-cache-context-actions em {
+  margin-top: 0;
+}
+
+.settings-cache-refresh {
+  align-items: center;
+  border: 1px solid #295a52;
+  border-radius: 6px;
+  background: #0c2523;
+  color: #7df5db;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 900;
+  min-height: 26px;
+  padding: 5px 8px;
+}
+
+.settings-cache-refresh:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .settings-cache-contexts article.stale em {
   background: #332612;
   color: #f1cb72;

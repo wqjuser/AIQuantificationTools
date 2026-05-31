@@ -30,6 +30,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadPlatformSettings,
+  refreshMarketCache,
   loadStrategyLibrary,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
@@ -305,6 +306,7 @@ export function App() {
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
+  const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -446,6 +448,39 @@ export function App() {
       setIsChartLoading(false);
     }
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+
+  const refreshCacheContext = useCallback(
+    async (context: PlatformSettingsStatus["cache"]["contexts"][number]) => {
+      const key = cacheContextKey(context);
+      setRefreshingCacheKey(key);
+      const result = await refreshMarketCache(quantCoreBaseUrl, {
+        market: context.market,
+        symbol: context.symbol,
+        timeframe: context.timeframe,
+        limit: chartKlineLimit
+      });
+      setSettingsStatus({
+        settings: result.settings,
+        source: result.source,
+        error: result.error
+      });
+      if (
+        result.source === "core" &&
+        context.market === workspace.selectedInstrument.market &&
+        context.symbol === workspace.selectedInstrument.symbol &&
+        context.timeframe === workspace.selectedTimeframe
+      ) {
+        await refreshChart();
+      }
+      setRefreshingCacheKey(null);
+    },
+    [
+      refreshChart,
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
+    ]
+  );
 
   const loadHistoricalKlines = useCallback(async (beforeTimestampMs: number): Promise<MarketKlinesResult["bars"]> => {
     const current = klinesStateRef.current;
@@ -1448,6 +1483,8 @@ export function App() {
             adapterRows={brokerAdapterRows}
             className="workflow-settings-panel"
             i18n={i18n}
+            onRefreshContext={refreshCacheContext}
+            refreshingCacheKey={refreshingCacheKey}
             settings={settingsStatus.settings}
             state={klinesState}
             workspace={workspace}
@@ -2387,6 +2424,8 @@ function PlatformSettingsPanel({
   adapterRows,
   className,
   i18n,
+  onRefreshContext,
+  refreshingCacheKey,
   settings,
   state,
   workspace
@@ -2394,6 +2433,8 @@ function PlatformSettingsPanel({
   adapterRows: BrokerAdapterRow[];
   className?: string;
   i18n: AppI18n;
+  onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
+  refreshingCacheKey?: string | null;
   settings?: PlatformSettingsStatus;
   state: MarketKlinesResult;
   workspace: TerminalWorkspace;
@@ -2543,7 +2584,26 @@ function PlatformSettingsPanel({
                     ? `${context.rowCount.toLocaleString("zh-CN")} 行 · ${formatCacheContextRange(context.startTimestamp, context.endTimestamp)}`
                     : `${context.rowCount.toLocaleString("en-US")} rows · ${formatCacheContextRange(context.startTimestamp, context.endTimestamp)}`}
                 </p>
-                <em>{cacheFreshnessLabel(i18n, context.freshness, context.ageHours)}</em>
+                <div className="settings-cache-context-actions">
+                  <em>{cacheFreshnessLabel(i18n, context.freshness, context.ageHours)}</em>
+                  {onRefreshContext ? (
+                    <button
+                      type="button"
+                      className="settings-cache-refresh"
+                      disabled={refreshingCacheKey === cacheContextKey(context)}
+                      onClick={() => onRefreshContext(context)}
+                    >
+                      <RefreshCw size={12} />
+                      {refreshingCacheKey === cacheContextKey(context)
+                        ? i18n.locale === "zh-CN"
+                          ? "刷新中"
+                          : "Refreshing"
+                        : i18n.locale === "zh-CN"
+                          ? "刷新"
+                          : "Refresh"}
+                    </button>
+                  ) : null}
+                </div>
               </article>
             ))}
           </div>
@@ -4099,6 +4159,10 @@ function cacheFreshnessLabel(
     return i18n.locale === "zh-CN" ? `新鲜 · ${ageLabel}` : `Fresh · ${ageLabel}`;
   }
   return i18n.locale === "zh-CN" ? `过期 · ${ageLabel}` : `Stale · ${ageLabel}`;
+}
+
+function cacheContextKey(context: PlatformSettingsStatus["cache"]["contexts"][number]): string {
+  return `${context.market}:${context.symbol}:${context.timeframe}`;
 }
 
 function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {

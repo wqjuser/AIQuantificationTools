@@ -8,6 +8,7 @@ import {
   buildResearchNoteUrl,
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
+  buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
@@ -24,6 +25,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadPlatformSettings,
+  refreshMarketCache,
   loadStrategyLibrary,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
@@ -132,6 +134,10 @@ describe("terminal workspace API client", () => {
 
   test("builds the settings status URL", () => {
     expect(buildSettingsStatusUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/settings/status");
+  });
+
+  test("builds the cache refresh URL", () => {
+    expect(buildCacheRefreshUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/cache/refresh");
   });
 
   test("builds strategy library URLs for context and detail lookup", () => {
@@ -484,6 +490,105 @@ describe("terminal workspace API client", () => {
     });
     expect((result.settings?.cache as unknown as { freshnessSummary?: { fresh?: number } }).freshnessSummary?.fresh).toBe(1);
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
+  });
+
+  test("refreshes a market cache context and returns updated settings", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await refreshMarketCache(
+      "http://127.0.0.1:8765/",
+      { market: "ashare", symbol: "600000", timeframe: "1d", limit: 240 },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          json: async () => ({
+            refresh: {
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              requestedLimit: 240,
+              upsertedRows: 3,
+              quality: {
+                source: "tencent",
+                isComplete: true,
+                warnings: [],
+                rows: 3
+              }
+            },
+            settings: {
+              schemaVersion: 1,
+              generatedAt: "2026-05-31T09:00:00+08:00",
+              dataSources: [
+                {
+                  market: "ashare",
+                  label: "A shares",
+                  quoteSource: "tencent",
+                  klineSource: "tencent",
+                  status: "ready",
+                  optionalKeyName: null,
+                  optionalKeyConfigured: false,
+                  note: "No key required."
+                }
+              ],
+              cache: {
+                engine: "sqlite",
+                path: "data/market.sqlite",
+                exists: true,
+                scope: "ohlcv",
+                rowCount: 3,
+                contextCount: 1,
+                latestTimestamp: "2026-05-27T00:00:00+00:00",
+                freshnessSummary: {
+                  fresh: 1,
+                  stale: 0,
+                  empty: 0
+                },
+                contexts: [
+                  {
+                    market: "ashare",
+                    symbol: "600000",
+                    timeframe: "1d",
+                    rowCount: 3,
+                    startTimestamp: "2026-05-25T00:00:00+00:00",
+                    endTimestamp: "2026-05-27T00:00:00+00:00",
+                    freshness: "fresh",
+                    ageHours: 48
+                  }
+                ]
+              },
+              executionAdapters: [
+                {
+                  id: "paper-local",
+                  market: "multi",
+                  adapter: "Paper Trading",
+                  route: "paper",
+                  status: "paper_ready",
+                  certification: "local",
+                  liveTradingAllowed: false,
+                  note: "Paper only."
+                }
+              ],
+              safety: {
+                liveTradingAllowed: false,
+                requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+              }
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/cache/refresh");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      limit: 240
+    });
+    expect(result.source).toBe("core");
+    expect(result.refresh?.upsertedRows).toBe(3);
+    expect(result.settings?.cache.rowCount).toBe(3);
   });
 
   test("rejects settings status when cache freshness summary is missing", async () => {

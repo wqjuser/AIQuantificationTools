@@ -560,6 +560,80 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(contexts[3]["freshness"], "empty")
         self.assertIsNone(contexts[3]["ageHours"])
 
+    def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import DataQuality, OHLCVBar
+
+        class RecordingKlineAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request, limit=160):
+                self.calls.append((request.market, request.symbol, request.timeframe, limit))
+                base_timestamp = datetime.now(timezone.utc) - timedelta(days=2)
+                bars = [
+                    OHLCVBar(
+                        market=request.market,
+                        symbol=request.symbol,
+                        timeframe=request.timeframe,
+                        timestamp=base_timestamp + timedelta(days=index),
+                        open=10 + index,
+                        high=11 + index,
+                        low=9 + index,
+                        close=10.5 + index,
+                        volume=1000 + index,
+                    )
+                    for index in range(3)
+                ]
+                return bars, DataQuality(source="test-kline", is_complete=True, warnings=[], rows=len(bars))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = RecordingKlineAdapter()
+
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                kline_adapter = adapter
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/cache/refresh",
+                    body=json.dumps(
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "limit": 240,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(adapter.calls, [("ashare", "600000", "1d", 240)])
+        self.assertEqual(payload["refresh"]["upsertedRows"], 3)
+        self.assertEqual(payload["refresh"]["quality"]["source"], "test-kline")
+        self.assertEqual(payload["settings"]["cache"]["rowCount"], 3)
+        self.assertEqual(payload["settings"]["cache"]["contexts"][0]["symbol"], "600000")
+        self.assertEqual(payload["settings"]["cache"]["freshnessSummary"]["fresh"], 1)
+
     def test_backtest_generates_metrics_and_trade_log_from_visual_strategy(self):
         from quant_core.backtest import BacktestEngine
         from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig

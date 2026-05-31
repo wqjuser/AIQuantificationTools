@@ -376,6 +376,22 @@ export interface PlatformSettingsResult {
   error?: string;
 }
 
+export interface CacheRefreshSummary {
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  requestedLimit: number;
+  upsertedRows: number;
+  quality: MarketKlineQuality;
+}
+
+export interface CacheRefreshResult {
+  refresh?: CacheRefreshSummary;
+  settings?: PlatformSettingsStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface WorkspaceResponse {
   ok: boolean;
   status?: number;
@@ -393,6 +409,10 @@ export interface TerminalResearchParams {
 
 export interface MarketKlinesParams extends TerminalResearchParams {
   end?: string;
+}
+
+export interface CacheRefreshParams extends TerminalResearchParams {
+  limit?: number;
 }
 
 export interface ResearchNoteSaveParams extends TerminalResearchParams {
@@ -545,6 +565,11 @@ export function buildMarketSearchUrl(baseUrl: string, market: Market, query: str
 export function buildSettingsStatusUrl(baseUrl: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL("api/settings/status", normalizedBase).toString();
+}
+
+export function buildCacheRefreshUrl(baseUrl: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL("api/cache/refresh", normalizedBase).toString();
 }
 
 export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
@@ -844,6 +869,42 @@ export async function loadPlatformSettings(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown settings status error"
+    };
+  }
+}
+
+export async function refreshMarketCache(
+  baseUrl: string,
+  params: CacheRefreshParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<CacheRefreshResult> {
+  try {
+    const response = await fetcher(buildCacheRefreshUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        market: params.market,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        limit: Math.max(1, Math.min(params.limit ?? 160, 500))
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isCacheRefreshPayload(payload)) {
+      throw new Error("Invalid cache refresh contract");
+    }
+    return {
+      refresh: payload.refresh,
+      settings: payload.settings,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown cache refresh error"
     };
   }
 }
@@ -1300,6 +1361,29 @@ function isPlatformSettingsPayload(value: unknown): value is { settings: Platfor
   return isPlatformSettingsStatus(payload.settings);
 }
 
+function isCacheRefreshPayload(value: unknown): value is { refresh: CacheRefreshSummary; settings: PlatformSettingsStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { refresh?: unknown; settings?: unknown };
+  return isCacheRefreshSummary(payload.refresh) && isPlatformSettingsStatus(payload.settings);
+}
+
+function isCacheRefreshSummary(value: unknown): value is CacheRefreshSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const refresh = value as Partial<CacheRefreshSummary>;
+  return (
+    isMarket(refresh.market) &&
+    typeof refresh.symbol === "string" &&
+    isTimeframe(refresh.timeframe) &&
+    typeof refresh.requestedLimit === "number" &&
+    typeof refresh.upsertedRows === "number" &&
+    isMarketKlineQuality(refresh.quality)
+  );
+}
+
 function isStrategyLibraryPayload(value: unknown): value is { strategies: StrategyLibraryItem[] } {
   if (!value || typeof value !== "object") {
     return false;
@@ -1731,13 +1815,23 @@ function isMarketKlinesPayload(value: unknown): value is Omit<MarketKlinesResult
     isMarket(payload.market) &&
     typeof payload.symbol === "string" &&
     isTimeframe(payload.timeframe) &&
-    Boolean(payload.quality) &&
-    typeof payload.quality?.source === "string" &&
-    typeof payload.quality?.isComplete === "boolean" &&
-    Array.isArray(payload.quality?.warnings) &&
-    typeof payload.quality?.rows === "number" &&
+    isMarketKlineQuality(payload.quality) &&
     Array.isArray(payload.bars) &&
     payload.bars.every(isMarketKlineBar)
+  );
+}
+
+function isMarketKlineQuality(value: unknown): value is MarketKlineQuality {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const quality = value as Partial<MarketKlineQuality>;
+  return (
+    typeof quality.source === "string" &&
+    typeof quality.isComplete === "boolean" &&
+    Array.isArray(quality.warnings) &&
+    quality.warnings.every((warning) => typeof warning === "string") &&
+    typeof quality.rows === "number"
   );
 }
 
