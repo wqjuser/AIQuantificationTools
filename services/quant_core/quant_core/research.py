@@ -65,8 +65,9 @@ def run_terminal_research(
     created_at = datetime.now(timezone.utc)
 
     request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=created_at)
-    bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit)
-    market_cache.upsert_bars(bars)
+    bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit, cache=market_cache)
+    if _should_cache_research_bars(quality):
+        market_cache.upsert_bars(bars)
 
     snapshot = strategy_snapshot or _default_strategy_snapshot()
     strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
@@ -365,19 +366,73 @@ def _fetch_research_bars(
     request: MarketDataRequest,
     *,
     data_limit: int,
+    cache: MarketDataCache | None = None,
 ) -> tuple[list[OHLCVBar], DataQuality]:
+    bounded_limit = _bounded_research_limit(data_limit)
+    try:
+        bars, quality = _fetch_adapter_research_bars(adapter, request, limit=bounded_limit)
+    except Exception as exc:
+        cached = _cached_research_bars(cache, request, limit=bounded_limit)
+        if cached:
+            return cached, _local_cache_research_quality(cached, warnings=[f"research upstream unavailable: {exc}"])
+        raise
+
+    if quality.is_complete:
+        return bars, quality
+
+    cached = _cached_research_bars(cache, request, limit=bounded_limit)
+    if cached:
+        warnings = [*quality.warnings, f"research upstream incomplete from {quality.source}; using local cache"]
+        return cached, _local_cache_research_quality(cached, warnings=warnings)
+    return bars, quality
+
+
+def _bounded_research_limit(data_limit: int) -> int:
     try:
         requested_limit = int(data_limit)
     except (TypeError, ValueError):
         requested_limit = 500
-    bounded_limit = max(1, min(requested_limit, 500))
+    return max(1, min(requested_limit, 500))
+
+
+def _fetch_adapter_research_bars(
+    adapter: MarketDataAdapter,
+    request: MarketDataRequest,
+    *,
+    limit: int,
+) -> tuple[list[OHLCVBar], DataQuality]:
     try:
         parameters = signature(adapter.fetch_ohlcv).parameters.values()
     except (TypeError, ValueError):
         return adapter.fetch_ohlcv(request)
     if any(parameter.name == "limit" or parameter.kind == Parameter.VAR_KEYWORD for parameter in parameters):
-        return adapter.fetch_ohlcv(request, limit=bounded_limit)
+        return adapter.fetch_ohlcv(request, limit=limit)
     return adapter.fetch_ohlcv(request)
+
+
+def _cached_research_bars(
+    cache: MarketDataCache | None,
+    request: MarketDataRequest,
+    *,
+    limit: int,
+) -> list[OHLCVBar]:
+    if cache is None:
+        return []
+    return cache.read_bars(
+        market=request.market,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        start=request.start,
+        end=request.end,
+    )[-limit:]
+
+
+def _local_cache_research_quality(bars: list[OHLCVBar], *, warnings: list[str]) -> DataQuality:
+    return DataQuality(source="local-cache", is_complete=True, warnings=warnings, rows=len(bars))
+
+
+def _should_cache_research_bars(quality: DataQuality) -> bool:
+    return quality.is_complete and quality.source not in {"local-cache", "demo", "demo-fallback"}
 
 
 def _instrument_for_symbol(workspace: TerminalWorkspace, market: Market, symbol: str) -> Instrument:

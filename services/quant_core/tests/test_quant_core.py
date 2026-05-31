@@ -1716,6 +1716,127 @@ class QuantCoreContractTest(unittest.TestCase):
             payload["backtestEquityCurve"][-1]["timestamp"],
         )
 
+    def test_terminal_research_uses_sqlite_cache_when_adapter_unavailable(self):
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+        from quant_core.research import run_terminal_research
+        from quant_core.runs import ResearchRunStore
+        from quant_core.terminal import terminal_workspace_to_payload
+
+        class OfflineAdapter:
+            def fetch_ohlcv(self, request, limit=160):
+                raise RuntimeError("research upstream offline")
+
+        cached_bars = [
+            OHLCVBar(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=index),
+                open=9.0 + index * 0.1,
+                high=9.2 + index * 0.1,
+                low=8.8 + index * 0.1,
+                close=9.1 + index * 0.1,
+                volume=1000 + index,
+            )
+            for index in range(30)
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            cache.upsert_bars(cached_bars)
+            workspace = run_terminal_research(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                adapter=OfflineAdapter(),
+                cache=cache,
+                run_store=store,
+                data_limit=24,
+            )
+            audit = store.get(workspace.research_run.run_id)
+
+        payload = terminal_workspace_to_payload(workspace)
+
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.data_quality["source"], "local-cache")
+        self.assertTrue(audit.data_quality["isComplete"])
+        self.assertEqual(audit.data_quality["rows"], 24)
+        self.assertTrue(any("research upstream offline" in warning for warning in audit.data_quality["warnings"]))
+        self.assertEqual(audit.data_snapshot["source"], "local-cache")
+        self.assertEqual(audit.data_snapshot["rows"], 24)
+        self.assertEqual(audit.data_snapshot["bars"][-1]["close"], cached_bars[-1].close)
+        self.assertEqual(payload["researchRun"]["dataSnapshot"]["source"], "local-cache")
+        self.assertEqual(payload["researchRun"]["dataRows"], 24)
+
+    def test_terminal_research_prefers_cache_over_incomplete_fallback_data(self):
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import DataQuality, OHLCVBar
+        from quant_core.research import run_terminal_research
+        from quant_core.runs import ResearchRunStore
+
+        cached_bars = [
+            OHLCVBar(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=index),
+                open=9.0 + index * 0.1,
+                high=9.2 + index * 0.1,
+                low=8.8 + index * 0.1,
+                close=9.1 + index * 0.1,
+                volume=1000 + index,
+            )
+            for index in range(30)
+        ]
+        fallback_bars = [
+            OHLCVBar(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                timestamp=datetime(2026, 3, 1, tzinfo=timezone.utc) + timedelta(days=index),
+                open=100 + index,
+                high=101 + index,
+                low=99 + index,
+                close=100.5 + index,
+                volume=10,
+            )
+            for index in range(5)
+        ]
+
+        class IncompleteFallbackAdapter:
+            def fetch_ohlcv(self, request, limit=160):
+                return fallback_bars, DataQuality(
+                    source="demo-fallback",
+                    is_complete=False,
+                    warnings=["upstream returned generated fallback"],
+                    rows=len(fallback_bars),
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            cache.upsert_bars(cached_bars)
+            workspace = run_terminal_research(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                adapter=IncompleteFallbackAdapter(),
+                cache=cache,
+                run_store=store,
+                data_limit=24,
+            )
+            audit = store.get(workspace.research_run.run_id)
+            cache_stats = cache.stats()
+
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.data_quality["source"], "local-cache")
+        self.assertTrue(audit.data_quality["isComplete"])
+        self.assertTrue(any("demo-fallback" in warning for warning in audit.data_quality["warnings"]))
+        self.assertEqual(audit.data_snapshot["bars"][-1]["close"], cached_bars[-1].close)
+        self.assertEqual(cache_stats["row_count"], len(cached_bars))
+
     def test_terminal_research_run_builds_strategy_from_submitted_snapshot(self):
         from quant_core.backtest import BacktestEngine
         from quant_core.research import run_terminal_research
