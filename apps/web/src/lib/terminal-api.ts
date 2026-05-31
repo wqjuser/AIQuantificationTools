@@ -392,6 +392,14 @@ export interface CacheRefreshResult {
   error?: string;
 }
 
+export interface CacheBatchRefreshResult {
+  refreshes: CacheRefreshSummary[];
+  settings?: PlatformSettingsStatus;
+  source: WorkspaceSource;
+  failedCount: number;
+  error?: string;
+}
+
 export interface WorkspaceResponse {
   ok: boolean;
   status?: number;
@@ -907,6 +915,38 @@ export async function refreshMarketCache(
       error: error instanceof Error ? error.message : "Unknown cache refresh error"
     };
   }
+}
+
+export async function refreshMarketCacheBatch(
+  baseUrl: string,
+  paramsList: CacheRefreshParams[],
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<CacheBatchRefreshResult> {
+  const refreshes: CacheRefreshSummary[] = [];
+  const errors: string[] = [];
+  let settings: PlatformSettingsStatus | undefined;
+  let failedCount = 0;
+
+  for (const params of paramsList) {
+    const result = await refreshMarketCache(baseUrl, params, fetcher);
+    if (result.source === "core" && result.refresh && result.settings) {
+      refreshes.push(result.refresh);
+      settings = result.settings;
+      continue;
+    }
+    failedCount += 1;
+    if (result.error) {
+      errors.push(`${params.symbol}: ${result.error}`);
+    }
+  }
+
+  return {
+    refreshes,
+    settings,
+    source: refreshes.length || paramsList.length === 0 ? "core" : "fallback",
+    failedCount,
+    error: failedCount ? errors.join("; ") || `${failedCount} cache refresh failed` : undefined
+  };
 }
 
 export async function saveStrategySnapshot(

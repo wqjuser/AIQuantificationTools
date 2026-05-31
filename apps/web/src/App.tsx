@@ -31,6 +31,7 @@ import {
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
+  refreshMarketCacheBatch,
   loadStrategyLibrary,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
@@ -182,6 +183,14 @@ const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
 const workflowStepDelayMs = 180;
 
+interface WatchlistCacheSummary {
+  total: number;
+  fresh: number;
+  stale: number;
+  empty: number;
+  rows: number;
+}
+
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
@@ -307,6 +316,7 @@ export function App() {
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
+  const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -370,6 +380,7 @@ export function App() {
     symbol: workspace.selectedInstrument.symbol,
     timeframe: workspace.selectedTimeframe
   });
+  const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -510,6 +521,47 @@ export function App() {
     workspace.selectedInstrument.market,
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe
+  ]);
+
+  const refreshWatchlistMarketCache = useCallback(async () => {
+    if (!workspace.watchlist.length) {
+      return;
+    }
+    setIsRefreshingWatchlistCache(true);
+    try {
+      const result = await refreshMarketCacheBatch(
+        quantCoreBaseUrl,
+        workspace.watchlist.map((instrument) => ({
+          market: instrument.market,
+          symbol: instrument.symbol,
+          timeframe: workspace.selectedTimeframe,
+          limit: chartKlineLimit
+        }))
+      );
+      setSettingsStatus((current) => ({
+        settings: result.settings ?? current.settings,
+        source: result.source,
+        error: result.error
+      }));
+      if (
+        result.refreshes.some(
+          (refresh) =>
+            refresh.market === workspace.selectedInstrument.market &&
+            refresh.symbol === workspace.selectedInstrument.symbol &&
+            refresh.timeframe === workspace.selectedTimeframe
+        )
+      ) {
+        await refreshChart();
+      }
+    } finally {
+      setIsRefreshingWatchlistCache(false);
+    }
+  }, [
+    refreshChart,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe,
+    workspace.watchlist
   ]);
 
   const loadHistoricalKlines = useCallback(async (beforeTimestampMs: number): Promise<MarketKlinesResult["bars"]> => {
@@ -1372,8 +1424,11 @@ export function App() {
             className="workflow-data-panel"
             i18n={i18n}
             isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
+            isRefreshingWatchlistCache={isRefreshingWatchlistCache}
             onRefreshCache={refreshSelectedMarketCache}
+            onRefreshWatchlistCache={refreshWatchlistMarketCache}
             state={klinesState}
+            watchlistCacheSummary={watchlistCacheSummary}
             workspace={workspace}
           />
           <ScannerWorkspace
@@ -2367,16 +2422,22 @@ function MarketDataHealthPanel({
   className,
   i18n,
   isRefreshingCache = false,
+  isRefreshingWatchlistCache = false,
   onRefreshCache,
+  onRefreshWatchlistCache,
   state,
+  watchlistCacheSummary,
   workspace
 }: {
   cacheContext?: PlatformSettingsStatus["cache"]["contexts"][number];
   className?: string;
   i18n: AppI18n;
   isRefreshingCache?: boolean;
+  isRefreshingWatchlistCache?: boolean;
   onRefreshCache?: () => void;
+  onRefreshWatchlistCache?: () => void;
   state: MarketKlinesResult;
+  watchlistCacheSummary: WatchlistCacheSummary;
   workspace: TerminalWorkspace;
 }) {
   const warnings = state.quality.warnings.length ? state.quality.warnings : ["No source warnings reported."];
@@ -2391,6 +2452,12 @@ function MarketDataHealthPanel({
     : i18n.locale === "zh-CN"
       ? "未缓存当前上下文"
       : "No cache for current context";
+  const watchlistTone =
+    watchlistCacheSummary.empty > 0 ? "risk" : watchlistCacheSummary.stale > 0 ? "warning" : "positive";
+  const watchlistSummaryDetail =
+    i18n.locale === "zh-CN"
+      ? `${watchlistCacheSummary.fresh} 新鲜 · ${watchlistCacheSummary.stale} 过期 · ${watchlistCacheSummary.empty} 缺失 · ${watchlistCacheSummary.rows.toLocaleString("zh-CN")} 行`
+      : `${watchlistCacheSummary.fresh} fresh · ${watchlistCacheSummary.stale} stale · ${watchlistCacheSummary.empty} missing · ${watchlistCacheSummary.rows.toLocaleString("en-US")} rows`;
 
   return (
     <Panel
@@ -2398,19 +2465,42 @@ function MarketDataHealthPanel({
       subtitle={`${i18n.marketLabel(workspace.selectedInstrument.market)} · ${workspace.selectedInstrument.symbol}`}
       className={className}
       action={
-        onRefreshCache ? (
-          <button className="market-cache-refresh" disabled={isRefreshingCache} onClick={onRefreshCache} type="button">
-            <RefreshCw size={13} />
-            <span>
-              {isRefreshingCache
-                ? i18n.locale === "zh-CN"
-                  ? "刷新中"
-                  : "Refreshing"
-                : i18n.locale === "zh-CN"
-                  ? "刷新当前缓存"
-                  : "Refresh current cache"}
-            </span>
-          </button>
+        onRefreshCache || onRefreshWatchlistCache ? (
+          <div className="market-cache-actions">
+            {onRefreshCache ? (
+              <button className="market-cache-refresh" disabled={isRefreshingCache} onClick={onRefreshCache} type="button">
+                <RefreshCw size={13} />
+                <span>
+                  {isRefreshingCache
+                    ? i18n.locale === "zh-CN"
+                      ? "刷新中"
+                      : "Refreshing"
+                    : i18n.locale === "zh-CN"
+                      ? "刷新当前缓存"
+                      : "Refresh current cache"}
+                </span>
+              </button>
+            ) : null}
+            {onRefreshWatchlistCache ? (
+              <button
+                className="market-cache-bulk-refresh"
+                disabled={isRefreshingWatchlistCache || !workspace.watchlist.length}
+                onClick={onRefreshWatchlistCache}
+                type="button"
+              >
+                <RefreshCw size={13} />
+                <span>
+                  {isRefreshingWatchlistCache
+                    ? i18n.locale === "zh-CN"
+                      ? "刷新自选中"
+                      : "Refreshing watchlist"
+                    : i18n.locale === "zh-CN"
+                      ? "刷新自选缓存"
+                      : "Refresh watchlist cache"}
+                </span>
+              </button>
+            ) : null}
+          </div>
         ) : null
       }
     >
@@ -2438,6 +2528,11 @@ function MarketDataHealthPanel({
           <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>
           <strong>{cacheRows}</strong>
           <p>{cacheFreshness}</p>
+        </article>
+        <article className={watchlistTone}>
+          <span>{i18n.locale === "zh-CN" ? "自选缓存" : "Watchlist cache"}</span>
+          <strong>{`${watchlistCacheSummary.fresh}/${watchlistCacheSummary.total}`}</strong>
+          <p>{watchlistSummaryDetail}</p>
         </article>
       </div>
     </Panel>
@@ -4238,6 +4333,34 @@ function cacheFreshnessLabel(
     return i18n.locale === "zh-CN" ? `新鲜 · ${ageLabel}` : `Fresh · ${ageLabel}`;
   }
   return i18n.locale === "zh-CN" ? `过期 · ${ageLabel}` : `Stale · ${ageLabel}`;
+}
+
+function buildWatchlistCacheSummary(
+  settings: PlatformSettingsStatus | undefined,
+  workspace: TerminalWorkspace
+): WatchlistCacheSummary {
+  return workspace.watchlist.reduce<WatchlistCacheSummary>(
+    (summary, instrument) => {
+      const context = settings?.cache.contexts.find(
+        (item) =>
+          item.market === instrument.market &&
+          item.symbol === instrument.symbol &&
+          item.timeframe === workspace.selectedTimeframe
+      );
+      const freshness = context?.freshness ?? "empty";
+      summary.total += 1;
+      summary.rows += context?.rowCount ?? 0;
+      if (freshness === "fresh") {
+        summary.fresh += 1;
+      } else if (freshness === "stale") {
+        summary.stale += 1;
+      } else {
+        summary.empty += 1;
+      }
+      return summary;
+    },
+    { total: 0, fresh: 0, stale: 0, empty: 0, rows: 0 }
+  );
 }
 
 function cacheContextKey(

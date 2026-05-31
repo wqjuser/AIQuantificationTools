@@ -26,6 +26,7 @@ import {
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
+  refreshMarketCacheBatch,
   loadStrategyLibrary,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
@@ -589,6 +590,105 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.refresh?.upsertedRows).toBe(3);
     expect(result.settings?.cache.rowCount).toBe(3);
+  });
+
+  test("refreshes multiple market cache contexts in request order", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await refreshMarketCacheBatch(
+      "http://127.0.0.1:8765/",
+      [
+        { market: "ashare", symbol: "600000", timeframe: "1d", limit: 240 },
+        { market: "us", symbol: "AAPL", timeframe: "1d", limit: 240 }
+      ],
+      async (url, init) => {
+        calls.push({ url, init });
+        const body = JSON.parse(String(init?.body)) as { market: string; symbol: string; timeframe: string; limit: number };
+        const rowCount = body.symbol === "600000" ? 500 : 240;
+        return {
+          ok: true,
+          json: async () => ({
+            refresh: {
+              market: body.market,
+              symbol: body.symbol,
+              timeframe: body.timeframe,
+              requestedLimit: body.limit,
+              upsertedRows: rowCount,
+              quality: {
+                source: body.market === "ashare" ? "tencent" : "yfinance",
+                isComplete: true,
+                warnings: [],
+                rows: rowCount
+              }
+            },
+            settings: {
+              schemaVersion: 1,
+              generatedAt: "2026-05-31T09:00:00+08:00",
+              dataSources: [
+                {
+                  market: "ashare",
+                  label: "A shares",
+                  quoteSource: "tencent",
+                  klineSource: "tencent",
+                  status: "ready",
+                  optionalKeyName: null,
+                  optionalKeyConfigured: false,
+                  note: "No key required."
+                }
+              ],
+              cache: {
+                engine: "sqlite",
+                path: "data/market.sqlite",
+                exists: true,
+                scope: "ohlcv",
+                rowCount,
+                contextCount: calls.length,
+                latestTimestamp: "2026-05-29T00:00:00+00:00",
+                freshnessSummary: {
+                  fresh: calls.length,
+                  stale: 0,
+                  empty: 0
+                },
+                contexts: [
+                  {
+                    market: body.market,
+                    symbol: body.symbol,
+                    timeframe: body.timeframe,
+                    rowCount,
+                    startTimestamp: "2026-05-25T00:00:00+00:00",
+                    endTimestamp: "2026-05-29T00:00:00+00:00",
+                    freshness: "fresh",
+                    ageHours: 48
+                  }
+                ]
+              },
+              executionAdapters: [
+                {
+                  id: "paper-local",
+                  market: "multi",
+                  adapter: "Paper Trading",
+                  route: "paper",
+                  status: "paper_ready",
+                  certification: "local",
+                  liveTradingAllowed: false,
+                  note: "Paper only."
+                }
+              ],
+              safety: {
+                liveTradingAllowed: false,
+                requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+              }
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls).toHaveLength(2);
+    expect(calls.map((call) => JSON.parse(String(call.init?.body)).symbol)).toEqual(["600000", "AAPL"]);
+    expect(result.source).toBe("core");
+    expect(result.refreshes.map((refresh) => refresh.symbol)).toEqual(["600000", "AAPL"]);
+    expect(result.settings?.cache.rowCount).toBe(240);
+    expect(result.failedCount).toBe(0);
   });
 
   test("rejects settings status when cache freshness summary is missing", async () => {

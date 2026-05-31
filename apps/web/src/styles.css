@@ -1279,6 +1279,13 @@ em {
   line-height: 1.45;
 }
 
+.market-cache-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .market-cache-refresh {
   align-items: center;
   border: 1px solid #295a52;
@@ -1295,6 +1302,26 @@ em {
 }
 
 .market-cache-refresh:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.market-cache-bulk-refresh {
+  align-items: center;
+  border: 1px solid #3f4f78;
+  border-radius: 6px;
+  background: #171b31;
+  color: #cfc8ff;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  min-height: 30px;
+  padding: 6px 10px;
+}
+
+.market-cache-bulk-refresh:disabled {
   cursor: wait;
   opacity: 0.62;
 }
