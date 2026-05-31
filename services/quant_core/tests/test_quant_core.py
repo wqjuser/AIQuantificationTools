@@ -788,6 +788,7 @@ class QuantCoreContractTest(unittest.TestCase):
             decisions=[],
             execution_mode="paper_only",
             ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
             data_snapshot={
                 "source": "tencent",
                 "isComplete": True,
@@ -843,6 +844,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 12.4, "max_drawdown_pct": 5.8, "trade_count": 12},
             decisions=[],
             execution_mode="paper_only",
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
             data_snapshot={
                 "source": "tencent",
                 "isComplete": True,
@@ -912,6 +914,7 @@ class QuantCoreContractTest(unittest.TestCase):
             metrics={"total_return_pct": 12.4, "max_drawdown_pct": 5.8, "trade_count": 12},
             decisions=[],
             execution_mode="paper_only",
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
             data_snapshot={
                 "source": "tencent",
                 "isComplete": True,
@@ -979,6 +982,7 @@ class QuantCoreContractTest(unittest.TestCase):
             decisions=[],
             execution_mode="paper_only",
             ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
             data_snapshot={
                 "source": "tencent",
                 "isComplete": True,
@@ -1069,6 +1073,7 @@ class QuantCoreContractTest(unittest.TestCase):
             decisions=[],
             execution_mode="paper_only",
             ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
             data_snapshot={
                 "source": "tencent",
                 "isComplete": True,
@@ -1131,6 +1136,92 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["detail"], "paper_execution_strategy_risk_incomplete")
         self.assertEqual(executions, [])
 
+    def test_research_run_paper_execution_api_rejects_incomplete_data_quality(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-paper-incomplete-data",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Incomplete data quality",
+            strategy_revision="rev-paper-incomplete-data",
+            data_rows=1,
+            metrics={"total_return_pct": 2.4, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Paper", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "demo-fallback", "isComplete": False, "warnings": ["upstream unavailable"], "rows": 1},
+            data_snapshot={
+                "source": "demo-fallback",
+                "isComplete": False,
+                "warnings": ["upstream unavailable"],
+                "rows": 1,
+                "hash": "snapshot-paper-incomplete-data",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "name": "Incomplete data quality",
+                "revision": "rev-paper-incomplete-data",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                paper_execution_store = paper_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/research/runs/run-paper-incomplete-data/paper-executions")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            executions = paper_store.list_by_run("run-paper-incomplete-data")
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "invalid_paper_execution")
+        self.assertEqual(payload["detail"], "paper_execution_data_quality_incomplete")
+        self.assertEqual(executions, [])
+
     def test_research_run_promotion_api_and_export_include_candidate(self):
         import json
         from http.client import HTTPConnection
@@ -1154,6 +1245,7 @@ class QuantCoreContractTest(unittest.TestCase):
             decisions=[],
             execution_mode="paper_only",
             ai_report={"summary": "Paper", "risks": ["No live adapter"], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
             data_snapshot={
                 "source": "tencent",
                 "isComplete": True,

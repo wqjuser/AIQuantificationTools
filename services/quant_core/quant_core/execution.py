@@ -208,6 +208,10 @@ def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None
 
 
 def validate_paper_execution_handoff(audit: Any) -> None:
+    data_quality = getattr(audit, "data_quality", None)
+    if not _paper_execution_data_quality_is_complete(data_quality):
+        raise ValueError("paper_execution_data_quality_incomplete")
+
     strategy_config = getattr(audit, "strategy_config", None)
     risk = strategy_config.get("risk") if isinstance(strategy_config, dict) else None
     required_risk_fields = ("positionPct", "stopLossPct", "takeProfitPct", "maxDrawdownPct")
@@ -225,6 +229,18 @@ def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[s
         "orders": [_order_to_payload(order) for order in execution.orders],
         "gates": _normalize_gates(execution.gates),
     }
+
+
+def _paper_execution_data_quality_is_complete(data_quality: Any) -> bool:
+    if not isinstance(data_quality, dict):
+        return False
+    source = str(data_quality.get("source") or "").strip()
+    return (
+        bool(source)
+        and source not in {"unknown", "demo-fallback"}
+        and data_quality.get("isComplete") is True
+        and _strict_positive_number(data_quality.get("rows")) is not None
+    )
 
 
 def build_promotion_candidate(audit: Any, paper_executions: list[PaperExecutionRecord]) -> dict[str, Any]:
