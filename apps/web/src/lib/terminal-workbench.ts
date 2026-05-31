@@ -372,7 +372,7 @@ export interface PortfolioRiskRow {
 export type RiskApprovalStatus = "blocked" | "paper_ready" | "live_ready";
 
 export interface RiskApprovalGate {
-  id: "audited-run" | "ai-evidence" | "position-limit" | "drawdown-limit" | "execution-route";
+  id: "audited-run" | "ai-evidence" | "data-quality" | "position-limit" | "drawdown-limit" | "execution-route";
   label: string;
   value: string;
   detail: string;
@@ -1351,6 +1351,9 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
   const aiDossier = buildAiReviewDossier(workspace);
   const strategyDraft = buildStrategyRuleDraft(workspace);
   const approvalRisk = buildRiskApprovalRisk(workspace, strategyDraft);
+  const researchRun = workspace.researchRun;
+  const dataQualityGate = researchRun ? buildRiskApprovalDataQualityGate(researchRun) : null;
+  const dataQualityIsReady = dataQualityGate?.status === "passed";
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const drawdownMetric = parsePercentMetric(metricValue(workspace, "Max DD", "N/A"));
   const drawdownValue = drawdownMetric === null ? "N/A" : `${formatPercentValue(drawdownMetric)}%`;
@@ -1365,10 +1368,11 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
     approvalRisk.stopLossPct > 0 &&
     approvalRisk.takeProfitPct !== null &&
     approvalRisk.takeProfitPct > 0;
-  const paperCanStage = Boolean(workspace.researchRun) && aiDossier.status === "ready" && riskIsComplete && drawdownPassed;
+  const paperCanStage =
+    Boolean(researchRun) && aiDossier.status === "ready" && dataQualityIsReady && riskIsComplete && drawdownPassed;
   const liveCanRoute = paperCanStage && workspace.execution.liveEnabled && blockedGateCount === 0;
 
-  if (!workspace.researchRun) {
+  if (!researchRun) {
     return {
       status: "blocked",
       headline: "Risk approval blocked",
@@ -1418,6 +1422,7 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
     };
   }
 
+  const approvedDataQualityGate = dataQualityGate ?? buildRiskApprovalDataQualityGate(researchRun);
   const executionRouteGate: RiskApprovalGate = liveCanRoute
     ? {
         id: "execution-route",
@@ -1436,14 +1441,23 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
           status: "blocked",
           tone: "risk"
         }
-    : {
-        id: "execution-route",
-        label: "Execution route",
-        value: "paper only",
-        detail: `Paper route can stage; ${blockedGateCount} live gates still blocked.`,
-        status: "review",
-        tone: "warning"
-      };
+      : !dataQualityIsReady
+        ? {
+            id: "execution-route",
+            label: "Execution route",
+            value: "data blocked",
+            detail: approvedDataQualityGate.detail,
+            status: "blocked",
+            tone: "risk"
+          }
+        : {
+            id: "execution-route",
+            label: "Execution route",
+            value: "paper only",
+            detail: `Paper route can stage; ${blockedGateCount} live gates still blocked.`,
+            status: "review",
+            tone: "warning"
+          };
 
   const status: RiskApprovalStatus = liveCanRoute ? "live_ready" : paperCanStage ? "paper_ready" : "blocked";
   return {
@@ -1452,16 +1466,16 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
       status === "live_ready" ? "Certified live route ready" : status === "paper_ready" ? "Paper execution approved" : "Risk approval blocked",
     summary:
       status === "live_ready"
-        ? `Audited run ${workspace.researchRun.runId} can route through certified live execution.`
+        ? `Audited run ${researchRun.runId} can route through certified live execution.`
         : status === "paper_ready"
-          ? `Audited run ${workspace.researchRun.runId} can stage paper orders; live trading remains blocked until ${blockedGateCount} gates pass.`
-          : `Audited run ${workspace.researchRun.runId} needs risk review before staging execution.`,
+          ? `Audited run ${researchRun.runId} can stage paper orders; live trading remains blocked until ${blockedGateCount} gates pass.`
+          : `Audited run ${researchRun.runId} needs risk review before staging execution.`,
     gates: [
       {
         id: "audited-run",
         label: "Audited run",
-        value: workspace.researchRun.runId,
-        detail: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars · ${workspace.researchRun.executionMode}`,
+        value: researchRun.runId,
+        detail: `${researchRun.dataRows} ${researchRun.timeframe} bars · ${researchRun.executionMode}`,
         status: "passed",
         tone: "positive"
       },
@@ -1473,6 +1487,7 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
         status: aiDossier.status === "ready" ? "passed" : "blocked",
         tone: aiDossier.status === "ready" ? "ai" : "risk"
       },
+      approvedDataQualityGate,
       {
         id: "position-limit",
         label: "Position limit",
@@ -1533,6 +1548,36 @@ function buildRiskApprovalRisk(
 
 function fractionToPercentOrNull(value: number | null): number | null {
   return value === null || !Number.isFinite(value) ? null : value * 100;
+}
+
+function buildRiskApprovalDataQualityGate(run: ResearchRunSummary): RiskApprovalGate {
+  const dataQuality = run.dataQuality;
+  if (!dataQuality) {
+    return {
+      id: "data-quality",
+      label: "Data quality",
+      value: "Not attached",
+      detail: "Audited run metadata did not include data quality; rerun pipeline before paper execution.",
+      status: "blocked",
+      tone: "risk"
+    };
+  }
+
+  const source = dataQuality.source.trim();
+  const sourceIsTrusted = source !== "" && source !== "unknown" && source !== "demo-fallback";
+  const rowsAreReady = Number.isFinite(dataQuality.rows) && dataQuality.rows > 0;
+  const isReady = dataQuality.isComplete && sourceIsTrusted && rowsAreReady;
+
+  return {
+    id: "data-quality",
+    label: "Data quality",
+    value: `${source || "unknown"} · ${dataQuality.isComplete ? "complete" : "review"}`,
+    detail: isReady
+      ? `${dataQuality.rows} rows are approved for paper execution; ${formatWarningCount(dataQuality.warnings.length)}.`
+      : `Paper execution requires complete audited market data; current source ${source || "unknown"} is review-only.`,
+    status: isReady ? "passed" : "blocked",
+    tone: isReady ? (dataQuality.warnings.length === 0 ? "positive" : "warning") : "risk"
+  };
 }
 
 export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradingRow[] {

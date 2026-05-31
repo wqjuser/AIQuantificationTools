@@ -3869,6 +3869,7 @@ function riskApprovalGateLabel(i18n: AppI18n, gate: RiskApprovalGate): string {
   return {
     "audited-run": "审计运行",
     "ai-evidence": "AI 证据",
+    "data-quality": "数据质量",
     "position-limit": "仓位上限",
     "drawdown-limit": "回撤闸门",
     "execution-route": "执行通道"
@@ -3883,8 +3884,12 @@ function riskApprovalGateValue(i18n: AppI18n, gate: RiskApprovalGate): string {
     .replace("No audited run", "缺少审计运行")
     .replace("Evidence dossier blocked", "证据包阻断")
     .replace("Evidence locked", "证据已锁定")
+    .replace("Not attached", "未附加")
+    .replace("complete", "完整")
+    .replace("review", "复核")
     .replace("paper blocked", "模拟阻断")
     .replace("paper only", "仅模拟盘")
+    .replace("data blocked", "数据阻断")
     .replace("certified live", "认证实盘")
     .replace("cap", "上限")
     .replace("guard", "闸门");
@@ -3908,6 +3913,15 @@ function riskApprovalGateDetail(i18n: AppI18n, gate: RiskApprovalGate): string {
   return gate.detail
     .replace("Run Pipeline must produce a reproducible research run before execution.", "执行前必须先由流水线生成可复现研究运行。")
     .replace("Run Pipeline before agent debate, explanation, or strategy promotion.", "先运行流水线，再进行智能体辩论、解释或策略晋级。")
+    .replace(
+      "Audited run metadata did not include data quality; rerun pipeline before paper execution.",
+      "审计运行缺少数据质量元数据；请重新运行流水线后再进入模拟执行。"
+    )
+    .replace(
+      /^Paper execution requires complete audited market data; current source (.+) is review-only\.$/u,
+      "模拟执行要求完整的审计行情数据；当前来源 $1 仅可复核。"
+    )
+    .replace(/(\d+) rows are approved for paper execution; (.+)\./u, "$1 行数据已允许进入模拟执行；$2。")
     .replace("Position cap is parsed but cannot be approved without audited evidence.", "已解析仓位上限，但缺少审计证据时不能批准。")
     .replace("Drawdown is provisional until a run snapshot is bound.", "绑定运行快照前，回撤仅作为临时参考。")
     .replace("Paper route waits for audited evidence; live route remains gated.", "模拟通道等待审计证据；实盘通道继续受闸门限制。")

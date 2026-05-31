@@ -1082,18 +1082,69 @@ describe("terminal workbench model", () => {
     expect(approval.summary).toBe(
       "Audited run run-risk-ready can stage paper orders; live trading remains blocked until 3 gates pass."
     );
-    expect(approval.gates.map((gate) => gate.status)).toEqual(["passed", "passed", "passed", "passed", "review"]);
+    expect(approval.gates.map((gate) => gate.status)).toEqual(["passed", "passed", "passed", "passed", "passed", "review"]);
     expect(approval.gates[2]).toMatchObject({
-      value: "20% cap",
+      id: "data-quality",
+      value: "tencent · complete",
       tone: "positive"
     });
     expect(approval.gates[3]).toMatchObject({
-      value: "5.8% / 12% guard",
+      value: "20% cap",
       tone: "positive"
     });
     expect(approval.gates[4]).toMatchObject({
+      value: "5.8% / 12% guard",
+      tone: "positive"
+    });
+    expect(approval.gates[5]).toMatchObject({
       value: "paper only",
       detail: "Paper route can stage; 3 live gates still blocked."
+    });
+  });
+
+  test("blocks paper execution when audited data quality is incomplete", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-risk-incomplete-data",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-risk-incomplete-data",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "demo-fallback",
+        isComplete: false,
+        warnings: ["upstream unavailable"],
+        rows: 240
+      }
+    });
+
+    const approval = buildRiskApprovalSummary(workspace);
+    const rows = buildPaperTradingRows(workspace);
+    const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
+
+    expect(approval.status).toBe("blocked");
+    expect(approval.gates.find((gate) => gate.id === "data-quality")).toMatchObject({
+      value: "demo-fallback · review",
+      status: "blocked",
+      tone: "risk"
+    });
+    expect(rows[0]).toMatchObject({
+      status: "blocked",
+      reason: "Risk approval blocked before staging paper execution."
+    });
+    expect(rows[1]).toMatchObject({
+      status: "blocked",
+      reason: "Paper execution requires complete audited market data; current source demo-fallback is review-only."
+    });
+    expect(readiness.status).toBe("blocked");
+    expect(readiness.stages.find((stage) => stage.id === "risk-approval")).toMatchObject({
+      value: "risk blocked",
+      status: "blocked"
     });
   });
 
@@ -1110,6 +1161,12 @@ describe("terminal workbench model", () => {
       metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
       decisions: [],
       executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      },
       strategyConfig: {
         name: "Audited SMA plan",
         revision: "rev-risk-locked",
@@ -1180,7 +1237,13 @@ describe("terminal workbench model", () => {
         timeframe: "1d",
         strategyRevision: "rev-paper-ready",
         dataRows: 240,
-        executionMode: "paper_only"
+        executionMode: "paper_only",
+        dataQuality: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 240
+        }
       }
     });
 
@@ -1215,6 +1278,12 @@ describe("terminal workbench model", () => {
       metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
       decisions: [],
       executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      },
       strategyConfig: {
         name: "Audited sizing",
         revision: "rev-paper-audited-sizing",
@@ -1267,7 +1336,13 @@ describe("terminal workbench model", () => {
       dataRows: 240,
       metrics: { total_return_pct: -4.2, max_drawdown_pct: 18.5, win_rate_pct: 44, trade_count: 18 },
       decisions: [],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
     });
 
     const approval = buildRiskApprovalSummary(workspace);
@@ -1325,7 +1400,13 @@ describe("terminal workbench model", () => {
       dataRows: 240,
       metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
       decisions: [],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
     });
     const execution = {
       executionId: "paper-summary",
@@ -1488,7 +1569,13 @@ describe("terminal workbench model", () => {
       dataRows: 240,
       metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
       decisions: [],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
     });
 
     const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
@@ -1521,7 +1608,13 @@ describe("terminal workbench model", () => {
       dataRows: 240,
       metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
       decisions: [],
-      executionMode: "paper_only"
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
     });
     const execution = {
       executionId: "paper-promotion",
