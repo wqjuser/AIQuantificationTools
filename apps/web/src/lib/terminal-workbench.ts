@@ -299,6 +299,7 @@ export interface BacktestParameterScanRow {
   condition: string;
   entryWindow: number;
   exitWindow: number;
+  entryRsiThreshold: number | null;
   returnPct: string;
   maxDrawdownPct: string;
   tradeCount: number;
@@ -2667,32 +2668,44 @@ export function buildBacktestParameterScanRows(workspace: TerminalWorkspace): Ba
   const draft = buildStrategyRuleDraft(workspace);
   const entryWindows = parameterScanWindows(draft.entryWindow);
   const exitWindows = parameterScanWindows(draft.exitWindow);
+  const entryRsiThresholds: Array<number | null> =
+    draft.entryRsiConfirm && !isRsiConditionKind(draft.entryKind)
+      ? parameterScanThresholds(draft.entryRsiThreshold)
+      : [null];
   const currentMetricReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
-  const currentScan = simulateSmaParameterScan(workspace, bars, draft.entryWindow, draft.exitWindow);
+  const currentScan = simulateSmaParameterScan(workspace, bars, draft.entryWindow, draft.exitWindow, draft.entryRsiThreshold);
   const currentReturn = currentMetricReturn ?? currentScan.totalReturnPct;
 
   return entryWindows.flatMap((entryWindow) =>
-    exitWindows.map((exitWindow) => {
-      const result = simulateSmaParameterScan(workspace, bars, entryWindow, exitWindow);
-      const delta = result.totalReturnPct - currentReturn;
-      const isCurrent = entryWindow === draft.entryWindow && exitWindow === draft.exitWindow;
-      const breachesDrawdown = result.maxDrawdownPct > draft.maxDrawdownPct;
-      return {
-        id: `scan-entry-${entryWindow}-exit-${exitWindow}`,
-        runId: run.runId,
-        source: run.dataSnapshot?.hash ?? run.dataSnapshot?.source ?? "audited snapshot",
-        condition: `SMA${entryWindow} / SMA${exitWindow}`,
-        entryWindow,
-        exitWindow,
-        returnPct: formatSignedPct(result.totalReturnPct),
-        maxDrawdownPct: formatPct(result.maxDrawdownPct),
-        tradeCount: result.tradeCount,
-        alphaVsCurrent: formatSignedPointDelta(delta),
-        status: isCurrent ? "current" : "candidate",
-        tone: isCurrent ? "neutral" : breachesDrawdown ? "risk" : delta >= 0 ? "positive" : "warning",
-        dataRows: bars.length
-      };
-    })
+    exitWindows.flatMap((exitWindow) =>
+      entryRsiThresholds.map((entryRsiThreshold) => {
+        const result = simulateSmaParameterScan(workspace, bars, entryWindow, exitWindow, entryRsiThreshold);
+        const delta = result.totalReturnPct - currentReturn;
+        const isCurrent =
+          entryWindow === draft.entryWindow &&
+          exitWindow === draft.exitWindow &&
+          (!draft.entryRsiConfirm || entryRsiThreshold === draft.entryRsiThreshold);
+        const breachesDrawdown = result.maxDrawdownPct > draft.maxDrawdownPct;
+        const rsiCondition = entryRsiThreshold === null ? "" : ` / RSI>${formatConditionNumber(entryRsiThreshold)}`;
+        const rsiId = entryRsiThreshold === null ? "" : `-rsi-${formatConditionNumber(entryRsiThreshold)}`;
+        return {
+          id: `scan-entry-${entryWindow}-exit-${exitWindow}${rsiId}`,
+          runId: run.runId,
+          source: run.dataSnapshot?.hash ?? run.dataSnapshot?.source ?? "audited snapshot",
+          condition: `SMA${entryWindow} / SMA${exitWindow}${rsiCondition}`,
+          entryWindow,
+          exitWindow,
+          entryRsiThreshold,
+          returnPct: formatSignedPct(result.totalReturnPct),
+          maxDrawdownPct: formatPct(result.maxDrawdownPct),
+          tradeCount: result.tradeCount,
+          alphaVsCurrent: formatSignedPointDelta(delta),
+          status: isCurrent ? "current" : "candidate",
+          tone: isCurrent ? "neutral" : breachesDrawdown ? "risk" : delta >= 0 ? "positive" : "warning",
+          dataRows: bars.length
+        };
+      })
+    )
   );
 }
 
@@ -2714,8 +2727,7 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
   ];
   const assumptionRows = report.assumptionRows.map((row) => [row.label, `${row.value} ${row.suffix}`]);
   const parameterScanRows = buildBacktestParameterScanRows(workspace).map((row) => [
-    row.entryWindow,
-    row.exitWindow,
+    row.condition,
     row.returnPct,
     row.maxDrawdownPct,
     row.tradeCount,
@@ -2782,7 +2794,7 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
     "## Parameter Sensitivity",
     "",
     parameterScanRows.length
-      ? markdownTable(["Entry SMA", "Exit SMA", "Return", "Max drawdown", "Trades", "Delta", "Status"], parameterScanRows)
+      ? markdownTable(["Condition", "Return", "Max drawdown", "Trades", "Delta", "Status"], parameterScanRows)
       : "Parameter sensitivity requires an audited data snapshot.",
     "",
     "## AI Evidence Boundary",
@@ -2865,11 +2877,22 @@ function parameterScanWindows(currentWindow: number): number[] {
   ).sort((left, right) => left - right);
 }
 
+function parameterScanThresholds(currentThreshold: number): number[] {
+  return Array.from(
+    new Set(
+      [currentThreshold - 5, currentThreshold, currentThreshold + 5].map((threshold) =>
+        normalizeStrategyThreshold(threshold, defaultStrategyRuleDraft.entryRsiThreshold)
+      )
+    )
+  ).sort((left, right) => left - right);
+}
+
 function simulateSmaParameterScan(
   workspace: TerminalWorkspace,
   bars: ResearchRunDataSnapshotBar[],
   entryWindow: number,
-  exitWindow: number
+  exitWindow: number,
+  entryRsiThreshold: number | null = null
 ): { totalReturnPct: number; maxDrawdownPct: number; tradeCount: number } {
   const assumptions = resolveBacktestAssumptions(workspace);
   const draft = buildStrategyRuleDraft(workspace);
@@ -2879,6 +2902,7 @@ function simulateSmaParameterScan(
   const stopLossPct = draft.stopLossPct / 100;
   const takeProfitPct = draft.takeProfitPct / 100;
   const closes = bars.map((bar) => bar.close);
+  const volumes = bars.map((bar) => bar.volume);
   let cash = assumptions.initialCash;
   let quantity = 0;
   let entryPrice = 0;
@@ -2886,7 +2910,11 @@ function simulateSmaParameterScan(
   const equityValues: number[] = [];
 
   bars.forEach((bar, index) => {
-    if (quantity <= 0 && closeAboveSma(closes, index, entryWindow)) {
+    const passesRsi =
+      !draft.entryRsiConfirm ||
+      rsiAbove(closes, index, draft.entryRsiWindow, entryRsiThreshold ?? draft.entryRsiThreshold);
+    const passesVolume = !draft.entryVolumeConfirm || volumeAboveSma(volumes, index, draft.entryVolumeWindow);
+    if (quantity <= 0 && closeAboveSma(closes, index, entryWindow) && passesRsi && passesVolume) {
       const budget = cash * positionPct;
       const executionPrice = bar.close * (1 + slippageRate);
       const nextQuantity = executionPrice > 0 ? budget / executionPrice : 0;
@@ -2940,6 +2968,39 @@ function closeAboveSma(closes: number[], index: number, window: number): boolean
 function closeBelowSma(closes: number[], index: number, window: number): boolean {
   const average = smaAt(closes, index, window);
   return average !== null && closes[index] < average;
+}
+
+function volumeAboveSma(volumes: number[], index: number, window: number): boolean {
+  const average = smaAt(volumes, index, window);
+  return average !== null && volumes[index] > average;
+}
+
+function rsiAbove(closes: number[], index: number, window: number, threshold: number): boolean {
+  const value = rsiAt(closes, index, window);
+  return value !== null && value > threshold;
+}
+
+function rsiAt(closes: number[], index: number, window: number): number | null {
+  if (window <= 0 || index < window) {
+    return null;
+  }
+  let gains = 0;
+  let losses = 0;
+  for (let cursor = index - window + 1; cursor <= index; cursor += 1) {
+    const delta = closes[cursor] - closes[cursor - 1];
+    if (delta >= 0) {
+      gains += delta;
+    } else {
+      losses += Math.abs(delta);
+    }
+  }
+  const averageGain = gains / window;
+  const averageLoss = losses / window;
+  if (averageLoss === 0) {
+    return 100;
+  }
+  const relativeStrength = averageGain / averageLoss;
+  return 100 - 100 / (1 + relativeStrength);
 }
 
 function smaAt(values: number[], index: number, window: number): number | null {
@@ -4218,7 +4279,8 @@ export function workspaceWithBacktestParameterCandidate(
   const nextStrategy = strategySnapshotFromRuleDraft({
     ...currentDraft,
     entryWindow: candidate.entryWindow,
-    exitWindow: candidate.exitWindow
+    exitWindow: candidate.exitWindow,
+    entryRsiThreshold: candidate.entryRsiThreshold ?? currentDraft.entryRsiThreshold
   });
   const note: DecisionLogEntry = {
     agent: "Backtest Lab",

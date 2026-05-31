@@ -2724,8 +2724,8 @@ em {
 .parameter-scan-row {
   display: grid;
   grid-template-columns:
-    minmax(54px, 0.58fr) minmax(54px, 0.58fr) minmax(70px, 0.7fr) minmax(76px, 0.76fr)
-    minmax(56px, 0.52fr) minmax(68px, 0.66fr) minmax(64px, 0.58fr) minmax(72px, 0.62fr);
+    minmax(150px, 1.3fr) minmax(70px, 0.68fr) minmax(76px, 0.72fr) minmax(56px, 0.52fr)
+    minmax(68px, 0.64fr) minmax(64px, 0.56fr) minmax(72px, 0.62fr);
   gap: 8px;
   align-items: center;
   min-height: 36px;

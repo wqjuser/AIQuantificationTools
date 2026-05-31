@@ -2629,8 +2629,7 @@ function BacktestReportPanel({
           {parameterScanRows.length ? (
             <div className="parameter-scan-table">
               <div className="parameter-scan-row parameter-scan-head">
-                <span>{i18n.t("backtest.entrySma")}</span>
-                <span>{i18n.t("backtest.exitSma")}</span>
+                <span>{i18n.t("strategy.condition")}</span>
                 <span>{i18n.metricLabel("Return")}</span>
                 <span>{i18n.metricLabel("Max DD")}</span>
                 <span>{i18n.metricLabel("Trades")}</span>
@@ -2640,8 +2639,7 @@ function BacktestReportPanel({
               </div>
               {parameterScanRows.map((row) => (
                 <article className={`parameter-scan-row ${row.tone}`} key={row.id}>
-                  <span>SMA{row.entryWindow}</span>
-                  <span>SMA{row.exitWindow}</span>
+                  <span>{row.condition}</span>
                   <span>{row.returnPct}</span>
                   <span>{row.maxDrawdownPct}</span>
                   <span>{row.tradeCount}</span>
