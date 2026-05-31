@@ -2021,7 +2021,7 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
       group: "exit",
       label: "Exit signal",
       condition: workspace.strategy.exit,
-      parameter: `SMA${draft.exitWindow}`,
+      parameter: strategyExitParameter(workspace.strategy.exit, draft.exitWindow),
       status: isPendingStrategyText(workspace.strategy.exit) ? "pending" : "active",
       tone: "warning"
     },
@@ -2068,7 +2068,10 @@ export function buildStrategyReadinessGates(workspace: TerminalWorkspace): Strat
       ? {
           id: "schema",
           label: "Strategy schema",
-          value: `SMA${draft.entryWindow} / SMA${draft.exitWindow}`,
+          value: `${strategyEntryParameter(workspace.strategy.entry, draft.entryWindow)} / ${strategyExitParameter(
+            workspace.strategy.exit,
+            draft.exitWindow
+          )}`,
           detail: "Entry and exit conditions are structured.",
           status: "passed",
           tone: "positive"
@@ -3659,6 +3662,12 @@ function formatStrategyCondition(condition: ResearchRunStrategyCondition): strin
   if (condition.kind === "volume_above_sma" && Number.isFinite(window)) {
     return `Volume > VOL${window}`;
   }
+  if ((condition.kind === "rsi_below" || condition.kind === "rsi_above") && Number.isFinite(window)) {
+    const threshold = Number(condition.params["threshold"]);
+    if (Number.isFinite(threshold)) {
+      return `RSI${window} ${condition.kind === "rsi_below" ? "<" : ">"} ${formatConditionNumber(threshold)}`;
+    }
+  }
   const params = Object.entries(condition.params)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(", ");
@@ -3666,12 +3675,71 @@ function formatStrategyCondition(condition: ResearchRunStrategyCondition): strin
 }
 
 function strategyEntryParameter(text: string, entryWindow: number): string {
-  const parts = [`SMA${entryWindow}`];
+  return strategyConditionParameter(text, entryWindow);
+}
+
+function strategyExitParameter(text: string, exitWindow: number): string {
+  return strategyConditionParameter(text, exitWindow);
+}
+
+function strategyConditionParameter(text: string, smaWindow: number): string {
+  const parts: string[] = [];
+  if (hasSmaConditionText(text) || !hasKnownIndicatorText(text)) {
+    parts.push(`SMA${smaWindow}`);
+  }
+  const rsiCondition = inferRsiCondition(text);
+  if (rsiCondition) {
+    parts.push(`RSI${rsiCondition.window}${rsiCondition.operator}${formatConditionNumber(rsiCondition.threshold)}`);
+  }
   const volumeWindow = inferVolumeWindow(text);
   if (volumeWindow !== null) {
     parts.push(`VOL${volumeWindow}`);
   }
   return parts.join(" / ");
+}
+
+function hasKnownIndicatorText(text: string): boolean {
+  return hasSmaConditionText(text) || inferRsiCondition(text) !== null || inferVolumeWindow(text) !== null;
+}
+
+function hasSmaConditionText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  const smaIndex = normalized.search(/sma\s*\d*/u);
+  if (smaIndex < 0) {
+    return false;
+  }
+  if (/(?:close|price|收盘价|收盘)\s*(?:<=|>=|<|>|above|below|over|under|高于|大于|低于|小于)\s*sma\s*\d*/u.test(normalized)) {
+    return true;
+  }
+  if (normalized.includes("rsi") || normalized.includes("相对强弱")) {
+    return false;
+  }
+  const volumeIndexCandidates = [normalized.indexOf("volume"), normalized.indexOf("vol"), normalized.indexOf("成交量")].filter(
+    (index) => index >= 0
+  );
+  const firstVolumeIndex = volumeIndexCandidates.length ? Math.min(...volumeIndexCandidates) : -1;
+  return firstVolumeIndex < 0 || firstVolumeIndex > smaIndex;
+}
+
+function inferRsiCondition(text: string): { window: number; operator: "<" | ">"; threshold: number } | null {
+  const normalized = text.toLowerCase();
+  if (!normalized.includes("rsi") && !normalized.includes("相对强弱")) {
+    return null;
+  }
+  const windowMatch = normalized.match(/rsi\s*(\d+)/u);
+  const window = normalizeStrategyWindow(windowMatch ? Number(windowMatch[1]) : 14);
+  const belowMatch = normalized.match(/rsi\s*\d*\s*(?:<=|<|below|under|低于|小于)\s*(\d+(?:\.\d+)?)/u);
+  if (belowMatch) {
+    return { window, operator: "<", threshold: Number(belowMatch[1]) };
+  }
+  const aboveMatch = normalized.match(/rsi\s*\d*\s*(?:>=|>|above|over|高于|大于)\s*(\d+(?:\.\d+)?)/u);
+  if (aboveMatch) {
+    return { window, operator: ">", threshold: Number(aboveMatch[1]) };
+  }
+  if (normalized.includes("rebound") || normalized.includes("反弹") || normalized.includes("超卖")) {
+    return { window, operator: "<", threshold: 30 };
+  }
+  return null;
 }
 
 function inferVolumeWindow(text: string): number | null {
@@ -3681,6 +3749,10 @@ function inferVolumeWindow(text: string): number | null {
   }
   const match = normalized.match(/(?:volume|vol|成交量).*?(?:sma|ma|均线|vol)\s*(\d+)/u);
   return match ? normalizeStrategyWindow(Number(match[1])) : 20;
+}
+
+function formatConditionNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/u, "").replace(/\.$/u, "");
 }
 
 function formatStrategyRisk(risk: ResearchRunStrategyRisk): string {

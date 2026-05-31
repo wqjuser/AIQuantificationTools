@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from quant_core.domain import Market, StrategyConfig, Timeframe
+from quant_core.domain import Condition, Market, StrategyConfig, Timeframe
 from quant_core.research import strategy_config_from_snapshot, strategy_config_to_payload
 from quant_core.terminal import StrategySnapshot
 
@@ -39,11 +39,9 @@ def validate_strategy_snapshot(
     audit_run_id: str | None = None,
 ) -> StrategyValidation:
     strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
-    entry_window = _sma_window(snapshot.entry)
-    exit_window = _sma_window(snapshot.exit)
+    condition_label = _strategy_schema_label(strategy)
     schema_is_ready = (
-        entry_window is not None
-        and exit_window is not None
+        condition_label is not None
         and not _is_pending_text(snapshot.entry)
         and not _is_pending_text(snapshot.exit)
     )
@@ -63,7 +61,7 @@ def validate_strategy_snapshot(
         StrategyValidationGate(
             id="schema",
             label="Strategy schema",
-            value=f"SMA{entry_window} / SMA{exit_window}" if schema_is_ready else "pending",
+            value=condition_label if schema_is_ready and condition_label is not None else "pending",
             detail=(
                 "Entry and exit conditions are structured."
                 if schema_is_ready
@@ -142,11 +140,33 @@ def _is_pending_text(text: str) -> bool:
     return text.startswith("Pending") or text.startswith("Run Pipeline")
 
 
-def _sma_window(text: str) -> int | None:
-    match = re.search(r"sma\s*(\d+)", text, flags=re.IGNORECASE)
-    if not match:
+def _strategy_schema_label(strategy: StrategyConfig) -> str | None:
+    entry_label = _conditions_label(strategy.entry_conditions)
+    exit_label = _conditions_label(strategy.exit_conditions)
+    if not entry_label or not exit_label:
         return None
-    return max(1, min(int(match.group(1)), 250))
+    return f"{entry_label} / {exit_label}"
+
+
+def _conditions_label(conditions: list[Condition]) -> str:
+    return " + ".join(label for condition in conditions if (label := _condition_label(condition)))
+
+
+def _condition_label(condition: Condition) -> str:
+    window = condition.params.get("window")
+    if condition.kind == "close_above_sma":
+        return f"SMA{window:g}" if isinstance(window, (int, float)) else ""
+    if condition.kind == "close_below_sma":
+        return f"SMA{window:g}" if isinstance(window, (int, float)) else ""
+    if condition.kind == "volume_above_sma":
+        return f"VOL{window:g}" if isinstance(window, (int, float)) else ""
+    if condition.kind in {"rsi_below", "rsi_above"}:
+        threshold = condition.params.get("threshold")
+        if not isinstance(window, (int, float)) or not isinstance(threshold, (int, float)):
+            return ""
+        operator = "<" if condition.kind == "rsi_below" else ">"
+        return f"RSI{window:g} {operator} {threshold:g}"
+    return ""
 
 
 def _risk_values(snapshot: StrategySnapshot) -> tuple[float | None, float | None, float | None, float | None]:

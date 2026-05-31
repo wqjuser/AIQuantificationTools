@@ -1734,6 +1734,51 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("formats audited RSI conditions for strategy replay and rule parameters", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-rsi-condition",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "RSI reversal",
+      strategyRevision: "rev-rsi-condition",
+      dataRows: 240,
+      metrics: { total_return_pct: 5.4, max_drawdown_pct: 3.1, win_rate_pct: 52, trade_count: 8 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      strategyConfig: {
+        name: "RSI reversal",
+        revision: "rev-rsi-condition",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "rsi_below", params: { window: 14, threshold: 30 } }],
+        exitConditions: [{ kind: "rsi_above", params: { window: 14, threshold: 55 } }],
+        risk: {
+          positionPct: 0.35,
+          stopLossPct: 0.07,
+          takeProfitPct: 0.14,
+          maxDrawdownPct: 0.1
+        }
+      }
+    });
+
+    const rows = buildStrategyRuleRows(workspace);
+    const gates = buildStrategyReadinessGates(workspace);
+
+    expect(workspace.strategy.entry).toBe("RSI14 < 30");
+    expect(workspace.strategy.exit).toBe("RSI14 > 55");
+    expect(rows[0]).toMatchObject({ parameter: "RSI14<30" });
+    expect(rows[1]).toMatchObject({ parameter: "RSI14>55" });
+    expect(gates[0]).toMatchObject({
+      status: "passed",
+      value: "RSI14<30 / RSI14>55"
+    });
+  });
+
   test("keeps timeframe text from becoming a volume window", () => {
     const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
     const rows = buildStrategyRuleRows(workspace);

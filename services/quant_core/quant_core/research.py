@@ -327,7 +327,7 @@ def strategy_config_from_snapshot(
 
 
 def _entry_conditions_from_text(text: str) -> list[Condition]:
-    conditions = [_condition_from_text(text, default_kind="close_above_sma")]
+    conditions = _directional_conditions_from_text(text, default_kind="close_above_sma")
     volume_condition = _volume_condition_from_text(text)
     if volume_condition:
         conditions.append(volume_condition)
@@ -335,19 +335,108 @@ def _entry_conditions_from_text(text: str) -> list[Condition]:
 
 
 def _condition_from_text(text: str, *, default_kind: str) -> Condition:
+    return _directional_conditions_from_text(text, default_kind=default_kind)[0]
+
+
+def _directional_conditions_from_text(text: str, *, default_kind: str) -> list[Condition]:
+    conditions: list[Condition] = []
+    sma_condition = _sma_condition_from_text(text, default_kind=default_kind)
+    if sma_condition:
+        conditions.append(sma_condition)
+    rsi_condition = _rsi_condition_from_text(text)
+    if rsi_condition:
+        conditions.append(rsi_condition)
+    if conditions:
+        return conditions
+    return [_default_sma_condition(default_kind)]
+
+
+def _sma_condition_from_text(text: str, *, default_kind: str) -> Condition | None:
     normalized = text.lower()
-    if "sma" in normalized:
-        if "<" in text or "below" in normalized:
+    if "sma" not in normalized:
+        return None
+    price_match = re.search(
+        r"(?:close|price|收盘价|收盘)\s*(?P<operator><=|>=|<|>|above|below|over|under|高于|大于|低于|小于)\s*sma\s*(?P<window>\d+)?",
+        normalized,
+    )
+    if price_match:
+        operator = price_match.group("operator")
+        window_match = price_match.group("window")
+        if operator in {"<=", "<", "below", "under", "低于", "小于"}:
             kind = "close_below_sma"
-        elif ">" in text or "above" in normalized:
+        elif operator in {">=", ">", "above", "over", "高于", "大于"}:
             kind = "close_above_sma"
         else:
             kind = default_kind
+        window = int(window_match) if window_match else 20
+        return Condition(kind=kind, params={"window": max(1, min(window, 250))})
+
+    if "rsi" in normalized or "相对强弱" in normalized:
+        return None
+    volume_index = min(
+        [index for index in [normalized.find("volume"), normalized.find("vol"), normalized.find("成交量")] if index >= 0],
+        default=-1,
+    )
+    if volume_index >= 0 and volume_index < normalized.find("sma"):
+        return None
+    if "<" in text or "below" in normalized or "under" in normalized or "低于" in normalized or "小于" in normalized:
+        kind = "close_below_sma"
+    elif ">" in text or "above" in normalized or "over" in normalized or "高于" in normalized or "大于" in normalized:
+        kind = "close_above_sma"
     else:
         kind = default_kind
     window_match = re.search(r"sma\s*(\d+)", normalized)
     window = int(window_match.group(1)) if window_match else 20
     return Condition(kind=kind, params={"window": max(1, min(window, 250))})
+
+
+def _default_sma_condition(default_kind: str) -> Condition:
+    return Condition(kind=default_kind, params={"window": 20})
+
+
+def _rsi_condition_from_text(text: str) -> Condition | None:
+    normalized = text.lower()
+    if "rsi" not in normalized and "相对强弱" not in normalized:
+        return None
+
+    if _has_rsi_below_signal(text, normalized):
+        kind = "rsi_below"
+        default_threshold = 30.0
+    elif _has_rsi_above_signal(text, normalized):
+        kind = "rsi_above"
+        default_threshold = 70.0
+    elif "rebound" in normalized or "反弹" in normalized or "超卖" in normalized:
+        kind = "rsi_below"
+        default_threshold = 30.0
+    else:
+        return None
+
+    window_match = re.search(r"rsi\s*(\d+)", normalized)
+    window = int(window_match.group(1)) if window_match else 14
+    threshold = _rsi_threshold_from_text(text, kind=kind, default=default_threshold)
+    return Condition(
+        kind=kind,
+        params={"window": max(1, min(window, 250)), "threshold": max(0.0, min(threshold, 100.0))},
+    )
+
+
+def _has_rsi_below_signal(text: str, normalized: str) -> bool:
+    return "<" in text or "below" in normalized or "under" in normalized or "低于" in normalized or "小于" in normalized
+
+
+def _has_rsi_above_signal(text: str, normalized: str) -> bool:
+    return ">" in text or "above" in normalized or "over" in normalized or "高于" in normalized or "大于" in normalized
+
+
+def _rsi_threshold_from_text(text: str, *, kind: str, default: float) -> float:
+    normalized = text.lower()
+    if kind == "rsi_below":
+        match = re.search(r"rsi\s*\d*\s*(?:<=|<|below|under|低于|小于)\s*(\d+(?:\.\d+)?)", normalized)
+    else:
+        match = re.search(r"rsi\s*\d*\s*(?:>=|>|above|over|高于|大于)\s*(\d+(?:\.\d+)?)", normalized)
+    if match:
+        return float(match.group(1))
+    return default
 
 
 def _volume_condition_from_text(text: str) -> Condition | None:

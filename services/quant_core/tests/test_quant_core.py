@@ -62,6 +62,32 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(strategy.entry_conditions[1].kind, "volume_above_sma")
         self.assertEqual(strategy.entry_conditions[1].params, {"window": 20})
 
+    def test_strategy_snapshot_parses_rsi_conditions_without_defaulting_to_sma(self):
+        from quant_core.research import strategy_config_from_snapshot
+        from quant_core.terminal import StrategySnapshot
+
+        snapshot = StrategySnapshot(
+            name="RSI reversal",
+            entry="RSI14 < 30 with volume above SMA10",
+            exit="RSI14 > 55",
+            position="35% cap per instrument",
+            risk="Stop -7%, take profit +14%, drawdown guard 10%, paper only",
+        )
+
+        strategy = strategy_config_from_snapshot(snapshot, market="ashare", symbol="600000", timeframe="1d")
+
+        self.assertEqual(
+            [(condition.kind, condition.params) for condition in strategy.entry_conditions],
+            [
+                ("rsi_below", {"window": 14, "threshold": 30.0}),
+                ("volume_above_sma", {"window": 10}),
+            ],
+        )
+        self.assertEqual(
+            [(condition.kind, condition.params) for condition in strategy.exit_conditions],
+            [("rsi_above", {"window": 14, "threshold": 55.0})],
+        )
+
     def test_backtest_waits_for_volume_confirmation_before_entry(self):
         from quant_core.backtest import BacktestEngine
         from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig
@@ -92,6 +118,32 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(result.trades[0].side, "buy")
         self.assertEqual(result.trades[0].timestamp, bars[3].timestamp)
         self.assertEqual(result.trades[0].reason, "entry_conditions")
+
+    def test_backtest_waits_for_rsi_threshold_before_entry(self):
+        from quant_core.backtest import BacktestEngine
+        from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        closes = [10, 9, 8, 7, 8, 9]
+        bars = [
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=index), close, close, close, close, 1000)
+            for index, close in enumerate(closes)
+        ]
+        strategy = StrategyConfig(
+            name="RSI reversal",
+            market="ashare",
+            symbols=["600000"],
+            timeframe="1d",
+            entry_conditions=[Condition(kind="rsi_below", params={"window": 3, "threshold": 30})],
+            exit_conditions=[Condition(kind="close_above_sma", params={"window": 2})],
+            risk=RiskRules(position_pct=0.5),
+        )
+
+        result = BacktestEngine().run(strategy, bars)
+
+        self.assertEqual([(trade.side, trade.timestamp) for trade in result.trades[:2]], [("buy", bars[3].timestamp), ("sell", bars[4].timestamp)])
+        self.assertEqual(result.trades[0].reason, "entry_conditions")
+        self.assertEqual(result.trades[1].reason, "exit_conditions")
 
     def test_strategy_library_store_persists_stable_strategy_versions(self):
         from quant_core.research import strategy_config_from_snapshot
@@ -218,6 +270,27 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(blocked.status, "blocked")
         self.assertEqual([gate.status for gate in blocked.gates], ["blocked", "blocked", "passed", "blocked"])
         self.assertEqual(blocked.gates[0].detail, "Structured entry and exit rules are required before audit.")
+
+    def test_strategy_validation_accepts_structured_rsi_conditions(self):
+        from quant_core.strategy_validation import validate_strategy_snapshot
+        from quant_core.terminal import StrategySnapshot
+
+        validation = validate_strategy_snapshot(
+            StrategySnapshot(
+                name="RSI reversal",
+                entry="RSI14 < 30",
+                exit="RSI14 > 55",
+                position="35% cap per instrument",
+                risk="Stop -7%, take profit +14%, drawdown guard 10%, paper only",
+            ),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+        )
+
+        self.assertEqual(validation.status, "review")
+        self.assertEqual(validation.gates[0].status, "passed")
+        self.assertEqual(validation.gates[0].value, "RSI14 < 30 / RSI14 > 55")
 
     def test_strategy_validation_api_returns_preflight_contract(self):
         import json

@@ -12,7 +12,7 @@ from quant_core.domain import (
     StrategyConfig,
     Trade,
 )
-from quant_core.indicators import max_drawdown_pct, sma
+from quant_core.indicators import max_drawdown_pct, rsi, sma
 
 
 @dataclass
@@ -129,6 +129,14 @@ class BacktestEngine:
         if condition.kind == "volume_above_sma":
             average = sma(volumes, int(condition.params["window"]), index)
             return average is not None and volumes[index] > average
+        if condition.kind == "rsi_below":
+            value = rsi(closes, int(condition.params.get("window", 14)), index)
+            threshold = float(condition.params.get("threshold", 30))
+            return value is not None and value < threshold
+        if condition.kind == "rsi_above":
+            value = rsi(closes, int(condition.params.get("window", 14)), index)
+            threshold = float(condition.params.get("threshold", 70))
+            return value is not None and value > threshold
         raise ValueError(f"unsupported condition: {condition.kind}")
 
     def _exit_reason(
