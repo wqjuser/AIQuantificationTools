@@ -215,6 +215,60 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("updates structured RSI strategy draft fields as canonical auditable strategy text", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(
+      workspaceWithStrategyRuleDraftField(
+        workspaceWithStrategyRuleDraftField(
+          workspaceWithStrategyRuleDraftField(
+            workspaceWithStrategyRuleDraftField(
+              workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryKind", "rsi_below"),
+              "entryWindow",
+              14
+            ),
+            "entryThreshold",
+            30
+          ),
+          "exitKind",
+          "rsi_above"
+        ),
+        "exitWindow",
+        14
+      ),
+      "exitThreshold",
+      55
+    );
+
+    expect(workspace.strategy.entry).toBe("RSI14 < 30");
+    expect(workspace.strategy.exit).toBe("RSI14 > 55");
+    expect(buildStrategyRuleRows(workspace).map((row) => row.parameter)).toEqual([
+      "RSI14<30",
+      "RSI14>55",
+      "20% exposure cap",
+      "Stop / take profit / drawdown / execution mode"
+    ]);
+    expect(buildStrategyReadinessGates(workspace)[0]).toMatchObject({
+      status: "passed",
+      value: "RSI14<30 / RSI14>55"
+    });
+  });
+
+  test("restores structured RSI strategy snapshots into editable draft fields", () => {
+    const workspace = workspaceWithStrategyField(
+      workspaceWithStrategyField(buildTerminalWorkspace(), "entry", "RSI14 < 30"),
+      "exit",
+      "RSI14 > 55"
+    );
+
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      entryKind: "rsi_below",
+      entryWindow: 14,
+      entryThreshold: 30,
+      exitKind: "rsi_above",
+      exitWindow: 14,
+      exitThreshold: 55
+    });
+  });
+
   test("keeps strategy rule matrix parameters aligned with structured edits", () => {
     const workspace = workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 7);
 

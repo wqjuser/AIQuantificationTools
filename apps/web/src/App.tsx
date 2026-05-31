@@ -118,6 +118,7 @@ import {
   RiskApprovalGate,
   RiskApprovalSummary,
   ScannerCandidate,
+  StrategyConditionKind,
   StrategyRuleDraft,
   StrategyRuleDraftField,
   StrategyReadinessGate,
@@ -1943,21 +1944,29 @@ function StrategySummary({
           />
         </label>
         <div className="strategy-draft-grid">
-          <StrategyNumberField
-            field="entryWindow"
+          <StrategyConditionField
+            field="entryKind"
             i18n={i18n}
-            label={i18n.t("strategy.entryWindow")}
+            kind={draft.entryKind}
+            label={i18n.t("strategy.entryCondition")}
             onUpdate={onUpdateStrategyRuleDraftField}
-            suffix="SMA"
-            value={draft.entryWindow}
+            options={["close_above_sma", "rsi_below"]}
+            threshold={draft.entryThreshold}
+            thresholdField="entryThreshold"
+            window={draft.entryWindow}
+            windowField="entryWindow"
           />
-          <StrategyNumberField
-            field="exitWindow"
+          <StrategyConditionField
+            field="exitKind"
             i18n={i18n}
-            label={i18n.t("strategy.exitWindow")}
+            kind={draft.exitKind}
+            label={i18n.t("strategy.exitCondition")}
             onUpdate={onUpdateStrategyRuleDraftField}
-            suffix="SMA"
-            value={draft.exitWindow}
+            options={["close_below_sma", "rsi_above"]}
+            threshold={draft.exitThreshold}
+            thresholdField="exitThreshold"
+            window={draft.exitWindow}
+            windowField="exitWindow"
           />
           <StrategyNumberField
             field="positionPct"
@@ -2105,6 +2114,74 @@ function StrategySummary({
         )}
       </div>
     </div>
+  );
+}
+
+function StrategyConditionField({
+  field,
+  i18n,
+  kind,
+  label,
+  onUpdate,
+  options,
+  threshold,
+  thresholdField,
+  window,
+  windowField
+}: {
+  field: StrategyRuleDraftField;
+  i18n: AppI18n;
+  kind: StrategyConditionKind;
+  label: string;
+  onUpdate: (field: StrategyRuleDraftField, value: number | string) => void;
+  options: StrategyConditionKind[];
+  threshold: number;
+  thresholdField: StrategyRuleDraftField;
+  window: number;
+  windowField: StrategyRuleDraftField;
+}) {
+  const isRsi = kind === "rsi_below" || kind === "rsi_above";
+  return (
+    <label className={`strategy-draft-field strategy-condition-field ${isRsi ? "rsi" : "sma"}`}>
+      <span>{label}</span>
+      <div className={`strategy-condition-editor ${isRsi ? "rsi" : "sma"}`}>
+        <select
+          className="strategy-condition-select"
+          onChange={(event) => onUpdate(field, event.currentTarget.value)}
+          value={kind}
+        >
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {strategyConditionOptionLabel(i18n, option)}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label={`${label} window`}
+          max={250}
+          min={1}
+          onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
+          step={1}
+          type="number"
+          value={window}
+        />
+        {isRsi ? (
+          <input
+            aria-label={`${label} threshold`}
+            className="strategy-threshold-field"
+            max={100}
+            min={0}
+            onChange={(event) => onUpdate(thresholdField, Number(event.currentTarget.value))}
+            step={1}
+            type="number"
+            value={threshold}
+          />
+        ) : (
+          <em>SMA</em>
+        )}
+      </div>
+      <small>{strategyDraftHint(i18n, field)}</small>
+    </label>
   );
 }
 
@@ -3548,6 +3625,16 @@ function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"
   return { active: "启用", pending: "待生成", guardrail: "保护" }[status];
 }
 
+function strategyConditionOptionLabel(i18n: AppI18n, kind: StrategyConditionKind): string {
+  const key = {
+    close_above_sma: "strategy.condition.closeAboveSma",
+    close_below_sma: "strategy.condition.closeBelowSma",
+    rsi_below: "strategy.condition.rsiBelow",
+    rsi_above: "strategy.condition.rsiAbove"
+  }[kind] as Parameters<AppI18n["t"]>[0];
+  return i18n.t(key);
+}
+
 function strategyReadinessGateLabel(i18n: AppI18n, label: StrategyReadinessGate["label"]): string {
   if (i18n.locale === "en-US") {
     return label;
@@ -3600,8 +3687,12 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
   if (i18n.locale === "en-US") {
     return {
       name: "Strategy version name",
+      entryKind: "Entry condition type",
       entryWindow: "Entry: close above SMA",
+      entryThreshold: "RSI entry threshold",
+      exitKind: "Exit condition type",
       exitWindow: "Exit: close below SMA",
+      exitThreshold: "RSI exit threshold",
       positionPct: "Capital cap per run",
       stopLossPct: "Trade-level stop",
       takeProfitPct: "Trade-level target",
@@ -3610,8 +3701,12 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
   }
   return {
     name: "策略版本名称",
+    entryKind: "入场条件类型",
     entryWindow: "入场：收盘价上穿 SMA",
+    entryThreshold: "RSI 入场阈值",
+    exitKind: "出场条件类型",
     exitWindow: "出场：收盘价跌破 SMA",
+    exitThreshold: "RSI 出场阈值",
     positionPct: "单次资金上限",
     stopLossPct: "单笔止损",
     takeProfitPct: "单笔止盈",

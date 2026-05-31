@@ -1864,7 +1864,8 @@ em {
 }
 
 .strategy-structured-editor input,
-.strategy-draft-field input {
+.strategy-draft-field input,
+.strategy-draft-field select {
   width: 100%;
   min-width: 0;
   border: 1px solid #27364a;
@@ -1878,7 +1879,8 @@ em {
 }
 
 .strategy-structured-editor input:focus,
-.strategy-draft-field input:focus {
+.strategy-draft-field input:focus,
+.strategy-draft-field select:focus {
   border-color: #2b6f62;
   outline: none;
 }
@@ -1899,9 +1901,29 @@ em {
   background: #151f2d;
 }
 
+.strategy-condition-editor.sma {
+  grid-template-columns: minmax(120px, 1.3fr) minmax(58px, 0.55fr) auto;
+}
+
+.strategy-condition-editor.rsi {
+  grid-template-columns: minmax(120px, 1.25fr) minmax(54px, 0.42fr) minmax(60px, 0.48fr);
+}
+
+.strategy-condition-select {
+  border: 0;
+  border-right: 1px solid #27364a;
+  border-radius: 0;
+  background: transparent;
+}
+
 .strategy-draft-field > div input {
   border: 0;
   background: transparent;
+}
+
+.strategy-threshold-field {
+  border-left: 1px solid #27364a !important;
+  border-radius: 0 !important;
 }
 
 .strategy-draft-field em {

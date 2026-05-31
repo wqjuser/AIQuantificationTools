@@ -134,12 +134,16 @@ export interface StrategyReadinessGate {
   tone: "positive" | "warning" | "risk";
 }
 
-export type StrategyConditionKind = "close_above_sma" | "close_below_sma";
+export type StrategyConditionKind = "close_above_sma" | "close_below_sma" | "rsi_below" | "rsi_above";
 
 export type StrategyRuleDraftField =
   | "name"
+  | "entryKind"
   | "entryWindow"
+  | "entryThreshold"
+  | "exitKind"
   | "exitWindow"
+  | "exitThreshold"
   | "positionPct"
   | "stopLossPct"
   | "takeProfitPct"
@@ -149,8 +153,10 @@ export interface StrategyRuleDraft {
   name: string;
   entryKind: StrategyConditionKind;
   entryWindow: number;
+  entryThreshold: number;
   exitKind: StrategyConditionKind;
   exitWindow: number;
+  exitThreshold: number;
   positionPct: number;
   stopLossPct: number;
   takeProfitPct: number;
@@ -643,8 +649,10 @@ const defaultStrategyRuleDraft: StrategyRuleDraft = {
   name: "SMA trend demo",
   entryKind: "close_above_sma",
   entryWindow: 20,
+  entryThreshold: 30,
   exitKind: "close_below_sma",
   exitWindow: 20,
+  exitThreshold: 55,
   positionPct: 20,
   stopLossPct: 8,
   takeProfitPct: 18,
@@ -2195,15 +2203,23 @@ export function buildStrategyVersionDiffRows(
 
 export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRuleDraft {
   const strategy = workspace.strategy;
-  const entryWindow = inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
-  const exitWindow = inferSmaWindow(strategy.exit, defaultStrategyRuleDraft.exitWindow);
+  const entryRsiCondition = inferRsiCondition(strategy.entry);
+  const exitRsiCondition = inferRsiCondition(strategy.exit);
+  const entryWindow = entryRsiCondition?.window ?? inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
+  const exitWindow = exitRsiCondition?.window ?? inferSmaWindow(strategy.exit, defaultStrategyRuleDraft.exitWindow);
 
   return {
     name: strategy.name.trim() || defaultStrategyRuleDraft.name,
-    entryKind: inferSmaConditionKind(strategy.entry, "close_above_sma"),
+    entryKind: entryRsiCondition
+      ? rsiOperatorToConditionKind(entryRsiCondition.operator)
+      : inferSmaConditionKind(strategy.entry, "close_above_sma"),
     entryWindow,
-    exitKind: inferSmaConditionKind(strategy.exit, "close_below_sma"),
+    entryThreshold: entryRsiCondition?.threshold ?? defaultStrategyRuleDraft.entryThreshold,
+    exitKind: exitRsiCondition
+      ? rsiOperatorToConditionKind(exitRsiCondition.operator)
+      : inferSmaConditionKind(strategy.exit, "close_below_sma"),
     exitWindow,
+    exitThreshold: exitRsiCondition?.threshold ?? defaultStrategyRuleDraft.exitThreshold,
     positionPct: inferPercent(strategy.position, defaultStrategyRuleDraft.positionPct),
     stopLossPct: inferPercentNearKeywords(strategy.risk, ["stop", "止损"], defaultStrategyRuleDraft.stopLossPct),
     takeProfitPct: inferPercentNearKeywords(
@@ -2232,8 +2248,12 @@ export function strategySnapshotFromRuleDraft(draft: StrategyRuleDraft): Strateg
   const normalizedDraft = normalizeStrategyRuleDraft(draft);
   return {
     name: normalizedDraft.name,
-    entry: `${conditionOperatorLabel(normalizedDraft.entryKind)} SMA${normalizedDraft.entryWindow}`,
-    exit: `${conditionOperatorLabel(normalizedDraft.exitKind)} SMA${normalizedDraft.exitWindow}`,
+    entry: strategyConditionSnapshotText(
+      normalizedDraft.entryKind,
+      normalizedDraft.entryWindow,
+      normalizedDraft.entryThreshold
+    ),
+    exit: strategyConditionSnapshotText(normalizedDraft.exitKind, normalizedDraft.exitWindow, normalizedDraft.exitThreshold),
     position: `${formatPercentValue(normalizedDraft.positionPct)}% max capital allocation`,
     risk: [
       `Stop -${formatPercentValue(normalizedDraft.stopLossPct)}%`,
@@ -2912,6 +2932,10 @@ function inferSmaWindow(text: string, fallback: number): number {
   return normalizeStrategyWindow(match ? Number(match[1]) : fallback);
 }
 
+function rsiOperatorToConditionKind(operator: "<" | ">"): StrategyConditionKind {
+  return operator === "<" ? "rsi_below" : "rsi_above";
+}
+
 function inferPercent(text: string, fallback: number): number {
   const match = text.match(/(\d+(?:\.\d+)?)\s*%/u);
   return normalizeStrategyPercent(match ? Number(match[1]) : fallback, fallback);
@@ -2932,16 +2956,22 @@ function inferPercentNearKeywords(text: string, keywords: string[], fallback: nu
 function normalizeStrategyRuleDraft(draft: StrategyRuleDraft): StrategyRuleDraft {
   return {
     name: draft.name.trim() || defaultStrategyRuleDraft.name,
-    entryKind: draft.entryKind,
+    entryKind: normalizeStrategyConditionKind(draft.entryKind, defaultStrategyRuleDraft.entryKind),
     entryWindow: normalizeStrategyWindow(draft.entryWindow),
-    exitKind: draft.exitKind,
+    entryThreshold: normalizeStrategyThreshold(draft.entryThreshold, defaultStrategyRuleDraft.entryThreshold),
+    exitKind: normalizeStrategyConditionKind(draft.exitKind, defaultStrategyRuleDraft.exitKind),
     exitWindow: normalizeStrategyWindow(draft.exitWindow),
+    exitThreshold: normalizeStrategyThreshold(draft.exitThreshold, defaultStrategyRuleDraft.exitThreshold),
     positionPct: normalizeStrategyPercent(draft.positionPct, defaultStrategyRuleDraft.positionPct),
     stopLossPct: normalizeStrategyPercent(draft.stopLossPct, defaultStrategyRuleDraft.stopLossPct),
     takeProfitPct: normalizeStrategyPercent(draft.takeProfitPct, defaultStrategyRuleDraft.takeProfitPct),
     maxDrawdownPct: normalizeStrategyPercent(draft.maxDrawdownPct, defaultStrategyRuleDraft.maxDrawdownPct),
     paperOnly: draft.paperOnly
   };
+}
+
+function normalizeStrategyConditionKind(kind: StrategyConditionKind, fallback: StrategyConditionKind): StrategyConditionKind {
+  return ["close_above_sma", "close_below_sma", "rsi_below", "rsi_above"].includes(kind) ? kind : fallback;
 }
 
 function normalizeStrategyWindow(value: number): number {
@@ -2951,6 +2981,13 @@ function normalizeStrategyWindow(value: number): number {
   return Math.max(1, Math.min(Math.round(value), 250));
 }
 
+function normalizeStrategyThreshold(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(Number(value.toFixed(2)), 100));
+}
+
 function normalizeStrategyPercent(value: number, fallback: number): number {
   if (!Number.isFinite(value)) {
     return fallback;
@@ -2958,8 +2995,17 @@ function normalizeStrategyPercent(value: number, fallback: number): number {
   return Math.max(0, Math.min(Number(value.toFixed(2)), 100));
 }
 
-function conditionOperatorLabel(kind: StrategyConditionKind): string {
-  return kind === "close_below_sma" ? "Close <" : "Close >";
+function strategyConditionSnapshotText(kind: StrategyConditionKind, window: number, threshold: number): string {
+  if (kind === "close_below_sma") {
+    return `Close < SMA${window}`;
+  }
+  if (kind === "rsi_below") {
+    return `RSI${window} < ${formatConditionNumber(threshold)}`;
+  }
+  if (kind === "rsi_above") {
+    return `RSI${window} > ${formatConditionNumber(threshold)}`;
+  }
+  return `Close > SMA${window}`;
 }
 
 function formatPercentValue(value: number): string {
@@ -3927,7 +3973,7 @@ export function workspaceWithStrategyRuleDraftField(
   const currentDraft = buildStrategyRuleDraft(currentWorkspace);
   const nextDraft = normalizeStrategyRuleDraft({
     ...currentDraft,
-    [field]: field === "name" ? String(value) : Number(value)
+    [field]: field === "name" || field === "entryKind" || field === "exitKind" ? String(value) : Number(value)
   });
   const nextStrategy = strategySnapshotFromRuleDraft(nextDraft);
   const note: DecisionLogEntry = {
