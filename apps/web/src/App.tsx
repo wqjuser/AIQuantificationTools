@@ -2519,7 +2519,7 @@ function PlatformSettingsPanel({
           <span>{i18n.locale === "zh-CN" ? "缓存上下文" : "Cache contexts"}</span>
           <div>
             {cacheStatus.contexts.map((context) => (
-              <article key={`${context.market}-${context.symbol}-${context.timeframe}`}>
+              <article className={context.freshness} key={`${context.market}-${context.symbol}-${context.timeframe}`}>
                 <strong>
                   {i18n.marketLabel(context.market)} · {context.symbol} · {context.timeframe}
                 </strong>
@@ -2528,6 +2528,7 @@ function PlatformSettingsPanel({
                     ? `${context.rowCount.toLocaleString("zh-CN")} 行 · ${formatCacheContextRange(context.startTimestamp, context.endTimestamp)}`
                     : `${context.rowCount.toLocaleString("en-US")} rows · ${formatCacheContextRange(context.startTimestamp, context.endTimestamp)}`}
                 </p>
+                <em>{cacheFreshnessLabel(i18n, context.freshness, context.ageHours)}</em>
               </article>
             ))}
           </div>
@@ -4063,6 +4064,26 @@ function settingsKeyStatusLabel(i18n: AppI18n, keyName: string | null, isConfigu
     return i18n.locale === "zh-CN" ? `${keyName} 已配置` : `${keyName} configured`;
   }
   return i18n.locale === "zh-CN" ? `${keyName} 未配置` : `${keyName} not configured`;
+}
+
+function cacheFreshnessLabel(
+  i18n: AppI18n,
+  freshness: PlatformSettingsStatus["cache"]["contexts"][number]["freshness"],
+  ageHours: number | null
+): string {
+  if (freshness === "empty") {
+    return i18n.locale === "zh-CN" ? "无缓存数据" : "No cached data";
+  }
+  const ageLabel =
+    ageHours === null
+      ? "n/a"
+      : i18n.locale === "zh-CN"
+        ? `${ageHours.toLocaleString("zh-CN")} 小时`
+        : `${ageHours.toLocaleString("en-US")}h`;
+  if (freshness === "fresh") {
+    return i18n.locale === "zh-CN" ? `新鲜 · ${ageLabel}` : `Fresh · ${ageLabel}`;
+  }
+  return i18n.locale === "zh-CN" ? `过期 · ${ageLabel}` : `Stale · ${ageLabel}`;
 }
 
 function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {

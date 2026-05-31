@@ -1373,6 +1373,14 @@ em {
   padding: 9px 10px;
 }
 
+.settings-cache-contexts article.stale {
+  border-left-color: #e8be62;
+}
+
+.settings-cache-contexts article.empty {
+  border-left-color: #ff7f6d;
+}
+
 .settings-cache-contexts strong {
   display: block;
   color: #dce6ee;
@@ -1384,6 +1392,29 @@ em {
   color: #8fa0b2;
   font-size: 11px;
   font-weight: 800;
+}
+
+.settings-cache-contexts em {
+  display: inline-flex;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #0e3029;
+  color: #7df5db;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.settings-cache-contexts article.stale em {
+  background: #332612;
+  color: #f1cb72;
+}
+
+.settings-cache-contexts article.empty em {
+  background: #351a1e;
+  color: #ff9a8e;
 }
 
 .settings-source-row em {

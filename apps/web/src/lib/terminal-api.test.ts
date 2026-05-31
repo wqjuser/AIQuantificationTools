@@ -429,7 +429,9 @@ describe("terminal workspace API client", () => {
                   timeframe: "1d",
                   rowCount: 500,
                   startTimestamp: "2025-09-12T00:00:00+08:00",
-                  endTimestamp: "2026-05-29T00:00:00+08:00"
+                  endTimestamp: "2026-05-29T00:00:00+08:00",
+                  freshness: "fresh",
+                  ageHours: 48
                 }
               ]
             },
@@ -471,7 +473,73 @@ describe("terminal workspace API client", () => {
       symbol: "600000",
       rowCount: 500
     });
+    expect((result.settings?.cache as unknown as { contexts?: Array<{ freshness?: string; ageHours?: number }> }).contexts?.[0]).toMatchObject({
+      freshness: "fresh",
+      ageHours: 48
+    });
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
+  });
+
+  test("rejects settings status when cache context freshness is missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-05-31T09:00:00+08:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            contexts: [
+              {
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                rowCount: 500,
+                startTimestamp: "2025-09-12T00:00:00+08:00",
+                endTimestamp: "2026-05-29T00:00:00+08:00"
+              }
+            ]
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
   });
 
   test("rejects settings status when cache contexts are missing", async () => {

@@ -269,27 +269,18 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(settings["cache"]["rowCount"], 2)
         self.assertEqual(settings["cache"]["contextCount"], 2)
         self.assertEqual(settings["cache"]["latestTimestamp"], "2026-05-29T00:00:00+00:00")
-        self.assertEqual(
-            settings["cache"]["contexts"],
-            [
-                {
-                    "market": "crypto",
-                    "symbol": "BTC/USDT",
-                    "timeframe": "1d",
-                    "rowCount": 1,
-                    "startTimestamp": "2026-05-29T00:00:00+00:00",
-                    "endTimestamp": "2026-05-29T00:00:00+00:00",
-                },
-                {
-                    "market": "ashare",
-                    "symbol": "600000",
-                    "timeframe": "1d",
-                    "rowCount": 1,
-                    "startTimestamp": "2026-05-28T00:00:00+00:00",
-                    "endTimestamp": "2026-05-28T00:00:00+00:00",
-                },
-            ],
-        )
+        cache_contexts = settings["cache"]["contexts"]
+        self.assertEqual(len(cache_contexts), 2)
+        self.assertEqual(cache_contexts[0]["market"], "crypto")
+        self.assertEqual(cache_contexts[0]["symbol"], "BTC/USDT")
+        self.assertEqual(cache_contexts[0]["rowCount"], 1)
+        self.assertIn(cache_contexts[0]["freshness"], ["fresh", "stale"])
+        self.assertIsInstance(cache_contexts[0]["ageHours"], int)
+        self.assertEqual(cache_contexts[1]["market"], "ashare")
+        self.assertEqual(cache_contexts[1]["symbol"], "600000")
+        self.assertEqual(cache_contexts[1]["rowCount"], 1)
+        self.assertIn(cache_contexts[1]["freshness"], ["fresh", "stale"])
+        self.assertIsInstance(cache_contexts[1]["ageHours"], int)
         self.assertEqual(paper_adapter["route"], "paper")
         self.assertEqual(paper_adapter["status"], "paper_ready")
         self.assertFalse(settings["safety"]["liveTradingAllowed"])
@@ -513,6 +504,60 @@ class QuantCoreContractTest(unittest.TestCase):
                 },
             ],
         )
+
+    def test_settings_status_marks_cache_context_freshness(self):
+        from quant_core.settings import build_settings_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                cache_contexts=[
+                    {
+                        "market": "ashare",
+                        "symbol": "600000",
+                        "timeframe": "1d",
+                        "row_count": 500,
+                        "start_timestamp": "2026-05-01T00:00:00+00:00",
+                        "end_timestamp": "2026-05-29T00:00:00+00:00",
+                    },
+                    {
+                        "market": "crypto",
+                        "symbol": "BTC/USDT",
+                        "timeframe": "5m",
+                        "row_count": 100,
+                        "start_timestamp": "2026-05-30T00:00:00+00:00",
+                        "end_timestamp": "2026-05-30T22:00:00+00:00",
+                    },
+                    {
+                        "market": "us",
+                        "symbol": "AAPL",
+                        "timeframe": "1d",
+                        "row_count": 100,
+                        "start_timestamp": "2026-05-01T00:00:00+00:00",
+                        "end_timestamp": "2026-05-20T00:00:00+00:00",
+                    },
+                    {
+                        "market": "ashare",
+                        "symbol": "000001",
+                        "timeframe": "1d",
+                        "row_count": 0,
+                        "start_timestamp": None,
+                        "end_timestamp": None,
+                    },
+                ],
+                cache_stats={"row_count": 700, "context_count": 4, "latest_timestamp": "2026-05-30T22:00:00+00:00"},
+                generated_at=datetime(2026, 5, 31, tzinfo=timezone.utc),
+            )
+
+        contexts = settings["cache"]["contexts"]
+        self.assertEqual(contexts[0]["freshness"], "fresh")
+        self.assertEqual(contexts[0]["ageHours"], 48)
+        self.assertEqual(contexts[1]["freshness"], "fresh")
+        self.assertEqual(contexts[1]["ageHours"], 2)
+        self.assertEqual(contexts[2]["freshness"], "stale")
+        self.assertEqual(contexts[2]["ageHours"], 264)
+        self.assertEqual(contexts[3]["freshness"], "empty")
+        self.assertIsNone(contexts[3]["ageHours"])
 
     def test_backtest_generates_metrics_and_trade_log_from_visual_strategy(self):
         from quant_core.backtest import BacktestEngine

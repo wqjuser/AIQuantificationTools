@@ -13,17 +13,19 @@ def build_settings_status(
     cache_stats: dict[str, Any] | None = None,
     finnhub_api_key: str | None = None,
     ccxt_exchange: str | None = None,
+    generated_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a read-only platform settings status payload without returning secrets."""
 
     cache = Path(cache_path)
     stats = _normalize_cache_stats(cache_stats)
+    generated_timestamp = generated_at or datetime.now(timezone.utc)
     finnhub_configured = bool((finnhub_api_key if finnhub_api_key is not None else os.getenv("FINNHUB_API_KEY", "")).strip())
     exchange = (ccxt_exchange if ccxt_exchange is not None else os.getenv("CCXT_DEFAULT_EXCHANGE", "binance")).strip() or "binance"
 
     return {
         "schemaVersion": 1,
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": generated_timestamp.isoformat(),
         "dataSources": [
             {
                 "market": "ashare",
@@ -68,7 +70,7 @@ def build_settings_status(
             "rowCount": stats["row_count"],
             "contextCount": stats["context_count"],
             "latestTimestamp": stats["latest_timestamp"],
-            "contexts": [_cache_context_to_payload(context) for context in (cache_contexts or [])],
+            "contexts": [_cache_context_to_payload(context, generated_at=generated_timestamp) for context in (cache_contexts or [])],
         },
         "executionAdapters": [
             {
@@ -130,15 +132,50 @@ def _normalize_cache_stats(cache_stats: dict[str, Any] | None) -> dict[str, int 
     }
 
 
-def _cache_context_to_payload(context: dict[str, Any]) -> dict[str, int | str | None]:
+def _cache_context_to_payload(context: dict[str, Any], *, generated_at: datetime) -> dict[str, int | str | None]:
+    row_count = _non_negative_int(context.get("row_count"))
+    end_timestamp = context.get("end_timestamp") if isinstance(context.get("end_timestamp"), str) else None
+    freshness, age_hours = _cache_context_freshness(
+        row_count=row_count,
+        timeframe=str(context.get("timeframe") or ""),
+        end_timestamp=end_timestamp,
+        generated_at=generated_at,
+    )
     return {
         "market": str(context.get("market") or ""),
         "symbol": str(context.get("symbol") or ""),
         "timeframe": str(context.get("timeframe") or ""),
-        "rowCount": _non_negative_int(context.get("row_count")),
+        "rowCount": row_count,
         "startTimestamp": context.get("start_timestamp") if isinstance(context.get("start_timestamp"), str) else None,
-        "endTimestamp": context.get("end_timestamp") if isinstance(context.get("end_timestamp"), str) else None,
+        "endTimestamp": end_timestamp,
+        "freshness": freshness,
+        "ageHours": age_hours,
     }
+
+
+def _cache_context_freshness(
+    *, row_count: int, timeframe: str, end_timestamp: str | None, generated_at: datetime
+) -> tuple[str, int | None]:
+    end = _parse_timestamp(end_timestamp)
+    if row_count <= 0 or end is None:
+        return "empty", None
+    reference = generated_at if generated_at.tzinfo else generated_at.replace(tzinfo=timezone.utc)
+    age_hours = max(0, int((reference.astimezone(timezone.utc) - end).total_seconds() // 3600))
+    fresh_threshold_hours = 96 if timeframe == "1d" else 24
+    return ("fresh" if age_hours <= fresh_threshold_hours else "stale"), age_hours
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _non_negative_int(value: object) -> int:

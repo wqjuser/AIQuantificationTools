@@ -336,6 +336,8 @@ export interface PlatformSettingsCacheContext {
   rowCount: number;
   startTimestamp: string | null;
   endTimestamp: string | null;
+  freshness: "fresh" | "stale" | "empty";
+  ageHours: number | null;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -1523,7 +1525,9 @@ function isPlatformSettingsCacheContext(value: unknown): value is PlatformSettin
     isTimeframe(context.timeframe) &&
     typeof context.rowCount === "number" &&
     (context.startTimestamp === null || typeof context.startTimestamp === "string") &&
-    (context.endTimestamp === null || typeof context.endTimestamp === "string")
+    (context.endTimestamp === null || typeof context.endTimestamp === "string") &&
+    (context.freshness === "fresh" || context.freshness === "stale" || context.freshness === "empty") &&
+    (context.ageHours === null || typeof context.ageHours === "number")
   );
 }
 
