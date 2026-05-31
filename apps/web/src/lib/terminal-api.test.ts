@@ -8,6 +8,7 @@ import {
   buildResearchNoteUrl,
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
+  buildSettingsStatusUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
   buildStrategyValidationUrl,
@@ -22,6 +23,7 @@ import {
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
   loadResearchNote,
+  loadPlatformSettings,
   loadStrategyLibrary,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
@@ -126,6 +128,10 @@ describe("terminal workspace API client", () => {
     expect(buildResearchRunPromotionUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
       "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/promotion"
     );
+  });
+
+  test("builds the settings status URL", () => {
+    expect(buildSettingsStatusUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/settings/status");
   });
 
   test("builds strategy library URLs for context and detail lookup", () => {
@@ -384,6 +390,65 @@ describe("terminal workspace API client", () => {
     expect(result.statusLabel).toBe("Offline snapshot");
     expect(result.workspace.execution.liveEnabled).toBe(false);
     expect(result.workspace.selectedInstrument.symbol).toBe("600000");
+  });
+
+  test("loads settings status without exposing secret values", async () => {
+    const calls: string[] = [];
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          settings: {
+            schemaVersion: 1,
+            generatedAt: "2026-05-31T09:00:00+08:00",
+            dataSources: [
+              {
+                market: "us",
+                label: "US equities",
+                quoteSource: "finnhub / yfinance",
+                klineSource: "yahoo / yfinance",
+                status: "ready",
+                optionalKeyName: "FINNHUB_API_KEY",
+                optionalKeyConfigured: true,
+                note: "Secret values stay local."
+              }
+            ],
+            cache: {
+              engine: "sqlite",
+              path: "data/market.sqlite",
+              exists: true,
+              scope: "ohlcv"
+            },
+            executionAdapters: [
+              {
+                id: "paper-local",
+                market: "multi",
+                adapter: "Paper Trading",
+                route: "paper",
+                status: "paper_ready",
+                certification: "local",
+                liveTradingAllowed: false,
+                note: "Paper only."
+              }
+            ],
+            safety: {
+              liveTradingAllowed: false,
+              requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+            }
+          }
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/settings/status"]);
+    expect(result.source).toBe("core");
+    expect(result.settings?.dataSources[0]).toMatchObject({
+      market: "us",
+      optionalKeyName: "FINNHUB_API_KEY",
+      optionalKeyConfigured: true
+    });
+    expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
   });
 
   test("runs terminal research and returns a core-backed workspace", async () => {

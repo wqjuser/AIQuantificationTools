@@ -299,6 +299,61 @@ export interface MarketSearchResult {
   error?: string;
 }
 
+export type PlatformSettingsStatusTone =
+  | "ready"
+  | "degraded"
+  | "blocked"
+  | "config_required"
+  | "interface_only"
+  | "paper_ready";
+
+export interface PlatformSettingsDataSource {
+  market: Market;
+  label: string;
+  quoteSource: string;
+  klineSource: string;
+  status: PlatformSettingsStatusTone;
+  optionalKeyName: string | null;
+  optionalKeyConfigured: boolean;
+  note: string;
+}
+
+export interface PlatformSettingsCacheStatus {
+  engine: "sqlite";
+  path: string;
+  exists: boolean;
+  scope: string;
+}
+
+export interface PlatformSettingsExecutionAdapter {
+  id: string;
+  market: Market | "multi";
+  adapter: string;
+  route: "paper" | "live";
+  status: PlatformSettingsStatusTone;
+  certification: string;
+  liveTradingAllowed: boolean;
+  note: string;
+}
+
+export interface PlatformSettingsStatus {
+  schemaVersion: 1;
+  generatedAt: string;
+  dataSources: PlatformSettingsDataSource[];
+  cache: PlatformSettingsCacheStatus;
+  executionAdapters: PlatformSettingsExecutionAdapter[];
+  safety: {
+    liveTradingAllowed: boolean;
+    requiredGates: string[];
+  };
+}
+
+export interface PlatformSettingsResult {
+  settings?: PlatformSettingsStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface WorkspaceResponse {
   ok: boolean;
   status?: number;
@@ -463,6 +518,11 @@ export function buildMarketSearchUrl(baseUrl: string, market: Market, query: str
   url.searchParams.set("query", query);
   url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 20))));
   return url.toString();
+}
+
+export function buildSettingsStatusUrl(baseUrl: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL("api/settings/status", normalizedBase).toString();
 }
 
 export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
@@ -737,6 +797,31 @@ export async function loadResearchRunPromotion(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown promotion candidate error"
+    };
+  }
+}
+
+export async function loadPlatformSettings(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PlatformSettingsResult> {
+  try {
+    const response = await fetcher(buildSettingsStatusUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPlatformSettingsPayload(payload)) {
+      throw new Error("Invalid settings status contract");
+    }
+    return {
+      settings: payload.settings,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown settings status error"
     };
   }
 }
@@ -1185,6 +1270,14 @@ function isPromotionCandidatePayload(value: unknown): value is { promotion: Prom
   return isPromotionCandidateRecord(payload.promotion);
 }
 
+function isPlatformSettingsPayload(value: unknown): value is { settings: PlatformSettingsStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { settings?: unknown };
+  return isPlatformSettingsStatus(payload.settings);
+}
+
 function isStrategyLibraryPayload(value: unknown): value is { strategies: StrategyLibraryItem[] } {
   if (!value || typeof value !== "object") {
     return false;
@@ -1348,6 +1441,84 @@ function isPromotionCandidateStage(value: unknown): boolean {
     (stage.tone === "positive" || stage.tone === "warning" || stage.tone === "neutral" || stage.tone === "risk") &&
     (stage.passed === undefined || typeof stage.passed === "boolean") &&
     (stage.reason === undefined || typeof stage.reason === "string")
+  );
+}
+
+function isPlatformSettingsStatus(value: unknown): value is PlatformSettingsStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const settings = value as Partial<PlatformSettingsStatus>;
+  return (
+    settings.schemaVersion === 1 &&
+    typeof settings.generatedAt === "string" &&
+    Array.isArray(settings.dataSources) &&
+    settings.dataSources.every(isPlatformSettingsDataSource) &&
+    isPlatformSettingsCacheStatus(settings.cache) &&
+    Array.isArray(settings.executionAdapters) &&
+    settings.executionAdapters.every(isPlatformSettingsExecutionAdapter) &&
+    Boolean(settings.safety) &&
+    typeof settings.safety?.liveTradingAllowed === "boolean" &&
+    Array.isArray(settings.safety?.requiredGates) &&
+    settings.safety.requiredGates.every((gate) => typeof gate === "string")
+  );
+}
+
+function isPlatformSettingsDataSource(value: unknown): value is PlatformSettingsDataSource {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const source = value as Partial<PlatformSettingsDataSource>;
+  return (
+    isMarket(source.market) &&
+    typeof source.label === "string" &&
+    typeof source.quoteSource === "string" &&
+    typeof source.klineSource === "string" &&
+    isPlatformSettingsTone(source.status) &&
+    (source.optionalKeyName === null || typeof source.optionalKeyName === "string") &&
+    typeof source.optionalKeyConfigured === "boolean" &&
+    typeof source.note === "string"
+  );
+}
+
+function isPlatformSettingsCacheStatus(value: unknown): value is PlatformSettingsCacheStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const cache = value as Partial<PlatformSettingsCacheStatus>;
+  return (
+    cache.engine === "sqlite" &&
+    typeof cache.path === "string" &&
+    typeof cache.exists === "boolean" &&
+    typeof cache.scope === "string"
+  );
+}
+
+function isPlatformSettingsExecutionAdapter(value: unknown): value is PlatformSettingsExecutionAdapter {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const adapter = value as Partial<PlatformSettingsExecutionAdapter>;
+  return (
+    typeof adapter.id === "string" &&
+    (isMarket(adapter.market) || adapter.market === "multi") &&
+    typeof adapter.adapter === "string" &&
+    (adapter.route === "paper" || adapter.route === "live") &&
+    isPlatformSettingsTone(adapter.status) &&
+    typeof adapter.certification === "string" &&
+    typeof adapter.liveTradingAllowed === "boolean" &&
+    typeof adapter.note === "string"
+  );
+}
+
+function isPlatformSettingsTone(value: unknown): value is PlatformSettingsStatusTone {
+  return (
+    value === "ready" ||
+    value === "degraded" ||
+    value === "blocked" ||
+    value === "config_required" ||
+    value === "interface_only" ||
+    value === "paper_ready"
   );
 }
 

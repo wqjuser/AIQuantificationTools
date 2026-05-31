@@ -33,6 +33,7 @@ from quant_core.runs import (
     research_run_import_paper_executions,
     research_run_import_to_audit,
 )
+from quant_core.settings import build_settings_status
 from quant_core.strategy_library import (
     StrategyLibraryStore,
     strategy_library_record_to_payload,
@@ -195,6 +196,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/workspace":
             workspace, _quotes = workspace_with_live_quotes(build_terminal_workspace(), self.quote_adapter)
             self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if parsed.path == "/api/settings/status":
+            self._send_json(
+                {
+                    "settings": build_settings_status(
+                        cache_path=self.cache.path,
+                        finnhub_api_key=getattr(self.quote_adapter, "finnhub_api_key", ""),
+                    )
+                }
+            )
             return
         if parsed.path == "/api/market/quotes":
             query = parse_qs(parsed.query)

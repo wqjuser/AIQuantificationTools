@@ -1279,6 +1279,81 @@ em {
   line-height: 1.45;
 }
 
+.settings-source-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-source-list.adapters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-source-row,
+.settings-cache-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.settings-source-row.ready,
+.settings-source-row.paper_ready,
+.settings-cache-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.settings-source-row.degraded,
+.settings-source-row.config_required,
+.settings-cache-row.warning {
+  border-left-color: #e8be62;
+}
+
+.settings-source-row.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.settings-source-row span,
+.settings-cache-row span {
+  color: #8fa0b2;
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.settings-source-row strong,
+.settings-cache-row strong {
+  color: #dce6ee;
+  display: block;
+  font-size: 14px;
+  margin-top: 5px;
+}
+
+.settings-source-row p,
+.settings-cache-row p {
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-source-row em {
+  color: #7ee4d2;
+  display: block;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  margin-top: 7px;
+}
+
+.settings-cache-row {
+  margin-top: 10px;
+}
+
 .workflow-broker-panel .broker-adapter-head {
   display: none;
 }
@@ -4140,6 +4215,8 @@ em {
   .health-grid,
   .strategy-draft-grid,
   .strategy-readiness-list,
+  .settings-source-list,
+  .settings-source-list.adapters,
   .settings-grid {
     grid-template-columns: 1fr;
   }

@@ -29,6 +29,7 @@ import {
   loadResearchRunHistory,
   loadResearchRunPromotion,
   loadResearchNote,
+  loadPlatformSettings,
   loadStrategyLibrary,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
@@ -37,6 +38,8 @@ import {
   MarketSearchSuggestion,
   PaperExecutionRecord,
   PromotionCandidateRecord,
+  PlatformSettingsResult,
+  PlatformSettingsStatus,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunExportPackage,
@@ -169,6 +172,9 @@ const initialStrategyValidationState: StrategyValidationResult = {
 const initialResearchNoteState: ResearchNoteResult = {
   source: "fallback"
 };
+const initialSettingsStatusState: PlatformSettingsResult = {
+  source: "fallback"
+};
 
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
@@ -274,6 +280,7 @@ export function App() {
   const [strategyValidationState, setStrategyValidationState] =
     useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
+  const [settingsStatus, setSettingsStatus] = useState<PlatformSettingsResult>(initialSettingsStatusState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
@@ -400,6 +407,10 @@ export function App() {
     setResearchNoteDraft(result.note?.body ?? "");
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
+  const refreshSettingsStatus = useCallback(async () => {
+    setSettingsStatus(await loadPlatformSettings(quantCoreBaseUrl));
+  }, []);
+
   const refreshWorkspace = useCallback(async () => {
     const startedSelectionVersion = manualSelectionVersionRef.current;
     setIsRefreshing(true);
@@ -415,8 +426,9 @@ export function App() {
       };
     });
     await refreshRunHistory();
+    await refreshSettingsStatus();
     setIsRefreshing(false);
-  }, [refreshRunHistory]);
+  }, [refreshRunHistory, refreshSettingsStatus]);
 
   const refreshChart = useCallback(async () => {
     const requestId = chartRequestIdRef.current + 1;
@@ -1105,6 +1117,10 @@ export function App() {
   }, [refreshResearchNote]);
 
   useEffect(() => {
+    void refreshSettingsStatus();
+  }, [refreshSettingsStatus]);
+
+  useEffect(() => {
     document.documentElement.lang = locale;
     window.localStorage.setItem("aiqt.locale", locale);
   }, [locale]);
@@ -1432,6 +1448,7 @@ export function App() {
             adapterRows={brokerAdapterRows}
             className="workflow-settings-panel"
             i18n={i18n}
+            settings={settingsStatus.settings}
             state={klinesState}
             workspace={workspace}
           />
@@ -2370,17 +2387,48 @@ function PlatformSettingsPanel({
   adapterRows,
   className,
   i18n,
+  settings,
   state,
   workspace
 }: {
   adapterRows: BrokerAdapterRow[];
   className?: string;
   i18n: AppI18n;
+  settings?: PlatformSettingsStatus;
   state: MarketKlinesResult;
   workspace: TerminalWorkspace;
 }) {
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
-  const liveAdapterCount = adapterRows.filter((row) => row.route === "live").length;
+  const dataSources = settings?.dataSources ?? [
+    {
+      market: workspace.selectedInstrument.market,
+      label: i18n.marketLabel(workspace.selectedInstrument.market),
+      quoteSource: state.quality.source,
+      klineSource: state.quality.source,
+      status: state.quality.isComplete ? "ready" : "degraded",
+      optionalKeyName: null,
+      optionalKeyConfigured: false,
+      note:
+        state.quality.warnings[0] ??
+        (i18n.locale === "zh-CN"
+          ? "当前图表数据源状态来自本地页面回退。"
+          : "Current chart source status comes from the local page fallback.")
+    }
+  ];
+  const executionAdapters = settings?.executionAdapters ?? adapterRows.map((row) => ({
+    id: row.id,
+    market: row.market,
+    adapter: row.adapter,
+    route: row.route,
+    status: row.status,
+    certification: row.certification,
+    liveTradingAllowed: false,
+    note: row.nextStep
+  }));
+  const liveAdapterCount =
+    settings?.executionAdapters.filter((row) => row.route === "live").length ??
+    adapterRows.filter((row) => row.route === "live").length;
+  const cacheStatus = settings?.cache;
 
   return (
     <Panel
@@ -2391,13 +2439,13 @@ function PlatformSettingsPanel({
       <div className="settings-grid">
         <article className="positive">
           <span>{i18n.locale === "zh-CN" ? "行情源" : "Market data"}</span>
-          <strong>{state.quality.source}</strong>
-          <p>{i18n.locale === "zh-CN" ? "A 股 / 美股 / 加密货币通过统一 OHLCV schema 接入。" : "A shares, US equities, and crypto use the shared OHLCV schema."}</p>
+          <strong>{dataSources.length}</strong>
+          <p>{i18n.locale === "zh-CN" ? "A 股 / 美股 / 加密货币通过统一 OHLCV schema 接入，并显示可用性。" : "A shares, US equities, and crypto expose shared OHLCV readiness."}</p>
         </article>
         <article className="warning">
           <span>{i18n.locale === "zh-CN" ? "API Key" : "API keys"}</span>
-          <strong>{i18n.locale === "zh-CN" ? "本地配置" : "Local config"}</strong>
-          <p>{i18n.locale === "zh-CN" ? "无 Key 源可体验，有 Key 源通过本地环境增强稳定性。" : "No-key sources work for trials; local keys improve coverage."}</p>
+          <strong>{dataSources.filter((row) => row.optionalKeyConfigured).length}</strong>
+          <p>{i18n.locale === "zh-CN" ? "只显示是否配置，不把密钥值返回给浏览器。" : "Only configured flags are shown; secret values never return to the browser."}</p>
         </article>
         <article className="risk">
           <span>{i18n.locale === "zh-CN" ? "实盘闸门" : "Live gates"}</span>
@@ -2410,6 +2458,47 @@ function PlatformSettingsPanel({
           <p>{i18n.locale === "zh-CN" ? "实盘适配器目前仅保留接口和认证状态。" : "Live adapters currently expose contracts and certification state only."}</p>
         </article>
       </div>
+      <div className="settings-source-list">
+        {dataSources.map((row) => (
+          <article className={`settings-source-row ${row.status}`} key={`source-${row.market}`}>
+            <span>{i18n.marketLabel(row.market)}</span>
+            <strong>{row.label}</strong>
+            <p>{row.quoteSource} · {row.klineSource}</p>
+            <em>
+              {settingsStatusLabel(i18n, row.status)} ·{" "}
+              {settingsKeyStatusLabel(i18n, row.optionalKeyName, row.optionalKeyConfigured)}
+            </em>
+          </article>
+        ))}
+      </div>
+      <div className="settings-source-list adapters">
+        {executionAdapters.map((row) => (
+          <article className={`settings-source-row ${row.status}`} key={`adapter-${row.id}`}>
+            <span>
+              {row.route === "live" ? (i18n.locale === "zh-CN" ? "实盘" : "Live") : i18n.locale === "zh-CN" ? "模拟" : "Paper"}
+            </span>
+            <strong>{row.adapter}</strong>
+            <p>{row.certification}</p>
+            <em>
+              {settingsStatusLabel(i18n, row.status)} ·{" "}
+              {row.liveTradingAllowed
+                ? i18n.locale === "zh-CN"
+                  ? "允许实盘"
+                  : "Live allowed"
+                : i18n.locale === "zh-CN"
+                  ? "实盘关闭"
+                  : "Live blocked"}
+            </em>
+          </article>
+        ))}
+      </div>
+      {cacheStatus ? (
+        <div className={`settings-cache-row ${cacheStatus.exists ? "positive" : "warning"}`}>
+          <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>
+          <strong>{cacheStatus.engine} · {cacheStatus.scope}</strong>
+          <p>{cacheStatus.path}</p>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -3916,6 +4005,30 @@ function brokerNextStepLabel(i18n: AppI18n, nextStep: string): string {
       "Start with sandbox or testnet routes plus max order and emergency-stop limits.",
       "先使用 sandbox/testnet，并配置最大订单和紧急停止限制。"
     );
+}
+
+function settingsStatusLabel(i18n: AppI18n, status: PlatformSettingsStatus["dataSources"][number]["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status.replaceAll("_", " ");
+  }
+  return {
+    ready: "就绪",
+    degraded: "降级",
+    blocked: "阻断",
+    config_required: "需配置",
+    interface_only: "仅接口",
+    paper_ready: "模拟可用"
+  }[status];
+}
+
+function settingsKeyStatusLabel(i18n: AppI18n, keyName: string | null, isConfigured: boolean): string {
+  if (!keyName) {
+    return i18n.locale === "zh-CN" ? "无需 Key" : "No key required";
+  }
+  if (isConfigured) {
+    return i18n.locale === "zh-CN" ? `${keyName} 已配置` : `${keyName} configured`;
+  }
+  return i18n.locale === "zh-CN" ? `${keyName} 未配置` : `${keyName} not configured`;
 }
 
 function agentEvidenceLabel(i18n: AppI18n, card: AiEvidenceCard): string {

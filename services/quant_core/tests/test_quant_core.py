@@ -196,6 +196,52 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["validation"]["gates"][1]["value"], "40% / 6% / 12% / 9%")
         self.assertEqual(payload["validation"]["strategyConfig"]["symbols"], ["600000"])
 
+    def test_settings_status_api_reports_sources_without_secret_values(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                quote_adapter = QuantDingerLiveQuoteAdapter(finnhub_api_key="secret-finnhub-token")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/settings/status")
+                response = connection.getresponse()
+                raw_body = response.read().decode("utf-8")
+                payload = json.loads(raw_body)
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        settings = payload["settings"]
+        us_source = next(row for row in settings["dataSources"] if row["market"] == "us")
+        paper_adapter = next(row for row in settings["executionAdapters"] if row["id"] == "paper-local")
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(settings["schemaVersion"], 1)
+        self.assertEqual(us_source["optionalKeyName"], "FINNHUB_API_KEY")
+        self.assertTrue(us_source["optionalKeyConfigured"])
+        self.assertNotIn("secret-finnhub-token", raw_body)
+        self.assertEqual(settings["cache"]["engine"], "sqlite")
+        self.assertTrue(settings["cache"]["exists"])
+        self.assertTrue(settings["cache"]["path"].endswith("market.sqlite"))
+        self.assertEqual(paper_adapter["route"], "paper")
+        self.assertEqual(paper_adapter["status"], "paper_ready")
+        self.assertFalse(settings["safety"]["liveTradingAllowed"])
+
     def test_strategy_save_api_rejects_blocked_draft_before_library_write(self):
         import json
         from http.client import HTTPConnection

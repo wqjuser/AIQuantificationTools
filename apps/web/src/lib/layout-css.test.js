@@ -414,6 +414,18 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion broker"'])).toBe(true);
   });
 
+  test("renders platform settings from local-core status when available", () => {
+    expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
+    expect(appSource).toContain("settingsStatus.settings");
+    expect(appSource).toContain("settings={settingsStatus.settings}");
+    expect(appSource).toContain("settings?.dataSources");
+    expect(appSource).toContain("settings?.executionAdapters");
+    expect(appSource).toContain('className="settings-source-list"');
+    expect(appSource).toContain('className={`settings-source-row');
+    expect(styles).toContain(".settings-source-list");
+    expect(styles).toContain(".settings-source-row");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');
