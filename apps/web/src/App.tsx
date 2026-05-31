@@ -986,7 +986,7 @@ export function App() {
     setWorkflowRunState(nextWorkflowState);
   }, [workspace]);
 
-  const updateStrategyRuleDraftField = useCallback((field: StrategyRuleDraftField, value: number | string) => {
+  const updateStrategyRuleDraftField = useCallback((field: StrategyRuleDraftField, value: number | string | boolean) => {
     manualSelectionVersionRef.current += 1;
     setWorkspaceState((current) => ({
       workspace: workspaceWithStrategyRuleDraftField(current.workspace, field, value),
@@ -1923,7 +1923,7 @@ function StrategySummary({
   library: StrategyLibraryItem[];
   onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
   onSaveStrategyVersion: () => void;
-  onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string) => void;
+  onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
   readinessGates: StrategyReadinessGate[];
   rows: StrategyRuleRow[];
   validationSource: WorkspaceLoadResult["source"];
@@ -1955,6 +1955,15 @@ function StrategySummary({
             thresholdField="entryThreshold"
             window={draft.entryWindow}
             windowField="entryWindow"
+          />
+          <StrategyVolumeConfirmField
+            field="entryVolumeConfirm"
+            i18n={i18n}
+            isEnabled={draft.entryVolumeConfirm}
+            label={i18n.t("strategy.volumeConfirm")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            value={draft.entryVolumeWindow}
+            windowField="entryVolumeWindow"
           />
           <StrategyConditionField
             field="exitKind"
@@ -2133,7 +2142,7 @@ function StrategyConditionField({
   i18n: AppI18n;
   kind: StrategyConditionKind;
   label: string;
-  onUpdate: (field: StrategyRuleDraftField, value: number | string) => void;
+  onUpdate: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
   options: StrategyConditionKind[];
   threshold: number;
   thresholdField: StrategyRuleDraftField;
@@ -2185,6 +2194,50 @@ function StrategyConditionField({
   );
 }
 
+function StrategyVolumeConfirmField({
+  field,
+  i18n,
+  isEnabled,
+  label,
+  onUpdate,
+  value,
+  windowField
+}: {
+  field: StrategyRuleDraftField;
+  i18n: AppI18n;
+  isEnabled: boolean;
+  label: string;
+  onUpdate: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
+  value: number;
+  windowField: StrategyRuleDraftField;
+}) {
+  return (
+    <label className={`strategy-draft-field strategy-volume-field ${isEnabled ? "enabled" : "disabled"}`}>
+      <span>{label}</span>
+      <div className="strategy-volume-toggle">
+        <input
+          aria-label={label}
+          checked={isEnabled}
+          onChange={(event) => onUpdate(field, event.currentTarget.checked)}
+          type="checkbox"
+        />
+        <input
+          aria-label={i18n.t("strategy.volumeWindow")}
+          disabled={!isEnabled}
+          max={250}
+          min={1}
+          onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
+          step={1}
+          type="number"
+          value={value}
+        />
+        <em>VOL</em>
+      </div>
+      <small>{strategyDraftHint(i18n, field)}</small>
+    </label>
+  );
+}
+
 function StrategyNumberField({
   field,
   i18n,
@@ -2196,7 +2249,7 @@ function StrategyNumberField({
   field: StrategyRuleDraftField;
   i18n: AppI18n;
   label: string;
-  onUpdate: (field: StrategyRuleDraftField, value: number | string) => void;
+  onUpdate: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
   suffix: string;
   value: number;
 }) {
@@ -3690,6 +3743,8 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
       entryKind: "Entry condition type",
       entryWindow: "Entry: close above SMA",
       entryThreshold: "RSI entry threshold",
+      entryVolumeConfirm: "Optional volume gate",
+      entryVolumeWindow: "Volume moving average window",
       exitKind: "Exit condition type",
       exitWindow: "Exit: close below SMA",
       exitThreshold: "RSI exit threshold",
@@ -3704,6 +3759,8 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
     entryKind: "入场条件类型",
     entryWindow: "入场：收盘价上穿 SMA",
     entryThreshold: "RSI 入场阈值",
+    entryVolumeConfirm: "可选成交量闸门",
+    entryVolumeWindow: "成交量均线窗口",
     exitKind: "出场条件类型",
     exitWindow: "出场：收盘价跌破 SMA",
     exitThreshold: "RSI 出场阈值",

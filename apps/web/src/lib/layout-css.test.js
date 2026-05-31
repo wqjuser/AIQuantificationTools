@@ -245,14 +245,18 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("validateStrategySnapshot");
     expect(appSource).toContain("workspaceWithStrategyRuleDraftField");
     expect(appSource).toContain("StrategyConditionField");
+    expect(appSource).toContain("StrategyVolumeConfirmField");
     expect(appSource).toContain('field="entryKind"');
     expect(appSource).toContain('field="exitKind"');
+    expect(appSource).toContain('field="entryVolumeConfirm"');
+    expect(appSource).toContain('windowField="entryVolumeWindow"');
     expect(appSource).toContain('thresholdField="entryThreshold"');
     expect(appSource).toContain('thresholdField="exitThreshold"');
     expect(appSource).toContain('windowField="entryWindow"');
     expect(appSource).toContain('windowField="exitWindow"');
     expect(appSource).toContain("strategy-draft-grid");
     expect(appSource).toContain("strategy-condition-select");
+    expect(appSource).toContain("strategy-volume-toggle");
     expect(appSource).toContain("strategy-generated-snapshot");
     expect(appSource).toContain("readinessGates={strategyReadinessGates}");
     expect(appSource).toContain("validationSource={strategyValidationState.source}");
@@ -261,6 +265,7 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".strategy-draft-grid");
     expect(styles).toContain(".strategy-condition-select");
     expect(styles).toContain(".strategy-threshold-field");
+    expect(styles).toContain(".strategy-volume-toggle");
     expect(styles).toContain(".strategy-generated-snapshot");
     expect(styles).toContain(".strategy-readiness-gate");
     expect(styles).toContain(".strategy-validation-source");

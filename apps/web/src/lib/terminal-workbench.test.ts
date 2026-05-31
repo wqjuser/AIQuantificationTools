@@ -269,6 +269,39 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("updates structured volume confirmation fields as canonical auditable entry text", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(
+      workspaceWithStrategyRuleDraftField(
+        workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 5),
+        "entryVolumeConfirm",
+        true
+      ),
+      "entryVolumeWindow",
+      10
+    );
+
+    expect(workspace.strategy.entry).toBe("Close > SMA5 AND Volume > VOL10");
+    expect(buildStrategyRuleRows(workspace)[0]).toMatchObject({
+      condition: "Close > SMA5 AND Volume > VOL10",
+      parameter: "SMA5 / VOL10"
+    });
+    expect(buildStrategyReadinessGates(workspace)[0]).toMatchObject({
+      status: "passed",
+      value: "SMA5 / VOL10 / SMA20"
+    });
+  });
+
+  test("restores structured volume confirmation snapshots into editable draft fields", () => {
+    const workspace = workspaceWithStrategyField(buildTerminalWorkspace(), "entry", "Close > SMA5 AND Volume > VOL10");
+
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      entryKind: "close_above_sma",
+      entryWindow: 5,
+      entryVolumeConfirm: true,
+      entryVolumeWindow: 10
+    });
+  });
+
   test("keeps strategy rule matrix parameters aligned with structured edits", () => {
     const workspace = workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 7);
 

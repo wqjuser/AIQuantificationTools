@@ -141,6 +141,8 @@ export type StrategyRuleDraftField =
   | "entryKind"
   | "entryWindow"
   | "entryThreshold"
+  | "entryVolumeConfirm"
+  | "entryVolumeWindow"
   | "exitKind"
   | "exitWindow"
   | "exitThreshold"
@@ -154,6 +156,8 @@ export interface StrategyRuleDraft {
   entryKind: StrategyConditionKind;
   entryWindow: number;
   entryThreshold: number;
+  entryVolumeConfirm: boolean;
+  entryVolumeWindow: number;
   exitKind: StrategyConditionKind;
   exitWindow: number;
   exitThreshold: number;
@@ -650,6 +654,8 @@ const defaultStrategyRuleDraft: StrategyRuleDraft = {
   entryKind: "close_above_sma",
   entryWindow: 20,
   entryThreshold: 30,
+  entryVolumeConfirm: false,
+  entryVolumeWindow: 20,
   exitKind: "close_below_sma",
   exitWindow: 20,
   exitThreshold: 55,
@@ -2205,6 +2211,7 @@ export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRu
   const strategy = workspace.strategy;
   const entryRsiCondition = inferRsiCondition(strategy.entry);
   const exitRsiCondition = inferRsiCondition(strategy.exit);
+  const entryVolumeWindow = inferVolumeWindow(strategy.entry);
   const entryWindow = entryRsiCondition?.window ?? inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
   const exitWindow = exitRsiCondition?.window ?? inferSmaWindow(strategy.exit, defaultStrategyRuleDraft.exitWindow);
 
@@ -2215,6 +2222,8 @@ export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRu
       : inferSmaConditionKind(strategy.entry, "close_above_sma"),
     entryWindow,
     entryThreshold: entryRsiCondition?.threshold ?? defaultStrategyRuleDraft.entryThreshold,
+    entryVolumeConfirm: entryVolumeWindow !== null,
+    entryVolumeWindow: entryVolumeWindow ?? defaultStrategyRuleDraft.entryVolumeWindow,
     exitKind: exitRsiCondition
       ? rsiOperatorToConditionKind(exitRsiCondition.operator)
       : inferSmaConditionKind(strategy.exit, "close_below_sma"),
@@ -2246,13 +2255,16 @@ function normalizeDiffValue(value: string): string {
 
 export function strategySnapshotFromRuleDraft(draft: StrategyRuleDraft): StrategySnapshot {
   const normalizedDraft = normalizeStrategyRuleDraft(draft);
+  const entrySignal = strategyConditionSnapshotText(
+    normalizedDraft.entryKind,
+    normalizedDraft.entryWindow,
+    normalizedDraft.entryThreshold
+  );
   return {
     name: normalizedDraft.name,
-    entry: strategyConditionSnapshotText(
-      normalizedDraft.entryKind,
-      normalizedDraft.entryWindow,
-      normalizedDraft.entryThreshold
-    ),
+    entry: normalizedDraft.entryVolumeConfirm
+      ? `${entrySignal} AND Volume > VOL${normalizedDraft.entryVolumeWindow}`
+      : entrySignal,
     exit: strategyConditionSnapshotText(normalizedDraft.exitKind, normalizedDraft.exitWindow, normalizedDraft.exitThreshold),
     position: `${formatPercentValue(normalizedDraft.positionPct)}% max capital allocation`,
     risk: [
@@ -2959,6 +2971,8 @@ function normalizeStrategyRuleDraft(draft: StrategyRuleDraft): StrategyRuleDraft
     entryKind: normalizeStrategyConditionKind(draft.entryKind, defaultStrategyRuleDraft.entryKind),
     entryWindow: normalizeStrategyWindow(draft.entryWindow),
     entryThreshold: normalizeStrategyThreshold(draft.entryThreshold, defaultStrategyRuleDraft.entryThreshold),
+    entryVolumeConfirm: Boolean(draft.entryVolumeConfirm),
+    entryVolumeWindow: normalizeStrategyWindow(draft.entryVolumeWindow),
     exitKind: normalizeStrategyConditionKind(draft.exitKind, defaultStrategyRuleDraft.exitKind),
     exitWindow: normalizeStrategyWindow(draft.exitWindow),
     exitThreshold: normalizeStrategyThreshold(draft.exitThreshold, defaultStrategyRuleDraft.exitThreshold),
@@ -3968,12 +3982,17 @@ export function workspaceWithStrategyField(
 export function workspaceWithStrategyRuleDraftField(
   currentWorkspace: TerminalWorkspace,
   field: StrategyRuleDraftField,
-  value: number | string
+  value: number | string | boolean
 ): TerminalWorkspace {
   const currentDraft = buildStrategyRuleDraft(currentWorkspace);
   const nextDraft = normalizeStrategyRuleDraft({
     ...currentDraft,
-    [field]: field === "name" || field === "entryKind" || field === "exitKind" ? String(value) : Number(value)
+    [field]:
+      field === "name" || field === "entryKind" || field === "exitKind"
+        ? String(value)
+        : field === "entryVolumeConfirm"
+          ? Boolean(value)
+          : Number(value)
   });
   const nextStrategy = strategySnapshotFromRuleDraft(nextDraft);
   const note: DecisionLogEntry = {
