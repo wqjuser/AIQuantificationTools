@@ -32,6 +32,7 @@ import {
   buildStrategyReadinessGates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
+  buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
   buildTerminalWorkspace,
   buildWorkflowStages,
@@ -52,6 +53,7 @@ import {
   workspaceWithPreservedSelection,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
+  workspaceWithStrategyTemplate,
   workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument,
@@ -299,6 +301,72 @@ describe("terminal workbench model", () => {
       entryWindow: 5,
       entryVolumeConfirm: true,
       entryVolumeWindow: 10
+    });
+  });
+
+  test("lists structured strategy templates for Strategy Lab", () => {
+    expect(buildStrategyTemplateOptions().map((template) => template.id)).toEqual([
+      "sma_trend",
+      "rsi_reversal",
+      "volume_breakout"
+    ]);
+  });
+
+  test("applies the RSI reversal template as a fresh auditable draft", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-template-rsi",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Old audited strategy",
+      strategyRevision: "rev-old-template",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    const workspace = workspaceWithStrategyTemplate(auditedWorkspace, "rsi_reversal");
+
+    expect(workspace.strategy).toMatchObject({
+      name: "RSI Reversal / Mean Reversion",
+      entry: "RSI14 < 30",
+      exit: "RSI14 > 55",
+      position: "18% max capital allocation",
+      risk: "Stop -7%, take profit +14%, drawdown guard 10%, paper only"
+    });
+    expect(workspace.researchRun).toBeNull();
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      entryKind: "rsi_below",
+      entryThreshold: 30,
+      exitKind: "rsi_above",
+      exitThreshold: 55,
+      positionPct: 18
+    });
+    expect(workspace.decisionLog[0]).toMatchObject({
+      agent: "Strategy Template",
+      tone: "warning"
+    });
+  });
+
+  test("applies the volume breakout template with volume confirmation enabled", () => {
+    const workspace = workspaceWithStrategyTemplate(buildTerminalWorkspace(), "volume_breakout");
+
+    expect(workspace.strategy.entry).toBe("Close > SMA5 AND Volume > VOL10");
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      name: "Volume Breakout / Trend Follow",
+      entryKind: "close_above_sma",
+      entryWindow: 5,
+      entryVolumeConfirm: true,
+      entryVolumeWindow: 10,
+      exitKind: "close_below_sma",
+      exitWindow: 13
     });
   });
 

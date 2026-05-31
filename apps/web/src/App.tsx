@@ -85,6 +85,7 @@ import {
   buildStrategyReadinessGates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
+  buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
@@ -123,6 +124,8 @@ import {
   StrategyRuleDraftField,
   StrategyReadinessGate,
   StrategyRuleRow,
+  StrategyTemplateId,
+  StrategyTemplateOption,
   StrategyVersionDiffRow,
   Timeframe,
   TerminalModule,
@@ -137,6 +140,7 @@ import {
   workspaceWithPreservedInteractiveState,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
+  workspaceWithStrategyTemplate,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
@@ -357,6 +361,7 @@ export function App() {
     : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
+  const strategyTemplateOptions = buildStrategyTemplateOptions();
   const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
   const strategyReadinessGates = strategyValidationState.validation?.gates ?? localStrategyReadinessGates;
   const strategyRuleRows = buildStrategyRuleRows(workspace);
@@ -998,6 +1003,18 @@ export function App() {
     setActiveWorkflowStageId("factor");
   }, []);
 
+  const applyStrategyTemplate = useCallback((templateId: StrategyTemplateId) => {
+    manualSelectionVersionRef.current += 1;
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithStrategyTemplate(current.workspace, templateId),
+      source: "core",
+      statusLabel: "Strategy template applied"
+    }));
+    setActiveWorkAreaId("strategy");
+    setActiveLoopStepId("strategy");
+    setActiveWorkflowStageId("factor");
+  }, []);
+
   const saveCurrentStrategyVersion = useCallback(async () => {
     setIsSavingStrategy(true);
     const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
@@ -1366,11 +1383,13 @@ export function App() {
         i18n={i18n}
         isSavingStrategy={isSavingStrategy}
         library={visibleStrategyLibrary}
+        onApplyStrategyTemplate={applyStrategyTemplate}
         onLoadStrategyVersion={loadSavedStrategyVersion}
         onSaveStrategyVersion={saveCurrentStrategyVersion}
         onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
         readinessGates={strategyReadinessGates}
         rows={strategyRuleRows}
+        templates={strategyTemplateOptions}
         validationSource={strategyValidationState.source}
         workspace={workspace}
       />
@@ -1909,11 +1928,13 @@ function StrategySummary({
   i18n,
   isSavingStrategy,
   library,
+  onApplyStrategyTemplate,
   onLoadStrategyVersion,
   onSaveStrategyVersion,
   onUpdateStrategyRuleDraftField,
   readinessGates,
   rows,
+  templates,
   validationSource,
   workspace
 }: {
@@ -1921,11 +1942,13 @@ function StrategySummary({
   i18n: AppI18n;
   isSavingStrategy: boolean;
   library: StrategyLibraryItem[];
+  onApplyStrategyTemplate: (templateId: StrategyTemplateId) => void;
   onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
   onSaveStrategyVersion: () => void;
   onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
   readinessGates: StrategyReadinessGate[];
   rows: StrategyRuleRow[];
+  templates: StrategyTemplateOption[];
   validationSource: WorkspaceLoadResult["source"];
   workspace: TerminalWorkspace;
 }) {
@@ -1936,6 +1959,12 @@ function StrategySummary({
           <span>{i18n.t("strategy.builder")}</span>
           <strong>{workspace.researchRun ? workspace.researchRun.strategyRevision : i18n.t("strategy.auditRequired")}</strong>
         </div>
+        <StrategyTemplatePicker
+          activeDraft={draft}
+          i18n={i18n}
+          onApply={onApplyStrategyTemplate}
+          templates={templates}
+        />
         <label>
           <span>{i18n.t("strategy.name")}</span>
           <input
@@ -2123,6 +2152,58 @@ function StrategySummary({
         )}
       </div>
     </div>
+  );
+}
+
+function StrategyTemplatePicker({
+  activeDraft,
+  i18n,
+  onApply,
+  templates
+}: {
+  activeDraft: StrategyRuleDraft;
+  i18n: AppI18n;
+  onApply: (templateId: StrategyTemplateId) => void;
+  templates: StrategyTemplateOption[];
+}) {
+  return (
+    <section className="strategy-template-picker" aria-label={i18n.t("strategy.templates")}>
+      <div className="strategy-template-title">
+        <span>{i18n.t("strategy.templates")}</span>
+        <strong>{templates.length}</strong>
+      </div>
+      <div className="strategy-template-grid">
+        {templates.map((template) => {
+          const isActive =
+            activeDraft.name === template.draft.name &&
+            activeDraft.entryKind === template.draft.entryKind &&
+            activeDraft.entryWindow === template.draft.entryWindow &&
+            activeDraft.entryThreshold === template.draft.entryThreshold &&
+            activeDraft.entryVolumeConfirm === template.draft.entryVolumeConfirm &&
+            activeDraft.entryVolumeWindow === template.draft.entryVolumeWindow &&
+            activeDraft.exitKind === template.draft.exitKind &&
+            activeDraft.exitWindow === template.draft.exitWindow &&
+            activeDraft.exitThreshold === template.draft.exitThreshold &&
+            activeDraft.positionPct === template.draft.positionPct &&
+            activeDraft.stopLossPct === template.draft.stopLossPct &&
+            activeDraft.takeProfitPct === template.draft.takeProfitPct &&
+            activeDraft.maxDrawdownPct === template.draft.maxDrawdownPct;
+
+          return (
+            <button
+              className={`strategy-template-card ${isActive ? "active" : ""}`}
+              disabled={isActive}
+              key={template.id}
+              onClick={() => onApply(template.id)}
+              type="button"
+            >
+              <strong>{strategyTemplateName(i18n, template)}</strong>
+              <span>{strategyTemplateDescription(i18n, template)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -3685,6 +3766,24 @@ function strategyConditionOptionLabel(i18n: AppI18n, kind: StrategyConditionKind
     rsi_below: "strategy.condition.rsiBelow",
     rsi_above: "strategy.condition.rsiAbove"
   }[kind] as Parameters<AppI18n["t"]>[0];
+  return i18n.t(key);
+}
+
+function strategyTemplateName(i18n: AppI18n, template: StrategyTemplateOption): string {
+  const key = {
+    sma_trend: "strategy.template.smaTrend",
+    rsi_reversal: "strategy.template.rsiReversal",
+    volume_breakout: "strategy.template.volumeBreakout"
+  }[template.id] as Parameters<AppI18n["t"]>[0];
+  return i18n.t(key);
+}
+
+function strategyTemplateDescription(i18n: AppI18n, template: StrategyTemplateOption): string {
+  const key = {
+    sma_trend: "strategy.template.smaTrend.description",
+    rsi_reversal: "strategy.template.rsiReversal.description",
+    volume_breakout: "strategy.template.volumeBreakout.description"
+  }[template.id] as Parameters<AppI18n["t"]>[0];
   return i18n.t(key);
 }
 

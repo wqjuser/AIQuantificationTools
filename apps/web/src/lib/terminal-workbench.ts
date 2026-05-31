@@ -168,6 +168,15 @@ export interface StrategyRuleDraft {
   paperOnly: boolean;
 }
 
+export type StrategyTemplateId = "sma_trend" | "rsi_reversal" | "volume_breakout";
+
+export interface StrategyTemplateOption {
+  id: StrategyTemplateId;
+  name: string;
+  description: string;
+  draft: StrategyRuleDraft;
+}
+
 export interface StrategyRuleRow {
   id: string;
   group: "entry" | "exit" | "position" | "risk";
@@ -665,6 +674,75 @@ const defaultStrategyRuleDraft: StrategyRuleDraft = {
   maxDrawdownPct: 12,
   paperOnly: true
 };
+
+const strategyTemplateOptions: StrategyTemplateOption[] = [
+  {
+    id: "sma_trend",
+    name: "SMA Trend / Bank Sector",
+    description: "Trend-following baseline with SMA20 entry and exit.",
+    draft: {
+      ...defaultStrategyRuleDraft,
+      name: "SMA Trend / Bank Sector",
+      entryKind: "close_above_sma",
+      entryWindow: 20,
+      entryThreshold: 30,
+      entryVolumeConfirm: false,
+      entryVolumeWindow: 20,
+      exitKind: "close_below_sma",
+      exitWindow: 20,
+      exitThreshold: 55,
+      positionPct: 20,
+      stopLossPct: 8,
+      takeProfitPct: 18,
+      maxDrawdownPct: 12,
+      paperOnly: true
+    }
+  },
+  {
+    id: "rsi_reversal",
+    name: "RSI Reversal / Mean Reversion",
+    description: "Mean-reversion template using RSI14 oversold and RSI14 recovery exits.",
+    draft: {
+      ...defaultStrategyRuleDraft,
+      name: "RSI Reversal / Mean Reversion",
+      entryKind: "rsi_below",
+      entryWindow: 14,
+      entryThreshold: 30,
+      entryVolumeConfirm: false,
+      entryVolumeWindow: 20,
+      exitKind: "rsi_above",
+      exitWindow: 14,
+      exitThreshold: 55,
+      positionPct: 18,
+      stopLossPct: 7,
+      takeProfitPct: 14,
+      maxDrawdownPct: 10,
+      paperOnly: true
+    }
+  },
+  {
+    id: "volume_breakout",
+    name: "Volume Breakout / Trend Follow",
+    description: "Breakout template requiring price strength and volume confirmation.",
+    draft: {
+      ...defaultStrategyRuleDraft,
+      name: "Volume Breakout / Trend Follow",
+      entryKind: "close_above_sma",
+      entryWindow: 5,
+      entryThreshold: 30,
+      entryVolumeConfirm: true,
+      entryVolumeWindow: 10,
+      exitKind: "close_below_sma",
+      exitWindow: 13,
+      exitThreshold: 55,
+      positionPct: 15,
+      stopLossPct: 6,
+      takeProfitPct: 16,
+      maxDrawdownPct: 9,
+      paperOnly: true
+    }
+  }
+];
 
 const primaryQuantLoopStepDefinitions = [
   { id: "research", label: "Market Research" },
@@ -2243,6 +2321,13 @@ export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRu
     ),
     paperOnly: !/\blive\b|实盘/u.test(strategy.risk.toLowerCase()) || /paper only|模拟/u.test(strategy.risk.toLowerCase())
   };
+}
+
+export function buildStrategyTemplateOptions(): StrategyTemplateOption[] {
+  return strategyTemplateOptions.map((template) => ({
+    ...template,
+    draft: { ...template.draft }
+  }));
 }
 
 function strategyContextLabel(market: Market, symbol: string, timeframe: Timeframe): string {
@@ -4015,6 +4100,36 @@ export function workspaceWithStrategyRuleDraftField(
       "strategy"
     )
   };
+}
+
+export function workspaceWithStrategyTemplate(
+  currentWorkspace: TerminalWorkspace,
+  templateId: StrategyTemplateId
+): TerminalWorkspace {
+  const template = strategyTemplateOptions.find((candidate) => candidate.id === templateId);
+  if (!template) {
+    return currentWorkspace;
+  }
+
+  const nextStrategy = strategySnapshotFromRuleDraft(template.draft);
+  const note: DecisionLogEntry = {
+    agent: "Strategy Template",
+    message: `Strategy template ${template.name} applied locally. Run Pipeline to generate a fresh audited backtest.`,
+    tone: "warning"
+  };
+  const existingLog =
+    currentWorkspace.decisionLog[0]?.agent === "Strategy Template"
+      ? currentWorkspace.decisionLog.slice(1)
+      : currentWorkspace.decisionLog;
+
+  return clearAuditedResearchResults(
+    {
+      ...currentWorkspace,
+      strategy: nextStrategy,
+      decisionLog: [note, ...existingLog]
+    },
+    "strategy"
+  );
 }
 
 export function workspaceWithBacktestAssumption(

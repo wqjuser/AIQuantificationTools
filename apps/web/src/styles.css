@@ -1838,6 +1838,76 @@ em {
   color: #4cc9ad;
 }
 
+.strategy-template-picker {
+  display: grid;
+  gap: 7px;
+}
+
+.strategy-template-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.strategy-template-title span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.strategy-template-title strong {
+  color: #dce6ee;
+  font-size: 11px;
+}
+
+.strategy-template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-template-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #111a27;
+  color: #dce6ee;
+  cursor: pointer;
+  font: inherit;
+  padding: 9px;
+  text-align: left;
+}
+
+.strategy-template-card strong {
+  overflow: hidden;
+  color: #dce6ee;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-template-card span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.strategy-template-card:hover,
+.strategy-template-card.active {
+  border-color: #2b6f62;
+  background: #10251f;
+}
+
+.strategy-template-card:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .strategy-rule-title .strategy-validation-source {
   margin-left: 8px;
   border: 1px solid #27364a;
@@ -4413,6 +4483,7 @@ em {
 
   .health-grid,
   .strategy-draft-grid,
+  .strategy-template-grid,
   .strategy-readiness-list,
   .settings-source-list,
   .settings-source-list.adapters,
@@ -4482,6 +4553,7 @@ em {
   .strategy-rule-row,
   .strategy-editor,
   .strategy-draft-grid,
+  .strategy-template-grid,
   .strategy-generated-snapshot,
   .ai-dossier-grid,
   .backtest-evidence-grid,
