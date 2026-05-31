@@ -323,6 +323,9 @@ export interface PlatformSettingsCacheStatus {
   path: string;
   exists: boolean;
   scope: string;
+  rowCount: number;
+  contextCount: number;
+  latestTimestamp: string | null;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -1490,7 +1493,10 @@ function isPlatformSettingsCacheStatus(value: unknown): value is PlatformSetting
     cache.engine === "sqlite" &&
     typeof cache.path === "string" &&
     typeof cache.exists === "boolean" &&
-    typeof cache.scope === "string"
+    typeof cache.scope === "string" &&
+    typeof cache.rowCount === "number" &&
+    typeof cache.contextCount === "number" &&
+    (cache.latestTimestamp === null || typeof cache.latestTimestamp === "string")
   );
 }
 

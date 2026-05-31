@@ -204,12 +204,40 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
         from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 
         with tempfile.TemporaryDirectory() as tmp:
             class TestHandler(QuantApiHandler):
                 cache = MarketDataCache(f"{tmp}/market.sqlite")
                 quote_adapter = QuantDingerLiveQuoteAdapter(finnhub_api_key="secret-finnhub-token")
+
+            TestHandler.cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        symbol="600000",
+                        market="ashare",
+                        timeframe="1d",
+                        timestamp=datetime(2026, 5, 28, tzinfo=timezone.utc),
+                        open=9.1,
+                        high=9.4,
+                        low=9.0,
+                        close=9.21,
+                        volume=1_000_000,
+                    ),
+                    OHLCVBar(
+                        symbol="BTC/USDT",
+                        market="crypto",
+                        timeframe="1d",
+                        timestamp=datetime(2026, 5, 29, tzinfo=timezone.utc),
+                        open=68_000,
+                        high=69_000,
+                        low=67_000,
+                        close=68_200,
+                        volume=2_000,
+                    ),
+                ]
+            )
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -238,6 +266,9 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(settings["cache"]["engine"], "sqlite")
         self.assertTrue(settings["cache"]["exists"])
         self.assertTrue(settings["cache"]["path"].endswith("market.sqlite"))
+        self.assertEqual(settings["cache"]["rowCount"], 2)
+        self.assertEqual(settings["cache"]["contextCount"], 2)
+        self.assertEqual(settings["cache"]["latestTimestamp"], "2026-05-29T00:00:00+00:00")
         self.assertEqual(paper_adapter["route"], "paper")
         self.assertEqual(paper_adapter["status"], "paper_ready")
         self.assertFalse(settings["safety"]["liveTradingAllowed"])
@@ -347,6 +378,53 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual([bar.timestamp for bar in bars], [older.timestamp, newer.timestamp])
         self.assertEqual(bars[1].close, 116)
+
+    def test_sqlite_cache_reports_row_context_and_latest_timestamp_stats(self):
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+
+        first = OHLCVBar(
+            symbol="600000",
+            market="ashare",
+            timeframe="1d",
+            timestamp=datetime(2026, 5, 27, tzinfo=timezone.utc),
+            open=9.0,
+            high=9.4,
+            low=8.9,
+            close=9.2,
+            volume=1000,
+        )
+        second = OHLCVBar(
+            symbol="600000",
+            market="ashare",
+            timeframe="1d",
+            timestamp=datetime(2026, 5, 28, tzinfo=timezone.utc),
+            open=9.2,
+            high=9.5,
+            low=9.1,
+            close=9.3,
+            volume=1100,
+        )
+        third = OHLCVBar(
+            symbol="AAPL",
+            market="us",
+            timeframe="1d",
+            timestamp=datetime(2026, 5, 29, tzinfo=timezone.utc),
+            open=190,
+            high=195,
+            low=188,
+            close=192,
+            volume=12_000,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            cache.upsert_bars([first, second, third])
+            stats = cache.stats()
+
+        self.assertEqual(stats["row_count"], 3)
+        self.assertEqual(stats["context_count"], 2)
+        self.assertEqual(stats["latest_timestamp"], "2026-05-29T00:00:00+00:00")
 
     def test_backtest_generates_metrics_and_trade_log_from_visual_strategy(self):
         from quant_core.backtest import BacktestEngine

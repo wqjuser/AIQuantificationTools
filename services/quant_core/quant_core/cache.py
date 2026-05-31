@@ -119,3 +119,29 @@ class MarketDataCache:
             )
             for row in rows
         ]
+
+    def stats(self) -> dict[str, int | str | None]:
+        connection = self._connect()
+        try:
+            row_count = int(connection.execute("select count(*) from ohlcv").fetchone()[0])
+            context_count = int(
+                connection.execute(
+                    """
+                    select count(*)
+                    from (
+                        select market, symbol, timeframe
+                        from ohlcv
+                        group by market, symbol, timeframe
+                    )
+                    """
+                ).fetchone()[0]
+            )
+            latest_timestamp = connection.execute("select max(timestamp) from ohlcv").fetchone()[0]
+        finally:
+            connection.close()
+
+        return {
+            "row_count": row_count,
+            "context_count": context_count,
+            "latest_timestamp": latest_timestamp,
+        }

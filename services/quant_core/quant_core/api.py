@@ -202,6 +202,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {
                     "settings": build_settings_status(
                         cache_path=self.cache.path,
+                        cache_stats=self.cache.stats(),
                         finnhub_api_key=getattr(self.quote_adapter, "finnhub_api_key", ""),
                     )
                 }

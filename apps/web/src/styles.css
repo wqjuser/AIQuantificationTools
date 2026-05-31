@@ -1341,6 +1341,11 @@ em {
   overflow-wrap: anywhere;
 }
 
+.settings-cache-row .settings-cache-stats {
+  color: #7ee4d2;
+  font-weight: 900;
+}
+
 .settings-source-row em {
   color: #7ee4d2;
   display: block;

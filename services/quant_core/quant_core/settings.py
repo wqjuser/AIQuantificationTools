@@ -9,12 +9,14 @@ from typing import Any
 def build_settings_status(
     *,
     cache_path: str | Path,
+    cache_stats: dict[str, Any] | None = None,
     finnhub_api_key: str | None = None,
     ccxt_exchange: str | None = None,
 ) -> dict[str, Any]:
     """Build a read-only platform settings status payload without returning secrets."""
 
     cache = Path(cache_path)
+    stats = _normalize_cache_stats(cache_stats)
     finnhub_configured = bool((finnhub_api_key if finnhub_api_key is not None else os.getenv("FINNHUB_API_KEY", "")).strip())
     exchange = (ccxt_exchange if ccxt_exchange is not None else os.getenv("CCXT_DEFAULT_EXCHANGE", "binance")).strip() or "binance"
 
@@ -62,6 +64,9 @@ def build_settings_status(
             "path": str(cache),
             "exists": cache.exists(),
             "scope": "ohlcv",
+            "rowCount": stats["row_count"],
+            "contextCount": stats["context_count"],
+            "latestTimestamp": stats["latest_timestamp"],
         },
         "executionAdapters": [
             {
@@ -110,3 +115,22 @@ def build_settings_status(
             "requiredGates": ["adapter-certified", "risk-approved", "human-confirmed"],
         },
     }
+
+
+def _normalize_cache_stats(cache_stats: dict[str, Any] | None) -> dict[str, int | str | None]:
+    if not cache_stats:
+        return {"row_count": 0, "context_count": 0, "latest_timestamp": None}
+    latest_timestamp = cache_stats.get("latest_timestamp")
+    return {
+        "row_count": _non_negative_int(cache_stats.get("row_count")),
+        "context_count": _non_negative_int(cache_stats.get("context_count")),
+        "latest_timestamp": latest_timestamp if isinstance(latest_timestamp, str) else None,
+    }
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0

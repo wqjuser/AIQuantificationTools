@@ -2429,6 +2429,20 @@ function PlatformSettingsPanel({
     settings?.executionAdapters.filter((row) => row.route === "live").length ??
     adapterRows.filter((row) => row.route === "live").length;
   const cacheStatus = settings?.cache;
+  const cacheLatestLabel = cacheStatus?.latestTimestamp
+    ? formatChartDate(cacheStatus.latestTimestamp)
+    : i18n.locale === "zh-CN"
+      ? "暂无 K 线"
+      : "No bars yet";
+  const cacheStatsLabel = cacheStatus
+    ? i18n.locale === "zh-CN"
+      ? `${cacheStatus.rowCount.toLocaleString("zh-CN")} 行 · ${cacheStatus.contextCount.toLocaleString(
+          "zh-CN"
+        )} 个上下文 · 最新 ${cacheLatestLabel}`
+      : `${cacheStatus.rowCount.toLocaleString("en-US")} rows · ${cacheStatus.contextCount.toLocaleString(
+          "en-US"
+        )} contexts · latest ${cacheLatestLabel}`
+    : "";
 
   return (
     <Panel
@@ -2497,6 +2511,7 @@ function PlatformSettingsPanel({
           <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>
           <strong>{cacheStatus.engine} · {cacheStatus.scope}</strong>
           <p>{cacheStatus.path}</p>
+          <p className="settings-cache-stats">{cacheStatsLabel}</p>
         </div>
       ) : null}
     </Panel>

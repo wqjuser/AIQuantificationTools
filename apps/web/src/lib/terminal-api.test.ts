@@ -418,7 +418,10 @@ describe("terminal workspace API client", () => {
               engine: "sqlite",
               path: "data/market.sqlite",
               exists: true,
-              scope: "ohlcv"
+              scope: "ohlcv",
+              rowCount: 1280,
+              contextCount: 12,
+              latestTimestamp: "2026-05-29T00:00:00+00:00"
             },
             executionAdapters: [
               {
@@ -448,7 +451,61 @@ describe("terminal workspace API client", () => {
       optionalKeyName: "FINNHUB_API_KEY",
       optionalKeyConfigured: true
     });
+    expect((result.settings?.cache as unknown as { rowCount?: number }).rowCount).toBe(1280);
+    expect((result.settings?.cache as unknown as { contextCount?: number }).contextCount).toBe(12);
+    expect((result.settings?.cache as unknown as { latestTimestamp?: string | null }).latestTimestamp).toBe(
+      "2026-05-29T00:00:00+00:00"
+    );
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
+  });
+
+  test("rejects settings status when cache stats are missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-05-31T09:00:00+08:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv"
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
   });
 
   test("runs terminal research and returns a core-backed workspace", async () => {
