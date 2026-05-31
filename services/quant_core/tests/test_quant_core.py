@@ -634,6 +634,64 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["settings"]["cache"]["contexts"][0]["symbol"], "600000")
         self.assertEqual(payload["settings"]["cache"]["freshnessSummary"]["fresh"], 1)
 
+    def test_market_klines_api_serves_sqlite_cache_when_adapter_unavailable(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+
+        class OfflineKlineAdapter:
+            def fetch_ohlcv(self, request, limit=160):
+                raise RuntimeError("upstream offline")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            local_cache = MarketDataCache(f"{tmp}/market.sqlite")
+            local_cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        market="ashare",
+                        symbol="600000",
+                        timeframe="1d",
+                        timestamp=datetime(2026, 5, 27 + index, tzinfo=timezone.utc),
+                        open=9.0 + index,
+                        high=9.5 + index,
+                        low=8.8 + index,
+                        close=9.2 + index,
+                        volume=1000 + index,
+                    )
+                    for index in range(3)
+                ]
+            )
+
+            class TestHandler(QuantApiHandler):
+                cache = local_cache
+                kline_adapter = OfflineKlineAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/market/klines?market=ashare&symbol=600000&timeframe=1d&limit=2")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["quality"]["source"], "local-cache")
+        self.assertTrue(payload["quality"]["isComplete"])
+        self.assertEqual(payload["quality"]["rows"], 2)
+        self.assertIn("upstream offline", payload["quality"]["warnings"][0])
+        self.assertEqual([bar["close"] for bar in payload["bars"]], [10.2, 11.2])
+
     def test_backtest_generates_metrics_and_trade_log_from_visual_strategy(self):
         from quant_core.backtest import BacktestEngine
         from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig

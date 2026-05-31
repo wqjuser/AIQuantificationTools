@@ -11,7 +11,7 @@ from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
-from quant_core.domain import AiResearchRequest, Condition, MarketDataRequest, RiskRules, StrategyConfig
+from quant_core.domain import AiResearchRequest, Condition, DataQuality, MarketDataRequest, OHLCVBar, RiskRules, StrategyConfig
 from quant_core.execution import (
     PaperExecutionStore,
     build_promotion_candidate,
@@ -53,6 +53,56 @@ def _json_default(value):
 
 def _response(payload: object) -> bytes:
     return json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+
+
+def _fetch_market_klines_with_cache(
+    *,
+    cache: MarketDataCache,
+    adapter: object,
+    request: MarketDataRequest,
+    limit: int,
+) -> tuple[list[OHLCVBar], DataQuality]:
+    bounded_limit = max(1, min(int(limit or 160), 500))
+    upstream_error: str | None = None
+    try:
+        bars, quality = adapter.fetch_ohlcv(request, limit=bounded_limit)  # type: ignore[attr-defined]
+    except Exception as error:
+        bars = []
+        quality = None
+        upstream_error = str(error)
+
+    if quality and quality.is_complete:
+        cache.upsert_bars(bars)
+        return bars, quality
+
+    cached_bars = cache.read_bars(
+        request.market,
+        request.symbol,
+        request.timeframe,
+        end=request.end,
+    )[-bounded_limit:]
+    if cached_bars:
+        warnings = _cache_fallback_warnings(quality, upstream_error)
+        return cached_bars, DataQuality(
+            source="local-cache",
+            is_complete=True,
+            warnings=warnings,
+            rows=len(cached_bars),
+        )
+
+    if quality is not None:
+        return bars, quality
+
+    raise ValueError(upstream_error or "market kline adapter unavailable")
+
+
+def _cache_fallback_warnings(quality: DataQuality | None, upstream_error: str | None) -> list[str]:
+    if upstream_error:
+        return [f"served local cache after upstream error: {upstream_error}"]
+    if quality is None:
+        return ["served local cache because upstream quality was unavailable"]
+    reason = f"served local cache instead of incomplete {quality.source}"
+    return [reason, *quality.warnings]
 
 
 class QuantApiHandler(BaseHTTPRequestHandler):
@@ -134,7 +184,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 limit = _parse_kline_limit(str(payload.get("limit") or "160"))
                 request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe)
                 bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
-                upserted_rows = self.cache.upsert_bars(bars)
+                upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
             except ValueError as error:
                 self._send_json({"error": "invalid_cache_refresh", "detail": str(error)}, status=400)
                 return
@@ -264,8 +314,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 timeframe=timeframe,
                 end=_parse_kline_end(query.get("end", [""])[0]),
             )
-            bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
-            self.cache.upsert_bars(bars)
+            try:
+                bars, quality = _fetch_market_klines_with_cache(
+                    cache=self.cache,
+                    adapter=self.kline_adapter,
+                    request=request,
+                    limit=limit,
+                )
+            except ValueError as error:
+                self._send_json({"error": "market_klines_unavailable", "detail": str(error)}, status=502)
+                return
             self._send_json(market_klines_to_payload(market, symbol, timeframe, bars, quality))
             return
         if parsed.path == "/api/strategies":
