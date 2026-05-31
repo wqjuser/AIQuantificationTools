@@ -1690,6 +1690,60 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("formats audited volume confirmation conditions for strategy replay", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-volume-condition",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Volume confirmed SMA",
+      strategyRevision: "rev-volume-condition",
+      dataRows: 240,
+      metrics: { total_return_pct: 8.4, max_drawdown_pct: 4.1, win_rate_pct: 55, trade_count: 10 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      strategyConfig: {
+        name: "Volume confirmed SMA",
+        revision: "rev-volume-condition",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [
+          { kind: "close_above_sma", params: { window: 5 } },
+          { kind: "volume_above_sma", params: { window: 10 } }
+        ],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 5 } }],
+        risk: {
+          positionPct: 0.2,
+          stopLossPct: 0.08,
+          takeProfitPct: 0.18,
+          maxDrawdownPct: 0.12
+        }
+      }
+    });
+
+    const rows = buildStrategyRuleRows(workspace);
+
+    expect(workspace.strategy.entry).toBe("Close > SMA5 AND Volume > VOL10");
+    expect(rows[0]).toMatchObject({
+      condition: "Close > SMA5 AND Volume > VOL10",
+      parameter: "SMA5 / VOL10"
+    });
+  });
+
+  test("keeps timeframe text from becoming a volume window", () => {
+    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
+    const rows = buildStrategyRuleRows(workspace);
+
+    expect(workspace.strategy.entry).toBe("Close above SMA20 with volume confirmation after 1d research context");
+    expect(rows[0]).toMatchObject({
+      parameter: "SMA20 / VOL20"
+    });
+  });
+
   test("derives audited backtest trade rows from strategy and metrics", () => {
     const rows = buildBacktestTradeRows(buildTerminalWorkspace());
 
@@ -2993,8 +3047,8 @@ describe("terminal workbench model", () => {
 
     expect(workspace.strategy).toEqual({
       name: "Custom SMA risk plan",
-      entry: "close_above_sma(window=5)",
-      exit: "close_below_sma(window=7)",
+      entry: "Close > SMA5",
+      exit: "Close < SMA7",
       position: "25.00% position cap",
       risk: "Stop 6.00% / take profit 12.00% / max drawdown 9.00%"
     });

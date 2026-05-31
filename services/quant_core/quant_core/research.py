@@ -315,7 +315,7 @@ def strategy_config_from_snapshot(
         market=market,
         symbols=[symbol],
         timeframe=timeframe,
-        entry_conditions=[_condition_from_text(snapshot.entry, default_kind="close_above_sma")],
+        entry_conditions=_entry_conditions_from_text(snapshot.entry),
         exit_conditions=[_condition_from_text(snapshot.exit, default_kind="close_below_sma")],
         risk=RiskRules(
             position_pct=_position_pct_from_text(snapshot.position),
@@ -324,6 +324,14 @@ def strategy_config_from_snapshot(
             max_drawdown_pct=_percent_near_keywords(snapshot.risk, ["drawdown", "回撤"], default=0.2),
         ),
     )
+
+
+def _entry_conditions_from_text(text: str) -> list[Condition]:
+    conditions = [_condition_from_text(text, default_kind="close_above_sma")]
+    volume_condition = _volume_condition_from_text(text)
+    if volume_condition:
+        conditions.append(volume_condition)
+    return conditions
 
 
 def _condition_from_text(text: str, *, default_kind: str) -> Condition:
@@ -340,6 +348,16 @@ def _condition_from_text(text: str, *, default_kind: str) -> Condition:
     window_match = re.search(r"sma\s*(\d+)", normalized)
     window = int(window_match.group(1)) if window_match else 20
     return Condition(kind=kind, params={"window": max(1, min(window, 250))})
+
+
+def _volume_condition_from_text(text: str) -> Condition | None:
+    normalized = text.lower()
+    if "volume" not in normalized and "vol" not in normalized and "成交量" not in normalized:
+        return None
+    volume_segment = normalized[normalized.find("vol") :] if "vol" in normalized else normalized
+    window_match = re.search(r"(?:volume|vol|成交量).*?(?:sma|ma|均线|vol)\s*(\d+)", volume_segment)
+    window = int(window_match.group(1)) if window_match else 20
+    return Condition(kind="volume_above_sma", params={"window": max(1, min(window, 250))})
 
 
 def _position_pct_from_text(text: str) -> float:

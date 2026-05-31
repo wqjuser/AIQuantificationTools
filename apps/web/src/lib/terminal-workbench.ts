@@ -2012,7 +2012,7 @@ export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRul
       group: "entry",
       label: "Entry signal",
       condition: workspace.strategy.entry,
-      parameter: `SMA${draft.entryWindow}`,
+      parameter: strategyEntryParameter(workspace.strategy.entry, draft.entryWindow),
       status: isPendingStrategyText(workspace.strategy.entry) ? "pending" : "active",
       tone: isPendingStrategyText(workspace.strategy.entry) ? "warning" : "positive"
     },
@@ -3649,10 +3649,38 @@ function formatStrategyConditions(conditions: ResearchRunStrategyCondition[]): s
 }
 
 function formatStrategyCondition(condition: ResearchRunStrategyCondition): string {
+  const window = Number(condition.params["window"]);
+  if (condition.kind === "close_above_sma" && Number.isFinite(window)) {
+    return `Close > SMA${window}`;
+  }
+  if (condition.kind === "close_below_sma" && Number.isFinite(window)) {
+    return `Close < SMA${window}`;
+  }
+  if (condition.kind === "volume_above_sma" && Number.isFinite(window)) {
+    return `Volume > VOL${window}`;
+  }
   const params = Object.entries(condition.params)
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(", ");
   return params ? `${condition.kind}(${params})` : condition.kind;
+}
+
+function strategyEntryParameter(text: string, entryWindow: number): string {
+  const parts = [`SMA${entryWindow}`];
+  const volumeWindow = inferVolumeWindow(text);
+  if (volumeWindow !== null) {
+    parts.push(`VOL${volumeWindow}`);
+  }
+  return parts.join(" / ");
+}
+
+function inferVolumeWindow(text: string): number | null {
+  const normalized = text.toLowerCase();
+  if (!normalized.includes("volume") && !normalized.includes("vol") && !normalized.includes("成交量")) {
+    return null;
+  }
+  const match = normalized.match(/(?:volume|vol|成交量).*?(?:sma|ma|均线|vol)\s*(\d+)/u);
+  return match ? normalizeStrategyWindow(Number(match[1])) : 20;
 }
 
 function formatStrategyRisk(risk: ResearchRunStrategyRisk): string {

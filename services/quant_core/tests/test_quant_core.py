@@ -23,6 +23,76 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(restored.revision, strategy.revision)
         self.assertEqual(restored.version, 1)
 
+    def test_strategy_snapshot_parses_volume_confirmation_condition(self):
+        from quant_core.research import strategy_config_from_snapshot
+        from quant_core.terminal import StrategySnapshot
+
+        snapshot = StrategySnapshot(
+            name="Volume confirmed SMA",
+            entry="Close > SMA5 with volume above SMA10",
+            exit="Close < SMA5",
+            position="35% cap per instrument",
+            risk="Stop -7%, take profit +14%, drawdown guard 10%, paper only",
+        )
+
+        strategy = strategy_config_from_snapshot(snapshot, market="ashare", symbol="600000", timeframe="1d")
+
+        self.assertEqual(
+            [(condition.kind, condition.params) for condition in strategy.entry_conditions],
+            [
+                ("close_above_sma", {"window": 5}),
+                ("volume_above_sma", {"window": 10}),
+            ],
+        )
+
+    def test_strategy_snapshot_defaults_volume_confirmation_window_when_only_context_mentions_timeframe(self):
+        from quant_core.research import strategy_config_from_snapshot
+        from quant_core.terminal import StrategySnapshot
+
+        snapshot = StrategySnapshot(
+            name="AI volume draft",
+            entry="Close above SMA20 with volume confirmation after 1d research context",
+            exit="Close < SMA20",
+            position="35% cap per instrument",
+            risk="Stop -7%, take profit +14%, drawdown guard 10%, paper only",
+        )
+
+        strategy = strategy_config_from_snapshot(snapshot, market="ashare", symbol="600000", timeframe="1d")
+
+        self.assertEqual(strategy.entry_conditions[1].kind, "volume_above_sma")
+        self.assertEqual(strategy.entry_conditions[1].params, {"window": 20})
+
+    def test_backtest_waits_for_volume_confirmation_before_entry(self):
+        from quant_core.backtest import BacktestEngine
+        from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        bars = [
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=0), 10, 10, 10, 10, 100),
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=1), 11, 11, 11, 11, 100),
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=2), 12, 12, 12, 12, 80),
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=3), 13, 13, 13, 13, 220),
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=4), 14, 14, 14, 14, 220),
+        ]
+        strategy = StrategyConfig(
+            name="Volume confirmed SMA",
+            market="ashare",
+            symbols=["600000"],
+            timeframe="1d",
+            entry_conditions=[
+                Condition(kind="close_above_sma", params={"window": 2}),
+                Condition(kind="volume_above_sma", params={"window": 3}),
+            ],
+            exit_conditions=[],
+            risk=RiskRules(position_pct=0.5),
+        )
+
+        result = BacktestEngine().run(strategy, bars)
+
+        self.assertEqual(result.trades[0].side, "buy")
+        self.assertEqual(result.trades[0].timestamp, bars[3].timestamp)
+        self.assertEqual(result.trades[0].reason, "entry_conditions")
+
     def test_strategy_library_store_persists_stable_strategy_versions(self):
         from quant_core.research import strategy_config_from_snapshot
         from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload

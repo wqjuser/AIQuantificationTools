@@ -33,6 +33,7 @@ class BacktestEngine:
 
         ordered_bars = sorted(bars, key=lambda bar: bar.timestamp)
         closes = [bar.close for bar in ordered_bars]
+        volumes = [bar.volume for bar in ordered_bars]
         symbol = strategy.symbols[0]
         cash = self.initial_cash
         position = _Position()
@@ -40,7 +41,7 @@ class BacktestEngine:
         equity_curve: list[EquityPoint] = []
 
         for index, bar in enumerate(ordered_bars):
-            if position.quantity <= 0 and self._all_conditions(strategy.entry_conditions, closes, index):
+            if position.quantity <= 0 and self._all_conditions(strategy.entry_conditions, closes, volumes, index):
                 budget = cash * max(0.0, min(strategy.risk.position_pct, 1.0))
                 execution_price = bar.close * (1 + self.slippage_rate)
                 quantity = budget / execution_price if execution_price else 0.0
@@ -61,7 +62,7 @@ class BacktestEngine:
                     )
 
             elif position.quantity > 0:
-                exit_reason = self._exit_reason(strategy, position.entry_price, bar.close, closes, index)
+                exit_reason = self._exit_reason(strategy, position.entry_price, bar.close, closes, volumes, index)
                 if exit_reason is not None:
                     execution_price = bar.close * (1 - self.slippage_rate)
                     gross = position.quantity * execution_price
@@ -115,16 +116,19 @@ class BacktestEngine:
             data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(ordered_bars)),
         )
 
-    def _all_conditions(self, conditions: list[Condition], closes: list[float], index: int) -> bool:
-        return bool(conditions) and all(self._condition_met(condition, closes, index) for condition in conditions)
+    def _all_conditions(self, conditions: list[Condition], closes: list[float], volumes: list[float], index: int) -> bool:
+        return bool(conditions) and all(self._condition_met(condition, closes, volumes, index) for condition in conditions)
 
-    def _condition_met(self, condition: Condition, closes: list[float], index: int) -> bool:
+    def _condition_met(self, condition: Condition, closes: list[float], volumes: list[float], index: int) -> bool:
         if condition.kind == "close_above_sma":
             average = sma(closes, int(condition.params["window"]), index)
             return average is not None and closes[index] > average
         if condition.kind == "close_below_sma":
             average = sma(closes, int(condition.params["window"]), index)
             return average is not None and closes[index] < average
+        if condition.kind == "volume_above_sma":
+            average = sma(volumes, int(condition.params["window"]), index)
+            return average is not None and volumes[index] > average
         raise ValueError(f"unsupported condition: {condition.kind}")
 
     def _exit_reason(
@@ -133,13 +137,14 @@ class BacktestEngine:
         entry_price: float,
         close: float,
         closes: list[float],
+        volumes: list[float],
         index: int,
     ) -> str | None:
         if strategy.risk.stop_loss_pct is not None and close <= entry_price * (1 - strategy.risk.stop_loss_pct):
             return "stop_loss"
         if strategy.risk.take_profit_pct is not None and close >= entry_price * (1 + strategy.risk.take_profit_pct):
             return "take_profit"
-        if self._all_conditions(strategy.exit_conditions, closes, index):
+        if self._all_conditions(strategy.exit_conditions, closes, volumes, index):
             return "exit_conditions"
         return None
 
