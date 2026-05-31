@@ -1990,6 +1990,10 @@ em {
   grid-template-columns: auto minmax(58px, 1fr) auto;
 }
 
+.strategy-rsi-toggle {
+  grid-template-columns: auto minmax(52px, 0.75fr) minmax(52px, 0.75fr) auto;
+}
+
 .strategy-volume-toggle input[type="checkbox"] {
   width: 16px;
   height: 16px;
@@ -1997,7 +2001,19 @@ em {
   accent-color: #2fd3b0;
 }
 
+.strategy-rsi-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 8px;
+  accent-color: #2fd3b0;
+}
+
 .strategy-volume-toggle input[type="number"]:disabled {
+  color: #6f7d8e;
+  opacity: 0.7;
+}
+
+.strategy-rsi-toggle input[type="number"]:disabled {
   color: #6f7d8e;
   opacity: 0.7;
 }

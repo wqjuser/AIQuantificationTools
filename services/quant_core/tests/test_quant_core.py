@@ -88,6 +88,29 @@ class QuantCoreContractTest(unittest.TestCase):
             [("rsi_above", {"window": 14, "threshold": 55.0})],
         )
 
+    def test_strategy_snapshot_parses_combined_sma_rsi_and_volume_entry_conditions(self):
+        from quant_core.research import strategy_config_from_snapshot
+        from quant_core.terminal import StrategySnapshot
+
+        snapshot = StrategySnapshot(
+            name="Combined entry",
+            entry="Close > SMA5 AND RSI14 > 55 AND Volume > VOL10",
+            exit="Close < SMA13",
+            position="20% max capital allocation",
+            risk="Stop -6%, take profit +16%, drawdown guard 9%, paper only",
+        )
+
+        strategy = strategy_config_from_snapshot(snapshot, market="ashare", symbol="600000", timeframe="1d")
+
+        self.assertEqual(
+            [(condition.kind, condition.params) for condition in strategy.entry_conditions],
+            [
+                ("close_above_sma", {"window": 5}),
+                ("rsi_above", {"window": 14, "threshold": 55.0}),
+                ("volume_above_sma", {"window": 10}),
+            ],
+        )
+
     def test_backtest_waits_for_volume_confirmation_before_entry(self):
         from quant_core.backtest import BacktestEngine
         from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig

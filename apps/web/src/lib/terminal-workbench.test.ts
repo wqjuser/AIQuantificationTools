@@ -304,6 +304,53 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("updates structured RSI confirmation fields as a combined entry gate", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(
+      workspaceWithStrategyRuleDraftField(
+        workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryRsiConfirm", true),
+        "entryRsiThreshold",
+        55
+      ),
+      "entryRsiWindow",
+      14
+    );
+
+    expect(workspace.strategy.entry).toBe("Close > SMA20 AND RSI14 > 55");
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      entryKind: "close_above_sma",
+      entryWindow: 20,
+      entryRsiConfirm: true,
+      entryRsiWindow: 14,
+      entryRsiThreshold: 55
+    });
+    expect(buildStrategyRuleRows(workspace)[0]).toMatchObject({
+      condition: "Close > SMA20 AND RSI14 > 55",
+      parameter: "SMA20 / RSI14>55"
+    });
+  });
+
+  test("restores combined SMA RSI and volume snapshots into editable draft fields", () => {
+    const workspace = workspaceWithStrategyField(
+      buildTerminalWorkspace(),
+      "entry",
+      "Close > SMA5 AND RSI14 > 55 AND Volume > VOL10"
+    );
+
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      entryKind: "close_above_sma",
+      entryWindow: 5,
+      entryRsiConfirm: true,
+      entryRsiWindow: 14,
+      entryRsiThreshold: 55,
+      entryVolumeConfirm: true,
+      entryVolumeWindow: 10
+    });
+    expect(buildStrategyReadinessGates(workspace)[0]).toMatchObject({
+      status: "passed",
+      value: "SMA5 / RSI14>55 / VOL10 / SMA20"
+    });
+  });
+
   test("lists structured strategy templates for Strategy Lab", () => {
     expect(buildStrategyTemplateOptions().map((template) => template.id)).toEqual([
       "sma_trend",

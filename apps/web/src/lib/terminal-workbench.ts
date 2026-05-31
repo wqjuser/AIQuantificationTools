@@ -141,6 +141,9 @@ export type StrategyRuleDraftField =
   | "entryKind"
   | "entryWindow"
   | "entryThreshold"
+  | "entryRsiConfirm"
+  | "entryRsiWindow"
+  | "entryRsiThreshold"
   | "entryVolumeConfirm"
   | "entryVolumeWindow"
   | "exitKind"
@@ -156,6 +159,9 @@ export interface StrategyRuleDraft {
   entryKind: StrategyConditionKind;
   entryWindow: number;
   entryThreshold: number;
+  entryRsiConfirm: boolean;
+  entryRsiWindow: number;
+  entryRsiThreshold: number;
   entryVolumeConfirm: boolean;
   entryVolumeWindow: number;
   exitKind: StrategyConditionKind;
@@ -663,6 +669,9 @@ const defaultStrategyRuleDraft: StrategyRuleDraft = {
   entryKind: "close_above_sma",
   entryWindow: 20,
   entryThreshold: 30,
+  entryRsiConfirm: false,
+  entryRsiWindow: 14,
+  entryRsiThreshold: 55,
   entryVolumeConfirm: false,
   entryVolumeWindow: 20,
   exitKind: "close_below_sma",
@@ -686,6 +695,9 @@ const strategyTemplateOptions: StrategyTemplateOption[] = [
       entryKind: "close_above_sma",
       entryWindow: 20,
       entryThreshold: 30,
+      entryRsiConfirm: false,
+      entryRsiWindow: 14,
+      entryRsiThreshold: 55,
       entryVolumeConfirm: false,
       entryVolumeWindow: 20,
       exitKind: "close_below_sma",
@@ -708,6 +720,9 @@ const strategyTemplateOptions: StrategyTemplateOption[] = [
       entryKind: "rsi_below",
       entryWindow: 14,
       entryThreshold: 30,
+      entryRsiConfirm: false,
+      entryRsiWindow: 14,
+      entryRsiThreshold: 55,
       entryVolumeConfirm: false,
       entryVolumeWindow: 20,
       exitKind: "rsi_above",
@@ -730,6 +745,9 @@ const strategyTemplateOptions: StrategyTemplateOption[] = [
       entryKind: "close_above_sma",
       entryWindow: 5,
       entryThreshold: 30,
+      entryRsiConfirm: false,
+      entryRsiWindow: 14,
+      entryRsiThreshold: 55,
       entryVolumeConfirm: true,
       entryVolumeWindow: 10,
       exitKind: "close_below_sma",
@@ -2290,16 +2308,25 @@ export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRu
   const entryRsiCondition = inferRsiCondition(strategy.entry);
   const exitRsiCondition = inferRsiCondition(strategy.exit);
   const entryVolumeWindow = inferVolumeWindow(strategy.entry);
-  const entryWindow = entryRsiCondition?.window ?? inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
+  const hasEntrySmaCondition = hasSmaConditionText(strategy.entry);
+  const isPrimaryEntryRsi = Boolean(entryRsiCondition && !hasEntrySmaCondition);
+  const entryWindow = isPrimaryEntryRsi
+    ? entryRsiCondition?.window ?? defaultStrategyRuleDraft.entryWindow
+    : inferSmaWindow(strategy.entry, defaultStrategyRuleDraft.entryWindow);
   const exitWindow = exitRsiCondition?.window ?? inferSmaWindow(strategy.exit, defaultStrategyRuleDraft.exitWindow);
 
   return {
     name: strategy.name.trim() || defaultStrategyRuleDraft.name,
-    entryKind: entryRsiCondition
+    entryKind: isPrimaryEntryRsi && entryRsiCondition
       ? rsiOperatorToConditionKind(entryRsiCondition.operator)
       : inferSmaConditionKind(strategy.entry, "close_above_sma"),
     entryWindow,
-    entryThreshold: entryRsiCondition?.threshold ?? defaultStrategyRuleDraft.entryThreshold,
+    entryThreshold: isPrimaryEntryRsi
+      ? entryRsiCondition?.threshold ?? defaultStrategyRuleDraft.entryThreshold
+      : defaultStrategyRuleDraft.entryThreshold,
+    entryRsiConfirm: Boolean(entryRsiCondition && !isPrimaryEntryRsi),
+    entryRsiWindow: entryRsiCondition?.window ?? defaultStrategyRuleDraft.entryRsiWindow,
+    entryRsiThreshold: entryRsiCondition?.threshold ?? defaultStrategyRuleDraft.entryRsiThreshold,
     entryVolumeConfirm: entryVolumeWindow !== null,
     entryVolumeWindow: entryVolumeWindow ?? defaultStrategyRuleDraft.entryVolumeWindow,
     exitKind: exitRsiCondition
@@ -2345,11 +2372,16 @@ export function strategySnapshotFromRuleDraft(draft: StrategyRuleDraft): Strateg
     normalizedDraft.entryWindow,
     normalizedDraft.entryThreshold
   );
+  const entrySignals = [entrySignal];
+  if (normalizedDraft.entryRsiConfirm && !isRsiConditionKind(normalizedDraft.entryKind)) {
+    entrySignals.push(`RSI${normalizedDraft.entryRsiWindow} > ${formatConditionNumber(normalizedDraft.entryRsiThreshold)}`);
+  }
+  if (normalizedDraft.entryVolumeConfirm) {
+    entrySignals.push(`Volume > VOL${normalizedDraft.entryVolumeWindow}`);
+  }
   return {
     name: normalizedDraft.name,
-    entry: normalizedDraft.entryVolumeConfirm
-      ? `${entrySignal} AND Volume > VOL${normalizedDraft.entryVolumeWindow}`
-      : entrySignal,
+    entry: entrySignals.join(" AND "),
     exit: strategyConditionSnapshotText(normalizedDraft.exitKind, normalizedDraft.exitWindow, normalizedDraft.exitThreshold),
     position: `${formatPercentValue(normalizedDraft.positionPct)}% max capital allocation`,
     risk: [
@@ -3056,6 +3088,9 @@ function normalizeStrategyRuleDraft(draft: StrategyRuleDraft): StrategyRuleDraft
     entryKind: normalizeStrategyConditionKind(draft.entryKind, defaultStrategyRuleDraft.entryKind),
     entryWindow: normalizeStrategyWindow(draft.entryWindow),
     entryThreshold: normalizeStrategyThreshold(draft.entryThreshold, defaultStrategyRuleDraft.entryThreshold),
+    entryRsiConfirm: Boolean(draft.entryRsiConfirm),
+    entryRsiWindow: normalizeStrategyWindow(draft.entryRsiWindow),
+    entryRsiThreshold: normalizeStrategyThreshold(draft.entryRsiThreshold, defaultStrategyRuleDraft.entryRsiThreshold),
     entryVolumeConfirm: Boolean(draft.entryVolumeConfirm),
     entryVolumeWindow: normalizeStrategyWindow(draft.entryVolumeWindow),
     exitKind: normalizeStrategyConditionKind(draft.exitKind, defaultStrategyRuleDraft.exitKind),
@@ -3071,6 +3106,10 @@ function normalizeStrategyRuleDraft(draft: StrategyRuleDraft): StrategyRuleDraft
 
 function normalizeStrategyConditionKind(kind: StrategyConditionKind, fallback: StrategyConditionKind): StrategyConditionKind {
   return ["close_above_sma", "close_below_sma", "rsi_below", "rsi_above"].includes(kind) ? kind : fallback;
+}
+
+function isRsiConditionKind(kind: StrategyConditionKind): boolean {
+  return kind === "rsi_below" || kind === "rsi_above";
 }
 
 function normalizeStrategyWindow(value: number): number {
@@ -4075,7 +4114,7 @@ export function workspaceWithStrategyRuleDraftField(
     [field]:
       field === "name" || field === "entryKind" || field === "exitKind"
         ? String(value)
-        : field === "entryVolumeConfirm"
+        : field === "entryVolumeConfirm" || field === "entryRsiConfirm"
           ? Boolean(value)
           : Number(value)
   });

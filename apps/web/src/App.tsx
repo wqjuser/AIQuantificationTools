@@ -1985,6 +1985,17 @@ function StrategySummary({
             window={draft.entryWindow}
             windowField="entryWindow"
           />
+          <StrategyRsiConfirmField
+            field="entryRsiConfirm"
+            i18n={i18n}
+            isEnabled={draft.entryRsiConfirm}
+            label={i18n.t("strategy.rsiConfirm")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            threshold={draft.entryRsiThreshold}
+            thresholdField="entryRsiThreshold"
+            window={draft.entryRsiWindow}
+            windowField="entryRsiWindow"
+          />
           <StrategyVolumeConfirmField
             field="entryVolumeConfirm"
             i18n={i18n}
@@ -2179,6 +2190,9 @@ function StrategyTemplatePicker({
             activeDraft.entryKind === template.draft.entryKind &&
             activeDraft.entryWindow === template.draft.entryWindow &&
             activeDraft.entryThreshold === template.draft.entryThreshold &&
+            activeDraft.entryRsiConfirm === template.draft.entryRsiConfirm &&
+            activeDraft.entryRsiWindow === template.draft.entryRsiWindow &&
+            activeDraft.entryRsiThreshold === template.draft.entryRsiThreshold &&
             activeDraft.entryVolumeConfirm === template.draft.entryVolumeConfirm &&
             activeDraft.entryVolumeWindow === template.draft.entryVolumeWindow &&
             activeDraft.exitKind === template.draft.exitKind &&
@@ -2313,6 +2327,64 @@ function StrategyVolumeConfirmField({
           value={value}
         />
         <em>VOL</em>
+      </div>
+      <small>{strategyDraftHint(i18n, field)}</small>
+    </label>
+  );
+}
+
+function StrategyRsiConfirmField({
+  field,
+  i18n,
+  isEnabled,
+  label,
+  onUpdate,
+  threshold,
+  thresholdField,
+  window,
+  windowField
+}: {
+  field: StrategyRuleDraftField;
+  i18n: AppI18n;
+  isEnabled: boolean;
+  label: string;
+  onUpdate: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
+  threshold: number;
+  thresholdField: StrategyRuleDraftField;
+  window: number;
+  windowField: StrategyRuleDraftField;
+}) {
+  return (
+    <label className={`strategy-draft-field strategy-rsi-field ${isEnabled ? "enabled" : "disabled"}`}>
+      <span>{label}</span>
+      <div className="strategy-rsi-toggle">
+        <input
+          aria-label={label}
+          checked={isEnabled}
+          onChange={(event) => onUpdate(field, event.currentTarget.checked)}
+          type="checkbox"
+        />
+        <input
+          aria-label={i18n.t("strategy.rsiWindow")}
+          disabled={!isEnabled}
+          max={250}
+          min={1}
+          onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
+          step={1}
+          type="number"
+          value={window}
+        />
+        <input
+          aria-label={i18n.t("strategy.rsiThreshold")}
+          disabled={!isEnabled}
+          max={100}
+          min={0}
+          onChange={(event) => onUpdate(thresholdField, Number(event.currentTarget.value))}
+          step={1}
+          type="number"
+          value={threshold}
+        />
+        <em>RSI</em>
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
     </label>
@@ -3842,6 +3914,9 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
       entryKind: "Entry condition type",
       entryWindow: "Entry: close above SMA",
       entryThreshold: "RSI entry threshold",
+      entryRsiConfirm: "Optional RSI momentum gate",
+      entryRsiWindow: "RSI confirmation window",
+      entryRsiThreshold: "RSI must be above this value",
       entryVolumeConfirm: "Optional volume gate",
       entryVolumeWindow: "Volume moving average window",
       exitKind: "Exit condition type",
@@ -3858,6 +3933,9 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
     entryKind: "入场条件类型",
     entryWindow: "入场：收盘价上穿 SMA",
     entryThreshold: "RSI 入场阈值",
+    entryRsiConfirm: "可选 RSI 动量闸门",
+    entryRsiWindow: "RSI 确认窗口",
+    entryRsiThreshold: "RSI 需要高于该值",
     entryVolumeConfirm: "可选成交量闸门",
     entryVolumeWindow: "成交量均线窗口",
     exitKind: "出场条件类型",
