@@ -10,6 +10,7 @@ import {
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
   buildBacktestParameterScanRows,
+  buildBacktestParameterScanSummary,
   buildBacktestReport,
   buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
@@ -2343,6 +2344,97 @@ describe("terminal workbench model", () => {
     expect(rows.every((row) => row.source === "snapshot-parameter-scan")).toBe(true);
   });
 
+  test("summarizes parameter scan rows without turning them into advice", () => {
+    const workspace = workspaceFromResearchRunAudit(
+      {
+        ...buildTerminalWorkspace(),
+        strategy: {
+          name: "Short SMA audit",
+          entry: "Close > SMA3",
+          exit: "Close < SMA3",
+          position: "20% max capital allocation",
+          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
+        }
+      },
+      {
+        runId: "run-parameter-summary",
+        createdAt: "2026-05-28T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Short SMA audit",
+        strategyRevision: "rev-parameter-summary",
+        dataRows: 10,
+        metrics: {
+          total_return_pct: 4,
+          max_drawdown_pct: 2,
+          win_rate_pct: 50,
+          trade_count: 4
+        },
+        decisions: [],
+        executionMode: "paper_only",
+        strategyConfig: {
+          name: "Short SMA audit",
+          revision: "rev-parameter-summary",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [{ kind: "close_above_sma", params: { window: 3 } }],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
+          risk: {
+            positionPct: 0.2,
+            stopLossPct: 0.08,
+            takeProfitPct: 0.18,
+            maxDrawdownPct: 0.12
+          }
+        },
+        dataSnapshot: {
+          source: "unit-test",
+          isComplete: true,
+          warnings: [],
+          rows: 10,
+          start: "2026-05-01T00:00:00+00:00",
+          end: "2026-05-10T00:00:00+00:00",
+          hash: "snapshot-parameter-summary",
+          bars: [10, 11, 12, 11, 13, 14, 13, 15, 16, 17].map((close, index) => ({
+            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
+            timestampMs: 1777593600000 + index * 86_400_000,
+            open: close - 0.2,
+            high: close + 0.4,
+            low: close - 0.5,
+            close,
+            volume: 1_000_000 + index * 10_000
+          }))
+        }
+      }
+    );
+
+    const summary = buildBacktestParameterScanSummary(workspace);
+
+    expect(summary).toMatchObject({
+      totalRows: 9,
+      candidateCount: 8,
+      currentCondition: "SMA3 / SMA3",
+      currentRank: expect.any(Number),
+      bestCandidateId: expect.stringMatching(/^scan-entry-/u),
+      bestCandidateCondition: expect.any(String),
+      bestCandidateReturnPct: expect.stringMatching(/%$/u),
+      bestCandidateMaxDrawdownPct: expect.stringMatching(/%$/u),
+      bestCandidateDelta: expect.stringMatching(/pp$/u),
+      riskCount: expect.any(Number),
+      positiveCount: expect.any(Number),
+      tone: expect.stringMatching(/positive|warning|neutral|risk/u)
+    });
+    expect(summary?.bestCandidateId).not.toBe("scan-entry-3-exit-3");
+    expect(summary?.detail.toLowerCase()).toContain("re-audit");
+    expect(summary?.detail.toLowerCase()).not.toContain("buy");
+  });
+
+  test("does not summarize parameter scans without audited rows", () => {
+    expect(buildBacktestParameterScanSummary(buildTerminalWorkspace())).toBeNull();
+  });
+
   test("builds parameter scan rows for RSI confirmation thresholds", () => {
     const workspace = workspaceFromResearchRunAudit(
       {
@@ -2867,6 +2959,8 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("No investment advice");
     expect(markdown).toContain("Parameter Sensitivity");
     expect(markdown).toContain("| Condition | Return | Max drawdown | Trades | Delta | Status |");
+    expect(markdown).toContain("Parameter Scan Summary");
+    expect(markdown).toContain("No investment advice");
     expect(markdown).toContain("关注银行板块相对强度");
     expect(markdown).toContain("| BUY | filled | 9.20 | 2100 | +8.20% |");
   });

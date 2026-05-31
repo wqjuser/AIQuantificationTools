@@ -310,6 +310,23 @@ export interface BacktestParameterScanRow {
   dataRows: number;
 }
 
+export interface BacktestParameterScanSummary {
+  totalRows: number;
+  candidateCount: number;
+  positiveCount: number;
+  riskCount: number;
+  currentCondition: string | null;
+  currentRank: number | null;
+  bestCandidateId: string | null;
+  bestCandidateCondition: string | null;
+  bestCandidateReturnPct: string;
+  bestCandidateMaxDrawdownPct: string;
+  bestCandidateDelta: string;
+  headline: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -2733,6 +2750,71 @@ export function buildBacktestParameterScanRows(workspace: TerminalWorkspace): Ba
   );
 }
 
+export function buildBacktestParameterScanSummary(workspace: TerminalWorkspace): BacktestParameterScanSummary | null {
+  const rows = buildBacktestParameterScanRows(workspace);
+  if (!rows.length) {
+    return null;
+  }
+
+  const rankedRows = rows
+    .map((row, index) => ({
+      row,
+      index,
+      returnPct: parsePercentMetric(row.returnPct) ?? Number.NEGATIVE_INFINITY,
+      maxDrawdownPct: parsePercentMetric(row.maxDrawdownPct) ?? Number.POSITIVE_INFINITY
+    }))
+    .sort(
+      (left, right) =>
+        right.returnPct - left.returnPct ||
+        left.maxDrawdownPct - right.maxDrawdownPct ||
+        left.index - right.index
+    );
+  const currentRankIndex = rankedRows.findIndex((entry) => entry.row.status === "current");
+  const currentRow = rows.find((row) => row.status === "current") ?? null;
+  const candidateRows = rows.filter((row) => row.status === "candidate");
+  const positiveCount = rows.filter((row) => row.tone === "positive").length;
+  const riskCount = rows.filter((row) => row.tone === "risk").length;
+  const bestCandidate =
+    rankedRows.find((entry) => entry.row.status === "candidate" && entry.row.tone !== "risk") ??
+    rankedRows.find((entry) => entry.row.status === "candidate") ??
+    null;
+  const currentRank = currentRankIndex >= 0 ? currentRankIndex + 1 : null;
+  const bestRow = bestCandidate?.row ?? null;
+  const tone: BacktestParameterScanSummary["tone"] =
+    bestRow?.tone === "positive"
+      ? "positive"
+      : riskCount === candidateRows.length && candidateRows.length > 0
+        ? "risk"
+        : currentRank === 1
+          ? "neutral"
+          : "warning";
+
+  return {
+    totalRows: rows.length,
+    candidateCount: candidateRows.length,
+    positiveCount,
+    riskCount,
+    currentCondition: currentRow?.condition ?? null,
+    currentRank,
+    bestCandidateId: bestRow?.id ?? null,
+    bestCandidateCondition: bestRow?.condition ?? null,
+    bestCandidateReturnPct: bestRow?.returnPct ?? "N/A",
+    bestCandidateMaxDrawdownPct: bestRow?.maxDrawdownPct ?? "N/A",
+    bestCandidateDelta: bestRow?.alphaVsCurrent ?? "N/A",
+    headline: bestRow ? `${bestRow.condition} candidate for re-audit` : "No candidate cleared for re-audit",
+    detail: [
+      currentRank === null
+        ? "Current parameter row is missing from the locked scan."
+        : `Current ${currentRow?.condition ?? "parameter"} ranks ${currentRank}/${rows.length} on the locked snapshot.`,
+      `${candidateRows.length} candidates, ${positiveCount} positive rows, ${riskCount} drawdown-risk rows.`,
+      bestRow
+        ? `${bestRow.condition} is the top non-current candidate for re-audit; this is not investment advice.`
+        : "No non-current candidate is available for re-audit; this is not investment advice."
+    ].join(" "),
+    tone
+  };
+}
+
 export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): string | null {
   const run = workspace.researchRun;
   if (!run) {
@@ -2744,6 +2826,7 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
   const snapshot = run.dataSnapshot;
   const researchNote = normalizedResearchNote(run.researchNote);
   const metricRows = report.metrics.map((metric) => [metric.label, metric.value, metric.tone]);
+  const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const benchmarkRows = [
     ["Strategy", report.benchmark.strategyReturn],
     ["Benchmark buy and hold", report.benchmark.benchmarkReturn],
@@ -2814,6 +2897,24 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
     "## Backtest Assumptions",
     "",
     markdownTable(["Assumption", "Value"], assumptionRows),
+    "",
+    "## Parameter Scan Summary",
+    "",
+    parameterScanSummary
+      ? markdownTable(
+          ["Field", "Value"],
+          [
+            ["Rows", parameterScanSummary.totalRows],
+            ["Current rank", parameterScanSummary.currentRank ? `${parameterScanSummary.currentRank}/${parameterScanSummary.totalRows}` : "N/A"],
+            ["Candidate for re-audit", parameterScanSummary.bestCandidateCondition ?? "N/A"],
+            ["Candidate return", parameterScanSummary.bestCandidateReturnPct],
+            ["Candidate max drawdown", parameterScanSummary.bestCandidateMaxDrawdownPct],
+            ["Candidate delta", parameterScanSummary.bestCandidateDelta],
+            ["Risk rows", parameterScanSummary.riskCount],
+            ["Boundary", "Candidate must be re-audited; no investment advice."]
+          ]
+        )
+      : "Parameter scan summary requires an audited data snapshot.",
     "",
     "## Parameter Sensitivity",
     "",

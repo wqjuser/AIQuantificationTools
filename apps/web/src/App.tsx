@@ -68,6 +68,7 @@ import {
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
   buildBacktestParameterScanRows,
+  buildBacktestParameterScanSummary,
   buildBacktestReport,
   buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
@@ -102,6 +103,7 @@ import {
   BacktestAssumptionRow,
   BacktestEvidenceCard,
   BacktestParameterScanRow,
+  BacktestParameterScanSummary,
   BacktestReport,
   BacktestReadinessGate,
   BacktestTradeRow,
@@ -369,6 +371,7 @@ export function App() {
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
   const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
+  const backtestParameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const backtestReport = buildBacktestReport(workspace);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
@@ -1485,6 +1488,7 @@ export function App() {
             onStageParameterCandidate={stageBacktestParameterCandidate}
             onUpdateAssumption={updateBacktestAssumption}
             parameterScanRows={backtestParameterScanRows}
+            parameterScanSummary={backtestParameterScanSummary}
             report={backtestReport}
             readinessGates={backtestReadinessGates}
             rows={backtestTradeRows}
@@ -2434,6 +2438,7 @@ function BacktestReportPanel({
   onStageParameterCandidate,
   onUpdateAssumption,
   parameterScanRows,
+  parameterScanSummary,
   report,
   readinessGates,
   rows
@@ -2446,6 +2451,7 @@ function BacktestReportPanel({
   onStageParameterCandidate: (candidateId: string) => void;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
   parameterScanRows: BacktestParameterScanRow[];
+  parameterScanSummary: BacktestParameterScanSummary | null;
   report: BacktestReport;
   readinessGates: BacktestReadinessGate[];
   rows: BacktestTradeRow[];
@@ -2627,34 +2633,68 @@ function BacktestReportPanel({
             <strong>{parameterScanRows.length}</strong>
           </div>
           {parameterScanRows.length ? (
-            <div className="parameter-scan-table">
-              <div className="parameter-scan-row parameter-scan-head">
-                <span>{i18n.t("strategy.condition")}</span>
-                <span>{i18n.metricLabel("Return")}</span>
-                <span>{i18n.metricLabel("Max DD")}</span>
-                <span>{i18n.metricLabel("Trades")}</span>
-                <span>{i18n.locale === "zh-CN" ? "较当前" : "Delta"}</span>
-                <span>{i18n.t("execution.status")}</span>
-                <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
+            <>
+              {parameterScanSummary ? (
+                <div className="parameter-scan-summary" data-tone={parameterScanSummary.tone}>
+                  <article>
+                    <span>{i18n.locale === "zh-CN" ? "当前排名" : "Current rank"}</span>
+                    <strong>
+                      {parameterScanSummary.currentRank
+                        ? `${parameterScanSummary.currentRank}/${parameterScanSummary.totalRows}`
+                        : "N/A"}
+                    </strong>
+                    <p>{parameterScanSummary.currentCondition ?? (i18n.locale === "zh-CN" ? "等待当前参数" : "Waiting for current row")}</p>
+                  </article>
+                  <article>
+                    <span>{i18n.locale === "zh-CN" ? "复审候选" : "Re-audit candidate"}</span>
+                    <strong>{parameterScanSummary.bestCandidateCondition ?? "N/A"}</strong>
+                    <p>
+                      {parameterScanSummary.bestCandidateReturnPct} · {parameterScanSummary.bestCandidateDelta} ·{" "}
+                      {parameterScanSummary.bestCandidateMaxDrawdownPct}
+                    </p>
+                  </article>
+                  <article>
+                    <span>{i18n.locale === "zh-CN" ? "候选分布" : "Candidate mix"}</span>
+                    <strong>
+                      {parameterScanSummary.candidateCount} / {parameterScanSummary.totalRows}
+                    </strong>
+                    <p>
+                      {i18n.locale === "zh-CN"
+                        ? `${parameterScanSummary.positiveCount} 个正向，${parameterScanSummary.riskCount} 个回撤风险`
+                        : `${parameterScanSummary.positiveCount} positive, ${parameterScanSummary.riskCount} drawdown-risk`}
+                    </p>
+                  </article>
+                </div>
+              ) : null}
+              <div className="parameter-scan-table">
+                <div className="parameter-scan-row parameter-scan-head">
+                  <span>{i18n.t("strategy.condition")}</span>
+                  <span>{i18n.metricLabel("Return")}</span>
+                  <span>{i18n.metricLabel("Max DD")}</span>
+                  <span>{i18n.metricLabel("Trades")}</span>
+                  <span>{i18n.locale === "zh-CN" ? "较当前" : "Delta"}</span>
+                  <span>{i18n.t("execution.status")}</span>
+                  <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
+                </div>
+                {parameterScanRows.map((row) => (
+                  <article className={`parameter-scan-row ${row.tone}`} key={row.id}>
+                    <span>{row.condition}</span>
+                    <span>{row.returnPct}</span>
+                    <span>{row.maxDrawdownPct}</span>
+                    <span>{row.tradeCount}</span>
+                    <span>{row.alphaVsCurrent}</span>
+                    <span>{parameterScanStatusLabel(i18n, row.status)}</span>
+                    <button
+                      disabled={row.status === "current"}
+                      onClick={() => onStageParameterCandidate(row.id)}
+                      type="button"
+                    >
+                      {i18n.t("backtest.stageCandidate")}
+                    </button>
+                  </article>
+                ))}
               </div>
-              {parameterScanRows.map((row) => (
-                <article className={`parameter-scan-row ${row.tone}`} key={row.id}>
-                  <span>{row.condition}</span>
-                  <span>{row.returnPct}</span>
-                  <span>{row.maxDrawdownPct}</span>
-                  <span>{row.tradeCount}</span>
-                  <span>{row.alphaVsCurrent}</span>
-                  <span>{parameterScanStatusLabel(i18n, row.status)}</span>
-                  <button
-                    disabled={row.status === "current"}
-                    onClick={() => onStageParameterCandidate(row.id)}
-                    type="button"
-                  >
-                    {i18n.t("backtest.stageCandidate")}
-                  </button>
-                </article>
-              ))}
-            </div>
+            </>
           ) : (
             <div className="parameter-scan-empty">
               {i18n.locale === "zh-CN"
