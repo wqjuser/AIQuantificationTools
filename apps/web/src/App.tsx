@@ -359,6 +359,17 @@ export function App() {
   const promotionReadiness =
     activePromotionCandidateRecord ?? buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
+  const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
+    (context) =>
+      context.market === workspace.selectedInstrument.market &&
+      context.symbol === workspace.selectedInstrument.symbol &&
+      context.timeframe === workspace.selectedTimeframe
+  );
+  const activeCacheContextKey = cacheContextKey({
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    timeframe: workspace.selectedTimeframe
+  });
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -481,6 +492,25 @@ export function App() {
       workspace.selectedTimeframe
     ]
   );
+
+  const refreshSelectedMarketCache = useCallback(async () => {
+    await refreshCacheContext({
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      rowCount: activeCacheContext?.rowCount ?? 0,
+      startTimestamp: activeCacheContext?.startTimestamp ?? null,
+      endTimestamp: activeCacheContext?.endTimestamp ?? null,
+      freshness: activeCacheContext?.freshness ?? "empty",
+      ageHours: activeCacheContext?.ageHours ?? null
+    });
+  }, [
+    activeCacheContext,
+    refreshCacheContext,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   const loadHistoricalKlines = useCallback(async (beforeTimestampMs: number): Promise<MarketKlinesResult["bars"]> => {
     const current = klinesStateRef.current;
@@ -1337,7 +1367,15 @@ export function App() {
       return (
         <>
           {renderChartPanel("chart-panel workflow-chart-panel")}
-          <MarketDataHealthPanel className="workflow-data-panel" i18n={i18n} state={klinesState} workspace={workspace} />
+          <MarketDataHealthPanel
+            cacheContext={activeCacheContext}
+            className="workflow-data-panel"
+            i18n={i18n}
+            isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
+            onRefreshCache={refreshSelectedMarketCache}
+            state={klinesState}
+            workspace={workspace}
+          />
           <ScannerWorkspace
             candidates={scannerCandidates}
             className="workflow-scanner-panel"
@@ -2325,24 +2363,56 @@ function BacktestReportPanel({
 }
 
 function MarketDataHealthPanel({
+  cacheContext,
   className,
   i18n,
+  isRefreshingCache = false,
+  onRefreshCache,
   state,
   workspace
 }: {
+  cacheContext?: PlatformSettingsStatus["cache"]["contexts"][number];
   className?: string;
   i18n: AppI18n;
+  isRefreshingCache?: boolean;
+  onRefreshCache?: () => void;
   state: MarketKlinesResult;
   workspace: TerminalWorkspace;
 }) {
   const warnings = state.quality.warnings.length ? state.quality.warnings : ["No source warnings reported."];
   const freshness = state.quality.isComplete ? "Complete" : "Needs review";
+  const cacheRows = cacheContext
+    ? i18n.locale === "zh-CN"
+      ? cacheContext.rowCount.toLocaleString("zh-CN")
+      : cacheContext.rowCount.toLocaleString("en-US")
+    : "0";
+  const cacheFreshness = cacheContext
+    ? cacheFreshnessLabel(i18n, cacheContext.freshness, cacheContext.ageHours)
+    : i18n.locale === "zh-CN"
+      ? "未缓存当前上下文"
+      : "No cache for current context";
 
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "数据源健康" : "Data Source Health"}
       subtitle={`${i18n.marketLabel(workspace.selectedInstrument.market)} · ${workspace.selectedInstrument.symbol}`}
       className={className}
+      action={
+        onRefreshCache ? (
+          <button className="market-cache-refresh" disabled={isRefreshingCache} onClick={onRefreshCache} type="button">
+            <RefreshCw size={13} />
+            <span>
+              {isRefreshingCache
+                ? i18n.locale === "zh-CN"
+                  ? "刷新中"
+                  : "Refreshing"
+                : i18n.locale === "zh-CN"
+                  ? "刷新当前缓存"
+                  : "Refresh current cache"}
+            </span>
+          </button>
+        ) : null
+      }
     >
       <div className="health-grid">
         <article className={state.quality.isComplete ? "positive" : "warning"}>
@@ -2359,6 +2429,15 @@ function MarketDataHealthPanel({
           <span>{i18n.locale === "zh-CN" ? "质量状态" : "Quality"}</span>
           <strong>{i18n.locale === "zh-CN" ? (state.quality.isComplete ? "完整" : "需复核") : freshness}</strong>
           <p>{warnings[0]}</p>
+        </article>
+        <article
+          className={
+            cacheContext?.freshness === "fresh" ? "positive" : cacheContext?.freshness === "stale" ? "warning" : "risk"
+          }
+        >
+          <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>
+          <strong>{cacheRows}</strong>
+          <p>{cacheFreshness}</p>
         </article>
       </div>
     </Panel>
@@ -4161,7 +4240,9 @@ function cacheFreshnessLabel(
   return i18n.locale === "zh-CN" ? `过期 · ${ageLabel}` : `Stale · ${ageLabel}`;
 }
 
-function cacheContextKey(context: PlatformSettingsStatus["cache"]["contexts"][number]): string {
+function cacheContextKey(
+  context: Pick<PlatformSettingsStatus["cache"]["contexts"][number], "market" | "symbol" | "timeframe">
+): string {
   return `${context.market}:${context.symbol}:${context.timeframe}`;
 }
 

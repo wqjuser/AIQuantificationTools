@@ -214,6 +214,18 @@ describe("terminal layout css", () => {
     expect(cssBlock(".product-workspace-layout")).toContain("display: grid;");
   });
 
+  test("lets the market work area refresh the selected cache context", () => {
+    const marketWorkspaceSource = sourceBetween('if (activeWorkAreaId === "market")', 'if (activeWorkAreaId === "strategy")');
+    const healthPanelSource = sourceBetween("function MarketDataHealthPanel", "function ResearchNotesPanel");
+
+    expect(appSource).toContain("refreshSelectedMarketCache");
+    expect(marketWorkspaceSource).toContain("activeCacheContext");
+    expect(marketWorkspaceSource).toContain("onRefreshCache={refreshSelectedMarketCache}");
+    expect(healthPanelSource).toContain("market-cache-refresh");
+    expect(healthPanelSource).toContain("刷新当前缓存");
+    expect(cssBlock(".market-cache-refresh")).toContain("display: inline-flex;");
+  });
+
   test("renders the strategy lab as a structured rule builder", () => {
     expect(appSource).toContain("buildStrategyRuleDraft(workspace)");
     expect(appSource).toContain("buildStrategyReadinessGates(workspace)");
