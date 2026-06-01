@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { buildTerminalWorkspace, workspaceWithBacktestAssumption, workspaceWithStrategyField } from "./terminal-workbench";
+import {
+  type AiReviewRunRecord,
+  buildTerminalWorkspace,
+  workspaceWithBacktestAssumption,
+  workspaceWithStrategyField
+} from "./terminal-workbench";
 import {
   buildResearchRunUrl,
   buildResearchRunDetailUrl,
@@ -8,6 +13,7 @@ import {
   buildResearchNoteUrl,
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
+  buildResearchRunAiReviewsUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -30,6 +36,8 @@ import {
   loadStrategyLibrary,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
+  saveAiReviewRunRecord,
+  loadResearchRunAiReviews,
   saveResearchNote,
   saveStrategySnapshot,
   importResearchRunExport,
@@ -1735,6 +1743,173 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.promotion?.latestPaperExecutionId).toBe("paper-latest");
     expect(result.promotion?.evidence.filledOrders).toBe(1);
+  });
+
+  test("saves an AI review run record for an audited research run", async () => {
+    const record: AiReviewRunRecord = {
+      schemaVersion: 1,
+      recordType: "aiqt.aiReviewRun",
+      aiReviewId: "ai-review:run-ai-save:rev-ai-save",
+      runId: "run-ai-save",
+      createdAt: "2026-06-02T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyRevision: "rev-ai-save",
+      executionMode: "paper_only",
+      status: "ready",
+      summary: {
+        citationCount: 2,
+        roundCount: 1,
+        decisionCount: 1,
+        parameterScanBound: true,
+        liveExecutionBlocked: true
+      },
+      dossier: {
+        status: "ready",
+        headline: "AI review bound to run-ai-save",
+        summary: "Agents explain supplied evidence only.",
+        citations: [
+          {
+            id: "run",
+            label: "Run id",
+            value: "run-ai-save",
+            detail: "500 1d bars",
+            tone: "positive"
+          },
+          {
+            id: "parameter-scan",
+            label: "Parameter scan",
+            value: "Current rank 2 of 9",
+            detail: "Candidate requires fresh audited run.",
+            tone: "neutral"
+          }
+        ]
+      },
+      citations: [
+        {
+          id: "run",
+          label: "Run id",
+          value: "run-ai-save",
+          detail: "500 1d bars",
+          tone: "positive"
+        }
+      ],
+      rounds: [
+        {
+          id: "technical-analysis",
+          phase: "analysis",
+          agent: "Technical Analyst",
+          thesis: "Trend improving",
+          evidence: "Close above SMA20",
+          verdict: "support",
+          confidence: 64,
+          tone: "positive"
+        }
+      ],
+      decisionLog: [
+        {
+          agent: "AI Boundary",
+          message: "No buy/sell instructions.",
+          tone: "ai"
+        }
+      ],
+      boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+    const result = await saveAiReviewRunRecord("http://127.0.0.1:8765", record, async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          aiReview: {
+            aiReviewId: record.aiReviewId,
+            runId: record.runId,
+            createdAt: record.createdAt,
+            record
+          }
+        })
+      };
+    });
+
+    expect(buildResearchRunAiReviewsUrl("http://127.0.0.1:8765/", "run 你好/1")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1/ai-reviews"
+    );
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/research/runs/run-ai-save/ai-reviews");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(record);
+    expect(result.source).toBe("core");
+    expect(result.aiReview?.record.summary.parameterScanBound).toBe(true);
+  });
+
+  test("loads AI review run records for replay and audit history", async () => {
+    const calls: string[] = [];
+    const result = await loadResearchRunAiReviews("http://127.0.0.1:8765", "run-ai-save", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          aiReviews: [
+            {
+              aiReviewId: "ai-review:run-ai-save:rev-ai-save",
+              runId: "run-ai-save",
+              createdAt: "2026-06-02T08:00:00+00:00",
+              record: {
+                schemaVersion: 1,
+                recordType: "aiqt.aiReviewRun",
+                aiReviewId: "ai-review:run-ai-save:rev-ai-save",
+                runId: "run-ai-save",
+                createdAt: "2026-06-02T08:00:00+00:00",
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                strategyRevision: "rev-ai-save",
+                executionMode: "paper_only",
+                status: "ready",
+                summary: {
+                  citationCount: 1,
+                  roundCount: 1,
+                  decisionCount: 1,
+                  parameterScanBound: false,
+                  liveExecutionBlocked: true
+                },
+                dossier: {
+                  status: "ready",
+                  headline: "AI review bound to run-ai-save",
+                  summary: "Evidence only.",
+                  citations: []
+                },
+                citations: [],
+                rounds: [],
+                decisionLog: [],
+                boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
+              }
+            }
+          ]
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/research/runs/run-ai-save/ai-reviews"]);
+    expect(result.source).toBe("core");
+    expect(result.aiReviews).toHaveLength(1);
+    expect(result.aiReviews[0]?.record.boundary).toContain("Evidence explanation only");
+  });
+
+  test("returns fallback when AI review run history payload is malformed", async () => {
+    const result = await loadResearchRunAiReviews("http://127.0.0.1:8765", "run-ai-save", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ aiReviews: [{ runId: "run-ai-save" }] })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.aiReviews).toEqual([]);
+    expect(result.error).toBe("Invalid AI review run history contract");
   });
 
   test("loads and saves a research note for the selected context", async () => {

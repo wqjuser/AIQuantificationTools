@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import {
   buildLoadingMarketKlinesResult,
   importResearchRunExport,
+  loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketSearch,
   loadLatestResearchRunPaperExecution,
@@ -40,6 +41,7 @@ import {
   MarketSearchSuggestion,
   PaperExecutionRecord,
   PromotionCandidateRecord,
+  AiReviewRunRecordEnvelope,
   PlatformSettingsResult,
   PlatformSettingsStatus,
   resolveQuantCoreBaseUrl,
@@ -48,6 +50,7 @@ import {
   ResearchRunHistoryResult,
   ResearchNoteResult,
   saveResearchNote,
+  saveAiReviewRunRecord,
   saveStrategySnapshot,
   StrategyLibraryItem,
   StrategyLibraryResult,
@@ -324,11 +327,13 @@ export function App() {
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
+  const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
+  const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -356,6 +361,9 @@ export function App() {
     promotionCandidateRecord?.runId && promotionCandidateRecord.runId === workspace.researchRun?.runId
       ? promotionCandidateRecord
       : null;
+  const activeAiReviewRunRecords = workspace.researchRun?.runId
+    ? aiReviewRunRecords.filter((record) => record.runId === workspace.researchRun?.runId)
+    : [];
   const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
@@ -645,6 +653,7 @@ export function App() {
     setIsRunning(true);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
+    setAiReviewRunRecords([]);
     appendLog("factor", "info", "Strategy preflight sent to local core");
     publishStage("factor", []);
     const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
@@ -743,6 +752,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setAiReviewRunRecords([]);
       const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
@@ -757,19 +767,27 @@ export function App() {
       if (auditedKlines) {
         setKlinesState(auditedKlines);
       }
-      const [paperHistory, promotionHistory] = await Promise.all([
+      const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
         loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId),
-        loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId)
+        loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId),
+        loadResearchRunAiReviews(quantCoreBaseUrl, auditedRun.runId)
       ]);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
       }
       setPaperExecutionRecord(paperHistory.execution ?? null);
       setPromotionCandidateRecord(promotionHistory.promotion ?? null);
+      setAiReviewRunRecords(aiReviewHistory.aiReviews);
       if (paperHistory.execution) {
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Paper execution history loaded",
+          error: undefined
+        }));
+      } else if (aiReviewHistory.aiReviews.length) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "AI review records loaded",
           error: undefined
         }));
       }
@@ -893,6 +911,45 @@ export function App() {
     }));
   }, [workspace]);
 
+  const saveCurrentAiReviewRunRecord = useCallback(async () => {
+    const record = buildAiReviewRunRecord(workspace);
+    const runId = workspace.researchRun?.runId;
+    if (!record || !runId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "AI review record save failed",
+        error: "Run Pipeline before saving an AI review run record"
+      }));
+      return;
+    }
+
+    setIsSavingAiReviewRecord(true);
+    const result = await saveAiReviewRunRecord(quantCoreBaseUrl, record);
+    if (result.source === "fallback" || !result.aiReview) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "AI review record save failed",
+        error: result.error ?? "AI review record save failed"
+      }));
+      setIsSavingAiReviewRecord(false);
+      return;
+    }
+
+    setAiReviewRunRecords((current) => [
+      result.aiReview!,
+      ...current.filter((item) => item.aiReviewId !== result.aiReview!.aiReviewId)
+    ]);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "AI review record saved",
+      error: undefined
+    }));
+    setActiveWorkAreaId("ai-review");
+    setActiveLoopStepId("agent-review");
+    setActiveWorkflowStageId("agent");
+    setIsSavingAiReviewRecord(false);
+  }, [workspace]);
+
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
@@ -908,6 +965,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setAiReviewRunRecords([]);
 
       try {
         const parsed = JSON.parse(await file.text()) as ResearchRunExportPackage | { export?: ResearchRunExportPackage };
@@ -934,19 +992,27 @@ export function App() {
         if (importedKlines) {
           setKlinesState(importedKlines);
         }
-        const [paperHistory, promotionHistory] = await Promise.all([
+        const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
           loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
-          loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId)
+          loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),
+          loadResearchRunAiReviews(quantCoreBaseUrl, result.run.runId)
         ]);
         if (manualSelectionVersionRef.current !== importVersion) {
           return;
         }
         setPaperExecutionRecord(paperHistory.execution ?? null);
         setPromotionCandidateRecord(promotionHistory.promotion ?? null);
+        setAiReviewRunRecords(aiReviewHistory.aiReviews);
         if (paperHistory.execution) {
           setWorkspaceState((current) => ({
             ...current,
             statusLabel: "Paper execution history loaded",
+            error: undefined
+          }));
+        } else if (aiReviewHistory.aiReviews.length) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "AI review records loaded",
             error: undefined
           }));
         }
@@ -976,6 +1042,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setAiReviewRunRecords([]);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
@@ -996,6 +1063,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setAiReviewRunRecords([]);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
         source: "core",
@@ -1137,6 +1205,7 @@ export function App() {
     setIsRunning(false);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
+    setAiReviewRunRecords([]);
     setWorkspaceState((current) => ({
       workspace: workspaceWithStrategyLibraryItem(current.workspace, strategy),
       source: "core",
@@ -1152,6 +1221,7 @@ export function App() {
     manualSelectionVersionRef.current += 1;
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
+    setAiReviewRunRecords([]);
     setWorkspaceState((current) => ({
       workspace: workspaceWithBacktestAssumption(current.workspace, field, value),
       source: "core",
@@ -1168,6 +1238,7 @@ export function App() {
     setIsRunning(false);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
+    setAiReviewRunRecords([]);
     setWorkspaceState((current) => ({
       workspace: workspaceWithBacktestParameterCandidate(current.workspace, candidateId),
       source: "core",
@@ -1455,12 +1526,23 @@ export function App() {
             <Database size={13} />
             <span>{i18n.t("aiReview.exportRecord")}</span>
           </button>
+          <button
+            className="report-export-button"
+            disabled={!workspace.researchRun || isSavingAiReviewRecord}
+            onClick={saveCurrentAiReviewRunRecord}
+            title={i18n.t("aiReview.saveRecord")}
+            type="button"
+          >
+            <Upload size={13} />
+            <span>{isSavingAiReviewRecord ? i18n.t("aiReview.savingRecord") : i18n.t("aiReview.saveRecord")}</span>
+          </button>
         </div>
       }
       className={className}
     >
       <div className="agent-panel-body">
         <AiReviewDossierBoard dossier={aiReviewDossier} i18n={i18n} />
+        <AiReviewRunRecordHistory i18n={i18n} records={activeAiReviewRunRecords} />
         <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
         <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
       </div>
@@ -3276,6 +3358,40 @@ function AiReviewDossierBoard({ dossier, i18n }: { dossier: AiReviewDossier; i18
           </article>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AiReviewRunRecordHistory({ i18n, records }: { i18n: AppI18n; records: AiReviewRunRecordEnvelope[] }) {
+  const visibleRecords = records.slice(0, 3);
+
+  return (
+    <div className="ai-review-records">
+      <div className="agent-rounds-title">
+        <span>{i18n.t("aiReview.savedRecords")}</span>
+        <strong>{records.length}</strong>
+      </div>
+      {visibleRecords.length ? (
+        visibleRecords.map((item) => (
+          <article className={`ai-review-record ${item.record.status}`} key={item.aiReviewId}>
+            <header>
+              <strong>{item.record.strategyRevision}</strong>
+              <span>{formatChartDate(item.createdAt)}</span>
+            </header>
+            <p>{aiDossierText(i18n, item.record.dossier.headline)}</p>
+            <small>
+              {item.record.summary.citationCount} {i18n.t("aiReview.citations")} · {item.record.summary.roundCount}{" "}
+              {i18n.t("aiReview.rounds")} ·{" "}
+              {item.record.summary.liveExecutionBlocked ? i18n.t("aiReview.boundary") : item.record.executionMode}
+            </small>
+          </article>
+        ))
+      ) : (
+        <article className="ai-review-record empty">
+          <strong>{i18n.t("aiReview.noSavedRecords")}</strong>
+          <p>{i18n.t("aiReview.noSavedRecordsDetail")}</p>
+        </article>
+      )}
     </div>
   );
 }

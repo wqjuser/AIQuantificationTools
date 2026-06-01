@@ -3806,6 +3806,69 @@ em {
   border-left-color: #9f8cff;
 }
 
+.ai-review-records {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ai-review-records .agent-rounds-title {
+  grid-column: 1 / -1;
+}
+
+.ai-review-record {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px 9px;
+}
+
+.ai-review-record.blocked,
+.ai-review-record.empty {
+  border-left-color: #e8be62;
+}
+
+.ai-review-record header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-review-record header strong,
+.ai-review-record > strong {
+  color: #dce6ee;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ai-review-record header span,
+.ai-review-record small {
+  color: #8fa0b2;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.ai-review-record p {
+  margin: 6px 0 0;
+  color: #a8b7c7;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ai-review-record small {
+  display: block;
+  margin-top: 7px;
+  color: #83e6ce;
+  white-space: normal;
+}
+
 .history-panel-body {
   display: grid;
   gap: 10px;

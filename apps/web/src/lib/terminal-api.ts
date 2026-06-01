@@ -8,6 +8,7 @@ import {
   ResearchRunAudit,
   TerminalWorkspace,
   Timeframe,
+  type AiReviewRunRecord,
   type BacktestAssumptions,
   type StrategyReadinessGate,
   type StrategySnapshot
@@ -186,6 +187,25 @@ export interface PaperExecutionHistoryResult {
 
 export interface PromotionCandidateResult {
   promotion?: PromotionCandidateRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AiReviewRunRecordEnvelope {
+  aiReviewId: string;
+  runId: string;
+  createdAt: string;
+  record: AiReviewRunRecord;
+}
+
+export interface AiReviewRunRecordResult {
+  aiReview?: AiReviewRunRecordEnvelope;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AiReviewRunHistoryResult {
+  aiReviews: AiReviewRunRecordEnvelope[];
   source: WorkspaceSource;
   error?: string;
 }
@@ -513,6 +533,11 @@ export function buildResearchRunPaperExecutionsUrl(baseUrl: string, runId: strin
 export function buildResearchRunPromotionUrl(baseUrl: string, runId: string): string {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(`api/research/runs/${encodeURIComponent(runId)}/promotion`, normalizedBase).toString();
+}
+
+export function buildResearchRunAiReviewsUrl(baseUrl: string, runId: string): string {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(`api/research/runs/${encodeURIComponent(runId)}/ai-reviews`, normalizedBase).toString();
 }
 
 export function buildStrategiesUrl(
@@ -852,6 +877,69 @@ export async function loadResearchRunPromotion(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown promotion candidate error"
+    };
+  }
+}
+
+export async function saveAiReviewRunRecord(
+  baseUrl: string,
+  record: AiReviewRunRecord,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewRunRecordResult> {
+  try {
+    const response = await fetcher(buildResearchRunAiReviewsUrl(baseUrl, record.runId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      if (isCoreErrorPayload(payload)) {
+        return {
+          source: "core",
+          error: payload.detail ?? payload.error
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isAiReviewRunRecordPayload(payload)) {
+      throw new Error("Invalid AI review run record contract");
+    }
+    return {
+      aiReview: payload.aiReview,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown AI review run record save error"
+    };
+  }
+}
+
+export async function loadResearchRunAiReviews(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewRunHistoryResult> {
+  try {
+    const response = await fetcher(buildResearchRunAiReviewsUrl(baseUrl, runId));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAiReviewRunHistoryPayload(payload)) {
+      throw new Error("Invalid AI review run history contract");
+    }
+    return {
+      aiReviews: payload.aiReviews,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      aiReviews: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown AI review run history error"
     };
   }
 }
@@ -1393,6 +1481,22 @@ function isPromotionCandidatePayload(value: unknown): value is { promotion: Prom
   return isPromotionCandidateRecord(payload.promotion);
 }
 
+function isAiReviewRunRecordPayload(value: unknown): value is { aiReview: AiReviewRunRecordEnvelope } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { aiReview?: unknown };
+  return isAiReviewRunRecordEnvelope(payload.aiReview);
+}
+
+function isAiReviewRunHistoryPayload(value: unknown): value is { aiReviews: AiReviewRunRecordEnvelope[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { aiReviews?: unknown };
+  return Array.isArray(payload.aiReviews) && payload.aiReviews.every(isAiReviewRunRecordEnvelope);
+}
+
 function isPlatformSettingsPayload(value: unknown): value is { settings: PlatformSettingsStatus } {
   if (!value || typeof value !== "object") {
     return false;
@@ -1588,6 +1692,139 @@ function isPromotionCandidateStage(value: unknown): boolean {
     (stage.passed === undefined || typeof stage.passed === "boolean") &&
     (stage.reason === undefined || typeof stage.reason === "string")
   );
+}
+
+function isAiReviewRunRecordEnvelope(value: unknown): value is AiReviewRunRecordEnvelope {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const envelope = value as Partial<AiReviewRunRecordEnvelope>;
+  return (
+    typeof envelope.aiReviewId === "string" &&
+    typeof envelope.runId === "string" &&
+    typeof envelope.createdAt === "string" &&
+    isAiReviewRunRecord(envelope.record) &&
+    envelope.aiReviewId === envelope.record.aiReviewId &&
+    envelope.runId === envelope.record.runId
+  );
+}
+
+function isAiReviewRunRecord(value: unknown): value is AiReviewRunRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Partial<AiReviewRunRecord>;
+  return (
+    record.schemaVersion === 1 &&
+    record.recordType === "aiqt.aiReviewRun" &&
+    typeof record.aiReviewId === "string" &&
+    typeof record.runId === "string" &&
+    typeof record.createdAt === "string" &&
+    isMarket(record.market) &&
+    typeof record.symbol === "string" &&
+    isTimeframe(record.timeframe) &&
+    typeof record.strategyRevision === "string" &&
+    typeof record.executionMode === "string" &&
+    isAiReviewStatus(record.status) &&
+    isAiReviewRecordSummary(record.summary) &&
+    isAiReviewDossier(record.dossier) &&
+    Array.isArray(record.citations) &&
+    record.citations.every(isAiReviewCitation) &&
+    Array.isArray(record.rounds) &&
+    record.rounds.every(isAgentCommitteeRound) &&
+    Array.isArray(record.decisionLog) &&
+    record.decisionLog.every(isDecisionLogEntry) &&
+    typeof record.boundary === "string" &&
+    record.boundary.includes("Evidence explanation only")
+  );
+}
+
+function isAiReviewRecordSummary(value: unknown): value is AiReviewRunRecord["summary"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<AiReviewRunRecord["summary"]>;
+  return (
+    typeof summary.citationCount === "number" &&
+    typeof summary.roundCount === "number" &&
+    typeof summary.decisionCount === "number" &&
+    typeof summary.parameterScanBound === "boolean" &&
+    typeof summary.liveExecutionBlocked === "boolean"
+  );
+}
+
+function isAiReviewDossier(value: unknown): value is AiReviewRunRecord["dossier"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const dossier = value as Partial<AiReviewRunRecord["dossier"]>;
+  return (
+    isAiReviewStatus(dossier.status) &&
+    typeof dossier.headline === "string" &&
+    typeof dossier.summary === "string" &&
+    Array.isArray(dossier.citations) &&
+    dossier.citations.every(isAiReviewCitation)
+  );
+}
+
+function isAiReviewStatus(value: unknown): value is AiReviewRunRecord["status"] {
+  return value === "ready" || value === "blocked";
+}
+
+function isAiReviewCitation(value: unknown): value is AiReviewRunRecord["citations"][number] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const citation = value as Partial<AiReviewRunRecord["citations"][number]>;
+  return (
+    isAiReviewCitationId(citation.id) &&
+    typeof citation.label === "string" &&
+    typeof citation.value === "string" &&
+    typeof citation.detail === "string" &&
+    isAiReviewTone(citation.tone)
+  );
+}
+
+function isAiReviewCitationId(value: unknown): value is AiReviewRunRecord["citations"][number]["id"] {
+  return (
+    value === "run" ||
+    value === "metrics" ||
+    value === "benchmark" ||
+    value === "parameter-scan" ||
+    value === "strategy" ||
+    value === "data-quality" ||
+    value === "research-note" ||
+    value === "risk-gates"
+  );
+}
+
+function isAgentCommitteeRound(value: unknown): value is AiReviewRunRecord["rounds"][number] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const round = value as Partial<AiReviewRunRecord["rounds"][number]>;
+  return (
+    typeof round.id === "string" &&
+    (round.phase === "analysis" || round.phase === "debate" || round.phase === "risk" || round.phase === "decision") &&
+    typeof round.agent === "string" &&
+    typeof round.thesis === "string" &&
+    typeof round.evidence === "string" &&
+    (round.verdict === "support" || round.verdict === "challenge" || round.verdict === "risk" || round.verdict === "watch") &&
+    typeof round.confidence === "number" &&
+    isAiReviewTone(round.tone)
+  );
+}
+
+function isDecisionLogEntry(value: unknown): value is AiReviewRunRecord["decisionLog"][number] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const entry = value as Partial<AiReviewRunRecord["decisionLog"][number]>;
+  return typeof entry.agent === "string" && typeof entry.message === "string" && isAiReviewTone(entry.tone);
+}
+
+function isAiReviewTone(value: unknown): value is AiReviewRunRecord["citations"][number]["tone"] {
+  return value === "positive" || value === "warning" || value === "neutral" || value === "risk" || value === "ai";
 }
 
 function isPlatformSettingsStatus(value: unknown): value is PlatformSettingsStatus {

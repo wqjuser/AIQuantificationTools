@@ -24,6 +24,7 @@ describe("i18n", () => {
     expect(zh.statusLabel("Strategy version loaded")).toBe("策略版本已载入");
     expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
     expect(zh.statusLabel("AI review export ready")).toBe("AI 评审报告导出完成");
+    expect(zh.statusLabel("AI review record saved")).toBe("AI 评审运行记录已保存");
   });
 
   test("provides dropdown labels for every supported locale", () => {
@@ -64,6 +65,8 @@ describe("i18n", () => {
     expect(zh.t("backtest.stageCandidate")).toBe("暂存");
     expect(zh.statusLabel("Parameter candidate staged")).toBe("参数候选已暂存");
     expect(zh.t("aiReview.exportMarkdown")).toBe("导出 AI 报告");
+    expect(zh.t("aiReview.saveRecord")).toBe("保存运行记录");
+    expect(zh.t("aiReview.savedRecords")).toBe("已保存评审记录");
     expect(zh.t("history.replay")).toBe("回放");
     expect(zh.t("history.comparison")).toBe("运行对比");
     expect(zh.t("history.changed")).toBe("已变化");
@@ -86,6 +89,8 @@ describe("i18n", () => {
     expect(en.t("backtest.stageCandidate")).toBe("Stage");
     expect(en.t("backtest.initialCash")).toBe("Initial cash");
     expect(en.t("aiReview.exportMarkdown")).toBe("Export AI report");
+    expect(en.t("aiReview.saveRecord")).toBe("Save record");
+    expect(en.t("aiReview.savedRecords")).toBe("Saved review records");
     expect(en.t("portfolio.unrealizedPnl")).toBe("Unrealized P&L");
     expect(en.t("history.rows", { count: 240 })).toBe("240 bars");
     expect(en.t("history.comparison")).toBe("Run comparison");
