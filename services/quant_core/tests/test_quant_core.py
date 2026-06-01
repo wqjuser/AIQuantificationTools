@@ -994,6 +994,48 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["gates"][0]["passed"])
         self.assertFalse(payload["gates"][2]["passed"])
 
+    def test_ai_review_run_store_persists_records_bound_to_research_run(self):
+        from quant_core.ai_review_runs import AiReviewRunStore, ai_review_run_record_to_payload
+
+        review_record = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-ai-store:rev-ai-store",
+            "runId": "run-ai-store",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-ai-store",
+            "executionMode": "paper_only",
+            "status": "ready",
+            "summary": {
+                "citationCount": 7,
+                "roundCount": 5,
+                "decisionCount": 2,
+                "parameterScanBound": True,
+                "liveExecutionBlocked": True,
+            },
+            "dossier": {"status": "ready", "headline": "AI review bound", "summary": "Evidence only", "citations": []},
+            "citations": [{"id": "parameter-scan", "label": "Parameter scan", "value": "SMA5", "detail": "re-audit", "tone": "warning"}],
+            "rounds": [{"id": "risk-manager", "phase": "risk", "agent": "Risk Manager", "verdict": "risk"}],
+            "decisionLog": [{"agent": "Risk", "message": "Live routing blocked.", "tone": "risk"}],
+            "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            stored = store.record(review_record)
+            fetched = store.list_by_run("run-ai-store")
+
+        self.assertEqual(stored.ai_review_id, "ai-review:run-ai-store:rev-ai-store")
+        self.assertEqual(len(fetched), 1)
+        payload = ai_review_run_record_to_payload(fetched[0])
+        self.assertEqual(payload["runId"], "run-ai-store")
+        self.assertEqual(payload["record"]["recordType"], "aiqt.aiReviewRun")
+        self.assertEqual(payload["record"]["summary"]["parameterScanBound"], True)
+        self.assertEqual(payload["record"]["boundary"], "Evidence explanation only; no buy/sell instructions or guaranteed returns.")
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit
@@ -1215,6 +1257,96 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["promotion"]["latestPaperExecutionId"], payload["execution"]["executionId"])
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
+
+    def test_research_run_ai_review_api_records_review_for_run(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-ai-review-api",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-ai-review-api",
+            data_rows=2,
+            metrics={"total_return_pct": 2.4, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "AI review", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+        )
+        review_record = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-ai-review-api:rev-ai-review-api",
+            "runId": "run-ai-review-api",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-ai-review-api",
+            "executionMode": "paper_only",
+            "status": "ready",
+            "summary": {
+                "citationCount": 7,
+                "roundCount": 5,
+                "decisionCount": 2,
+                "parameterScanBound": True,
+                "liveExecutionBlocked": True,
+            },
+            "dossier": {"status": "ready", "headline": "AI review bound", "summary": "Evidence only", "citations": []},
+            "citations": [{"id": "parameter-scan", "label": "Parameter scan", "value": "SMA5", "detail": "re-audit", "tone": "warning"}],
+            "rounds": [{"id": "technical-analysis", "phase": "analysis", "agent": "Technical Analyst", "verdict": "support"}],
+            "decisionLog": [{"agent": "Technical", "message": "Evidence only.", "tone": "positive"}],
+            "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                ai_review_store = review_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(review_record).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/research/runs/run-ai-review-api/ai-reviews",
+                    body=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", "/api/research/runs/run-ai-review-api/ai-reviews")
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["aiReview"]["runId"], "run-ai-review-api")
+        self.assertEqual(payload["aiReview"]["record"]["summary"]["parameterScanBound"], True)
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(list_payload["aiReviews"][0]["aiReviewId"], "ai-review:run-ai-review-api:rev-ai-review-api")
+        self.assertEqual(list_payload["aiReviews"][0]["record"]["boundary"], "Evidence explanation only; no buy/sell instructions or guaranteed returns.")
 
     def test_research_run_paper_execution_api_rejects_incomplete_strategy_risk(self):
         import json

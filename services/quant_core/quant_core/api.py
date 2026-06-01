@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
+from quant_core.ai_review_runs import AiReviewRunStore, ai_review_run_record_to_payload
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
@@ -112,6 +113,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     engine = BacktestEngine()
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
+    ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
@@ -233,6 +235,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             for execution_record in paper_execution_records:
                 self.paper_execution_store.record(execution_record)
             self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
+            return
+        if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/ai-reviews"):
+            run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/ai-reviews")).strip()
+            audit = self.run_store.get(run_id) if run_id else None
+            if not audit:
+                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
+                return
+            try:
+                payload = self._read_json_body()
+                if str(payload.get("runId") or "").strip() != run_id:
+                    raise ValueError("ai_review_run_id_mismatch")
+                review = self.ai_review_store.record(payload)
+            except ValueError as error:
+                self._send_json({"error": "invalid_ai_review_record", "detail": str(error)}, status=400)
+                return
+            self._send_json({"aiReview": ai_review_run_record_to_payload(review)}, status=201)
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/paper-executions")).strip()
@@ -412,6 +430,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             executions = self.paper_execution_store.list_by_run(run_id, limit=20)
             self._send_json({"executions": [paper_execution_record_to_payload(execution) for execution in executions]})
+            return
+        if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/ai-reviews"):
+            run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/ai-reviews")).strip()
+            audit = self.run_store.get(run_id) if run_id else None
+            if not audit:
+                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
+                return
+            reviews = self.ai_review_store.list_by_run(run_id, limit=20)
+            self._send_json({"aiReviews": [ai_review_run_record_to_payload(review) for review in reviews]})
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/promotion"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/promotion")).strip()
