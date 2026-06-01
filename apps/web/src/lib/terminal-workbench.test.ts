@@ -1101,6 +1101,13 @@ describe("terminal workbench model", () => {
           tone: "positive"
         },
         {
+          id: "parameter-scan",
+          label: "Parameter scan",
+          value: expect.stringMatching(/candidate for re-audit|No candidate cleared for re-audit/u),
+          detail: expect.stringContaining("not investment advice"),
+          tone: expect.stringMatching(/positive|warning|neutral|risk/u)
+        },
+        {
           id: "strategy",
           label: "Strategy revision",
           value: "rev-ai-dossier",
@@ -1196,6 +1203,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("Run ID: `run-ai-report-md`");
     expect(markdown).toContain("Strategy revision: `rev-ai-report-md`");
     expect(markdown).toContain("| Benchmark alpha | +3.20pp |");
+    expect(markdown).toContain("## Parameter Scan Summary");
+    expect(markdown).toContain("| Candidate for re-audit |");
+    expect(markdown).toContain("Candidate must be re-audited; no investment advice.");
     expect(markdown).toContain("| Technical Analyst | support | 64% | Trend improved after the audit run. |");
     expect(markdown).toContain("| Risk Manager | risk | 82% | Keep paper-only gates closed for live routing. |");
     expect(markdown).toContain("关注银行板块相对强度");

@@ -4456,6 +4456,7 @@ function aiCitationLabel(i18n: AppI18n, citation: AiReviewCitation): string {
       run: "运行编号",
       metrics: "回测指标",
       "benchmark": "基准 Alpha",
+      "parameter-scan": "参数扫描",
       strategy: "策略版本",
       "data-quality": "数据质量",
       "research-note": "研究笔记",
@@ -4481,6 +4482,8 @@ function aiCitationValue(i18n: AppI18n, citation: AiReviewCitation): string {
     return "已锁定笔记快照";
   }
   return citation.value
+    .replace("candidate for re-audit", "复审候选")
+    .replace("No candidate cleared for re-audit", "暂无通过复审候选")
     .replace("Live gates open", "实盘闸门已开启")
     .replace("complete", "完整")
     .replace("review", "需复核")
@@ -4504,6 +4507,16 @@ function aiCitationDetail(i18n: AppI18n, detail: string): string {
     .replace("Data quality is only trusted after an audited run is loaded.", "数据质量只在加载审计运行后可信。")
     .replace("Run metadata did not include data quality details.", "运行元数据未包含数据质量详情。")
     .replace("no guaranteed outcome.", "不保证结果。")
+    .replace("this is not investment advice.", "这不是投资建议。")
+    .replace("Current parameter row is missing from the locked scan.", "锁定扫描中缺少当前参数行。")
+    .replace("is the top non-current candidate for re-audit", "是排名最高的非当前复审候选")
+    .replace("No non-current candidate is available for re-audit", "暂无非当前参数可进入复审")
+    .replace("on the locked snapshot.", "，基于锁定快照。")
+    .replace("drawdown-risk rows", "条回撤风险行")
+    .replace("positive rows", "条正向行")
+    .replace("candidates", "个候选")
+    .replace("Current", "当前")
+    .replace("ranks", "排名")
     .replace("Win rate", "胜率")
     .replace("rows", "行")
     .replace("warnings", "条告警")

@@ -26,7 +26,7 @@ Progress:
 - [x] UI/Markdown integration.
 - [x] Product plan and architecture documentation update.
 - [x] Verification completed.
-- [ ] Commit and push.
+- [x] Commit and push.
 
 Implementation notes:
 - `BacktestParameterScanSummary` is derived from existing scan rows, so UI and Markdown share one source of truth.
@@ -49,3 +49,6 @@ Verification result:
 - `npm run build`: passed; Vite reported the existing large chunk warning.
 - `git diff --check`: passed with CRLF normalization warnings only.
 - `Invoke-RestMethod http://127.0.0.1:5173/?workspace=strategy`: returned the Vite root page.
+
+Delivery:
+- Committed and pushed as `0a62abe feat: summarize parameter scan candidates`.

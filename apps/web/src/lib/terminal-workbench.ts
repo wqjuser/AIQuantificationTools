@@ -353,7 +353,15 @@ export interface AiEvidenceCard {
 }
 
 export interface AiReviewCitation {
-  id: "run" | "metrics" | "benchmark" | "strategy" | "data-quality" | "research-note" | "risk-gates";
+  id:
+    | "run"
+    | "metrics"
+    | "benchmark"
+    | "parameter-scan"
+    | "strategy"
+    | "data-quality"
+    | "research-note"
+    | "risk-gates";
   label: string;
   value: string;
   detail: string;
@@ -1262,6 +1270,7 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
   const dataQuality = run.dataQuality;
   const researchNote = normalizedResearchNote(run.researchNote);
   const benchmark = buildBacktestBenchmark(workspace);
+  const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const benchmarkCitation: AiReviewCitation = {
     id: "benchmark",
     label: "Benchmark alpha",
@@ -1269,6 +1278,15 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
     detail: aiBenchmarkDetail(benchmark),
     tone: benchmark.tone
   };
+  const parameterScanCitation: AiReviewCitation | null = parameterScanSummary
+    ? {
+        id: "parameter-scan",
+        label: "Parameter scan",
+        value: parameterScanSummary.headline,
+        detail: parameterScanSummary.detail,
+        tone: parameterScanSummary.tone
+      }
+    : null;
   const noteCitation: AiReviewCitation | null = researchNote
     ? {
         id: "research-note",
@@ -1299,6 +1317,7 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
         tone: returnMetric.startsWith("-") ? "warning" : "positive"
       },
       benchmarkCitation,
+      ...(parameterScanCitation ? [parameterScanCitation] : []),
       {
         id: "strategy",
         label: "Strategy revision",
@@ -1340,6 +1359,7 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
 
   const rounds = buildAgentCommitteeRounds(workspace);
   const benchmark = buildBacktestBenchmark(workspace);
+  const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const researchNote = normalizedResearchNote(run.researchNote);
   const citationRows = dossier.citations.map((citation) => [citation.label, citation.value, citation.detail]);
   const committeeRows = rounds.map((round) => [
@@ -1384,6 +1404,29 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
       ]
     ),
     "",
+    "## Parameter Scan Summary",
+    "",
+    parameterScanSummary
+      ? markdownTable(
+          ["Field", "Value"],
+          [
+            ["Rows", parameterScanSummary.totalRows],
+            [
+              "Current rank",
+              parameterScanSummary.currentRank
+                ? `${parameterScanSummary.currentRank}/${parameterScanSummary.totalRows}`
+                : "N/A"
+            ],
+            ["Candidate for re-audit", parameterScanSummary.bestCandidateCondition ?? "N/A"],
+            ["Candidate return", parameterScanSummary.bestCandidateReturnPct],
+            ["Candidate max drawdown", parameterScanSummary.bestCandidateMaxDrawdownPct],
+            ["Candidate delta", parameterScanSummary.bestCandidateDelta],
+            ["Risk rows", parameterScanSummary.riskCount],
+            ["Boundary", "Candidate must be re-audited; no investment advice."]
+          ]
+        )
+      : "Parameter scan summary requires an audited data snapshot.",
+    "",
     researchNote ? "## Locked Research Note" : "",
     researchNote ? "" : "",
     researchNote ? researchNote.body : "",
@@ -1400,7 +1443,7 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
     "",
     "AI must not output buy/sell instructions or guaranteed returns.",
     "",
-    "This report can explain only the audited run, locked strategy revision, data snapshot, benchmark comparison, and risk gates above."
+    "This report can explain only the audited run, locked strategy revision, data snapshot, benchmark comparison, parameter scan summary, and risk gates above."
   ]
     .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
     .join("\n")
