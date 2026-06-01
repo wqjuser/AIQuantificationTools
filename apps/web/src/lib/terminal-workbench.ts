@@ -375,6 +375,32 @@ export interface AiReviewDossier {
   citations: AiReviewCitation[];
 }
 
+export interface AiReviewRunRecord {
+  schemaVersion: 1;
+  recordType: "aiqt.aiReviewRun";
+  aiReviewId: string;
+  runId: string;
+  createdAt: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  strategyRevision: string;
+  executionMode: string;
+  status: AiReviewDossier["status"];
+  summary: {
+    citationCount: number;
+    roundCount: number;
+    decisionCount: number;
+    parameterScanBound: boolean;
+    liveExecutionBlocked: boolean;
+  };
+  dossier: AiReviewDossier;
+  citations: AiReviewCitation[];
+  rounds: AgentCommitteeRound[];
+  decisionLog: DecisionLogEntry[];
+  boundary: string;
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -1449,6 +1475,48 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
     .join("\n")
     .trimEnd()
     .concat("\n");
+}
+
+export function buildAiReviewRunRecord(workspace: TerminalWorkspace): AiReviewRunRecord | null {
+  const run = workspace.researchRun;
+  if (!run) {
+    return null;
+  }
+
+  const dossier = buildAiReviewDossier(workspace);
+  if (dossier.status !== "ready") {
+    return null;
+  }
+
+  const rounds = buildAgentCommitteeRounds(workspace);
+  const decisionLog = workspace.decisionLog.slice();
+  const citations = dossier.citations.slice();
+
+  return {
+    schemaVersion: 1,
+    recordType: "aiqt.aiReviewRun",
+    aiReviewId: `ai-review:${run.runId}:${run.strategyRevision}`,
+    runId: run.runId,
+    createdAt: run.createdAt,
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    timeframe: run.timeframe,
+    strategyRevision: run.strategyRevision,
+    executionMode: run.executionMode,
+    status: dossier.status,
+    summary: {
+      citationCount: citations.length,
+      roundCount: rounds.length,
+      decisionCount: decisionLog.length,
+      parameterScanBound: citations.some((citation) => citation.id === "parameter-scan"),
+      liveExecutionBlocked: !workspace.execution.liveEnabled
+    },
+    dossier,
+    citations,
+    rounds,
+    decisionLog,
+    boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
+  };
 }
 
 function normalizedResearchNote(note: ResearchRunNote | null | undefined): ResearchRunNote | null {

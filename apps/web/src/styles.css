@@ -4069,6 +4069,13 @@ em {
   padding: 6px 9px;
 }
 
+.report-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .report-export-button:hover:not(:disabled) {
   border-color: #4cc9ad;
   background: #15362f;

@@ -64,6 +64,7 @@ import {
   buildAiEvidenceCards,
   buildAiReviewDossier,
   buildAiReviewReportMarkdown,
+  buildAiReviewRunRecord,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -863,6 +864,35 @@ export function App() {
     }));
   }, [workspace]);
 
+  const exportAiReviewRunRecord = useCallback(() => {
+    const record = buildAiReviewRunRecord(workspace);
+    const runId = workspace.researchRun?.runId;
+    if (!record || !runId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "AI review record export failed",
+        error: "Run Pipeline before exporting an AI review run record"
+      }));
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(
+      new Blob([JSON.stringify(record, null, 2)], { type: "application/json;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `${runId}-ai-review-record.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "AI review record export ready",
+      error: undefined
+    }));
+  }, [workspace]);
+
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
@@ -1404,16 +1434,28 @@ export function App() {
       title={i18n.t("panel.agent.title")}
       subtitle={i18n.t("panel.agent.subtitle")}
       action={
-        <button
-          className="report-export-button"
-          disabled={!workspace.researchRun}
-          onClick={exportAiReviewMarkdown}
-          title={i18n.t("aiReview.exportMarkdown")}
-          type="button"
-        >
-          <Download size={13} />
-          <span>{i18n.t("aiReview.exportMarkdown")}</span>
-        </button>
+        <div className="report-export-actions">
+          <button
+            className="report-export-button"
+            disabled={!workspace.researchRun}
+            onClick={exportAiReviewMarkdown}
+            title={i18n.t("aiReview.exportMarkdown")}
+            type="button"
+          >
+            <Download size={13} />
+            <span>{i18n.t("aiReview.exportMarkdown")}</span>
+          </button>
+          <button
+            className="report-export-button"
+            disabled={!workspace.researchRun}
+            onClick={exportAiReviewRunRecord}
+            title={i18n.t("aiReview.exportRecord")}
+            type="button"
+          >
+            <Database size={13} />
+            <span>{i18n.t("aiReview.exportRecord")}</span>
+          </button>
+        </div>
       }
       className={className}
     >

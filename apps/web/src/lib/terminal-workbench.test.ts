@@ -6,6 +6,7 @@ import {
   buildAiEvidenceCards,
   buildAiReviewDossier,
   buildAiReviewReportMarkdown,
+  buildAiReviewRunRecord,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -1214,6 +1215,95 @@ describe("terminal workbench model", () => {
 
   test("does not export an AI review report before audited evidence exists", () => {
     expect(buildAiReviewReportMarkdown(buildTerminalWorkspace())).toBeNull();
+  });
+
+  test("builds a structured AI review run record from audited evidence", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-record",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-record",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [
+        { agent: "Technical", message: "Trend improved after the audit run.", tone: "positive" },
+        { agent: "Risk", message: "Keep paper-only gates closed for live routing.", tone: "risk" }
+      ],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-ai-record",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            timestampMs: 1779868800000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ]
+      }
+    });
+
+    const record = buildAiReviewRunRecord(workspace);
+
+    expect(record).toMatchObject({
+      schemaVersion: 1,
+      recordType: "aiqt.aiReviewRun",
+      aiReviewId: "ai-review:run-ai-record:rev-ai-record",
+      runId: "run-ai-record",
+      strategyRevision: "rev-ai-record",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      executionMode: "paper_only",
+      status: "ready",
+      summary: {
+        citationCount: expect.any(Number),
+        roundCount: 5,
+        decisionCount: 2,
+        parameterScanBound: true,
+        liveExecutionBlocked: true
+      },
+      boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
+    });
+    expect(record?.citations.map((citation) => citation.id)).toContain("parameter-scan");
+    expect(record?.rounds.map((round) => round.id)).toEqual([
+      "technical-analysis",
+      "bull-research",
+      "bear-research",
+      "risk-manager",
+      "portfolio-decision"
+    ]);
+    expect(record?.decisionLog).toHaveLength(2);
+  });
+
+  test("does not build an AI review run record before audited evidence exists", () => {
+    expect(buildAiReviewRunRecord(buildTerminalWorkspace())).toBeNull();
   });
 
   test("derives scanner candidates from the active watchlist", () => {
