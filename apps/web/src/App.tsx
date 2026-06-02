@@ -1005,6 +1005,18 @@ export function App() {
           });
           setResearchNoteDraft(result.run.researchNote.body);
         }
+        if (result.strategies?.length) {
+          setStrategyLibraryState((current) => ({
+            strategies: [
+              ...result.strategies!,
+              ...current.strategies.filter(
+                (existing) => !result.strategies!.some((restored) => restored.revision === existing.revision)
+              )
+            ],
+            source: "core",
+            error: undefined
+          }));
+        }
         const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
           loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
           loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),

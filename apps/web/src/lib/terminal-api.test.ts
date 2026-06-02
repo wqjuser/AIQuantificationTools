@@ -1721,6 +1721,51 @@ describe("terminal workspace API client", () => {
             })
           };
         }
+        if (url.includes("/api/strategies")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              strategies: [
+                {
+                  strategyId: "strategy-rev-import",
+                  createdAt: "2026-05-26T08:00:00+00:00",
+                  name: "Imported SMA trend",
+                  revision: "rev-import",
+                  market: "ashare",
+                  symbol: "600000",
+                  timeframe: "1d",
+                  version: 1,
+                  status: "audited",
+                  auditRunId: "run-import",
+                  strategySnapshot: {
+                    name: "Imported SMA trend",
+                    entry: "Close > SMA20",
+                    exit: "Close < SMA20",
+                    position: "80% cap per instrument",
+                    risk: "Stop -8%, take profit +18%, drawdown guard 20%, paper only"
+                  },
+                  strategyConfig: {
+                    name: "Imported SMA trend",
+                    revision: "rev-import",
+                    market: "ashare",
+                    symbols: ["600000"],
+                    timeframe: "1d",
+                    version: 1,
+                    entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+                    exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+                    risk: {
+                      positionPct: 0.8,
+                      stopLossPct: 0.08,
+                      takeProfitPct: 0.18,
+                      maxDrawdownPct: 0.2
+                    }
+                  }
+                }
+              ]
+            })
+          };
+        }
         return {
           ok: true,
           status: 201,
@@ -1775,10 +1820,13 @@ describe("terminal workspace API client", () => {
     expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
     expect(JSON.parse(String(calls[0]?.init?.body)).kind).toBe("aiqt.researchRun.export");
     expect(calls[1]?.url).toBe("http://127.0.0.1:8765/api/research/notes?market=ashare&symbol=600000&timeframe=1d");
+    expect(calls[2]?.url).toBe("http://127.0.0.1:8765/api/strategies?market=ashare&symbol=600000&limit=12");
     expect(result.source).toBe("core");
     expect(result.run?.runId).toBe("run-import");
     expect(result.run?.dataSnapshot?.hash).toBe("snapshot-import");
     expect(result.note?.body).toBe("导入包里的研究笔记应恢复到本地笔记库。");
+    expect(result.strategies?.[0]?.revision).toBe("rev-import");
+    expect(result.strategies?.[0]?.status).toBe("audited");
   });
 
   test("submits a paper execution for an audited research run", async () => {

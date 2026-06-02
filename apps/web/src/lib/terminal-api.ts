@@ -118,6 +118,7 @@ export interface ResearchRunExportResult {
 export interface ResearchRunImportResult {
   run?: ResearchRunAudit;
   note?: ResearchNote;
+  strategies?: StrategyLibraryItem[];
   source: WorkspaceSource;
   error?: string;
 }
@@ -758,9 +759,19 @@ export async function importResearchRunExport(
       },
       fetcher
     );
+    const strategyLibraryResult = await loadStrategyLibrary(
+      baseUrl,
+      {
+        market: payload.run.market,
+        symbol: payload.run.symbol,
+        limit: 12
+      },
+      fetcher
+    );
     return {
       run: payload.run,
       note: noteResult.note,
+      strategies: strategyLibraryResult.source === "core" ? strategyLibraryResult.strategies : undefined,
       source: "core"
     };
   } catch (error) {
