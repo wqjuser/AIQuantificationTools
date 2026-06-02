@@ -96,6 +96,10 @@ docker compose down
 docker compose down -v
 ```
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` 会在 push 和 pull request 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，最后执行 `python tools/docker_smoke.py --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。
+
 实时报价可选配置：
 
 ```powershell

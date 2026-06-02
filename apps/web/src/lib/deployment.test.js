@@ -10,6 +10,27 @@ function readRepoFile(path) {
 }
 
 describe("docker deployment contract", () => {
+  test("runs tests, build, Docker build, and Docker smoke in GitHub Actions", () => {
+    expect(existsSync(repoFile(".github/workflows/ci.yml"))).toBe(true);
+
+    const workflow = readRepoFile(".github/workflows/ci.yml");
+    expect(workflow).toContain("name: CI");
+    expect(workflow).toContain("push:");
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain("actions/checkout@v4");
+    expect(workflow).toContain("actions/setup-node@v4");
+    expect(workflow).toContain("node-version: 22");
+    expect(workflow).toContain("cache: npm");
+    expect(workflow).toContain("actions/setup-python@v5");
+    expect(workflow).toContain('python-version: "3.12"');
+    expect(workflow).toContain("npm ci");
+    expect(workflow).toContain("npm test");
+    expect(workflow).toContain("npm run build");
+    expect(workflow).toContain("docker compose config");
+    expect(workflow).toContain("docker compose build");
+    expect(workflow).toContain("python tools/docker_smoke.py --no-build --down");
+  });
+
   test("exposes Docker lifecycle and smoke test commands from the root package", () => {
     const packageJson = JSON.parse(readRepoFile("package.json"));
 
