@@ -992,6 +992,19 @@ export function App() {
         if (importedKlines) {
           setKlinesState(importedKlines);
         }
+        if (result.note) {
+          setResearchNoteState({
+            note: result.note,
+            source: "core"
+          });
+          setResearchNoteDraft(result.note.body);
+        } else if (result.run.researchNote?.body) {
+          setResearchNoteState({
+            note: result.run.researchNote,
+            source: "core"
+          });
+          setResearchNoteDraft(result.run.researchNote.body);
+        }
         const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
           loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
           loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),

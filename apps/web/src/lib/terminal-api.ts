@@ -117,6 +117,7 @@ export interface ResearchRunExportResult {
 
 export interface ResearchRunImportResult {
   run?: ResearchRunAudit;
+  note?: ResearchNote;
   source: WorkspaceSource;
   error?: string;
 }
@@ -748,8 +749,18 @@ export async function importResearchRunExport(
     if (!isResearchRunImportPayload(payload)) {
       throw new Error("Invalid research run import contract");
     }
+    const noteResult = await loadResearchNote(
+      baseUrl,
+      {
+        market: payload.run.market,
+        symbol: payload.run.symbol,
+        timeframe: payload.run.timeframe
+      },
+      fetcher
+    );
     return {
       run: payload.run,
+      note: noteResult.note,
       source: "core"
     };
   } catch (error) {

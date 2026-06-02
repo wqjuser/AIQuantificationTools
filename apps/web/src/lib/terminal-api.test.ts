@@ -1655,7 +1655,7 @@ describe("terminal workspace API client", () => {
           executionMode: "paper_only",
           paperOnly: true,
           liveTradingAllowed: false,
-          artifactCounts: { bars: 2, trades: 1, equityPoints: 1, decisions: 1, aiRisks: 1 }
+          artifactCounts: { bars: 2, trades: 1, equityPoints: 1, decisions: 1, aiRisks: 1, researchNotes: 1 }
         },
         researchRun: {
           runId: "run-import",
@@ -1669,6 +1669,13 @@ describe("terminal workspace API client", () => {
           metrics: { total_return_pct: 4.2, trade_count: 1 },
           decisions: [{ agent: "AI Summary", message: "Imported evidence only", tone: "ai" }],
           executionMode: "paper_only",
+          researchNote: {
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            body: "导入包里的研究笔记应恢复到本地笔记库。",
+            updatedAt: "2026-05-26T08:03:00+00:00"
+          },
           dataSnapshot: {
             source: "tencent",
             isComplete: true,
@@ -1699,6 +1706,21 @@ describe("terminal workspace API client", () => {
       },
       async (url, init) => {
         calls.push({ url, init });
+        if (url.includes("/api/research/notes")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              note: {
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                body: "导入包里的研究笔记应恢复到本地笔记库。",
+                updatedAt: "2026-05-26T08:03:00+00:00"
+              }
+            })
+          };
+        }
         return {
           ok: true,
           status: 201,
@@ -1715,6 +1737,13 @@ describe("terminal workspace API client", () => {
               metrics: { total_return_pct: 4.2, trade_count: 1 },
               decisions: [{ agent: "AI Summary", message: "Imported evidence only", tone: "ai" }],
               executionMode: "paper_only",
+              researchNote: {
+                market: "ashare",
+                symbol: "600000",
+                timeframe: "1d",
+                body: "导入包里的研究笔记应恢复到本地笔记库。",
+                updatedAt: "2026-05-26T08:03:00+00:00"
+              },
               dataSnapshot: {
                 source: "tencent",
                 isComplete: true,
@@ -1745,9 +1774,11 @@ describe("terminal workspace API client", () => {
     expect(calls[0]?.init?.method).toBe("POST");
     expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
     expect(JSON.parse(String(calls[0]?.init?.body)).kind).toBe("aiqt.researchRun.export");
+    expect(calls[1]?.url).toBe("http://127.0.0.1:8765/api/research/notes?market=ashare&symbol=600000&timeframe=1d");
     expect(result.source).toBe("core");
     expect(result.run?.runId).toBe("run-import");
     expect(result.run?.dataSnapshot?.hash).toBe("snapshot-import");
+    expect(result.note?.body).toBe("导入包里的研究笔记应恢复到本地笔记库。");
   });
 
   test("submits a paper execution for an audited research run", async () => {
