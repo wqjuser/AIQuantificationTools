@@ -13,5 +13,6 @@ __pycache__/
 local.properties
 .superpowers/
 artifacts/
+.codex-artifacts/
 .tmp/
 *.tsbuildinfo

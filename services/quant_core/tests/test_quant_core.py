@@ -3919,6 +3919,40 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(adapter.cache_key("us", "AAPL"), "watchlist_price:us:AAPL")
 
+    def test_yfinance_quote_fallback_suppresses_vendor_stderr(self):
+        import contextlib
+        import io
+        import sys
+        import types
+
+        from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
+
+        class NoisyTicker:
+            def __init__(self, symbol: str) -> None:
+                self.symbol = symbol
+
+            @property
+            def fast_info(self) -> dict[str, float]:
+                print("$AAPL: possibly delisted; No price data found", file=sys.stderr)
+                return {"lastPrice": 101.5, "previousClose": 100.0, "dayHigh": 102.0, "dayLow": 99.5, "open": 100.5}
+
+        original_yfinance = sys.modules.get("yfinance")
+        sys.modules["yfinance"] = types.SimpleNamespace(Ticker=NoisyTicker)
+        stderr = io.StringIO()
+        try:
+            adapter = QuantDingerLiveQuoteAdapter(finnhub_api_key="")
+            with contextlib.redirect_stderr(stderr):
+                quote = adapter.fetch_quote("us", "AAPL")
+        finally:
+            if original_yfinance is None:
+                sys.modules.pop("yfinance", None)
+            else:
+                sys.modules["yfinance"] = original_yfinance
+
+        self.assertEqual(quote.source, "yfinance")
+        self.assertEqual(quote.price, 101.5)
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_terminal_workspace_applies_live_quotes_to_watchlist_and_selected_symbol(self):
         from quant_core.domain import MarketQuote
         from quant_core.terminal import apply_market_quotes, build_terminal_workspace, terminal_workspace_to_payload

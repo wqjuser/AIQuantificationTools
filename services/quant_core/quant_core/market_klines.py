@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from typing import Callable
 from urllib.parse import quote, urlencode
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
@@ -181,7 +182,8 @@ class QuantDingerKlineAdapter:
             return self._fallback(request, limit, warning)
 
         interval, period = yfinance_period(request.timeframe)
-        frame = yf.Ticker(request.symbol).history(period=period, interval=interval, auto_adjust=False)
+        with redirect_stderr(StringIO()):
+            frame = yf.Ticker(request.symbol).history(period=period, interval=interval, auto_adjust=False)
         if frame is None or frame.empty:
             warning = "yfinance returned no chart bars"
             if yahoo_warning:

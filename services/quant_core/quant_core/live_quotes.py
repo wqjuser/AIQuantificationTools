@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import time
+from contextlib import redirect_stderr
 from dataclasses import asdict
 from datetime import datetime, timezone
+from io import StringIO
 from typing import Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -106,14 +108,18 @@ class QuantDingerLiveQuoteAdapter:
         try:
             import yfinance as yf  # type: ignore
 
-            ticker = yf.Ticker(symbol)
-            fast_info = ticker.fast_info
-            price = as_float(fast_info.get("lastPrice") or fast_info.get("last_price"))
-            previous_close = as_float(
-                fast_info.get("previousClose")
-                or fast_info.get("previous_close")
-                or fast_info.get("regularMarketPreviousClose")
-            )
+            with redirect_stderr(StringIO()):
+                ticker = yf.Ticker(symbol)
+                fast_info = ticker.fast_info
+                price = as_float(fast_info.get("lastPrice") or fast_info.get("last_price"))
+                previous_close = as_float(
+                    fast_info.get("previousClose")
+                    or fast_info.get("previous_close")
+                    or fast_info.get("regularMarketPreviousClose")
+                )
+                high = as_float(fast_info.get("dayHigh") or fast_info.get("day_high") or price)
+                low = as_float(fast_info.get("dayLow") or fast_info.get("day_low") or price)
+                open_price = as_float(fast_info.get("open") or fast_info.get("regularMarketOpen") or price)
             if not price:
                 return None
             change = price - previous_close if previous_close else 0.0
@@ -123,9 +129,9 @@ class QuantDingerLiveQuoteAdapter:
                 price=price,
                 change=round(change, 4),
                 change_pct=round(change / previous_close * 100, 2) if previous_close else 0.0,
-                high=as_float(fast_info.get("dayHigh") or fast_info.get("day_high") or price),
-                low=as_float(fast_info.get("dayLow") or fast_info.get("day_low") or price),
-                open=as_float(fast_info.get("open") or fast_info.get("regularMarketOpen") or price),
+                high=high,
+                low=low,
+                open=open_price,
                 previous_close=previous_close,
                 source="yfinance",
                 as_of=datetime.now(timezone.utc),

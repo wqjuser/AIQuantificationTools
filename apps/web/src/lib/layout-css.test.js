@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const viteConfig = readFileSync(new URL("../../vite.config.ts", import.meta.url), "utf8");
 
 function cssBlock(selector) {
   return cssBlocks(selector)[0] ?? "";
@@ -51,6 +52,14 @@ function sourceBetween(startMarker, endMarker) {
 }
 
 describe("terminal layout css", () => {
+  test("splits production vendor dependencies instead of emitting one large entry chunk", () => {
+    expect(viteConfig).toContain("manualChunks: vendorChunkName");
+    expect(viteConfig).toContain('return "vendor-charts";');
+    expect(viteConfig).toContain('return "vendor-icons";');
+    expect(viteConfig).toContain('return "vendor-react";');
+    expect(viteConfig).not.toContain("chunkSizeWarningLimit");
+  });
+
   test("uses product work areas as the primary left navigation", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
 
