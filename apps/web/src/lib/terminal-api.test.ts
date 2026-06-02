@@ -298,6 +298,32 @@ describe("terminal workspace API client", () => {
                   actionId: "submit-paper-order"
                 }
               ],
+              runbook: [
+                {
+                  stepId: "market-data",
+                  label: "Market data",
+                  workspaceId: "market",
+                  status: "passed",
+                  current: false,
+                  passed: true,
+                  detail: "Fresh cache exists.",
+                  blocker: null,
+                  actionId: null,
+                  actionLabel: null
+                },
+                {
+                  stepId: "paper-execution",
+                  label: "Paper execution",
+                  workspaceId: "execution",
+                  status: "review",
+                  current: true,
+                  passed: false,
+                  detail: "Submit a paper execution before promotion.",
+                  blocker: "Submit a paper execution before promotion.",
+                  actionId: "submit-paper-order",
+                  actionLabel: "Submit paper order"
+                }
+              ],
               steps: [
                 {
                   id: "market-data",
@@ -330,6 +356,48 @@ describe("terminal workspace API client", () => {
     expect(result.goldenPath?.nextAction?.targetWorkspace).toBe("execution");
     expect(result.goldenPath?.summary.passedSteps).toBe(4);
     expect(result.goldenPath?.workspaces.find((workspace) => workspace.id === "execution")?.status).toBe("needs_run");
+    expect(result.goldenPath?.runbook.find((item) => item.stepId === "paper-execution")?.workspaceId).toBe("execution");
+  });
+
+  test("rejects stale golden path status payloads without a runbook", async () => {
+    const result = await loadGoldenPathStatus(
+      "http://127.0.0.1:8765/",
+      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      async () => ({
+        ok: true,
+        json: async () => ({
+          goldenPath: {
+            schemaVersion: 1,
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            status: "blocked",
+            currentStepId: "research-run",
+            latestRunId: null,
+            nextAction: {
+              id: "run-pipeline",
+              label: "Run research pipeline",
+              targetWorkspace: "research",
+              reason: "Run the research pipeline."
+            },
+            summary: {
+              totalSteps: 6,
+              passedSteps: 1,
+              reviewSteps: 0,
+              blockedSteps: 5,
+              currentStepLabel: "Audited research run",
+              nextActionId: "run-pipeline",
+              liveTradingAllowed: false
+            },
+            workspaces: [],
+            steps: []
+          }
+        })
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid golden path status contract");
   });
 
   test("validates the active strategy draft through the Python core", async () => {

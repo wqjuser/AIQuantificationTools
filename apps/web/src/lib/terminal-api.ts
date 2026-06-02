@@ -440,6 +440,19 @@ export interface GoldenPathSummary {
   liveTradingAllowed: boolean;
 }
 
+export interface GoldenPathRunbookItem {
+  stepId: string;
+  label: string;
+  workspaceId: string;
+  status: GoldenPathStepStatus;
+  current: boolean;
+  passed: boolean;
+  detail: string;
+  blocker: string | null;
+  actionId: string | null;
+  actionLabel: string | null;
+}
+
 export interface GoldenPathStatus {
   schemaVersion: 1;
   market: Market;
@@ -450,6 +463,7 @@ export interface GoldenPathStatus {
   latestRunId: string | null;
   nextAction: GoldenPathNextAction | null;
   summary: GoldenPathSummary;
+  runbook: GoldenPathRunbookItem[];
   workspaces: GoldenPathWorkspace[];
   steps: GoldenPathStep[];
 }
@@ -2066,6 +2080,8 @@ function isGoldenPathStatus(value: unknown): value is GoldenPathStatus {
     (status.latestRunId === null || typeof status.latestRunId === "string") &&
     (status.nextAction === null || isGoldenPathNextAction(status.nextAction)) &&
     isGoldenPathSummary(status.summary) &&
+    Array.isArray(status.runbook) &&
+    status.runbook.every(isGoldenPathRunbookItem) &&
     Array.isArray(status.workspaces) &&
     status.workspaces.every(isGoldenPathWorkspace) &&
     Array.isArray(status.steps) &&
@@ -2130,6 +2146,25 @@ function isGoldenPathSummary(value: unknown): value is GoldenPathSummary {
     (summary.currentStepLabel === null || typeof summary.currentStepLabel === "string") &&
     (summary.nextActionId === null || typeof summary.nextActionId === "string") &&
     typeof summary.liveTradingAllowed === "boolean"
+  );
+}
+
+function isGoldenPathRunbookItem(value: unknown): value is GoldenPathRunbookItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const item = value as Partial<GoldenPathRunbookItem>;
+  return (
+    typeof item.stepId === "string" &&
+    typeof item.label === "string" &&
+    typeof item.workspaceId === "string" &&
+    isGoldenPathStepStatus(item.status) &&
+    typeof item.current === "boolean" &&
+    typeof item.passed === "boolean" &&
+    typeof item.detail === "string" &&
+    (item.blocker === null || typeof item.blocker === "string") &&
+    (item.actionId === null || typeof item.actionId === "string") &&
+    (item.actionLabel === null || typeof item.actionLabel === "string")
   );
 }
 

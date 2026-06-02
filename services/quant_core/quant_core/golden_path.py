@@ -41,6 +41,7 @@ def build_golden_path_status(
         "latestRunId": str(getattr(latest_run, "run_id", "")) if latest_run else None,
         "nextAction": _next_action(current_step),
         "summary": _summary_from_steps(steps, current_step, settings),
+        "runbook": _runbook_from_steps(steps, current_step),
         "workspaces": _workspaces_from_steps(steps, current_step),
         "steps": steps,
     }
@@ -358,6 +359,38 @@ def _summary_from_steps(
         "nextActionId": next_action.get("id") if isinstance(next_action, dict) else None,
         "liveTradingAllowed": bool(safety.get("liveTradingAllowed")) if isinstance(safety, dict) else False,
     }
+
+
+def _runbook_from_steps(steps: list[GoldenPathPayload], current_step: GoldenPathPayload | None) -> list[GoldenPathPayload]:
+    return [_runbook_item(step, current_step) for step in steps]
+
+
+def _runbook_item(step: GoldenPathPayload, current_step: GoldenPathPayload | None) -> GoldenPathPayload:
+    action = _next_action(step)
+    is_passed = bool(step["passed"])
+    return {
+        "stepId": step["id"],
+        "label": step["label"],
+        "workspaceId": _workspace_id_for_step(str(step["id"])),
+        "status": step["status"],
+        "current": bool(current_step and current_step["id"] == step["id"]),
+        "passed": is_passed,
+        "detail": step["detail"],
+        "blocker": None if is_passed else step["detail"],
+        "actionId": action.get("id") if isinstance(action, dict) else None,
+        "actionLabel": action.get("label") if isinstance(action, dict) else None,
+    }
+
+
+def _workspace_id_for_step(step_id: str) -> str:
+    return {
+        "market-data": "market",
+        "research-run": "research",
+        "backtest-report": "backtest",
+        "ai-review": "ai-review",
+        "paper-execution": "execution",
+        "live-gate": "settings",
+    }.get(step_id, "audit")
 
 
 def _workspace_from_step(

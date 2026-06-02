@@ -1750,6 +1750,16 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(status["summary"]["passedSteps"], 1)
         self.assertEqual(status["summary"]["blockedSteps"], 5)
         self.assertEqual(status["summary"]["currentStepLabel"], "Audited research run")
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertEqual(len(status["runbook"]), 6)
+        self.assertTrue(runbook_by_step["market-data"]["passed"])
+        self.assertEqual(runbook_by_step["market-data"]["workspaceId"], "market")
+        self.assertIsNone(runbook_by_step["market-data"]["blocker"])
+        self.assertTrue(runbook_by_step["research-run"]["current"])
+        self.assertEqual(runbook_by_step["research-run"]["workspaceId"], "research")
+        self.assertEqual(runbook_by_step["research-run"]["actionId"], "run-pipeline")
+        self.assertEqual(runbook_by_step["research-run"]["actionLabel"], "Run research pipeline")
+        self.assertIn("Run the research pipeline", runbook_by_step["research-run"]["blocker"])
         workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
         self.assertEqual(workspaces["market"]["status"], "ready")
         self.assertEqual(workspaces["research"]["status"], "needs_run")
@@ -1849,6 +1859,13 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(status["summary"]["reviewSteps"], 1)
         self.assertEqual(status["summary"]["blockedSteps"], 1)
         self.assertEqual(status["summary"]["nextActionId"], "submit-paper-order")
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertTrue(runbook_by_step["paper-execution"]["current"])
+        self.assertEqual(runbook_by_step["paper-execution"]["workspaceId"], "execution")
+        self.assertEqual(runbook_by_step["paper-execution"]["actionId"], "submit-paper-order")
+        self.assertEqual(runbook_by_step["paper-execution"]["actionLabel"], "Submit paper order")
+        self.assertEqual(runbook_by_step["live-gate"]["workspaceId"], "settings")
+        self.assertEqual(runbook_by_step["live-gate"]["actionId"], "certify-live-adapter")
         workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
         self.assertEqual(workspaces["research"]["status"], "ready")
         self.assertEqual(workspaces["backtest"]["status"], "ready")
@@ -1963,6 +1980,9 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["goldenPath"]["currentStepId"], "paper-execution")
         self.assertEqual(payload["goldenPath"]["nextAction"]["targetWorkspace"], "execution")
         self.assertEqual(payload["goldenPath"]["summary"]["nextActionId"], "submit-paper-order")
+        self.assertEqual(payload["goldenPath"]["runbook"][4]["stepId"], "paper-execution")
+        self.assertEqual(payload["goldenPath"]["runbook"][4]["workspaceId"], "execution")
+        self.assertEqual(payload["goldenPath"]["runbook"][4]["actionId"], "submit-paper-order")
         self.assertEqual(payload["goldenPath"]["workspaces"][0]["id"], "market")
         self.assertEqual(payload["goldenPath"]["workspaces"][0]["status"], "ready")
 
