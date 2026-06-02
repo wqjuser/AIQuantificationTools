@@ -73,6 +73,7 @@ export interface ResearchRunExportManifest {
     paperExecutions?: number;
     promotionCandidates?: number;
     researchNotes?: number;
+    aiReviewRuns?: number;
   };
 }
 
@@ -105,6 +106,7 @@ export interface ResearchRunExportPackage {
   executionHandoff: ResearchRunExecutionHandoff;
   paperExecutions?: PaperExecutionRecord[];
   promotionCandidate?: PromotionCandidateRecord | null;
+  aiReviewRuns?: AiReviewRunRecordEnvelope[];
 }
 
 export interface ResearchRunExportResult {
@@ -2016,7 +2018,9 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
       (Array.isArray(exportPackage.paperExecutions) && exportPackage.paperExecutions.every(isPaperExecutionRecord))) &&
     (exportPackage.promotionCandidate === undefined ||
       exportPackage.promotionCandidate === null ||
-      isPromotionCandidateRecord(exportPackage.promotionCandidate))
+      isPromotionCandidateRecord(exportPackage.promotionCandidate)) &&
+    (exportPackage.aiReviewRuns === undefined ||
+      (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope)))
   );
 }
 
@@ -2052,7 +2056,8 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     typeof counts?.equityPoints === "number" &&
     typeof counts?.decisions === "number" &&
     typeof counts?.aiRisks === "number" &&
-    (counts?.researchNotes === undefined || typeof counts.researchNotes === "number")
+    (counts?.researchNotes === undefined || typeof counts.researchNotes === "number") &&
+    (counts?.aiReviewRuns === undefined || typeof counts.aiReviewRuns === "number")
   );
 }
 

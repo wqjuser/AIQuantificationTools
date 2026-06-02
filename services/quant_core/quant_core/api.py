@@ -31,6 +31,7 @@ from quant_core.runs import (
     research_run_audit_to_payload,
     research_run_audits_to_payload,
     research_run_export_to_payload,
+    research_run_import_ai_review_runs,
     research_run_import_paper_executions,
     research_run_import_to_audit,
 )
@@ -225,15 +226,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 payload = self._read_json_body()
                 audit = research_run_import_to_audit(payload)
                 paper_executions = research_run_import_paper_executions(payload, run_id=audit.run_id)
+                ai_review_runs = research_run_import_ai_review_runs(payload, run_id=audit.run_id)
                 paper_execution_records = [
                     paper_execution_payload_to_record(execution_payload) for execution_payload in paper_executions
                 ]
+                ai_review_records = [dict(review_payload["record"]) for review_payload in ai_review_runs]
             except ValueError as error:
                 self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
                 return
             self.run_store.record(audit)
             for execution_record in paper_execution_records:
                 self.paper_execution_store.record(execution_record)
+            for review_record in ai_review_records:
+                self.ai_review_store.record(review_record)
             self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/ai-reviews"):
@@ -459,6 +464,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 paper_execution_record_to_payload(execution)
                 for execution in self.paper_execution_store.list_by_run(run_id, limit=20)
             ]
+            ai_reviews = [
+                ai_review_run_record_to_payload(review) for review in self.ai_review_store.list_by_run(run_id, limit=20)
+            ]
             promotion_candidate = build_promotion_candidate(audit, self.paper_execution_store.list_by_run(run_id, limit=20))
             self._send_json(
                 {
@@ -466,6 +474,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         audit,
                         paper_executions=executions,
                         promotion_candidate=promotion_candidate,
+                        ai_review_runs=ai_reviews,
                     )
                 }
             )

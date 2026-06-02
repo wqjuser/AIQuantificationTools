@@ -35,4 +35,4 @@ The platform goal is a full quant workflow, not isolated cards. AI review output
 - Passed: `npm run build`; Vite reported the existing large chunk warning.
 - Passed: `git diff --check`; only CRLF normalization warnings were reported.
 - Passed: browser smoke at `http://127.0.0.1:5173/?workspace=ai-review`.
-- Pending: push to `origin/codex/p0-product-workspaces`; `git push` failed because GitHub port 443 was unreachable.
+- Passed: pushed `f0396b7 feat: save ai review run records` to `origin/codex/p0-product-workspaces`.

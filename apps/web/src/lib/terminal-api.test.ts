@@ -1267,7 +1267,8 @@ describe("terminal workspace API client", () => {
                 aiRisks: 1,
                 paperExecutions: 1,
                 promotionCandidates: 1,
-                researchNotes: 1
+                researchNotes: 1,
+                aiReviewRuns: 1
               }
             },
             researchRun: {
@@ -1388,6 +1389,63 @@ describe("terminal workspace API client", () => {
                 }
               ]
             }
+            ,
+            aiReviewRuns: [
+              {
+                aiReviewId: "ai-review:run-new:rev123",
+                runId: "run-new",
+                createdAt: "2026-05-26T08:30:00+00:00",
+                record: {
+                  schemaVersion: 1,
+                  recordType: "aiqt.aiReviewRun",
+                  aiReviewId: "ai-review:run-new:rev123",
+                  runId: "run-new",
+                  createdAt: "2026-05-26T08:30:00+00:00",
+                  market: "ashare",
+                  symbol: "600000",
+                  timeframe: "1d",
+                  strategyRevision: "rev123",
+                  executionMode: "paper_only",
+                  status: "ready",
+                  summary: {
+                    citationCount: 1,
+                    roundCount: 1,
+                    decisionCount: 1,
+                    parameterScanBound: true,
+                    liveExecutionBlocked: true
+                  },
+                  dossier: {
+                    status: "ready",
+                    headline: "AI review saved",
+                    summary: "Evidence only.",
+                    citations: []
+                  },
+                  citations: [
+                    {
+                      id: "parameter-scan",
+                      label: "Parameter scan",
+                      value: "SMA20",
+                      detail: "Re-audit before promotion.",
+                      tone: "warning"
+                    }
+                  ],
+                  rounds: [
+                    {
+                      id: "technical-analysis",
+                      phase: "analysis",
+                      agent: "Technical Analyst",
+                      thesis: "Trend remains constructive but needs audited evidence.",
+                      evidence: "SMA20 and parameter scan are attached.",
+                      verdict: "support",
+                      confidence: 0.64,
+                      tone: "positive"
+                    }
+                  ],
+                  decisionLog: [{ agent: "Technical", message: "Evidence only.", tone: "positive" }],
+                  boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
+                }
+              }
+            ]
           }
         })
       };
@@ -1401,11 +1459,13 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.manifest.artifactCounts.paperExecutions).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.promotionCandidates).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.researchNotes).toBe(1);
+    expect(result.exportPackage?.manifest.artifactCounts.aiReviewRuns).toBe(1);
     expect(result.exportPackage?.researchRun.researchNote?.body).toBe("关注银行板块相对强度，等待放量确认。");
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
     expect(result.exportPackage?.promotionCandidate?.status).toBe("certification_pending");
+    expect(result.exportPackage?.aiReviewRuns?.[0]?.aiReviewId).toBe("ai-review:run-new:rev123");
   });
 
   test("returns fallback when research run export package is malformed", async () => {
@@ -1494,6 +1554,84 @@ describe("terminal workspace API client", () => {
     }));
 
     expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid research run export contract");
+  });
+
+  test("returns fallback when research run export ai review records are malformed", async () => {
+    const result = await loadResearchRunExport("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        export: {
+          kind: "aiqt.researchRun.export",
+          packageVersion: 1,
+          exportedAt: "2026-05-26T08:05:00+00:00",
+          manifest: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyRevision: "rev123",
+            dataHash: "snapshot-detail",
+            dataRows: 1,
+            executionMode: "paper_only",
+            paperOnly: true,
+            liveTradingAllowed: false,
+            artifactCounts: {
+              bars: 1,
+              trades: 0,
+              equityPoints: 0,
+              decisions: 0,
+              aiRisks: 0,
+              aiReviewRuns: 1
+            }
+          },
+          researchRun: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyName: "SMA trend demo",
+            strategyRevision: "rev123",
+            dataRows: 1,
+            metrics: { total_return_pct: 3.4, trade_count: 0 },
+            decisions: [],
+            executionMode: "paper_only",
+            dataSnapshot: {
+              source: "tencent",
+              isComplete: true,
+              warnings: [],
+              rows: 1,
+              start: null,
+              end: null,
+              hash: "snapshot-detail",
+              bars: [
+                {
+                  timestamp: "2026-05-26T08:00:00+00:00",
+                  timestampMs: 1779782400000,
+                  open: 9.1,
+                  high: 9.3,
+                  low: 9,
+                  close: 9.2,
+                  volume: 1200000
+                }
+              ]
+            }
+          },
+          executionHandoff: {
+            mode: "paper_only",
+            paperOnly: true,
+            liveTradingAllowed: false,
+            requiredGates: []
+          },
+          aiReviewRuns: [{ aiReviewId: "broken-ai-review" }]
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.exportPackage).toBeUndefined();
     expect(result.error).toBe("Invalid research run export contract");
   });
 

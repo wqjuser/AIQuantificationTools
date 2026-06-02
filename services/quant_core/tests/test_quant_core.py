@@ -3224,6 +3224,74 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact_count_bars_mismatch"):
             research_run_import_to_audit(export_package)
 
+    def test_research_run_import_rejects_ai_review_run_id_mismatch(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        audit = ResearchRunAudit(
+            run_id="run-ai-review-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-ai-review-mismatch",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "AI review mismatch", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-ai-review-mismatch",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_trades=[],
+            backtest_equity_curve=[],
+        )
+        ai_review = {
+            "aiReviewId": "ai-review:run-ai-review-mismatch:rev-ai-review-mismatch",
+            "runId": "run-ai-review-mismatch",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "record": {
+                "schemaVersion": 1,
+                "recordType": "aiqt.aiReviewRun",
+                "aiReviewId": "ai-review:run-ai-review-mismatch:rev-ai-review-mismatch",
+                "runId": "run-ai-review-mismatch",
+                "createdAt": "2026-05-26T08:05:00+00:00",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyRevision": "rev-ai-review-mismatch",
+                "executionMode": "paper_only",
+                "status": "ready",
+                "summary": {"citationCount": 1, "roundCount": 1, "decisionCount": 1, "parameterScanBound": True, "liveExecutionBlocked": True},
+                "dossier": {"status": "ready", "headline": "Evidence", "summary": "Evidence only", "citations": []},
+                "citations": [{"id": "parameter-scan", "label": "Parameter scan", "value": "SMA20", "detail": "audit", "tone": "warning"}],
+                "rounds": [{"id": "risk-manager", "phase": "risk", "agent": "Risk Manager", "verdict": "risk"}],
+                "decisionLog": [{"agent": "Risk", "message": "Evidence only.", "tone": "risk"}],
+                "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+            },
+        }
+        export_package = research_run_export_to_payload(audit, ai_review_runs=[ai_review])
+        export_package.pop("integrity", None)
+        export_package["aiReviewRuns"][0]["record"]["runId"] = "run-other"
+
+        with self.assertRaisesRegex(ValueError, "ai_review_record_run_id_mismatch"):
+            research_run_import_to_audit(export_package)
+
     def test_research_run_import_api_persists_export_package_for_replay(self):
         import json
         from http.client import HTTPConnection
@@ -3504,6 +3572,174 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             history_payload["executions"][0]["executionId"],
             export_payload["export"]["paperExecutions"][0]["executionId"],
+        )
+
+    def test_research_run_export_import_preserves_ai_review_records(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-ai-review-portable",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Portable AI review SMA",
+            strategy_revision="rev-ai-review-portable",
+            data_rows=2,
+            metrics={"total_return_pct": 4.2, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Portable evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={
+                "summary": "Portable AI review summary",
+                "risks": ["Portable AI review risk"],
+                "improvements": ["Review imported AI evidence"],
+                "disclaimer": "No investment advice",
+            },
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 2,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-27T08:00:00+00:00",
+                "hash": "snapshot-ai-review-portable",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    },
+                    {
+                        "timestamp": "2026-05-27T08:00:00+00:00",
+                        "timestampMs": 1779868800000,
+                        "open": 9.2,
+                        "high": 9.4,
+                        "low": 9.1,
+                        "close": 9.3,
+                        "volume": 1300000,
+                    },
+                ],
+            },
+            strategy_config={
+                "name": "Portable AI review SMA",
+                "revision": "rev-ai-review-portable",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            backtest_trades=[{"id": "trade-ai-review-portable", "side": "BUY", "price": "9.20"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000.0}],
+            backtest_diagnostics=[{"id": "return-profile", "label": "Return profile", "value": "+4.20%"}],
+        )
+        review_record = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-ai-review-portable:rev-ai-review-portable",
+            "runId": "run-ai-review-portable",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-ai-review-portable",
+            "executionMode": "paper_only",
+            "status": "ready",
+            "summary": {
+                "citationCount": 7,
+                "roundCount": 5,
+                "decisionCount": 2,
+                "parameterScanBound": True,
+                "liveExecutionBlocked": True,
+            },
+            "dossier": {"status": "ready", "headline": "Portable AI review", "summary": "Evidence only", "citations": []},
+            "citations": [
+                {"id": "parameter-scan", "label": "Parameter scan", "value": "SMA20", "detail": "portable", "tone": "warning"}
+            ],
+            "rounds": [{"id": "technical-analysis", "phase": "analysis", "agent": "Technical Analyst", "verdict": "support"}],
+            "decisionLog": [{"agent": "Technical", "message": "Evidence only.", "tone": "positive"}],
+            "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source_run_store = ResearchRunStore(f"{tmp}/source-runs.sqlite")
+            source_ai_review_store = AiReviewRunStore(f"{tmp}/source-ai-reviews.sqlite")
+            target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
+            target_ai_review_store = AiReviewRunStore(f"{tmp}/target-ai-reviews.sqlite")
+            source_run_store.record(audit)
+            source_ai_review_store.record(review_record)
+
+            class SourceHandler(QuantApiHandler):
+                run_store = source_run_store
+                ai_review_store = source_ai_review_store
+
+            source_server = HTTPServer(("127.0.0.1", 0), SourceHandler)
+            source_thread = Thread(target=source_server.serve_forever, daemon=True)
+            source_thread.start()
+            source_connection = HTTPConnection(source_server.server_address[0], source_server.server_address[1], timeout=5)
+            try:
+                source_connection.request("GET", "/api/research/runs/run-ai-review-portable/export")
+                export_response = source_connection.getresponse()
+                export_payload = json.loads(export_response.read().decode("utf-8"))
+            finally:
+                source_connection.close()
+                source_server.shutdown()
+                source_thread.join(timeout=5)
+                source_server.server_close()
+
+            class TargetHandler(QuantApiHandler):
+                run_store = target_run_store
+                ai_review_store = target_ai_review_store
+
+            target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
+            target_thread = Thread(target=target_server.serve_forever, daemon=True)
+            target_thread.start()
+            target_connection = HTTPConnection(target_server.server_address[0], target_server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(export_payload["export"]).encode("utf-8")
+                target_connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                import_response = target_connection.getresponse()
+                import_payload = json.loads(import_response.read().decode("utf-8"))
+                target_connection.request("GET", "/api/research/runs/run-ai-review-portable/ai-reviews")
+                history_response = target_connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                target_connection.close()
+                target_server.shutdown()
+                target_thread.join(timeout=5)
+                target_server.server_close()
+
+        self.assertEqual(export_response.status, 200)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["aiReviewRuns"], 1)
+        self.assertEqual(export_payload["export"]["aiReviewRuns"][0]["aiReviewId"], "ai-review:run-ai-review-portable:rev-ai-review-portable")
+        self.assertEqual(import_response.status, 201)
+        self.assertEqual(import_payload["run"]["runId"], "run-ai-review-portable")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["aiReviews"]), 1)
+        self.assertEqual(history_payload["aiReviews"][0]["aiReviewId"], "ai-review:run-ai-review-portable:rev-ai-review-portable")
+        self.assertEqual(
+            history_payload["aiReviews"][0]["record"]["boundary"],
+            "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
         )
 
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):

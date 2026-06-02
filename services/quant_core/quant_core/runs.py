@@ -379,6 +379,7 @@ def research_run_export_to_payload(
     exported_at: datetime | None = None,
     paper_executions: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
+    ai_review_runs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     exported = exported_at or datetime.now(timezone.utc)
     run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
@@ -387,6 +388,7 @@ def research_run_export_to_payload(
     research_note = _dict_or_empty(run_payload.get("researchNote"))
     paper_execution_payloads = _normalize_paper_execution_payloads(paper_executions, run_id=audit.run_id)
     normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
+    ai_review_run_payloads = _normalize_ai_review_run_payloads(ai_review_runs, run_id=audit.run_id)
     artifact_counts = {
         "bars": len(data_snapshot.get("bars", [])) if isinstance(data_snapshot, dict) else 0,
         "trades": len(run_payload.get("backtestTrades", [])),
@@ -396,6 +398,7 @@ def research_run_export_to_payload(
         "paperExecutions": len(paper_execution_payloads),
         "promotionCandidates": 1 if normalized_promotion_candidate else 0,
         "researchNotes": 1 if _research_note_has_body(research_note) else 0,
+        "aiReviewRuns": len(ai_review_run_payloads),
     }
     export_package = {
         "kind": "aiqt.researchRun.export",
@@ -418,6 +421,7 @@ def research_run_export_to_payload(
         "researchRun": run_payload,
         "paperExecutions": paper_execution_payloads,
         "promotionCandidate": normalized_promotion_candidate,
+        "aiReviewRuns": ai_review_run_payloads,
         "executionHandoff": {
             "mode": audit.execution_mode,
             "paperOnly": True,
@@ -468,6 +472,18 @@ def research_run_import_paper_executions(payload: dict[str, Any], *, run_id: str
     return executions
 
 
+def research_run_import_ai_review_runs(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_reviews = export_package.get("aiReviewRuns", [])
+    if raw_reviews is None:
+        return []
+    if not isinstance(raw_reviews, list):
+        raise ValueError("ai_review_runs_must_be_array")
+    return _normalize_ai_review_run_payloads(raw_reviews, run_id=run_id)
+
+
 def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
@@ -492,6 +508,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
 
     run_id = _required_text(research_run, "runId")
     paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
+    ai_review_runs = research_run_import_ai_review_runs(export_package, run_id=run_id)
     data_snapshot = research_run.get("dataSnapshot")
     if not isinstance(data_snapshot, dict):
         raise ValueError("data_snapshot_must_be_object")
@@ -501,6 +518,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         data_snapshot,
         handoff,
         paper_executions=paper_executions,
+        ai_review_runs=ai_review_runs,
     )
 
     created_at_raw = _required_text(research_run, "createdAt")
@@ -629,6 +647,7 @@ def _validate_manifest_consistency(
     handoff: dict[str, Any],
     *,
     paper_executions: list[dict[str, Any]] | None = None,
+    ai_review_runs: list[dict[str, Any]] | None = None,
 ) -> None:
     for manifest_key, run_key, error_code in [
         ("runId", "runId", "manifest_run_id_mismatch"),
@@ -671,6 +690,8 @@ def _validate_manifest_consistency(
     }
     if "paperExecutions" in counts or paper_executions:
         expected_counts["paperExecutions"] = len(paper_executions or [])
+    if "aiReviewRuns" in counts or ai_review_runs:
+        expected_counts["aiReviewRuns"] = len(ai_review_runs or [])
     research_note = _normalize_research_note(
         _dict_or_empty(research_run.get("researchNote")),
         audit_fields={
@@ -748,6 +769,53 @@ def _normalize_paper_execution_payloads(value: list[dict[str, Any]] | None, *, r
                 "account": _dict_or_empty(item.get("account")),
                 "orders": _list_of_dicts(item.get("orders")),
                 "gates": _list_of_dicts(item.get("gates")),
+            }
+        )
+    return normalized
+
+
+def _normalize_ai_review_run_payloads(
+    value: list[dict[str, Any]] | None,
+    *,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    normalized = []
+    expected_run_id = str(run_id or "").strip()
+    for item in value or []:
+        if not isinstance(item, dict):
+            raise ValueError("ai_review_run_must_be_object")
+        record = item.get("record")
+        if not isinstance(record, dict):
+            raise ValueError("ai_review_record_must_be_object")
+        envelope_run_id = str(item.get("runId") or "").strip()
+        record_run_id = str(record.get("runId") or "").strip()
+        if expected_run_id and envelope_run_id != expected_run_id:
+            raise ValueError("ai_review_run_id_mismatch")
+        if expected_run_id and record_run_id != expected_run_id:
+            raise ValueError("ai_review_record_run_id_mismatch")
+        if envelope_run_id and record_run_id and envelope_run_id != record_run_id:
+            raise ValueError("ai_review_record_run_id_mismatch")
+        ai_review_id = str(item.get("aiReviewId") or "").strip()
+        record_ai_review_id = str(record.get("aiReviewId") or "").strip()
+        if not ai_review_id or not record_ai_review_id:
+            raise ValueError("ai_review_id_is_required")
+        if ai_review_id != record_ai_review_id:
+            raise ValueError("ai_review_id_mismatch")
+        created_at = str(item.get("createdAt") or record.get("createdAt") or "").strip()
+        if not created_at:
+            raise ValueError("ai_review_created_at_is_required")
+        if int(_number_or_default(record.get("schemaVersion"), 0)) != 1:
+            raise ValueError("ai_review_schema_version_must_be_1")
+        if str(record.get("recordType") or "") != "aiqt.aiReviewRun":
+            raise ValueError("ai_review_record_type_mismatch")
+        if not str(record.get("boundary") or "").strip():
+            raise ValueError("ai_review_boundary_is_required")
+        normalized.append(
+            {
+                "aiReviewId": ai_review_id,
+                "runId": envelope_run_id or record_run_id or expected_run_id,
+                "createdAt": created_at,
+                "record": dict(record),
             }
         )
     return normalized
