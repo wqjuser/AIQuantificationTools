@@ -211,6 +211,28 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"ai"'])).toBe(true);
   });
 
+  test("compares current AI review evidence with the latest saved audit record", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+
+    expect(appSource).toContain("function AiReviewAuditComparison");
+    expect(auditWorkspaceSource).toContain("currentRunId={workspace.researchRun?.runId ?? null}");
+    expect(auditWorkspaceSource).toContain('currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}');
+    expect(auditWorkspaceSource).toContain("liveExecutionBlocked={!workspace.execution.liveEnabled}");
+    expect(auditWorkspaceSource).toContain("roundCount={agentCommitteeRounds.length}");
+    expect(auditPanelSource).toContain("const latestRecord = records[0] ?? null;");
+    expect(auditPanelSource).toContain("<AiReviewAuditComparison");
+    expect(auditPanelSource).toContain("latestRecord={latestRecord}");
+    expect(auditPanelSource).toContain("currentCitationCount={dossier.citations.length}");
+    expect(auditPanelSource).toContain("currentStatus={dossier.status}");
+    expect(auditPanelSource).toContain("roundCount={roundCount}");
+    expect(cssBlock(".audit-ai-comparison")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".audit-ai-comparison-grid")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-comparison-row")).toContain(
+      "grid-template-columns: minmax(96px, 0.58fr) minmax(0, 1fr) minmax(0, 1fr);"
+    );
+  });
+
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');

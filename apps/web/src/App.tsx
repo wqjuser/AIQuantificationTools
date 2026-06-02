@@ -1860,9 +1860,13 @@ export function App() {
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
           <AiReviewAuditTrailPanel
             className="workflow-ai-audit-panel"
+            currentRunId={workspace.researchRun?.runId ?? null}
+            currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}
             dossier={aiReviewDossier}
             i18n={i18n}
+            liveExecutionBlocked={!workspace.execution.liveEnabled}
             records={activeAiReviewRunRecords}
+            roundCount={agentCommitteeRounds.length}
           />
         </>
       );
@@ -3803,17 +3807,118 @@ function AiReviewRunRecordHistory({ i18n, records }: { i18n: AppI18n; records: A
   );
 }
 
+function AiReviewAuditComparison({
+  currentCitationCount,
+  currentRunId,
+  currentStatus,
+  currentStrategyRevision,
+  i18n,
+  latestRecord,
+  liveExecutionBlocked,
+  roundCount
+}: {
+  currentCitationCount: number;
+  currentRunId: string | null;
+  currentStatus: AiReviewDossier["status"];
+  currentStrategyRevision: string;
+  i18n: AppI18n;
+  latestRecord: AiReviewRunRecordEnvelope | null;
+  liveExecutionBlocked: boolean;
+  roundCount: number;
+}) {
+  const emptyValue = i18n.locale === "zh-CN" ? "未保存" : "Not saved";
+  const currentRunLabel = currentRunId ?? (i18n.locale === "zh-CN" ? "等待审计运行" : "Pending audited run");
+  const savedRecord = latestRecord?.record ?? null;
+  const rows = [
+    {
+      id: "run",
+      label: i18n.locale === "zh-CN" ? "审计运行" : "Audit run",
+      current: currentRunLabel,
+      saved: latestRecord?.runId ?? emptyValue,
+      changed: Boolean(currentRunId && latestRecord && currentRunId !== latestRecord.runId)
+    },
+    {
+      id: "revision",
+      label: i18n.locale === "zh-CN" ? "策略版本" : "Strategy revision",
+      current: currentStrategyRevision,
+      saved: savedRecord?.strategyRevision ?? emptyValue,
+      changed: Boolean(savedRecord && currentStrategyRevision !== savedRecord.strategyRevision)
+    },
+    {
+      id: "status",
+      label: i18n.locale === "zh-CN" ? "档案状态" : "Dossier status",
+      current: aiReviewAuditStatusLabel(i18n, currentStatus),
+      saved: savedRecord ? aiReviewAuditStatusLabel(i18n, savedRecord.status) : emptyValue,
+      changed: Boolean(savedRecord && currentStatus !== savedRecord.status)
+    },
+    {
+      id: "citations",
+      label: i18n.locale === "zh-CN" ? "引用证据" : "Citations",
+      current: currentCitationCount.toLocaleString(i18n.locale),
+      saved: savedRecord ? savedRecord.summary.citationCount.toLocaleString(i18n.locale) : emptyValue,
+      changed: Boolean(savedRecord && currentCitationCount !== savedRecord.summary.citationCount)
+    },
+    {
+      id: "rounds",
+      label: i18n.locale === "zh-CN" ? "委员会轮次" : "Committee rounds",
+      current: roundCount.toLocaleString(i18n.locale),
+      saved: savedRecord ? savedRecord.summary.roundCount.toLocaleString(i18n.locale) : emptyValue,
+      changed: Boolean(savedRecord && roundCount !== savedRecord.summary.roundCount)
+    },
+    {
+      id: "boundary",
+      label: i18n.locale === "zh-CN" ? "实盘边界" : "Live boundary",
+      current: aiReviewAuditBoundaryLabel(i18n, liveExecutionBlocked),
+      saved: savedRecord ? aiReviewAuditBoundaryLabel(i18n, savedRecord.summary.liveExecutionBlocked) : emptyValue,
+      changed: Boolean(savedRecord && liveExecutionBlocked !== savedRecord.summary.liveExecutionBlocked)
+    }
+  ];
+
+  return (
+    <div className="audit-ai-comparison">
+      <div className="agent-rounds-title">
+        <span>{i18n.locale === "zh-CN" ? "证据对照" : "Evidence Comparison"}</span>
+        <strong>{latestRecord ? formatChartDate(latestRecord.createdAt) : emptyValue}</strong>
+      </div>
+      <div className="audit-ai-comparison-grid">
+        <div className="audit-ai-comparison-row audit-ai-comparison-head">
+          <span>{i18n.locale === "zh-CN" ? "维度" : "Dimension"}</span>
+          <span>{i18n.locale === "zh-CN" ? "当前证据" : "Current evidence"}</span>
+          <span>{i18n.locale === "zh-CN" ? "最近保存" : "Latest saved"}</span>
+        </div>
+        {rows.map((row) => (
+          <article className={`audit-ai-comparison-row ${row.changed ? "changed" : "matched"}`} key={row.id}>
+            <span>{row.label}</span>
+            <strong>{row.current}</strong>
+            <em>{row.saved}</em>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
+  currentRunId,
+  currentStrategyRevision,
   dossier,
   i18n,
-  records
+  liveExecutionBlocked,
+  records,
+  roundCount
 }: {
   className?: string;
+  currentRunId: string | null;
+  currentStrategyRevision: string;
   dossier: AiReviewDossier;
   i18n: AppI18n;
+  liveExecutionBlocked: boolean;
   records: AiReviewRunRecordEnvelope[];
+  roundCount: number;
 }) {
+  const latestRecord = records[0] ?? null;
+
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "AI 评审审计" : "AI Review Audit"}
@@ -3821,6 +3926,16 @@ function AiReviewAuditTrailPanel({
       className={className}
     >
       <div className="audit-ai-trail-grid">
+        <AiReviewAuditComparison
+          currentCitationCount={dossier.citations.length}
+          currentRunId={currentRunId}
+          currentStatus={dossier.status}
+          currentStrategyRevision={currentStrategyRevision}
+          i18n={i18n}
+          latestRecord={latestRecord}
+          liveExecutionBlocked={liveExecutionBlocked}
+          roundCount={roundCount}
+        />
         <AiReviewRunRecordHistory i18n={i18n} records={records} />
         <div className="audit-ai-citation-list">
           <div className="agent-rounds-title">
@@ -3838,6 +3953,20 @@ function AiReviewAuditTrailPanel({
       </div>
     </Panel>
   );
+}
+
+function aiReviewAuditStatusLabel(i18n: AppI18n, status: AiReviewDossier["status"]): string {
+  if (status === "ready") {
+    return i18n.locale === "zh-CN" ? "可评审" : "Ready";
+  }
+  return i18n.locale === "zh-CN" ? "阻断" : "Blocked";
+}
+
+function aiReviewAuditBoundaryLabel(i18n: AppI18n, blocked: boolean): string {
+  if (blocked) {
+    return i18n.locale === "zh-CN" ? "仅模拟盘" : "Paper only";
+  }
+  return i18n.locale === "zh-CN" ? "实盘闸门开启" : "Live gates open";
 }
 
 function AgentEvidenceBoard({ cards, i18n }: { cards: AiEvidenceCard[]; i18n: AppI18n }) {

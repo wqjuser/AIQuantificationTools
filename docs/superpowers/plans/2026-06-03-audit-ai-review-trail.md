@@ -13,13 +13,14 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Render an `AiReviewAuditTrailPanel` in the Audit workspace.
 - Reuse `activeAiReviewRunRecords` already loaded from `/api/research/runs/{runId}/ai-reviews`.
 - Reuse `aiReviewDossier` citations as the current evidence reference list.
+- Compare the current run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary against the latest saved AI Review Run Record.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
 ## Out Of Scope
 
 - No new backend AI review storage contract.
-- No AI review diffing or search yet.
+- No AI review record search or deep field-level diffing beyond the current-vs-latest evidence comparison.
 - No changes to AI Review generation behavior.
 
 ## Test Plan
@@ -34,3 +35,5 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 
 - RED: `layout-css.test.js -t "AI review audit trail"` failed because `AiReviewAuditTrailPanel` did not exist.
 - GREEN: added the panel, rendered saved AI review records plus dossier citations, and expanded the Audit grid with a full-width `ai` area.
+- RED: `layout-css.test.js -t "compares current AI review evidence"` failed because `AiReviewAuditComparison` did not exist.
+- GREEN: added the current-vs-latest AI review evidence comparison, including run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary.

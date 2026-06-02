@@ -1419,6 +1419,63 @@ em {
   align-items: start;
 }
 
+.audit-ai-comparison {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 7px;
+  min-width: 0;
+}
+
+.audit-ai-comparison-grid {
+  display: grid;
+  gap: 5px;
+}
+
+.audit-ai-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.58fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.86);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.76);
+  padding: 7px 9px;
+}
+
+.audit-ai-comparison-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-ai-comparison-row span {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.audit-ai-comparison-row strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.audit-ai-comparison-row em {
+  color: var(--muted-strong);
+  font-style: normal;
+}
+
+.audit-ai-comparison-row.changed {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.audit-ai-comparison-head {
+  background: rgba(11, 18, 30, 0.72);
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .audit-ai-citation-list {
   display: grid;
   gap: 7px;
