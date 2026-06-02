@@ -40,6 +40,7 @@ def build_golden_path_status(
         "currentStepId": current_step["id"] if current_step else None,
         "latestRunId": str(getattr(latest_run, "run_id", "")) if latest_run else None,
         "nextAction": _next_action(current_step),
+        "workspaces": _workspaces_from_steps(steps, current_step),
         "steps": steps,
     }
 
@@ -300,6 +301,84 @@ def _next_action(current_step: GoldenPathPayload | None) -> GoldenPathPayload | 
     }
     action_id = current_step.get("actionId")
     return actions.get(action_id) if isinstance(action_id, str) else None
+
+
+def _workspaces_from_steps(steps: list[GoldenPathPayload], current_step: GoldenPathPayload | None) -> list[GoldenPathPayload]:
+    by_id = {step["id"]: step for step in steps}
+    market = by_id["market-data"]
+    research = by_id["research-run"]
+    backtest = by_id["backtest-report"]
+    ai_review = by_id["ai-review"]
+    paper = by_id["paper-execution"]
+    live_gate = by_id["live-gate"]
+
+    return [
+        _workspace_from_step("market", "Market", market, current_step, blocked_status="needs_run"),
+        _workspace_from_step("research", "Research", research, current_step, blocked_status="needs_run"),
+        _workspace(
+            "strategy",
+            "Strategy",
+            "ready" if market["status"] in {"passed", "review"} else "needs_run",
+            current_step,
+            ["market-data", "research-run"],
+            "Strategy drafts can be edited, but an audited run is required before execution.",
+            "run-pipeline" if research["status"] != "passed" else None,
+        ),
+        _workspace_from_step("backtest", "Backtest", backtest, current_step, blocked_status="needs_run"),
+        _workspace_from_step("ai-review", "AI review", ai_review, current_step, blocked_status="needs_run"),
+        _workspace_from_step("portfolio", "Portfolio", paper, current_step, blocked_status="blocked"),
+        _workspace_from_step("execution", "Execution", paper, current_step, blocked_status="blocked"),
+        _workspace(
+            "audit",
+            "Audit",
+            "ready" if research["status"] == "passed" else "needs_run",
+            current_step,
+            ["research-run", "backtest-report", "ai-review", "paper-execution"],
+            "Audit history becomes useful after a research run is bound.",
+            "run-pipeline" if research["status"] != "passed" else None,
+        ),
+        _workspace_from_step("settings", "Settings", live_gate, current_step, blocked_status="blocked"),
+    ]
+
+
+def _workspace_from_step(
+    workspace_id: str,
+    label: str,
+    step: GoldenPathPayload,
+    current_step: GoldenPathPayload | None,
+    *,
+    blocked_status: str,
+) -> GoldenPathPayload:
+    if step["status"] == "passed":
+        status = "ready"
+        action_id = None
+    elif step["status"] == "review":
+        status = "needs_run"
+        action_id = step.get("actionId")
+    else:
+        status = blocked_status
+        action_id = step.get("actionId")
+    return _workspace(workspace_id, label, status, current_step, [step["id"]], step["detail"], action_id)
+
+
+def _workspace(
+    workspace_id: str,
+    label: str,
+    status: str,
+    current_step: GoldenPathPayload | None,
+    step_ids: list[str],
+    reason: str,
+    action_id: Any,
+) -> GoldenPathPayload:
+    return {
+        "id": workspace_id,
+        "label": label,
+        "status": status,
+        "current": bool(current_step and current_step["id"] in step_ids),
+        "stepIds": step_ids,
+        "reason": reason,
+        "actionId": action_id if isinstance(action_id, str) else None,
+    }
 
 
 def _positive_int(value: Any) -> int:

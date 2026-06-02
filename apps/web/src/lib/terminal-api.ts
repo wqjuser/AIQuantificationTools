@@ -402,6 +402,7 @@ export interface PlatformSettingsResult {
 
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
+export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
 
 export interface GoldenPathNextAction {
   id: string;
@@ -419,6 +420,16 @@ export interface GoldenPathStep {
   actionId: string | null;
 }
 
+export interface GoldenPathWorkspace {
+  id: string;
+  label: string;
+  status: GoldenPathWorkspaceStatus;
+  current: boolean;
+  stepIds: string[];
+  reason: string;
+  actionId: string | null;
+}
+
 export interface GoldenPathStatus {
   schemaVersion: 1;
   market: Market;
@@ -428,6 +439,7 @@ export interface GoldenPathStatus {
   currentStepId: string | null;
   latestRunId: string | null;
   nextAction: GoldenPathNextAction | null;
+  workspaces: GoldenPathWorkspace[];
   steps: GoldenPathStep[];
 }
 
@@ -2042,6 +2054,8 @@ function isGoldenPathStatus(value: unknown): value is GoldenPathStatus {
     (status.currentStepId === null || typeof status.currentStepId === "string") &&
     (status.latestRunId === null || typeof status.latestRunId === "string") &&
     (status.nextAction === null || isGoldenPathNextAction(status.nextAction)) &&
+    Array.isArray(status.workspaces) &&
+    status.workspaces.every(isGoldenPathWorkspace) &&
     Array.isArray(status.steps) &&
     status.steps.every(isGoldenPathStep)
   );
@@ -2068,6 +2082,27 @@ function isGoldenPathStep(value: unknown): value is GoldenPathStep {
 
 function isGoldenPathStepStatus(value: unknown): value is GoldenPathStepStatus {
   return value === "passed" || value === "review" || value === "blocked";
+}
+
+function isGoldenPathWorkspace(value: unknown): value is GoldenPathWorkspace {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const workspace = value as Partial<GoldenPathWorkspace>;
+  return (
+    typeof workspace.id === "string" &&
+    typeof workspace.label === "string" &&
+    isGoldenPathWorkspaceStatus(workspace.status) &&
+    typeof workspace.current === "boolean" &&
+    Array.isArray(workspace.stepIds) &&
+    workspace.stepIds.every((stepId) => typeof stepId === "string") &&
+    typeof workspace.reason === "string" &&
+    (workspace.actionId === null || typeof workspace.actionId === "string")
+  );
+}
+
+function isGoldenPathWorkspaceStatus(value: unknown): value is GoldenPathWorkspaceStatus {
+  return value === "ready" || value === "needs_run" || value === "blocked";
 }
 
 function isGoldenPathNextAction(value: unknown): value is GoldenPathNextAction {

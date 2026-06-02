@@ -1746,6 +1746,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(status["steps"][0]["status"], "passed")
         self.assertEqual(status["steps"][1]["id"], "research-run")
         self.assertEqual(status["steps"][1]["status"], "blocked")
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "ready")
+        self.assertEqual(workspaces["research"]["status"], "needs_run")
+        self.assertEqual(workspaces["backtest"]["status"], "needs_run")
+        self.assertEqual(workspaces["execution"]["status"], "blocked")
+        self.assertEqual(workspaces["research"]["actionId"], "run-pipeline")
 
     def test_golden_path_status_advances_to_paper_execution_after_audited_ai_run(self):
         from quant_core.golden_path import build_golden_path_status
@@ -1835,6 +1841,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(steps["ai-review"]["status"], "passed")
         self.assertEqual(steps["paper-execution"]["status"], "review")
         self.assertEqual(steps["live-gate"]["status"], "blocked")
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["research"]["status"], "ready")
+        self.assertEqual(workspaces["backtest"]["status"], "ready")
+        self.assertEqual(workspaces["ai-review"]["status"], "ready")
+        self.assertEqual(workspaces["execution"]["status"], "needs_run")
+        self.assertEqual(workspaces["execution"]["actionId"], "submit-paper-order")
 
     def test_golden_path_status_api_returns_selected_context_progress(self):
         import json
@@ -1942,6 +1954,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["goldenPath"]["latestRunId"], "run-golden-api")
         self.assertEqual(payload["goldenPath"]["currentStepId"], "paper-execution")
         self.assertEqual(payload["goldenPath"]["nextAction"]["targetWorkspace"], "execution")
+        self.assertEqual(payload["goldenPath"]["workspaces"][0]["id"], "market")
+        self.assertEqual(payload["goldenPath"]["workspaces"][0]["status"], "ready")
 
     def test_research_run_paper_execution_api_returns_404_for_missing_run(self):
         import json

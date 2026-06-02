@@ -269,6 +269,26 @@ describe("terminal workspace API client", () => {
                 targetWorkspace: "execution",
                 reason: "Audited AI evidence is ready, but no paper execution is bound."
               },
+              workspaces: [
+                {
+                  id: "research",
+                  label: "Research",
+                  status: "ready",
+                  current: false,
+                  stepIds: ["research-run"],
+                  reason: "Audit run is bound.",
+                  actionId: null
+                },
+                {
+                  id: "execution",
+                  label: "Execution",
+                  status: "needs_run",
+                  current: true,
+                  stepIds: ["paper-execution"],
+                  reason: "Submit a paper execution before promotion.",
+                  actionId: "submit-paper-order"
+                }
+              ],
               steps: [
                 {
                   id: "market-data",
@@ -299,6 +319,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.goldenPath?.currentStepId).toBe("paper-execution");
     expect(result.goldenPath?.nextAction?.targetWorkspace).toBe("execution");
+    expect(result.goldenPath?.workspaces.find((workspace) => workspace.id === "execution")?.status).toBe("needs_run");
   });
 
   test("validates the active strategy draft through the Python core", async () => {

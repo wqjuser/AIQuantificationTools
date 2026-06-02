@@ -350,7 +350,8 @@ export function App() {
   const symbolSearchRequestIdRef = useRef(0);
   const skipNextSymbolSearchRef = useRef(false);
   const i18n = createI18n(locale);
-  const productWorkAreas = buildProductWorkAreas(workspace);
+  const goldenPath = goldenPathState.goldenPath;
+  const productWorkAreas = productWorkAreasWithGoldenPath(buildProductWorkAreas(workspace), goldenPath);
   const activeWorkArea =
     productWorkAreas.find((area) => area.id === activeWorkAreaId) ?? productWorkAreas.find((area) => area.id === "research");
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
@@ -407,7 +408,6 @@ export function App() {
     timeframe: workspace.selectedTimeframe
   });
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
-  const goldenPath = goldenPathState.goldenPath;
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
 
   useEffect(() => {
@@ -2134,6 +2134,20 @@ function workflowNextActionLabel(i18n: AppI18n, stepId: string): string {
     return i18n.t("execution.submitPaper");
   }
   return i18n.t("action.runPipeline");
+}
+
+function productWorkAreasWithGoldenPath(
+  areas: ProductWorkArea[],
+  goldenPath: GoldenPathStatus | undefined
+): ProductWorkArea[] {
+  if (!goldenPath) {
+    return areas;
+  }
+  const statusByWorkspace = new Map(goldenPath.workspaces.map((workspace) => [workspace.id, workspace.status]));
+  return areas.map((area) => {
+    const status = statusByWorkspace.get(area.id);
+    return status ? { ...area, status } : area;
+  });
 }
 
 function goldenPathStatusLabel(i18n: AppI18n, status: GoldenPathStatus["status"]): string {
