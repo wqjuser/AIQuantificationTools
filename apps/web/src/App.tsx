@@ -1500,43 +1500,68 @@ export function App() {
     void runPipeline();
   }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, submitPaperExecution]);
 
+  const runGoldenPathActionById = useCallback(
+    (actionId: string | null | undefined, targetWorkspace?: string | null) => {
+      if (!actionId) {
+        runActiveWorkflowAction();
+        return;
+      }
+      if (actionId === "refresh-data") {
+        void refreshSelectedMarketCache();
+        return;
+      }
+      if (actionId === "run-pipeline") {
+        void runPipeline();
+        return;
+      }
+      if (actionId === "run-ai-review") {
+        setActiveWorkAreaId("ai-review");
+        setActiveLoopStepId("agent-review");
+        setActiveWorkflowStageId("agent");
+        runAiWorkbenchAction("debate");
+        return;
+      }
+      if (actionId === "submit-paper-order") {
+        void submitPaperExecution();
+        return;
+      }
+      if (actionId === "fix-paper-handoff") {
+        selectProductWorkArea("execution");
+        return;
+      }
+      if (actionId === "certify-live-adapter") {
+        selectProductWorkArea("settings");
+        return;
+      }
+      if (targetWorkspace && productWorkAreaIds.includes(targetWorkspace as ProductWorkAreaId)) {
+        selectProductWorkArea(targetWorkspace as ProductWorkAreaId);
+      }
+    },
+    [
+      refreshSelectedMarketCache,
+      runActiveWorkflowAction,
+      runAiWorkbenchAction,
+      runPipeline,
+      selectProductWorkArea,
+      submitPaperExecution
+    ]
+  );
+
   const runGoldenPathAction = useCallback(() => {
     const action = goldenPath?.nextAction;
     if (!action) {
       runActiveWorkflowAction();
       return;
     }
-    if (action.id === "refresh-data") {
-      void refreshSelectedMarketCache();
+    runGoldenPathActionById(action.id, action.targetWorkspace);
+  }, [goldenPath?.nextAction, runActiveWorkflowAction, runGoldenPathActionById]);
+
+  const runWorkspaceContextAction = useCallback(() => {
+    if (!activeWorkspaceContext?.actionId) {
       return;
     }
-    if (action.id === "run-pipeline") {
-      void runPipeline();
-      return;
-    }
-    if (action.id === "run-ai-review") {
-      setActiveWorkAreaId("ai-review");
-      setActiveLoopStepId("agent-review");
-      setActiveWorkflowStageId("agent");
-      runAiWorkbenchAction("debate");
-      return;
-    }
-    if (action.id === "submit-paper-order") {
-      void submitPaperExecution();
-      return;
-    }
-    if (productWorkAreaIds.includes(action.targetWorkspace as ProductWorkAreaId)) {
-      selectProductWorkArea(action.targetWorkspace as ProductWorkAreaId);
-    }
-  }, [
-    goldenPath?.nextAction,
-    refreshSelectedMarketCache,
-    runActiveWorkflowAction,
-    runAiWorkbenchAction,
-    runPipeline,
-    selectProductWorkArea,
-    submitPaperExecution
-  ]);
+    runGoldenPathActionById(activeWorkspaceContext.actionId, activeWorkspaceContext.workspaceId);
+  }, [activeWorkspaceContext, runGoldenPathActionById]);
 
   const goldenPathActionId = goldenPath?.nextAction?.id;
   const isGoldenPathActionDisabled =
@@ -1544,6 +1569,14 @@ export function App() {
     isRunning ||
     (goldenPathActionId === "refresh-data" && Boolean(refreshingCacheKey)) ||
     (goldenPathActionId === "submit-paper-order" && (isSubmittingPaperExecution || !workspace.researchRun?.runId));
+  const workspaceContextActionId = activeWorkspaceContext?.actionId;
+  const isWorkspaceContextActionDisabled =
+    !workspaceContextActionId ||
+    isRefreshing ||
+    isRunning ||
+    (workspaceContextActionId === "refresh-data" && Boolean(refreshingCacheKey)) ||
+    (workspaceContextActionId === "submit-paper-order" &&
+      (isSubmittingPaperExecution || !workspace.researchRun?.runId));
 
   const renderChartPanel = (className = "chart-panel") => (
     <Panel
@@ -2048,7 +2081,14 @@ export function App() {
                         )
                       : i18n.productWorkAreaStatus(activeWorkspaceContext.status)}
                   </strong>
-                  <em>{goldenPathWorkspaceContextActionLabel(i18n, activeWorkspaceContext)}</em>
+                  <button
+                    className="workspace-gate-action"
+                    disabled={isWorkspaceContextActionDisabled}
+                    onClick={runWorkspaceContextAction}
+                    type="button"
+                  >
+                    {goldenPathWorkspaceContextActionLabel(i18n, activeWorkspaceContext)}
+                  </button>
                   <small>{goldenPathWorkspaceContextDetail(i18n, activeWorkspaceContext)}</small>
                 </div>
               ) : null}

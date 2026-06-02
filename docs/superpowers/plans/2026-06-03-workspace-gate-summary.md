@@ -12,6 +12,7 @@ Show a compact gate summary for the active product work area in the current task
 
 - Add a model helper that derives selected work-area context from Golden Path workspaces and runbook items.
 - Render the active work-area context in the existing module focus card.
+- Make the active work-area context action directly executable from the summary.
 - Keep the summary compact and non-intrusive.
 - Update the product plan.
 
@@ -25,6 +26,7 @@ Show a compact gate summary for the active product work area in the current task
 
 - RED/GREEN model tests for selected work-area Golden Path context.
 - RED/GREEN layout contract test for rendering the active work-area summary.
+- RED/GREEN layout contract test for the active work-area action button.
 - Full `npm test`.
 - `npm run build`.
 - Docker rebuild, smoke check, and browser verification on port 5173.
@@ -35,3 +37,5 @@ Show a compact gate summary for the active product work area in the current task
 - GREEN: added `buildGoldenPathWorkspaceContext` to derive status, step progress, blocker detail, and action label from Golden Path workspaces and runbook items.
 - RED: `layout-css.test.js -t "active work-area"` failed because the current task card did not render active work-area context.
 - GREEN: the module focus card now renders a compact `workspace-gate-summary` for the selected work area.
+- RED: `layout-css.test.js -t "active work-area"` failed because the summary action was only static text.
+- GREEN: the summary now renders `workspace-gate-action`, reusing shared Golden Path action routing by `actionId`.

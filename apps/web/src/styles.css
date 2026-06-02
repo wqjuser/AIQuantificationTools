@@ -922,6 +922,33 @@ em {
   white-space: nowrap;
 }
 
+.workspace-gate-action {
+  border: 0;
+  border-radius: 999px;
+  background: #12332e;
+  color: #71dfc5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.workspace-gate-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.workspace-gate-action:not(:disabled):hover {
+  background: #17473f;
+}
+
+.workspace-gate-action:focus-visible {
+  outline: 2px solid #71dfc5;
+  outline-offset: 2px;
+}
+
 .workspace-gate-summary small {
   grid-column: 1 / -1;
   overflow: hidden;

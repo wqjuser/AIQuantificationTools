@@ -157,11 +157,17 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId)");
     expect(appSource).toContain("activeWorkspaceContext");
+    expect(appSource).toContain("runWorkspaceContextAction");
+    expect(appSource).toContain("runGoldenPathActionById");
     expect(overviewSource).toContain('className={`workspace-gate-summary ${activeWorkspaceContext.status}`}');
     expect(overviewSource).toContain("goldenPathWorkspaceContextLabel");
     expect(overviewSource).toContain("goldenPathWorkspaceContextDetail");
+    expect(overviewSource).toContain('className="workspace-gate-action"');
+    expect(overviewSource).toContain("disabled={isWorkspaceContextActionDisabled}");
+    expect(overviewSource).toContain("onClick={runWorkspaceContextAction}");
     expect(cssBlock(".workspace-gate-summary")).toContain("display: grid;");
     expect(cssBlock(".workspace-gate-summary")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+    expect(cssBlock(".workspace-gate-action")).toContain("cursor: pointer;");
   });
 
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
