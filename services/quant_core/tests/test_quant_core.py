@@ -1,9 +1,71 @@
 import tempfile
 import unittest
+import importlib.util
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 
 class QuantCoreContractTest(unittest.TestCase):
+    def _load_docker_smoke_module(self):
+        root = Path(__file__).resolve().parents[3]
+        module_path = root / "tools" / "docker_smoke.py"
+        spec = importlib.util.spec_from_file_location("docker_smoke", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_docker_smoke_validates_workspace_payload(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        summary = docker_smoke.validate_workspace_payload(
+            {
+                "schemaVersion": 1,
+                "selectedInstrument": {"symbol": "600000"},
+                "watchlist": [{"symbol": "600000"}, {"symbol": "AAPL"}],
+            }
+        )
+
+        self.assertEqual(summary, "workspace schema=1 selected=600000 watchlist=2")
+
+    def test_docker_smoke_rejects_invalid_workspace_payload(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        with self.assertRaisesRegex(RuntimeError, "Invalid /api/workspace response"):
+            docker_smoke.validate_workspace_payload({"schemaVersion": 1, "watchlist": []})
+
+    def test_docker_smoke_compose_up_args_support_optional_build(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        self.assertEqual(docker_smoke.compose_up_args(build=True), ["docker", "compose", "up", "-d", "--build"])
+        self.assertEqual(docker_smoke.compose_up_args(build=False), ["docker", "compose", "up", "-d"])
+
+    def test_docker_smoke_command_runner_keeps_success_output_quiet(self):
+        import contextlib
+        import io
+        import subprocess
+
+        docker_smoke = self._load_docker_smoke_module()
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="verbose compose config\n")
+
+        original_run = docker_smoke.subprocess.run
+        docker_smoke.subprocess.run = fake_run
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output):
+                docker_smoke.run_command(["docker", "compose", "config"], cwd=Path("F:/MyProjects/AIQuantificationTools"))
+        finally:
+            docker_smoke.subprocess.run = original_run
+
+        self.assertEqual(output.getvalue(), "$ docker compose config\n")
+        self.assertEqual(calls[0][1]["stdout"], subprocess.PIPE)
+        self.assertEqual(calls[0][1]["stderr"], subprocess.STDOUT)
+
     def test_quant_api_bind_uses_container_environment(self):
         from quant_core.api import resolve_api_bind
 

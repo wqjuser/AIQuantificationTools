@@ -14,7 +14,10 @@
     "test:python": "python -m unittest discover -s services/quant_core/tests -t services/quant_core",
     "desktop:dev": "npm run tauri:dev --workspace @aiqt/web",
     "desktop:build": "npm run tauri:build --workspace @aiqt/web",
-    "api": "python tools/run_quant_api.py"
+    "api": "python tools/run_quant_api.py",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "docker:smoke": "python tools/docker_smoke.py"
   },
   "engines": {
     "node": ">=22",

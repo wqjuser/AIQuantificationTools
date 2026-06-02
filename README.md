@@ -48,6 +48,18 @@ VITE_QUANT_API_BASE=http://127.0.0.1:8765
 docker compose up --build
 ```
 
+部署自检：
+
+```powershell
+npm run docker:smoke
+```
+
+如果镜像已经构建好，只想复用当前 Compose 服务：
+
+```powershell
+npm run docker:smoke -- --no-build
+```
+
 访问：
 
 ```powershell

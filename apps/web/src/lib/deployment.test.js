@@ -10,6 +10,15 @@ function readRepoFile(path) {
 }
 
 describe("docker deployment contract", () => {
+  test("exposes Docker lifecycle and smoke test commands from the root package", () => {
+    const packageJson = JSON.parse(readRepoFile("package.json"));
+
+    expect(packageJson.scripts["docker:up"]).toBe("docker compose up --build");
+    expect(packageJson.scripts["docker:down"]).toBe("docker compose down");
+    expect(packageJson.scripts["docker:smoke"]).toBe("python tools/docker_smoke.py");
+    expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
+  });
+
   test("ships a compose file with web and api services, health checks, and a persisted data volume", () => {
     expect(existsSync(repoFile("compose.yaml"))).toBe(true);
 
