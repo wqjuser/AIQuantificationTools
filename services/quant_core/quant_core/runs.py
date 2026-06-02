@@ -509,6 +509,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     run_id = _required_text(research_run, "runId")
     paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
     ai_review_runs = research_run_import_ai_review_runs(export_package, run_id=run_id)
+    promotion_candidate = _normalize_promotion_candidate(export_package.get("promotionCandidate"), run_id=run_id)
     data_snapshot = research_run.get("dataSnapshot")
     if not isinstance(data_snapshot, dict):
         raise ValueError("data_snapshot_must_be_object")
@@ -519,6 +520,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         handoff,
         paper_executions=paper_executions,
         ai_review_runs=ai_review_runs,
+        promotion_candidate=promotion_candidate,
     )
 
     created_at_raw = _required_text(research_run, "createdAt")
@@ -648,6 +650,7 @@ def _validate_manifest_consistency(
     *,
     paper_executions: list[dict[str, Any]] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
+    promotion_candidate: dict[str, Any] | None = None,
 ) -> None:
     for manifest_key, run_key, error_code in [
         ("runId", "runId", "manifest_run_id_mismatch"),
@@ -690,6 +693,8 @@ def _validate_manifest_consistency(
     }
     if "paperExecutions" in counts or paper_executions:
         expected_counts["paperExecutions"] = len(paper_executions or [])
+    if "promotionCandidates" in counts or promotion_candidate:
+        expected_counts["promotionCandidates"] = 1 if promotion_candidate else 0
     if "aiReviewRuns" in counts or ai_review_runs:
         expected_counts["aiReviewRuns"] = len(ai_review_runs or [])
     research_note = _normalize_research_note(

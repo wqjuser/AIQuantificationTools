@@ -3253,6 +3253,68 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact_count_bars_mismatch"):
             research_run_import_to_audit(export_package)
 
+    def test_research_run_import_rejects_promotion_candidate_count_mismatch(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        audit = ResearchRunAudit(
+            run_id="run-promotion-counts",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-promotion-counts",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Counts", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-promotion-counts",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_trades=[],
+            backtest_equity_curve=[],
+        )
+        export_package = research_run_export_to_payload(
+            audit,
+            promotion_candidate={
+                "candidateId": "promotion-run-promotion-counts",
+                "runId": "run-promotion-counts",
+                "createdAt": "2026-05-26T08:05:00+00:00",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyRevision": "rev-promotion-counts",
+                "latestPaperExecutionId": "paper-counts",
+                "status": "certification_pending",
+                "headline": "Live promotion pending certification",
+                "summary": "Paper passed; live route blocked.",
+                "liveTradingAllowed": False,
+                "evidence": {"paperExecutions": 1, "filledOrders": 1, "passedPaperRiskChecks": 1},
+                "stages": [],
+            },
+        )
+        export_package.pop("integrity", None)
+        export_package["manifest"]["artifactCounts"]["promotionCandidates"] = 0
+
+        with self.assertRaisesRegex(ValueError, "artifact_count_promotion_candidates_mismatch"):
+            research_run_import_to_audit(export_package)
+
     def test_research_run_import_rejects_ai_review_run_id_mismatch(self):
         from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
 
