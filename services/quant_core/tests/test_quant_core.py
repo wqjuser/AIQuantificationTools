@@ -198,6 +198,32 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["strategyConfig"]["entryConditions"][0]["params"], {"window": 5})
         self.assertEqual(payload["strategySnapshot"]["entry"], "Close > SMA5")
 
+    def test_strategy_library_store_preserves_imported_strategy_revision(self):
+        from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload
+
+        imported_config = {
+            "name": "Imported SMA plan",
+            "revision": "external-rev-001",
+            "market": "ashare",
+            "symbols": ["600000"],
+            "timeframe": "1d",
+            "version": 1,
+            "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+            "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+            "risk": {"positionPct": 0.8, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            record = store.save_payload(imported_config, audit_run_id="run-imported-strategy")
+            payload = strategy_library_record_to_payload(record)
+
+        self.assertEqual(payload["revision"], "external-rev-001")
+        self.assertEqual(payload["status"], "audited")
+        self.assertEqual(payload["auditRunId"], "run-imported-strategy")
+        self.assertEqual(payload["strategyConfig"]["revision"], "external-rev-001")
+        self.assertEqual(payload["strategySnapshot"]["entry"], "Close > SMA20")
+
     def test_strategy_library_api_saves_lists_and_returns_strategy_versions(self):
         import json
         from http.client import HTTPConnection
@@ -1267,6 +1293,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import QuantApiHandler
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         audit = ResearchRunAudit(
             run_id="run-ai-review-api",
@@ -1529,6 +1556,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.api import QuantApiHandler
         from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         audit = ResearchRunAudit(
             run_id="run-promotion-api",
@@ -1622,6 +1650,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.api import QuantApiHandler
         from quant_core.execution import PaperExecutionStore
         from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         with tempfile.TemporaryDirectory() as tmp:
             research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
@@ -3300,6 +3329,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.api import QuantApiHandler
         from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         export_package = {
             "kind": "aiqt.researchRun.export",
@@ -3393,9 +3423,11 @@ class QuantCoreContractTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
 
             class TestHandler(QuantApiHandler):
                 run_store = store
+                strategy_store = strategy_library
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -3414,6 +3446,9 @@ class QuantCoreContractTest(unittest.TestCase):
                 connection.request("GET", "/api/research/runs/run-import")
                 detail_response = connection.getresponse()
                 detail_payload = json.loads(detail_response.read().decode("utf-8"))
+                connection.request("GET", "/api/strategies?market=ashare&symbol=600000&limit=5")
+                strategies_response = connection.getresponse()
+                strategies_payload = json.loads(strategies_response.read().decode("utf-8"))
             finally:
                 connection.close()
                 server.shutdown()
@@ -3428,6 +3463,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(detail_payload["run"]["strategyConfig"]["revision"], "rev-import")
         self.assertEqual(detail_payload["run"]["dataSnapshot"]["bars"][1]["close"], 9.3)
         self.assertEqual(detail_payload["run"]["executionMode"], "paper_only")
+        self.assertEqual(strategies_response.status, 200)
+        self.assertEqual(len(strategies_payload["strategies"]), 1)
+        self.assertEqual(strategies_payload["strategies"][0]["revision"], "rev-import")
+        self.assertEqual(strategies_payload["strategies"][0]["status"], "audited")
+        self.assertEqual(strategies_payload["strategies"][0]["auditRunId"], "run-import")
+        self.assertEqual(strategies_payload["strategies"][0]["strategySnapshot"]["entry"], "Close > SMA20")
 
     def test_research_run_export_import_preserves_paper_execution_history(self):
         import json
@@ -3438,6 +3479,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.api import QuantApiHandler
         from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         audit = ResearchRunAudit(
             run_id="run-paper-portable",
@@ -3509,6 +3551,7 @@ class QuantCoreContractTest(unittest.TestCase):
             source_paper_store = PaperExecutionStore(f"{tmp}/source-paper.sqlite")
             target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
             target_paper_store = PaperExecutionStore(f"{tmp}/target-paper.sqlite")
+            target_strategy_store = StrategyLibraryStore(f"{tmp}/target-strategies.sqlite")
             source_run_store.record(audit)
             source_paper_store.record(
                 create_paper_execution_from_audit(
@@ -3538,6 +3581,7 @@ class QuantCoreContractTest(unittest.TestCase):
             class TargetHandler(QuantApiHandler):
                 run_store = target_run_store
                 paper_execution_store = target_paper_store
+                strategy_store = target_strategy_store
 
             target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
             target_thread = Thread(target=target_server.serve_forever, daemon=True)
@@ -3583,6 +3627,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import QuantApiHandler
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
 
         audit = ResearchRunAudit(
             run_id="run-ai-review-portable",
@@ -3681,6 +3726,7 @@ class QuantCoreContractTest(unittest.TestCase):
             source_ai_review_store = AiReviewRunStore(f"{tmp}/source-ai-reviews.sqlite")
             target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
             target_ai_review_store = AiReviewRunStore(f"{tmp}/target-ai-reviews.sqlite")
+            target_strategy_store = StrategyLibraryStore(f"{tmp}/target-strategies.sqlite")
             source_run_store.record(audit)
             source_ai_review_store.record(review_record)
 
@@ -3705,6 +3751,7 @@ class QuantCoreContractTest(unittest.TestCase):
             class TargetHandler(QuantApiHandler):
                 run_store = target_run_store
                 ai_review_store = target_ai_review_store
+                strategy_store = target_strategy_store
 
             target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
             target_thread = Thread(target=target_server.serve_forever, daemon=True)

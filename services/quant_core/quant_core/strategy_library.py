@@ -88,6 +88,65 @@ class StrategyLibraryStore:
             raise RuntimeError("strategy_library_save_failed")
         return saved
 
+    def save_payload(
+        self,
+        strategy_config: dict[str, Any],
+        *,
+        audit_run_id: str | None = None,
+        created_at: datetime | None = None,
+    ) -> StrategyLibraryRecord:
+        config = _normalize_strategy_config_payload(strategy_config)
+        revision = str(config.get("revision") or "").strip()
+        if not revision:
+            raise ValueError("strategy_revision_required")
+        timestamp = created_at or datetime.now(timezone.utc)
+        existing = self.get(revision)
+        final_audit_run_id = audit_run_id or (existing.audit_run_id if existing else None)
+        status = "audited" if final_audit_run_id else "draft"
+        created_value = existing.created_at if existing else timestamp
+        symbols = config.get("symbols") if isinstance(config.get("symbols"), list) else []
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                insert into strategy_versions (
+                    revision,
+                    created_at,
+                    name,
+                    market,
+                    symbol,
+                    timeframe,
+                    version,
+                    status,
+                    audit_run_id,
+                    strategy_config_json
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(revision) do update set
+                    status = excluded.status,
+                    audit_run_id = excluded.audit_run_id
+                """,
+                (
+                    revision,
+                    created_value.isoformat(),
+                    str(config.get("name") or "Imported strategy"),
+                    str(config.get("market") or "ashare"),
+                    str(symbols[0] if symbols else ""),
+                    str(config.get("timeframe") or "1d"),
+                    int(_number_or_default(config.get("version"), 1)),
+                    status,
+                    final_audit_run_id,
+                    json.dumps(config, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        saved = self.get(revision)
+        if saved is None:
+            raise RuntimeError("strategy_library_save_failed")
+        return saved
+
     def list_recent(
         self,
         *,
@@ -212,6 +271,43 @@ def strategy_snapshot_from_config_payload(config: dict[str, Any]) -> dict[str, s
     }
 
 
+def _normalize_strategy_config_payload(value: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("strategy_config_must_be_object")
+    symbols = value.get("symbols") if isinstance(value.get("symbols"), list) else []
+    entry_conditions = value.get("entryConditions", value.get("entry_conditions", []))
+    exit_conditions = value.get("exitConditions", value.get("exit_conditions", []))
+    risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
+    return {
+        "name": str(value.get("name") or "Imported strategy"),
+        "revision": str(value.get("revision") or "").strip(),
+        "market": str(value.get("market") or "ashare"),
+        "symbols": [str(symbol) for symbol in symbols],
+        "timeframe": str(value.get("timeframe") or "1d"),
+        "version": int(_number_or_default(value.get("version"), 1)),
+        "entryConditions": [
+            _normalize_strategy_condition(condition) for condition in entry_conditions if isinstance(condition, dict)
+        ],
+        "exitConditions": [
+            _normalize_strategy_condition(condition) for condition in exit_conditions if isinstance(condition, dict)
+        ],
+        "risk": {
+            "positionPct": _nullable_number(risk.get("positionPct", risk.get("position_pct"))),
+            "stopLossPct": _nullable_number(risk.get("stopLossPct", risk.get("stop_loss_pct"))),
+            "takeProfitPct": _nullable_number(risk.get("takeProfitPct", risk.get("take_profit_pct"))),
+            "maxDrawdownPct": _nullable_number(risk.get("maxDrawdownPct", risk.get("max_drawdown_pct"))),
+        },
+    }
+
+
+def _normalize_strategy_condition(value: dict[str, Any]) -> dict[str, Any]:
+    params = value.get("params")
+    return {
+        "kind": str(value.get("kind") or "unknown"),
+        "params": dict(params) if isinstance(params, dict) else {},
+    }
+
+
 def _row_to_record(row: tuple[Any, ...]) -> StrategyLibraryRecord:
     created_at = datetime.fromisoformat(row[1])
     if created_at.tzinfo is None:
@@ -250,3 +346,9 @@ def _number_or_default(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _nullable_number(value: Any) -> int | float | None:
+    if value is None:
+        return None
+    return _number_or_default(value, 0)

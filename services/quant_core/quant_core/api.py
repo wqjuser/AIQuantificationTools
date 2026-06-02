@@ -235,6 +235,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
                 return
             self.run_store.record(audit)
+            if _is_importable_strategy_config(audit.strategy_config):
+                self.strategy_store.save_payload(
+                    audit.strategy_config,
+                    audit_run_id=audit.run_id,
+                    created_at=audit.created_at,
+                )
             for execution_record in paper_execution_records:
                 self.paper_execution_store.record(execution_record)
             for review_record in ai_review_records:
@@ -624,6 +630,21 @@ def _strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
         position=str(value.get("position") or "80% max capital allocation").strip() or "80% max capital allocation",
         risk=str(value.get("risk") or "Stop -8%, take profit +18%, drawdown guard 20%, paper only").strip()
         or "Stop -8%, take profit +18%, drawdown guard 20%, paper only",
+    )
+
+
+def _is_importable_strategy_config(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    revision = str(value.get("revision") or "").strip()
+    entry_conditions = value.get("entryConditions")
+    exit_conditions = value.get("exitConditions")
+    return (
+        bool(revision)
+        and isinstance(entry_conditions, list)
+        and bool(entry_conditions)
+        and isinstance(exit_conditions, list)
+        and bool(exit_conditions)
     )
 
 
