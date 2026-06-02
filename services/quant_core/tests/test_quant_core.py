@@ -3328,6 +3328,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from threading import Thread
 
         from quant_core.api import QuantApiHandler
+        from quant_core.research_notes import ResearchNoteStore
         from quant_core.runs import ResearchRunStore
         from quant_core.strategy_library import StrategyLibraryStore
 
@@ -3347,7 +3348,14 @@ class QuantCoreContractTest(unittest.TestCase):
                 "executionMode": "paper_only",
                 "paperOnly": True,
                 "liveTradingAllowed": False,
-                "artifactCounts": {"bars": 2, "trades": 1, "equityPoints": 1, "decisions": 1, "aiRisks": 1},
+                "artifactCounts": {
+                    "bars": 2,
+                    "trades": 1,
+                    "equityPoints": 1,
+                    "decisions": 1,
+                    "aiRisks": 1,
+                    "researchNotes": 1,
+                },
             },
             "researchRun": {
                 "runId": "run-import",
@@ -3368,6 +3376,13 @@ class QuantCoreContractTest(unittest.TestCase):
                     "disclaimer": "No investment advice",
                 },
                 "dataQuality": {"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+                "researchNote": {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "body": "导入包里的研究笔记应恢复到本地笔记库。",
+                    "updatedAt": "2026-05-26T08:03:00+00:00",
+                },
                 "dataSnapshot": {
                     "source": "tencent",
                     "isComplete": True,
@@ -3424,10 +3439,12 @@ class QuantCoreContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = ResearchRunStore(f"{tmp}/runs.sqlite")
             strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            note_library = ResearchNoteStore(f"{tmp}/notes.sqlite")
 
             class TestHandler(QuantApiHandler):
                 run_store = store
                 strategy_store = strategy_library
+                note_store = note_library
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -3449,6 +3466,9 @@ class QuantCoreContractTest(unittest.TestCase):
                 connection.request("GET", "/api/strategies?market=ashare&symbol=600000&limit=5")
                 strategies_response = connection.getresponse()
                 strategies_payload = json.loads(strategies_response.read().decode("utf-8"))
+                connection.request("GET", "/api/research/notes?market=ashare&symbol=600000&timeframe=1d")
+                notes_response = connection.getresponse()
+                notes_payload = json.loads(notes_response.read().decode("utf-8"))
             finally:
                 connection.close()
                 server.shutdown()
@@ -3469,6 +3489,9 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(strategies_payload["strategies"][0]["status"], "audited")
         self.assertEqual(strategies_payload["strategies"][0]["auditRunId"], "run-import")
         self.assertEqual(strategies_payload["strategies"][0]["strategySnapshot"]["entry"], "Close > SMA20")
+        self.assertEqual(notes_response.status, 200)
+        self.assertEqual(notes_payload["note"]["body"], "导入包里的研究笔记应恢复到本地笔记库。")
+        self.assertEqual(notes_payload["note"]["symbol"], "600000")
 
     def test_research_run_export_import_preserves_paper_execution_history(self):
         import json

@@ -231,10 +231,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     paper_execution_payload_to_record(execution_payload) for execution_payload in paper_executions
                 ]
                 ai_review_records = [dict(review_payload["record"]) for review_payload in ai_review_runs]
+                imported_note = _importable_research_note_payload(
+                    audit.research_note,
+                    market=audit.market,
+                    symbol=audit.symbol,
+                    timeframe=audit.timeframe,
+                )
             except ValueError as error:
                 self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
                 return
             self.run_store.record(audit)
+            if imported_note:
+                self.note_store.save(
+                    market=imported_note["market"],
+                    symbol=imported_note["symbol"],
+                    timeframe=imported_note["timeframe"],
+                    body=imported_note["body"],
+                    updated_at=imported_note["updated_at"],
+                )
             if _is_importable_strategy_config(audit.strategy_config):
                 self.strategy_store.save_payload(
                     audit.strategy_config,
@@ -646,6 +660,43 @@ def _is_importable_strategy_config(value: object) -> bool:
         and isinstance(exit_conditions, list)
         and bool(exit_conditions)
     )
+
+
+def _importable_research_note_payload(
+    value: object,
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    body = str(value.get("body") or "").strip()
+    if not body:
+        return None
+    return {
+        "market": str(value.get("market") or market or "").strip(),
+        "symbol": str(value.get("symbol") or symbol or "").strip(),
+        "timeframe": str(value.get("timeframe") or timeframe or "").strip(),
+        "body": body,
+        "updated_at": _parse_optional_datetime(value.get("updatedAt", value.get("updated_at"))),
+    }
+
+
+def _parse_optional_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _parse_kline_end(raw: str) -> datetime | None:
