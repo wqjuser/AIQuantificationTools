@@ -201,7 +201,7 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("dossier={aiReviewDossier}");
     expect(auditWorkspaceSource).toContain("records={activeAiReviewRunRecords}");
     expect(auditWorkspaceSource).toContain('className="workflow-ai-audit-panel"');
-    expect(appSource).toContain("<AiReviewRunRecordHistory i18n={i18n} records={records} />");
+    expect(appSource).toContain("<AiReviewRunRecordHistory");
     expect(appSource).toContain("dossier.citations.map");
     expect(cssBlock(".workflow-ai-audit-panel")).toContain("grid-area: ai;");
     expect(cssBlock(".audit-ai-trail-grid")).toContain("display: grid;");
@@ -264,6 +264,31 @@ describe("terminal layout css", () => {
     expect(driftSummarySource).toContain("rows.length !== totalRows");
     expect(cssBlock(".audit-ai-drift-toolbar")).toContain("display: grid;");
     expect(cssBlock(".audit-ai-drift-search")).toContain("min-width: 0;");
+  });
+
+  test("applies the AI review audit search to saved record history", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+
+    expect(auditPanelSource).toContain("const filteredRecordIds = new Set(filteredDriftRows.map((row) => row.aiReviewId));");
+    expect(auditPanelSource).toContain("const filteredRecords = records.filter((record) => filteredRecordIds.has(record.aiReviewId));");
+    expect(auditPanelSource).toContain("records={filteredRecords}");
+    expect(auditPanelSource).toContain("totalRecords={records.length}");
+    expect(auditPanelSource).toContain("query={driftQuery}");
+    expect(recordHistorySource).toContain("totalRecords");
+    expect(recordHistorySource).toContain("records.length !== totalRecords");
+    expect(recordHistorySource).toContain("No matching records");
+  });
+
+  test("passes explicit count and query props to every AI review record history", () => {
+    const recordHistoryUsages = appSource.match(/<AiReviewRunRecordHistory[\s\S]*?\/>/g) ?? [];
+
+    expect(recordHistoryUsages).toHaveLength(2);
+    recordHistoryUsages.forEach((usage) => {
+      expect(usage).toContain("query=");
+      expect(usage).toContain("records=");
+      expect(usage).toContain("totalRecords=");
+    });
   });
 
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {

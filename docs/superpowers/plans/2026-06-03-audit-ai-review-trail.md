@@ -16,6 +16,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Compare the current run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary against the latest saved AI Review Run Record.
 - Summarize drift across all loaded saved AI Review Run Records so Audit can spot stale strategy revisions, citation counts, committee rounds, dossier status, run binding, or live boundary changes.
 - Filter saved AI Review Run Records by revision, record id, drift status, counts, and drift reason so the Audit workspace can locate stale records quickly.
+- Apply the same local filter to both the drift summary and the saved AI Review Run Record history, so the Audit workspace does not show mismatched summary and record lists.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -47,3 +48,5 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: added model-level filtering by AI review id, strategy revision, drift status, numeric counts, live boundary, and drift reasons.
 - RED: `layout-css.test.js -t "filters saved AI review drift rows"` failed because the Audit panel did not expose drift filtering.
 - GREEN: added a compact search input to the Audit drift summary and wired it to `filterAiReviewRecordDriftRows`.
+- RED: `layout-css.test.js -t "applies the AI review audit search"` failed because saved AI review record history still received the unfiltered record list.
+- GREEN: wired the Audit drift search through saved record history, including filtered/total counts and an explicit no-match empty state.

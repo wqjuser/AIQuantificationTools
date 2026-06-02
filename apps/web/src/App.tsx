@@ -1683,7 +1683,12 @@ export function App() {
     >
       <div className="agent-panel-body">
         <AiReviewDossierBoard dossier={aiReviewDossier} i18n={i18n} />
-        <AiReviewRunRecordHistory i18n={i18n} records={activeAiReviewRunRecords} />
+        <AiReviewRunRecordHistory
+          i18n={i18n}
+          query=""
+          records={activeAiReviewRunRecords}
+          totalRecords={activeAiReviewRunRecords.length}
+        />
         <AgentEvidenceBoard cards={aiEvidenceCards} i18n={i18n} />
         <AgentCommitteeBoard i18n={i18n} rounds={agentCommitteeRounds} />
       </div>
@@ -3776,14 +3781,33 @@ function AiReviewDossierBoard({ dossier, i18n }: { dossier: AiReviewDossier; i18
   );
 }
 
-function AiReviewRunRecordHistory({ i18n, records }: { i18n: AppI18n; records: AiReviewRunRecordEnvelope[] }) {
+function AiReviewRunRecordHistory({
+  i18n,
+  query,
+  records,
+  totalRecords
+}: {
+  i18n: AppI18n;
+  query: string;
+  records: AiReviewRunRecordEnvelope[];
+  totalRecords: number;
+}) {
   const visibleRecords = records.slice(0, 3);
+  const countLabel = records.length !== totalRecords ? `${records.length}/${totalRecords}` : `${totalRecords}`;
+  const emptyTitle =
+    totalRecords > 0 ? (i18n.locale === "zh-CN" ? "没有匹配记录" : "No matching records") : i18n.t("aiReview.noSavedRecords");
+  const emptyDetail =
+    totalRecords > 0
+      ? i18n.locale === "zh-CN"
+        ? `未找到匹配「${query}」的已保存 AI 评审记录。`
+        : `No saved AI review record matches "${query}".`
+      : i18n.t("aiReview.noSavedRecordsDetail");
 
   return (
     <div className="ai-review-records">
       <div className="agent-rounds-title">
         <span>{i18n.t("aiReview.savedRecords")}</span>
-        <strong>{records.length}</strong>
+        <strong>{countLabel}</strong>
       </div>
       {visibleRecords.length ? (
         visibleRecords.map((item) => (
@@ -3802,8 +3826,8 @@ function AiReviewRunRecordHistory({ i18n, records }: { i18n: AppI18n; records: A
         ))
       ) : (
         <article className="ai-review-record empty">
-          <strong>{i18n.t("aiReview.noSavedRecords")}</strong>
-          <p>{i18n.t("aiReview.noSavedRecordsDetail")}</p>
+          <strong>{emptyTitle}</strong>
+          <p>{emptyDetail}</p>
         </article>
       )}
     </div>
@@ -4012,6 +4036,8 @@ function AiReviewAuditTrailPanel({
     roundCount
   });
   const filteredDriftRows = filterAiReviewRecordDriftRows(driftRows, driftQuery);
+  const filteredRecordIds = new Set(filteredDriftRows.map((row) => row.aiReviewId));
+  const filteredRecords = records.filter((record) => filteredRecordIds.has(record.aiReviewId));
 
   return (
     <Panel
@@ -4037,7 +4063,12 @@ function AiReviewAuditTrailPanel({
           rows={filteredDriftRows}
           totalRows={driftRows.length}
         />
-        <AiReviewRunRecordHistory i18n={i18n} records={records} />
+        <AiReviewRunRecordHistory
+          i18n={i18n}
+          query={driftQuery}
+          records={filteredRecords}
+          totalRecords={records.length}
+        />
         <div className="audit-ai-citation-list">
           <div className="agent-rounds-title">
             <span>{i18n.locale === "zh-CN" ? "引用证据" : "Citations"}</span>
