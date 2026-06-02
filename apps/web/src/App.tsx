@@ -99,6 +99,7 @@ import {
   buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
   buildWorkflowStages,
+  filterAiReviewRecordDriftRows,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -3900,24 +3901,50 @@ function AiReviewAuditComparison({
   );
 }
 
-function AiReviewRecordDriftSummary({ i18n, rows }: { i18n: AppI18n; rows: AiReviewRecordDriftRow[] }) {
+function AiReviewRecordDriftSummary({
+  i18n,
+  onQueryChange,
+  query,
+  rows,
+  totalRows
+}: {
+  i18n: AppI18n;
+  onQueryChange: (query: string) => void;
+  query: string;
+  rows: AiReviewRecordDriftRow[];
+  totalRows: number;
+}) {
   const visibleRows = rows.slice(0, 5);
   const driftCount = rows.filter((row) => row.status === "drift").length;
-  const summaryValue = rows.length
-    ? driftCount
-      ? `${driftCount}/${rows.length}`
-      : i18n.locale === "zh-CN"
-        ? "全部匹配"
-        : "All matched"
+  const countLabel = rows.length !== totalRows ? `${rows.length}/${totalRows}` : `${totalRows}`;
+  const summaryValue = totalRows
+    ? `${countLabel} · ${
+        driftCount
+          ? i18n.locale === "zh-CN"
+            ? `${driftCount} 漂移`
+            : `${driftCount} drift`
+          : i18n.locale === "zh-CN"
+            ? "全部匹配"
+            : "All matched"
+      }`
     : i18n.locale === "zh-CN"
       ? "无记录"
       : "No records";
 
   return (
     <div className="audit-ai-drift-summary">
-      <div className="agent-rounds-title">
-        <span>{i18n.locale === "zh-CN" ? "保存记录漂移" : "Saved Record Drift"}</span>
-        <strong>{summaryValue}</strong>
+      <div className="audit-ai-drift-toolbar">
+        <div className="agent-rounds-title">
+          <span>{i18n.locale === "zh-CN" ? "保存记录漂移" : "Saved Record Drift"}</span>
+          <strong>{summaryValue}</strong>
+        </div>
+        <input
+          className="audit-ai-drift-search"
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder={i18n.locale === "zh-CN" ? "搜索版本、ID、漂移原因" : "Search revision, ID, drift reason"}
+          type="search"
+          value={query}
+        />
       </div>
       <div className="audit-ai-drift-list">
         {visibleRows.length ? (
@@ -3934,10 +3961,18 @@ function AiReviewRecordDriftSummary({ i18n, rows }: { i18n: AppI18n; rows: AiRev
         ) : (
           <article className="audit-ai-drift-row empty">
             <span>
-              <strong>{i18n.t("aiReview.noSavedRecords")}</strong>
-              <em>{i18n.locale === "zh-CN" ? "等待保存" : "Waiting"}</em>
+              <strong>
+                {totalRows ? (i18n.locale === "zh-CN" ? "没有匹配记录" : "No matching records") : i18n.t("aiReview.noSavedRecords")}
+              </strong>
+              <em>{query ? query : i18n.locale === "zh-CN" ? "等待保存" : "Waiting"}</em>
             </span>
-            <p>{i18n.t("aiReview.noSavedRecordsDetail")}</p>
+            <p>
+              {totalRows
+                ? i18n.locale === "zh-CN"
+                  ? "换一个关键词，或清空搜索查看全部保存记录。"
+                  : "Try another keyword, or clear search to see all saved records."
+                : i18n.t("aiReview.noSavedRecordsDetail")}
+            </p>
             <strong>{i18n.locale === "zh-CN" ? "未开始" : "Pending"}</strong>
           </article>
         )}
@@ -3965,6 +4000,7 @@ function AiReviewAuditTrailPanel({
   records: AiReviewRunRecordEnvelope[];
   roundCount: number;
 }) {
+  const [driftQuery, setDriftQuery] = useState("");
   const latestRecord = records[0] ?? null;
   const driftRows = buildAiReviewRecordDriftRows({
     currentCitationCount: dossier.citations.length,
@@ -3975,6 +4011,7 @@ function AiReviewAuditTrailPanel({
     records: records.map((record) => record.record),
     roundCount
   });
+  const filteredDriftRows = filterAiReviewRecordDriftRows(driftRows, driftQuery);
 
   return (
     <Panel
@@ -3993,7 +4030,13 @@ function AiReviewAuditTrailPanel({
           liveExecutionBlocked={liveExecutionBlocked}
           roundCount={roundCount}
         />
-        <AiReviewRecordDriftSummary i18n={i18n} rows={driftRows} />
+        <AiReviewRecordDriftSummary
+          i18n={i18n}
+          onQueryChange={setDriftQuery}
+          query={driftQuery}
+          rows={filteredDriftRows}
+          totalRows={driftRows.length}
+        />
         <AiReviewRunRecordHistory i18n={i18n} records={records} />
         <div className="audit-ai-citation-list">
           <div className="agent-rounds-title">

@@ -15,13 +15,14 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Reuse `aiReviewDossier` citations as the current evidence reference list.
 - Compare the current run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary against the latest saved AI Review Run Record.
 - Summarize drift across all loaded saved AI Review Run Records so Audit can spot stale strategy revisions, citation counts, committee rounds, dossier status, run binding, or live boundary changes.
+- Filter saved AI Review Run Records by revision, record id, drift status, counts, and drift reason so the Audit workspace can locate stale records quickly.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
 ## Out Of Scope
 
 - No new backend AI review storage contract.
-- No AI review record search or deep field-level diffing beyond current evidence comparison and saved-record drift summaries.
+- No backend AI review search API or deep field-level diffing beyond current evidence comparison, saved-record drift summaries, and local Audit filtering.
 - No changes to AI Review generation behavior.
 
 ## Test Plan
@@ -42,3 +43,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: added model-level saved-record drift rows for run binding, strategy revision, dossier status, citation count, committee rounds, and live execution boundary.
 - RED: `layout-css.test.js -t "summarizes drift"` failed because the Audit panel did not render a saved-record drift summary.
 - GREEN: added `AiReviewRecordDriftSummary` to the Audit AI review trail with compact matched/drift status rows.
+- RED: `terminal-workbench.test.ts -t "filters AI review drift rows"` failed because `filterAiReviewRecordDriftRows` did not exist.
+- GREEN: added model-level filtering by AI review id, strategy revision, drift status, numeric counts, live boundary, and drift reasons.
+- RED: `layout-css.test.js -t "filters saved AI review drift rows"` failed because the Audit panel did not expose drift filtering.
+- GREEN: added a compact search input to the Audit drift summary and wired it to `filterAiReviewRecordDriftRows`.

@@ -1483,6 +1483,35 @@ em {
   min-width: 0;
 }
 
+.audit-ai-drift-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.42fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.audit-ai-drift-toolbar .agent-rounds-title {
+  min-width: 0;
+}
+
+.audit-ai-drift-search {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(53, 78, 109, 0.88);
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.72);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  outline: none;
+}
+
+.audit-ai-drift-search:focus {
+  border-color: rgba(45, 212, 191, 0.72);
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.1);
+}
+
 .audit-ai-drift-list {
   display: grid;
   gap: 6px;
@@ -5225,6 +5254,10 @@ em {
   }
 
   .audit-ai-drift-row {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-ai-drift-toolbar {
     grid-template-columns: 1fr;
   }
 

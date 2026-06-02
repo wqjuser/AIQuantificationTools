@@ -240,13 +240,30 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function AiReviewRecordDriftSummary");
     expect(auditPanelSource).toContain("const driftRows = buildAiReviewRecordDriftRows");
     expect(auditPanelSource).toContain("<AiReviewRecordDriftSummary");
-    expect(auditPanelSource).toContain("rows={driftRows}");
+    expect(auditPanelSource).toContain("rows={filteredDriftRows}");
     expect(cssBlock(".audit-ai-drift-summary")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".audit-ai-drift-list")).toContain("display: grid;");
     expect(cssBlock(".audit-ai-drift-row")).toContain(
       "grid-template-columns: minmax(130px, 0.75fr) minmax(0, 1fr) auto;"
     );
     expect(hasCssDeclaration(".audit-ai-drift-row", "grid-template-columns: 1fr;")).toBe(true);
+  });
+
+  test("filters saved AI review drift rows from the audit trail", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+    const driftSummarySource = sourceBetween("function AiReviewRecordDriftSummary", "function AiReviewAuditTrailPanel");
+
+    expect(appSource).toContain("filterAiReviewRecordDriftRows");
+    expect(auditPanelSource).toContain('const [driftQuery, setDriftQuery] = useState("");');
+    expect(auditPanelSource).toContain("const filteredDriftRows = filterAiReviewRecordDriftRows(driftRows, driftQuery);");
+    expect(auditPanelSource).toContain("onQueryChange={setDriftQuery}");
+    expect(auditPanelSource).toContain("query={driftQuery}");
+    expect(auditPanelSource).toContain("totalRows={driftRows.length}");
+    expect(driftSummarySource).toContain('type="search"');
+    expect(driftSummarySource).toContain('className="audit-ai-drift-search"');
+    expect(driftSummarySource).toContain("rows.length !== totalRows");
+    expect(cssBlock(".audit-ai-drift-toolbar")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-drift-search")).toContain("min-width: 0;");
   });
 
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {

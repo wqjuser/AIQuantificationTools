@@ -1706,6 +1706,33 @@ export function buildAiReviewRecordDriftRows({
   });
 }
 
+export function filterAiReviewRecordDriftRows(
+  rows: AiReviewRecordDriftRow[],
+  query: string
+): AiReviewRecordDriftRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+
+  return rows.filter((row) =>
+    [
+      row.aiReviewId,
+      row.createdAt,
+      row.strategyRevision,
+      row.status,
+      row.driftCount.toString(),
+      row.citationCount.toString(),
+      row.roundCount.toString(),
+      row.liveExecutionBlocked ? "paper only blocked" : "live open",
+      ...row.driftReasons
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
 function normalizedResearchNote(note: ResearchRunNote | null | undefined): ResearchRunNote | null {
   if (!note || !note.body.trim()) {
     return null;

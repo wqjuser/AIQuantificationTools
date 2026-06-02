@@ -42,12 +42,14 @@ import {
   buildTerminalWorkspace,
   buildWorkflowStages,
   executionModeLabel,
+  filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
   quantLoopLabels,
   resolveBacktestAssumptions,
+  type AiReviewRecordDriftRow,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -1524,6 +1526,41 @@ describe("terminal workbench model", () => {
         driftReasons: ["strategy", "citations", "rounds", "boundary"],
         status: "drift"
       })
+    ]);
+  });
+
+  test("filters AI review drift rows by revision, id, status, and drift reason", () => {
+    const rows: AiReviewRecordDriftRow[] = [
+      {
+        aiReviewId: "ai-review:run-a:rev-current",
+        createdAt: "2026-05-28T08:00:00+00:00",
+        strategyRevision: "rev-current",
+        citationCount: 6,
+        roundCount: 5,
+        liveExecutionBlocked: true,
+        status: "matched" as const,
+        driftCount: 0,
+        driftReasons: []
+      },
+      {
+        aiReviewId: "ai-review:run-a:rev-old",
+        createdAt: "2026-05-27T08:00:00+00:00",
+        strategyRevision: "rev-old",
+        citationCount: 4,
+        roundCount: 4,
+        liveExecutionBlocked: false,
+        status: "drift" as const,
+        driftCount: 3,
+        driftReasons: ["strategy", "citations", "boundary"]
+      }
+    ];
+
+    expect(filterAiReviewRecordDriftRows(rows, "")).toEqual(rows);
+    expect(filterAiReviewRecordDriftRows(rows, "REV-OLD").map((row) => row.strategyRevision)).toEqual(["rev-old"]);
+    expect(filterAiReviewRecordDriftRows(rows, "matched").map((row) => row.strategyRevision)).toEqual(["rev-current"]);
+    expect(filterAiReviewRecordDriftRows(rows, "boundary").map((row) => row.strategyRevision)).toEqual(["rev-old"]);
+    expect(filterAiReviewRecordDriftRows(rows, "run-a:rev-current").map((row) => row.aiReviewId)).toEqual([
+      "ai-review:run-a:rev-current"
     ]);
   });
 
