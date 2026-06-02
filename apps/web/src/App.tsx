@@ -1831,6 +1831,13 @@ export function App() {
     if (activeWorkAreaId === "audit") {
       return (
         <>
+          <GoldenPathRunbookPanel
+            className="workflow-runbook-panel"
+            i18n={i18n}
+            onRunAction={runGoldenPathActionById}
+            onSelectWorkspace={selectProductWorkArea}
+            runbook={goldenPath?.runbook ?? []}
+          />
           <RunHistoryPanel
             className="workflow-history-panel"
             i18n={i18n}
@@ -2306,6 +2313,43 @@ function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPreviewIt
       "live-gate": "保持实盘阻断，等待认证和确认。"
     }[item.stepId] ?? item.detail
   );
+}
+
+function auditRunbookStatusLabel(i18n: AppI18n, item: GoldenPathStatus["runbook"][number]): string {
+  if (item.passed) {
+    return i18n.locale === "zh-CN" ? "已通过" : "Passed";
+  }
+  return item.current
+    ? goldenPathStatusLabel(i18n, "blocked")
+    : goldenPathStatusLabel(i18n, item.status === "passed" ? "ready" : item.status);
+}
+
+function auditRunbookActionLabel(i18n: AppI18n, item: GoldenPathStatus["runbook"][number]): string {
+  if (item.passed) {
+    return i18n.locale === "zh-CN" ? "已完成" : "Done";
+  }
+  return goldenPathRunbookActionLabel(i18n, {
+    stepId: item.stepId,
+    label: item.label,
+    workspaceId: item.workspaceId,
+    status: item.status,
+    current: item.current,
+    detail: item.blocker ?? item.detail,
+    actionLabel: item.actionLabel
+  });
+}
+
+function auditRunbookDetail(i18n: AppI18n, item: GoldenPathStatus["runbook"][number]): string {
+  const detail = item.blocker ?? item.detail;
+  return goldenPathRunbookDetail(i18n, {
+    stepId: item.stepId,
+    label: item.label,
+    workspaceId: item.workspaceId,
+    status: item.status,
+    current: item.current,
+    detail,
+    actionLabel: item.actionLabel
+  });
 }
 
 function goldenPathWorkspaceContextLabel(i18n: AppI18n, context: GoldenPathWorkspaceContext): string {
@@ -5497,6 +5541,64 @@ function Panel({
       </header>
       {children}
     </section>
+  );
+}
+
+function GoldenPathRunbookPanel({
+  className,
+  i18n,
+  onRunAction,
+  onSelectWorkspace,
+  runbook
+}: {
+  className?: string;
+  i18n: AppI18n;
+  onRunAction: (actionId: string | null | undefined, targetWorkspace?: string | null) => void;
+  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
+  runbook: GoldenPathStatus["runbook"];
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "黄金路径审计清单" : "Golden Path Runbook"}
+      subtitle={i18n.locale === "zh-CN" ? "从行情到模拟执行的可操作闸门" : "Actionable gates from market data to paper execution"}
+      className={`audit-runbook-panel ${className ?? ""}`}
+    >
+      <div className="audit-runbook-list">
+        {runbook.length ? (
+          runbook.map((item, index) => {
+            const workspaceId = productWorkAreaIds.includes(item.workspaceId as ProductWorkAreaId)
+              ? (item.workspaceId as ProductWorkAreaId)
+              : null;
+            const canRunAction = Boolean(item.actionId) && !item.passed;
+            return (
+              <article
+                className={`audit-runbook-row ${item.status} ${item.current ? "current" : ""}`}
+                key={item.stepId}
+              >
+                <span className="audit-runbook-index">{index + 1}</span>
+                <div className="audit-runbook-main">
+                  <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
+                  <small>{auditRunbookDetail(i18n, item)}</small>
+                </div>
+                <em>{auditRunbookStatusLabel(i18n, item)}</em>
+                <div className="audit-runbook-actions">
+                  <button disabled={!workspaceId} onClick={() => workspaceId && onSelectWorkspace(workspaceId)} type="button">
+                    {i18n.locale === "zh-CN" ? "工作区" : "Workspace"}
+                  </button>
+                  <button disabled={!canRunAction} onClick={() => onRunAction(item.actionId, item.workspaceId)} type="button">
+                    {auditRunbookActionLabel(i18n, item)}
+                  </button>
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <p className="empty-state">
+            {i18n.locale === "zh-CN" ? "等待本地核心返回黄金路径状态。" : "Waiting for the local core to return golden path status."}
+          </p>
+        )}
+      </div>
+    </Panel>
   );
 }
 

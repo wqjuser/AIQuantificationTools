@@ -170,6 +170,23 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workspace-gate-action")).toContain("cursor: pointer;");
   });
 
+  test("renders a full golden path runbook board in the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+
+    expect(appSource).toContain("function GoldenPathRunbookPanel");
+    expect(auditWorkspaceSource).toContain("<GoldenPathRunbookPanel");
+    expect(auditWorkspaceSource).toContain("runbook={goldenPath?.runbook ?? []}");
+    expect(auditWorkspaceSource).toContain("onSelectWorkspace={selectProductWorkArea}");
+    expect(auditWorkspaceSource).toContain("onRunAction={runGoldenPathActionById}");
+    expect(cssBlock(".workflow-runbook-panel")).toContain("grid-area: runbook;");
+    expect(cssBlock(".audit-runbook-panel")).toContain("align-self: start;");
+    expect(cssBlock(".audit-runbook-list")).toContain("display: grid;");
+    expect(cssBlock(".audit-runbook-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto;");
+    expect(cssBlock(".audit-runbook-actions")).toContain("display: flex;");
+    expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"'])).toBe(true);
+  });
+
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');

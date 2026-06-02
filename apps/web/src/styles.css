@@ -1212,8 +1212,8 @@ em {
 .audit-layout {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
-    "history workflow"
-    "decision workflow";
+    "runbook workflow"
+    "history decision";
 }
 
 .settings-layout {
@@ -1389,6 +1389,10 @@ em {
   grid-area: decision;
 }
 
+.workflow-runbook-panel {
+  grid-area: runbook;
+}
+
 .workflow-history-panel {
   grid-area: history;
 }
@@ -1400,6 +1404,129 @@ em {
 
 .workflow-history-panel .run-history {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.audit-runbook-panel {
+  align-self: start;
+}
+
+.audit-runbook-list {
+  display: grid;
+  gap: 7px;
+}
+
+.audit-runbook-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #111c2a;
+  padding: 8px 9px;
+}
+
+.audit-runbook-row.passed {
+  border-left-color: #4cc9ad;
+}
+
+.audit-runbook-row.review {
+  border-left-color: #e8be62;
+}
+
+.audit-runbook-row.blocked,
+.audit-runbook-row.current {
+  border-left-color: #ff7f6d;
+}
+
+.audit-runbook-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #162235;
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.audit-runbook-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.audit-runbook-main strong,
+.audit-runbook-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-runbook-main strong {
+  color: #dce6ee;
+  font-size: 13px;
+}
+
+.audit-runbook-main small {
+  color: #8fa0b2;
+  font-size: 11px;
+}
+
+.audit-runbook-row em {
+  justify-self: end;
+  color: #9ab7d4;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.audit-runbook-row.passed em {
+  color: #71dfc5;
+}
+
+.audit-runbook-row.review em {
+  color: #e8be62;
+}
+
+.audit-runbook-row.blocked em,
+.audit-runbook-row.current em {
+  color: #ffb35c;
+}
+
+.audit-runbook-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.audit-runbook-actions button {
+  min-height: 26px;
+  border: 1px solid #2a3b51;
+  border-radius: 6px;
+  background: #121b29;
+  color: #dce6ee;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 4px 8px;
+}
+
+.audit-runbook-actions button:not(:disabled):hover {
+  border-color: #2b6f62;
+  background: #122b27;
+  color: #71dfc5;
+}
+
+.audit-runbook-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .workflow-execution-panel {
@@ -4805,6 +4932,7 @@ em {
 
   .audit-layout {
     grid-template-areas:
+      "runbook"
       "history"
       "workflow"
       "decision";
@@ -4992,6 +5120,7 @@ em {
 
   .audit-layout {
     grid-template-areas:
+      "runbook"
       "history"
       "workflow"
       "decision";
