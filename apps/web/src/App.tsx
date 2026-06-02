@@ -2036,12 +2036,17 @@ export function App() {
               {goldenPathRunbookPreview.length ? (
                 <div className="golden-path-runbook" aria-label="Golden path runbook">
                   {goldenPathRunbookPreview.map((item, index) => (
-                    <article className={`golden-path-runbook-item ${item.status} ${item.current ? "current" : ""}`} key={item.stepId}>
+                    <button
+                      className={`golden-path-runbook-item ${item.status} ${item.current ? "current" : ""}`}
+                      key={item.stepId}
+                      onClick={() => selectProductWorkArea(item.workspaceId as ProductWorkAreaId)}
+                      type="button"
+                    >
                       <span>{index + 1}</span>
                       <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
                       <em>{goldenPathRunbookActionLabel(i18n, item)}</em>
                       <small>{goldenPathRunbookDetail(i18n, item)}</small>
-                    </article>
+                    </button>
                   ))}
                 </div>
               ) : null}

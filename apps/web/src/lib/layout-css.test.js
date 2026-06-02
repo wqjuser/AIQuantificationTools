@@ -144,9 +144,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildGoldenPathRunbookPreview(goldenPath)");
     expect(appSource).toContain('className="golden-path-runbook"');
     expect(appSource).toContain('className={`golden-path-runbook-item ${item.status}');
+    expect(appSource).toContain("onClick={() => selectProductWorkArea(item.workspaceId as ProductWorkAreaId)}");
+    expect(appSource).toContain('type="button"');
     expect(appSource).toContain("goldenPathRunbookPreview.map");
     expect(cssBlock(".golden-path-runbook")).toContain("display: grid;");
     expect(cssBlock(".golden-path-runbook-item")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+    expect(cssBlock(".golden-path-runbook-item")).toContain("cursor: pointer;");
   });
 
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {

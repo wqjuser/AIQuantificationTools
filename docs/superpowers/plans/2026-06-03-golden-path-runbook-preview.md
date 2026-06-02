@@ -12,6 +12,7 @@ Show a compact Golden Path runbook preview in the current task card. It should d
 
 - Add a workbench model helper to derive a small preview from `goldenPath.runbook`.
 - Render the preview in the existing current task card.
+- Make each preview item navigate to its mapped product workspace.
 - Keep the layout compact and horizontal on desktop.
 - Update product planning notes.
 
@@ -25,6 +26,7 @@ Show a compact Golden Path runbook preview in the current task card. It should d
 
 - RED/GREEN model test for `buildGoldenPathRunbookPreview`.
 - RED/GREEN layout contract test for the visible runbook preview.
+- RED/GREEN layout contract and browser click verification for workspace navigation.
 - Full `npm test`.
 - `npm run build`.
 - Docker rebuild, smoke check, and browser verification on port 5173.
@@ -35,3 +37,5 @@ Show a compact Golden Path runbook preview in the current task card. It should d
 - GREEN: added a model helper that returns the first unpassed runbook item and the next two unpassed items.
 - RED: `layout-css.test.js` failed because the current task card did not render the runbook preview.
 - GREEN: current task card now renders a compact `golden-path-runbook` checklist from `goldenPath.runbook`.
+- RED: `layout-css.test.js -t "golden path runbook"` failed because runbook preview items had no workspace navigation handler.
+- GREEN: runbook preview items are now keyboard-focusable buttons that call `selectProductWorkArea(item.workspaceId)`.

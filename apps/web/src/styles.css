@@ -900,11 +900,15 @@ em {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 1px 5px;
   min-width: 0;
+  width: 100%;
   border: 1px solid #26354a;
   border-radius: 7px;
   background: #121c2a;
   padding: 5px 6px;
   color: #a8b7c7;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .golden-path-runbook-item > span {
@@ -945,6 +949,16 @@ em {
 
 .golden-path-runbook-item.current {
   border-color: #7a3a32;
+}
+
+.golden-path-runbook-item:hover {
+  border-color: #2b6f62;
+  background: #142235;
+}
+
+.golden-path-runbook-item:focus-visible {
+  outline: 2px solid #71dfc5;
+  outline-offset: 2px;
 }
 
 .golden-path-runbook-item.blocked em {
