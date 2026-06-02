@@ -23,6 +23,8 @@ import {
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
   buildLoadingMarketKlinesResult,
+  buildGoldenPathStatusUrl,
+  loadGoldenPathStatus,
   loadMarketKlines,
   loadMarketSearch,
   loadResearchRunDetail,
@@ -154,6 +156,12 @@ describe("terminal workspace API client", () => {
     expect(buildSettingsStatusUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/settings/status");
   });
 
+  test("builds the golden path status URL for the selected context", () => {
+    expect(buildGoldenPathStatusUrl("/", { market: "ashare", symbol: "600000", timeframe: "1d" })).toBe(
+      "/api/golden-path/status?market=ashare&symbol=600000&timeframe=1d"
+    );
+  });
+
   test("builds the cache refresh URL", () => {
     expect(buildCacheRefreshUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/cache/refresh");
   });
@@ -235,6 +243,62 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Core connected");
     expect(result.workspace.selectedInstrument.symbol).toBe("AAPL");
+  });
+
+  test("loads golden path status from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadGoldenPathStatus(
+      "http://127.0.0.1:8765/",
+      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            goldenPath: {
+              schemaVersion: 1,
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              status: "blocked",
+              currentStepId: "paper-execution",
+              latestRunId: "run-golden",
+              nextAction: {
+                id: "submit-paper-order",
+                label: "Submit paper order",
+                targetWorkspace: "execution",
+                reason: "Audited AI evidence is ready, but no paper execution is bound."
+              },
+              steps: [
+                {
+                  id: "market-data",
+                  label: "Market data",
+                  status: "passed",
+                  passed: true,
+                  detail: "Fresh cache exists.",
+                  actionId: null
+                },
+                {
+                  id: "paper-execution",
+                  label: "Paper execution",
+                  status: "review",
+                  passed: false,
+                  detail: "Submit a paper execution before promotion.",
+                  actionId: "submit-paper-order"
+                }
+              ]
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/golden-path/status?market=ashare&symbol=600000&timeframe=1d"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.goldenPath?.currentStepId).toBe("paper-execution");
+    expect(result.goldenPath?.nextAction?.targetWorkspace).toBe("execution");
   });
 
   test("validates the active strategy draft through the Python core", async () => {

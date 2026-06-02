@@ -1713,6 +1713,236 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export_payload["export"]["promotionCandidate"]["runId"], "run-promotion-api")
         self.assertEqual(export_payload["export"]["promotionCandidate"]["status"], "certification_pending")
 
+    def test_golden_path_status_blocks_at_research_when_cache_exists_without_audit_run(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[],
+            paper_executions=[],
+        )
+
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertEqual(status["status"], "blocked")
+        self.assertEqual(status["currentStepId"], "research-run")
+        self.assertEqual(status["nextAction"]["id"], "run-pipeline")
+        self.assertEqual(status["steps"][0]["id"], "market-data")
+        self.assertEqual(status["steps"][0]["status"], "passed")
+        self.assertEqual(status["steps"][1]["id"], "research-run")
+        self.assertEqual(status["steps"][1]["status"], "blocked")
+
+    def test_golden_path_status_advances_to_paper_execution_after_audited_ai_run(self):
+        from quant_core.golden_path import build_golden_path_status
+        from quant_core.runs import ResearchRunAudit
+
+        audit = ResearchRunAudit(
+            run_id="run-golden-ai",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend",
+            strategy_revision="rev-golden",
+            data_rows=240,
+            metrics={"total_return_pct": 12.4, "max_drawdown_pct": 5.8, "trade_count": 3},
+            decisions=[{"agent": "Technical Analyst", "message": "Evidence bound"}],
+            execution_mode="paper_only",
+            ai_report={
+                "summary": "Trend evidence is positive but needs paper execution.",
+                "risks": ["Live trading disabled"],
+                "improvements": ["Run paper execution"],
+                "disclaimer": "No investment advice",
+            },
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 240},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 240,
+                "hash": "snapshot-golden",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "name": "SMA trend",
+                "revision": "rev-golden",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000}],
+        )
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[audit],
+            paper_executions=[],
+        )
+
+        steps = {step["id"]: step for step in status["steps"]}
+        self.assertEqual(status["latestRunId"], "run-golden-ai")
+        self.assertEqual(status["currentStepId"], "paper-execution")
+        self.assertEqual(status["nextAction"]["id"], "submit-paper-order")
+        self.assertEqual(steps["research-run"]["status"], "passed")
+        self.assertEqual(steps["backtest-report"]["status"], "passed")
+        self.assertEqual(steps["ai-review"]["status"], "passed")
+        self.assertEqual(steps["paper-execution"]["status"], "review")
+        self.assertEqual(steps["live-gate"]["status"], "blocked")
+
+    def test_golden_path_status_api_returns_selected_context_progress(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-golden-api",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend",
+            strategy_revision="rev-golden-api",
+            data_rows=1,
+            metrics={"total_return_pct": 3.2, "max_drawdown_pct": 1.5, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Audited", "risks": ["Paper pending"], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-golden-api",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "name": "SMA trend",
+                "revision": "rev-golden-api",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000}],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        market="ashare",
+                        symbol="600000",
+                        timeframe="1d",
+                        timestamp=datetime.now(timezone.utc),
+                        open=9.1,
+                        high=9.3,
+                        low=9.0,
+                        close=9.2,
+                        volume=1200000,
+                    )
+                ]
+            )
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.cache = cache
+            TestHandler.run_store = research_store
+            TestHandler.paper_execution_store = paper_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/golden-path/status?market=ashare&symbol=600000&timeframe=1d")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["goldenPath"]["latestRunId"], "run-golden-api")
+        self.assertEqual(payload["goldenPath"]["currentStepId"], "paper-execution")
+        self.assertEqual(payload["goldenPath"]["nextAction"]["targetWorkspace"], "execution")
+
     def test_research_run_paper_execution_api_returns_404_for_missing_run(self):
         import json
         from http.client import HTTPConnection

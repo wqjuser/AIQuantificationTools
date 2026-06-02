@@ -400,6 +400,43 @@ export interface PlatformSettingsResult {
   error?: string;
 }
 
+export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
+export type GoldenPathStepStatus = "passed" | "review" | "blocked";
+
+export interface GoldenPathNextAction {
+  id: string;
+  label: string;
+  targetWorkspace: string;
+  reason: string;
+}
+
+export interface GoldenPathStep {
+  id: string;
+  label: string;
+  status: GoldenPathStepStatus;
+  passed: boolean;
+  detail: string;
+  actionId: string | null;
+}
+
+export interface GoldenPathStatus {
+  schemaVersion: 1;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  status: GoldenPathOverallStatus;
+  currentStepId: string | null;
+  latestRunId: string | null;
+  nextAction: GoldenPathNextAction | null;
+  steps: GoldenPathStep[];
+}
+
+export interface GoldenPathStatusResult {
+  goldenPath?: GoldenPathStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface CacheRefreshSummary {
   market: Market;
   symbol: string;
@@ -594,6 +631,14 @@ export function buildMarketSearchUrl(baseUrl: string, market: Market, query: str
 
 export function buildSettingsStatusUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/settings/status");
+}
+
+export function buildGoldenPathStatusUrl(baseUrl: string, params: TerminalResearchParams): string {
+  return buildApiUrl(baseUrl, "api/golden-path/status", (url) => {
+    url.searchParams.set("market", params.market);
+    url.searchParams.set("symbol", params.symbol);
+    url.searchParams.set("timeframe", params.timeframe);
+  });
 }
 
 export function buildCacheRefreshUrl(baseUrl: string): string {
@@ -979,6 +1024,32 @@ export async function loadPlatformSettings(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown settings status error"
+    };
+  }
+}
+
+export async function loadGoldenPathStatus(
+  baseUrl: string,
+  params: TerminalResearchParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<GoldenPathStatusResult> {
+  try {
+    const response = await fetcher(buildGoldenPathStatusUrl(baseUrl, params));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isGoldenPathStatusPayload(payload)) {
+      throw new Error("Invalid golden path status contract");
+    }
+    return {
+      goldenPath: payload.goldenPath,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown golden path status error"
     };
   }
 }
@@ -1518,6 +1589,14 @@ function isPlatformSettingsPayload(value: unknown): value is { settings: Platfor
   return isPlatformSettingsStatus(payload.settings);
 }
 
+function isGoldenPathStatusPayload(value: unknown): value is { goldenPath: GoldenPathStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { goldenPath?: unknown };
+  return isGoldenPathStatus(payload.goldenPath);
+}
+
 function isCacheRefreshPayload(value: unknown): value is { refresh: CacheRefreshSummary; settings: PlatformSettingsStatus } {
   if (!value || typeof value !== "object") {
     return false;
@@ -1946,6 +2025,61 @@ function isPlatformSettingsTone(value: unknown): value is PlatformSettingsStatus
     value === "config_required" ||
     value === "interface_only" ||
     value === "paper_ready"
+  );
+}
+
+function isGoldenPathStatus(value: unknown): value is GoldenPathStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const status = value as Partial<GoldenPathStatus>;
+  return (
+    status.schemaVersion === 1 &&
+    isMarket(status.market) &&
+    typeof status.symbol === "string" &&
+    isTimeframe(status.timeframe) &&
+    isGoldenPathOverallStatus(status.status) &&
+    (status.currentStepId === null || typeof status.currentStepId === "string") &&
+    (status.latestRunId === null || typeof status.latestRunId === "string") &&
+    (status.nextAction === null || isGoldenPathNextAction(status.nextAction)) &&
+    Array.isArray(status.steps) &&
+    status.steps.every(isGoldenPathStep)
+  );
+}
+
+function isGoldenPathOverallStatus(value: unknown): value is GoldenPathOverallStatus {
+  return value === "ready" || value === "review" || value === "blocked";
+}
+
+function isGoldenPathStep(value: unknown): value is GoldenPathStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const step = value as Partial<GoldenPathStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.label === "string" &&
+    isGoldenPathStepStatus(step.status) &&
+    typeof step.passed === "boolean" &&
+    typeof step.detail === "string" &&
+    (step.actionId === null || typeof step.actionId === "string")
+  );
+}
+
+function isGoldenPathStepStatus(value: unknown): value is GoldenPathStepStatus {
+  return value === "passed" || value === "review" || value === "blocked";
+}
+
+function isGoldenPathNextAction(value: unknown): value is GoldenPathNextAction {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const action = value as Partial<GoldenPathNextAction>;
+  return (
+    typeof action.id === "string" &&
+    typeof action.label === "string" &&
+    typeof action.targetWorkspace === "string" &&
+    typeof action.reason === "string"
   );
 }
 

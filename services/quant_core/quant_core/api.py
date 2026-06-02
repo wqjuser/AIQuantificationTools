@@ -22,6 +22,7 @@ from quant_core.execution import (
     paper_execution_record_to_payload,
     validate_paper_execution_handoff,
 )
+from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
@@ -322,6 +323,31 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
+            return
+        if parsed.path == "/api/golden-path/status":
+            query = parse_qs(parsed.query)
+            market = query.get("market", ["ashare"])[0]
+            symbol = query.get("symbol", ["600000"])[0]
+            timeframe = query.get("timeframe", ["1d"])[0]
+            context_runs = [
+                run
+                for run in self.run_store.list_recent(limit=50)
+                if run.market == market and run.symbol == symbol and run.timeframe == timeframe
+            ]
+            latest_run = context_runs[0] if context_runs else None
+            paper_executions = self.paper_execution_store.list_by_run(latest_run.run_id, limit=20) if latest_run else []
+            self._send_json(
+                {
+                    "goldenPath": build_golden_path_status(
+                        market=market,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        settings=self._settings_status_payload(),
+                        runs=context_runs,
+                        paper_executions=paper_executions,
+                    )
+                }
+            )
             return
         if parsed.path == "/api/market/quotes":
             query = parse_qs(parsed.query)

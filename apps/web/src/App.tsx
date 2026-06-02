@@ -20,6 +20,7 @@ import { ActionType, dispose, init, LoadDataType, type Chart, type KLineData } f
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import {
   buildLoadingMarketKlinesResult,
+  loadGoldenPathStatus,
   importResearchRunExport,
   loadResearchRunAiReviews,
   loadMarketKlines,
@@ -42,6 +43,8 @@ import {
   PaperExecutionRecord,
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
+  GoldenPathStatus,
+  GoldenPathStatusResult,
   PlatformSettingsResult,
   PlatformSettingsStatus,
   resolveQuantCoreBaseUrl,
@@ -189,6 +192,9 @@ const initialResearchNoteState: ResearchNoteResult = {
 const initialSettingsStatusState: PlatformSettingsResult = {
   source: "fallback"
 };
+const initialGoldenPathStatusState: GoldenPathStatusResult = {
+  source: "fallback"
+};
 
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
@@ -303,6 +309,7 @@ export function App() {
     useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
   const [settingsStatus, setSettingsStatus] = useState<PlatformSettingsResult>(initialSettingsStatusState);
+  const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
@@ -400,6 +407,8 @@ export function App() {
     timeframe: workspace.selectedTimeframe
   });
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
+  const goldenPath = goldenPathState.goldenPath;
+  const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -453,6 +462,16 @@ export function App() {
   const refreshSettingsStatus = useCallback(async () => {
     setSettingsStatus(await loadPlatformSettings(quantCoreBaseUrl));
   }, []);
+
+  const refreshGoldenPathStatus = useCallback(async () => {
+    setGoldenPathState(
+      await loadGoldenPathStatus(quantCoreBaseUrl, {
+        market: workspace.selectedInstrument.market,
+        symbol: workspace.selectedInstrument.symbol,
+        timeframe: workspace.selectedTimeframe
+      })
+    );
+  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const refreshWorkspace = useCallback(async () => {
     const startedSelectionVersion = manualSelectionVersionRef.current;
@@ -513,10 +532,12 @@ export function App() {
       ) {
         await refreshChart();
       }
+      await refreshGoldenPathStatus();
       setRefreshingCacheKey(null);
     },
     [
       refreshChart,
+      refreshGoldenPathStatus,
       workspace.selectedInstrument.market,
       workspace.selectedInstrument.symbol,
       workspace.selectedTimeframe
@@ -572,11 +593,13 @@ export function App() {
       ) {
         await refreshChart();
       }
+      await refreshGoldenPathStatus();
     } finally {
       setIsRefreshingWatchlistCache(false);
     }
   }, [
     refreshChart,
+    refreshGoldenPathStatus,
     workspace.selectedInstrument.market,
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe,
@@ -1384,6 +1407,10 @@ export function App() {
   }, [refreshSettingsStatus]);
 
   useEffect(() => {
+    void refreshGoldenPathStatus();
+  }, [paperExecutionRecord?.executionId, refreshGoldenPathStatus, workspace.researchRun?.runId]);
+
+  useEffect(() => {
     document.documentElement.lang = locale;
     window.localStorage.setItem("aiqt.locale", locale);
   }, [locale]);
@@ -1467,10 +1494,50 @@ export function App() {
     void runPipeline();
   }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, submitPaperExecution]);
 
-  const isWorkflowActionDisabled =
+  const runGoldenPathAction = useCallback(() => {
+    const action = goldenPath?.nextAction;
+    if (!action) {
+      runActiveWorkflowAction();
+      return;
+    }
+    if (action.id === "refresh-data") {
+      void refreshSelectedMarketCache();
+      return;
+    }
+    if (action.id === "run-pipeline") {
+      void runPipeline();
+      return;
+    }
+    if (action.id === "run-ai-review") {
+      setActiveWorkAreaId("ai-review");
+      setActiveLoopStepId("agent-review");
+      setActiveWorkflowStageId("agent");
+      runAiWorkbenchAction("debate");
+      return;
+    }
+    if (action.id === "submit-paper-order") {
+      void submitPaperExecution();
+      return;
+    }
+    if (productWorkAreaIds.includes(action.targetWorkspace as ProductWorkAreaId)) {
+      selectProductWorkArea(action.targetWorkspace as ProductWorkAreaId);
+    }
+  }, [
+    goldenPath?.nextAction,
+    refreshSelectedMarketCache,
+    runActiveWorkflowAction,
+    runAiWorkbenchAction,
+    runPipeline,
+    selectProductWorkArea,
+    submitPaperExecution
+  ]);
+
+  const goldenPathActionId = goldenPath?.nextAction?.id;
+  const isGoldenPathActionDisabled =
     isRefreshing ||
     isRunning ||
-    (activeLoopStepId === "paper" && (isSubmittingPaperExecution || !workspace.researchRun?.runId));
+    (goldenPathActionId === "refresh-data" && Boolean(refreshingCacheKey)) ||
+    (goldenPathActionId === "submit-paper-order" && (isSubmittingPaperExecution || !workspace.researchRun?.runId));
 
   const renderChartPanel = (className = "chart-panel") => (
     <Panel
@@ -1952,10 +2019,23 @@ export function App() {
                   ? i18n.productWorkAreaDescription(activeWorkArea)
                   : i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}
               </p>
+              {goldenPath ? (
+                <div className={`golden-path-status ${goldenPath.status}`}>
+                  <span>{goldenPathStatusLabel(i18n, goldenPath.status)}</span>
+                  <strong>
+                    {goldenPathCurrentStep
+                      ? goldenPathStepLabel(i18n, goldenPathCurrentStep.id, goldenPathCurrentStep.label)
+                      : goldenPathStatusLabel(i18n, "ready")}
+                  </strong>
+                  <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
+                </div>
+              ) : null}
             </div>
-            <button className="run-button compact" disabled={isWorkflowActionDisabled} onClick={runActiveWorkflowAction} type="button">
+            <button className="run-button compact" disabled={isGoldenPathActionDisabled} onClick={runGoldenPathAction} type="button">
               {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
-              {workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
+              {goldenPath?.nextAction
+                ? goldenPathActionLabel(i18n, goldenPath.nextAction)
+                : workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
             </button>
           </section>
 
@@ -2054,6 +2134,71 @@ function workflowNextActionLabel(i18n: AppI18n, stepId: string): string {
     return i18n.t("execution.submitPaper");
   }
   return i18n.t("action.runPipeline");
+}
+
+function goldenPathStatusLabel(i18n: AppI18n, status: GoldenPathStatus["status"]): string {
+  if (i18n.locale === "en-US") {
+    return { ready: "Ready", review: "Review", blocked: "Blocked" }[status];
+  }
+  return { ready: "就绪", review: "待复核", blocked: "阻断" }[status];
+}
+
+function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {
+  if (i18n.locale === "en-US") {
+    return fallback;
+  }
+  return (
+    {
+      "market-data": "行情数据",
+      "research-run": "审计研究",
+      "backtest-report": "回测证据",
+      "ai-review": "AI 评审",
+      "paper-execution": "模拟执行",
+      "live-gate": "实盘闸门"
+    }[stepId] ?? fallback
+  );
+}
+
+function goldenPathActionLabel(i18n: AppI18n, action: NonNullable<GoldenPathStatus["nextAction"]>): string {
+  if (i18n.locale === "en-US") {
+    return action.label;
+  }
+  return (
+    {
+      "refresh-data": "刷新行情",
+      "run-pipeline": "运行流水线",
+      "run-ai-review": "运行 AI 评审",
+      "fix-paper-handoff": "修复执行交接",
+      "submit-paper-order": "提交模拟委托",
+      "certify-live-adapter": "查看实盘闸门"
+    }[action.id] ?? action.label
+  );
+}
+
+function goldenPathDetail(
+  i18n: AppI18n,
+  step: GoldenPathStatus["steps"][number] | undefined,
+  fallback?: string
+): string {
+  if (i18n.locale === "en-US") {
+    return step?.detail ?? fallback ?? "";
+  }
+  if (!step) {
+    return "当前上下文已完成 P0 模拟闭环，实盘仍需认证。";
+  }
+  if (step.id === "paper-execution" && step.status === "blocked") {
+    return "模拟执行交接未通过，请先修复数据质量或结构化风控。";
+  }
+  return (
+    {
+      "market-data": "当前标的缺少可用 K 线缓存，先刷新行情数据。",
+      "research-run": "先运行流水线，绑定行情、策略、回测和 AI 证据。",
+      "backtest-report": "回测证据缺失，重新运行流水线生成审计报告。",
+      "ai-review": "AI 评审证据缺失，先完成基于审计 run 的解释记录。",
+      "paper-execution": "审计证据已就绪，下一步提交模拟委托并绑定成交记录。",
+      "live-gate": "实盘通道继续阻断，需要适配器认证、风控审批和人工确认。"
+    }[step.id] ?? fallback ?? step.detail
+  );
 }
 
 function ChartDataStrip({
