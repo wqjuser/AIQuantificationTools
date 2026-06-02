@@ -430,6 +430,16 @@ export interface GoldenPathWorkspace {
   actionId: string | null;
 }
 
+export interface GoldenPathSummary {
+  totalSteps: number;
+  passedSteps: number;
+  reviewSteps: number;
+  blockedSteps: number;
+  currentStepLabel: string | null;
+  nextActionId: string | null;
+  liveTradingAllowed: boolean;
+}
+
 export interface GoldenPathStatus {
   schemaVersion: 1;
   market: Market;
@@ -439,6 +449,7 @@ export interface GoldenPathStatus {
   currentStepId: string | null;
   latestRunId: string | null;
   nextAction: GoldenPathNextAction | null;
+  summary: GoldenPathSummary;
   workspaces: GoldenPathWorkspace[];
   steps: GoldenPathStep[];
 }
@@ -2054,6 +2065,7 @@ function isGoldenPathStatus(value: unknown): value is GoldenPathStatus {
     (status.currentStepId === null || typeof status.currentStepId === "string") &&
     (status.latestRunId === null || typeof status.latestRunId === "string") &&
     (status.nextAction === null || isGoldenPathNextAction(status.nextAction)) &&
+    isGoldenPathSummary(status.summary) &&
     Array.isArray(status.workspaces) &&
     status.workspaces.every(isGoldenPathWorkspace) &&
     Array.isArray(status.steps) &&
@@ -2103,6 +2115,22 @@ function isGoldenPathWorkspace(value: unknown): value is GoldenPathWorkspace {
 
 function isGoldenPathWorkspaceStatus(value: unknown): value is GoldenPathWorkspaceStatus {
   return value === "ready" || value === "needs_run" || value === "blocked";
+}
+
+function isGoldenPathSummary(value: unknown): value is GoldenPathSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<GoldenPathSummary>;
+  return (
+    typeof summary.totalSteps === "number" &&
+    typeof summary.passedSteps === "number" &&
+    typeof summary.reviewSteps === "number" &&
+    typeof summary.blockedSteps === "number" &&
+    (summary.currentStepLabel === null || typeof summary.currentStepLabel === "string") &&
+    (summary.nextActionId === null || typeof summary.nextActionId === "string") &&
+    typeof summary.liveTradingAllowed === "boolean"
+  );
 }
 
 function isGoldenPathNextAction(value: unknown): value is GoldenPathNextAction {

@@ -269,6 +269,15 @@ describe("terminal workspace API client", () => {
                 targetWorkspace: "execution",
                 reason: "Audited AI evidence is ready, but no paper execution is bound."
               },
+              summary: {
+                totalSteps: 6,
+                passedSteps: 4,
+                reviewSteps: 1,
+                blockedSteps: 1,
+                currentStepLabel: "Paper execution",
+                nextActionId: "submit-paper-order",
+                liveTradingAllowed: false
+              },
               workspaces: [
                 {
                   id: "research",
@@ -319,6 +328,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.goldenPath?.currentStepId).toBe("paper-execution");
     expect(result.goldenPath?.nextAction?.targetWorkspace).toBe("execution");
+    expect(result.goldenPath?.summary.passedSteps).toBe(4);
     expect(result.goldenPath?.workspaces.find((workspace) => workspace.id === "execution")?.status).toBe("needs_run");
   });
 

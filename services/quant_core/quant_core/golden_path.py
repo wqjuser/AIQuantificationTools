@@ -40,6 +40,7 @@ def build_golden_path_status(
         "currentStepId": current_step["id"] if current_step else None,
         "latestRunId": str(getattr(latest_run, "run_id", "")) if latest_run else None,
         "nextAction": _next_action(current_step),
+        "summary": _summary_from_steps(steps, current_step, settings),
         "workspaces": _workspaces_from_steps(steps, current_step),
         "steps": steps,
     }
@@ -339,6 +340,24 @@ def _workspaces_from_steps(steps: list[GoldenPathPayload], current_step: GoldenP
         ),
         _workspace_from_step("settings", "Settings", live_gate, current_step, blocked_status="blocked"),
     ]
+
+
+def _summary_from_steps(
+    steps: list[GoldenPathPayload],
+    current_step: GoldenPathPayload | None,
+    settings: dict[str, Any],
+) -> GoldenPathPayload:
+    next_action = _next_action(current_step)
+    safety = settings.get("safety") if isinstance(settings, dict) else None
+    return {
+        "totalSteps": len(steps),
+        "passedSteps": sum(1 for step in steps if step["status"] == "passed"),
+        "reviewSteps": sum(1 for step in steps if step["status"] == "review"),
+        "blockedSteps": sum(1 for step in steps if step["status"] == "blocked"),
+        "currentStepLabel": str(current_step["label"]) if current_step else None,
+        "nextActionId": next_action.get("id") if isinstance(next_action, dict) else None,
+        "liveTradingAllowed": bool(safety.get("liveTradingAllowed")) if isinstance(safety, dict) else False,
+    }
 
 
 def _workspace_from_step(

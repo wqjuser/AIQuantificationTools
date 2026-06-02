@@ -2021,7 +2021,7 @@ export function App() {
               </p>
               {goldenPath ? (
                 <div className={`golden-path-status ${goldenPath.status}`}>
-                  <span>{goldenPathStatusLabel(i18n, goldenPath.status)}</span>
+                  <span>{goldenPathProgressLabel(i18n, goldenPath)}</span>
                   <strong>
                     {goldenPathCurrentStep
                       ? goldenPathStepLabel(i18n, goldenPathCurrentStep.id, goldenPathCurrentStep.label)
@@ -2155,6 +2155,11 @@ function goldenPathStatusLabel(i18n: AppI18n, status: GoldenPathStatus["status"]
     return { ready: "Ready", review: "Review", blocked: "Blocked" }[status];
   }
   return { ready: "就绪", review: "待复核", blocked: "阻断" }[status];
+}
+
+function goldenPathProgressLabel(i18n: AppI18n, goldenPath: GoldenPathStatus): string {
+  const progress = `${goldenPath.summary.passedSteps}/${goldenPath.summary.totalSteps}`;
+  return `${goldenPathStatusLabel(i18n, goldenPath.status)} · ${i18n.locale === "en-US" ? progress : `${progress}步`}`;
 }
 
 function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {

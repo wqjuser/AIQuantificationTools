@@ -1746,6 +1746,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(status["steps"][0]["status"], "passed")
         self.assertEqual(status["steps"][1]["id"], "research-run")
         self.assertEqual(status["steps"][1]["status"], "blocked")
+        self.assertEqual(status["summary"]["totalSteps"], 6)
+        self.assertEqual(status["summary"]["passedSteps"], 1)
+        self.assertEqual(status["summary"]["blockedSteps"], 5)
+        self.assertEqual(status["summary"]["currentStepLabel"], "Audited research run")
         workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
         self.assertEqual(workspaces["market"]["status"], "ready")
         self.assertEqual(workspaces["research"]["status"], "needs_run")
@@ -1841,6 +1845,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(steps["ai-review"]["status"], "passed")
         self.assertEqual(steps["paper-execution"]["status"], "review")
         self.assertEqual(steps["live-gate"]["status"], "blocked")
+        self.assertEqual(status["summary"]["passedSteps"], 4)
+        self.assertEqual(status["summary"]["reviewSteps"], 1)
+        self.assertEqual(status["summary"]["blockedSteps"], 1)
+        self.assertEqual(status["summary"]["nextActionId"], "submit-paper-order")
         workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
         self.assertEqual(workspaces["research"]["status"], "ready")
         self.assertEqual(workspaces["backtest"]["status"], "ready")
@@ -1954,6 +1962,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["goldenPath"]["latestRunId"], "run-golden-api")
         self.assertEqual(payload["goldenPath"]["currentStepId"], "paper-execution")
         self.assertEqual(payload["goldenPath"]["nextAction"]["targetWorkspace"], "execution")
+        self.assertEqual(payload["goldenPath"]["summary"]["nextActionId"], "submit-paper-order")
         self.assertEqual(payload["goldenPath"]["workspaces"][0]["id"], "market")
         self.assertEqual(payload["goldenPath"]["workspaces"][0]["status"], "ready")
 
