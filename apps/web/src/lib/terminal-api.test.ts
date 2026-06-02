@@ -55,6 +55,15 @@ describe("terminal workspace API client", () => {
     expect(buildWorkspaceUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/workspace");
   });
 
+  test("builds same-origin API URLs for containerized web deployments", () => {
+    expect(resolveQuantCoreBaseUrl({ VITE_QUANT_API_BASE: "/" })).toBe("/");
+    expect(buildWorkspaceUrl("/")).toBe("/api/workspace");
+    expect(buildResearchRunDetailUrl("/", "run 你好/1")).toBe("/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1");
+    expect(buildMarketSearchUrl("/", "ashare", "浦发", 8)).toBe(
+      "/api/market/search?market=ashare&query=%E6%B5%A6%E5%8F%91&limit=8"
+    );
+  });
+
   test("builds the research run URL with selected instrument context", () => {
     expect(buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d")).toBe(
       "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500"

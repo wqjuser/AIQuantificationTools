@@ -1,0 +1,44 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        INSTALL_DATA_DEPS: ${INSTALL_DATA_DEPS:-false}
+    environment:
+      QUANT_CORE_HOST: 0.0.0.0
+      QUANT_CORE_PORT: "8765"
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      CCXT_DEFAULT_EXCHANGE: ${CCXT_DEFAULT_EXCHANGE:-binance}
+      CCXT_TIMEOUT: ${CCXT_TIMEOUT:-10000}
+    volumes:
+      - quant-data:/app/data
+    expose:
+      - "8765"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_QUANT_API_BASE: /
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${AIQT_WEB_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  quant-data:

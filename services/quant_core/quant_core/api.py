@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -588,9 +589,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         return
 
 
-def run(host: str = "127.0.0.1", port: int = 8765) -> None:
-    server = HTTPServer((host, port), QuantApiHandler)
-    print(f"quant-core API listening on http://{host}:{port}")
+def resolve_api_bind(
+    host: str | None = None,
+    port: int | str | None = None,
+    environ: dict[str, str] | None = None,
+) -> tuple[str, int]:
+    source = os.environ if environ is None else environ
+    bind_host = (host or source.get("QUANT_CORE_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+    raw_port = port if port is not None else source.get("QUANT_CORE_PORT", "8765")
+    try:
+        bind_port = int(raw_port)
+    except (TypeError, ValueError):
+        bind_port = 8765
+    if bind_port < 1 or bind_port > 65535:
+        bind_port = 8765
+    return bind_host, bind_port
+
+
+def run(host: str | None = None, port: int | str | None = None) -> None:
+    bind_host, bind_port = resolve_api_bind(host=host, port=port)
+    server = HTTPServer((bind_host, bind_port), QuantApiHandler)
+    print(f"quant-core API listening on http://{bind_host}:{bind_port}")
     server.serve_forever()
 
 

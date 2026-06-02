@@ -4,6 +4,8 @@
 
 AIQuantificationTools 使用一套 React 前端支撑 Web 和桌面端。桌面端通过 Tauri v2 包装同一个 Vite 应用；Python 本地核心作为独立服务运行，默认监听 `127.0.0.1:8765`。
 
+Docker 部署使用 `compose.yaml` 启动 `api` 和 `web` 两个服务：`api` 运行 Python quant-core，并通过 `QUANT_CORE_HOST=0.0.0.0` 暴露容器内 `8765`；`web` 使用 Node 22 构建 Vite 静态资源，再由 Nginx Alpine 托管页面并把 `/api/*` 与 `/health` 反向代理到 `api:8765`。生产 Web 构建时 `VITE_QUANT_API_BASE=/`，前端 API client 会生成同源 `/api/...` URL，避免浏览器在容器部署中访问用户机器的 `127.0.0.1:8765`。SQLite 行情缓存、研究运行、策略库、笔记和模拟执行记录持久化在 Compose 命名卷 `quant-data`。
+
 ## Backend Core
 
 - `domain.py`：统一 OHLCV、策略、回测、AI 报告、订单和账户模型。

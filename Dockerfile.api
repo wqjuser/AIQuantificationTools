@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/services/quant_core
+ENV QUANT_CORE_HOST=0.0.0.0
+ENV QUANT_CORE_PORT=8765
+
+ARG INSTALL_DATA_DEPS=false
+
+WORKDIR /app
+
+COPY services/quant_core/pyproject.toml services/quant_core/pyproject.toml
+RUN if [ "$INSTALL_DATA_DEPS" = "true" ]; then \
+      pip install --no-cache-dir akshare yfinance ccxt; \
+    fi
+
+COPY services/quant_core services/quant_core
+COPY tools tools
+
+EXPOSE 8765
+
+CMD ["python", "tools/run_quant_api.py"]

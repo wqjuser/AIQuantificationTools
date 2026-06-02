@@ -458,9 +458,16 @@ export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): 
   return configured ? configured : defaultQuantCoreBaseUrl;
 }
 
+function buildApiUrl(baseUrl: string, path: string, configure?: (url: URL) => void): string {
+  const trimmedBase = baseUrl.trim();
+  const normalizedBase = trimmedBase && trimmedBase !== "/" ? (trimmedBase.endsWith("/") ? trimmedBase : `${trimmedBase}/`) : "/";
+  const url = new URL(path.replace(/^\/+/, ""), normalizedBase === "/" ? "http://aiqt.local/" : normalizedBase);
+  configure?.(url);
+  return normalizedBase === "/" ? `${url.pathname}${url.search}` : url.toString();
+}
+
 export function buildWorkspaceUrl(baseUrl: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL("api/workspace", normalizedBase).toString();
+  return buildApiUrl(baseUrl, "api/workspace");
 }
 
 export function buildResearchRunUrl(
@@ -472,47 +479,42 @@ export function buildResearchRunUrl(
   limit = 500,
   strategy?: StrategySnapshot
 ): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL("api/research/run", normalizedBase);
-  url.searchParams.set("market", market);
-  url.searchParams.set("symbol", symbol);
-  url.searchParams.set("timeframe", timeframe);
-  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
-  if (strategy) {
-    url.searchParams.set("strategyName", strategy.name);
-    url.searchParams.set("strategyEntry", strategy.entry);
-    url.searchParams.set("strategyExit", strategy.exit);
-    url.searchParams.set("strategyPosition", strategy.position);
-    url.searchParams.set("strategyRisk", strategy.risk);
-  }
-  if (assumptions) {
-    url.searchParams.set("initialCash", String(assumptions.initialCash));
-    url.searchParams.set("feeBps", String(assumptions.feeBps));
-    url.searchParams.set("slippageBps", String(assumptions.slippageBps));
-  }
-  return url.toString();
+  return buildApiUrl(baseUrl, "api/research/run", (url) => {
+    url.searchParams.set("market", market);
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("timeframe", timeframe);
+    url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
+    if (strategy) {
+      url.searchParams.set("strategyName", strategy.name);
+      url.searchParams.set("strategyEntry", strategy.entry);
+      url.searchParams.set("strategyExit", strategy.exit);
+      url.searchParams.set("strategyPosition", strategy.position);
+      url.searchParams.set("strategyRisk", strategy.risk);
+    }
+    if (assumptions) {
+      url.searchParams.set("initialCash", String(assumptions.initialCash));
+      url.searchParams.set("feeBps", String(assumptions.feeBps));
+      url.searchParams.set("slippageBps", String(assumptions.slippageBps));
+    }
+  });
 }
 
 export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL("api/research/runs", normalizedBase);
-  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 50))));
-  return url.toString();
+  return buildApiUrl(baseUrl, "api/research/runs", (url) => {
+    url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 50))));
+  });
 }
 
 export function buildResearchRunDetailUrl(baseUrl: string, runId: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`api/research/runs/${encodeURIComponent(runId)}`, normalizedBase).toString();
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}`);
 }
 
 export function buildResearchRunExportUrl(baseUrl: string, runId: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`api/research/runs/${encodeURIComponent(runId)}/export`, normalizedBase).toString();
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/export`);
 }
 
 export function buildResearchRunImportUrl(baseUrl: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL("api/research/runs/import", normalizedBase).toString();
+  return buildApiUrl(baseUrl, "api/research/runs/import");
 }
 
 export function buildResearchNoteUrl(
@@ -521,53 +523,46 @@ export function buildResearchNoteUrl(
   symbol: string,
   timeframe: ResearchTimeframe
 ): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL("api/research/notes", normalizedBase);
-  url.searchParams.set("market", market);
-  url.searchParams.set("symbol", symbol);
-  url.searchParams.set("timeframe", timeframe);
-  return url.toString();
+  return buildApiUrl(baseUrl, "api/research/notes", (url) => {
+    url.searchParams.set("market", market);
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("timeframe", timeframe);
+  });
 }
 
 export function buildResearchRunPaperExecutionsUrl(baseUrl: string, runId: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`api/research/runs/${encodeURIComponent(runId)}/paper-executions`, normalizedBase).toString();
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/paper-executions`);
 }
 
 export function buildResearchRunPromotionUrl(baseUrl: string, runId: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`api/research/runs/${encodeURIComponent(runId)}/promotion`, normalizedBase).toString();
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/promotion`);
 }
 
 export function buildResearchRunAiReviewsUrl(baseUrl: string, runId: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`api/research/runs/${encodeURIComponent(runId)}/ai-reviews`, normalizedBase).toString();
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/ai-reviews`);
 }
 
 export function buildStrategiesUrl(
   baseUrl: string,
   params: { market?: Market; symbol?: string; limit?: number } = {}
 ): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL("api/strategies", normalizedBase);
-  if (params.market) {
-    url.searchParams.set("market", params.market);
-  }
-  if (params.symbol?.trim()) {
-    url.searchParams.set("symbol", params.symbol.trim());
-  }
-  url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit ?? 20, 50))));
-  return url.toString();
+  return buildApiUrl(baseUrl, "api/strategies", (url) => {
+    if (params.market) {
+      url.searchParams.set("market", params.market);
+    }
+    if (params.symbol?.trim()) {
+      url.searchParams.set("symbol", params.symbol.trim());
+    }
+    url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit ?? 20, 50))));
+  });
 }
 
 export function buildStrategyDetailUrl(baseUrl: string, revision: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`api/strategies/${encodeURIComponent(revision)}`, normalizedBase).toString();
+  return buildApiUrl(baseUrl, `api/strategies/${encodeURIComponent(revision)}`);
 }
 
 export function buildStrategyValidationUrl(baseUrl: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL("api/strategies/validate", normalizedBase).toString();
+  return buildApiUrl(baseUrl, "api/strategies/validate");
 }
 
 export function buildMarketKlinesUrl(
@@ -578,35 +573,31 @@ export function buildMarketKlinesUrl(
   limit = 160,
   end?: string
 ): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL("api/market/klines", normalizedBase);
-  url.searchParams.set("market", market);
-  url.searchParams.set("symbol", symbol);
-  url.searchParams.set("timeframe", timeframe);
-  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
-  if (end?.trim()) {
-    url.searchParams.set("end", end.trim());
-  }
-  return url.toString();
+  return buildApiUrl(baseUrl, "api/market/klines", (url) => {
+    url.searchParams.set("market", market);
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("timeframe", timeframe);
+    url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
+    if (end?.trim()) {
+      url.searchParams.set("end", end.trim());
+    }
+  });
 }
 
 export function buildMarketSearchUrl(baseUrl: string, market: Market, query: string, limit = 8): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const url = new URL("api/market/search", normalizedBase);
-  url.searchParams.set("market", market);
-  url.searchParams.set("query", query);
-  url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 20))));
-  return url.toString();
+  return buildApiUrl(baseUrl, "api/market/search", (url) => {
+    url.searchParams.set("market", market);
+    url.searchParams.set("query", query);
+    url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 20))));
+  });
 }
 
 export function buildSettingsStatusUrl(baseUrl: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL("api/settings/status", normalizedBase).toString();
+  return buildApiUrl(baseUrl, "api/settings/status");
 }
 
 export function buildCacheRefreshUrl(baseUrl: string): string {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL("api/cache/refresh", normalizedBase).toString();
+  return buildApiUrl(baseUrl, "api/cache/refresh");
 }
 
 export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
@@ -814,8 +805,7 @@ export async function saveResearchNote(
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<ResearchNoteResult> {
   try {
-    const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-    const response = await fetcher(new URL("api/research/notes", normalizedBase).toString(), {
+    const response = await fetcher(buildApiUrl(baseUrl, "api/research/notes"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1067,8 +1057,7 @@ export async function saveStrategySnapshot(
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<StrategySaveResult> {
   try {
-    const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-    const response = await fetcher(new URL("api/strategies", normalizedBase).toString(), {
+    const response = await fetcher(buildApiUrl(baseUrl, "api/strategies"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

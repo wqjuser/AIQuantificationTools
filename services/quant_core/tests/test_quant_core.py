@@ -4,6 +4,16 @@ from datetime import datetime, timedelta, timezone
 
 
 class QuantCoreContractTest(unittest.TestCase):
+    def test_quant_api_bind_uses_container_environment(self):
+        from quant_core.api import resolve_api_bind
+
+        self.assertEqual(resolve_api_bind(environ={}), ("127.0.0.1", 8765))
+        self.assertEqual(
+            resolve_api_bind(environ={"QUANT_CORE_HOST": "0.0.0.0", "QUANT_CORE_PORT": "8765"}),
+            ("0.0.0.0", 8765),
+        )
+        self.assertEqual(resolve_api_bind(environ={"QUANT_CORE_PORT": "not-a-number"}), ("127.0.0.1", 8765))
+
     def test_strategy_config_round_trips_with_stable_revision(self):
         from quant_core.domain import Condition, RiskRules, StrategyConfig
 

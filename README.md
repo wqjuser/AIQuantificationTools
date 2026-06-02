@@ -35,6 +35,55 @@ npm run dev
 VITE_QUANT_API_BASE=http://127.0.0.1:8765
 ```
 
+## Docker Deployment
+
+项目现在提供 Docker Compose 部署入口，默认启动两个容器：
+
+- `api`：Python quant-core，本地核心监听容器内 `0.0.0.0:8765`，SQLite 数据写入命名卷 `quant-data`。
+- `web`：Nginx 托管 Vite 构建产物，并把 `/api/*` 和 `/health` 反向代理到 `api` 服务。
+
+启动：
+
+```powershell
+docker compose up --build
+```
+
+访问：
+
+```powershell
+http://127.0.0.1:8080/
+http://127.0.0.1:8080/health
+```
+
+常用配置：
+
+```powershell
+$env:AIQT_WEB_PORT="8080"
+$env:FINNHUB_API_KEY="your_finnhub_key"
+$env:CCXT_DEFAULT_EXCHANGE="binance"
+docker compose up --build
+```
+
+如果希望镜像内安装 AKShare、yfinance、ccxt 这类可选数据源依赖：
+
+```powershell
+$env:INSTALL_DATA_DEPS="true"
+docker compose build api
+docker compose up
+```
+
+停止服务但保留 SQLite 数据卷：
+
+```powershell
+docker compose down
+```
+
+停止并删除数据卷：
+
+```powershell
+docker compose down -v
+```
+
 实时报价可选配置：
 
 ```powershell
