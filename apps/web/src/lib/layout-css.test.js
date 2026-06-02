@@ -233,6 +233,22 @@ describe("terminal layout css", () => {
     );
   });
 
+  test("summarizes drift across saved AI review records in the audit trail", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+
+    expect(appSource).toContain("buildAiReviewRecordDriftRows");
+    expect(appSource).toContain("function AiReviewRecordDriftSummary");
+    expect(auditPanelSource).toContain("const driftRows = buildAiReviewRecordDriftRows");
+    expect(auditPanelSource).toContain("<AiReviewRecordDriftSummary");
+    expect(auditPanelSource).toContain("rows={driftRows}");
+    expect(cssBlock(".audit-ai-drift-summary")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".audit-ai-drift-list")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-drift-row")).toContain(
+      "grid-template-columns: minmax(130px, 0.75fr) minmax(0, 1fr) auto;"
+    );
+    expect(hasCssDeclaration(".audit-ai-drift-row", "grid-template-columns: 1fr;")).toBe(true);
+  });
+
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');

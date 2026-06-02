@@ -1476,6 +1476,67 @@ em {
   font-size: 0.76rem;
 }
 
+.audit-ai-drift-summary {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 7px;
+  min-width: 0;
+}
+
+.audit-ai-drift-list {
+  display: grid;
+  gap: 6px;
+}
+
+.audit-ai-drift-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.75fr) minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.66);
+  padding: 7px 9px;
+}
+
+.audit-ai-drift-row > span,
+.audit-ai-drift-row p {
+  min-width: 0;
+}
+
+.audit-ai-drift-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.audit-ai-drift-row > span strong,
+.audit-ai-drift-row > strong {
+  color: var(--text);
+}
+
+.audit-ai-drift-row > span em,
+.audit-ai-drift-row p {
+  overflow: hidden;
+  color: var(--muted);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-ai-drift-row.matched {
+  border-color: rgba(45, 212, 191, 0.38);
+}
+
+.audit-ai-drift-row.drift {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.audit-ai-drift-row.empty {
+  border-style: dashed;
+}
+
 .audit-ai-citation-list {
   display: grid;
   gap: 7px;
@@ -5151,6 +5212,7 @@ em {
   .strategy-template-grid,
   .strategy-generated-snapshot,
   .ai-dossier-grid,
+  .audit-ai-drift-row,
   .backtest-evidence-grid,
   .backtest-readiness-list,
   .backtest-benchmark-strip,
@@ -5159,6 +5221,10 @@ em {
   .backtest-row,
   .workflow-artifact-grid,
   .workflow-canvas-large {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-ai-drift-row {
     grid-template-columns: 1fr;
   }
 

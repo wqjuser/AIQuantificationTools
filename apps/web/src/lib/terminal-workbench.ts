@@ -459,6 +459,20 @@ export interface AiReviewRunRecord {
   boundary: string;
 }
 
+export type AiReviewRecordDriftReason = "run" | "strategy" | "status" | "citations" | "rounds" | "boundary";
+
+export interface AiReviewRecordDriftRow {
+  aiReviewId: string;
+  createdAt: string;
+  strategyRevision: string;
+  citationCount: number;
+  roundCount: number;
+  liveExecutionBlocked: boolean;
+  status: "matched" | "drift";
+  driftCount: number;
+  driftReasons: AiReviewRecordDriftReason[];
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -1638,6 +1652,58 @@ export function buildAiReviewRunRecord(workspace: TerminalWorkspace): AiReviewRu
     decisionLog,
     boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
   };
+}
+
+export function buildAiReviewRecordDriftRows({
+  currentCitationCount,
+  currentRunId,
+  currentStatus,
+  currentStrategyRevision,
+  liveExecutionBlocked,
+  records,
+  roundCount
+}: {
+  currentCitationCount: number;
+  currentRunId: string | null;
+  currentStatus: AiReviewDossier["status"];
+  currentStrategyRevision: string;
+  liveExecutionBlocked: boolean;
+  records: AiReviewRunRecord[];
+  roundCount: number;
+}): AiReviewRecordDriftRow[] {
+  return records.map((record) => {
+    const driftReasons: AiReviewRecordDriftReason[] = [];
+    if (!currentRunId || record.runId !== currentRunId) {
+      driftReasons.push("run");
+    }
+    if (record.strategyRevision !== currentStrategyRevision) {
+      driftReasons.push("strategy");
+    }
+    if (record.status !== currentStatus) {
+      driftReasons.push("status");
+    }
+    if (record.summary.citationCount !== currentCitationCount) {
+      driftReasons.push("citations");
+    }
+    if (record.summary.roundCount !== roundCount) {
+      driftReasons.push("rounds");
+    }
+    if (record.summary.liveExecutionBlocked !== liveExecutionBlocked) {
+      driftReasons.push("boundary");
+    }
+
+    return {
+      aiReviewId: record.aiReviewId,
+      createdAt: record.createdAt,
+      strategyRevision: record.strategyRevision,
+      citationCount: record.summary.citationCount,
+      roundCount: record.summary.roundCount,
+      liveExecutionBlocked: record.summary.liveExecutionBlocked,
+      status: driftReasons.length ? "drift" : "matched",
+      driftCount: driftReasons.length,
+      driftReasons
+    };
+  });
 }
 
 function normalizedResearchNote(note: ResearchRunNote | null | undefined): ResearchRunNote | null {

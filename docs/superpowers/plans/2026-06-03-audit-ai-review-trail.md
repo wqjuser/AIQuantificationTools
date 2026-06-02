@@ -14,13 +14,14 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Reuse `activeAiReviewRunRecords` already loaded from `/api/research/runs/{runId}/ai-reviews`.
 - Reuse `aiReviewDossier` citations as the current evidence reference list.
 - Compare the current run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary against the latest saved AI Review Run Record.
+- Summarize drift across all loaded saved AI Review Run Records so Audit can spot stale strategy revisions, citation counts, committee rounds, dossier status, run binding, or live boundary changes.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
 ## Out Of Scope
 
 - No new backend AI review storage contract.
-- No AI review record search or deep field-level diffing beyond the current-vs-latest evidence comparison.
+- No AI review record search or deep field-level diffing beyond current evidence comparison and saved-record drift summaries.
 - No changes to AI Review generation behavior.
 
 ## Test Plan
@@ -37,3 +38,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: added the panel, rendered saved AI review records plus dossier citations, and expanded the Audit grid with a full-width `ai` area.
 - RED: `layout-css.test.js -t "compares current AI review evidence"` failed because `AiReviewAuditComparison` did not exist.
 - GREEN: added the current-vs-latest AI review evidence comparison, including run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary.
+- RED: `terminal-workbench.test.ts -t "builds audit drift rows"` failed because `buildAiReviewRecordDriftRows` did not exist.
+- GREEN: added model-level saved-record drift rows for run binding, strategy revision, dossier status, citation count, committee rounds, and live execution boundary.
+- RED: `layout-css.test.js -t "summarizes drift"` failed because the Audit panel did not render a saved-record drift summary.
+- GREEN: added `AiReviewRecordDriftSummary` to the Audit AI review trail with compact matched/drift status rows.

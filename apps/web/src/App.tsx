@@ -70,6 +70,7 @@ import {
   buildAiEvidenceCards,
   buildAiReviewDossier,
   buildAiReviewReportMarkdown,
+  buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
@@ -106,6 +107,7 @@ import {
   AiEvidenceCard,
   AiReviewDossier,
   AiReviewCitation,
+  AiReviewRecordDriftRow,
   Market,
   AgentCommitteeRound,
   BacktestAssumptionField,
@@ -3898,6 +3900,52 @@ function AiReviewAuditComparison({
   );
 }
 
+function AiReviewRecordDriftSummary({ i18n, rows }: { i18n: AppI18n; rows: AiReviewRecordDriftRow[] }) {
+  const visibleRows = rows.slice(0, 5);
+  const driftCount = rows.filter((row) => row.status === "drift").length;
+  const summaryValue = rows.length
+    ? driftCount
+      ? `${driftCount}/${rows.length}`
+      : i18n.locale === "zh-CN"
+        ? "全部匹配"
+        : "All matched"
+    : i18n.locale === "zh-CN"
+      ? "无记录"
+      : "No records";
+
+  return (
+    <div className="audit-ai-drift-summary">
+      <div className="agent-rounds-title">
+        <span>{i18n.locale === "zh-CN" ? "保存记录漂移" : "Saved Record Drift"}</span>
+        <strong>{summaryValue}</strong>
+      </div>
+      <div className="audit-ai-drift-list">
+        {visibleRows.length ? (
+          visibleRows.map((row) => (
+            <article className={`audit-ai-drift-row ${row.status}`} key={row.aiReviewId}>
+              <span>
+                <strong>{row.strategyRevision}</strong>
+                <em>{formatChartDate(row.createdAt)}</em>
+              </span>
+              <p>{aiReviewDriftReasonText(i18n, row)}</p>
+              <strong>{aiReviewDriftStatusText(i18n, row)}</strong>
+            </article>
+          ))
+        ) : (
+          <article className="audit-ai-drift-row empty">
+            <span>
+              <strong>{i18n.t("aiReview.noSavedRecords")}</strong>
+              <em>{i18n.locale === "zh-CN" ? "等待保存" : "Waiting"}</em>
+            </span>
+            <p>{i18n.t("aiReview.noSavedRecordsDetail")}</p>
+            <strong>{i18n.locale === "zh-CN" ? "未开始" : "Pending"}</strong>
+          </article>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
   currentRunId,
@@ -3918,6 +3966,15 @@ function AiReviewAuditTrailPanel({
   roundCount: number;
 }) {
   const latestRecord = records[0] ?? null;
+  const driftRows = buildAiReviewRecordDriftRows({
+    currentCitationCount: dossier.citations.length,
+    currentRunId,
+    currentStatus: dossier.status,
+    currentStrategyRevision,
+    liveExecutionBlocked,
+    records: records.map((record) => record.record),
+    roundCount
+  });
 
   return (
     <Panel
@@ -3936,6 +3993,7 @@ function AiReviewAuditTrailPanel({
           liveExecutionBlocked={liveExecutionBlocked}
           roundCount={roundCount}
         />
+        <AiReviewRecordDriftSummary i18n={i18n} rows={driftRows} />
         <AiReviewRunRecordHistory i18n={i18n} records={records} />
         <div className="audit-ai-citation-list">
           <div className="agent-rounds-title">
@@ -3953,6 +4011,50 @@ function AiReviewAuditTrailPanel({
       </div>
     </Panel>
   );
+}
+
+function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {
+  if (row.status === "matched") {
+    return i18n.locale === "zh-CN" ? "匹配" : "Matched";
+  }
+  return i18n.locale === "zh-CN" ? `${row.driftCount} 项漂移` : `${row.driftCount} drift`;
+}
+
+function aiReviewDriftReasonText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {
+  if (!row.driftReasons.length) {
+    return i18n.locale === "zh-CN"
+      ? `引用 ${row.citationCount} 条 · 委员会 ${row.roundCount} 轮 · ${aiReviewAuditBoundaryLabel(i18n, row.liveExecutionBlocked)}`
+      : `${row.citationCount} citations · ${row.roundCount} rounds · ${aiReviewAuditBoundaryLabel(
+          i18n,
+          row.liveExecutionBlocked
+        )}`;
+  }
+  return row.driftReasons.map((reason) => aiReviewDriftReasonLabel(i18n, reason)).join(i18n.locale === "zh-CN" ? "、" : ", ");
+}
+
+function aiReviewDriftReasonLabel(i18n: AppI18n, reason: AiReviewRecordDriftRow["driftReasons"][number]): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        run: "run",
+        strategy: "strategy revision",
+        status: "dossier status",
+        citations: "citations",
+        rounds: "committee rounds",
+        boundary: "live boundary"
+      } satisfies Record<AiReviewRecordDriftRow["driftReasons"][number], string>
+    )[reason];
+  }
+  return (
+    {
+      run: "审计运行",
+      strategy: "策略版本",
+      status: "档案状态",
+      citations: "引用证据",
+      rounds: "委员会轮次",
+      boundary: "实盘边界"
+    } satisfies Record<AiReviewRecordDriftRow["driftReasons"][number], string>
+  )[reason];
 }
 
 function aiReviewAuditStatusLabel(i18n: AppI18n, status: AiReviewDossier["status"]): string {

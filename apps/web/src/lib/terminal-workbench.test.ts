@@ -6,6 +6,7 @@ import {
   buildAiEvidenceCards,
   buildAiReviewDossier,
   buildAiReviewReportMarkdown,
+  buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
@@ -1455,6 +1456,75 @@ describe("terminal workbench model", () => {
 
   test("does not build an AI review run record before audited evidence exists", () => {
     expect(buildAiReviewRunRecord(buildTerminalWorkspace())).toBeNull();
+  });
+
+  test("builds audit drift rows for saved AI review records", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-record",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-record",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Trend improved after the audit run.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-ai-record",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const staleRecord = {
+      ...currentRecord!,
+      aiReviewId: "ai-review:run-ai-record:rev-old",
+      strategyRevision: "rev-old",
+      summary: {
+        ...currentRecord!.summary,
+        citationCount: currentRecord!.summary.citationCount - 1,
+        roundCount: currentRecord!.summary.roundCount - 1,
+        liveExecutionBlocked: false
+      }
+    };
+
+    const rows = buildAiReviewRecordDriftRows({
+      currentCitationCount: currentRecord!.summary.citationCount,
+      currentRunId: currentRecord!.runId,
+      currentStatus: currentRecord!.status,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      liveExecutionBlocked: true,
+      records: [currentRecord!, staleRecord],
+      roundCount: currentRecord!.summary.roundCount
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        aiReviewId: "ai-review:run-ai-record:rev-ai-record",
+        driftCount: 0,
+        driftReasons: [],
+        status: "matched"
+      }),
+      expect.objectContaining({
+        aiReviewId: "ai-review:run-ai-record:rev-old",
+        driftCount: 4,
+        driftReasons: ["strategy", "citations", "rounds", "boundary"],
+        status: "drift"
+      })
+    ]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {
