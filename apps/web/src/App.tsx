@@ -1563,20 +1563,27 @@ export function App() {
     runGoldenPathActionById(activeWorkspaceContext.actionId, activeWorkspaceContext.workspaceId);
   }, [activeWorkspaceContext, runGoldenPathActionById]);
 
+  const isGoldenPathActionDisabledById = useCallback(
+    (actionId: string | null | undefined) => {
+      if (isRefreshing || isRunning) {
+        return true;
+      }
+      if (actionId === "refresh-data") {
+        return Boolean(refreshingCacheKey);
+      }
+      if (actionId === "submit-paper-order") {
+        return isSubmittingPaperExecution || !workspace.researchRun?.runId;
+      }
+      return false;
+    },
+    [isRefreshing, isRunning, isSubmittingPaperExecution, refreshingCacheKey, workspace.researchRun?.runId]
+  );
+
   const goldenPathActionId = goldenPath?.nextAction?.id;
-  const isGoldenPathActionDisabled =
-    isRefreshing ||
-    isRunning ||
-    (goldenPathActionId === "refresh-data" && Boolean(refreshingCacheKey)) ||
-    (goldenPathActionId === "submit-paper-order" && (isSubmittingPaperExecution || !workspace.researchRun?.runId));
+  const isGoldenPathActionDisabled = isGoldenPathActionDisabledById(goldenPathActionId);
   const workspaceContextActionId = activeWorkspaceContext?.actionId;
   const isWorkspaceContextActionDisabled =
-    !workspaceContextActionId ||
-    isRefreshing ||
-    isRunning ||
-    (workspaceContextActionId === "refresh-data" && Boolean(refreshingCacheKey)) ||
-    (workspaceContextActionId === "submit-paper-order" &&
-      (isSubmittingPaperExecution || !workspace.researchRun?.runId));
+    !workspaceContextActionId || isGoldenPathActionDisabledById(workspaceContextActionId);
 
   const renderChartPanel = (className = "chart-panel") => (
     <Panel
@@ -1834,6 +1841,7 @@ export function App() {
           <GoldenPathRunbookPanel
             className="workflow-runbook-panel"
             i18n={i18n}
+            isActionDisabled={isGoldenPathActionDisabledById}
             onRunAction={runGoldenPathActionById}
             onSelectWorkspace={selectProductWorkArea}
             runbook={goldenPath?.runbook ?? []}
@@ -5547,12 +5555,14 @@ function Panel({
 function GoldenPathRunbookPanel({
   className,
   i18n,
+  isActionDisabled,
   onRunAction,
   onSelectWorkspace,
   runbook
 }: {
   className?: string;
   i18n: AppI18n;
+  isActionDisabled: (actionId: string | null | undefined) => boolean;
   onRunAction: (actionId: string | null | undefined, targetWorkspace?: string | null) => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
   runbook: GoldenPathStatus["runbook"];
@@ -5570,6 +5580,7 @@ function GoldenPathRunbookPanel({
               ? (item.workspaceId as ProductWorkAreaId)
               : null;
             const canRunAction = Boolean(item.actionId) && !item.passed;
+            const isRunbookActionDisabled = !canRunAction || isActionDisabled(item.actionId);
             return (
               <article
                 className={`audit-runbook-row ${item.status} ${item.current ? "current" : ""}`}
@@ -5585,7 +5596,11 @@ function GoldenPathRunbookPanel({
                   <button disabled={!workspaceId} onClick={() => workspaceId && onSelectWorkspace(workspaceId)} type="button">
                     {i18n.locale === "zh-CN" ? "工作区" : "Workspace"}
                   </button>
-                  <button disabled={!canRunAction} onClick={() => onRunAction(item.actionId, item.workspaceId)} type="button">
+                  <button
+                    disabled={isRunbookActionDisabled}
+                    onClick={() => onRunAction(item.actionId, item.workspaceId)}
+                    type="button"
+                  >
                     {auditRunbookActionLabel(i18n, item)}
                   </button>
                 </div>

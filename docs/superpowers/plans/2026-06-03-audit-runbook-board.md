@@ -34,3 +34,5 @@ Render the complete Golden Path runbook in the Audit workspace. Each step should
 
 - RED: `layout-css.test.js -t "full golden path runbook board"` failed because `GoldenPathRunbookPanel` did not exist.
 - GREEN: added the full Audit runbook panel, wired workspace jumps and shared Golden Path actions, and updated the audit grid to place runbook, workflow, history, and decision panels explicitly.
+- RED: the same layout contract failed because Audit runbook actions did not reuse the shared Golden Path disabled-state gate.
+- GREEN: extracted `isGoldenPathActionDisabledById` and reused it for the top task action, active workspace action, and Audit runbook action buttons.

@@ -174,10 +174,16 @@ describe("terminal layout css", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
 
     expect(appSource).toContain("function GoldenPathRunbookPanel");
+    expect(appSource).toContain("isGoldenPathActionDisabledById");
     expect(auditWorkspaceSource).toContain("<GoldenPathRunbookPanel");
     expect(auditWorkspaceSource).toContain("runbook={goldenPath?.runbook ?? []}");
     expect(auditWorkspaceSource).toContain("onSelectWorkspace={selectProductWorkArea}");
     expect(auditWorkspaceSource).toContain("onRunAction={runGoldenPathActionById}");
+    expect(auditWorkspaceSource).toContain("isActionDisabled={isGoldenPathActionDisabledById}");
+    expect(appSource).toContain("const isRunbookActionDisabled = !canRunAction || isActionDisabled(item.actionId);");
+    expect(appSource).toContain("disabled={isRunbookActionDisabled}");
+    expect(appSource).toContain("isGoldenPathActionDisabledById(goldenPathActionId)");
+    expect(appSource).toContain("isGoldenPathActionDisabledById(workspaceContextActionId)");
     expect(cssBlock(".workflow-runbook-panel")).toContain("grid-area: runbook;");
     expect(cssBlock(".audit-runbook-panel")).toContain("align-self: start;");
     expect(cssBlock(".audit-runbook-list")).toContain("display: grid;");
