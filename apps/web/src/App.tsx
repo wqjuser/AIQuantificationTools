@@ -1858,6 +1858,12 @@ export function App() {
           />
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
+          <AiReviewAuditTrailPanel
+            className="workflow-ai-audit-panel"
+            dossier={aiReviewDossier}
+            i18n={i18n}
+            records={activeAiReviewRunRecords}
+          />
         </>
       );
     }
@@ -3794,6 +3800,43 @@ function AiReviewRunRecordHistory({ i18n, records }: { i18n: AppI18n; records: A
         </article>
       )}
     </div>
+  );
+}
+
+function AiReviewAuditTrailPanel({
+  className,
+  dossier,
+  i18n,
+  records
+}: {
+  className?: string;
+  dossier: AiReviewDossier;
+  i18n: AppI18n;
+  records: AiReviewRunRecordEnvelope[];
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "AI 评审审计" : "AI Review Audit"}
+      subtitle={i18n.locale === "zh-CN" ? "保存记录、引用证据与风控边界" : "Saved records, citations, and risk boundary"}
+      className={className}
+    >
+      <div className="audit-ai-trail-grid">
+        <AiReviewRunRecordHistory i18n={i18n} records={records} />
+        <div className="audit-ai-citation-list">
+          <div className="agent-rounds-title">
+            <span>{i18n.locale === "zh-CN" ? "引用证据" : "Citations"}</span>
+            <strong>{dossier.citations.length}</strong>
+          </div>
+          {dossier.citations.map((citation) => (
+            <article className={`audit-ai-citation ${citation.tone}`} key={citation.id}>
+              <span>{aiCitationLabel(i18n, citation)}</span>
+              <strong>{aiCitationValue(i18n, citation)}</strong>
+              <p>{aiCitationDetail(i18n, citation.detail)}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </Panel>
   );
 }
 

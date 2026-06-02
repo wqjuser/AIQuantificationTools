@@ -1213,7 +1213,8 @@ em {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
     "runbook workflow"
-    "history decision";
+    "history decision"
+    "ai ai";
 }
 
 .settings-layout {
@@ -1366,6 +1367,11 @@ em {
   grid-area: ai;
 }
 
+.workflow-ai-audit-panel {
+  align-self: start;
+  grid-area: ai;
+}
+
 .workflow-agent-panel .agent-panel-body {
   grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
   align-items: start;
@@ -1404,6 +1410,68 @@ em {
 
 .workflow-history-panel .run-history {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.audit-ai-trail-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.audit-ai-citation-list {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.audit-ai-citation {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #6d5dfc;
+  border-radius: 7px;
+  background: #111c2a;
+  padding: 9px 10px;
+}
+
+.audit-ai-citation.positive {
+  border-left-color: #4cc9ad;
+}
+
+.audit-ai-citation.warning {
+  border-left-color: #e8be62;
+}
+
+.audit-ai-citation.risk {
+  border-left-color: #ff7f6d;
+}
+
+.audit-ai-citation span,
+.audit-ai-citation strong,
+.audit-ai-citation p {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audit-ai-citation span {
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.audit-ai-citation strong {
+  margin-top: 4px;
+  color: #dce6ee;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.audit-ai-citation p {
+  margin: 5px 0 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .audit-runbook-panel {
@@ -4935,7 +5003,8 @@ em {
       "runbook"
       "history"
       "workflow"
-      "decision";
+      "decision"
+      "ai";
   }
 
   .settings-layout {
@@ -4945,6 +5014,7 @@ em {
   }
 
   .workflow-agent-panel .agent-panel-body,
+  .audit-ai-trail-grid,
   .workflow-history-panel .history-panel-body {
     grid-template-columns: 1fr;
   }
@@ -5123,7 +5193,8 @@ em {
       "runbook"
       "history"
       "workflow"
-      "decision";
+      "decision"
+      "ai";
   }
 
   .settings-layout {
@@ -5133,6 +5204,7 @@ em {
   }
 
   .watchlist-ai-panel .agent-panel-body,
+  .audit-ai-trail-grid,
   .assistant-command-strip .agent-grid,
   .assistant-command-strip .ai-actions,
   .watchlist-history-panel .history-panel-body,

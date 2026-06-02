@@ -193,6 +193,24 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"'])).toBe(true);
   });
 
+  test("renders AI review audit trail inside the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+
+    expect(appSource).toContain("function AiReviewAuditTrailPanel");
+    expect(auditWorkspaceSource).toContain("<AiReviewAuditTrailPanel");
+    expect(auditWorkspaceSource).toContain("dossier={aiReviewDossier}");
+    expect(auditWorkspaceSource).toContain("records={activeAiReviewRunRecords}");
+    expect(auditWorkspaceSource).toContain('className="workflow-ai-audit-panel"');
+    expect(appSource).toContain("<AiReviewRunRecordHistory i18n={i18n} records={records} />");
+    expect(appSource).toContain("dossier.citations.map");
+    expect(cssBlock(".workflow-ai-audit-panel")).toContain("grid-area: ai;");
+    expect(cssBlock(".audit-ai-trail-grid")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-trail-grid")).toContain("grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);");
+    expect(cssBlock(".audit-ai-citation-list")).toContain("display: grid;");
+    expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"', '"ai ai"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"ai"'])).toBe(true);
+  });
+
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');
