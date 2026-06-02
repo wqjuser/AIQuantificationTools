@@ -52,11 +52,17 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("QUANT_CORE_HOST: 0.0.0.0");
     expect(compose).toContain("QUANT_CORE_PORT: \"8765\"");
     expect(compose).toContain("quant-data:/app/data");
-    expect(compose).toContain("${AIQT_WEB_PORT:-8080}:80");
+    expect(compose).toContain("${AIQT_WEB_PORT:-5173}:80");
     expect(compose).toContain("condition: service_healthy");
     expect(compose).toContain("healthcheck:");
     expect(compose).toContain("volumes:");
     expect(compose).toContain("quant-data:");
+  });
+
+  test("uses the Docker-first 5173 endpoint as the default smoke target", () => {
+    const smokeHelper = readRepoFile("tools/docker_smoke.py");
+
+    expect(smokeHelper).toContain('default="http://127.0.0.1:5173"');
   });
 
   test("ships focused Dockerfiles for the Python core and static web runtime", () => {

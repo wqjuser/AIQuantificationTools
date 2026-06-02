@@ -63,14 +63,14 @@ npm run docker:smoke -- --no-build
 访问：
 
 ```powershell
-http://127.0.0.1:8080/
-http://127.0.0.1:8080/health
+http://127.0.0.1:5173/
+http://127.0.0.1:5173/health
 ```
 
 常用配置：
 
 ```powershell
-$env:AIQT_WEB_PORT="8080"
+$env:AIQT_WEB_PORT="5173"
 $env:FINNHUB_API_KEY="your_finnhub_key"
 $env:CCXT_DEFAULT_EXCHANGE="binance"
 docker compose up --build

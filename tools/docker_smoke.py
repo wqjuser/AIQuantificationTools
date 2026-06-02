@@ -108,7 +108,7 @@ def run_smoke(repo_root: Path, base_url: str, timeout_seconds: int, build: bool,
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a Docker Compose smoke test for AIQuantificationTools.")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8080", help="Web service URL to verify.")
+    parser.add_argument("--base-url", default="http://127.0.0.1:5173", help="Web service URL to verify.")
     parser.add_argument("--timeout", type=int, default=90, help="Seconds to wait for services to become reachable.")
     parser.add_argument("--no-build", action="store_true", help="Start Compose without rebuilding images.")
     parser.add_argument("--down", action="store_true", help="Run docker compose down after the smoke test.")
