@@ -140,6 +140,15 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .terminal-overview-grid .metrics-row", ["grid-row: 1 / span 2;"])).toBe(true);
   });
 
+  test("renders the golden path runbook as a compact task checklist", () => {
+    expect(appSource).toContain("buildGoldenPathRunbookPreview(goldenPath)");
+    expect(appSource).toContain('className="golden-path-runbook"');
+    expect(appSource).toContain('className={`golden-path-runbook-item ${item.status}');
+    expect(appSource).toContain("goldenPathRunbookPreview.map");
+    expect(cssBlock(".golden-path-runbook")).toContain("display: grid;");
+    expect(cssBlock(".golden-path-runbook-item")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+  });
+
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');

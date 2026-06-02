@@ -51,6 +51,35 @@ export interface ProductWorkAreaSelection {
   workflowStageId: string;
 }
 
+export type GoldenPathRunbookStatus = "passed" | "review" | "blocked";
+
+export interface GoldenPathRunbookSourceItem {
+  stepId: string;
+  label: string;
+  workspaceId: string;
+  status: GoldenPathRunbookStatus;
+  current: boolean;
+  passed: boolean;
+  detail: string;
+  blocker: string | null;
+  actionId: string | null;
+  actionLabel: string | null;
+}
+
+export interface GoldenPathRunbookSource {
+  runbook: GoldenPathRunbookSourceItem[];
+}
+
+export interface GoldenPathRunbookPreviewItem {
+  stepId: string;
+  label: string;
+  workspaceId: string;
+  status: GoldenPathRunbookStatus;
+  current: boolean;
+  detail: string;
+  actionLabel: string | null;
+}
+
 export interface QuantLoopNavigationTarget {
   moduleId: string;
   workflowStageId: string;
@@ -1050,6 +1079,32 @@ export function buildProductWorkAreas(workspace: TerminalWorkspace): ProductWork
     ...area,
     status: productWorkAreaStatus(area.id, hasAuditedRun, workspace)
   }));
+}
+
+export function buildGoldenPathRunbookPreview(
+  goldenPath: GoldenPathRunbookSource | null | undefined,
+  limit = 3
+): GoldenPathRunbookPreviewItem[] {
+  if (!goldenPath || !Array.isArray(goldenPath.runbook) || limit <= 0) {
+    return [];
+  }
+  const firstOpenIndex = goldenPath.runbook.findIndex((item) => !item.passed);
+  if (firstOpenIndex < 0) {
+    return [];
+  }
+  return goldenPath.runbook
+    .slice(firstOpenIndex)
+    .filter((item) => !item.passed)
+    .slice(0, limit)
+    .map((item) => ({
+      stepId: item.stepId,
+      label: item.label,
+      workspaceId: item.workspaceId,
+      status: item.status,
+      current: item.current,
+      detail: item.blocker ?? item.detail,
+      actionLabel: item.actionLabel
+    }));
 }
 
 export function resolveProductWorkAreaSelection(

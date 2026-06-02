@@ -888,6 +888,73 @@ em {
   color: #71dfc5;
 }
 
+.golden-path-runbook {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.golden-path-runbook-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1px 5px;
+  min-width: 0;
+  border: 1px solid #26354a;
+  border-radius: 7px;
+  background: #121c2a;
+  padding: 5px 6px;
+  color: #a8b7c7;
+}
+
+.golden-path-runbook-item > span {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  background: #1a2637;
+  color: #dce6ee;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.golden-path-runbook-item strong {
+  overflow: hidden;
+  color: #dce6ee;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.golden-path-runbook-item em {
+  align-self: center;
+  color: #71dfc5;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.golden-path-runbook-item small {
+  grid-column: 2 / -1;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.golden-path-runbook-item.current {
+  border-color: #7a3a32;
+}
+
+.golden-path-runbook-item.blocked em {
+  color: #ffb35c;
+}
+
+.golden-path-runbook-item.review em {
+  color: #e8be62;
+}
+
 .module-focus-symbol {
   flex: 0 0 auto;
   border: 1px solid #2b6f62;

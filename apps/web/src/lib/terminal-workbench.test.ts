@@ -17,6 +17,7 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildGoldenPathRunbookPreview,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
   buildPaperExecutionSummaryTiles,
@@ -131,6 +132,91 @@ describe("terminal workbench model", () => {
       quantLoopStepId: "strategy",
       workflowStageId: "factor"
     });
+  });
+
+  test("builds a compact golden path runbook preview from the current blocker", () => {
+    const preview = buildGoldenPathRunbookPreview({
+      runbook: [
+        {
+          stepId: "market-data",
+          label: "Market data",
+          workspaceId: "market",
+          status: "passed",
+          current: false,
+          passed: true,
+          detail: "Fresh cache exists.",
+          blocker: null,
+          actionId: null,
+          actionLabel: null
+        },
+        {
+          stepId: "research-run",
+          label: "Audited research run",
+          workspaceId: "research",
+          status: "blocked",
+          current: true,
+          passed: false,
+          detail: "Run the pipeline.",
+          blocker: "Run the pipeline.",
+          actionId: "run-pipeline",
+          actionLabel: "Run research pipeline"
+        },
+        {
+          stepId: "backtest-report",
+          label: "Backtest report",
+          workspaceId: "backtest",
+          status: "blocked",
+          current: false,
+          passed: false,
+          detail: "Backtest waits for audit.",
+          blocker: "Backtest waits for audit.",
+          actionId: "run-pipeline",
+          actionLabel: "Run research pipeline"
+        },
+        {
+          stepId: "ai-review",
+          label: "AI review",
+          workspaceId: "ai-review",
+          status: "blocked",
+          current: false,
+          passed: false,
+          detail: "AI waits for backtest.",
+          blocker: "AI waits for backtest.",
+          actionId: "run-ai-review",
+          actionLabel: "Run AI review"
+        }
+      ]
+    });
+
+    expect(preview).toEqual([
+      {
+        stepId: "research-run",
+        label: "Audited research run",
+        workspaceId: "research",
+        status: "blocked",
+        current: true,
+        detail: "Run the pipeline.",
+        actionLabel: "Run research pipeline"
+      },
+      {
+        stepId: "backtest-report",
+        label: "Backtest report",
+        workspaceId: "backtest",
+        status: "blocked",
+        current: false,
+        detail: "Backtest waits for audit.",
+        actionLabel: "Run research pipeline"
+      },
+      {
+        stepId: "ai-review",
+        label: "AI review",
+        workspaceId: "ai-review",
+        status: "blocked",
+        current: false,
+        detail: "AI waits for backtest.",
+        actionLabel: "Run AI review"
+      }
+    ]);
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {

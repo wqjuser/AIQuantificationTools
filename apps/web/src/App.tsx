@@ -81,6 +81,7 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildGoldenPathRunbookPreview,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -115,6 +116,7 @@ import {
   BacktestReadinessGate,
   BacktestTradeRow,
   BrokerAdapterRow,
+  GoldenPathRunbookPreviewItem,
   PaperPositionRow,
   PaperExecutionSummaryTile,
   PaperTradingRow,
@@ -409,6 +411,7 @@ export function App() {
   });
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
+  const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -2030,6 +2033,18 @@ export function App() {
                   <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
                 </div>
               ) : null}
+              {goldenPathRunbookPreview.length ? (
+                <div className="golden-path-runbook" aria-label="Golden path runbook">
+                  {goldenPathRunbookPreview.map((item, index) => (
+                    <article className={`golden-path-runbook-item ${item.status} ${item.current ? "current" : ""}`} key={item.stepId}>
+                      <span>{index + 1}</span>
+                      <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
+                      <em>{goldenPathRunbookActionLabel(i18n, item)}</em>
+                      <small>{goldenPathRunbookDetail(i18n, item)}</small>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <button className="run-button compact" disabled={isGoldenPathActionDisabled} onClick={runGoldenPathAction} type="button">
               {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
@@ -2191,6 +2206,41 @@ function goldenPathActionLabel(i18n: AppI18n, action: NonNullable<GoldenPathStat
       "submit-paper-order": "提交模拟委托",
       "certify-live-adapter": "查看实盘闸门"
     }[action.id] ?? action.label
+  );
+}
+
+function goldenPathRunbookActionLabel(i18n: AppI18n, item: GoldenPathRunbookPreviewItem): string {
+  if (!item.actionLabel) {
+    return item.current ? goldenPathStatusLabel(i18n, "blocked") : goldenPathStatusLabel(i18n, "review");
+  }
+  if (i18n.locale === "en-US") {
+    return item.actionLabel;
+  }
+  return (
+    {
+      "Refresh market data": "刷新行情",
+      "Run research pipeline": "运行流水线",
+      "Run AI review": "运行 AI 评审",
+      "Fix paper handoff": "修复交接",
+      "Submit paper order": "提交委托",
+      "Certify live adapter": "查看闸门"
+    }[item.actionLabel] ?? item.actionLabel
+  );
+}
+
+function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPreviewItem): string {
+  if (i18n.locale === "en-US") {
+    return item.detail;
+  }
+  return (
+    {
+      "market-data": "补齐或刷新当前标的 K 线缓存。",
+      "research-run": "绑定行情、策略、回测和 AI 证据。",
+      "backtest-report": "等待审计回测报告生成。",
+      "ai-review": "等待基于审计 run 的 AI 评审。",
+      "paper-execution": "提交并绑定模拟委托成交记录。",
+      "live-gate": "保持实盘阻断，等待认证和确认。"
+    }[item.stepId] ?? item.detail
   );
 }
 
