@@ -70,6 +70,20 @@ export interface GoldenPathRunbookSource {
   runbook: GoldenPathRunbookSourceItem[];
 }
 
+export interface GoldenPathWorkspaceContextSourceItem {
+  id: string;
+  label: string;
+  status: ProductWorkAreaStatus;
+  current: boolean;
+  stepIds: string[];
+  reason: string;
+  actionId: string | null;
+}
+
+export interface GoldenPathWorkspaceContextSource extends GoldenPathRunbookSource {
+  workspaces: GoldenPathWorkspaceContextSourceItem[];
+}
+
 export interface GoldenPathRunbookPreviewItem {
   stepId: string;
   label: string;
@@ -77,6 +91,21 @@ export interface GoldenPathRunbookPreviewItem {
   status: GoldenPathRunbookStatus;
   current: boolean;
   detail: string;
+  actionLabel: string | null;
+}
+
+export interface GoldenPathWorkspaceContext {
+  workspaceId: string;
+  status: ProductWorkAreaStatus;
+  current: boolean;
+  reason: string;
+  stepIds: string[];
+  totalStepCount: number;
+  passedStepCount: number;
+  primaryStepId: string | null;
+  primaryStepLabel: string | null;
+  detail: string;
+  actionId: string | null;
   actionLabel: string | null;
 }
 
@@ -1105,6 +1134,43 @@ export function buildGoldenPathRunbookPreview(
       detail: item.blocker ?? item.detail,
       actionLabel: item.actionLabel
     }));
+}
+
+export function buildGoldenPathWorkspaceContext(
+  goldenPath: GoldenPathWorkspaceContextSource | null | undefined,
+  workspaceId: string
+): GoldenPathWorkspaceContext | null {
+  if (!goldenPath || !Array.isArray(goldenPath.workspaces) || !Array.isArray(goldenPath.runbook)) {
+    return null;
+  }
+  const workspaceContext = goldenPath.workspaces.find((workspace) => workspace.id === workspaceId);
+  if (!workspaceContext) {
+    return null;
+  }
+  const stepIds = workspaceContext.stepIds;
+  const runbookItems = goldenPath.runbook.filter(
+    (item) => item.workspaceId === workspaceId || stepIds.includes(item.stepId)
+  );
+  const primaryItem =
+    runbookItems.find((item) => item.current && !item.passed) ??
+    runbookItems.find((item) => !item.passed) ??
+    runbookItems[0] ??
+    null;
+
+  return {
+    workspaceId: workspaceContext.id,
+    status: workspaceContext.status,
+    current: workspaceContext.current,
+    reason: workspaceContext.reason,
+    stepIds,
+    totalStepCount: runbookItems.length || stepIds.length,
+    passedStepCount: runbookItems.filter((item) => item.passed).length,
+    primaryStepId: primaryItem?.stepId ?? null,
+    primaryStepLabel: primaryItem?.label ?? null,
+    detail: primaryItem?.blocker ?? primaryItem?.detail ?? workspaceContext.reason,
+    actionId: primaryItem?.actionId ?? workspaceContext.actionId,
+    actionLabel: primaryItem?.actionLabel ?? null
+  };
 }
 
 export function resolveProductWorkAreaSelection(

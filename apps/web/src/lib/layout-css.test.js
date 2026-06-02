@@ -152,6 +152,18 @@ describe("terminal layout css", () => {
     expect(cssBlock(".golden-path-runbook-item")).toContain("cursor: pointer;");
   });
 
+  test("renders the active work-area golden path context inside the task card", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId)");
+    expect(appSource).toContain("activeWorkspaceContext");
+    expect(overviewSource).toContain('className={`workspace-gate-summary ${activeWorkspaceContext.status}`}');
+    expect(overviewSource).toContain("goldenPathWorkspaceContextLabel");
+    expect(overviewSource).toContain("goldenPathWorkspaceContextDetail");
+    expect(cssBlock(".workspace-gate-summary")).toContain("display: grid;");
+    expect(cssBlock(".workspace-gate-summary")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+  });
+
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {
     expect(appSource).toContain('"chart-panel workflow-chart-panel"');
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');

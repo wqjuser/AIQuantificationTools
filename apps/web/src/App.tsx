@@ -82,6 +82,7 @@ import {
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
   buildGoldenPathRunbookPreview,
+  buildGoldenPathWorkspaceContext,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -116,6 +117,7 @@ import {
   BacktestReadinessGate,
   BacktestTradeRow,
   BrokerAdapterRow,
+  GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
   PaperPositionRow,
   PaperExecutionSummaryTile,
@@ -412,6 +414,7 @@ export function App() {
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
   const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
+  const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -2033,6 +2036,22 @@ export function App() {
                   <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
                 </div>
               ) : null}
+              {activeWorkspaceContext ? (
+                <div className={`workspace-gate-summary ${activeWorkspaceContext.status}`}>
+                  <span>{goldenPathWorkspaceContextLabel(i18n, activeWorkspaceContext)}</span>
+                  <strong>
+                    {activeWorkspaceContext.primaryStepId
+                      ? goldenPathStepLabel(
+                          i18n,
+                          activeWorkspaceContext.primaryStepId,
+                          activeWorkspaceContext.primaryStepLabel ?? activeWorkspaceContext.reason
+                        )
+                      : i18n.productWorkAreaStatus(activeWorkspaceContext.status)}
+                  </strong>
+                  <em>{goldenPathWorkspaceContextActionLabel(i18n, activeWorkspaceContext)}</em>
+                  <small>{goldenPathWorkspaceContextDetail(i18n, activeWorkspaceContext)}</small>
+                </div>
+              ) : null}
               {goldenPathRunbookPreview.length ? (
                 <div className="golden-path-runbook" aria-label="Golden path runbook">
                   {goldenPathRunbookPreview.map((item, index) => (
@@ -2246,6 +2265,52 @@ function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPreviewIt
       "paper-execution": "提交并绑定模拟委托成交记录。",
       "live-gate": "保持实盘阻断，等待认证和确认。"
     }[item.stepId] ?? item.detail
+  );
+}
+
+function goldenPathWorkspaceContextLabel(i18n: AppI18n, context: GoldenPathWorkspaceContext): string {
+  const progress = `${context.passedStepCount}/${context.totalStepCount}`;
+  return `${i18n.productWorkAreaStatus(context.status)} · ${i18n.locale === "en-US" ? progress : `${progress}步`}`;
+}
+
+function goldenPathWorkspaceContextActionLabel(i18n: AppI18n, context: GoldenPathWorkspaceContext): string {
+  if (!context.actionLabel) {
+    return i18n.productWorkAreaStatus(context.status);
+  }
+  return goldenPathRunbookActionLabel(i18n, {
+    stepId: context.primaryStepId ?? "",
+    label: context.primaryStepLabel ?? "",
+    workspaceId: context.workspaceId,
+    status: goldenPathRunbookStatusFromWorkspaceStatus(context.status),
+    current: context.current,
+    detail: context.detail,
+    actionLabel: context.actionLabel
+  });
+}
+
+function goldenPathRunbookStatusFromWorkspaceStatus(status: GoldenPathWorkspaceContext["status"]) {
+  if (status === "ready") {
+    return "passed";
+  }
+  return status === "blocked" ? "blocked" : "review";
+}
+
+function goldenPathWorkspaceContextDetail(i18n: AppI18n, context: GoldenPathWorkspaceContext): string {
+  if (i18n.locale === "en-US") {
+    return context.detail || context.reason;
+  }
+  if (!context.primaryStepId) {
+    return context.reason;
+  }
+  return (
+    {
+      "market-data": "本工作区负责补齐当前标的行情缓存。",
+      "research-run": "本工作区负责生成可复现审计运行。",
+      "backtest-report": "本工作区等待或展示审计回测报告。",
+      "ai-review": "本工作区只基于审计证据运行 AI 评审。",
+      "paper-execution": "本工作区负责模拟委托和执行交接。",
+      "live-gate": "本工作区负责实盘适配器和安全闸门。"
+    }[context.primaryStepId] ?? context.detail ?? context.reason
   );
 }
 

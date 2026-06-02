@@ -18,6 +18,7 @@ import {
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
   buildGoldenPathRunbookPreview,
+  buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
   buildPaperExecutionSummaryTiles,
@@ -217,6 +218,70 @@ describe("terminal workbench model", () => {
         actionLabel: "Run AI review"
       }
     ]);
+  });
+
+  test("builds selected product work-area context from golden path runbook evidence", () => {
+    const context = buildGoldenPathWorkspaceContext(
+      {
+        workspaces: [
+          {
+            id: "backtest",
+            label: "Backtest Lab",
+            status: "needs_run",
+            current: false,
+            stepIds: ["backtest-report"],
+            reason: "Backtest report waits for the audited pipeline.",
+            actionId: "run-pipeline"
+          }
+        ],
+        runbook: [
+          {
+            stepId: "research-run",
+            label: "Audited research run",
+            workspaceId: "research",
+            status: "passed",
+            current: false,
+            passed: true,
+            detail: "Audit run is available.",
+            blocker: null,
+            actionId: null,
+            actionLabel: null
+          },
+          {
+            stepId: "backtest-report",
+            label: "Backtest report",
+            workspaceId: "backtest",
+            status: "blocked",
+            current: false,
+            passed: false,
+            detail: "Backtest report waits for the audited pipeline.",
+            blocker: "Run the research pipeline to refresh the report.",
+            actionId: "run-pipeline",
+            actionLabel: "Run research pipeline"
+          }
+        ]
+      },
+      "backtest"
+    );
+
+    expect(context).toEqual({
+      workspaceId: "backtest",
+      status: "needs_run",
+      current: false,
+      reason: "Backtest report waits for the audited pipeline.",
+      stepIds: ["backtest-report"],
+      totalStepCount: 1,
+      passedStepCount: 0,
+      primaryStepId: "backtest-report",
+      primaryStepLabel: "Backtest report",
+      detail: "Run the research pipeline to refresh the report.",
+      actionId: "run-pipeline",
+      actionLabel: "Run research pipeline"
+    });
+  });
+
+  test("returns no work-area context when the golden path has no matching workspace", () => {
+    expect(buildGoldenPathWorkspaceContext({ workspaces: [], runbook: [] }, "execution")).toBeNull();
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {
