@@ -401,6 +401,29 @@ describe("terminal layout css", () => {
     expect(cssBlock(".research-import-diff-actions")).toContain("display: flex;");
   });
 
+  test("renders import audit events in the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const importEventsPanelSource = sourceBetween("function ResearchRunImportAuditEventPanel", "function ResearchRunExportIndexPanel");
+
+    expect(appSource).toContain("buildResearchRunImportAuditEvent");
+    expect(appSource).toContain("mergeResearchRunImportAuditEvents");
+    expect(appSource).toContain("filterResearchRunImportAuditEvents");
+    expect(appSource).toContain("const [researchRunImportAuditEvents, setResearchRunImportAuditEvents]");
+    expect(appSource).toContain("function ResearchRunImportAuditEventPanel");
+    expect(auditWorkspaceSource).toContain("<ResearchRunImportAuditEventPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-import-events-panel"');
+    expect(auditWorkspaceSource).toContain("events={researchRunImportAuditEvents}");
+    expect(importEventsPanelSource).toContain("research-import-events-summary");
+    expect(importEventsPanelSource).toContain("research-import-event-row");
+    expect(cssBlock(".workflow-import-events-panel")).toContain("grid-area: import-events;");
+    expect(cssBlock(".research-import-events")).toContain("display: grid;");
+    expect(cssBlock(".research-import-event-row")).toContain(
+      "grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(92px, 0.24fr) auto;"
+    );
+    expect(hasCssBlockWith(".audit-layout", ['"import-diff import-diff"', '"import-events import-events"', '"index index"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"import-diff"', '"import-events"', '"index"'])).toBe(true);
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");

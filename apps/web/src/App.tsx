@@ -98,6 +98,7 @@ import {
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
+  buildResearchRunImportAuditEvent,
   buildResearchRunImportDiffRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
@@ -112,8 +113,10 @@ import {
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
+  filterResearchRunImportAuditEvents,
   filterResearchRunImportDiffRows,
   formatInstrumentPrice,
+  mergeResearchRunImportAuditEvents,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
   AiWorkbenchAction,
@@ -148,6 +151,7 @@ import {
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
+  ResearchRunImportAuditEvent,
   ResearchRunImportDiffRow,
   ResearchRunComparisonRow,
   ResearchRunExportPreviewRow,
@@ -376,6 +380,7 @@ export function App() {
     exportPackage: ResearchRunExportPackage;
     fileName: string;
   } | null>(null);
+  const [researchRunImportAuditEvents, setResearchRunImportAuditEvents] = useState<ResearchRunImportAuditEvent[]>([]);
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
@@ -1135,6 +1140,10 @@ export function App() {
     setIsSavingAiReviewRecord(false);
   }, [workspace]);
 
+  const appendResearchRunImportAuditEvent = useCallback((event: ResearchRunImportAuditEvent) => {
+    setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, event));
+  }, []);
+
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
@@ -1148,6 +1157,15 @@ export function App() {
         const parsed = JSON.parse(await file.text()) as unknown;
         const exportPackage = normalizeResearchRunExportPackagePayload(parsed);
         if (!exportPackage) {
+          appendResearchRunImportAuditEvent(
+            buildResearchRunImportAuditEvent({
+              error: "Invalid research run export contract",
+              exportPackage: null,
+              fileName: file.name,
+              rows: [],
+              stage: "failed"
+            })
+          );
           setPendingImportPackage(null);
           setInspectedExportPackage(null);
           setWorkspaceState((current) => ({
@@ -1158,15 +1176,39 @@ export function App() {
           return;
         }
 
+        const previewRows = buildResearchRunImportDiffRows({
+          aiReviewRecords: activeAiReviewRunRecords,
+          exportPackage,
+          paperExecution: activePaperExecutionRecord,
+          workspace
+        });
+        const previewBlocked = previewRows.some((row) => row.status === "blocked");
+        appendResearchRunImportAuditEvent(
+          buildResearchRunImportAuditEvent({
+            exportPackage,
+            fileName: file.name,
+            rows: previewRows,
+            stage: "preview"
+          })
+        );
         setPendingImportPackage({ exportPackage, fileName: file.name });
         setInspectedExportPackage(exportPackage);
         setActiveWorkAreaId("audit");
         setWorkspaceState((current) => ({
           ...current,
-          statusLabel: "Research run import preview ready",
+          statusLabel: previewBlocked ? "Research run import preview blocked" : "Research run import preview ready",
           error: undefined
         }));
       } catch (importError) {
+        appendResearchRunImportAuditEvent(
+          buildResearchRunImportAuditEvent({
+            error: importError instanceof Error ? importError.message : "Research run import failed",
+            exportPackage: null,
+            fileName: file.name,
+            rows: [],
+            stage: "failed"
+          })
+        );
         setPendingImportPackage(null);
         setInspectedExportPackage(null);
         setWorkspaceState((current) => ({
@@ -1176,7 +1218,7 @@ export function App() {
         }));
       }
     },
-    []
+    [activeAiReviewRunRecords, activePaperExecutionRecord, appendResearchRunImportAuditEvent, workspace]
   );
 
   const confirmPendingImportPackage = useCallback(async () => {
@@ -1184,6 +1226,12 @@ export function App() {
       return;
     }
 
+    const importRows = buildResearchRunImportDiffRows({
+      aiReviewRecords: activeAiReviewRunRecords,
+      exportPackage: pendingImportPackage.exportPackage,
+      paperExecution: activePaperExecutionRecord,
+      workspace
+    });
     const importVersion = manualSelectionVersionRef.current + 1;
     manualSelectionVersionRef.current = importVersion;
     workflowRunIdRef.current += 1;
@@ -1199,6 +1247,15 @@ export function App() {
         return;
       }
       if (result.source === "fallback" || !result.run) {
+        appendResearchRunImportAuditEvent(
+          buildResearchRunImportAuditEvent({
+            error: result.error ?? "Research run import failed",
+            exportPackage: pendingImportPackage.exportPackage,
+            fileName: pendingImportPackage.fileName,
+            rows: importRows,
+            stage: "failed"
+          })
+        );
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Research run import failed",
@@ -1207,6 +1264,14 @@ export function App() {
         return;
       }
       const importedKlines = marketKlinesFromResearchRunAudit(result.run);
+      appendResearchRunImportAuditEvent(
+        buildResearchRunImportAuditEvent({
+          exportPackage: pendingImportPackage.exportPackage,
+          fileName: pendingImportPackage.fileName,
+          rows: importRows,
+          stage: "confirmed"
+        })
+      );
       setWorkspaceState((current) => ({
         workspace: workspaceFromResearchRunAudit(current.workspace, result.run as ResearchRunAudit),
         source: "core",
@@ -1275,6 +1340,15 @@ export function App() {
       if (manualSelectionVersionRef.current !== importVersion) {
         return;
       }
+      appendResearchRunImportAuditEvent(
+        buildResearchRunImportAuditEvent({
+          error: importError instanceof Error ? importError.message : "Research run import failed",
+          exportPackage: pendingImportPackage.exportPackage,
+          fileName: pendingImportPackage.fileName,
+          rows: importRows,
+          stage: "failed"
+        })
+      );
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Research run import failed",
@@ -1285,9 +1359,33 @@ export function App() {
         setIsApplyingImportPackage(false);
       }
     }
-  }, [pendingImportPackage, refreshAiReviewRunHistory, refreshRunHistory, resetAiReviewHistoryState]);
+  }, [
+    activeAiReviewRunRecords,
+    activePaperExecutionRecord,
+    appendResearchRunImportAuditEvent,
+    pendingImportPackage,
+    refreshAiReviewRunHistory,
+    refreshRunHistory,
+    resetAiReviewHistoryState,
+    workspace
+  ]);
 
   const cancelPendingImportPackage = useCallback(() => {
+    if (pendingImportPackage) {
+      appendResearchRunImportAuditEvent(
+        buildResearchRunImportAuditEvent({
+          exportPackage: pendingImportPackage.exportPackage,
+          fileName: pendingImportPackage.fileName,
+          rows: buildResearchRunImportDiffRows({
+            aiReviewRecords: activeAiReviewRunRecords,
+            exportPackage: pendingImportPackage.exportPackage,
+            paperExecution: activePaperExecutionRecord,
+            workspace
+          }),
+          stage: "cancelled"
+        })
+      );
+    }
     setPendingImportPackage(null);
     setInspectedExportPackage(null);
     setWorkspaceState((current) => ({
@@ -1295,7 +1393,13 @@ export function App() {
       statusLabel: "Research run import preview cancelled",
       error: undefined
     }));
-  }, []);
+  }, [
+    activeAiReviewRunRecords,
+    activePaperExecutionRecord,
+    appendResearchRunImportAuditEvent,
+    pendingImportPackage,
+    workspace
+  ]);
 
   const updateAiReviewHistoryQuery = useCallback((query: string) => {
     setAiReviewHistoryQuery(query);
@@ -2111,6 +2215,11 @@ export function App() {
             onConfirmImport={confirmPendingImportPackage}
             pendingFileName={pendingImportPackage?.fileName ?? null}
             rows={researchRunImportDiffRows}
+          />
+          <ResearchRunImportAuditEventPanel
+            className="workflow-import-events-panel"
+            events={researchRunImportAuditEvents}
+            i18n={i18n}
           />
           <ResearchRunExportIndexPanel
             className="workflow-export-index-panel"
@@ -4674,6 +4783,96 @@ function ResearchRunImportDiffPanel({
   );
 }
 
+function ResearchRunImportAuditEventPanel({
+  className,
+  events,
+  i18n
+}: {
+  className?: string;
+  events: ResearchRunImportAuditEvent[];
+  i18n: AppI18n;
+}) {
+  const [query, setQuery] = useState("");
+  const filteredEvents = filterResearchRunImportAuditEvents(events, query);
+  const blockedCount = events.filter((event) => event.stage === "blocked").length;
+  const failedCount = events.filter((event) => event.stage === "failed").length;
+  const confirmedCount = events.filter((event) => event.stage === "confirmed").length;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "导入审计流水" : "Import Audit Ledger"}
+      subtitle={i18n.locale === "zh-CN" ? "记录外部复现包的预检、阻断、确认和失败" : "Track preflight, blocked, applied, and failed imports"}
+      className={className}
+    >
+      <div className="research-import-events">
+        <div className="research-import-events-toolbar">
+          <div className="research-import-events-summary">
+            <span>
+              {i18n.locale === "zh-CN" ? "已确认" : "Applied"} <strong>{confirmedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{blockedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "失败" : "Failed"} <strong>{failedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "事件" : "Events"} <strong>{events.length}</strong>
+            </span>
+          </div>
+          <input
+            aria-label={i18n.locale === "zh-CN" ? "搜索导入审计流水" : "Search import audit ledger"}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={i18n.locale === "zh-CN" ? "搜索文件 / run / contract / exportPath" : "Search file / run / contract / exportPath"}
+            type="search"
+            value={query}
+          />
+        </div>
+        <div className="research-import-events-list">
+          {filteredEvents.length ? (
+            filteredEvents.map((event) => (
+              <article className={`research-import-event-row ${event.tone} ${event.stage}`} key={event.id}>
+                <span>{researchImportAuditStageLabel(i18n, event.stage)}</span>
+                <strong>
+                  {event.fileName}
+                  <small>{event.runId}</small>
+                </strong>
+                <p>
+                  <b>{researchImportAuditSummaryLabel(i18n, event.summary)}</b>
+                  <small>{researchImportAuditDetailLabel(i18n, event.detail)}</small>
+                  <em>{event.exportPath}</em>
+                </p>
+                <em>
+                  {event.blockedCount}/{event.changeCount}
+                </em>
+                <time dateTime={event.createdAt}>{researchImportAuditTimeLabel(event.createdAt)}</time>
+              </article>
+            ))
+          ) : (
+            <article className="research-import-event-row empty">
+              <span>{i18n.locale === "zh-CN" ? "暂无事件" : "No events"}</span>
+              <strong>
+                {i18n.locale === "zh-CN" ? "选择外部复现包" : "Choose an external package"}
+                <small>{i18n.locale === "zh-CN" ? "预检后会记录流水" : "Events appear after preflight"}</small>
+              </strong>
+              <p>
+                <b>{i18n.locale === "zh-CN" ? "等待导入动作" : "Waiting for import action"}</b>
+                <small>
+                  {i18n.locale === "zh-CN"
+                    ? "导入流水只记录本页操作，不会写入后端审计库。"
+                    : "This ledger tracks page actions only and does not write the backend audit store."}
+                </small>
+              </p>
+              <em>0/0</em>
+              <time>-</time>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function ResearchRunExportIndexPanel({
   className,
   i18n,
@@ -5256,6 +5455,74 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
     .replace("Local import must reject packages that claim live trading permission.", "本地导入必须拒绝声明实盘权限的复现包。")
     .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
+}
+
+function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAuditEvent["stage"]): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        preview: "Preview",
+        blocked: "Blocked",
+        confirmed: "Applied",
+        failed: "Failed",
+        cancelled: "Cancelled"
+      } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
+    )[stage];
+  }
+  return (
+    {
+      preview: "预检",
+      blocked: "阻断",
+      confirmed: "已确认",
+      failed: "失败",
+      cancelled: "已取消"
+    } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
+  )[stage];
+}
+
+function researchImportAuditSummaryLabel(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  return summary
+    .replace("Import preview blocked", "导入预检已阻断")
+    .replace("Import preview ready", "导入预检已就绪")
+    .replace("Import applied", "导入已写入")
+    .replace("Import failed", "导入失败")
+    .replace("Import cancelled", "导入已取消");
+}
+
+function researchImportAuditDetailLabel(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("Import preview found blocked preflight gates.", "导入预检发现阻断闸门。")
+    .replace("Import preview passed preflight.", "导入预检已通过。")
+    .replace("Research run import wrote to the local audit store.", "研究运行导入已写入本地审计库。")
+    .replace("Import preview was discarded before writing to the local audit store.", "导入预检已放弃，没有写入本地审计库。")
+    .replace("Import failed before the package could be applied.", "复现包写入前导入失败。")
+    .replace("Invalid research run export contract", "研究运行导出契约无效")
+    .replace("Research run import failed", "研究运行导入失败")
+    .replaceAll("blocked", "阻断")
+    .replaceAll("changes", "处变更")
+    .replaceAll("change", "处变更");
+}
+
+function researchImportAuditTimeLabel(createdAt: string): string {
+  if (!createdAt) {
+    return "-";
+  }
+  const parsed = new Date(createdAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return createdAt;
+  }
+  return parsed.toLocaleString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+    day: "2-digit"
+  });
 }
 
 function researchExportIndexStatusLabel(

@@ -14,6 +14,7 @@ import {
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
   buildResearchRunImportDiffRows,
+  buildResearchRunImportAuditEvent,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -53,11 +54,13 @@ import {
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
   filterResearchRunImportDiffRows,
+  filterResearchRunImportAuditEvents,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
+  mergeResearchRunImportAuditEvents,
   quantLoopLabels,
   resolveBacktestAssumptions,
   type AiReviewRecordDriftRow,
@@ -66,6 +69,7 @@ import {
   type ResearchRunExportPreviewRow,
   type ResearchRunExportBrowserRow,
   type ResearchRunExportIndexRow,
+  type ResearchRunExportBrowserPackage,
   type ResearchRunImportDiffRow,
   type TerminalWorkspace,
   type WorkflowRunState,
@@ -2592,6 +2596,145 @@ describe("terminal workbench model", () => {
     expect(artifactRow?.detail).toContain("promotionCandidates 1/0");
     expect(artifactRow?.detail).toContain("aiReviewRuns 3/0");
     expect(filterResearchRunImportDiffRows(rows, "invalid").map((row) => row.id)).toEqual(["package-integrity"]);
+  });
+
+  test("builds a searchable audit ledger for research run import attempts", () => {
+    const exportPackage: ResearchRunExportBrowserPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T09:00:00+00:00",
+      integrity: {
+        algorithm: "sha256",
+        hash: "b".repeat(64)
+      },
+      manifest: {
+        runId: "run-import-ledger",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-import-ledger",
+        dataHash: "hash-ledger",
+        dataRows: 500,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 500,
+          trades: 3,
+          equityPoints: 500,
+          decisions: 4,
+          aiRisks: 1,
+          paperExecutions: 0,
+          promotionCandidates: 0,
+          researchNotes: 1,
+          aiReviewRuns: 0
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: []
+      },
+      researchRun: undefined,
+      paperExecutions: [],
+      promotionCandidate: null,
+      aiReviewRuns: []
+    };
+    const rows: ResearchRunImportDiffRow[] = [
+      {
+        id: "package-integrity",
+        label: "Package integrity",
+        status: "blocked",
+        current: "Local verification required",
+        incoming: "sha256 · invalid",
+        detail: "Import must stop until the package has valid canonical SHA-256 metadata.",
+        exportPath: "integrity.hash",
+        tone: "risk"
+      },
+      {
+        id: "run-id",
+        label: "Research run",
+        status: "replace",
+        current: "run-current",
+        incoming: "run-import-ledger",
+        detail: "Import will replace the current replay context with the package run.",
+        exportPath: "researchRun.runId",
+        tone: "warning"
+      }
+    ];
+
+    const blockedPreview = buildResearchRunImportAuditEvent({
+      createdAt: "2026-05-26T09:10:00+00:00",
+      exportPackage,
+      fileName: "unsafe-import.json",
+      rows,
+      stage: "preview"
+    });
+    const confirmed = buildResearchRunImportAuditEvent({
+      createdAt: "2026-05-26T09:12:00+00:00",
+      exportPackage,
+      fileName: "unsafe-import.json",
+      rows: rows.filter((row) => row.status !== "blocked"),
+      stage: "confirmed"
+    });
+    const failed = buildResearchRunImportAuditEvent({
+      createdAt: "2026-05-26T09:13:00+00:00",
+      error: "Invalid research run export contract",
+      exportPackage: null,
+      fileName: "broken.json",
+      rows: [],
+      stage: "failed"
+    });
+
+    expect(blockedPreview).toEqual(
+      expect.objectContaining({
+        stage: "blocked",
+        runId: "run-import-ledger",
+        fileName: "unsafe-import.json",
+        summary: "Import preview blocked",
+        blockedCount: 1,
+        changeCount: 1,
+        exportPath: "manifest:run-import-ledger",
+        tone: "risk"
+      })
+    );
+    expect(blockedPreview.detail).toContain("1 blocked");
+    expect(blockedPreview.detail).toContain("1 change");
+    expect(confirmed).toEqual(
+      expect.objectContaining({
+        stage: "confirmed",
+        summary: "Import applied",
+        blockedCount: 0,
+        changeCount: 1,
+        tone: "positive"
+      })
+    );
+    expect(failed).toEqual(
+      expect.objectContaining({
+        stage: "failed",
+        runId: "unknown",
+        fileName: "broken.json",
+        detail: "Invalid research run export contract",
+        exportPath: "import:file:broken.json",
+        tone: "risk"
+      })
+    );
+
+    const merged = mergeResearchRunImportAuditEvents([blockedPreview], confirmed);
+    expect(merged.map((event) => event.stage)).toEqual(["confirmed", "blocked"]);
+    expect(mergeResearchRunImportAuditEvents(merged, blockedPreview).map((event) => event.id)).toEqual([
+      blockedPreview.id,
+      confirmed.id
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "contract").map((event) => event.id)).toEqual([
+      failed.id
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "unsafe-import").map((event) => event.id)).toEqual([
+      blockedPreview.id,
+      confirmed.id
+    ]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {

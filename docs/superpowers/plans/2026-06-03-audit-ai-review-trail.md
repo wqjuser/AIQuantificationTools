@@ -123,3 +123,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "blocks import diff"` failed because import diff rows did not include package integrity or artifact count gates.
 - GREEN: added `package-integrity` and `artifact-counts` import diff rows, blocking invalid SHA-256 metadata and manifest/package payload count mismatches before confirm import.
 - DOCS: updated product plan and architecture notes to mark integrity/count import preflight blocking as implemented.
+- RED: `terminal-workbench.test.ts -t "audit ledger"` failed because import preview/apply/failure events had no model helper.
+- RED: `layout-css.test.js -t "import audit events"` failed because Audit did not render an import audit ledger panel.
+- GREEN: added `ResearchRunImportAuditEvent`, event build/merge/filter helpers, Audit import ledger state, preview/blocked/confirmed/cancelled/failed events, and compact responsive panel styles.
+- DOCS: updated product plan and architecture notes to mark front-end import audit ledger as implemented and leave backend AuditEvent persistence plus rollback as the next slice.

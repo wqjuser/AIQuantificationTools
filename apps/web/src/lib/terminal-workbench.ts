@@ -677,6 +677,22 @@ export interface ResearchRunImportDiffRow {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export type ResearchRunImportAuditEventStage = "preview" | "blocked" | "confirmed" | "failed" | "cancelled";
+
+export interface ResearchRunImportAuditEvent {
+  id: string;
+  stage: ResearchRunImportAuditEventStage;
+  runId: string;
+  fileName: string;
+  createdAt: string;
+  summary: string;
+  detail: string;
+  blockedCount: number;
+  changeCount: number;
+  exportPath: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -2851,6 +2867,145 @@ export function filterResearchRunImportDiffRows(
       .toLowerCase()
       .includes(normalizedQuery)
   );
+}
+
+export function buildResearchRunImportAuditEvent({
+  createdAt = new Date().toISOString(),
+  error,
+  exportPackage,
+  fileName,
+  rows,
+  stage
+}: {
+  exportPackage: Pick<ResearchRunExportBrowserPackage, "manifest"> | null | undefined;
+  fileName: string;
+  rows: ResearchRunImportDiffRow[];
+  stage: "preview" | "confirmed" | "failed" | "cancelled";
+  createdAt?: string;
+  error?: string | null;
+}): ResearchRunImportAuditEvent {
+  const runId = exportPackage?.manifest.runId ?? "unknown";
+  const blockedCount = rows.filter((row) => row.status === "blocked").length;
+  const changeCount = rows.filter(
+    (row) => row.status === "add" || row.status === "change" || row.status === "replace"
+  ).length;
+  const resolvedStage: ResearchRunImportAuditEventStage =
+    stage === "preview" && blockedCount > 0 ? "blocked" : stage;
+  const summary = researchRunImportAuditSummary(resolvedStage);
+  const detail = researchRunImportAuditDetail({
+    blockedCount,
+    changeCount,
+    error,
+    fileName,
+    stage: resolvedStage
+  });
+
+  return {
+    id: `import:${runId}:${resolvedStage}:${createdAt}:${fileName || "unknown"}`,
+    stage: resolvedStage,
+    runId,
+    fileName: fileName || "unknown",
+    createdAt,
+    summary,
+    detail,
+    blockedCount,
+    changeCount,
+    exportPath: exportPackage ? `manifest:${runId}` : `import:file:${fileName || "unknown"}`,
+    tone: researchRunImportAuditTone(resolvedStage)
+  };
+}
+
+export function mergeResearchRunImportAuditEvents(
+  events: ResearchRunImportAuditEvent[],
+  event: ResearchRunImportAuditEvent,
+  limit = 12
+): ResearchRunImportAuditEvent[] {
+  return [event, ...events.filter((item) => item.id !== event.id)].slice(0, limit);
+}
+
+export function filterResearchRunImportAuditEvents(
+  events: ResearchRunImportAuditEvent[],
+  query: string
+): ResearchRunImportAuditEvent[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return events;
+  }
+  return events.filter((event) =>
+    [
+      event.id,
+      event.stage,
+      event.runId,
+      event.fileName,
+      event.createdAt,
+      event.summary,
+      event.detail,
+      String(event.blockedCount),
+      String(event.changeCount),
+      event.exportPath,
+      event.tone
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+function researchRunImportAuditSummary(stage: ResearchRunImportAuditEventStage): string {
+  if (stage === "blocked") {
+    return "Import preview blocked";
+  }
+  if (stage === "confirmed") {
+    return "Import applied";
+  }
+  if (stage === "failed") {
+    return "Import failed";
+  }
+  if (stage === "cancelled") {
+    return "Import cancelled";
+  }
+  return "Import preview ready";
+}
+
+function researchRunImportAuditDetail({
+  blockedCount,
+  changeCount,
+  error,
+  stage
+}: {
+  blockedCount: number;
+  changeCount: number;
+  error?: string | null;
+  fileName: string;
+  stage: ResearchRunImportAuditEventStage;
+}): string {
+  const counts = `${blockedCount} blocked · ${changeCount} change${changeCount === 1 ? "" : "s"}`;
+  if (stage === "failed") {
+    return error || "Import failed before the package could be applied.";
+  }
+  if (stage === "cancelled") {
+    return `Import preview was discarded before writing to the local audit store. ${counts}.`;
+  }
+  if (stage === "confirmed") {
+    return `Research run import wrote to the local audit store. ${counts}.`;
+  }
+  if (stage === "blocked") {
+    return `Import preview found blocked preflight gates. ${counts}.`;
+  }
+  return `Import preview passed preflight. ${counts}.`;
+}
+
+function researchRunImportAuditTone(stage: ResearchRunImportAuditEventStage): ResearchRunImportAuditEvent["tone"] {
+  if (stage === "confirmed") {
+    return "positive";
+  }
+  if (stage === "failed" || stage === "blocked") {
+    return "risk";
+  }
+  if (stage === "cancelled") {
+    return "warning";
+  }
+  return "ai";
 }
 
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
