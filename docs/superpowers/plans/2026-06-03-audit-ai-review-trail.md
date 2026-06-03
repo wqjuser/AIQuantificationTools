@@ -22,12 +22,13 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Support backend `limit`, `offset`, and `query` parameters for saved AI Review Run Records, returning pagination metadata while preserving the existing `aiReviews` response array.
 - Build a compact audit timeline from current evidence, saved AI Review Run Records, and risk approval so the Audit workspace has a single approval-reference chain.
 - Give timeline references action metadata so current evidence opens Backtest, saved reviews select the comparison record, and risk approval opens Execution.
+- Attach export-package evidence anchors to AI Review Run Records and Audit timeline rows so saved records can point back to stable `researchRun`, `strategyConfig`, `dataSnapshot`, citation, committee, decision log, and boundary locations.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
 ## Out Of Scope
 
-- No new backend AI review storage contract.
+- No new backend AI review storage table.
 - No deep field-level diffing beyond current evidence comparison, saved-record drift summaries, and the backend run-record search contract.
 - No changes to AI Review generation behavior.
 
@@ -80,3 +81,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "timeline rows into workflow actions"` failed because Audit timeline rows were read-only.
 - GREEN: added compact timeline action buttons; saved-review actions select the comparison record, while current-evidence and risk-approval actions call `selectProductWorkArea` for Backtest and Execution.
 - DOCS: updated product plan and architecture notes to record clickable Audit timeline actions and leave export-package evidence anchors for later.
+- RED: `test_research_run_export_import_preserves_ai_review_records` failed because portable AI review export dropped `evidenceAnchors`.
+- GREEN: preserved AI review record `evidenceAnchors` through export/import fixtures and confirmed the backend portable test passes.
+- RED: frontend AI review model/API/layout tests failed until run records exposed typed evidence anchors, timeline rows exposed `exportAnchor`, and API guards rejected malformed anchors.
+- GREEN: added `AiReviewEvidenceAnchor`, generated stable run/strategy/data/citation/committee/decision/boundary anchors, rendered timeline anchors, and validated anchor shape in frontend API guards.
+- DOCS: updated product plan and architecture notes to mark export-package evidence anchors as implemented.

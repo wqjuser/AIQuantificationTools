@@ -1705,6 +1705,7 @@ em {
 .audit-ai-timeline-row > strong,
 .audit-ai-timeline-row > em,
 .audit-ai-timeline-row > button,
+.audit-ai-timeline-row > small,
 .audit-ai-timeline-row > p {
   min-width: 0;
   overflow: hidden;
@@ -1728,6 +1729,15 @@ em {
   color: var(--muted-strong);
   font-size: 10px;
   font-style: normal;
+  white-space: nowrap;
+}
+
+.audit-ai-timeline-anchor {
+  grid-column: 1 / -1;
+  color: rgba(141, 163, 190, 0.82);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 

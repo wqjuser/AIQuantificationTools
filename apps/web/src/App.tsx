@@ -4186,6 +4186,7 @@ function AiReviewAuditTimelineBoard({
             <button className="audit-ai-timeline-action" onClick={() => handleTimelineAction(item)} type="button">
               {auditTimelineActionLabel(i18n, item)}
             </button>
+            <small className="audit-ai-timeline-anchor">{item.exportAnchor}</small>
             <p>{auditTimelineDetail(i18n, item)}</p>
           </article>
         ))}

@@ -1614,6 +1614,22 @@ describe("terminal workspace API client", () => {
                     }
                   ],
                   decisionLog: [{ agent: "Technical", message: "Evidence only.", tone: "positive" }],
+                  evidenceAnchors: [
+                    {
+                      id: "run:run-new",
+                      type: "research-run",
+                      label: "Research run",
+                      reference: "run-new",
+                      exportPath: "researchRun.runId"
+                    },
+                    {
+                      id: "citation:parameter-scan",
+                      type: "citation",
+                      label: "Parameter scan",
+                      reference: "parameter-scan",
+                      exportPath: "aiReviewRuns[].record.citations[parameter-scan]"
+                    }
+                  ],
                   boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
                 }
               }
@@ -1638,6 +1654,10 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
     expect(result.exportPackage?.promotionCandidate?.status).toBe("certification_pending");
     expect(result.exportPackage?.aiReviewRuns?.[0]?.aiReviewId).toBe("ai-review:run-new:rev123");
+    expect(result.exportPackage?.aiReviewRuns?.[0]?.record.evidenceAnchors?.map((anchor) => anchor.id)).toEqual([
+      "run:run-new",
+      "citation:parameter-scan"
+    ]);
   });
 
   test("returns fallback when research run export package is malformed", async () => {
@@ -2203,6 +2223,15 @@ describe("terminal workspace API client", () => {
           tone: "ai"
         }
       ],
+      evidenceAnchors: [
+        {
+          id: "run:run-ai-save",
+          type: "research-run",
+          label: "Research run",
+          reference: "run-ai-save",
+          exportPath: "researchRun.runId"
+        }
+      ],
       boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
     };
     const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -2328,6 +2357,57 @@ describe("terminal workspace API client", () => {
       ok: true,
       status: 200,
       json: async () => ({ aiReviews: [{ runId: "run-ai-save" }] })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.aiReviews).toEqual([]);
+    expect(result.error).toBe("Invalid AI review run history contract");
+  });
+
+  test("returns fallback when AI review evidence anchors are malformed", async () => {
+    const result = await loadResearchRunAiReviews("http://127.0.0.1:8765", "run-ai-save", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        aiReviews: [
+          {
+            aiReviewId: "ai-review:run-ai-save:rev-ai-save",
+            runId: "run-ai-save",
+            createdAt: "2026-06-02T08:00:00+00:00",
+            record: {
+              schemaVersion: 1,
+              recordType: "aiqt.aiReviewRun",
+              aiReviewId: "ai-review:run-ai-save:rev-ai-save",
+              runId: "run-ai-save",
+              createdAt: "2026-06-02T08:00:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyRevision: "rev-ai-save",
+              executionMode: "paper_only",
+              status: "ready",
+              summary: {
+                citationCount: 1,
+                roundCount: 1,
+                decisionCount: 1,
+                parameterScanBound: false,
+                liveExecutionBlocked: true
+              },
+              dossier: {
+                status: "ready",
+                headline: "AI review bound to run-ai-save",
+                summary: "Evidence only.",
+                citations: []
+              },
+              citations: [],
+              rounds: [],
+              decisionLog: [],
+              evidenceAnchors: [{ id: "run:run-ai-save", type: "unknown", label: "Bad", reference: "run-ai-save" }],
+              boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
+            }
+          }
+        ]
+      })
     }));
 
     expect(result.source).toBe("fallback");

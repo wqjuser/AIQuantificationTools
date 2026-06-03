@@ -1450,6 +1450,22 @@ class QuantCoreContractTest(unittest.TestCase):
             "citations": [{"id": "parameter-scan", "label": "Parameter scan", "value": "SMA5", "detail": "re-audit", "tone": "warning"}],
             "rounds": [{"id": "technical-analysis", "phase": "analysis", "agent": "Technical Analyst", "verdict": "support"}],
             "decisionLog": [{"agent": "Technical", "message": "Evidence only.", "tone": "positive"}],
+            "evidenceAnchors": [
+                {
+                    "id": "run:run-ai-review-api",
+                    "type": "research-run",
+                    "label": "Research run",
+                    "reference": "run-ai-review-api",
+                    "exportPath": "researchRun.runId",
+                },
+                {
+                    "id": "citation:parameter-scan",
+                    "type": "citation",
+                    "label": "Parameter scan",
+                    "reference": "parameter-scan",
+                    "exportPath": "aiReviewRuns[].record.citations[parameter-scan]",
+                },
+            ],
             "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
         }
 
@@ -4276,6 +4292,22 @@ class QuantCoreContractTest(unittest.TestCase):
             ],
             "rounds": [{"id": "technical-analysis", "phase": "analysis", "agent": "Technical Analyst", "verdict": "support"}],
             "decisionLog": [{"agent": "Technical", "message": "Evidence only.", "tone": "positive"}],
+            "evidenceAnchors": [
+                {
+                    "id": "run:run-ai-review-portable",
+                    "type": "research-run",
+                    "label": "Research run",
+                    "reference": "run-ai-review-portable",
+                    "exportPath": "researchRun.runId",
+                },
+                {
+                    "id": "citation:parameter-scan",
+                    "type": "citation",
+                    "label": "Parameter scan",
+                    "reference": "parameter-scan",
+                    "exportPath": "aiReviewRuns[].record.citations[parameter-scan]",
+                },
+            ],
             "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
         }
 
@@ -4337,6 +4369,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export_response.status, 200)
         self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["aiReviewRuns"], 1)
         self.assertEqual(export_payload["export"]["aiReviewRuns"][0]["aiReviewId"], "ai-review:run-ai-review-portable:rev-ai-review-portable")
+        self.assertEqual(
+            export_payload["export"]["aiReviewRuns"][0]["record"]["evidenceAnchors"][0]["id"],
+            "run:run-ai-review-portable",
+        )
         self.assertEqual(import_response.status, 201)
         self.assertEqual(import_payload["run"]["runId"], "run-ai-review-portable")
         self.assertEqual(history_response.status, 200)
@@ -4345,6 +4381,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             history_payload["aiReviews"][0]["record"]["boundary"],
             "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        )
+        self.assertEqual(
+            history_payload["aiReviews"][0]["record"]["evidenceAnchors"][1]["exportPath"],
+            "aiReviewRuns[].record.citations[parameter-scan]",
         )
 
     def test_quantdinger_style_live_quote_adapter_maps_finnhub_and_tencent_quotes(self):

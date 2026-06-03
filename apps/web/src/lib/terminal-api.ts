@@ -8,6 +8,7 @@ import {
   ResearchRunAudit,
   TerminalWorkspace,
   Timeframe,
+  type AiReviewEvidenceAnchor,
   type AiReviewRunRecord,
   type BacktestAssumptions,
   type StrategyReadinessGate,
@@ -1915,8 +1916,40 @@ function isAiReviewRunRecord(value: unknown): value is AiReviewRunRecord {
     record.rounds.every(isAgentCommitteeRound) &&
     Array.isArray(record.decisionLog) &&
     record.decisionLog.every(isDecisionLogEntry) &&
+    (record.evidenceAnchors === undefined ||
+      (Array.isArray(record.evidenceAnchors) && record.evidenceAnchors.every(isAiReviewEvidenceAnchor))) &&
     typeof record.boundary === "string" &&
     record.boundary.includes("Evidence explanation only")
+  );
+}
+
+function isAiReviewEvidenceAnchor(value: unknown): value is AiReviewEvidenceAnchor {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const anchor = value as Partial<AiReviewEvidenceAnchor>;
+  return (
+    typeof anchor.id === "string" &&
+    anchor.id.trim().length > 0 &&
+    isAiReviewEvidenceAnchorType(anchor.type) &&
+    typeof anchor.label === "string" &&
+    anchor.label.trim().length > 0 &&
+    typeof anchor.reference === "string" &&
+    anchor.reference.trim().length > 0 &&
+    typeof anchor.exportPath === "string" &&
+    anchor.exportPath.trim().length > 0
+  );
+}
+
+function isAiReviewEvidenceAnchorType(value: unknown): value is AiReviewEvidenceAnchor["type"] {
+  return (
+    value === "research-run" ||
+    value === "strategy-revision" ||
+    value === "data-snapshot" ||
+    value === "citation" ||
+    value === "committee-rounds" ||
+    value === "decision-log" ||
+    value === "risk-boundary"
   );
 }
 

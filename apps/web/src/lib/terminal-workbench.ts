@@ -433,6 +433,23 @@ export interface AiReviewDossier {
   citations: AiReviewCitation[];
 }
 
+export type AiReviewEvidenceAnchorType =
+  | "research-run"
+  | "strategy-revision"
+  | "data-snapshot"
+  | "citation"
+  | "committee-rounds"
+  | "decision-log"
+  | "risk-boundary";
+
+export interface AiReviewEvidenceAnchor {
+  id: string;
+  type: AiReviewEvidenceAnchorType;
+  label: string;
+  reference: string;
+  exportPath: string;
+}
+
 export interface AiReviewRunRecord {
   schemaVersion: 1;
   recordType: "aiqt.aiReviewRun";
@@ -456,6 +473,7 @@ export interface AiReviewRunRecord {
   citations: AiReviewCitation[];
   rounds: AgentCommitteeRound[];
   decisionLog: DecisionLogEntry[];
+  evidenceAnchors?: AiReviewEvidenceAnchor[];
   boundary: string;
 }
 
@@ -482,6 +500,7 @@ export interface AiReviewAuditTimelineItem {
   value: string;
   detail: string;
   reference: string;
+  exportAnchor: string;
   createdAt: string | null;
   targetWorkspaceId: ProductWorkAreaId | null;
   targetRecordId: string | null;
@@ -1643,6 +1662,7 @@ export function buildAiReviewRunRecord(workspace: TerminalWorkspace): AiReviewRu
   const rounds = buildAgentCommitteeRounds(workspace);
   const decisionLog = workspace.decisionLog.slice();
   const citations = dossier.citations.slice();
+  const evidenceAnchors = buildAiReviewEvidenceAnchors(run, citations, rounds, decisionLog);
 
   return {
     schemaVersion: 1,
@@ -1667,8 +1687,79 @@ export function buildAiReviewRunRecord(workspace: TerminalWorkspace): AiReviewRu
     citations,
     rounds,
     decisionLog,
+    evidenceAnchors,
     boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
   };
+}
+
+function buildAiReviewEvidenceAnchors(
+  run: ResearchRunSummary | ResearchRunAudit,
+  citations: AiReviewCitation[],
+  rounds: AgentCommitteeRound[],
+  decisionLog: DecisionLogEntry[]
+): AiReviewEvidenceAnchor[] {
+  const anchors: AiReviewEvidenceAnchor[] = [
+    {
+      id: `run:${run.runId}`,
+      type: "research-run",
+      label: "Research run",
+      reference: run.runId,
+      exportPath: "researchRun.runId"
+    },
+    {
+      id: `strategy:${run.strategyRevision}`,
+      type: "strategy-revision",
+      label: "Strategy revision",
+      reference: run.strategyRevision,
+      exportPath: "researchRun.strategyConfig.revision"
+    }
+  ];
+
+  if (run.dataSnapshot?.hash) {
+    anchors.push({
+      id: `data:${run.dataSnapshot.hash}`,
+      type: "data-snapshot",
+      label: "Data snapshot",
+      reference: run.dataSnapshot.hash,
+      exportPath: "researchRun.dataSnapshot.hash"
+    });
+  }
+
+  citations.forEach((citation) => {
+    anchors.push({
+      id: `citation:${citation.id}`,
+      type: "citation",
+      label: citation.label,
+      reference: citation.id,
+      exportPath: `aiReviewRuns[].record.citations[${citation.id}]`
+    });
+  });
+
+  anchors.push(
+    {
+      id: `committee:${rounds.length}-rounds`,
+      type: "committee-rounds",
+      label: "Committee rounds",
+      reference: String(rounds.length),
+      exportPath: "aiReviewRuns[].record.rounds"
+    },
+    {
+      id: `decision-log:${decisionLog.length}`,
+      type: "decision-log",
+      label: "Decision log",
+      reference: String(decisionLog.length),
+      exportPath: "aiReviewRuns[].record.decisionLog"
+    },
+    {
+      id: "boundary:evidence-explanation-only",
+      type: "risk-boundary",
+      label: "AI boundary",
+      reference: "Evidence explanation only",
+      exportPath: "aiReviewRuns[].record.boundary"
+    }
+  );
+
+  return anchors;
 }
 
 export function buildAiReviewRecordDriftRows({
@@ -1774,6 +1865,7 @@ export function buildAiReviewAuditTimelineItems({
       value: `${record.strategyRevision} · ${record.summary.citationCount} citations · ${record.summary.roundCount} rounds`,
       detail: record.dossier.headline,
       reference: record.aiReviewId,
+      exportAnchor: `aiReviewRun:${record.aiReviewId}`,
       createdAt: record.createdAt,
       targetWorkspaceId: null,
       targetRecordId: record.aiReviewId,
@@ -1792,6 +1884,7 @@ export function buildAiReviewAuditTimelineItems({
         : `${currentStrategyRevision} · no audited run`,
       detail: dossier.headline,
       reference: currentRunReference,
+      exportAnchor: `run:${currentRunReference}`,
       createdAt: null,
       targetWorkspaceId: "backtest",
       targetRecordId: null,
@@ -1807,6 +1900,7 @@ export function buildAiReviewAuditTimelineItems({
       value: riskApproval.headline,
       detail: riskApproval.summary,
       reference: `risk:${riskApproval.status}`,
+      exportAnchor: `riskApproval:${riskApproval.status}`,
       createdAt: null,
       targetWorkspaceId: "execution",
       targetRecordId: null,

@@ -241,10 +241,13 @@ describe("terminal layout css", () => {
     expect(auditPanelSource).toContain("<AiReviewAuditTimelineBoard");
     expect(timelineSource).toContain("items.map");
     expect(timelineSource).toContain("item.reference");
+    expect(timelineSource).toContain("item.exportAnchor");
+    expect(timelineSource).toContain("audit-ai-timeline-anchor");
     expect(cssBlock(".audit-ai-timeline")).toContain("display: grid;");
     expect(cssBlock(".audit-ai-timeline-row")).toContain(
       "grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr) minmax(140px, 0.35fr) auto;"
     );
+    expect(cssBlock(".audit-ai-timeline-anchor")).toContain("grid-column: 1 / -1;");
   });
 
   test("turns AI review audit timeline rows into workflow actions", () => {

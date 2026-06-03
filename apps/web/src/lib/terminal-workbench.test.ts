@@ -1448,6 +1448,40 @@ describe("terminal workbench model", () => {
       boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
     });
     expect(record?.citations.map((citation) => citation.id)).toContain("parameter-scan");
+    expect(record?.evidenceAnchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "run:run-ai-record",
+          type: "research-run",
+          reference: "run-ai-record",
+          exportPath: "researchRun.runId"
+        }),
+        expect.objectContaining({
+          id: "strategy:rev-ai-record",
+          type: "strategy-revision",
+          reference: "rev-ai-record",
+          exportPath: "researchRun.strategyConfig.revision"
+        }),
+        expect.objectContaining({
+          id: "data:snapshot-ai-record",
+          type: "data-snapshot",
+          reference: "snapshot-ai-record",
+          exportPath: "researchRun.dataSnapshot.hash"
+        }),
+        expect.objectContaining({
+          id: "citation:parameter-scan",
+          type: "citation",
+          reference: "parameter-scan",
+          exportPath: "aiReviewRuns[].record.citations[parameter-scan]"
+        }),
+        expect.objectContaining({
+          id: "boundary:evidence-explanation-only",
+          type: "risk-boundary",
+          reference: "Evidence explanation only",
+          exportPath: "aiReviewRuns[].record.boundary"
+        })
+      ])
+    );
     expect(record?.rounds.map((round) => round.id)).toEqual([
       "technical-analysis",
       "bull-research",
@@ -1633,6 +1667,7 @@ describe("terminal workbench model", () => {
       status: "passed",
       tone: "ai",
       reference: "run-ai-timeline",
+      exportAnchor: "run:run-ai-timeline",
       targetWorkspaceId: "backtest",
       targetRecordId: null,
       actionLabel: "Open backtest evidence"
@@ -1640,6 +1675,7 @@ describe("terminal workbench model", () => {
     expect(items[1]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
       kind: "saved-review",
       reference: "ai-review:run-ai-timeline:rev-ai-timeline",
+      exportAnchor: "aiReviewRun:ai-review:run-ai-timeline:rev-ai-timeline",
       status: "passed",
       tone: "ai",
       targetWorkspaceId: null,
@@ -1649,6 +1685,7 @@ describe("terminal workbench model", () => {
     expect(items[3]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
       kind: "risk-approval",
       reference: "risk:paper_ready",
+      exportAnchor: "riskApproval:paper_ready",
       status: "review",
       tone: "warning",
       targetWorkspaceId: "execution",
