@@ -71,6 +71,7 @@ import {
   buildAiEvidenceCards,
   buildAiReviewDossier,
   buildAiReviewReportMarkdown,
+  buildAiReviewAuditTimelineItems,
   buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
   buildAuditReplayWorkflowState,
@@ -108,6 +109,7 @@ import {
   AiEvidenceCard,
   AiReviewDossier,
   AiReviewCitation,
+  AiReviewAuditTimelineItem,
   AiReviewRecordDriftRow,
   Market,
   AgentCommitteeRound,
@@ -4147,6 +4149,33 @@ function AiReviewRecordDriftSummary({
   );
 }
 
+function AiReviewAuditTimelineBoard({
+  i18n,
+  items
+}: {
+  i18n: AppI18n;
+  items: AiReviewAuditTimelineItem[];
+}) {
+  return (
+    <div className="audit-ai-timeline">
+      <div className="agent-rounds-title">
+        <span>{i18n.locale === "zh-CN" ? "审计时间线" : "Audit Timeline"}</span>
+        <strong>{items.length}</strong>
+      </div>
+      <div className="audit-ai-timeline-list">
+        {items.map((item) => (
+          <article className={`audit-ai-timeline-row ${item.status} ${item.tone}`} key={item.id}>
+            <span>{auditTimelineKindLabel(i18n, item.kind)}</span>
+            <strong>{auditTimelineValue(i18n, item)}</strong>
+            <em>{item.reference}</em>
+            <p>{auditTimelineDetail(i18n, item)}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
   currentRunId,
@@ -4192,6 +4221,13 @@ function AiReviewAuditTrailPanel({
     records: records.map((record) => record.record),
     roundCount
   });
+  const timelineItems = buildAiReviewAuditTimelineItems({
+    currentRunId,
+    currentStrategyRevision,
+    dossier,
+    records: records.map((record) => record.record),
+    riskApproval
+  });
   const totalHistoryRecords = historyPagination?.total ?? records.length;
 
   return (
@@ -4211,6 +4247,7 @@ function AiReviewAuditTrailPanel({
           liveExecutionBlocked={liveExecutionBlocked}
           roundCount={roundCount}
         />
+        <AiReviewAuditTimelineBoard i18n={i18n} items={timelineItems} />
         <AiReviewRiskReferenceBoard approval={riskApproval} i18n={i18n} />
         <AiReviewRecordDriftSummary
           i18n={i18n}
@@ -4247,6 +4284,58 @@ function AiReviewAuditTrailPanel({
       </div>
     </Panel>
   );
+}
+
+function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["kind"]): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        "current-evidence": "Current evidence",
+        "saved-review": "Saved review",
+        "risk-approval": "Risk approval"
+      } satisfies Record<AiReviewAuditTimelineItem["kind"], string>
+    )[kind];
+  }
+  return (
+    {
+      "current-evidence": "当前证据",
+      "saved-review": "保存评审",
+      "risk-approval": "风控审批"
+    } satisfies Record<AiReviewAuditTimelineItem["kind"], string>
+  )[kind];
+}
+
+function auditTimelineValue(i18n: AppI18n, item: AiReviewAuditTimelineItem): string {
+  if (i18n.locale === "en-US") {
+    return item.value;
+  }
+  return item.value
+    .replace("Current audit evidence", "当前审计证据")
+    .replace("Saved AI review", "保存 AI 评审")
+    .replace("Paper execution approved", "模拟执行已审批")
+    .replace("Risk approval blocked", "风控审批阻断")
+    .replace("Certified live route ready", "认证实盘通道就绪")
+    .replace("Risk approval", "风控审批")
+    .replace("citations", "条引用")
+    .replace("rounds", "轮")
+    .replace("no audited run", "无审计运行");
+}
+
+function auditTimelineDetail(i18n: AppI18n, item: AiReviewAuditTimelineItem): string {
+  if (i18n.locale === "en-US") {
+    return item.detail;
+  }
+  return item.detail
+    .replace("Audited evidence required", "需要先绑定审计证据")
+    .replace("Bind an audited run before paper or live execution.", "先绑定审计运行，再进入模拟或实盘执行。")
+    .replace("Evidence dossier is ready", "证据档案已就绪")
+    .replace("Evidence dossier blocked", "证据档案阻断")
+    .replace("Paper execution approved", "模拟执行已审批")
+    .replace("Risk approval blocked", "风控审批阻断")
+    .replace("Certified live route ready", "认证实盘通道就绪")
+    .replace("can stage paper orders", "可提交模拟委托")
+    .replace("live trading remains blocked", "实盘仍保持阻断")
+    .replace("needs risk review before staging execution", "提交执行前仍需风控复核");
 }
 
 function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {

@@ -20,6 +20,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Let users select any visible saved AI Review Run Record and compare current evidence against that selected record, while defaulting to the latest saved record.
 - Render risk approval references beside the AI evidence trail, reusing the same execution approval gates that block paper and live handoff.
 - Support backend `limit`, `offset`, and `query` parameters for saved AI Review Run Records, returning pagination metadata while preserving the existing `aiReviews` response array.
+- Build a compact audit timeline from current evidence, saved AI Review Run Records, and risk approval so the Audit workspace has a single approval-reference chain.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -68,3 +69,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "backend pagination"` failed because the Audit workspace did not keep AI review history query, offset, pagination metadata, or page controls.
 - GREEN: added `AI_REVIEW_HISTORY_PAGE_SIZE`, backend-backed Audit history loading, query reset on context changes, and previous/next controls that use backend `pagination.total`.
 - REFACTOR: removed Audit-side double filtering so backend search over full saved record JSON feeds the drift summary and record history from the same current page.
+- RED: `terminal-workbench.test.ts -t "AI review audit timeline"` failed because `buildAiReviewAuditTimelineItems` did not exist.
+- GREEN: added `AiReviewAuditTimelineItem` and `buildAiReviewAuditTimelineItems`, sorting saved records by `createdAt` and producing current evidence, saved review, and risk approval reference rows.
+- RED: `layout-css.test.js -t "AI review audit timeline"` failed because the Audit panel did not render the timeline.
+- GREEN: added `AiReviewAuditTimelineBoard` with compact reference rows for current evidence, saved records, and risk approval, then wired it into `AiReviewAuditTrailPanel`.
+- DOCS: updated product plan and architecture notes to mark the compact AI review audit timeline as implemented and leave clickable approval/export/cross-workspace references for the next slice.

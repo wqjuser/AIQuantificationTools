@@ -8,6 +8,7 @@ import {
   buildAiReviewReportMarkdown,
   buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
+  buildAiReviewAuditTimelineItems,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -50,6 +51,7 @@ import {
   quantLoopLabels,
   resolveBacktestAssumptions,
   type AiReviewRecordDriftRow,
+  type AiReviewAuditTimelineItem,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -1562,6 +1564,88 @@ describe("terminal workbench model", () => {
     expect(filterAiReviewRecordDriftRows(rows, "run-a:rev-current").map((row) => row.aiReviewId)).toEqual([
       "ai-review:run-a:rev-current"
     ]);
+  });
+
+  test("builds an AI review audit timeline for approval references", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-timeline",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Trend improved after the audit run.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-ai-timeline",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const olderRecord = {
+      ...currentRecord!,
+      aiReviewId: "ai-review:run-ai-timeline:rev-old",
+      createdAt: "2026-05-27T08:00:00+00:00",
+      strategyRevision: "rev-old",
+      summary: {
+        ...currentRecord!.summary,
+        citationCount: currentRecord!.summary.citationCount - 1,
+        roundCount: currentRecord!.summary.roundCount - 1
+      }
+    };
+
+    const items = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [olderRecord, currentRecord!],
+      riskApproval: {
+        status: "paper_ready",
+        headline: "Paper execution approved",
+        summary: "Audited run can stage paper orders; live trading remains blocked.",
+        gates: []
+      }
+    });
+
+    expect(items.map((item) => item.id)).toEqual([
+      "current:run-ai-timeline",
+      "saved:ai-review:run-ai-timeline:rev-ai-timeline",
+      "saved:ai-review:run-ai-timeline:rev-old",
+      "risk:paper_ready"
+    ]);
+    expect(items[0]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      kind: "current-evidence",
+      status: "passed",
+      tone: "ai",
+      reference: "run-ai-timeline"
+    });
+    expect(items[1]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      kind: "saved-review",
+      reference: "ai-review:run-ai-timeline:rev-ai-timeline",
+      status: "passed",
+      tone: "ai"
+    });
+    expect(items[3]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      kind: "risk-approval",
+      reference: "risk:paper_ready",
+      status: "review",
+      tone: "warning"
+    });
   });
 
   test("derives scanner candidates from the active watchlist", () => {

@@ -473,6 +473,20 @@ export interface AiReviewRecordDriftRow {
   driftReasons: AiReviewRecordDriftReason[];
 }
 
+export type AiReviewAuditTimelineItemKind = "current-evidence" | "saved-review" | "risk-approval";
+
+export interface AiReviewAuditTimelineItem {
+  id: string;
+  kind: AiReviewAuditTimelineItemKind;
+  label: string;
+  value: string;
+  detail: string;
+  reference: string;
+  createdAt: string | null;
+  status: "passed" | "review" | "blocked";
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -1731,6 +1745,71 @@ export function filterAiReviewRecordDriftRows(
       .toLowerCase()
       .includes(normalizedQuery)
   );
+}
+
+export function buildAiReviewAuditTimelineItems({
+  currentRunId,
+  currentStrategyRevision,
+  dossier,
+  records,
+  riskApproval
+}: {
+  currentRunId: string | null;
+  currentStrategyRevision: string;
+  dossier: AiReviewDossier;
+  records: AiReviewRunRecord[];
+  riskApproval: RiskApprovalSummary;
+}): AiReviewAuditTimelineItem[] {
+  const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
+  const currentRunReference = currentRunId ?? "pending-audit-run";
+  const savedRecordItems = [...records]
+    .sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt))
+    .map((record) => ({
+      id: `saved:${record.aiReviewId}`,
+      kind: "saved-review" as const,
+      label: "Saved AI review",
+      value: `${record.strategyRevision} · ${record.summary.citationCount} citations · ${record.summary.roundCount} rounds`,
+      detail: record.dossier.headline,
+      reference: record.aiReviewId,
+      createdAt: record.createdAt,
+      status: record.status === "ready" ? ("passed" as const) : ("blocked" as const),
+      tone: record.status === "ready" ? ("ai" as const) : ("risk" as const)
+    }));
+
+  return [
+    {
+      id: `current:${currentRunReference}`,
+      kind: "current-evidence",
+      label: "Current audit evidence",
+      value: currentRunId
+        ? `${currentStrategyRevision} · ${dossier.citations.length} citations`
+        : `${currentStrategyRevision} · no audited run`,
+      detail: dossier.headline,
+      reference: currentRunReference,
+      createdAt: null,
+      status: currentEvidenceReady ? "passed" : "blocked",
+      tone: currentEvidenceReady ? "ai" : "risk"
+    },
+    ...savedRecordItems,
+    {
+      id: `risk:${riskApproval.status}`,
+      kind: "risk-approval",
+      label: "Risk approval",
+      value: riskApproval.headline,
+      detail: riskApproval.summary,
+      reference: `risk:${riskApproval.status}`,
+      createdAt: null,
+      status:
+        riskApproval.status === "live_ready" ? "passed" : riskApproval.status === "paper_ready" ? "review" : "blocked",
+      tone:
+        riskApproval.status === "live_ready" ? "positive" : riskApproval.status === "paper_ready" ? "warning" : "risk"
+    }
+  ];
+}
+
+function timestampSortValue(timestamp: string): number {
+  const value = Date.parse(timestamp);
+  return Number.isFinite(value) ? value : 0;
 }
 
 function normalizedResearchNote(note: ResearchRunNote | null | undefined): ResearchRunNote | null {

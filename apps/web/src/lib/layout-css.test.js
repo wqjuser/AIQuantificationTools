@@ -231,6 +231,22 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-ai-risk-gate")).toContain("grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1fr) auto;");
   });
 
+  test("renders an AI review audit timeline as approval references", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function aiReviewDriftStatusText");
+    const timelineSource = sourceBetween("function AiReviewAuditTimelineBoard", "function AiReviewAuditTrailPanel");
+
+    expect(appSource).toContain("buildAiReviewAuditTimelineItems");
+    expect(appSource).toContain("function AiReviewAuditTimelineBoard");
+    expect(auditPanelSource).toContain("const timelineItems = buildAiReviewAuditTimelineItems");
+    expect(auditPanelSource).toContain("<AiReviewAuditTimelineBoard");
+    expect(timelineSource).toContain("items.map");
+    expect(timelineSource).toContain("item.reference");
+    expect(cssBlock(".audit-ai-timeline")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-timeline-row")).toContain(
+      "grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr) minmax(140px, 0.35fr);"
+    );
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
