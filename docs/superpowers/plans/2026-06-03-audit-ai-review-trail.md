@@ -19,13 +19,14 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Apply the same local filter to both the drift summary and the saved AI Review Run Record history, so the Audit workspace does not show mismatched summary and record lists.
 - Let users select any visible saved AI Review Run Record and compare current evidence against that selected record, while defaulting to the latest saved record.
 - Render risk approval references beside the AI evidence trail, reusing the same execution approval gates that block paper and live handoff.
+- Support backend `limit`, `offset`, and `query` parameters for saved AI Review Run Records, returning pagination metadata while preserving the existing `aiReviews` response array.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
 ## Out Of Scope
 
 - No new backend AI review storage contract.
-- No backend AI review search API or deep field-level diffing beyond current evidence comparison, saved-record drift summaries, and local Audit filtering.
+- No deep field-level diffing beyond current evidence comparison, saved-record drift summaries, local Audit filtering, and the backend run-record search contract.
 - No changes to AI Review generation behavior.
 
 ## Test Plan
@@ -56,3 +57,11 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: made saved AI review record cards selectable and wired the evidence comparison to the selected record, defaulting back to the latest saved record.
 - RED: `layout-css.test.js -t "risk approval references"` failed because the Audit AI trail did not render execution risk approval references.
 - GREEN: added `AiReviewRiskReferenceBoard`, passed `riskApprovalSummary` into the Audit AI trail, and reused the existing risk approval gate labels, statuses, and details.
+- RED: `test_ai_review_run_store_pages_and_searches_records_bound_to_run` failed because `AiReviewRunStore.list_by_run` did not support `offset` or `query`.
+- GREEN: added store-level pagination, total counts, and run-scoped text search over AI review ids and normalized record JSON.
+- RED: `test_research_run_ai_review_api_pages_and_searches_review_records` failed because the HTTP API ignored `limit`, `offset`, and `query` and returned no pagination metadata.
+- GREEN: added the backend query parameters and `pagination` response object, while preserving the existing `aiReviews` array.
+- RED: `terminal-api.test.ts -t "paged AI review"` failed because the web API client URL builder ignored AI review history search parameters.
+- GREEN: added typed client params and optional pagination parsing while keeping old `loadResearchRunAiReviews(baseUrl, runId, fetcher)` calls compatible.
+- DOCS: updated the product plan and architecture endpoint notes with the backend AI review pagination contract.
+- VERIFY: Docker service on port 5173 saved AI Review Run Records for a real research run and returned only the `needle-drift` match with `limit`, `offset`, `total`, and `query` metadata.

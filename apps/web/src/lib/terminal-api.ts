@@ -210,8 +210,22 @@ export interface AiReviewRunRecordResult {
 
 export interface AiReviewRunHistoryResult {
   aiReviews: AiReviewRunRecordEnvelope[];
+  pagination?: AiReviewRunHistoryPagination;
   source: WorkspaceSource;
   error?: string;
+}
+
+export interface AiReviewRunHistoryPagination {
+  limit: number;
+  offset: number;
+  total: number;
+  query: string;
+}
+
+export interface AiReviewRunHistoryParams {
+  query?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export type StrategyLibraryStatus = "draft" | "audited";
@@ -612,8 +626,22 @@ export function buildResearchRunPromotionUrl(baseUrl: string, runId: string): st
   return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/promotion`);
 }
 
-export function buildResearchRunAiReviewsUrl(baseUrl: string, runId: string): string {
-  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/ai-reviews`);
+export function buildResearchRunAiReviewsUrl(
+  baseUrl: string,
+  runId: string,
+  params: AiReviewRunHistoryParams = {}
+): string {
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/ai-reviews`, (url) => {
+    if (params.query?.trim()) {
+      url.searchParams.set("query", params.query.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+    if (params.offset !== undefined) {
+      url.searchParams.set("offset", String(Math.max(0, params.offset)));
+    }
+  });
 }
 
 export function buildStrategiesUrl(
@@ -1016,10 +1044,13 @@ export async function saveAiReviewRunRecord(
 export async function loadResearchRunAiReviews(
   baseUrl: string,
   runId: string,
-  fetcher: WorkspaceFetcher = defaultFetcher
+  paramsOrFetcher: AiReviewRunHistoryParams | WorkspaceFetcher = {},
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AiReviewRunHistoryResult> {
+  const params = typeof paramsOrFetcher === "function" ? {} : paramsOrFetcher;
+  const fetcher = typeof paramsOrFetcher === "function" ? paramsOrFetcher : maybeFetcher;
   try {
-    const response = await fetcher(buildResearchRunAiReviewsUrl(baseUrl, runId));
+    const response = await fetcher(buildResearchRunAiReviewsUrl(baseUrl, runId, params));
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }
@@ -1029,6 +1060,7 @@ export async function loadResearchRunAiReviews(
     }
     return {
       aiReviews: payload.aiReviews,
+      pagination: payload.pagination,
       source: "core"
     };
   } catch (error) {
@@ -1610,12 +1642,32 @@ function isAiReviewRunRecordPayload(value: unknown): value is { aiReview: AiRevi
   return isAiReviewRunRecordEnvelope(payload.aiReview);
 }
 
-function isAiReviewRunHistoryPayload(value: unknown): value is { aiReviews: AiReviewRunRecordEnvelope[] } {
+function isAiReviewRunHistoryPayload(value: unknown): value is {
+  aiReviews: AiReviewRunRecordEnvelope[];
+  pagination?: AiReviewRunHistoryPagination;
+} {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { aiReviews?: unknown };
-  return Array.isArray(payload.aiReviews) && payload.aiReviews.every(isAiReviewRunRecordEnvelope);
+  const payload = value as { aiReviews?: unknown; pagination?: unknown };
+  return (
+    Array.isArray(payload.aiReviews) &&
+    payload.aiReviews.every(isAiReviewRunRecordEnvelope) &&
+    (payload.pagination === undefined || isAiReviewRunHistoryPagination(payload.pagination))
+  );
+}
+
+function isAiReviewRunHistoryPagination(value: unknown): value is AiReviewRunHistoryPagination {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const pagination = value as Partial<AiReviewRunHistoryPagination>;
+  return (
+    typeof pagination.limit === "number" &&
+    typeof pagination.offset === "number" &&
+    typeof pagination.total === "number" &&
+    typeof pagination.query === "string"
+  );
 }
 
 function isPlatformSettingsPayload(value: unknown): value is { settings: PlatformSettingsStatus } {

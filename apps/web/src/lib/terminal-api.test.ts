@@ -2289,6 +2289,40 @@ describe("terminal workspace API client", () => {
     expect(result.aiReviews[0]?.record.boundary).toContain("Evidence explanation only");
   });
 
+  test("loads paged AI review run records with backend search metadata", async () => {
+    const calls: string[] = [];
+    const result = await loadResearchRunAiReviews(
+      "http://127.0.0.1:8765",
+      "run-ai-save",
+      { query: "risk drift", limit: 5, offset: 10 },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            aiReviews: [],
+            pagination: {
+              limit: 5,
+              offset: 10,
+              total: 24,
+              query: "risk drift"
+            }
+          })
+        };
+      }
+    );
+
+    expect(buildResearchRunAiReviewsUrl("http://127.0.0.1:8765", "run-ai-save", { query: "risk drift", limit: 5, offset: 10 })).toBe(
+      "http://127.0.0.1:8765/api/research/runs/run-ai-save/ai-reviews?query=risk+drift&limit=5&offset=10"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/research/runs/run-ai-save/ai-reviews?query=risk+drift&limit=5&offset=10"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.pagination).toEqual({ limit: 5, offset: 10, total: 24, query: "risk drift" });
+  });
+
   test("returns fallback when AI review run history payload is malformed", async () => {
     const result = await loadResearchRunAiReviews("http://127.0.0.1:8765", "run-ai-save", async () => ({
       ok: true,

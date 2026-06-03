@@ -1134,6 +1134,51 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["record"]["summary"]["parameterScanBound"], True)
         self.assertEqual(payload["record"]["boundary"], "Evidence explanation only; no buy/sell instructions or guaranteed returns.")
 
+    def test_ai_review_run_store_pages_and_searches_records_bound_to_run(self):
+        from quant_core.ai_review_runs import AiReviewRunStore
+
+        def review_record(revision: str, created_at: str, headline: str) -> dict:
+            return {
+                "schemaVersion": 1,
+                "recordType": "aiqt.aiReviewRun",
+                "aiReviewId": f"ai-review:run-ai-page:{revision}",
+                "runId": "run-ai-page",
+                "createdAt": created_at,
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyRevision": revision,
+                "executionMode": "paper_only",
+                "status": "ready",
+                "summary": {
+                    "citationCount": 1,
+                    "roundCount": 1,
+                    "decisionCount": 1,
+                    "parameterScanBound": False,
+                    "liveExecutionBlocked": True,
+                },
+                "dossier": {"status": "ready", "headline": headline, "summary": "Evidence only", "citations": []},
+                "citations": [],
+                "rounds": [],
+                "decisionLog": [],
+                "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            store.record(review_record("rev-old", "2026-05-26T08:01:00+00:00", "Old review"))
+            store.record(review_record("rev-mid", "2026-05-26T08:02:00+00:00", "Risk review"))
+            store.record(review_record("rev-new", "2026-05-26T08:03:00+00:00", "Latest review"))
+            page = store.list_by_run("run-ai-page", limit=1, offset=1)
+            filtered = store.list_by_run("run-ai-page", query="risk")
+            total = store.count_by_run("run-ai-page")
+            filtered_total = store.count_by_run("run-ai-page", query="risk")
+
+        self.assertEqual([record.ai_review_id for record in page], ["ai-review:run-ai-page:rev-mid"])
+        self.assertEqual([record.ai_review_id for record in filtered], ["ai-review:run-ai-page:rev-mid"])
+        self.assertEqual(total, 3)
+        self.assertEqual(filtered_total, 1)
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit
@@ -1446,6 +1491,89 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["aiReviews"][0]["aiReviewId"], "ai-review:run-ai-review-api:rev-ai-review-api")
         self.assertEqual(list_payload["aiReviews"][0]["record"]["boundary"], "Evidence explanation only; no buy/sell instructions or guaranteed returns.")
+
+    def test_research_run_ai_review_api_pages_and_searches_review_records(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        def review_record(revision: str, created_at: str, headline: str) -> dict:
+            return {
+                "schemaVersion": 1,
+                "recordType": "aiqt.aiReviewRun",
+                "aiReviewId": f"ai-review:run-ai-review-page:{revision}",
+                "runId": "run-ai-review-page",
+                "createdAt": created_at,
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyRevision": revision,
+                "executionMode": "paper_only",
+                "status": "ready",
+                "summary": {
+                    "citationCount": 1,
+                    "roundCount": 1,
+                    "decisionCount": 1,
+                    "parameterScanBound": False,
+                    "liveExecutionBlocked": True,
+                },
+                "dossier": {"status": "ready", "headline": headline, "summary": "Evidence only", "citations": []},
+                "citations": [],
+                "rounds": [],
+                "decisionLog": [],
+                "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+            }
+
+        audit = ResearchRunAudit(
+            run_id="run-ai-review-page",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-ai-review-page",
+            data_rows=2,
+            metrics={"total_return_pct": 2.4, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 1},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "AI review", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            research_store.record(audit)
+            review_store.record(review_record("rev-risk-old", "2026-05-26T08:01:00+00:00", "Risk review old"))
+            review_store.record(review_record("rev-other", "2026-05-26T08:02:00+00:00", "Technical review"))
+            review_store.record(review_record("rev-risk-new", "2026-05-26T08:03:00+00:00", "Risk review new"))
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                ai_review_store = review_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/runs/run-ai-review-page/ai-reviews?query=risk&limit=1&offset=1")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["pagination"], {"limit": 1, "offset": 1, "total": 2, "query": "risk"})
+        self.assertEqual([item["aiReviewId"] for item in payload["aiReviews"]], ["ai-review:run-ai-review-page:rev-risk-old"])
 
     def test_research_run_paper_execution_api_rejects_incomplete_strategy_risk(self):
         import json

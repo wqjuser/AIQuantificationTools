@@ -36,7 +36,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 
 `buildAiReviewRunRecord` 会把已审计 run 的 AI 评审状态打包为 `aiqt.aiReviewRun` JSON：包含 run id、策略 revision、市场/标的/周期、dossier、citations、committee rounds、decision log、摘要计数和“仅解释证据”的安全边界。前端 AI Review 面板可导出该结构化记录，也可通过 `/api/research/runs/{runId}/ai-reviews` 保存到本地核心；保存后面板会显示最近的运行记录摘要，审计 run 回放或导入完成后也会读取同一接口恢复该 run 的 AI 评审记录。研究运行 JSON 导出包会把这些已保存记录放入 `aiReviewRuns`，导入时校验 run id、record type、schema、manifest count 和安全边界后写回 `AiReviewRunStore`。
 
-本地核心已经提供 `AiReviewRunStore`，并通过 `/api/research/runs/{runId}/ai-reviews` 保存和读取绑定到同一审计 run 的 AI 评审记录。POST 会先确认 research run 存在，再校验 `recordType=aiqt.aiReviewRun`、`schemaVersion=1`、`runId` 与路径一致和安全边界存在；GET 返回最近的 AI 评审记录列表。
+本地核心已经提供 `AiReviewRunStore`，并通过 `/api/research/runs/{runId}/ai-reviews` 保存和读取绑定到同一审计 run 的 AI 评审记录。POST 会先确认 research run 存在，再校验 `recordType=aiqt.aiReviewRun`、`schemaVersion=1`、`runId` 与路径一致和安全边界存在；GET 支持 `limit`、`offset`、`query`，并返回 `pagination` 元信息，供审计页按 run 分页检索 AI 评审历史。
 
 前端风险审批现在还会把 `researchRun.dataQuality` 渲染为独立 gate：来源必须不是 `demo-fallback/unknown`，完整性必须为 true，且 rows 必须为正数；模拟委托预览、风险检查行和晋级队列都复用该 gate，保证用户提交前就能看到与后端 paper handoff 一致的数据质量阻断原因。
 
@@ -70,7 +70,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 - `POST /api/research/runs/{runId}/paper-executions`：先校验审计运行的 `dataQuality` 是否完整，再校验结构化 `strategyConfig.risk` 是否包含正数 `positionPct`、`stopLossPct`、`takeProfitPct` 和 `maxDrawdownPct`；数据质量不完整、`demo-fallback`、`unknown` 或风控字段缺失时返回 `invalid_paper_execution` 且不写入执行记录。通过后再从数据快照、回测假设和仓位上限派生一笔本地模拟委托，经过 `PaperExecutionAdapter` 风控后写入 `PaperExecutionStore`；返回订单、账户快照和 `audit-run-bound`、`paper-risk-check`、`live-route-blocked` 闸门。
 - `GET /api/research/runs/{runId}/paper-executions`：返回该审计运行的近期模拟执行记录，用于后续回放和执行中心展示；前端 replay/import 会读取最新一条记录恢复执行中心；缺失 run id 返回 `research_run_not_found`。
 - `POST /api/research/runs/{runId}/ai-reviews`：保存一条结构化 `aiqt.aiReviewRun` 记录；run 不存在返回 `research_run_not_found`，schema、record type、run id 或安全边界不合法返回 `invalid_ai_review_record`。
-- `GET /api/research/runs/{runId}/ai-reviews`：返回该审计运行的近期 AI 评审记录，用于后续 AI 委员会历史、审计回放和风控审批引用。
+- `GET /api/research/runs/{runId}/ai-reviews?limit=20&offset=0&query=`：返回该审计运行的 AI 评审记录分页和 `pagination` 元信息，用于 AI 委员会历史、审计回放和风控审批引用。
 - `GET /api/demo?market=ashare&symbol=600000&timeframe=1d`：拉取演示行情、运行策略回测并生成本地 AI 研究报告。
 
 ## Next Integration Points

@@ -489,8 +489,23 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             if not audit:
                 self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
                 return
-            reviews = self.ai_review_store.list_by_run(run_id, limit=20)
-            self._send_json({"aiReviews": [ai_review_run_record_to_payload(review) for review in reviews]})
+            query = parse_qs(parsed.query)
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            offset = _parse_offset(query.get("offset", ["0"])[0])
+            search_query = query.get("query", [""])[0].strip()
+            reviews = self.ai_review_store.list_by_run(run_id, limit=limit, offset=offset, query=search_query)
+            total = self.ai_review_store.count_by_run(run_id, query=search_query)
+            self._send_json(
+                {
+                    "aiReviews": [ai_review_run_record_to_payload(review) for review in reviews],
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total": total,
+                        "query": search_query,
+                    },
+                }
+            )
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/promotion"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/promotion")).strip()
@@ -645,6 +660,14 @@ def _parse_limit(raw: str) -> int:
     except ValueError:
         return 10
     return max(1, min(value, 50))
+
+
+def _parse_offset(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return 0
+    return max(0, value)
 
 
 def _parse_kline_limit(raw: str) -> int:

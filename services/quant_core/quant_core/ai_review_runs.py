@@ -84,22 +84,42 @@ class AiReviewRunStore:
             connection.close()
         return stored
 
-    def list_by_run(self, run_id: str, limit: int = 20) -> list[AiReviewRunRecord]:
+    def list_by_run(self, run_id: str, limit: int = 20, offset: int = 0, query: str = "") -> list[AiReviewRunRecord]:
+        bounded_limit = _bounded_limit(limit)
+        bounded_offset = max(0, int(_number_or_default(offset, 0)))
+        filter_sql, parameters = _run_filter_parameters(run_id, query)
         connection = self._connect()
         try:
             rows = connection.execute(
-                """
+                f"""
                 select ai_review_id, run_id, created_at, record_json
                 from ai_review_runs
-                where run_id = ?
+                where {filter_sql}
                 order by created_at desc
                 limit ?
+                offset ?
                 """,
-                (run_id, max(1, min(limit, 50))),
+                (*parameters, bounded_limit, bounded_offset),
             ).fetchall()
         finally:
             connection.close()
         return [_row_to_ai_review_run_record(row) for row in rows]
+
+    def count_by_run(self, run_id: str, query: str = "") -> int:
+        filter_sql, parameters = _run_filter_parameters(run_id, query)
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                f"""
+                select count(*)
+                from ai_review_runs
+                where {filter_sql}
+                """,
+                parameters,
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(row[0]) if row else 0
 
 
 def ai_review_run_record_to_payload(record: AiReviewRunRecord) -> dict[str, Any]:
@@ -180,3 +200,15 @@ def _number_or_default(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _bounded_limit(value: int) -> int:
+    return max(1, min(int(_number_or_default(value, 20)), 50))
+
+
+def _run_filter_parameters(run_id: str, query: str) -> tuple[str, tuple[Any, ...]]:
+    normalized_query = str(query or "").strip()
+    if not normalized_query:
+        return "run_id = ?", (run_id,)
+    like_query = f"%{normalized_query.lower()}%"
+    return "run_id = ? and (lower(ai_review_id) like ? or lower(record_json) like ?)", (run_id, like_query, like_query)
