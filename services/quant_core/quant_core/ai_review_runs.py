@@ -105,6 +105,22 @@ class AiReviewRunStore:
             connection.close()
         return [_row_to_ai_review_run_record(row) for row in rows]
 
+    def list_all_by_run(self, run_id: str) -> list[AiReviewRunRecord]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select ai_review_id, run_id, created_at, record_json
+                from ai_review_runs
+                where run_id = ?
+                order by created_at desc
+                """,
+                (run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_ai_review_run_record(row) for row in rows]
+
     def count_by_run(self, run_id: str, query: str = "") -> int:
         filter_sql, parameters = _run_filter_parameters(run_id, query)
         connection = self._connect()
@@ -120,6 +136,14 @@ class AiReviewRunStore:
         finally:
             connection.close()
         return int(row[0]) if row else 0
+
+    def delete_by_run(self, run_id: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("delete from ai_review_runs where run_id = ?", (run_id,))
+            connection.commit()
+        finally:
+            connection.close()
 
 
 def ai_review_run_record_to_payload(record: AiReviewRunRecord) -> dict[str, Any]:

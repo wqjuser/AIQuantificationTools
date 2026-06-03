@@ -198,6 +198,67 @@ class StrategyLibraryStore:
             connection.close()
         return _row_to_record(row) if row else None
 
+    def restore(self, record: StrategyLibraryRecord) -> StrategyLibraryRecord:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                insert into strategy_versions (
+                    revision,
+                    created_at,
+                    name,
+                    market,
+                    symbol,
+                    timeframe,
+                    version,
+                    status,
+                    audit_run_id,
+                    strategy_config_json
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(revision) do update set
+                    created_at = excluded.created_at,
+                    name = excluded.name,
+                    market = excluded.market,
+                    symbol = excluded.symbol,
+                    timeframe = excluded.timeframe,
+                    version = excluded.version,
+                    status = excluded.status,
+                    audit_run_id = excluded.audit_run_id,
+                    strategy_config_json = excluded.strategy_config_json
+                """,
+                (
+                    record.revision,
+                    record.created_at.isoformat(),
+                    record.name,
+                    record.market,
+                    record.symbol,
+                    record.timeframe,
+                    record.version,
+                    record.status,
+                    record.audit_run_id,
+                    json.dumps(record.strategy_config, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        restored = self.get(record.revision)
+        if restored is None:
+            raise RuntimeError("strategy_library_restore_failed")
+        return restored
+
+    def delete(self, revision: str) -> None:
+        normalized_revision = revision.strip()
+        if not normalized_revision:
+            return
+        connection = self._connect()
+        try:
+            connection.execute("delete from strategy_versions where revision = ?", (normalized_revision,))
+            connection.commit()
+        finally:
+            connection.close()
+
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
 

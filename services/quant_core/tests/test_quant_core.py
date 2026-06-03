@@ -4151,6 +4151,260 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(notes_payload["note"]["body"], "导入包里的研究笔记应恢复到本地笔记库。")
         self.assertEqual(notes_payload["note"]["symbol"], "600000")
 
+    def test_research_run_import_api_rolls_back_partial_writes_on_store_failure(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit, paper_execution_record_to_payload
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore, research_run_export_to_payload
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        audit = ResearchRunAudit(
+            run_id="run-import-rollback",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Rollback SMA trend",
+            strategy_revision="rev-import-rollback",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "max_drawdown_pct": 0.4, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Rollback evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={"summary": "Rollback", "risks": ["Import write can fail"], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-import-rollback",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            research_note={
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "body": "Imported note should be rolled back.",
+                "updatedAt": "2026-05-26T08:03:00+00:00",
+            },
+            strategy_config={
+                "name": "Rollback SMA trend",
+                "revision": "rev-import-rollback",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
+            backtest_trades=[{"id": "trade-rollback"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 101200.0}],
+        )
+        paper_execution = paper_execution_record_to_payload(create_paper_execution_from_audit(audit))
+        ai_review = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-import-rollback:rev-import-rollback",
+            "runId": "run-import-rollback",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-import-rollback",
+            "executionMode": "paper_only",
+            "status": "ready",
+            "summary": {"citationCount": 1, "roundCount": 1, "decisionCount": 1, "liveExecutionBlocked": True},
+            "dossier": {"status": "ready", "headline": "Rollback AI review", "summary": "Evidence only", "citations": []},
+            "citations": [],
+            "rounds": [],
+            "decisionLog": [],
+            "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        }
+        export_package = research_run_export_to_payload(
+            audit,
+            paper_executions=[paper_execution],
+            ai_review_runs=[
+                {
+                    "aiReviewId": ai_review["aiReviewId"],
+                    "runId": ai_review["runId"],
+                    "createdAt": ai_review["createdAt"],
+                    "record": ai_review,
+                }
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            note_library = ResearchNoteStore(f"{tmp}/notes.sqlite")
+            strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
+
+            class FailingAiReviewStore(AiReviewRunStore):
+                def record(self, record):
+                    raise RuntimeError("ai_review_write_failed")
+
+            review_store = FailingAiReviewStore(f"{tmp}/ai_reviews.sqlite")
+            note_library.save(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                body="Existing note must survive rollback.",
+                updated_at=datetime(2026, 5, 25, 8, 0, tzinfo=timezone.utc),
+            )
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                note_store = note_library
+                strategy_store = strategy_library
+                paper_execution_store = paper_library
+                ai_review_store = review_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(export_package).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            restored_run = research_store.get("run-import-rollback")
+            restored_note = note_library.get(market="ashare", symbol="600000", timeframe="1d")
+            restored_strategy = strategy_library.get("rev-import-rollback")
+            restored_paper_executions = paper_library.list_by_run("run-import-rollback")
+            restored_ai_review_count = review_store.count_by_run("run-import-rollback")
+
+        self.assertEqual(response.status, 500)
+        self.assertEqual(payload["error"], "research_run_import_write_failed")
+        self.assertEqual(payload["detail"], "ai_review_write_failed")
+        self.assertIsNone(restored_run)
+        self.assertEqual(restored_note.body, "Existing note must survive rollback.")
+        self.assertIsNone(restored_strategy)
+        self.assertEqual(restored_paper_executions, [])
+        self.assertEqual(restored_ai_review_count, 0)
+
+    def test_research_run_import_rollback_restores_all_previous_paper_executions(self):
+        import sqlite3
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import _persist_research_run_import
+        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        audit = ResearchRunAudit(
+            run_id="run-import-rollback-many-paper",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Rollback many paper executions",
+            strategy_revision="rev-import-rollback-many-paper",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "max_drawdown_pct": 0.4, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Rollback evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-import-rollback-many-paper",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+        )
+        failing_review = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-import-rollback-many-paper:failing",
+            "runId": "run-import-rollback-many-paper",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            note_library = ResearchNoteStore(f"{tmp}/notes.sqlite")
+            strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
+
+            class FailingAiReviewStore(AiReviewRunStore):
+                def record(self, record):
+                    raise RuntimeError("ai_review_write_failed")
+
+            review_store = FailingAiReviewStore(f"{tmp}/ai_reviews.sqlite")
+            research_store.record(audit)
+            for index in range(51):
+                paper_library.record(
+                    create_paper_execution_from_audit(
+                        audit,
+                        created_at=audit.created_at + timedelta(minutes=index),
+                    )
+                )
+
+            with self.assertRaises(RuntimeError):
+                _persist_research_run_import(
+                    run_store=research_store,
+                    note_store=note_library,
+                    strategy_store=strategy_library,
+                    paper_execution_store=paper_library,
+                    ai_review_store=review_store,
+                    audit=audit,
+                    imported_note=None,
+                    paper_execution_records=[],
+                    ai_review_records=[failing_review],
+                )
+
+            connection = sqlite3.connect(f"{tmp}/paper.sqlite")
+            try:
+                paper_count = connection.execute(
+                    "select count(*) from paper_executions where run_id = ?",
+                    ("run-import-rollback-many-paper",),
+                ).fetchone()[0]
+            finally:
+                connection.close()
+
+        self.assertEqual(paper_count, 51)
+
     def test_research_run_export_import_preserves_paper_execution_history(self):
         import json
         from http.client import HTTPConnection

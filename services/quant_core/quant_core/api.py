@@ -10,12 +10,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
-from quant_core.ai_review_runs import AiReviewRunStore, ai_review_run_record_to_payload
+from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_review_run_record_to_payload
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.domain import AiResearchRequest, Condition, DataQuality, MarketDataRequest, OHLCVBar, RiskRules, StrategyConfig
 from quant_core.execution import (
+    PaperExecutionRecord,
     PaperExecutionStore,
     build_promotion_candidate,
     create_paper_execution_from_audit,
@@ -28,8 +29,9 @@ from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
-from quant_core.research_notes import ResearchNoteStore, research_note_to_payload
+from quant_core.research_notes import ResearchNote, ResearchNoteStore, research_note_to_payload
 from quant_core.runs import (
+    ResearchRunAudit,
     ResearchRunStore,
     research_run_audit_to_payload,
     research_run_audits_to_payload,
@@ -40,6 +42,7 @@ from quant_core.runs import (
 )
 from quant_core.settings import build_settings_status
 from quant_core.strategy_library import (
+    StrategyLibraryRecord,
     StrategyLibraryStore,
     strategy_library_record_to_payload,
     strategy_library_records_to_payload,
@@ -252,25 +255,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
                 return
-            self.run_store.record(audit)
-            if imported_note:
-                self.note_store.save(
-                    market=imported_note["market"],
-                    symbol=imported_note["symbol"],
-                    timeframe=imported_note["timeframe"],
-                    body=imported_note["body"],
-                    updated_at=imported_note["updated_at"],
+            try:
+                _persist_research_run_import(
+                    run_store=self.run_store,
+                    note_store=self.note_store,
+                    strategy_store=self.strategy_store,
+                    paper_execution_store=self.paper_execution_store,
+                    ai_review_store=self.ai_review_store,
+                    audit=audit,
+                    imported_note=imported_note,
+                    paper_execution_records=paper_execution_records,
+                    ai_review_records=ai_review_records,
                 )
-            if _is_importable_strategy_config(audit.strategy_config):
-                self.strategy_store.save_payload(
-                    audit.strategy_config,
-                    audit_run_id=audit.run_id,
-                    created_at=audit.created_at,
-                )
-            for execution_record in paper_execution_records:
-                self.paper_execution_store.record(execution_record)
-            for review_record in ai_review_records:
-                self.ai_review_store.record(review_record)
+            except Exception as error:
+                self._send_json({"error": "research_run_import_write_failed", "detail": str(error)}, status=500)
+                return
             self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/ai-reviews"):
@@ -765,6 +764,128 @@ def _is_importable_strategy_config(value: object) -> bool:
         and isinstance(exit_conditions, list)
         and bool(exit_conditions)
     )
+
+
+def _persist_research_run_import(
+    *,
+    run_store: ResearchRunStore,
+    note_store: ResearchNoteStore,
+    strategy_store: StrategyLibraryStore,
+    paper_execution_store: PaperExecutionStore,
+    ai_review_store: AiReviewRunStore,
+    audit: ResearchRunAudit,
+    imported_note: dict[str, object] | None,
+    paper_execution_records: list[PaperExecutionRecord],
+    ai_review_records: list[dict[str, object]],
+) -> None:
+    previous_run = run_store.get(audit.run_id)
+    previous_note = (
+        note_store.get_existing(
+            market=str(imported_note["market"]),
+            symbol=str(imported_note["symbol"]),
+            timeframe=str(imported_note["timeframe"]),
+        )
+        if imported_note
+        else None
+    )
+    strategy_revision = (
+        str(audit.strategy_config.get("revision") or "").strip()
+        if _is_importable_strategy_config(audit.strategy_config)
+        else ""
+    )
+    previous_strategy = strategy_store.get(strategy_revision) if strategy_revision else None
+    previous_paper_executions = paper_execution_store.list_all_by_run(audit.run_id)
+    previous_ai_reviews = ai_review_store.list_all_by_run(audit.run_id)
+
+    try:
+        run_store.record(audit)
+        if imported_note:
+            note_store.save(
+                market=str(imported_note["market"]),
+                symbol=str(imported_note["symbol"]),
+                timeframe=str(imported_note["timeframe"]),
+                body=str(imported_note["body"]),
+                updated_at=imported_note["updated_at"],
+            )
+        if strategy_revision:
+            strategy_store.save_payload(
+                audit.strategy_config,
+                audit_run_id=audit.run_id,
+                created_at=audit.created_at,
+            )
+        for execution_record in paper_execution_records:
+            paper_execution_store.record(execution_record)
+        for review_record in ai_review_records:
+            ai_review_store.record(review_record)
+    except Exception:
+        _rollback_research_run_import(
+            run_store=run_store,
+            note_store=note_store,
+            strategy_store=strategy_store,
+            paper_execution_store=paper_execution_store,
+            ai_review_store=ai_review_store,
+            run_id=audit.run_id,
+            imported_note=imported_note,
+            previous_run=previous_run,
+            previous_note=previous_note,
+            strategy_revision=strategy_revision,
+            previous_strategy=previous_strategy,
+            previous_paper_executions=previous_paper_executions,
+            previous_ai_reviews=previous_ai_reviews,
+        )
+        raise
+
+
+def _rollback_research_run_import(
+    *,
+    run_store: ResearchRunStore,
+    note_store: ResearchNoteStore,
+    strategy_store: StrategyLibraryStore,
+    paper_execution_store: PaperExecutionStore,
+    ai_review_store: AiReviewRunStore,
+    run_id: str,
+    imported_note: dict[str, object] | None,
+    previous_run: ResearchRunAudit | None,
+    previous_note: ResearchNote | None,
+    strategy_revision: str,
+    previous_strategy: StrategyLibraryRecord | None,
+    previous_paper_executions: list[PaperExecutionRecord],
+    previous_ai_reviews: list[AiReviewRunRecord],
+) -> None:
+    ai_review_store.delete_by_run(run_id)
+    for review in previous_ai_reviews:
+        ai_review_store.record(review.record)
+
+    paper_execution_store.delete_by_run(run_id)
+    for execution in previous_paper_executions:
+        paper_execution_store.record(execution)
+
+    if strategy_revision:
+        if previous_strategy:
+            strategy_store.restore(previous_strategy)
+        else:
+            strategy_store.delete(strategy_revision)
+
+    if imported_note:
+        if previous_note:
+            note_store.save(
+                market=previous_note.market,
+                symbol=previous_note.symbol,
+                timeframe=previous_note.timeframe,
+                body=previous_note.body,
+                updated_at=previous_note.updated_at,
+            )
+        else:
+            note_store.delete(
+                market=str(imported_note["market"]),
+                symbol=str(imported_note["symbol"]),
+                timeframe=str(imported_note["timeframe"]),
+            )
+
+    if previous_run:
+        run_store.record(previous_run)
+    else:
+        run_store.delete(run_id)
 
 
 def _importable_research_note_payload(

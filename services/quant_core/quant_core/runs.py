@@ -341,6 +341,14 @@ class ResearchRunStore:
 
         return _row_to_research_run_audit(row) if row else None
 
+    def delete(self, run_id: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("delete from research_runs where run_id = ?", (run_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
 
 def research_run_audit_to_payload(audit: ResearchRunAudit, *, include_data_snapshot: bool = False) -> dict[str, Any]:
     payload = {

@@ -167,6 +167,30 @@ class PaperExecutionStore:
             connection.close()
         return [_row_to_paper_execution(row) for row in rows]
 
+    def list_all_by_run(self, run_id: str) -> list[PaperExecutionRecord]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select execution_id, run_id, created_at, mode, account_json, orders_json, gates_json
+                from paper_executions
+                where run_id = ?
+                order by created_at desc
+                """,
+                (run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_paper_execution(row) for row in rows]
+
+    def delete_by_run(self, run_id: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("delete from paper_executions where run_id = ?", (run_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
 
 def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None = None) -> PaperExecutionRecord:
     created = created_at or datetime.now(timezone.utc)

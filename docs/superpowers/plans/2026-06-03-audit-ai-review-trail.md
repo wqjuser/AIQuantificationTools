@@ -137,3 +137,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: preserved Python core import `detail` errors as `source=core` results so failed import audit events can explain schema, integrity, artifact-count, and core rejections.
 - DOCS: updated product plan and architecture notes to mark import failure explanations and old-run replay recovery as implemented while leaving transaction-level import undo as the next rollback slice.
 - DOCS: updated product plan and architecture notes to mark backend AuditEvent persistence as implemented; transaction-level import rollback remained the next slice.
+- RED: `test_research_run_import_api_rolls_back_partial_writes_on_store_failure` failed because import store write exceptions disconnected the API and left partial writes.
+- GREEN: added compensating import write rollback across `ResearchRunStore`, `ResearchNoteStore`, `StrategyLibraryStore`, `PaperExecutionStore`, and `AiReviewRunStore`; import write failures now return `research_run_import_write_failed`.
+- RED: `test_research_run_import_rollback_restores_all_previous_paper_executions` failed because rollback snapshots reused paged execution history and restored only 50 records.
+- GREEN: added full run-scoped snapshot readers for paper executions and AI review records so rollback restores all previous records, not only the UI page window.
+- DOCS: updated product plan and architecture notes to mark write-stage transaction rollback as implemented, leaving user-initiated import undo as the next slice.

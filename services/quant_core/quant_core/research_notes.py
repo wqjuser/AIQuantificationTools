@@ -24,6 +24,13 @@ class ResearchNoteStore:
         self._ensure_schema()
 
     def get(self, *, market: str, symbol: str, timeframe: str) -> ResearchNote:
+        existing = self.get_existing(market=market, symbol=symbol, timeframe=timeframe)
+        if existing:
+            return existing
+        market, symbol, timeframe = _normalize_context(market, symbol, timeframe)
+        return ResearchNote(market=market, symbol=symbol, timeframe=timeframe, body="", updated_at=None)
+
+    def get_existing(self, *, market: str, symbol: str, timeframe: str) -> ResearchNote | None:
         market, symbol, timeframe = _normalize_context(market, symbol, timeframe)
         connection = self._connect()
         try:
@@ -39,7 +46,7 @@ class ResearchNoteStore:
         finally:
             connection.close()
         if not row:
-            return ResearchNote(market=market, symbol=symbol, timeframe=timeframe, body="", updated_at=None)
+            return None
         updated_at = datetime.fromisoformat(row[4])
         if updated_at.tzinfo is None:
             updated_at = updated_at.replace(tzinfo=timezone.utc)
@@ -73,6 +80,18 @@ class ResearchNoteStore:
         finally:
             connection.close()
         return self.get(market=market, symbol=symbol, timeframe=timeframe)
+
+    def delete(self, *, market: str, symbol: str, timeframe: str) -> None:
+        market, symbol, timeframe = _normalize_context(market, symbol, timeframe)
+        connection = self._connect()
+        try:
+            connection.execute(
+                "delete from research_notes where market = ? and symbol = ? and timeframe = ?",
+                (market, symbol, timeframe),
+            )
+            connection.commit()
+        finally:
+            connection.close()
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
