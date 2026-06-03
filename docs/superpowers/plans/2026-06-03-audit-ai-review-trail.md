@@ -24,6 +24,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Give timeline references action metadata so current evidence opens Backtest, saved reviews select the comparison record, and risk approval opens Execution.
 - Attach export-package evidence anchors to AI Review Run Records and Audit timeline rows so saved records can point back to stable `researchRun`, `strategyConfig`, `dataSnapshot`, citation, committee, decision log, and boundary locations.
 - Render a searchable export evidence index inside Audit so users can inspect anchors and `exportPath` values without opening raw JSON.
+- Render a reproducible research run export preview inside Audit so users can inspect package-level readiness before opening raw JSON.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -92,3 +93,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export evidence index"` failed because Audit did not render the index board.
 - GREEN: added `AiReviewExportEvidenceIndexBoard`, local search, compact index rows, and CSS for anchor/exportPath inspection.
 - DOCS: updated product plan and architecture notes to mark the Audit export evidence index as implemented.
+- RED: `terminal-workbench.test.ts -t "export preview"` failed because `buildResearchRunExportPreviewRows` did not exist.
+- GREEN: added research run export preview rows and filtering across run, data snapshot, strategy config, research note, backtest replay artifacts, AI reviews, paper executions, promotion evidence, and execution handoff.
+- RED: `layout-css.test.js -t "export package preview"` failed because Audit did not render the package preview panel.
+- GREEN: added `ResearchRunExportPreviewPanel`, compact readiness/search UI, and an `export` Audit layout area before the AI audit trail.
+- DOCS: updated product plan and architecture notes to mark the Audit export package preview as implemented and leave full package browser plus cross-package audit search as the next slice.

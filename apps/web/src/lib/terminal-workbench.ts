@@ -522,6 +522,47 @@ export interface AiReviewExportEvidenceIndexRow {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export type ResearchRunExportPreviewStatus = "ready" | "missing" | "blocked";
+
+export interface ResearchRunExportPreviewRow {
+  id:
+    | "research-run"
+    | "data-snapshot"
+    | "strategy-config"
+    | "research-note"
+    | "backtest-trades"
+    | "paper-executions"
+    | "promotion-candidate"
+    | "ai-review-runs"
+    | "execution-handoff";
+  label: string;
+  status: ResearchRunExportPreviewStatus;
+  count: string;
+  anchor: string;
+  exportPath: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
+export interface ResearchRunExportPreviewAiReviewEnvelope {
+  aiReviewId: string;
+  runId: string;
+  createdAt: string;
+  record: AiReviewRunRecord;
+}
+
+export interface ResearchRunExportPreviewPromotionCandidate extends Partial<PromotionReadiness> {
+  candidateId?: string | null;
+  runId?: string | null;
+  createdAt?: string | null;
+  liveTradingAllowed?: boolean;
+  evidence?: {
+    paperExecutions: number;
+    filledOrders: number;
+    passedPaperRiskChecks: number;
+  };
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -1992,6 +2033,218 @@ export function filterAiReviewExportEvidenceIndexRows(
 
   return rows.filter((row) =>
     [row.group, row.label, row.anchor, row.reference, row.exportPath, row.detail, row.tone]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+export function buildResearchRunExportPreviewRows({
+  aiReviewRecords = [],
+  currentAiReviewRecord = null,
+  paperExecution = null,
+  promotionCandidate = null,
+  riskApproval = null,
+  workspace
+}: {
+  workspace: TerminalWorkspace;
+  currentAiReviewRecord?: AiReviewRunRecord | null;
+  aiReviewRecords?: ResearchRunExportPreviewAiReviewEnvelope[];
+  paperExecution?: PaperExecutionSnapshot | null;
+  promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
+  riskApproval?: RiskApprovalSummary | null;
+}): ResearchRunExportPreviewRow[] {
+  const run = workspace.researchRun ?? null;
+  const runId = run?.runId ?? "pending-run";
+  const dataSnapshot = run?.dataSnapshot ?? null;
+  const researchNote = normalizedResearchNote(run?.researchNote);
+  const activePaperExecution = run && paperExecution?.runId === run.runId ? paperExecution : null;
+  const activePromotionCandidate =
+    run && promotionCandidate?.runId && promotionCandidate.runId === run.runId ? promotionCandidate : null;
+  const activeAiReviewRecords = run
+    ? aiReviewRecords.filter((record) => record.runId === run.runId)
+    : [];
+  const latestAiReviewRecord = activeAiReviewRecords[0] ?? null;
+  const currentRecordReady = Boolean(currentAiReviewRecord && run && currentAiReviewRecord.runId === run.runId);
+  const backtestTradeCount = workspace.backtestTrades?.length ?? 0;
+  const equityPointCount = workspace.backtestEquityCurve?.length ?? 0;
+
+  return [
+    {
+      id: "research-run",
+      label: "Research run",
+      status: run ? "ready" : "blocked",
+      count: run ? "1" : "0",
+      anchor: `run:${runId}`,
+      exportPath: "researchRun",
+      detail: run
+        ? `${workspace.selectedInstrument.symbol} · ${run.timeframe} · ${run.strategyRevision} · ${run.dataRows} bars`
+        : "Run Pipeline before an export package can be reproduced.",
+      tone: run ? "positive" : "risk"
+    },
+    {
+      id: "data-snapshot",
+      label: "Data snapshot",
+      status:
+        run && dataSnapshot?.hash && Number.isFinite(dataSnapshot.rows) && dataSnapshot.rows > 0
+          ? "ready"
+          : run
+            ? "missing"
+            : "blocked",
+      count: dataSnapshot ? String(dataSnapshot.rows) : "0",
+      anchor: dataSnapshot?.hash ? `dataSnapshot:${dataSnapshot.hash}` : `dataSnapshot:${runId}:missing`,
+      exportPath: "researchRun.dataSnapshot",
+      detail: dataSnapshot
+        ? `${dataSnapshot.source} · ${dataSnapshot.hash} · ${formatWarningCount(dataSnapshot.warnings.length)}`
+        : run
+          ? "The audited run did not include a local data snapshot hash."
+          : "A research run is required before data can be exported.",
+      tone:
+        run && dataSnapshot?.hash && Number.isFinite(dataSnapshot.rows) && dataSnapshot.rows > 0
+          ? dataSnapshot.warnings.length
+            ? "warning"
+            : "positive"
+          : run
+            ? "warning"
+            : "risk"
+    },
+    {
+      id: "strategy-config",
+      label: "Strategy config",
+      status: run?.strategyConfig ? "ready" : run ? "missing" : "blocked",
+      count: run?.strategyConfig ? `${run.strategyConfig.entryConditions.length}/${run.strategyConfig.exitConditions.length}` : "0/0",
+      anchor: run?.strategyConfig ? `strategy:${run.strategyConfig.revision}` : `strategy:${runId}:missing`,
+      exportPath: "researchRun.strategyConfig",
+      detail: run?.strategyConfig
+        ? `${run.strategyConfig.name} · v${run.strategyConfig.version} · ${run.strategyConfig.symbols.join(", ")}`
+        : run
+          ? "The export can replay the run, but structured strategy rules are missing."
+          : "Run Pipeline after saving a strategy to bind structured rules.",
+      tone: run?.strategyConfig ? "positive" : run ? "warning" : "risk"
+    },
+    {
+      id: "research-note",
+      label: "Research note",
+      status: researchNote ? "ready" : run ? "missing" : "blocked",
+      count: researchNote ? "1" : "0",
+      anchor: researchNote ? `researchNote:${researchNote.symbol}:${researchNote.timeframe}` : `researchNote:${runId}:missing`,
+      exportPath: "researchRun.researchNote",
+      detail: researchNote
+        ? compactResearchNoteDetail(researchNote.body)
+        : run
+          ? "No research note is attached to this run; add one for stronger replay context."
+          : "Research notes are bound after a run is created.",
+      tone: researchNote ? "ai" : run ? "neutral" : "risk"
+    },
+    {
+      id: "backtest-trades",
+      label: "Backtest trades",
+      status: backtestTradeCount > 0 || equityPointCount > 0 ? "ready" : run ? "missing" : "blocked",
+      count:
+        backtestTradeCount > 0 || equityPointCount > 0
+          ? `${backtestTradeCount} trades / ${equityPointCount} equity`
+          : "0 trades / 0 equity",
+      anchor: `backtest:${runId}`,
+      exportPath: "researchRun.backtestTrades",
+      detail:
+        backtestTradeCount > 0 || equityPointCount > 0
+          ? "Trade blotter and equity curve are available for replay."
+          : run
+            ? "The run summary is bound, but the trade blotter or equity curve is missing."
+            : "Run Pipeline before backtest replay artifacts are exported.",
+      tone: backtestTradeCount > 0 || equityPointCount > 0 ? "positive" : run ? "warning" : "risk"
+    },
+    {
+      id: "ai-review-runs",
+      label: "AI review runs",
+      status: activeAiReviewRecords.length > 0 ? "ready" : currentRecordReady ? "missing" : run ? "missing" : "blocked",
+      count: `${activeAiReviewRecords.length} saved / ${currentRecordReady ? "current ready" : "current missing"}`,
+      anchor: latestAiReviewRecord
+        ? `aiReviewRun:${latestAiReviewRecord.aiReviewId}`
+        : currentRecordReady
+          ? `aiReviewRun:${currentAiReviewRecord?.aiReviewId}`
+          : `aiReviewRun:${runId}:missing`,
+      exportPath: "aiReviewRuns[]",
+      detail:
+        activeAiReviewRecords.length > 0
+          ? "Saved AI review records are attached to this export package."
+          : currentRecordReady
+            ? "Current AI evidence is ready, but it has not been saved into the export package yet."
+            : run
+              ? "Run and save an AI review record before relying on exported AI evidence."
+              : "A research run is required before AI review records can be exported.",
+      tone: activeAiReviewRecords.length > 0 ? "ai" : currentRecordReady || run ? "warning" : "risk"
+    },
+    {
+      id: "paper-executions",
+      label: "Paper executions",
+      status: activePaperExecution ? "ready" : run ? "missing" : "blocked",
+      count: activePaperExecution ? `${activePaperExecution.orders.length} order${activePaperExecution.orders.length === 1 ? "" : "s"}` : "0 orders",
+      anchor: activePaperExecution ? `paperExecution:${activePaperExecution.executionId}` : `paperExecution:${runId}:missing`,
+      exportPath: "paperExecutions[]",
+      detail: activePaperExecution
+        ? `${activePaperExecution.mode} · ${activePaperExecution.gates.filter((gate) => gate.passed).length}/${activePaperExecution.gates.length} gates passed`
+        : run
+          ? "Submit a paper order to attach execution evidence to the run package."
+          : "Paper execution waits for an audited run.",
+      tone: activePaperExecution ? "positive" : run ? "warning" : "risk"
+    },
+    {
+      id: "promotion-candidate",
+      label: "Promotion candidate",
+      status: activePromotionCandidate
+        ? activePromotionCandidate.status === "live_ready" || activePromotionCandidate.liveTradingAllowed
+          ? "ready"
+          : "blocked"
+        : run
+          ? "missing"
+          : "blocked",
+      count: activePromotionCandidate?.evidence
+        ? `${activePromotionCandidate.evidence.filledOrders} fills / ${activePromotionCandidate.evidence.passedPaperRiskChecks} risk`
+        : "0 fills / 0 risk",
+      anchor: activePromotionCandidate?.candidateId
+        ? `promotion:${activePromotionCandidate.candidateId}`
+        : `promotion:${runId}:missing`,
+      exportPath: "promotionCandidate",
+      detail: activePromotionCandidate
+        ? activePromotionCandidate.summary ?? "Promotion evidence is attached, but live execution remains blocked."
+        : run
+          ? "Create a paper execution before promotion evidence can be attached."
+          : "Promotion evidence waits for a research run.",
+      tone:
+        activePromotionCandidate?.status === "live_ready" || activePromotionCandidate?.liveTradingAllowed
+          ? "positive"
+          : activePromotionCandidate
+            ? "warning"
+            : run
+              ? "neutral"
+              : "risk"
+    },
+    {
+      id: "execution-handoff",
+      label: "Execution handoff",
+      status: run && riskApproval && riskApproval.status !== "blocked" ? "ready" : run ? "blocked" : "blocked",
+      count: riskApproval ? `${riskApproval.gates.filter((gate) => gate.status === "passed").length}/${riskApproval.gates.length}` : "0/0",
+      anchor: riskApproval ? `riskApproval:${riskApproval.status}` : `riskApproval:${runId}:missing`,
+      exportPath: "executionHandoff.requiredGates",
+      detail: riskApproval
+        ? riskApproval.summary
+        : "Execution handoff gates are created after an audited run is available.",
+      tone: riskApproval?.status === "live_ready" ? "positive" : riskApproval?.status === "paper_ready" ? "warning" : "risk"
+    }
+  ];
+}
+
+export function filterResearchRunExportPreviewRows(
+  rows: ResearchRunExportPreviewRow[],
+  query: string
+): ResearchRunExportPreviewRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [row.id, row.label, row.status, row.count, row.anchor, row.exportPath, row.detail, row.tone]
       .join(" ")
       .toLowerCase()
       .includes(normalizedQuery)

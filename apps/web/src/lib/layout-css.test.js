@@ -290,6 +290,26 @@ describe("terminal layout css", () => {
     );
   });
 
+  test("renders a research run export package preview in the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+
+    expect(appSource).toContain("buildResearchRunExportPreviewRows");
+    expect(appSource).toContain("filterResearchRunExportPreviewRows");
+    expect(appSource).toContain("const researchRunExportPreviewRows = buildResearchRunExportPreviewRows");
+    expect(appSource).toContain("function ResearchRunExportPreviewPanel");
+    expect(auditWorkspaceSource).toContain("<ResearchRunExportPreviewPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-export-preview-panel"');
+    expect(auditWorkspaceSource).toContain("rows={researchRunExportPreviewRows}");
+    expect(cssBlock(".workflow-export-preview-panel")).toContain("grid-area: export;");
+    expect(cssBlock(".research-export-preview")).toContain("display: grid;");
+    expect(cssBlock(".research-export-preview-toolbar")).toContain("display: grid;");
+    expect(cssBlock(".research-export-preview-row")).toContain(
+      "grid-template-columns: minmax(104px, 0.44fr) minmax(0, 1fr) minmax(76px, 0.28fr) minmax(126px, 0.46fr) auto;"
+    );
+    expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"', '"export export"', '"ai ai"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"export"', '"ai"'])).toBe(true);
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");

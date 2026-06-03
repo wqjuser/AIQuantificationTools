@@ -10,6 +10,7 @@ import {
   buildAiReviewRunRecord,
   buildAiReviewAuditTimelineItems,
   buildAiReviewExportEvidenceIndexRows,
+  buildResearchRunExportPreviewRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -45,6 +46,7 @@ import {
   buildWorkflowStages,
   executionModeLabel,
   filterAiReviewExportEvidenceIndexRows,
+  filterResearchRunExportPreviewRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -55,6 +57,7 @@ import {
   type AiReviewRecordDriftRow,
   type AiReviewAuditTimelineItem,
   type AiReviewExportEvidenceIndexRow,
+  type ResearchRunExportPreviewRow,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -1798,6 +1801,181 @@ describe("terminal workbench model", () => {
     );
     expect(filterAiReviewExportEvidenceIndexRows(rows, "executionHandoff").map((row) => row.group)).toEqual([
       "timeline"
+    ]);
+  });
+
+  test("builds a reproducible research run export preview from active audit evidence", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-export-preview",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-export-preview",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [{ agent: "Technical", message: "Trend improved after audit.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      },
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-export-preview",
+        bars: [
+          {
+            timestamp: "2026-05-26T08:00:00+00:00",
+            timestampMs: 1779782400000,
+            open: 9.1,
+            high: 9.32,
+            low: 9.09,
+            close: 9.27,
+            volume: 1_464_000
+          }
+        ]
+      },
+      researchNote: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "Bank sector context and SMA hypothesis.",
+        updatedAt: "2026-05-26T08:10:00+00:00"
+      },
+      strategyConfig: {
+        name: "SMA Trend / Bank Sector",
+        revision: "rev-export-preview",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+        risk: { positionPct: 0.2, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.12 }
+      },
+      backtestTrades: [
+        {
+          id: "trade-export-preview",
+          timestamp: "2026-05-26T08:00:00+00:00",
+          symbol: "600000",
+          side: "BUY",
+          status: "filled",
+          price: "9.27",
+          quantity: "2100",
+          exposure: "20%",
+          pnl: "+12.4%",
+          reason: "Close > SMA20",
+          tone: "positive"
+        }
+      ],
+      backtestEquityCurve: [{ timestamp: "2026-05-26T08:00:00+00:00", equity: 100_000 }]
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const paperExecution = {
+      executionId: "paper-export-preview",
+      runId: "run-export-preview",
+      createdAt: "2026-05-26T08:20:00+00:00",
+      mode: "paper_only",
+      account: { cash: 80_659, equity: 100_000, positions: { "600000": 2100 } },
+      orders: [
+        {
+          orderId: "order-export-preview",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:20:00+00:00"
+        }
+      ],
+      gates: [{ id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "passed" }]
+    };
+    const promotion = buildPromotionReadiness(workspace, paperExecution, buildBrokerAdapterRows(workspace));
+    const rows = buildResearchRunExportPreviewRows({
+      workspace,
+      aiReviewRecords: [
+        {
+          aiReviewId: "ai-review:run-export-preview:rev-export-preview",
+          runId: "run-export-preview",
+          createdAt: "2026-05-26T08:30:00+00:00",
+          record: currentRecord!
+        }
+      ],
+      currentAiReviewRecord: currentRecord,
+      paperExecution,
+      promotionCandidate: {
+        ...promotion,
+        runId: "run-export-preview",
+        candidateId: "promotion-export-preview",
+        createdAt: "2026-05-26T08:40:00+00:00",
+        liveTradingAllowed: false,
+        evidence: { paperExecutions: 1, filledOrders: 1, passedPaperRiskChecks: 1 }
+      },
+      riskApproval: buildRiskApprovalSummary(workspace)
+    });
+
+    expect(rows).toEqual(
+      expect.arrayContaining<ResearchRunExportPreviewRow>([
+        expect.objectContaining({
+          id: "research-run",
+          status: "ready",
+          count: "1",
+          exportPath: "researchRun",
+          anchor: "run:run-export-preview"
+        }),
+        expect.objectContaining({
+          id: "data-snapshot",
+          status: "ready",
+          count: "240",
+          exportPath: "researchRun.dataSnapshot",
+          anchor: "dataSnapshot:snapshot-export-preview"
+        }),
+        expect.objectContaining({
+          id: "strategy-config",
+          status: "ready",
+          exportPath: "researchRun.strategyConfig",
+          anchor: "strategy:rev-export-preview"
+        }),
+        expect.objectContaining({
+          id: "ai-review-runs",
+          status: "ready",
+          count: "1 saved / current ready",
+          exportPath: "aiReviewRuns[]",
+          anchor: "aiReviewRun:ai-review:run-export-preview:rev-export-preview"
+        }),
+        expect.objectContaining({
+          id: "paper-executions",
+          status: "ready",
+          count: "1 order",
+          exportPath: "paperExecutions[]",
+          anchor: "paperExecution:paper-export-preview"
+        }),
+        expect.objectContaining({
+          id: "promotion-candidate",
+          status: "blocked",
+          exportPath: "promotionCandidate",
+          anchor: "promotion:promotion-export-preview"
+        }),
+        expect.objectContaining({
+          id: "execution-handoff",
+          status: "ready",
+          exportPath: "executionHandoff.requiredGates"
+        })
+      ])
+    );
+    expect(filterResearchRunExportPreviewRows(rows, "snapshot").map((row) => row.id)).toEqual(["data-snapshot"]);
+    expect(filterResearchRunExportPreviewRows(rows, "paperExecutions").map((row) => row.id)).toEqual([
+      "paper-executions"
     ]);
   });
 

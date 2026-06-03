@@ -94,6 +94,7 @@ import {
   buildProductWorkAreas,
   buildPromotionReadiness,
   buildResearchRunComparisonRows,
+  buildResearchRunExportPreviewRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -104,6 +105,7 @@ import {
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   filterAiReviewExportEvidenceIndexRows,
+  filterResearchRunExportPreviewRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -138,6 +140,7 @@ import {
   ProductWorkAreaId,
   ResearchRunAudit,
   ResearchRunComparisonRow,
+  ResearchRunExportPreviewRow,
   RiskApprovalGate,
   RiskApprovalSummary,
   ScannerCandidate,
@@ -399,6 +402,14 @@ export function App() {
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
+  const researchRunExportPreviewRows = buildResearchRunExportPreviewRows({
+    aiReviewRecords: activeAiReviewRunRecords,
+    currentAiReviewRecord: currentAiReviewRunRecord,
+    paperExecution: activePaperExecutionRecord,
+    promotionCandidate: activePromotionCandidateRecord,
+    riskApproval: riskApprovalSummary,
+    workspace
+  });
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyTemplateOptions = buildStrategyTemplateOptions();
   const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
@@ -1942,6 +1953,11 @@ export function App() {
             runComparisonRows={runComparisonRows}
             runHistory={runHistory}
             workspace={workspace}
+          />
+          <ResearchRunExportPreviewPanel
+            className="workflow-export-preview-panel"
+            i18n={i18n}
+            rows={researchRunExportPreviewRows}
           />
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
@@ -4254,6 +4270,79 @@ function AiReviewExportEvidenceIndexBoard({
   );
 }
 
+function ResearchRunExportPreviewPanel({
+  className,
+  i18n,
+  rows
+}: {
+  className?: string;
+  i18n: AppI18n;
+  rows: ResearchRunExportPreviewRow[];
+}) {
+  const [query, setQuery] = useState("");
+  const filteredRows = filterResearchRunExportPreviewRows(rows, query);
+  const readyCount = rows.filter((row) => row.status === "ready").length;
+  const blockedCount = rows.filter((row) => row.status === "blocked").length;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "复现包预览" : "Export Package Preview"}
+      subtitle={
+        i18n.locale === "zh-CN"
+          ? "研究运行、证据和执行闸门的导出就绪度"
+          : "Export readiness for run evidence and execution gates"
+      }
+      className={className}
+    >
+      <div className="research-export-preview">
+        <div className="research-export-preview-toolbar">
+          <div className="research-export-preview-summary">
+            <span>
+              {i18n.locale === "zh-CN" ? "就绪" : "Ready"} <strong>{readyCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{blockedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "总项" : "Total"} <strong>{rows.length}</strong>
+            </span>
+          </div>
+          <input
+            aria-label={i18n.locale === "zh-CN" ? "搜索复现包预览" : "Search export package preview"}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={i18n.locale === "zh-CN" ? "搜索 artifact / anchor / exportPath" : "Search artifact / anchor / exportPath"}
+            type="search"
+            value={query}
+          />
+        </div>
+        <div className="research-export-preview-list">
+          {filteredRows.length ? (
+            filteredRows.map((row) => (
+              <article className={`research-export-preview-row ${row.tone} ${row.status}`} key={row.id}>
+                <span>{researchExportPreviewLabel(i18n, row)}</span>
+                <strong>{researchExportPreviewDetail(i18n, row.detail)}</strong>
+                <em>{row.count}</em>
+                <small>{row.exportPath}</small>
+                <b>{researchExportPreviewStatusLabel(i18n, row.status)}</b>
+                <p>{row.anchor}</p>
+              </article>
+            ))
+          ) : (
+            <article className="research-export-preview-row empty">
+              <span>{i18n.locale === "zh-CN" ? "无匹配" : "No match"}</span>
+              <strong>{i18n.locale === "zh-CN" ? "清空搜索查看全部导出项" : "Clear search to see every export item"}</strong>
+              <em>-</em>
+              <small>-</small>
+              <b>{i18n.locale === "zh-CN" ? "过滤中" : "Filtered"}</b>
+              <p>{i18n.locale === "zh-CN" ? "当前查询没有命中复现包预览。" : "The current query did not match this export package preview."}</p>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
   currentRecord,
@@ -4483,6 +4572,93 @@ function aiReviewEvidenceIndexDetail(i18n: AppI18n, detail: string): string {
     .replace("Paper execution approved", "模拟执行已审批")
     .replace("Risk approval blocked", "风控审批阻断")
     .replace("live trading remains blocked", "实盘仍保持阻断");
+}
+
+function researchExportPreviewLabel(i18n: AppI18n, row: ResearchRunExportPreviewRow): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return (
+    {
+      "research-run": "研究运行",
+      "data-snapshot": "数据快照",
+      "strategy-config": "策略配置",
+      "research-note": "研究笔记",
+      "backtest-trades": "回测流水",
+      "paper-executions": "模拟执行",
+      "promotion-candidate": "晋级候选",
+      "ai-review-runs": "AI 评审记录",
+      "execution-handoff": "执行交接"
+    } satisfies Record<ResearchRunExportPreviewRow["id"], string>
+  )[row.id];
+}
+
+function researchExportPreviewStatusLabel(
+  i18n: AppI18n,
+  status: ResearchRunExportPreviewRow["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        ready: "Ready",
+        missing: "Missing",
+        blocked: "Blocked"
+      } satisfies Record<ResearchRunExportPreviewRow["status"], string>
+    )[status];
+  }
+  return (
+    {
+      ready: "就绪",
+      missing: "缺失",
+      blocked: "阻断"
+    } satisfies Record<ResearchRunExportPreviewRow["status"], string>
+  )[status];
+}
+
+function researchExportPreviewDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  const runDetail = detail.match(/^(.+) · (.+) · (.+) · (\d+) bars$/);
+  if (runDetail) {
+    return `${runDetail[1]} · ${runDetail[2]} · ${runDetail[3]} · ${runDetail[4]} 根K线`;
+  }
+  const snapshotDetail = detail.match(/^(.+) · (.+) · (\d+) warnings$/);
+  if (snapshotDetail) {
+    return `${snapshotDetail[1]} · ${snapshotDetail[2]} · ${snapshotDetail[3]} 条告警`;
+  }
+  const strategyDetail = detail.match(/^(.+) · v(\d+) · (.+)$/);
+  if (strategyDetail) {
+    return `${strategyDetail[1]} · v${strategyDetail[2]} · ${strategyDetail[3]}`;
+  }
+  const executionDetail = detail.match(/^(.+) · (\d+)\/(\d+) gates passed$/);
+  if (executionDetail) {
+    return `${executionDetail[1]} · ${executionDetail[2]}/${executionDetail[3]} 个闸门通过`;
+  }
+  return detail
+    .replace("Run Pipeline before an export package can be reproduced.", "先运行流水线，才能生成可复现导出包。")
+    .replace("The audited run did not include a local data snapshot hash.", "审计运行没有包含本地数据快照哈希。")
+    .replace("A research run is required before data can be exported.", "需要先生成研究运行，才能导出数据。")
+    .replace("The export can replay the run, but structured strategy rules are missing.", "导出包可以回放运行，但缺少结构化策略规则。")
+    .replace("Run Pipeline after saving a strategy to bind structured rules.", "保存策略后运行流水线，绑定结构化规则。")
+    .replace("No research note is attached to this run; add one for stronger replay context.", "当前运行没有绑定研究笔记；添加后复现上下文会更完整。")
+    .replace("Research notes are bound after a run is created.", "研究笔记会在研究运行创建后绑定。")
+    .replace("Trade blotter and equity curve are available for replay.", "交易流水和权益曲线可用于回放。")
+    .replace("The run summary is bound, but the trade blotter or equity curve is missing.", "运行摘要已绑定，但交易流水或权益曲线缺失。")
+    .replace("Run Pipeline before backtest replay artifacts are exported.", "先运行流水线，再导出回测回放材料。")
+    .replace("Saved AI review records are attached to this export package.", "已保存的 AI 评审记录会随导出包附带。")
+    .replace("Current AI evidence is ready, but it has not been saved into the export package yet.", "当前 AI 证据已就绪，但尚未保存进导出包。")
+    .replace("Run and save an AI review record before relying on exported AI evidence.", "先运行并保存 AI 评审记录，再依赖导出的 AI 证据。")
+    .replace("A research run is required before AI review records can be exported.", "需要先生成研究运行，才能导出 AI 评审记录。")
+    .replace("Submit a paper order to attach execution evidence to the run package.", "提交模拟委托后，执行证据会附加到运行包。")
+    .replace("Paper execution waits for an audited run.", "模拟执行等待审计运行。")
+    .replace("Promotion evidence is attached, but live execution remains blocked.", "晋级证据已附加，但实盘执行仍保持阻断。")
+    .replace("Create a paper execution before promotion evidence can be attached.", "先创建模拟执行，才能附加晋级证据。")
+    .replace("Promotion evidence waits for a research run.", "晋级证据等待研究运行。")
+    .replace("Execution handoff gates are created after an audited run is available.", "审计运行可用后会生成执行交接闸门。")
+    .replace("Audited run can stage paper orders", "审计运行可提交模拟委托")
+    .replace("live trading remains blocked", "实盘仍保持阻断")
+    .replace("needs risk review before staging execution", "提交执行前仍需风控复核");
 }
 
 function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {
