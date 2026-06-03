@@ -1476,6 +1476,101 @@ em {
   font-size: 0.76rem;
 }
 
+.audit-ai-risk-reference {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.86);
+  border-left: 3px solid #e8be62;
+  border-radius: 7px;
+  background: rgba(17, 28, 42, 0.76);
+  padding: 9px 10px;
+}
+
+.audit-ai-risk-reference.paper_ready,
+.audit-ai-risk-reference.live_ready {
+  border-left-color: #4cc9ad;
+}
+
+.audit-ai-risk-reference.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.audit-ai-risk-reference > p {
+  margin: 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.audit-ai-risk-gates {
+  display: grid;
+  gap: 6px;
+}
+
+.audit-ai-risk-gate {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.7);
+  border-left: 3px solid #6d5dfc;
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.62);
+  padding: 7px 8px;
+}
+
+.audit-ai-risk-gate.positive {
+  border-left-color: #4cc9ad;
+}
+
+.audit-ai-risk-gate.warning {
+  border-left-color: #e8be62;
+}
+
+.audit-ai-risk-gate.risk {
+  border-left-color: #ff7f6d;
+}
+
+.audit-ai-risk-gate > span,
+.audit-ai-risk-gate > strong,
+.audit-ai-risk-gate > em,
+.audit-ai-risk-gate > p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audit-ai-risk-gate > span {
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.audit-ai-risk-gate > strong {
+  color: #dce6ee;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.audit-ai-risk-gate > em {
+  color: #83e6ce;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.audit-ai-risk-gate > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .audit-ai-drift-summary {
   display: grid;
   grid-column: 1 / -1;
@@ -5258,6 +5353,7 @@ button.ai-review-record {
   .strategy-template-grid,
   .strategy-generated-snapshot,
   .ai-dossier-grid,
+  .audit-ai-risk-gate,
   .audit-ai-drift-row,
   .backtest-evidence-grid,
   .backtest-readiness-list,
@@ -5271,6 +5367,10 @@ button.ai-review-record {
   }
 
   .audit-ai-drift-row {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-ai-risk-gate {
     grid-template-columns: 1fr;
   }
 

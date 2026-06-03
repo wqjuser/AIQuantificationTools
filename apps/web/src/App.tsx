@@ -1874,6 +1874,7 @@ export function App() {
             i18n={i18n}
             liveExecutionBlocked={!workspace.execution.liveEnabled}
             records={activeAiReviewRunRecords}
+            riskApproval={riskApprovalSummary}
             roundCount={agentCommitteeRounds.length}
           />
         </>
@@ -3939,6 +3940,28 @@ function AiReviewAuditComparison({
   );
 }
 
+function AiReviewRiskReferenceBoard({ approval, i18n }: { approval: RiskApprovalSummary; i18n: AppI18n }) {
+  return (
+    <div className={`audit-ai-risk-reference ${approval.status}`}>
+      <div className="agent-rounds-title">
+        <span>{i18n.locale === "zh-CN" ? "风控引用" : "Risk References"}</span>
+        <strong>{riskApprovalHeadline(i18n, approval)}</strong>
+      </div>
+      <p>{riskApprovalSummaryText(i18n, approval)}</p>
+      <div className="audit-ai-risk-gates">
+        {approval.gates.map((gate) => (
+          <article className={`audit-ai-risk-gate ${gate.tone}`} key={gate.id}>
+            <span>{riskApprovalGateLabel(i18n, gate)}</span>
+            <strong>{riskApprovalGateValue(i18n, gate)}</strong>
+            <em>{riskApprovalGateStatus(i18n, gate.status)}</em>
+            <p>{riskApprovalGateDetail(i18n, gate)}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AiReviewRecordDriftSummary({
   i18n,
   onQueryChange,
@@ -4027,6 +4050,7 @@ function AiReviewAuditTrailPanel({
   i18n,
   liveExecutionBlocked,
   records,
+  riskApproval,
   roundCount
 }: {
   className?: string;
@@ -4036,6 +4060,7 @@ function AiReviewAuditTrailPanel({
   i18n: AppI18n;
   liveExecutionBlocked: boolean;
   records: AiReviewRunRecordEnvelope[];
+  riskApproval: RiskApprovalSummary;
   roundCount: number;
 }) {
   const [driftQuery, setDriftQuery] = useState("");
@@ -4072,6 +4097,7 @@ function AiReviewAuditTrailPanel({
           liveExecutionBlocked={liveExecutionBlocked}
           roundCount={roundCount}
         />
+        <AiReviewRiskReferenceBoard approval={riskApproval} i18n={i18n} />
         <AiReviewRecordDriftSummary
           i18n={i18n}
           onQueryChange={setDriftQuery}

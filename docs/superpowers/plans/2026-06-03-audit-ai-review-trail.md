@@ -18,6 +18,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Filter saved AI Review Run Records by revision, record id, drift status, counts, and drift reason so the Audit workspace can locate stale records quickly.
 - Apply the same local filter to both the drift summary and the saved AI Review Run Record history, so the Audit workspace does not show mismatched summary and record lists.
 - Let users select any visible saved AI Review Run Record and compare current evidence against that selected record, while defaulting to the latest saved record.
+- Render risk approval references beside the AI evidence trail, reusing the same execution approval gates that block paper and live handoff.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -53,3 +54,5 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: wired the Audit drift search through saved record history, including filtered/total counts and an explicit no-match empty state.
 - RED: `layout-css.test.js -t "selected AI review record"` failed because Audit evidence comparison always used the latest saved record.
 - GREEN: made saved AI review record cards selectable and wired the evidence comparison to the selected record, defaulting back to the latest saved record.
+- RED: `layout-css.test.js -t "risk approval references"` failed because the Audit AI trail did not render execution risk approval references.
+- GREEN: added `AiReviewRiskReferenceBoard`, passed `riskApprovalSummary` into the Audit AI trail, and reused the existing risk approval gate labels, statuses, and details.

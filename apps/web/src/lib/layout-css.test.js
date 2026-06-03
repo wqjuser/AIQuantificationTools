@@ -199,6 +199,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function AiReviewAuditTrailPanel");
     expect(auditWorkspaceSource).toContain("<AiReviewAuditTrailPanel");
     expect(auditWorkspaceSource).toContain("dossier={aiReviewDossier}");
+    expect(auditWorkspaceSource).toContain("riskApproval={riskApprovalSummary}");
     expect(auditWorkspaceSource).toContain("records={activeAiReviewRunRecords}");
     expect(auditWorkspaceSource).toContain('className="workflow-ai-audit-panel"');
     expect(appSource).toContain("<AiReviewRunRecordHistory");
@@ -209,6 +210,25 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-ai-citation-list")).toContain("display: grid;");
     expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"ai"'])).toBe(true);
+  });
+
+  test("renders risk approval references in the AI review audit trail", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+    const riskReferenceSource = sourceBetween("function AiReviewRiskReferenceBoard", "function AiReviewRecordDriftSummary");
+
+    expect(appSource).toContain("function AiReviewRiskReferenceBoard");
+    expect(auditPanelSource).toContain("riskApproval");
+    expect(auditPanelSource).toContain("<AiReviewRiskReferenceBoard");
+    expect(auditPanelSource).toContain("approval={riskApproval}");
+    expect(riskReferenceSource).toContain("approval.gates.map");
+    expect(riskReferenceSource).toContain("riskApprovalHeadline(i18n, approval)");
+    expect(riskReferenceSource).toContain("riskApprovalSummaryText(i18n, approval)");
+    expect(riskReferenceSource).toContain("riskApprovalGateLabel(i18n, gate)");
+    expect(riskReferenceSource).toContain("riskApprovalGateStatus(i18n, gate.status)");
+    expect(cssBlock(".audit-ai-risk-reference")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-risk-reference")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".audit-ai-risk-gates")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-risk-gate")).toContain("grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1fr) auto;");
   });
 
   test("compares current AI review evidence with the latest saved audit record", () => {
