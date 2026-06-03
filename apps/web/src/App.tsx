@@ -95,6 +95,7 @@ import {
   buildPromotionReadiness,
   buildResearchRunComparisonRows,
   buildResearchRunExportBrowserRows,
+  buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
@@ -108,6 +109,7 @@ import {
   filterAiReviewExportEvidenceIndexRows,
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
+  filterResearchRunExportIndexRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -142,6 +144,7 @@ import {
   ProductWorkAreaId,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
+  ResearchRunExportIndexRow,
   ResearchRunComparisonRow,
   ResearchRunExportPreviewRow,
   RiskApprovalGate,
@@ -357,6 +360,7 @@ export function App() {
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
+  const [isIndexingExportPackages, setIsIndexingExportPackages] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
@@ -364,6 +368,7 @@ export function App() {
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
   const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
+  const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
   const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
@@ -416,6 +421,7 @@ export function App() {
     workspace
   });
   const researchRunExportBrowserRows = buildResearchRunExportBrowserRows(inspectedExportPackage);
+  const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyTemplateOptions = buildStrategyTemplateOptions();
   const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
@@ -961,6 +967,35 @@ export function App() {
       setIsInspectingExportPackage(false);
     }
   }, []);
+
+  const indexRecentRunExportPackages = useCallback(async () => {
+    if (!runHistory.length) {
+      setIndexedExportPackages([]);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research run export index empty",
+        error: undefined
+      }));
+      return;
+    }
+
+    setIsIndexingExportPackages(true);
+    try {
+      const results = await Promise.all(runHistory.map((run) => loadResearchRunExport(quantCoreBaseUrl, run.runId)));
+      const exportPackages = results
+        .map((result) => (result.source === "core" ? result.exportPackage : null))
+        .filter((exportPackage): exportPackage is ResearchRunExportPackage => Boolean(exportPackage));
+      const failedCount = results.length - exportPackages.length;
+      setIndexedExportPackages(exportPackages);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: failedCount ? "Research run export index partial" : "Research run export index loaded",
+        error: failedCount ? `${failedCount} recent export package(s) failed to load.` : undefined
+      }));
+    } finally {
+      setIsIndexingExportPackages(false);
+    }
+  }, [runHistory]);
 
   const exportBacktestReportMarkdown = useCallback(() => {
     const markdown = buildBacktestReportMarkdown(workspace);
@@ -1999,6 +2034,13 @@ export function App() {
             i18n={i18n}
             isLoading={isInspectingExportPackage}
             rows={researchRunExportBrowserRows}
+          />
+          <ResearchRunExportIndexPanel
+            className="workflow-export-index-panel"
+            i18n={i18n}
+            isLoading={isIndexingExportPackages}
+            onIndexPackages={indexRecentRunExportPackages}
+            rows={researchRunExportIndexRows}
           />
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
@@ -4462,6 +4504,99 @@ function ResearchRunExportPackageBrowserPanel({
   );
 }
 
+function ResearchRunExportIndexPanel({
+  className,
+  i18n,
+  isLoading,
+  onIndexPackages,
+  rows
+}: {
+  className?: string;
+  i18n: AppI18n;
+  isLoading: boolean;
+  onIndexPackages: () => void;
+  rows: ResearchRunExportIndexRow[];
+}) {
+  const [query, setQuery] = useState("");
+  const filteredRows = filterResearchRunExportIndexRows(rows, query);
+  const blockedCount = rows.filter((row) => row.status === "blocked").length;
+  const reviewCount = rows.filter((row) => row.status === "review").length;
+  const readyCount = rows.filter((row) => row.status === "ready").length;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "近期复现包索引" : "Recent Export Package Index"}
+      subtitle={i18n.locale === "zh-CN" ? "跨运行搜索 run、hash、artifact 与执行交接" : "Search runs, hashes, artifacts, and handoff"}
+      className={className}
+      action={
+        <button className="report-export-button" disabled={isLoading} onClick={onIndexPackages} type="button">
+          {isLoading ? <RefreshCw className="spin" size={13} /> : <Search size={13} />}
+          <span>{i18n.locale === "zh-CN" ? "索引近期包" : "Index recent"}</span>
+        </button>
+      }
+    >
+      <div className="research-export-index">
+        <div className="research-export-index-toolbar">
+          <div className="research-export-index-summary">
+            <span>
+              {i18n.locale === "zh-CN" ? "实盘就绪" : "Live ready"} <strong>{readyCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "待复核" : "Review"} <strong>{reviewCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{blockedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "已索引" : "Indexed"} <strong>{rows.length}</strong>
+            </span>
+          </div>
+          <input
+            aria-label={i18n.locale === "zh-CN" ? "搜索近期复现包索引" : "Search recent export package index"}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={i18n.locale === "zh-CN" ? "搜索 run / 标的 / hash / 阻断原因" : "Search run / symbol / hash / block reason"}
+            type="search"
+            value={query}
+          />
+        </div>
+        <div className="research-export-index-list">
+          {filteredRows.length ? (
+            filteredRows.map((row) => (
+              <article className={`research-export-index-row ${row.tone} ${row.status}`} key={row.id}>
+                <span>
+                  <strong>{row.context}</strong>
+                  <em>{row.runId}</em>
+                </span>
+                <small>{row.strategyRevision}</small>
+                <strong>{researchExportIndexDetail(i18n, row.detail)}</strong>
+                <em>{row.artifacts}</em>
+                <small>{row.execution}</small>
+                <b>{researchExportIndexStatusLabel(i18n, row.status)}</b>
+                <p>
+                  {row.integrity} · {row.dataHash} · {row.exportPath} · {researchExportIndexDate(i18n, row.exportedAt)}
+                </p>
+              </article>
+            ))
+          ) : (
+            <article className="research-export-index-row empty">
+              <span>
+                <strong>{i18n.locale === "zh-CN" ? "暂无索引" : "No index"}</strong>
+                <em>{i18n.locale === "zh-CN" ? "先点击索引近期包" : "Click Index recent first"}</em>
+              </span>
+              <small>-</small>
+              <strong>{i18n.locale === "zh-CN" ? "还没有加载近期复现包。" : "No recent export packages have been loaded."}</strong>
+              <em>-</em>
+              <small>-</small>
+              <b>{i18n.locale === "zh-CN" ? "等待" : "Waiting"}</b>
+              <p>{i18n.locale === "zh-CN" ? "索引只读取运行历史中的复现包，不会修改审计记录。" : "Indexing reads packages from run history without changing audit records."}</p>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
   currentRecord,
@@ -4853,6 +4988,49 @@ function researchExportBrowserDetail(i18n: AppI18n, detail: string): string {
     .replace("No saved AI review record is attached.", "没有附加保存的 AI 评审记录。")
     .replace("Live execution handoff is allowed by the package gates.", "包内闸门允许实盘执行交接。")
     .replace("Package remains paper-only; live execution is blocked.", "导出包仍为仅模拟盘；实盘执行保持阻断。");
+}
+
+function researchExportIndexStatusLabel(
+  i18n: AppI18n,
+  status: ResearchRunExportIndexRow["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        ready: "Ready",
+        review: "Review",
+        blocked: "Blocked"
+      } satisfies Record<ResearchRunExportIndexRow["status"], string>
+    )[status];
+  }
+  return (
+    {
+      ready: "就绪",
+      review: "复核",
+      blocked: "阻断"
+    } satisfies Record<ResearchRunExportIndexRow["status"], string>
+  )[status];
+}
+
+function researchExportIndexDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("Integrity missing", "完整性缺失")
+    .replace("Data snapshot mismatch", "数据快照不一致")
+    .replace("Paper execution count mismatch", "模拟执行数量不一致")
+    .replace("Promotion candidate count mismatch", "晋级候选数量不一致")
+    .replace("AI review count mismatch", "AI 评审数量不一致")
+    .replace("Package is consistent and live handoff is open.", "复现包一致，实盘交接闸门已开启。")
+    .replace("Package is consistent; paper-only handoff requires review.", "复现包一致；仅模拟盘交接需要复核。");
+}
+
+function researchExportIndexDate(i18n: AppI18n, exportedAt: string): string {
+  if (!exportedAt) {
+    return i18n.locale === "zh-CN" ? "无导出时间" : "No export time";
+  }
+  return i18n.locale === "zh-CN" ? `导出 ${exportedAt}` : `exported ${exportedAt}`;
 }
 
 function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {

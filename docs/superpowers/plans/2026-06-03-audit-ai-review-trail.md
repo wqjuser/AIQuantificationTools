@@ -26,6 +26,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Render a searchable export evidence index inside Audit so users can inspect anchors and `exportPath` values without opening raw JSON.
 - Render a reproducible research run export preview inside Audit so users can inspect package-level readiness before opening raw JSON.
 - Render a research run export package browser inside Audit, loading a selected history run package and checking manifest counts, integrity metadata, package artifacts, AI review records, and execution handoff gates.
+- Render a recent export package index inside Audit, loading export packages for visible run history and enabling cross-package search over run ids, symbols, hashes, artifact summaries, integrity failures, and handoff status.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -104,3 +105,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser"` failed because Audit did not render the package browser or wire Run History inspect actions.
 - GREEN: added `ResearchRunExportPackageBrowserPanel`, an Audit `package` grid area, Run History inspect buttons, and a backend-backed export package load action.
 - DOCS: updated product plan and architecture notes to mark the Audit export package browser as implemented and leave cross-package audit search plus import diffing as the next slice.
+- RED: `terminal-workbench.test.ts -t "export package index"` failed because `buildResearchRunExportIndexRows` did not exist.
+- GREEN: added recent export package index rows and filtering across run id, symbol, strategy revision, integrity, data hash, artifact summary, execution gates, export path, and mismatch reasons.
+- RED: `layout-css.test.js -t "export package index"` failed because Audit did not render a recent package index or expose a batch index action.
+- GREEN: added `ResearchRunExportIndexPanel`, an Audit `index` grid area, a backend-backed "Index recent" action, compact index rows, summary counts, and local search.
+- DOCS: updated product plan and architecture notes to mark cross-package audit search as implemented and leave field-level import diffing as the next slice.

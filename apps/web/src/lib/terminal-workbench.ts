@@ -634,6 +634,24 @@ export interface ResearchRunExportBrowserRow {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export type ResearchRunExportIndexStatus = "ready" | "review" | "blocked";
+
+export interface ResearchRunExportIndexRow {
+  id: string;
+  runId: string;
+  context: string;
+  strategyRevision: string;
+  exportedAt: string;
+  status: ResearchRunExportIndexStatus;
+  integrity: string;
+  dataHash: string;
+  artifacts: string;
+  execution: string;
+  detail: string;
+  exportPath: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -2462,6 +2480,95 @@ export function filterResearchRunExportBrowserRows(
   }
   return rows.filter((row) =>
     [row.id, row.label, row.status, row.value, row.detail, row.exportPath, row.tone]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+export function buildResearchRunExportIndexRows(
+  exportPackages: ResearchRunExportBrowserPackage[]
+): ResearchRunExportIndexRow[] {
+  return [...exportPackages]
+    .sort((left, right) => timestampSortValue(right.exportedAt) - timestampSortValue(left.exportedAt))
+    .map((exportPackage) => {
+      const { artifactCounts } = exportPackage.manifest;
+      const paperPackageCount = exportPackage.paperExecutions?.length ?? 0;
+      const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
+      const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
+      const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
+      const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
+      const integrityHash = exportPackage.integrity?.hash ?? "";
+      const integrityIsReady =
+        exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
+      const dataIsReady =
+        artifactCounts.bars === exportPackage.manifest.dataRows &&
+        artifactCounts.bars > 0 &&
+        exportPackage.manifest.dataHash.trim() !== "";
+      const paperCountMatches = (artifactCounts.paperExecutions ?? 0) === paperPackageCount;
+      const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
+      const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
+      const mismatchReasons = [
+        integrityIsReady ? null : "Integrity missing",
+        dataIsReady ? null : "Data snapshot mismatch",
+        paperCountMatches ? null : "Paper execution count mismatch",
+        promotionCountMatches ? null : "Promotion candidate count mismatch",
+        aiReviewCountMatches ? null : "AI review count mismatch"
+      ].filter((reason): reason is string => Boolean(reason));
+      const status: ResearchRunExportIndexStatus = mismatchReasons.length
+        ? "blocked"
+        : exportPackage.executionHandoff.liveTradingAllowed
+          ? "ready"
+          : "review";
+
+      return {
+        id: exportPackage.manifest.runId,
+        runId: exportPackage.manifest.runId,
+        context: `${exportPackage.manifest.symbol} · ${exportPackage.manifest.timeframe}`,
+        strategyRevision: exportPackage.manifest.strategyRevision,
+        exportedAt: exportPackage.exportedAt,
+        status,
+        integrity: exportPackage.integrity
+          ? `${exportPackage.integrity.algorithm} · ${integrityHash.slice(0, 8)}`
+          : "No hash",
+        dataHash: exportPackage.manifest.dataHash || "missing hash",
+        artifacts: `${artifactCounts.bars} bars / ${artifactCounts.trades} trades / ${artifactCounts.aiReviewRuns ?? 0} AI`,
+        execution: `${passedGateCount}/${totalGateCount} gates · ${exportPackage.executionHandoff.mode}`,
+        detail: mismatchReasons.length
+          ? mismatchReasons.join("; ")
+          : exportPackage.executionHandoff.liveTradingAllowed
+            ? "Package is consistent and live handoff is open."
+            : "Package is consistent; paper-only handoff requires review.",
+        exportPath: `manifest:${exportPackage.manifest.runId}`,
+        tone: status === "ready" ? "positive" : status === "review" ? "warning" : "risk"
+      };
+    });
+}
+
+export function filterResearchRunExportIndexRows(
+  rows: ResearchRunExportIndexRow[],
+  query: string
+): ResearchRunExportIndexRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [
+      row.id,
+      row.runId,
+      row.context,
+      row.strategyRevision,
+      row.exportedAt,
+      row.status,
+      row.integrity,
+      row.dataHash,
+      row.artifacts,
+      row.execution,
+      row.detail,
+      row.exportPath,
+      row.tone
+    ]
       .join(" ")
       .toLowerCase()
       .includes(normalizedQuery)

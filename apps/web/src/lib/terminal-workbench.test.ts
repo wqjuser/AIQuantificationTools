@@ -12,6 +12,7 @@ import {
   buildAiReviewExportEvidenceIndexRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
+  buildResearchRunExportIndexRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -49,6 +50,7 @@ import {
   filterAiReviewExportEvidenceIndexRows,
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
+  filterResearchRunExportIndexRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -61,6 +63,7 @@ import {
   type AiReviewExportEvidenceIndexRow,
   type ResearchRunExportPreviewRow,
   type ResearchRunExportBrowserRow,
+  type ResearchRunExportIndexRow,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -2122,6 +2125,155 @@ describe("terminal workbench model", () => {
     );
     expect(filterResearchRunExportBrowserRows(rows, "integrity.hash").map((row) => row.id)).toEqual(["integrity"]);
     expect(filterResearchRunExportBrowserRows(rows, "aiReviewRuns").map((row) => row.id)).toEqual(["ai-reviews"]);
+  });
+
+  test("builds a searchable recent export package index across packages", () => {
+    const basePackage = {
+      kind: "aiqt.researchRun.export" as const,
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:50:00+00:00",
+      integrity: {
+        algorithm: "sha256" as const,
+        hash: "c".repeat(64)
+      },
+      manifest: {
+        runId: "run-index-a",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-index-a",
+        dataHash: "hash-index-a",
+        dataRows: 500,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 500,
+          trades: 18,
+          equityPoints: 500,
+          decisions: 4,
+          aiRisks: 1,
+          paperExecutions: 1,
+          promotionCandidates: 1,
+          researchNotes: 1,
+          aiReviewRuns: 1
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [
+          { id: "adapter-certified", label: "Adapter certified", passed: false, reason: "not configured" },
+          { id: "risk-approved", label: "Risk approved", passed: true, reason: "paper approved" }
+        ]
+      },
+      paperExecutions: [
+        {
+          executionId: "paper-index-a",
+          runId: "run-index-a",
+          createdAt: "2026-05-26T08:20:00+00:00",
+          mode: "paper_only",
+          account: { cash: 80_659, equity: 100_000, positions: { "600000": 2100 } },
+          orders: [],
+          gates: []
+        }
+      ],
+      promotionCandidate: {
+        candidateId: "promotion-index-a",
+        runId: "run-index-a",
+        createdAt: "2026-05-26T08:40:00+00:00",
+        liveTradingAllowed: false,
+        status: "certification_pending" as const,
+        headline: "Live promotion pending certification",
+        summary: "Adapter certification is still required.",
+        stages: [],
+        evidence: { paperExecutions: 1, filledOrders: 1, passedPaperRiskChecks: 1 }
+      },
+      aiReviewRuns: [
+        {
+          aiReviewId: "ai-review:run-index-a:rev-index-a",
+          runId: "run-index-a",
+          createdAt: "2026-05-26T08:45:00+00:00",
+          record: {
+            recordType: "aiqt.aiReviewRun" as const,
+            schemaVersion: 1 as const,
+            aiReviewId: "ai-review:run-index-a:rev-index-a",
+            runId: "run-index-a",
+            createdAt: "2026-05-26T08:45:00+00:00",
+            strategyRevision: "rev-index-a",
+            market: "ashare" as const,
+            symbol: "600000",
+            timeframe: "1d" as const,
+            executionMode: "paper_only",
+            status: "ready" as const,
+            summary: {
+              citationCount: 1,
+              roundCount: 1,
+              decisionCount: 1,
+              parameterScanBound: false,
+              liveExecutionBlocked: true
+            },
+            dossier: { status: "ready" as const, headline: "Evidence ready", summary: "AI evidence is bound.", citations: [] },
+            citations: [],
+            rounds: [],
+            decisionLog: [],
+            boundary: "AI can explain supplied evidence only."
+          }
+        }
+      ]
+    };
+    const rows = buildResearchRunExportIndexRows([
+      basePackage,
+      {
+        ...basePackage,
+        exportedAt: "2026-05-26T09:50:00+00:00",
+        integrity: undefined,
+        manifest: {
+          ...basePackage.manifest,
+          runId: "run-index-b",
+          symbol: "AAPL",
+          market: "us",
+          strategyRevision: "rev-index-b",
+          dataHash: "",
+          artifactCounts: {
+            ...basePackage.manifest.artifactCounts,
+            bars: 499,
+            paperExecutions: 2,
+            aiReviewRuns: 3
+          }
+        },
+        paperExecutions: [],
+        aiReviewRuns: []
+      }
+    ]);
+
+    expect(rows).toEqual(
+      expect.arrayContaining<ResearchRunExportIndexRow>([
+        expect.objectContaining({
+          id: "run-index-b",
+          runId: "run-index-b",
+          status: "blocked",
+          context: "AAPL · 1d",
+          integrity: "No hash",
+          detail: "Integrity missing; Data snapshot mismatch; Paper execution count mismatch; AI review count mismatch"
+        }),
+        expect.objectContaining({
+          id: "run-index-a",
+          runId: "run-index-a",
+          status: "review",
+          context: "600000 · 1d",
+          integrity: "sha256 · cccccccc",
+          artifacts: "500 bars / 18 trades / 1 AI",
+          execution: "1/2 gates · paper_only"
+        })
+      ])
+    );
+    expect(rows.map((row) => row.id)).toEqual(["run-index-b", "run-index-a"]);
+    expect(filterResearchRunExportIndexRows(rows, "AAPL").map((row) => row.id)).toEqual(["run-index-b"]);
+    expect(filterResearchRunExportIndexRows(rows, "integrity missing").map((row) => row.id)).toEqual(["run-index-b"]);
+    expect(filterResearchRunExportIndexRows(rows, "hash-index-a").map((row) => row.id)).toEqual(["run-index-a"]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {
