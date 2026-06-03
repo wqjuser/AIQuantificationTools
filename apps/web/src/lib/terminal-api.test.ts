@@ -14,6 +14,7 @@ import {
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
+  buildAuditEventsUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -40,6 +41,8 @@ import {
   submitResearchRunPaperExecution,
   saveAiReviewRunRecord,
   loadResearchRunAiReviews,
+  saveAuditEvent,
+  loadAuditEvents,
   saveResearchNote,
   saveStrategySnapshot,
   normalizeResearchRunExportPackagePayload,
@@ -51,6 +54,7 @@ import {
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  type AuditEventRecord,
   type ResearchRunExportPackage
 } from "./terminal-api";
 
@@ -2417,6 +2421,105 @@ describe("terminal workspace API client", () => {
     ]);
     expect(result.source).toBe("core");
     expect(result.pagination).toEqual({ limit: 5, offset: 10, total: 24, query: "risk drift" });
+  });
+
+  test("saves import audit events through the Python core", async () => {
+    const event: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "audit-import-run-ledger-confirmed",
+      eventType: "research_run_import",
+      runId: "run-ledger",
+      createdAt: "2026-06-03T09:12:00+00:00",
+      stage: "confirmed",
+      source: "web",
+      summary: "Import applied",
+      detail: "Research run import wrote to the local audit store. 0 blocked · 2 changes.",
+      metadata: {
+        fileName: "safe-import.json",
+        blockedCount: 0,
+        changeCount: 2,
+        exportPath: "manifest:run-ledger",
+        tone: "positive"
+      }
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+    const result = await saveAuditEvent("http://127.0.0.1:8765", event, async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({ event })
+      };
+    });
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/audit/events");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(event);
+    expect(result.source).toBe("core");
+    expect(result.event?.metadata.fileName).toBe("safe-import.json");
+  });
+
+  test("loads paged import audit events with backend search metadata", async () => {
+    const event: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "audit-import-run-ledger-blocked",
+      eventType: "research_run_import",
+      runId: "run-ledger",
+      createdAt: "2026-06-03T09:10:00+00:00",
+      stage: "blocked",
+      source: "web",
+      summary: "Import preview blocked",
+      detail: "Import preview found blocked preflight gates. 1 blocked · 2 changes.",
+      metadata: {
+        fileName: "unsafe-import.json",
+        blockedCount: 1,
+        changeCount: 2,
+        exportPath: "manifest:run-ledger",
+        tone: "risk"
+      }
+    };
+    const calls: string[] = [];
+
+    const result = await loadAuditEvents(
+      "http://127.0.0.1:8765",
+      { eventType: "research_run_import", runId: "run-ledger", query: "unsafe-import", limit: 5, offset: 10 },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            events: [event],
+            pagination: {
+              limit: 5,
+              offset: 10,
+              total: 1,
+              query: "unsafe-import"
+            }
+          })
+        };
+      }
+    );
+
+    expect(
+      buildAuditEventsUrl("http://127.0.0.1:8765", {
+        eventType: "research_run_import",
+        runId: "run-ledger",
+        query: "unsafe-import",
+        limit: 5,
+        offset: 10
+      })
+    ).toBe(
+      "http://127.0.0.1:8765/api/audit/events?eventType=research_run_import&runId=run-ledger&query=unsafe-import&limit=5&offset=10"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/audit/events?eventType=research_run_import&runId=run-ledger&query=unsafe-import&limit=5&offset=10"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.events[0]?.stage).toBe("blocked");
+    expect(result.pagination).toEqual({ limit: 5, offset: 10, total: 1, query: "unsafe-import" });
   });
 
   test("returns fallback when AI review run history payload is malformed", async () => {

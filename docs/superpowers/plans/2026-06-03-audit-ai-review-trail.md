@@ -127,3 +127,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because Audit did not render an import audit ledger panel.
 - GREEN: added `ResearchRunImportAuditEvent`, event build/merge/filter helpers, Audit import ledger state, preview/blocked/confirmed/cancelled/failed events, and compact responsive panel styles.
 - DOCS: updated product plan and architecture notes to mark front-end import audit ledger as implemented and leave backend AuditEvent persistence plus rollback as the next slice.
+- RED: backend audit event tests failed because `quant_core.audit_events` and `/api/audit/events` did not exist.
+- GREEN: added `AuditEventStore`, searchable `research_run_import` events, POST/GET `/api/audit/events`, and frontend `saveAuditEvent`/`loadAuditEvents` client helpers.
+- GREEN: wired import preview/blocked/confirmed/cancelled/failed events to persist asynchronously and refresh from backend when entering Audit.
+- DOCS: updated product plan and architecture notes to mark backend AuditEvent persistence as implemented; rollback and richer failure explanations remain the next slice.

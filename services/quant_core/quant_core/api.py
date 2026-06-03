@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
+from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
 from quant_core.ai_review_runs import AiReviewRunStore, ai_review_run_record_to_payload
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
@@ -117,6 +118,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
+    audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
@@ -222,6 +224,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_research_note", "detail": str(error)}, status=400)
                 return
             self._send_json({"note": research_note_to_payload(note)}, status=201)
+            return
+        if parsed.path == "/api/audit/events":
+            try:
+                event = self.audit_event_store.record(self._read_json_body())
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_event", "detail": str(error)}, status=400)
+                return
+            self._send_json({"event": audit_event_record_to_payload(event)}, status=201)
             return
         if parsed.path == "/api/research/runs/import":
             try:
@@ -346,6 +356,33 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         runs=context_runs,
                         paper_executions=paper_executions,
                     )
+                }
+            )
+            return
+        if parsed.path == "/api/audit/events":
+            query = parse_qs(parsed.query)
+            run_id = query.get("runId", [""])[0].strip() or None
+            event_type = query.get("eventType", [""])[0].strip() or None
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            offset = _parse_offset(query.get("offset", ["0"])[0])
+            search_query = query.get("query", [""])[0].strip()
+            events = self.audit_event_store.list_recent(
+                run_id=run_id,
+                event_type=event_type,
+                limit=limit,
+                offset=offset,
+                query=search_query,
+            )
+            total = self.audit_event_store.count(run_id=run_id, event_type=event_type, query=search_query)
+            self._send_json(
+                {
+                    "events": [audit_event_record_to_payload(event) for event in events],
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total": total,
+                        "query": search_query,
+                    },
                 }
             )
             return

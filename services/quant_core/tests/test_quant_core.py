@@ -1179,6 +1179,113 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(total, 3)
         self.assertEqual(filtered_total, 1)
 
+    def test_audit_event_store_persists_searchable_import_events(self):
+        from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
+
+        event = {
+            "schemaVersion": 1,
+            "eventId": "audit-import-run-ledger-blocked",
+            "eventType": "research_run_import",
+            "runId": "run-ledger",
+            "createdAt": "2026-06-03T09:10:00+00:00",
+            "stage": "blocked",
+            "source": "web",
+            "summary": "Import preview blocked",
+            "detail": "Import preview found blocked preflight gates. 1 blocked · 2 changes.",
+            "metadata": {
+                "fileName": "unsafe-import.json",
+                "blockedCount": 1,
+                "changeCount": 2,
+                "exportPath": "manifest:run-ledger",
+                "tone": "risk",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+            stored = store.record(event)
+            by_run = store.list_recent(run_id="run-ledger", event_type="research_run_import")
+            filtered = store.list_recent(event_type="research_run_import", query="unsafe-import")
+            total = store.count(event_type="research_run_import", query="unsafe-import")
+
+        payload = audit_event_record_to_payload(stored)
+        self.assertEqual(payload["eventId"], "audit-import-run-ledger-blocked")
+        self.assertEqual(payload["runId"], "run-ledger")
+        self.assertEqual(payload["stage"], "blocked")
+        self.assertEqual(payload["metadata"]["blockedCount"], 1)
+        self.assertEqual([record.event_id for record in by_run], ["audit-import-run-ledger-blocked"])
+        self.assertEqual([record.event_id for record in filtered], ["audit-import-run-ledger-blocked"])
+        self.assertEqual(total, 1)
+
+    def test_audit_event_api_records_and_lists_import_events(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        event = {
+            "schemaVersion": 1,
+            "eventId": "audit-import-run-api-confirmed",
+            "eventType": "research_run_import",
+            "runId": "run-api-ledger",
+            "createdAt": "2026-06-03T09:12:00+00:00",
+            "stage": "confirmed",
+            "source": "web",
+            "summary": "Import applied",
+            "detail": "Research run import wrote to the local audit store. 0 blocked · 2 changes.",
+            "metadata": {
+                "fileName": "safe-import.json",
+                "blockedCount": 0,
+                "changeCount": 2,
+                "exportPath": "manifest:run-api-ledger",
+                "tone": "positive",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_event_store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = audit_event_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(event).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/events",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                saved_payload = json.loads(response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=research_run_import&runId=run-api-ledger&query=safe-import",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(saved_payload["event"]["eventId"], "audit-import-run-api-confirmed")
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(list_payload["events"][0]["eventId"], "audit-import-run-api-confirmed")
+        self.assertEqual(list_payload["events"][0]["metadata"]["fileName"], "safe-import.json")
+        self.assertEqual(list_payload["pagination"], {"limit": 20, "offset": 0, "total": 1, "query": "safe-import"})
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit

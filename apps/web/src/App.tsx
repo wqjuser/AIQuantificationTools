@@ -22,6 +22,7 @@ import {
   buildLoadingMarketKlinesResult,
   loadGoldenPathStatus,
   importResearchRunExport,
+  loadAuditEvents,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketSearch,
@@ -45,6 +46,7 @@ import {
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
   AiReviewRunHistoryPagination,
+  AuditEventRecord,
   GoldenPathStatus,
   GoldenPathStatusResult,
   PlatformSettingsResult,
@@ -55,6 +57,7 @@ import {
   ResearchRunHistoryResult,
   ResearchNoteResult,
   saveResearchNote,
+  saveAuditEvent,
   saveAiReviewRunRecord,
   saveStrategySnapshot,
   StrategyLibraryItem,
@@ -538,6 +541,30 @@ export function App() {
     },
     [aiReviewHistoryOffset, aiReviewHistoryQuery]
   );
+
+  const refreshResearchRunImportAuditEvents = useCallback(async () => {
+    const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
+      eventType: "research_run_import",
+      limit: 12
+    });
+    if (auditHistory.source === "core") {
+      const importedEvents = auditHistory.events
+        .map(auditEventRecordToResearchRunImportEvent)
+        .filter((event): event is ResearchRunImportAuditEvent => Boolean(event));
+      setResearchRunImportAuditEvents((current) => {
+        const importedIds = new Set(importedEvents.map((event) => event.id));
+        return [...importedEvents, ...current.filter((event) => !importedIds.has(event.id))].slice(0, 12);
+      });
+    }
+    return auditHistory;
+  }, []);
+
+  useEffect(() => {
+    if (activeWorkAreaId !== "audit") {
+      return;
+    }
+    void refreshResearchRunImportAuditEvents();
+  }, [activeWorkAreaId, refreshResearchRunImportAuditEvents]);
 
   useEffect(() => {
     if (activeWorkAreaId !== "audit") {
@@ -1142,6 +1169,15 @@ export function App() {
 
   const appendResearchRunImportAuditEvent = useCallback((event: ResearchRunImportAuditEvent) => {
     setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, event));
+    void saveAuditEvent(quantCoreBaseUrl, researchRunImportAuditEventToAuditEventRecord(event)).then((result) => {
+      if (result.source !== "core" || !result.event) {
+        return;
+      }
+      const savedEvent = auditEventRecordToResearchRunImportEvent(result.event);
+      if (savedEvent) {
+        setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, savedEvent));
+      }
+    });
   }, []);
 
   const importRunExportFile = useCallback(
@@ -5455,6 +5491,69 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
     .replace("Local import must reject packages that claim live trading permission.", "本地导入必须拒绝声明实盘权限的复现包。")
     .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
+}
+
+function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportAuditEvent): AuditEventRecord {
+  return {
+    schemaVersion: 1,
+    eventId: event.id,
+    eventType: "research_run_import",
+    runId: event.runId === "unknown" ? null : event.runId,
+    createdAt: event.createdAt,
+    stage: event.stage,
+    source: "web",
+    summary: event.summary,
+    detail: event.detail,
+    metadata: {
+      fileName: event.fileName,
+      blockedCount: event.blockedCount,
+      changeCount: event.changeCount,
+      exportPath: event.exportPath,
+      tone: event.tone
+    }
+  };
+}
+
+function auditEventRecordToResearchRunImportEvent(record: AuditEventRecord): ResearchRunImportAuditEvent | null {
+  if (record.eventType !== "research_run_import" || !isResearchRunImportAuditEventStage(record.stage)) {
+    return null;
+  }
+  return {
+    id: record.eventId,
+    stage: record.stage,
+    runId: record.runId ?? "unknown",
+    fileName: auditMetadataString(record.metadata.fileName, "unknown"),
+    createdAt: record.createdAt,
+    summary: record.summary,
+    detail: record.detail,
+    blockedCount: auditMetadataNumber(record.metadata.blockedCount),
+    changeCount: auditMetadataNumber(record.metadata.changeCount),
+    exportPath: auditMetadataString(record.metadata.exportPath, `auditEvent:${record.eventId}`),
+    tone: auditMetadataTone(record.metadata.tone)
+  };
+}
+
+function isResearchRunImportAuditEventStage(value: string): value is ResearchRunImportAuditEvent["stage"] {
+  return value === "preview" || value === "blocked" || value === "confirmed" || value === "failed" || value === "cancelled";
+}
+
+function auditMetadataString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function auditMetadataNumber(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function auditMetadataTone(value: unknown): ResearchRunImportAuditEvent["tone"] {
+  return value === "positive" ||
+    value === "warning" ||
+    value === "neutral" ||
+    value === "risk" ||
+    value === "ai"
+    ? value
+    : "neutral";
 }
 
 function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAuditEvent["stage"]): string {
