@@ -15,8 +15,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Reuse `aiReviewDossier` citations as the current evidence reference list.
 - Compare the current run id, strategy revision, dossier status, citation count, committee rounds, and live execution boundary against the latest saved AI Review Run Record.
 - Summarize drift across all loaded saved AI Review Run Records so Audit can spot stale strategy revisions, citation counts, committee rounds, dossier status, run binding, or live boundary changes.
-- Filter saved AI Review Run Records by revision, record id, drift status, counts, and drift reason so the Audit workspace can locate stale records quickly.
-- Apply the same local filter to both the drift summary and the saved AI Review Run Record history, so the Audit workspace does not show mismatched summary and record lists.
+- Filter saved AI Review Run Records through the backend `query` contract so Audit can search over the stored record JSON without losing run binding.
+- Apply the same backend search result page to both the drift summary and the saved AI Review Run Record history, so Audit does not show mismatched summary and record lists.
 - Let users select any visible saved AI Review Run Record and compare current evidence against that selected record, while defaulting to the latest saved record.
 - Render risk approval references beside the AI evidence trail, reusing the same execution approval gates that block paper and live handoff.
 - Support backend `limit`, `offset`, and `query` parameters for saved AI Review Run Records, returning pagination metadata while preserving the existing `aiReviews` response array.
@@ -26,7 +26,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 ## Out Of Scope
 
 - No new backend AI review storage contract.
-- No deep field-level diffing beyond current evidence comparison, saved-record drift summaries, local Audit filtering, and the backend run-record search contract.
+- No deep field-level diffing beyond current evidence comparison, saved-record drift summaries, and the backend run-record search contract.
 - No changes to AI Review generation behavior.
 
 ## Test Plan
@@ -65,3 +65,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: added typed client params and optional pagination parsing while keeping old `loadResearchRunAiReviews(baseUrl, runId, fetcher)` calls compatible.
 - DOCS: updated the product plan and architecture endpoint notes with the backend AI review pagination contract.
 - VERIFY: Docker service on port 5173 saved AI Review Run Records for a real research run and returned only the `needle-drift` match with `limit`, `offset`, `total`, and `query` metadata.
+- RED: `layout-css.test.js -t "backend pagination"` failed because the Audit workspace did not keep AI review history query, offset, pagination metadata, or page controls.
+- GREEN: added `AI_REVIEW_HISTORY_PAGE_SIZE`, backend-backed Audit history loading, query reset on context changes, and previous/next controls that use backend `pagination.total`.
+- REFACTOR: removed Audit-side double filtering so backend search over full saved record JSON feeds the drift summary and record history from the same current page.

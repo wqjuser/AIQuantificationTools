@@ -36,7 +36,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 
 `buildAiReviewRunRecord` 会把已审计 run 的 AI 评审状态打包为 `aiqt.aiReviewRun` JSON：包含 run id、策略 revision、市场/标的/周期、dossier、citations、committee rounds、decision log、摘要计数和“仅解释证据”的安全边界。前端 AI Review 面板可导出该结构化记录，也可通过 `/api/research/runs/{runId}/ai-reviews` 保存到本地核心；保存后面板会显示最近的运行记录摘要，审计 run 回放或导入完成后也会读取同一接口恢复该 run 的 AI 评审记录。研究运行 JSON 导出包会把这些已保存记录放入 `aiReviewRuns`，导入时校验 run id、record type、schema、manifest count 和安全边界后写回 `AiReviewRunStore`。
 
-本地核心已经提供 `AiReviewRunStore`，并通过 `/api/research/runs/{runId}/ai-reviews` 保存和读取绑定到同一审计 run 的 AI 评审记录。POST 会先确认 research run 存在，再校验 `recordType=aiqt.aiReviewRun`、`schemaVersion=1`、`runId` 与路径一致和安全边界存在；GET 支持 `limit`、`offset`、`query`，并返回 `pagination` 元信息，供审计页按 run 分页检索 AI 评审历史。
+本地核心已经提供 `AiReviewRunStore`，并通过 `/api/research/runs/{runId}/ai-reviews` 保存和读取绑定到同一审计 run 的 AI 评审记录。POST 会先确认 research run 存在，再校验 `recordType=aiqt.aiReviewRun`、`schemaVersion=1`、`runId` 与路径一致和安全边界存在；GET 支持 `limit`、`offset`、`query`，并返回 `pagination` 元信息。Audit 工作区会用同一个后端查询结果驱动漂移摘要、保存记录历史和上一页/下一页控件，避免前端二次过滤和后端搜索语义不一致。
 
 前端风险审批现在还会把 `researchRun.dataQuality` 渲染为独立 gate：来源必须不是 `demo-fallback/unknown`，完整性必须为 true，且 rows 必须为正数；模拟委托预览、风险检查行和晋级队列都复用该 gate，保证用户提交前就能看到与后端 paper handoff 一致的数据质量阻断原因。
 

@@ -43,6 +43,7 @@ import {
   PaperExecutionRecord,
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
+  AiReviewRunHistoryPagination,
   GoldenPathStatus,
   GoldenPathStatusResult,
   PlatformSettingsResult,
@@ -99,7 +100,6 @@ import {
   buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
   buildWorkflowStages,
-  filterAiReviewRecordDriftRows,
   buildInstrumentFromSymbol,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -206,6 +206,7 @@ const initialGoldenPathStatusState: GoldenPathStatusResult = {
 const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
+const AI_REVIEW_HISTORY_PAGE_SIZE = 5;
 const workflowStepDelayMs = 180;
 
 interface WatchlistCacheSummary {
@@ -342,16 +343,21 @@ export function App() {
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
+  const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
+  const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
+  const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
+  const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
+  const aiReviewHistoryRequestIdRef = useRef(0);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -449,6 +455,52 @@ export function App() {
   const refreshRunHistory = useCallback(async () => {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
   }, []);
+
+  const resetAiReviewHistoryState = useCallback(() => {
+    setAiReviewRunRecords([]);
+    setAiReviewHistoryQuery("");
+    setAiReviewHistoryOffset(0);
+    setAiReviewHistoryPagination(null);
+  }, []);
+
+  useEffect(() => {
+    resetAiReviewHistoryState();
+  }, [resetAiReviewHistoryState, workspace.researchRun?.runId]);
+
+  const refreshAiReviewRunHistory = useCallback(
+    async (runId: string, options: { offset?: number; query?: string } = {}) => {
+      const offset = options.offset ?? aiReviewHistoryOffset;
+      const query = options.query ?? aiReviewHistoryQuery;
+      const requestId = aiReviewHistoryRequestIdRef.current + 1;
+      aiReviewHistoryRequestIdRef.current = requestId;
+      setIsLoadingAiReviewHistory(true);
+      const aiReviewHistory = await loadResearchRunAiReviews(quantCoreBaseUrl, runId, {
+        limit: AI_REVIEW_HISTORY_PAGE_SIZE,
+        offset,
+        query
+      });
+      if (aiReviewHistoryRequestIdRef.current === requestId) {
+        setAiReviewRunRecords(aiReviewHistory.aiReviews);
+        setAiReviewHistoryPagination(aiReviewHistory.pagination ?? null);
+        setIsLoadingAiReviewHistory(false);
+      }
+      return aiReviewHistory;
+    },
+    [aiReviewHistoryOffset, aiReviewHistoryQuery]
+  );
+
+  useEffect(() => {
+    if (activeWorkAreaId !== "audit") {
+      return;
+    }
+    const runId = workspace.researchRun?.runId;
+    if (!runId) {
+      setAiReviewRunRecords([]);
+      setAiReviewHistoryPagination(null);
+      return;
+    }
+    void refreshAiReviewRunHistory(runId);
+  }, [activeWorkAreaId, refreshAiReviewRunHistory, workspace.researchRun?.runId]);
 
   const refreshStrategyLibrary = useCallback(async () => {
     setStrategyLibraryState(
@@ -685,7 +737,7 @@ export function App() {
     setIsRunning(true);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
-    setAiReviewRunRecords([]);
+    resetAiReviewHistoryState();
     appendLog("factor", "info", "Strategy preflight sent to local core");
     publishStage("factor", []);
     const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
@@ -774,7 +826,7 @@ export function App() {
     await refreshRunHistory();
     await refreshStrategyLibrary();
     setIsRunning(false);
-  }, [refreshRunHistory, refreshStrategyLibrary, workspace]);
+  }, [refreshRunHistory, refreshStrategyLibrary, resetAiReviewHistoryState, workspace]);
 
   const replayRun = useCallback(
     async (run: ResearchRunAudit) => {
@@ -784,7 +836,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
-      setAiReviewRunRecords([]);
+      resetAiReviewHistoryState();
       const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
@@ -802,7 +854,7 @@ export function App() {
       const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
         loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId),
         loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId),
-        loadResearchRunAiReviews(quantCoreBaseUrl, auditedRun.runId)
+        refreshAiReviewRunHistory(auditedRun.runId, { offset: 0, query: "" })
       ]);
       if (manualSelectionVersionRef.current !== replayVersion) {
         return;
@@ -828,7 +880,7 @@ export function App() {
       setActiveWorkflowStageId("execution");
       setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
     },
-    []
+    [refreshAiReviewRunHistory, resetAiReviewHistoryState]
   );
 
   const exportRun = useCallback(async (run: ResearchRunAudit) => {
@@ -997,7 +1049,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
-      setAiReviewRunRecords([]);
+      resetAiReviewHistoryState();
 
       try {
         const parsed = JSON.parse(await file.text()) as ResearchRunExportPackage | { export?: ResearchRunExportPackage };
@@ -1052,7 +1104,7 @@ export function App() {
         const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
           loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
           loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),
-          loadResearchRunAiReviews(quantCoreBaseUrl, result.run.runId)
+          refreshAiReviewRunHistory(result.run.runId, { offset: 0, query: "" })
         ]);
         if (manualSelectionVersionRef.current !== importVersion) {
           return;
@@ -1089,8 +1141,28 @@ export function App() {
         }));
       }
     },
-    [refreshRunHistory]
+    [refreshAiReviewRunHistory, refreshRunHistory, resetAiReviewHistoryState]
   );
+
+  const updateAiReviewHistoryQuery = useCallback((query: string) => {
+    setAiReviewHistoryQuery(query);
+    setAiReviewHistoryOffset(0);
+  }, []);
+
+  const previousAiReviewHistoryPage = useCallback(() => {
+    setAiReviewHistoryOffset((current) => Math.max(0, current - AI_REVIEW_HISTORY_PAGE_SIZE));
+  }, []);
+
+  const nextAiReviewHistoryPage = useCallback(() => {
+    setAiReviewHistoryOffset((current) => {
+      const total = aiReviewHistoryPagination?.total ?? 0;
+      if (!total) {
+        return current;
+      }
+      const next = current + AI_REVIEW_HISTORY_PAGE_SIZE;
+      return next >= total ? current : next;
+    });
+  }, [aiReviewHistoryPagination?.total]);
 
   const selectInstrument = useCallback(
     (instrument: TerminalWorkspace["selectedInstrument"]) => {
@@ -1099,7 +1171,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
-      setAiReviewRunRecords([]);
+      resetAiReviewHistoryState();
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
@@ -1110,7 +1182,7 @@ export function App() {
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
     },
-    []
+    [resetAiReviewHistoryState]
   );
 
   const selectTimeframe = useCallback(
@@ -1120,7 +1192,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
-      setAiReviewRunRecords([]);
+      resetAiReviewHistoryState();
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
         source: "core",
@@ -1131,7 +1203,7 @@ export function App() {
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
     },
-    []
+    [resetAiReviewHistoryState]
   );
 
   const runAiWorkbenchAction = useCallback((action: AiWorkbenchAction) => {
@@ -1262,7 +1334,7 @@ export function App() {
     setIsRunning(false);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
-    setAiReviewRunRecords([]);
+    resetAiReviewHistoryState();
     setWorkspaceState((current) => ({
       workspace: workspaceWithStrategyLibraryItem(current.workspace, strategy),
       source: "core",
@@ -1272,13 +1344,13 @@ export function App() {
     setActiveLoopStepId("strategy");
     setActiveWorkflowStageId("factor");
     setWorkflowRunState(createWorkflowRunState());
-  }, []);
+  }, [resetAiReviewHistoryState]);
 
   const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
     manualSelectionVersionRef.current += 1;
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
-    setAiReviewRunRecords([]);
+    resetAiReviewHistoryState();
     setWorkspaceState((current) => ({
       workspace: workspaceWithBacktestAssumption(current.workspace, field, value),
       source: "core",
@@ -1295,7 +1367,7 @@ export function App() {
     setIsRunning(false);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
-    setAiReviewRunRecords([]);
+    resetAiReviewHistoryState();
     setWorkspaceState((current) => ({
       workspace: workspaceWithBacktestParameterCandidate(current.workspace, candidateId),
       source: "core",
@@ -1871,8 +1943,14 @@ export function App() {
             currentRunId={workspace.researchRun?.runId ?? null}
             currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}
             dossier={aiReviewDossier}
+            historyPagination={aiReviewHistoryPagination}
+            historyQuery={aiReviewHistoryQuery}
             i18n={i18n}
+            isLoadingHistory={isLoadingAiReviewHistory}
             liveExecutionBlocked={!workspace.execution.liveEnabled}
+            onHistoryQueryChange={updateAiReviewHistoryQuery}
+            onNextHistoryPage={nextAiReviewHistoryPage}
+            onPreviousHistoryPage={previousAiReviewHistoryPage}
             records={activeAiReviewRunRecords}
             riskApproval={riskApprovalSummary}
             roundCount={agentCommitteeRounds.length}
@@ -3784,14 +3862,22 @@ function AiReviewDossierBoard({ dossier, i18n }: { dossier: AiReviewDossier; i18
 
 function AiReviewRunRecordHistory({
   i18n,
+  isLoading,
+  onNextPage,
+  onPreviousPage,
   onSelectRecord,
+  pagination,
   query,
   records,
   selectedRecordId,
   totalRecords
 }: {
   i18n: AppI18n;
+  isLoading?: boolean;
+  onNextPage?: () => void;
+  onPreviousPage?: () => void;
   onSelectRecord?: (recordId: string) => void;
+  pagination?: AiReviewRunHistoryPagination | null;
   query: string;
   records: AiReviewRunRecordEnvelope[];
   selectedRecordId?: string | null;
@@ -3800,7 +3886,15 @@ function AiReviewRunRecordHistory({
   const visibleRecords = records.slice(0, 3);
   const isSelectable = Boolean(onSelectRecord);
   const RecordTag = isSelectable ? "button" : "article";
-  const countLabel = records.length !== totalRecords ? `${records.length}/${totalRecords}` : `${totalRecords}`;
+  const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
+  const pageEnd = pagination ? Math.min(pagination.offset + records.length, pagination.total) : records.length;
+  const countLabel = pagination
+    ? `${pageStart}-${pageEnd}/${pagination.total}`
+    : records.length !== totalRecords
+      ? `${records.length}/${totalRecords}`
+      : `${totalRecords}`;
+  const canPageBack = Boolean(pagination && onPreviousPage && pagination.offset > 0);
+  const canPageForward = Boolean(pagination && onNextPage && pagination.offset + pagination.limit < pagination.total);
   const emptyTitle =
     totalRecords > 0 ? (i18n.locale === "zh-CN" ? "没有匹配记录" : "No matching records") : i18n.t("aiReview.noSavedRecords");
   const emptyDetail =
@@ -3816,6 +3910,17 @@ function AiReviewRunRecordHistory({
         <span>{i18n.t("aiReview.savedRecords")}</span>
         <strong>{countLabel}</strong>
       </div>
+      {pagination ? (
+        <div className="ai-review-record-pagination">
+          <button disabled={!canPageBack || isLoading} onClick={onPreviousPage} type="button">
+            {i18n.locale === "zh-CN" ? "上一页" : "Prev"}
+          </button>
+          <span>{isLoading ? (i18n.locale === "zh-CN" ? "加载中" : "Loading") : countLabel}</span>
+          <button disabled={!canPageForward || isLoading} onClick={onNextPage} type="button">
+            {i18n.locale === "zh-CN" ? "下一页" : "Next"}
+          </button>
+        </div>
+      ) : null}
       {visibleRecords.length ? (
         visibleRecords.map((item) => (
           <RecordTag
@@ -4047,8 +4152,14 @@ function AiReviewAuditTrailPanel({
   currentRunId,
   currentStrategyRevision,
   dossier,
+  historyPagination,
+  historyQuery,
   i18n,
+  isLoadingHistory,
   liveExecutionBlocked,
+  onHistoryQueryChange,
+  onNextHistoryPage,
+  onPreviousHistoryPage,
   records,
   riskApproval,
   roundCount
@@ -4057,13 +4168,18 @@ function AiReviewAuditTrailPanel({
   currentRunId: string | null;
   currentStrategyRevision: string;
   dossier: AiReviewDossier;
+  historyPagination: AiReviewRunHistoryPagination | null;
+  historyQuery: string;
   i18n: AppI18n;
+  isLoadingHistory: boolean;
   liveExecutionBlocked: boolean;
+  onHistoryQueryChange: (query: string) => void;
+  onNextHistoryPage: () => void;
+  onPreviousHistoryPage: () => void;
   records: AiReviewRunRecordEnvelope[];
   riskApproval: RiskApprovalSummary;
   roundCount: number;
 }) {
-  const [driftQuery, setDriftQuery] = useState("");
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const latestRecord = records[0] ?? null;
   const selectedRecord = records.find((record) => record.aiReviewId === selectedRecordId) ?? latestRecord;
@@ -4076,9 +4192,7 @@ function AiReviewAuditTrailPanel({
     records: records.map((record) => record.record),
     roundCount
   });
-  const filteredDriftRows = filterAiReviewRecordDriftRows(driftRows, driftQuery);
-  const filteredRecordIds = new Set(filteredDriftRows.map((row) => row.aiReviewId));
-  const filteredRecords = records.filter((record) => filteredRecordIds.has(record.aiReviewId));
+  const totalHistoryRecords = historyPagination?.total ?? records.length;
 
   return (
     <Panel
@@ -4100,18 +4214,22 @@ function AiReviewAuditTrailPanel({
         <AiReviewRiskReferenceBoard approval={riskApproval} i18n={i18n} />
         <AiReviewRecordDriftSummary
           i18n={i18n}
-          onQueryChange={setDriftQuery}
-          query={driftQuery}
-          rows={filteredDriftRows}
-          totalRows={driftRows.length}
+          onQueryChange={onHistoryQueryChange}
+          query={historyQuery}
+          rows={driftRows}
+          totalRows={totalHistoryRecords}
         />
         <AiReviewRunRecordHistory
           i18n={i18n}
+          isLoading={isLoadingHistory}
+          onNextPage={onNextHistoryPage}
+          onPreviousPage={onPreviousHistoryPage}
           onSelectRecord={setSelectedRecordId}
-          query={driftQuery}
-          records={filteredRecords}
+          pagination={historyPagination}
+          query={historyQuery}
+          records={records}
           selectedRecordId={selectedRecord?.aiReviewId ?? null}
-          totalRecords={records.length}
+          totalRecords={totalHistoryRecords}
         />
         <div className="audit-ai-citation-list">
           <div className="agent-rounds-title">

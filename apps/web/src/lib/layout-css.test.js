@@ -260,8 +260,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAiReviewRecordDriftRows");
     expect(appSource).toContain("function AiReviewRecordDriftSummary");
     expect(auditPanelSource).toContain("const driftRows = buildAiReviewRecordDriftRows");
+    expect(auditPanelSource).toContain("const totalHistoryRecords = historyPagination?.total ?? records.length;");
     expect(auditPanelSource).toContain("<AiReviewRecordDriftSummary");
-    expect(auditPanelSource).toContain("rows={filteredDriftRows}");
+    expect(auditPanelSource).toContain("rows={driftRows}");
+    expect(auditPanelSource).toContain("totalRows={totalHistoryRecords}");
     expect(cssBlock(".audit-ai-drift-summary")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".audit-ai-drift-list")).toContain("display: grid;");
     expect(cssBlock(".audit-ai-drift-row")).toContain(
@@ -274,12 +276,11 @@ describe("terminal layout css", () => {
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
     const driftSummarySource = sourceBetween("function AiReviewRecordDriftSummary", "function AiReviewAuditTrailPanel");
 
-    expect(appSource).toContain("filterAiReviewRecordDriftRows");
-    expect(auditPanelSource).toContain('const [driftQuery, setDriftQuery] = useState("");');
-    expect(auditPanelSource).toContain("const filteredDriftRows = filterAiReviewRecordDriftRows(driftRows, driftQuery);");
-    expect(auditPanelSource).toContain("onQueryChange={setDriftQuery}");
-    expect(auditPanelSource).toContain("query={driftQuery}");
-    expect(auditPanelSource).toContain("totalRows={driftRows.length}");
+    expect(auditPanelSource).not.toContain("filterAiReviewRecordDriftRows");
+    expect(auditPanelSource).not.toContain('const [driftQuery, setDriftQuery] = useState("");');
+    expect(auditPanelSource).toContain("onQueryChange={onHistoryQueryChange}");
+    expect(auditPanelSource).toContain("query={historyQuery}");
+    expect(auditPanelSource).toContain("totalRows={totalHistoryRecords}");
     expect(driftSummarySource).toContain('type="search"');
     expect(driftSummarySource).toContain('className="audit-ai-drift-search"');
     expect(driftSummarySource).toContain("rows.length !== totalRows");
@@ -291,11 +292,10 @@ describe("terminal layout css", () => {
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
     const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
 
-    expect(auditPanelSource).toContain("const filteredRecordIds = new Set(filteredDriftRows.map((row) => row.aiReviewId));");
-    expect(auditPanelSource).toContain("const filteredRecords = records.filter((record) => filteredRecordIds.has(record.aiReviewId));");
-    expect(auditPanelSource).toContain("records={filteredRecords}");
-    expect(auditPanelSource).toContain("totalRecords={records.length}");
-    expect(auditPanelSource).toContain("query={driftQuery}");
+    expect(auditPanelSource).toContain("records={records}");
+    expect(auditPanelSource).toContain("totalRecords={totalHistoryRecords}");
+    expect(auditPanelSource).toContain("query={historyQuery}");
+    expect(auditPanelSource).toContain("pagination={historyPagination}");
     expect(recordHistorySource).toContain("totalRecords");
     expect(recordHistorySource).toContain("records.length !== totalRecords");
     expect(recordHistorySource).toContain("No matching records");
@@ -331,6 +331,27 @@ describe("terminal layout css", () => {
       expect(usage).toContain("records=");
       expect(usage).toContain("totalRecords=");
     });
+  });
+
+  test("wires audit AI review history search to backend pagination", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function aiReviewDriftStatusText");
+    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+
+    expect(appSource).toContain("const AI_REVIEW_HISTORY_PAGE_SIZE = 5;");
+    expect(appSource).toContain("const [aiReviewHistoryPagination, setAiReviewHistoryPagination]");
+    expect(appSource).toContain('const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");');
+    expect(appSource).toContain("loadResearchRunAiReviews(quantCoreBaseUrl, runId, {");
+    expect(appSource).toContain("limit: AI_REVIEW_HISTORY_PAGE_SIZE");
+    expect(appSource).toContain("const offset = options.offset ?? aiReviewHistoryOffset;");
+    expect(appSource).toContain("const query = options.query ?? aiReviewHistoryQuery;");
+    expect(appSource).toContain("setAiReviewHistoryPagination(aiReviewHistory.pagination ?? null)");
+    expect(auditPanelSource).toContain("historyPagination");
+    expect(auditPanelSource).toContain("onHistoryQueryChange");
+    expect(auditPanelSource).not.toContain("filterAiReviewRecordDriftRows");
+    expect(recordHistorySource).toContain("onNextPage");
+    expect(recordHistorySource).toContain("onPreviousPage");
+    expect(recordHistorySource).toContain("ai-review-record-pagination");
+    expect(cssBlock(".ai-review-record-pagination")).toContain("display: flex;");
   });
 
   test("keeps saved AI review records read-only outside the audit selector", () => {
