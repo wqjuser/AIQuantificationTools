@@ -120,3 +120,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "previews an imported"` failed because the file picker still imported immediately and the import diff panel had no confirm/cancel actions.
 - GREEN: added `normalizeResearchRunExportPackagePayload`, pending file import state, preview-only file selection, confirm/cancel actions, and blocked-diff guarded apply.
 - DOCS: updated product plan, architecture notes, and i18n status labels to mark external file import preview/confirmation as implemented.
+- RED: `terminal-workbench.test.ts -t "blocks import diff"` failed because import diff rows did not include package integrity or artifact count gates.
+- GREEN: added `package-integrity` and `artifact-counts` import diff rows, blocking invalid SHA-256 metadata and manifest/package payload count mismatches before confirm import.
+- DOCS: updated product plan and architecture notes to mark integrity/count import preflight blocking as implemented.

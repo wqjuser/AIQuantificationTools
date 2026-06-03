@@ -5166,6 +5166,8 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
   }
   return (
     {
+      "package-integrity": "复现包完整性",
+      "artifact-counts": "Artifact 数量",
       "run-id": "研究运行",
       context: "市场 / 标的",
       timeframe: "周期",
@@ -5210,6 +5212,11 @@ function researchImportDiffValue(i18n: AppI18n, value: string): string {
     return value;
   }
   return value
+    .replace("Local verification required", "本地校验必需")
+    .replace("No integrity hash", "无完整性 hash")
+    .replace("Counts match", "数量一致")
+    .replace("Manifest versus package payload", "Manifest 对比包内载荷")
+    .replace("mismatch", "处不一致")
     .replace("No audited run", "无审计运行")
     .replace("No package selected", "未选择复现包")
     .replace("No data snapshot", "无数据快照")
@@ -5232,6 +5239,9 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
   }
   return detail
     .replace("Inspect or choose a research run export package before importing.", "导入前先查看或选择一个研究运行复现包。")
+    .replace("Canonical SHA-256 metadata is present before import.", "导入前已存在标准 SHA-256 完整性元数据。")
+    .replace("Import must stop until the package has valid canonical SHA-256 metadata.", "复现包缺少有效标准 SHA-256 元数据时必须阻断导入。")
+    .replace("Manifest artifact counts match the package payloads that will be restored.", "Manifest artifact 数量与即将恢复的包内载荷一致。")
     .replace("Import will refresh the existing audited run payload.", "导入会刷新现有审计运行载荷。")
     .replace("Import will replace the current replay context with the package run.", "导入会用包内运行替换当前回放上下文。")
     .replace("Import will add an audited run to the local workspace.", "导入会向本地工作区新增一条审计运行。")

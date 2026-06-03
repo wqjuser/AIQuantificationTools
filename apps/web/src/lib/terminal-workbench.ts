@@ -657,6 +657,8 @@ export type ResearchRunImportDiffStatus = "same" | "add" | "change" | "replace" 
 
 export interface ResearchRunImportDiffRow {
   id:
+    | "package-integrity"
+    | "artifact-counts"
     | "run-id"
     | "context"
     | "timeframe"
@@ -2598,6 +2600,29 @@ export function filterResearchRunExportIndexRows(
   );
 }
 
+function researchRunImportArtifactCountMismatches(
+  exportPackage: ResearchRunExportBrowserPackage,
+  actualCounts: {
+    aiReviewRuns: number;
+    paperExecutions: number;
+    promotionCandidates: number;
+    researchNotes: number;
+  }
+): string[] {
+  const { artifactCounts } = exportPackage.manifest;
+  const pairs: Array<[string, number, number]> = [
+    ["bars", artifactCounts.bars, exportPackage.manifest.dataRows],
+    ["researchNotes", artifactCounts.researchNotes ?? 0, actualCounts.researchNotes],
+    ["paperExecutions", artifactCounts.paperExecutions ?? 0, actualCounts.paperExecutions],
+    ["promotionCandidates", artifactCounts.promotionCandidates ?? 0, actualCounts.promotionCandidates],
+    ["aiReviewRuns", artifactCounts.aiReviewRuns ?? 0, actualCounts.aiReviewRuns]
+  ];
+
+  return pairs
+    .filter(([, manifestCount, packageCount]) => manifestCount !== packageCount)
+    .map(([label, manifestCount, packageCount]) => `${label} ${manifestCount}/${packageCount}`);
+}
+
 export function buildResearchRunImportDiffRows({
   aiReviewRecords = [],
   exportPackage,
@@ -2628,6 +2653,9 @@ export function buildResearchRunImportDiffRows({
   const incomingRun = exportPackage.researchRun ?? null;
   const currentNote = normalizedResearchNote(currentRun?.researchNote);
   const incomingNote = normalizedResearchNote(incomingRun?.researchNote);
+  const integrityHash = exportPackage.integrity?.hash ?? "";
+  const integrityIsReady =
+    exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
   const packageAiReviewCount = exportPackage.aiReviewRuns?.length ?? 0;
   const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
   const currentAiReviewCount = currentRun
@@ -2635,8 +2663,40 @@ export function buildResearchRunImportDiffRows({
     : 0;
   const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
   const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
+  const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
+    aiReviewRuns: packageAiReviewCount,
+    paperExecutions: packagePaperCount,
+    promotionCandidates: exportPackage.promotionCandidate ? 1 : 0,
+    researchNotes: incomingNote ? 1 : 0
+  });
 
   return [
+    {
+      id: "package-integrity",
+      label: "Package integrity",
+      status: integrityIsReady ? "same" : "blocked",
+      current: "Local verification required",
+      incoming: exportPackage.integrity
+        ? `${exportPackage.integrity.algorithm} · ${integrityIsReady ? integrityHash.slice(0, 8) : "invalid"}`
+        : "No integrity hash",
+      detail: integrityIsReady
+        ? "Canonical SHA-256 metadata is present before import."
+        : "Import must stop until the package has valid canonical SHA-256 metadata.",
+      exportPath: "integrity.hash",
+      tone: integrityIsReady ? "positive" : "risk"
+    },
+    {
+      id: "artifact-counts",
+      label: "Artifact counts",
+      status: artifactCountMismatches.length ? "blocked" : "same",
+      current: "Manifest versus package payload",
+      incoming: artifactCountMismatches.length ? `${artifactCountMismatches.length} mismatch` : "Counts match",
+      detail: artifactCountMismatches.length
+        ? artifactCountMismatches.join(" · ")
+        : "Manifest artifact counts match the package payloads that will be restored.",
+      exportPath: "manifest.artifactCounts",
+      tone: artifactCountMismatches.length ? "risk" : "positive"
+    },
     {
       id: "run-id",
       label: "Research run",

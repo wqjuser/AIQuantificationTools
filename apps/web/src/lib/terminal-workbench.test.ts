@@ -2499,6 +2499,101 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportDiffRows(rows, "researchNote").map((row) => row.id)).toEqual(["research-note"]);
   });
 
+  test("blocks import diff rows when package integrity or artifact counts are unsafe", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export" as const,
+      packageVersion: 1,
+      exportedAt: "2026-05-26T09:00:00+00:00",
+      integrity: {
+        algorithm: "sha256" as const,
+        hash: "not-a-sha256"
+      },
+      manifest: {
+        runId: "run-unsafe-import",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-unsafe",
+        dataHash: "hash-unsafe",
+        dataRows: 500,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 500,
+          trades: 3,
+          equityPoints: 500,
+          decisions: 4,
+          aiRisks: 1,
+          paperExecutions: 2,
+          promotionCandidates: 1,
+          researchNotes: 1,
+          aiReviewRuns: 3
+        }
+      },
+      researchRun: {
+        runId: "run-unsafe-import",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyName: "Unsafe package",
+        strategyRevision: "rev-unsafe",
+        dataRows: 500,
+        dataSnapshot: {
+          rows: 500,
+          hash: "hash-unsafe",
+          source: "local-cache",
+          isComplete: true,
+          warnings: [],
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:30:00+00:00",
+          bars: []
+        },
+        metrics: { totalReturnPct: 1.2, maxDrawdownPct: 2.4, winRatePct: 51, profitFactor: 1.1, tradeCount: 3 },
+        decisions: [],
+        backtestTrades: [],
+        backtestEquityCurve: [],
+        executionMode: "paper_only"
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: []
+      },
+      paperExecutions: [],
+      promotionCandidate: null,
+      aiReviewRuns: []
+    };
+
+    const rows = buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage });
+    const integrityRow = rows.find((row) => String(row.id) === "package-integrity");
+    const artifactRow = rows.find((row) => String(row.id) === "artifact-counts");
+
+    expect(integrityRow).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        current: "Local verification required",
+        incoming: "sha256 · invalid",
+        exportPath: "integrity.hash",
+        tone: "risk"
+      })
+    );
+    expect(artifactRow).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        exportPath: "manifest.artifactCounts",
+        tone: "risk"
+      })
+    );
+    expect(artifactRow?.detail).toContain("paperExecutions 2/0");
+    expect(artifactRow?.detail).toContain("promotionCandidates 1/0");
+    expect(artifactRow?.detail).toContain("aiReviewRuns 3/0");
+    expect(filterResearchRunImportDiffRows(rows, "invalid").map((row) => row.id)).toEqual(["package-integrity"]);
+  });
+
   test("derives scanner candidates from the active watchlist", () => {
     const candidates = buildScannerCandidates(buildTerminalWorkspace());
 
