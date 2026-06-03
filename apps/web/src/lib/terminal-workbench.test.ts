@@ -2678,7 +2678,8 @@ describe("terminal workbench model", () => {
       fileName: "unsafe-import.json",
       previousRunId: "run-current",
       rows: rows.filter((row) => row.status !== "blocked"),
-      stage: "confirmed"
+      stage: "confirmed",
+      undoToken: "import-undo-ledger"
     });
     const failed = buildResearchRunImportAuditEvent({
       createdAt: "2026-05-26T09:13:00+00:00",
@@ -2710,7 +2711,8 @@ describe("terminal workbench model", () => {
         blockedCount: 0,
         changeCount: 1,
         rollbackTargetRunId: "run-current",
-        recoveryHint: "Replay previous audited run run-current to roll back the workspace context.",
+        undoToken: "import-undo-ledger",
+        recoveryHint: "Undo import import-undo-ledger to restore the audited stores.",
         tone: "positive"
       })
     );
@@ -2738,6 +2740,9 @@ describe("terminal workbench model", () => {
       failed.id
     ]);
     expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "rollback").map((event) => event.id)).toEqual([
+      confirmed.id
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "undo").map((event) => event.id)).toEqual([
       confirmed.id
     ]);
     expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "unsafe-import").map((event) => event.id)).toEqual([

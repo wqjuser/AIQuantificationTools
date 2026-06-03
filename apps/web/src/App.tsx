@@ -22,6 +22,7 @@ import {
   buildLoadingMarketKlinesResult,
   loadGoldenPathStatus,
   importResearchRunExport,
+  undoResearchRunImport,
   loadAuditEvents,
   loadResearchRunAiReviews,
   loadMarketKlines,
@@ -982,6 +983,32 @@ export function App() {
     [replayRun, runHistory]
   );
 
+  const undoResearchRunImportEvent = useCallback(
+    async (undoToken: string) => {
+      const result = await undoResearchRunImport(quantCoreBaseUrl, undoToken);
+      if (result.source === "fallback" || !result.undo) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research run import undo failed",
+          error: result.error ?? "Research run import undo failed"
+        }));
+        return;
+      }
+      if (result.run) {
+        await replayRun(result.run);
+      } else {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research run import undone",
+          error: undefined
+        }));
+        setActiveWorkAreaId("audit");
+      }
+      await refreshRunHistory();
+    },
+    [refreshRunHistory, replayRun]
+  );
+
   const exportRun = useCallback(async (run: ResearchRunAudit) => {
     const result = await loadResearchRunExport(quantCoreBaseUrl, run.runId);
     if (result.source === "fallback" || !result.exportPackage) {
@@ -1334,7 +1361,8 @@ export function App() {
           fileName: pendingImportPackage.fileName,
           previousRunId,
           rows: importRows,
-          stage: "confirmed"
+          stage: "confirmed",
+          undoToken: result.undoToken ?? result.undo?.undoToken ?? null
         })
       );
       setWorkspaceState((current) => ({
@@ -2288,6 +2316,7 @@ export function App() {
             events={researchRunImportAuditEvents}
             i18n={i18n}
             onReplayRollbackRun={replayImportRollbackRun}
+            onUndoImport={undoResearchRunImportEvent}
           />
           <ResearchRunExportIndexPanel
             className="workflow-export-index-panel"
@@ -4855,12 +4884,14 @@ function ResearchRunImportAuditEventPanel({
   className,
   events,
   i18n,
-  onReplayRollbackRun
+  onReplayRollbackRun,
+  onUndoImport
 }: {
   className?: string;
   events: ResearchRunImportAuditEvent[];
   i18n: AppI18n;
   onReplayRollbackRun: (runId: string) => void;
+  onUndoImport: (undoToken: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const filteredEvents = filterResearchRunImportAuditEvents(events, query);
@@ -4917,6 +4948,18 @@ function ResearchRunImportAuditEventPanel({
                 </em>
                 <div className="research-import-event-recovery">
                   <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
+                  {event.undoToken ? (
+                    <button
+                      onClick={() => {
+                        if (event.undoToken) {
+                          onUndoImport(event.undoToken);
+                        }
+                      }}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "撤销导入" : "Undo import"}
+                    </button>
+                  ) : null}
                   {event.rollbackTargetRunId ? (
                     <button
                       onClick={() => {
@@ -5560,6 +5603,7 @@ function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportA
       fileName: event.fileName,
       previousRunId: event.previousRunId,
       rollbackTargetRunId: event.rollbackTargetRunId,
+      undoToken: event.undoToken,
       failureCategory: event.failureCategory,
       recoveryHint: event.recoveryHint,
       blockedCount: event.blockedCount,
@@ -5580,6 +5624,7 @@ function auditEventRecordToResearchRunImportEvent(record: AuditEventRecord): Res
     runId: record.runId ?? "unknown",
     previousRunId: auditMetadataNullableString(record.metadata.previousRunId),
     rollbackTargetRunId: auditMetadataNullableString(record.metadata.rollbackTargetRunId),
+    undoToken: auditMetadataNullableString(record.metadata.undoToken),
     fileName: auditMetadataString(record.metadata.fileName, "unknown"),
     createdAt: record.createdAt,
     summary: record.summary,
@@ -5683,6 +5728,7 @@ function researchImportAuditRecoveryLabel(i18n: AppI18n, recoveryHint: string): 
     return recoveryHint;
   }
   return recoveryHint
+    .replace(/^Undo import (.+) to restore the audited stores\.$/u, "撤销导入 $1，恢复导入前的审计存储。")
     .replace(/^Replay previous audited run (.+) to roll back the workspace context\.$/u, "回放旧的已审计 run $1，以恢复导入前的工作台上下文。")
     .replace(
       "No previous audited run was bound before import; replay a run from history to change context.",

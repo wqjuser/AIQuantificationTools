@@ -142,3 +142,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `test_research_run_import_rollback_restores_all_previous_paper_executions` failed because rollback snapshots reused paged execution history and restored only 50 records.
 - GREEN: added full run-scoped snapshot readers for paper executions and AI review records so rollback restores all previous records, not only the UI page window.
 - DOCS: updated product plan and architecture notes to mark write-stage transaction rollback as implemented, leaving user-initiated import undo as the next slice.
+- RED: `test_research_run_import_api_can_undo_successful_import` failed because successful imports had no durable undo store or undo endpoint.
+- GREEN: added `ResearchRunImportUndoStore`, `/api/research/runs/import/undo`, import `undoToken` responses, and snapshot restore across previous run, research note, strategy version, paper executions, and AI review records.
+- RED: frontend API, model, and layout tests failed because import results dropped undo tokens and the Audit ledger only replayed old runs.
+- GREEN: added `undoResearchRunImport`, undo-token audit metadata/search, and a real "Undo import" ledger action while keeping old-run replay as fallback.
+- DOCS: updated product plan and architecture notes; next slice is stricter cross-run recovery validation and import event status refresh after undo.

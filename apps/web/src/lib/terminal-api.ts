@@ -120,6 +120,23 @@ export interface ResearchRunImportResult {
   run?: ResearchRunAudit;
   note?: ResearchNote;
   strategies?: StrategyLibraryItem[];
+  undoToken?: string;
+  undo?: ResearchRunImportUndoRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ResearchRunImportUndoRecord {
+  undoToken: string;
+  runId: string;
+  createdAt: string;
+  consumedAt: string | null;
+  status: string;
+}
+
+export interface ResearchRunImportUndoResult {
+  undo?: ResearchRunImportUndoRecord;
+  run?: ResearchRunAudit | null;
   source: WorkspaceSource;
   error?: string;
 }
@@ -647,6 +664,10 @@ export function buildResearchRunImportUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/research/runs/import");
 }
 
+export function buildResearchRunImportUndoUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/research/runs/import/undo");
+}
+
 export function buildResearchNoteUrl(
   baseUrl: string,
   market: Market,
@@ -952,12 +973,52 @@ export async function importResearchRunExport(
       run: payload.run,
       note: noteResult.note,
       strategies: strategyLibraryResult.source === "core" ? strategyLibraryResult.strategies : undefined,
+      undoToken: payload.undoToken,
+      undo: payload.undo,
       source: "core"
     };
   } catch (error) {
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run import error"
+    };
+  }
+}
+
+export async function undoResearchRunImport(
+  baseUrl: string,
+  undoToken: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchRunImportUndoResult> {
+  try {
+    const response = await fetcher(buildResearchRunImportUndoUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ undoToken })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isResearchRunImportUndoPayload(payload)) {
+      throw new Error("Invalid research run import undo contract");
+    }
+    return {
+      undo: payload.undo,
+      run: payload.run,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research run import undo error"
     };
   }
 }
@@ -1739,12 +1800,46 @@ function isResearchRunExportPayload(value: unknown): value is { export: Research
   return isResearchRunExportPackage(payload.export);
 }
 
-function isResearchRunImportPayload(value: unknown): value is { run: ResearchRunAudit } {
+function isResearchRunImportPayload(value: unknown): value is {
+  run: ResearchRunAudit;
+  undoToken?: string;
+  undo?: ResearchRunImportUndoRecord;
+} {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { run?: unknown };
-  return isResearchRunAudit(payload.run) && Boolean(payload.run.dataSnapshot);
+  const payload = value as { run?: unknown; undoToken?: unknown; undo?: unknown };
+  return (
+    isResearchRunAudit(payload.run) &&
+    Boolean(payload.run.dataSnapshot) &&
+    (payload.undoToken === undefined || typeof payload.undoToken === "string") &&
+    (payload.undo === undefined || isResearchRunImportUndoRecord(payload.undo))
+  );
+}
+
+function isResearchRunImportUndoPayload(value: unknown): value is {
+  undo: ResearchRunImportUndoRecord;
+  run: ResearchRunAudit | null;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { undo?: unknown; run?: unknown };
+  return isResearchRunImportUndoRecord(payload.undo) && (payload.run === null || isResearchRunAudit(payload.run));
+}
+
+function isResearchRunImportUndoRecord(value: unknown): value is ResearchRunImportUndoRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const undo = value as Partial<ResearchRunImportUndoRecord>;
+  return (
+    typeof undo.undoToken === "string" &&
+    typeof undo.runId === "string" &&
+    typeof undo.createdAt === "string" &&
+    (undo.consumedAt === null || typeof undo.consumedAt === "string") &&
+    typeof undo.status === "string"
+  );
 }
 
 function isResearchNotePayload(value: unknown): value is { note: ResearchNote } {

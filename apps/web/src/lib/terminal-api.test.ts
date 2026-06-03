@@ -10,6 +10,7 @@ import {
   buildResearchRunDetailUrl,
   buildResearchRunExportUrl,
   buildResearchRunImportUrl,
+  buildResearchRunImportUndoUrl,
   buildResearchNoteUrl,
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
@@ -47,6 +48,7 @@ import {
   saveStrategySnapshot,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
+  undoResearchRunImport,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   buildWorkspaceUrl,
@@ -2033,6 +2035,7 @@ describe("terminal workspace API client", () => {
           ok: true,
           status: 201,
           json: async () => ({
+            undoToken: "import-undo-client-token",
             run: {
               runId: "run-import",
               createdAt: "2026-05-26T08:00:00+00:00",
@@ -2086,10 +2089,75 @@ describe("terminal workspace API client", () => {
     expect(calls[2]?.url).toBe("http://127.0.0.1:8765/api/strategies?market=ashare&symbol=600000&limit=12");
     expect(result.source).toBe("core");
     expect(result.run?.runId).toBe("run-import");
+    expect(result.undoToken).toBe("import-undo-client-token");
     expect(result.run?.dataSnapshot?.hash).toBe("snapshot-import");
     expect(result.note?.body).toBe("导入包里的研究笔记应恢复到本地笔记库。");
     expect(result.strategies?.[0]?.revision).toBe("rev-import");
     expect(result.strategies?.[0]?.status).toBe("audited");
+  });
+
+  test("undoes a successful research run import through the Python core", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await undoResearchRunImport("http://127.0.0.1:8765", "import-undo-client-token", async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          undo: {
+            undoToken: "import-undo-client-token",
+            runId: "run-import",
+            createdAt: "2026-05-26T08:06:00+00:00",
+            consumedAt: "2026-05-26T08:07:00+00:00",
+            status: "undone"
+          },
+          run: {
+            runId: "run-before-import",
+            createdAt: "2026-05-25T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyName: "Previous SMA trend",
+            strategyRevision: "rev-before-import",
+            dataRows: 1,
+            metrics: { total_return_pct: -1.0, trade_count: 1 },
+            decisions: [],
+            executionMode: "paper_only",
+            dataSnapshot: {
+              source: "tencent",
+              isComplete: true,
+              warnings: [],
+              rows: 1,
+              start: "2026-05-25T08:00:00+00:00",
+              end: "2026-05-25T08:00:00+00:00",
+              hash: "snapshot-before-import",
+              bars: [
+                {
+                  timestamp: "2026-05-25T08:00:00+00:00",
+                  timestampMs: 1779696000000,
+                  open: 8.9,
+                  high: 9,
+                  low: 8.7,
+                  close: 8.8,
+                  volume: 1100000
+                }
+              ]
+            }
+          }
+        })
+      };
+    });
+
+    expect(buildResearchRunImportUndoUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/research/runs/import/undo"
+    );
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/research/runs/import/undo");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ undoToken: "import-undo-client-token" });
+    expect(result.source).toBe("core");
+    expect(result.undo?.status).toBe("undone");
+    expect(result.run?.runId).toBe("run-before-import");
   });
 
   test("surfaces detailed research run import errors from the Python core", async () => {

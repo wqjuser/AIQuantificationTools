@@ -4405,6 +4405,235 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(paper_count, 51)
 
+    def test_research_run_import_api_can_undo_successful_import(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit, paper_execution_record_to_payload
+        from quant_core.research_import_undo import ResearchRunImportUndoStore
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore, research_run_export_to_payload
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        previous_audit = ResearchRunAudit(
+            run_id="run-import-undo",
+            created_at=datetime(2026, 5, 25, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Previous SMA trend",
+            strategy_revision="rev-import-undo-old",
+            data_rows=1,
+            metrics={"total_return_pct": -1.0, "max_drawdown_pct": 1.5, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Previous evidence", "tone": "warning"}],
+            execution_mode="paper_only",
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-import-undo-old",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-25T08:00:00+00:00",
+                        "timestampMs": 1779696000000,
+                        "open": 8.9,
+                        "high": 9.0,
+                        "low": 8.7,
+                        "close": 8.8,
+                        "volume": 1100000,
+                    }
+                ],
+            },
+            research_note={
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "body": "Previous note should return after undo.",
+                "updatedAt": "2026-05-25T08:03:00+00:00",
+            },
+            strategy_config={
+                "name": "Previous SMA trend",
+                "revision": "rev-import-undo-old",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.1, "stopLossPct": 0.06, "takeProfitPct": 0.14, "maxDrawdownPct": 0.1},
+            },
+        )
+        imported_audit = ResearchRunAudit(
+            run_id="run-import-undo",
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Imported SMA trend",
+            strategy_revision="rev-import-undo-new",
+            data_rows=1,
+            metrics={"total_return_pct": 3.2, "max_drawdown_pct": 0.5, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Imported evidence", "tone": "positive"}],
+            execution_mode="paper_only",
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "hash": "snapshot-import-undo-new",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            research_note={
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "body": "Imported note should be undone.",
+                "updatedAt": "2026-05-26T08:03:00+00:00",
+            },
+            strategy_config={
+                "name": "Imported SMA trend",
+                "revision": "rev-import-undo-new",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 10}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 10}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
+        )
+        previous_review = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-import-undo:old",
+            "runId": "run-import-undo",
+            "createdAt": "2026-05-25T08:05:00+00:00",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-import-undo-old",
+            "executionMode": "paper_only",
+            "status": "ready",
+            "summary": {"citationCount": 1, "roundCount": 1, "decisionCount": 1, "liveExecutionBlocked": True},
+            "dossier": {"status": "ready", "headline": "Previous AI review", "summary": "Old evidence", "citations": []},
+            "citations": [],
+            "rounds": [],
+            "decisionLog": [],
+            "boundary": "Evidence explanation only; no buy/sell instructions or guaranteed returns.",
+        }
+        imported_review = {
+            **previous_review,
+            "aiReviewId": "ai-review:run-import-undo:new",
+            "createdAt": "2026-05-26T08:05:00+00:00",
+            "strategyRevision": "rev-import-undo-new",
+            "dossier": {"status": "ready", "headline": "Imported AI review", "summary": "New evidence", "citations": []},
+        }
+        imported_package = research_run_export_to_payload(
+            imported_audit,
+            paper_executions=[paper_execution_record_to_payload(create_paper_execution_from_audit(imported_audit))],
+            ai_review_runs=[
+                {
+                    "aiReviewId": imported_review["aiReviewId"],
+                    "runId": imported_review["runId"],
+                    "createdAt": imported_review["createdAt"],
+                    "record": imported_review,
+                }
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            note_library = ResearchNoteStore(f"{tmp}/notes.sqlite")
+            strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            undo_store = ResearchRunImportUndoStore(f"{tmp}/import_undo.sqlite")
+
+            research_store.record(previous_audit)
+            note_library.save(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                body="Previous note should return after undo.",
+                updated_at=datetime(2026, 5, 25, 8, 3, tzinfo=timezone.utc),
+            )
+            strategy_library.save_payload(previous_audit.strategy_config, audit_run_id=previous_audit.run_id)
+            paper_library.record(create_paper_execution_from_audit(previous_audit))
+            review_store.record(previous_review)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                note_store = note_library
+                strategy_store = strategy_library
+                paper_execution_store = paper_library
+                ai_review_store = review_store
+                import_undo_store = undo_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(imported_package).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                import_response = connection.getresponse()
+                import_payload = json.loads(import_response.read().decode("utf-8"))
+                undo_body = json.dumps({"undoToken": import_payload.get("undoToken")}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/research/runs/import/undo",
+                    body=undo_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(undo_body))},
+                )
+                undo_response = connection.getresponse()
+                undo_payload = json.loads(undo_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            restored_run = research_store.get("run-import-undo")
+            restored_note = note_library.get(market="ashare", symbol="600000", timeframe="1d")
+            restored_old_strategy = strategy_library.get("rev-import-undo-old")
+            restored_new_strategy = strategy_library.get("rev-import-undo-new")
+            restored_paper = paper_library.list_all_by_run("run-import-undo")
+            restored_reviews = review_store.list_all_by_run("run-import-undo")
+            consumed_undo = undo_store.get(import_payload.get("undoToken"))
+
+        self.assertEqual(import_response.status, 201)
+        self.assertTrue(import_payload["undoToken"].startswith("import-undo-"))
+        self.assertEqual(undo_response.status, 200)
+        self.assertEqual(undo_payload["undo"]["status"], "undone")
+        self.assertEqual(restored_run.strategy_revision, "rev-import-undo-old")
+        self.assertEqual(restored_run.metrics["total_return_pct"], -1.0)
+        self.assertEqual(restored_note.body, "Previous note should return after undo.")
+        self.assertEqual(restored_old_strategy.revision, "rev-import-undo-old")
+        self.assertIsNone(restored_new_strategy)
+        self.assertEqual(len(restored_paper), 1)
+        self.assertEqual([review.ai_review_id for review in restored_reviews], ["ai-review:run-import-undo:old"])
+        self.assertIsNotNone(consumed_undo.consumed_at)
+
     def test_research_run_export_import_preserves_paper_execution_history(self):
         import json
         from http.client import HTTPConnection

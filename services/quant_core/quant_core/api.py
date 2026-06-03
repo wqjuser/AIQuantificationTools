@@ -29,6 +29,11 @@ from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
+from quant_core.research_import_undo import (
+    ResearchRunImportUndoRecord,
+    ResearchRunImportUndoStore,
+    research_run_import_undo_record_to_payload,
+)
 from quant_core.research_notes import ResearchNote, ResearchNoteStore, research_note_to_payload
 from quant_core.runs import (
     ResearchRunAudit,
@@ -122,6 +127,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
+    import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
@@ -236,6 +242,45 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"event": audit_event_record_to_payload(event)}, status=201)
             return
+        if parsed.path == "/api/research/runs/import/undo":
+            payload = self._read_json_body()
+            undo_token = str(payload.get("undoToken") or "").strip()
+            undo_record = self.import_undo_store.get(undo_token)
+            if not undo_record:
+                self._send_json({"error": "research_run_import_undo_not_found", "undoToken": undo_token}, status=404)
+                return
+            if undo_record.consumed_at:
+                self._send_json(
+                    {
+                        "error": "research_run_import_undo_already_consumed",
+                        "undo": research_run_import_undo_record_to_payload(undo_record),
+                    },
+                    status=409,
+                )
+                return
+            try:
+                previous_run = _undo_research_run_import_from_record(
+                    run_store=self.run_store,
+                    note_store=self.note_store,
+                    strategy_store=self.strategy_store,
+                    paper_execution_store=self.paper_execution_store,
+                    ai_review_store=self.ai_review_store,
+                    undo_record=undo_record,
+                )
+                consumed = self.import_undo_store.mark_consumed(undo_record.undo_token)
+            except ValueError as error:
+                self._send_json({"error": "invalid_research_run_import_undo", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "undo": {
+                        **research_run_import_undo_record_to_payload(consumed or undo_record),
+                        "status": "undone",
+                    },
+                    "run": research_run_audit_to_payload(previous_run, include_data_snapshot=True) if previous_run else None,
+                }
+            )
+            return
         if parsed.path == "/api/research/runs/import":
             try:
                 payload = self._read_json_body()
@@ -255,8 +300,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send_json({"error": "invalid_research_run_export", "detail": str(error)}, status=400)
                 return
+            undo_snapshot = None
             try:
-                _persist_research_run_import(
+                undo_snapshot = _persist_research_run_import(
                     run_store=self.run_store,
                     note_store=self.note_store,
                     strategy_store=self.strategy_store,
@@ -267,10 +313,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     paper_execution_records=paper_execution_records,
                     ai_review_records=ai_review_records,
                 )
+                undo_record = self.import_undo_store.record(run_id=audit.run_id, snapshot=undo_snapshot)
             except Exception as error:
+                if undo_snapshot:
+                    _undo_research_run_import_from_snapshot(
+                        run_store=self.run_store,
+                        note_store=self.note_store,
+                        strategy_store=self.strategy_store,
+                        paper_execution_store=self.paper_execution_store,
+                        ai_review_store=self.ai_review_store,
+                        snapshot=undo_snapshot,
+                    )
                 self._send_json({"error": "research_run_import_write_failed", "detail": str(error)}, status=500)
                 return
-            self._send_json({"run": research_run_audit_to_payload(audit, include_data_snapshot=True)}, status=201)
+            self._send_json(
+                {
+                    "run": research_run_audit_to_payload(audit, include_data_snapshot=True),
+                    "undoToken": undo_record.undo_token,
+                    "undo": research_run_import_undo_record_to_payload(undo_record),
+                },
+                status=201,
+            )
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/ai-reviews"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/ai-reviews")).strip()
@@ -777,7 +840,7 @@ def _persist_research_run_import(
     imported_note: dict[str, object] | None,
     paper_execution_records: list[PaperExecutionRecord],
     ai_review_records: list[dict[str, object]],
-) -> None:
+) -> dict[str, object]:
     previous_run = run_store.get(audit.run_id)
     previous_note = (
         note_store.get_existing(
@@ -834,6 +897,231 @@ def _persist_research_run_import(
             previous_ai_reviews=previous_ai_reviews,
         )
         raise
+    return _research_run_import_undo_snapshot(
+        audit=audit,
+        imported_note=imported_note,
+        strategy_revision=strategy_revision,
+        previous_run=previous_run,
+        previous_note=previous_note,
+        previous_strategy=previous_strategy,
+        previous_paper_executions=previous_paper_executions,
+        previous_ai_reviews=previous_ai_reviews,
+    )
+
+
+def _research_run_import_undo_snapshot(
+    *,
+    audit: ResearchRunAudit,
+    imported_note: dict[str, object] | None,
+    strategy_revision: str,
+    previous_run: ResearchRunAudit | None,
+    previous_note: ResearchNote | None,
+    previous_strategy: StrategyLibraryRecord | None,
+    previous_paper_executions: list[PaperExecutionRecord],
+    previous_ai_reviews: list[AiReviewRunRecord],
+) -> dict[str, object]:
+    return {
+        "schemaVersion": 1,
+        "runId": audit.run_id,
+        "importedRun": research_run_audit_to_payload(audit, include_data_snapshot=True),
+        "importedNote": _imported_note_snapshot(imported_note),
+        "strategyRevision": strategy_revision,
+        "previous": {
+            "run": research_run_audit_to_payload(previous_run, include_data_snapshot=True) if previous_run else None,
+            "note": research_note_to_payload(previous_note) if previous_note else None,
+            "strategy": strategy_library_record_to_payload(previous_strategy) if previous_strategy else None,
+            "paperExecutions": [
+                paper_execution_record_to_payload(execution) for execution in previous_paper_executions
+            ],
+            "aiReviewRuns": [ai_review_run_record_to_payload(review) for review in previous_ai_reviews],
+        },
+    }
+
+
+def _imported_note_snapshot(imported_note: dict[str, object] | None) -> dict[str, object] | None:
+    if not imported_note:
+        return None
+    updated_at = imported_note.get("updated_at")
+    return {
+        "market": str(imported_note.get("market") or ""),
+        "symbol": str(imported_note.get("symbol") or ""),
+        "timeframe": str(imported_note.get("timeframe") or ""),
+        "body": str(imported_note.get("body") or ""),
+        "updatedAt": updated_at.isoformat() if isinstance(updated_at, datetime) else updated_at,
+    }
+
+
+def _undo_research_run_import_from_record(
+    *,
+    run_store: ResearchRunStore,
+    note_store: ResearchNoteStore,
+    strategy_store: StrategyLibraryStore,
+    paper_execution_store: PaperExecutionStore,
+    ai_review_store: AiReviewRunStore,
+    undo_record: ResearchRunImportUndoRecord,
+) -> ResearchRunAudit | None:
+    return _undo_research_run_import_from_snapshot(
+        run_store=run_store,
+        note_store=note_store,
+        strategy_store=strategy_store,
+        paper_execution_store=paper_execution_store,
+        ai_review_store=ai_review_store,
+        snapshot=undo_record.snapshot,
+    )
+
+
+def _undo_research_run_import_from_snapshot(
+    *,
+    run_store: ResearchRunStore,
+    note_store: ResearchNoteStore,
+    strategy_store: StrategyLibraryStore,
+    paper_execution_store: PaperExecutionStore,
+    ai_review_store: AiReviewRunStore,
+    snapshot: dict[str, object],
+) -> ResearchRunAudit | None:
+    if int(_number_or_default(snapshot.get("schemaVersion"), 0)) != 1:
+        raise ValueError("unsupported_import_undo_snapshot_schema")
+    previous = snapshot.get("previous")
+    if not isinstance(previous, dict):
+        raise ValueError("import_undo_previous_snapshot_required")
+    run_id = str(snapshot.get("runId") or "").strip()
+    if not run_id:
+        raise ValueError("import_undo_run_id_required")
+
+    imported_note = snapshot.get("importedNote")
+    previous_run_payload = previous.get("run")
+    previous_note_payload = previous.get("note")
+    previous_strategy_payload = previous.get("strategy")
+    previous_paper_payloads = previous.get("paperExecutions", [])
+    previous_ai_review_payloads = previous.get("aiReviewRuns", [])
+
+    if previous_paper_payloads is None:
+        previous_paper_payloads = []
+    if previous_ai_review_payloads is None:
+        previous_ai_review_payloads = []
+    if not isinstance(previous_paper_payloads, list):
+        raise ValueError("import_undo_paper_executions_must_be_array")
+    if not isinstance(previous_ai_review_payloads, list):
+        raise ValueError("import_undo_ai_reviews_must_be_array")
+
+    previous_run = (
+        _research_run_audit_from_payload(previous_run_payload) if isinstance(previous_run_payload, dict) else None
+    )
+    previous_note = (
+        _research_note_from_payload(previous_note_payload) if isinstance(previous_note_payload, dict) else None
+    )
+    previous_strategy = (
+        _strategy_record_from_payload(previous_strategy_payload) if isinstance(previous_strategy_payload, dict) else None
+    )
+    previous_paper_executions = [
+        paper_execution_payload_to_record(item) for item in previous_paper_payloads if isinstance(item, dict)
+    ]
+    previous_ai_reviews = [
+        _ai_review_run_from_payload(item) for item in previous_ai_review_payloads if isinstance(item, dict)
+    ]
+
+    _rollback_research_run_import(
+        run_store=run_store,
+        note_store=note_store,
+        strategy_store=strategy_store,
+        paper_execution_store=paper_execution_store,
+        ai_review_store=ai_review_store,
+        run_id=run_id,
+        imported_note=dict(imported_note) if isinstance(imported_note, dict) else None,
+        previous_run=previous_run,
+        previous_note=previous_note,
+        strategy_revision=str(snapshot.get("strategyRevision") or "").strip(),
+        previous_strategy=previous_strategy,
+        previous_paper_executions=previous_paper_executions,
+        previous_ai_reviews=previous_ai_reviews,
+    )
+    return previous_run
+
+
+def _research_run_audit_from_payload(payload: dict[str, object]) -> ResearchRunAudit:
+    created_at = _parse_iso_datetime(str(payload.get("createdAt") or ""))
+    return ResearchRunAudit(
+        run_id=str(payload.get("runId") or ""),
+        created_at=created_at,
+        market=str(payload.get("market") or ""),
+        symbol=str(payload.get("symbol") or ""),
+        timeframe=str(payload.get("timeframe") or ""),
+        strategy_name=str(payload.get("strategyName") or ""),
+        strategy_revision=str(payload.get("strategyRevision") or ""),
+        data_rows=int(_number_or_default(payload.get("dataRows"), 0)),
+        metrics=dict(payload.get("metrics")) if isinstance(payload.get("metrics"), dict) else {},
+        decisions=list(payload.get("decisions")) if isinstance(payload.get("decisions"), list) else [],
+        execution_mode=str(payload.get("executionMode") or "paper_only"),
+        ai_report=dict(payload.get("aiReport")) if isinstance(payload.get("aiReport"), dict) else {},
+        data_quality=dict(payload.get("dataQuality")) if isinstance(payload.get("dataQuality"), dict) else {},
+        data_snapshot=dict(payload.get("dataSnapshot")) if isinstance(payload.get("dataSnapshot"), dict) else {},
+        strategy_config=dict(payload.get("strategyConfig")) if isinstance(payload.get("strategyConfig"), dict) else None,
+        backtest_assumptions=dict(payload.get("backtestAssumptions"))
+        if isinstance(payload.get("backtestAssumptions"), dict)
+        else {},
+        backtest_trades=list(payload.get("backtestTrades")) if isinstance(payload.get("backtestTrades"), list) else [],
+        backtest_equity_curve=list(payload.get("backtestEquityCurve"))
+        if isinstance(payload.get("backtestEquityCurve"), list)
+        else [],
+        backtest_diagnostics=list(payload.get("backtestDiagnostics"))
+        if isinstance(payload.get("backtestDiagnostics"), list)
+        else [],
+        research_note=dict(payload.get("researchNote")) if isinstance(payload.get("researchNote"), dict) else {},
+    )
+
+
+def _research_note_from_payload(payload: dict[str, object]) -> ResearchNote:
+    updated_at = payload.get("updatedAt")
+    return ResearchNote(
+        market=str(payload.get("market") or ""),
+        symbol=str(payload.get("symbol") or ""),
+        timeframe=str(payload.get("timeframe") or ""),
+        body=str(payload.get("body") or ""),
+        updated_at=_parse_iso_datetime(str(updated_at)) if updated_at else None,
+    )
+
+
+def _strategy_record_from_payload(payload: dict[str, object]) -> StrategyLibraryRecord:
+    strategy_config = payload.get("strategyConfig")
+    return StrategyLibraryRecord(
+        strategy_id=str(payload.get("strategyId") or f"strategy-{payload.get('revision') or ''}"),
+        created_at=_parse_iso_datetime(str(payload.get("createdAt") or "")),
+        name=str(payload.get("name") or ""),
+        revision=str(payload.get("revision") or ""),
+        market=str(payload.get("market") or ""),
+        symbol=str(payload.get("symbol") or ""),
+        timeframe=str(payload.get("timeframe") or ""),
+        version=int(_number_or_default(payload.get("version"), 1)),
+        status=str(payload.get("status") or "draft"),
+        audit_run_id=str(payload.get("auditRunId") or "").strip() or None,
+        strategy_config=dict(strategy_config) if isinstance(strategy_config, dict) else {},
+    )
+
+
+def _ai_review_run_from_payload(payload: dict[str, object]) -> AiReviewRunRecord:
+    record = payload.get("record")
+    return AiReviewRunRecord(
+        ai_review_id=str(payload.get("aiReviewId") or ""),
+        run_id=str(payload.get("runId") or ""),
+        created_at=_parse_iso_datetime(str(payload.get("createdAt") or "")),
+        record=dict(record) if isinstance(record, dict) else {},
+    )
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    if not value:
+        raise ValueError("datetime_required")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _number_or_default(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _rollback_research_run_import(

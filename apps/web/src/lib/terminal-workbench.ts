@@ -686,6 +686,7 @@ export interface ResearchRunImportAuditEvent {
   runId: string;
   previousRunId: string | null;
   rollbackTargetRunId: string | null;
+  undoToken: string | null;
   fileName: string;
   createdAt: string;
   summary: string;
@@ -2881,7 +2882,8 @@ export function buildResearchRunImportAuditEvent({
   fileName,
   previousRunId = null,
   rows,
-  stage
+  stage,
+  undoToken = null
 }: {
   exportPackage: Pick<ResearchRunExportBrowserPackage, "manifest"> | null | undefined;
   fileName: string;
@@ -2890,6 +2892,7 @@ export function buildResearchRunImportAuditEvent({
   stage: "preview" | "confirmed" | "failed" | "cancelled";
   createdAt?: string;
   error?: string | null;
+  undoToken?: string | null;
 }): ResearchRunImportAuditEvent {
   const runId = exportPackage?.manifest.runId ?? "unknown";
   const blockedCount = rows.filter((row) => row.status === "blocked").length;
@@ -2909,6 +2912,7 @@ export function buildResearchRunImportAuditEvent({
   });
   const normalizedPreviousRunId = previousRunId?.trim() || null;
   const rollbackTargetRunId = resolvedStage === "confirmed" ? normalizedPreviousRunId : null;
+  const normalizedUndoToken = resolvedStage === "confirmed" ? undoToken?.trim() || null : null;
 
   return {
     id: `import:${runId}:${resolvedStage}:${createdAt}:${fileName || "unknown"}`,
@@ -2916,12 +2920,13 @@ export function buildResearchRunImportAuditEvent({
     runId,
     previousRunId: normalizedPreviousRunId,
     rollbackTargetRunId,
+    undoToken: normalizedUndoToken,
     fileName: fileName || "unknown",
     createdAt,
     summary,
     detail,
     failureCategory: resolvedStage === "failed" ? failure.category : null,
-    recoveryHint: researchRunImportRecoveryHint(resolvedStage, rollbackTargetRunId, failure),
+    recoveryHint: researchRunImportRecoveryHint(resolvedStage, rollbackTargetRunId, failure, normalizedUndoToken),
     blockedCount,
     changeCount,
     exportPath: exportPackage ? `manifest:${runId}` : `import:file:${fileName || "unknown"}`,
@@ -2957,6 +2962,8 @@ export function filterResearchRunImportAuditEvents(
       event.previousRunId ?? "",
       event.rollbackTargetRunId ?? "",
       event.rollbackTargetRunId ? "rollback" : "",
+      event.undoToken ?? "",
+      event.undoToken ? "undo" : "",
       event.failureCategory ?? "",
       event.recoveryHint,
       String(event.blockedCount),
@@ -3072,9 +3079,13 @@ function researchRunImportFailure(error?: string | null): {
 function researchRunImportRecoveryHint(
   stage: ResearchRunImportAuditEventStage,
   rollbackTargetRunId: string | null,
-  failure: { category: ResearchRunImportFailureCategory; detail: string | null }
+  failure: { category: ResearchRunImportFailureCategory; detail: string | null },
+  undoToken: string | null = null
 ): string {
   if (stage === "confirmed") {
+    if (undoToken) {
+      return `Undo import ${undoToken} to restore the audited stores.`;
+    }
     return rollbackTargetRunId
       ? `Replay previous audited run ${rollbackTargetRunId} to roll back the workspace context.`
       : "No previous audited run was bound before import; replay a run from history to change context.";

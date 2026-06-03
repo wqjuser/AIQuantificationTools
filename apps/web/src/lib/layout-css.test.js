@@ -406,6 +406,7 @@ describe("terminal layout css", () => {
     const importEventsPanelSource = sourceBetween("function ResearchRunImportAuditEventPanel", "function ResearchRunExportIndexPanel");
 
     expect(appSource).toContain("buildResearchRunImportAuditEvent");
+    expect(appSource).toContain("undoResearchRunImport");
     expect(appSource).toContain("mergeResearchRunImportAuditEvents");
     expect(appSource).toContain("filterResearchRunImportAuditEvents");
     expect(appSource).toContain("const [researchRunImportAuditEvents, setResearchRunImportAuditEvents]");
@@ -414,9 +415,12 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain('className="workflow-import-events-panel"');
     expect(auditWorkspaceSource).toContain("events={researchRunImportAuditEvents}");
     expect(auditWorkspaceSource).toContain("onReplayRollbackRun={replayImportRollbackRun}");
+    expect(auditWorkspaceSource).toContain("onUndoImport={undoResearchRunImportEvent}");
     expect(importEventsPanelSource).toContain("research-import-events-summary");
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");
+    expect(importEventsPanelSource).toContain("event.undoToken");
+    expect(importEventsPanelSource).toContain("onUndoImport(event.undoToken)");
     expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
     expect(importEventsPanelSource).toContain("research-import-event-recovery");
     expect(cssBlock(".workflow-import-events-panel")).toContain("grid-area: import-events;");
