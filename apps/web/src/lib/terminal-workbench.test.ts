@@ -13,6 +13,7 @@ import {
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
+  buildResearchRunImportDiffRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -51,6 +52,7 @@ import {
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
+  filterResearchRunImportDiffRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -64,6 +66,7 @@ import {
   type ResearchRunExportPreviewRow,
   type ResearchRunExportBrowserRow,
   type ResearchRunExportIndexRow,
+  type ResearchRunImportDiffRow,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -2274,6 +2277,226 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportIndexRows(rows, "AAPL").map((row) => row.id)).toEqual(["run-index-b"]);
     expect(filterResearchRunExportIndexRows(rows, "integrity missing").map((row) => row.id)).toEqual(["run-index-b"]);
     expect(filterResearchRunExportIndexRows(rows, "hash-index-a").map((row) => row.id)).toEqual(["run-index-a"]);
+  });
+
+  test("builds searchable import diff rows before applying a research run export package", () => {
+    const currentWorkspace: TerminalWorkspace = {
+      ...buildTerminalWorkspace(),
+      selectedInstrument: {
+        symbol: "600000",
+        name: "浦发银行",
+        market: "ashare",
+        changePct: 1.2,
+        price: 9.21
+      },
+      selectedTimeframe: "1d",
+      researchRun: {
+        runId: "run-current",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        timeframe: "1d",
+        strategyRevision: "rev-current",
+        dataRows: 240,
+        dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+        dataSnapshot: {
+          rows: 240,
+          hash: "hash-current",
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          bars: []
+        },
+        executionMode: "paper_only",
+        strategyConfig: {
+          version: 1,
+          revision: "rev-current",
+          name: "Current SMA",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          entryConditions: [{ kind: "close_above_sma", params: { window: 20, threshold: 0 } }],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 20, threshold: 0 } }],
+          risk: { positionPct: 20, stopLossPct: 8, takeProfitPct: 16, maxDrawdownPct: 12 }
+        },
+        researchNote: {
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          body: "Current local research note",
+          updatedAt: "2026-05-26T07:50:00+00:00"
+        }
+      }
+    };
+    const exportPackage = {
+      kind: "aiqt.researchRun.export" as const,
+      packageVersion: 1,
+      exportedAt: "2026-05-26T09:00:00+00:00",
+      integrity: {
+        algorithm: "sha256" as const,
+        hash: "d".repeat(64)
+      },
+      manifest: {
+        runId: "run-imported",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "5m" as const,
+        strategyRevision: "rev-imported",
+        dataHash: "hash-imported",
+        dataRows: 500,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 500,
+          trades: 18,
+          equityPoints: 500,
+          decisions: 4,
+          aiRisks: 1,
+          paperExecutions: 1,
+          promotionCandidates: 0,
+          researchNotes: 1,
+          aiReviewRuns: 2
+        }
+      },
+      researchRun: {
+        runId: "run-imported",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "5m" as const,
+        strategyName: "Imported SMA + RSI",
+        strategyRevision: "rev-imported",
+        dataRows: 500,
+        dataQuality: { source: "local-cache", isComplete: true, warnings: ["cache replay"], rows: 500 },
+        dataSnapshot: {
+          rows: 500,
+          hash: "hash-imported",
+          source: "local-cache",
+          isComplete: true,
+          warnings: ["cache replay"],
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:30:00+00:00",
+          bars: []
+        },
+        metrics: { totalReturnPct: 12.4, maxDrawdownPct: 5.8, winRatePct: 51, profitFactor: 1.6, tradeCount: 18 },
+        decisions: [],
+        backtestTrades: [],
+        backtestEquityCurve: [],
+        executionMode: "paper_only",
+        strategyConfig: {
+          version: 1,
+          revision: "rev-imported",
+          name: "Imported SMA + RSI",
+          market: "ashare" as const,
+          symbols: ["600000"],
+          timeframe: "5m" as const,
+          entryConditions: [{ kind: "rsi_below", params: { window: 14, threshold: 30 } }],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 20, threshold: 0 } }],
+          risk: { positionPct: 15, stopLossPct: 7, takeProfitPct: 14, maxDrawdownPct: 10 }
+        },
+        researchNote: {
+          market: "ashare" as const,
+          symbol: "600000",
+          timeframe: "5m" as const,
+          body: "Imported package note",
+          updatedAt: "2026-05-26T08:25:00+00:00"
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "risk-approved", label: "Risk approved", passed: true, reason: "paper approved" }]
+      },
+      paperExecutions: [
+        {
+          executionId: "paper-imported",
+          runId: "run-imported",
+          createdAt: "2026-05-26T08:45:00+00:00",
+          mode: "paper_only",
+          account: { cash: 80_000, equity: 100_000, positions: { "600000": 1600 } },
+          orders: [],
+          gates: []
+        }
+      ],
+      aiReviewRuns: [
+        {
+          aiReviewId: "ai-review:run-imported:rev-imported",
+          runId: "run-imported",
+          createdAt: "2026-05-26T08:50:00+00:00",
+          record: {
+            recordType: "aiqt.aiReviewRun" as const,
+            schemaVersion: 1 as const,
+            aiReviewId: "ai-review:run-imported:rev-imported",
+            runId: "run-imported",
+            createdAt: "2026-05-26T08:50:00+00:00",
+            strategyRevision: "rev-imported",
+            market: "ashare" as const,
+            symbol: "600000",
+            timeframe: "5m" as const,
+            executionMode: "paper_only",
+            status: "ready" as const,
+            summary: {
+              citationCount: 2,
+              roundCount: 5,
+              decisionCount: 4,
+              parameterScanBound: true,
+              liveExecutionBlocked: true
+            },
+            dossier: { status: "ready" as const, headline: "Imported evidence", summary: "Ready.", citations: [] },
+            citations: [],
+            rounds: [],
+            decisionLog: [],
+            boundary: "AI can explain supplied evidence only."
+          }
+        }
+      ]
+    };
+
+    const rows = buildResearchRunImportDiffRows({ workspace: currentWorkspace, exportPackage });
+
+    expect(rows).toEqual(
+      expect.arrayContaining<ResearchRunImportDiffRow>([
+        expect.objectContaining({
+          id: "run-id",
+          status: "replace",
+          current: "run-current",
+          incoming: "run-imported",
+          exportPath: "researchRun.runId"
+        }),
+        expect.objectContaining({
+          id: "timeframe",
+          status: "change",
+          current: "1d",
+          incoming: "5m",
+          detail: "Current research context will switch to the package timeframe."
+        }),
+        expect.objectContaining({
+          id: "data-snapshot",
+          status: "change",
+          current: "240 rows · hash-current",
+          incoming: "500 rows · hash-imported",
+          tone: "warning"
+        }),
+        expect.objectContaining({
+          id: "research-note",
+          status: "change",
+          current: "Current local research note",
+          incoming: "Imported package note",
+          exportPath: "researchRun.researchNote"
+        }),
+        expect.objectContaining({
+          id: "ai-review-runs",
+          status: "add",
+          current: "0 saved",
+          incoming: "1 saved / 2 manifest"
+        })
+      ])
+    );
+    expect(filterResearchRunImportDiffRows(rows, "hash-imported").map((row) => row.id)).toEqual(["data-snapshot"]);
+    expect(filterResearchRunImportDiffRows(rows, "researchNote").map((row) => row.id)).toEqual(["research-note"]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {

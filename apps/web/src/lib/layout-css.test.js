@@ -358,6 +358,23 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"history"', '"export"', '"workflow"', '"decision"', '"package"', '"index"', '"ai"'])).toBe(true);
   });
 
+  test("renders import diff guidance in the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+
+    expect(appSource).toContain("buildResearchRunImportDiffRows");
+    expect(appSource).toContain("filterResearchRunImportDiffRows");
+    expect(appSource).toContain("const researchRunImportDiffRows = buildResearchRunImportDiffRows");
+    expect(appSource).toContain("function ResearchRunImportDiffPanel");
+    expect(auditWorkspaceSource).toContain("<ResearchRunImportDiffPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-import-diff-panel"');
+    expect(auditWorkspaceSource).toContain("rows={researchRunImportDiffRows}");
+    expect(cssBlock(".workflow-import-diff-panel")).toContain("grid-area: import-diff;");
+    expect(cssBlock(".research-import-diff")).toContain("display: grid;");
+    expect(cssBlock(".research-import-diff-row")).toContain("grid-template-columns: minmax(116px, 0.44fr) minmax(104px, 0.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);");
+    expect(hasCssBlockWith(".audit-layout", ['"package package"', '"import-diff import-diff"', '"index index"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"package"', '"import-diff"', '"index"'])).toBe(true);
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");

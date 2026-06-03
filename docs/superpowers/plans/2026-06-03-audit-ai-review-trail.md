@@ -27,6 +27,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Render a reproducible research run export preview inside Audit so users can inspect package-level readiness before opening raw JSON.
 - Render a research run export package browser inside Audit, loading a selected history run package and checking manifest counts, integrity metadata, package artifacts, AI review records, and execution handoff gates.
 - Render a recent export package index inside Audit, loading export packages for visible run history and enabling cross-package search over run ids, symbols, hashes, artifact summaries, integrity failures, and handoff status.
+- Render an import impact diff inside Audit, comparing the current workspace with the inspected export package before import writes anything.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -110,3 +111,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package index"` failed because Audit did not render a recent package index or expose a batch index action.
 - GREEN: added `ResearchRunExportIndexPanel`, an Audit `index` grid area, a backend-backed "Index recent" action, compact index rows, summary counts, and local search.
 - DOCS: updated product plan and architecture notes to mark cross-package audit search as implemented and leave field-level import diffing as the next slice.
+- RED: `terminal-workbench.test.ts -t "import diff"` failed because `buildResearchRunImportDiffRows` did not exist.
+- GREEN: added `ResearchRunImportDiffRow`, `buildResearchRunImportDiffRows`, and `filterResearchRunImportDiffRows` to compare run id, context, timeframe, data snapshot, strategy revision, research note, paper executions, AI review records, and live boundary before import.
+- RED: `layout-css.test.js -t "import diff guidance"` failed because Audit did not render an import impact panel.
+- GREEN: added `ResearchRunImportDiffPanel`, the `import-diff` Audit grid area, compact diff rows, summary counts, search, and responsive styles.
+- DOCS: updated product plan and architecture notes to mark import impact diffing as implemented and leave file-picker import preview/confirmation as the next slice.

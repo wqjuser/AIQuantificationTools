@@ -610,6 +610,7 @@ export interface ResearchRunExportBrowserPackage {
       reason: string;
     }>;
   };
+  researchRun?: ResearchRunAudit;
   paperExecutions?: PaperExecutionSnapshot[];
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
@@ -647,6 +648,28 @@ export interface ResearchRunExportIndexRow {
   dataHash: string;
   artifacts: string;
   execution: string;
+  detail: string;
+  exportPath: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
+export type ResearchRunImportDiffStatus = "same" | "add" | "change" | "replace" | "blocked";
+
+export interface ResearchRunImportDiffRow {
+  id:
+    | "run-id"
+    | "context"
+    | "timeframe"
+    | "data-snapshot"
+    | "strategy-revision"
+    | "research-note"
+    | "paper-executions"
+    | "ai-review-runs"
+    | "live-boundary";
+  label: string;
+  status: ResearchRunImportDiffStatus;
+  current: string;
+  incoming: string;
   detail: string;
   exportPath: string;
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
@@ -2569,6 +2592,201 @@ export function filterResearchRunExportIndexRows(
       row.exportPath,
       row.tone
     ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+export function buildResearchRunImportDiffRows({
+  aiReviewRecords = [],
+  exportPackage,
+  paperExecution = null,
+  workspace
+}: {
+  workspace: TerminalWorkspace;
+  exportPackage: ResearchRunExportBrowserPackage | null | undefined;
+  aiReviewRecords?: ResearchRunExportPreviewAiReviewEnvelope[];
+  paperExecution?: PaperExecutionSnapshot | null;
+}): ResearchRunImportDiffRow[] {
+  if (!exportPackage) {
+    return [
+      {
+        id: "run-id",
+        label: "Research run",
+        status: "blocked",
+        current: workspace.researchRun?.runId ?? "No audited run",
+        incoming: "No package selected",
+        detail: "Inspect or choose a research run export package before importing.",
+        exportPath: "researchRun",
+        tone: "risk"
+      }
+    ];
+  }
+
+  const currentRun = workspace.researchRun ?? null;
+  const incomingRun = exportPackage.researchRun ?? null;
+  const currentNote = normalizedResearchNote(currentRun?.researchNote);
+  const incomingNote = normalizedResearchNote(incomingRun?.researchNote);
+  const packageAiReviewCount = exportPackage.aiReviewRuns?.length ?? 0;
+  const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
+  const currentAiReviewCount = currentRun
+    ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
+    : 0;
+  const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
+  const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
+
+  return [
+    {
+      id: "run-id",
+      label: "Research run",
+      status: currentRun ? (currentRun.runId === exportPackage.manifest.runId ? "same" : "replace") : "add",
+      current: currentRun?.runId ?? "No audited run",
+      incoming: exportPackage.manifest.runId,
+      detail: currentRun
+        ? currentRun.runId === exportPackage.manifest.runId
+          ? "Import will refresh the existing audited run payload."
+          : "Import will replace the current replay context with the package run."
+        : "Import will add an audited run to the local workspace.",
+      exportPath: "researchRun.runId",
+      tone: currentRun?.runId === exportPackage.manifest.runId ? "positive" : "warning"
+    },
+    {
+      id: "context",
+      label: "Market / symbol",
+      status:
+        workspace.selectedInstrument.market === exportPackage.manifest.market &&
+        workspace.selectedInstrument.symbol === exportPackage.manifest.symbol
+          ? "same"
+          : "change",
+      current: `${workspace.selectedInstrument.market} · ${workspace.selectedInstrument.symbol}`,
+      incoming: `${exportPackage.manifest.market} · ${exportPackage.manifest.symbol}`,
+      detail: "Import will bind the terminal to the package market and symbol.",
+      exportPath: "manifest.market",
+      tone:
+        workspace.selectedInstrument.market === exportPackage.manifest.market &&
+        workspace.selectedInstrument.symbol === exportPackage.manifest.symbol
+          ? "positive"
+          : "warning"
+    },
+    {
+      id: "timeframe",
+      label: "Timeframe",
+      status: workspace.selectedTimeframe === exportPackage.manifest.timeframe ? "same" : "change",
+      current: workspace.selectedTimeframe,
+      incoming: exportPackage.manifest.timeframe,
+      detail:
+        workspace.selectedTimeframe === exportPackage.manifest.timeframe
+          ? "Current research context already matches the package timeframe."
+          : "Current research context will switch to the package timeframe.",
+      exportPath: "manifest.timeframe",
+      tone: workspace.selectedTimeframe === exportPackage.manifest.timeframe ? "positive" : "warning"
+    },
+    {
+      id: "data-snapshot",
+      label: "Data snapshot",
+      status:
+        currentRun?.dataSnapshot?.hash && currentRun.dataSnapshot.hash === exportPackage.manifest.dataHash
+          ? "same"
+          : currentRun?.dataSnapshot
+            ? "change"
+            : "add",
+      current: currentRun?.dataSnapshot
+        ? `${currentRun.dataSnapshot.rows} rows · ${currentRun.dataSnapshot.hash || "missing hash"}`
+        : "No data snapshot",
+      incoming: `${exportPackage.manifest.dataRows} rows · ${exportPackage.manifest.dataHash || "missing hash"}`,
+      detail: "Import will replay the package data hash and row count as the audited snapshot.",
+      exportPath: "researchRun.dataSnapshot",
+      tone:
+        currentRun?.dataSnapshot?.hash && currentRun.dataSnapshot.hash === exportPackage.manifest.dataHash
+          ? "positive"
+          : "warning"
+    },
+    {
+      id: "strategy-revision",
+      label: "Strategy revision",
+      status:
+        currentRun?.strategyRevision && currentRun.strategyRevision === exportPackage.manifest.strategyRevision
+          ? "same"
+          : currentRun?.strategyRevision
+            ? "change"
+            : "add",
+      current: currentRun?.strategyRevision ?? "No audited strategy",
+      incoming: exportPackage.manifest.strategyRevision,
+      detail: "Import will restore the package strategy revision as an audited Strategy Lab version.",
+      exportPath: "researchRun.strategyConfig.revision",
+      tone:
+        currentRun?.strategyRevision && currentRun.strategyRevision === exportPackage.manifest.strategyRevision
+          ? "positive"
+          : "warning"
+    },
+    {
+      id: "research-note",
+      label: "Research note",
+      status: incomingNote
+        ? currentNote?.body === incomingNote.body
+          ? "same"
+          : currentNote
+            ? "change"
+            : "add"
+        : "same",
+      current: currentNote ? compactResearchNoteDetail(currentNote.body) : "No local note",
+      incoming: incomingNote ? compactResearchNoteDetail(incomingNote.body) : "No package note",
+      detail: incomingNote
+        ? "Import will write the package research note back to the local note store."
+        : "Package does not include a locked research note.",
+      exportPath: "researchRun.researchNote",
+      tone: incomingNote && currentNote?.body !== incomingNote.body ? "warning" : "neutral"
+    },
+    {
+      id: "paper-executions",
+      label: "Paper executions",
+      status: packagePaperCount > currentPaperCount ? "add" : packagePaperCount === currentPaperCount ? "same" : "change",
+      current: `${currentPaperCount} saved`,
+      incoming: `${packagePaperCount} saved / ${exportPackage.manifest.artifactCounts.paperExecutions ?? 0} manifest`,
+      detail: "Import will restore paper execution records attached to the package run.",
+      exportPath: "paperExecutions[]",
+      tone: packagePaperCount > 0 ? "warning" : "neutral"
+    },
+    {
+      id: "ai-review-runs",
+      label: "AI review runs",
+      status: packageAiReviewCount > currentAiReviewCount ? "add" : packageAiReviewCount === currentAiReviewCount ? "same" : "change",
+      current: `${currentAiReviewCount} saved`,
+      incoming: `${packageAiReviewCount} saved / ${manifestAiReviewCount} manifest`,
+      detail: "Import will restore saved AI review records and their evidence anchors.",
+      exportPath: "aiReviewRuns[]",
+      tone: packageAiReviewCount > 0 ? "ai" : "neutral"
+    },
+    {
+      id: "live-boundary",
+      label: "Live boundary",
+      status: exportPackage.manifest.liveTradingAllowed || exportPackage.executionHandoff.liveTradingAllowed ? "blocked" : "same",
+      current: workspace.execution.liveEnabled ? "Local live enabled" : "Local paper boundary",
+      incoming:
+        exportPackage.manifest.liveTradingAllowed || exportPackage.executionHandoff.liveTradingAllowed
+          ? "Package claims live handoff"
+          : "Package remains paper-only",
+      detail:
+        exportPackage.manifest.liveTradingAllowed || exportPackage.executionHandoff.liveTradingAllowed
+          ? "Local import must reject packages that claim live trading permission."
+          : "Import keeps the package inside the paper-only execution boundary.",
+      exportPath: "executionHandoff.liveTradingAllowed",
+      tone: exportPackage.manifest.liveTradingAllowed || exportPackage.executionHandoff.liveTradingAllowed ? "risk" : "positive"
+    }
+  ];
+}
+
+export function filterResearchRunImportDiffRows(
+  rows: ResearchRunImportDiffRow[],
+  query: string
+): ResearchRunImportDiffRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [row.id, row.label, row.status, row.current, row.incoming, row.detail, row.exportPath, row.tone]
       .join(" ")
       .toLowerCase()
       .includes(normalizedQuery)

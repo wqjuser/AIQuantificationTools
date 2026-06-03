@@ -97,6 +97,7 @@ import {
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
+  buildResearchRunImportDiffRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -110,6 +111,7 @@ import {
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
+  filterResearchRunImportDiffRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -145,6 +147,7 @@ import {
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
+  ResearchRunImportDiffRow,
   ResearchRunComparisonRow,
   ResearchRunExportPreviewRow,
   RiskApprovalGate,
@@ -422,6 +425,12 @@ export function App() {
   });
   const researchRunExportBrowserRows = buildResearchRunExportBrowserRows(inspectedExportPackage);
   const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
+  const researchRunImportDiffRows = buildResearchRunImportDiffRows({
+    aiReviewRecords: activeAiReviewRunRecords,
+    exportPackage: inspectedExportPackage,
+    paperExecution: activePaperExecutionRecord,
+    workspace
+  });
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyTemplateOptions = buildStrategyTemplateOptions();
   const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
@@ -2034,6 +2043,11 @@ export function App() {
             i18n={i18n}
             isLoading={isInspectingExportPackage}
             rows={researchRunExportBrowserRows}
+          />
+          <ResearchRunImportDiffPanel
+            className="workflow-import-diff-panel"
+            i18n={i18n}
+            rows={researchRunImportDiffRows}
           />
           <ResearchRunExportIndexPanel
             className="workflow-export-index-panel"
@@ -4504,6 +4518,80 @@ function ResearchRunExportPackageBrowserPanel({
   );
 }
 
+function ResearchRunImportDiffPanel({
+  className,
+  i18n,
+  rows
+}: {
+  className?: string;
+  i18n: AppI18n;
+  rows: ResearchRunImportDiffRow[];
+}) {
+  const [query, setQuery] = useState("");
+  const filteredRows = filterResearchRunImportDiffRows(rows, query);
+  const changeCount = rows.filter((row) => row.status === "change" || row.status === "replace").length;
+  const addCount = rows.filter((row) => row.status === "add").length;
+  const blockedCount = rows.filter((row) => row.status === "blocked").length;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "导入影响预检" : "Import Impact Diff"}
+      subtitle={i18n.locale === "zh-CN" ? "导入前对比当前工作区和复现包字段" : "Compare current workspace fields before import"}
+      className={className}
+    >
+      <div className="research-import-diff">
+        <div className="research-import-diff-toolbar">
+          <div className="research-import-diff-summary">
+            <span>
+              {i18n.locale === "zh-CN" ? "变更" : "Changes"} <strong>{changeCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "新增" : "Adds"} <strong>{addCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{blockedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "字段" : "Fields"} <strong>{rows.length}</strong>
+            </span>
+          </div>
+          <input
+            aria-label={i18n.locale === "zh-CN" ? "搜索导入差异" : "Search import diff"}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={i18n.locale === "zh-CN" ? "搜索字段 / hash / exportPath / 状态" : "Search field / hash / exportPath / status"}
+            type="search"
+            value={query}
+          />
+        </div>
+        <div className="research-import-diff-list">
+          {filteredRows.length ? (
+            filteredRows.map((row) => (
+              <article className={`research-import-diff-row ${row.tone} ${row.status}`} key={row.id}>
+                <span>{researchImportDiffLabel(i18n, row)}</span>
+                <b>{researchImportDiffStatusLabel(i18n, row.status)}</b>
+                <strong>{researchImportDiffValue(i18n, row.current)}</strong>
+                <em>{researchImportDiffValue(i18n, row.incoming)}</em>
+                <p>
+                  {researchImportDiffDetail(i18n, row.detail)}
+                  <small>{row.exportPath}</small>
+                </p>
+              </article>
+            ))
+          ) : (
+            <article className="research-import-diff-row empty">
+              <span>{i18n.locale === "zh-CN" ? "无匹配" : "No match"}</span>
+              <b>{i18n.locale === "zh-CN" ? "过滤中" : "Filtered"}</b>
+              <strong>-</strong>
+              <em>-</em>
+              <p>{i18n.locale === "zh-CN" ? "当前查询没有命中导入差异字段。" : "The current query did not match any import diff fields."}</p>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function ResearchRunExportIndexPanel({
   className,
   i18n,
@@ -4988,6 +5076,94 @@ function researchExportBrowserDetail(i18n: AppI18n, detail: string): string {
     .replace("No saved AI review record is attached.", "没有附加保存的 AI 评审记录。")
     .replace("Live execution handoff is allowed by the package gates.", "包内闸门允许实盘执行交接。")
     .replace("Package remains paper-only; live execution is blocked.", "导出包仍为仅模拟盘；实盘执行保持阻断。");
+}
+
+function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return (
+    {
+      "run-id": "研究运行",
+      context: "市场 / 标的",
+      timeframe: "周期",
+      "data-snapshot": "数据快照",
+      "strategy-revision": "策略版本",
+      "research-note": "研究笔记",
+      "paper-executions": "模拟执行",
+      "ai-review-runs": "AI 评审记录",
+      "live-boundary": "实盘边界"
+    } satisfies Record<ResearchRunImportDiffRow["id"], string>
+  )[row.id];
+}
+
+function researchImportDiffStatusLabel(
+  i18n: AppI18n,
+  status: ResearchRunImportDiffRow["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        same: "Same",
+        add: "Add",
+        change: "Change",
+        replace: "Replace",
+        blocked: "Blocked"
+      } satisfies Record<ResearchRunImportDiffRow["status"], string>
+    )[status];
+  }
+  return (
+    {
+      same: "一致",
+      add: "新增",
+      change: "变更",
+      replace: "替换",
+      blocked: "阻断"
+    } satisfies Record<ResearchRunImportDiffRow["status"], string>
+  )[status];
+}
+
+function researchImportDiffValue(i18n: AppI18n, value: string): string {
+  if (i18n.locale === "en-US") {
+    return value;
+  }
+  return value
+    .replace("No audited run", "无审计运行")
+    .replace("No package selected", "未选择复现包")
+    .replace("No data snapshot", "无数据快照")
+    .replace("No audited strategy", "无审计策略")
+    .replace("No local note", "无本地笔记")
+    .replace("No package note", "无包内笔记")
+    .replace("No package selected", "未选择复现包")
+    .replace("Local live enabled", "本地实盘已开启")
+    .replace("Local paper boundary", "本地模拟盘边界")
+    .replace("Package claims live handoff", "复现包声明实盘交接")
+    .replace("Package remains paper-only", "复现包仅模拟盘")
+    .replaceAll("rows", "行")
+    .replaceAll("saved", "条保存")
+    .replaceAll("manifest", "manifest");
+}
+
+function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("Inspect or choose a research run export package before importing.", "导入前先查看或选择一个研究运行复现包。")
+    .replace("Import will refresh the existing audited run payload.", "导入会刷新现有审计运行载荷。")
+    .replace("Import will replace the current replay context with the package run.", "导入会用包内运行替换当前回放上下文。")
+    .replace("Import will add an audited run to the local workspace.", "导入会向本地工作区新增一条审计运行。")
+    .replace("Import will bind the terminal to the package market and symbol.", "导入会把终端绑定到复现包的市场和标的。")
+    .replace("Current research context already matches the package timeframe.", "当前研究上下文已经匹配复现包周期。")
+    .replace("Current research context will switch to the package timeframe.", "当前研究上下文会切换到复现包周期。")
+    .replace("Import will replay the package data hash and row count as the audited snapshot.", "导入会把包内数据 hash 和行数作为审计快照回放。")
+    .replace("Import will restore the package strategy revision as an audited Strategy Lab version.", "导入会把包内策略版本恢复为 Strategy Lab 的 audited 版本。")
+    .replace("Import will write the package research note back to the local note store.", "导入会把包内研究笔记写回本地笔记库。")
+    .replace("Package does not include a locked research note.", "复现包没有包含锁定研究笔记。")
+    .replace("Import will restore paper execution records attached to the package run.", "导入会恢复附加在包内运行上的模拟执行记录。")
+    .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
+    .replace("Local import must reject packages that claim live trading permission.", "本地导入必须拒绝声明实盘权限的复现包。")
+    .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
 }
 
 function researchExportIndexStatusLabel(
