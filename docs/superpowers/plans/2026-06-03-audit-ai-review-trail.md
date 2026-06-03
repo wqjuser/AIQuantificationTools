@@ -21,6 +21,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Render risk approval references beside the AI evidence trail, reusing the same execution approval gates that block paper and live handoff.
 - Support backend `limit`, `offset`, and `query` parameters for saved AI Review Run Records, returning pagination metadata while preserving the existing `aiReviews` response array.
 - Build a compact audit timeline from current evidence, saved AI Review Run Records, and risk approval so the Audit workspace has a single approval-reference chain.
+- Give timeline references action metadata so current evidence opens Backtest, saved reviews select the comparison record, and risk approval opens Execution.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -74,3 +75,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "AI review audit timeline"` failed because the Audit panel did not render the timeline.
 - GREEN: added `AiReviewAuditTimelineBoard` with compact reference rows for current evidence, saved records, and risk approval, then wired it into `AiReviewAuditTrailPanel`.
 - DOCS: updated product plan and architecture notes to mark the compact AI review audit timeline as implemented and leave clickable approval/export/cross-workspace references for the next slice.
+- RED: `terminal-workbench.test.ts -t "AI review audit timeline"` failed because timeline items did not expose action metadata.
+- GREEN: added `targetWorkspaceId`, `targetRecordId`, and `actionLabel` to timeline items for Backtest evidence, saved review comparison, and Execution approval.
+- RED: `layout-css.test.js -t "timeline rows into workflow actions"` failed because Audit timeline rows were read-only.
+- GREEN: added compact timeline action buttons; saved-review actions select the comparison record, while current-evidence and risk-approval actions call `selectProductWorkArea` for Backtest and Execution.
+- DOCS: updated product plan and architecture notes to record clickable Audit timeline actions and leave export-package evidence anchors for later.

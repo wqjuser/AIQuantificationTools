@@ -1632,19 +1632,28 @@ describe("terminal workbench model", () => {
       kind: "current-evidence",
       status: "passed",
       tone: "ai",
-      reference: "run-ai-timeline"
+      reference: "run-ai-timeline",
+      targetWorkspaceId: "backtest",
+      targetRecordId: null,
+      actionLabel: "Open backtest evidence"
     });
     expect(items[1]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
       kind: "saved-review",
       reference: "ai-review:run-ai-timeline:rev-ai-timeline",
       status: "passed",
-      tone: "ai"
+      tone: "ai",
+      targetWorkspaceId: null,
+      targetRecordId: "ai-review:run-ai-timeline:rev-ai-timeline",
+      actionLabel: "Compare saved review"
     });
     expect(items[3]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
       kind: "risk-approval",
       reference: "risk:paper_ready",
       status: "review",
-      tone: "warning"
+      tone: "warning",
+      targetWorkspaceId: "execution",
+      targetRecordId: null,
+      actionLabel: "Open execution approval"
     });
   });
 

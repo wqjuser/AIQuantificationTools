@@ -483,6 +483,9 @@ export interface AiReviewAuditTimelineItem {
   detail: string;
   reference: string;
   createdAt: string | null;
+  targetWorkspaceId: ProductWorkAreaId | null;
+  targetRecordId: string | null;
+  actionLabel: string;
   status: "passed" | "review" | "blocked";
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
@@ -1772,6 +1775,9 @@ export function buildAiReviewAuditTimelineItems({
       detail: record.dossier.headline,
       reference: record.aiReviewId,
       createdAt: record.createdAt,
+      targetWorkspaceId: null,
+      targetRecordId: record.aiReviewId,
+      actionLabel: "Compare saved review",
       status: record.status === "ready" ? ("passed" as const) : ("blocked" as const),
       tone: record.status === "ready" ? ("ai" as const) : ("risk" as const)
     }));
@@ -1787,6 +1793,9 @@ export function buildAiReviewAuditTimelineItems({
       detail: dossier.headline,
       reference: currentRunReference,
       createdAt: null,
+      targetWorkspaceId: "backtest",
+      targetRecordId: null,
+      actionLabel: "Open backtest evidence",
       status: currentEvidenceReady ? "passed" : "blocked",
       tone: currentEvidenceReady ? "ai" : "risk"
     },
@@ -1799,6 +1808,9 @@ export function buildAiReviewAuditTimelineItems({
       detail: riskApproval.summary,
       reference: `risk:${riskApproval.status}`,
       createdAt: null,
+      targetWorkspaceId: "execution",
+      targetRecordId: null,
+      actionLabel: "Open execution approval",
       status:
         riskApproval.status === "live_ready" ? "passed" : riskApproval.status === "paper_ready" ? "review" : "blocked",
       tone:

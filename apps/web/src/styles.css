@@ -1675,7 +1675,7 @@ em {
 
 .audit-ai-timeline-row {
   display: grid;
-  grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr) minmax(140px, 0.35fr);
+  grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr) minmax(140px, 0.35fr) auto;
   gap: 9px;
   align-items: center;
   min-width: 0;
@@ -1704,6 +1704,7 @@ em {
 .audit-ai-timeline-row > span,
 .audit-ai-timeline-row > strong,
 .audit-ai-timeline-row > em,
+.audit-ai-timeline-row > button,
 .audit-ai-timeline-row > p {
   min-width: 0;
   overflow: hidden;
@@ -1737,6 +1738,23 @@ em {
   font-size: 11px;
   line-height: 1.38;
   white-space: nowrap;
+}
+
+.audit-ai-timeline-action {
+  cursor: pointer;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 6px;
+  background: rgba(20, 184, 166, 0.08);
+  color: #83e6ce;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.audit-ai-timeline-action:hover {
+  border-color: rgba(45, 212, 191, 0.72);
+  background: rgba(20, 184, 166, 0.14);
 }
 
 .audit-ai-citation-list {

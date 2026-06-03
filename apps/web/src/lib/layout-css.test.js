@@ -243,8 +243,25 @@ describe("terminal layout css", () => {
     expect(timelineSource).toContain("item.reference");
     expect(cssBlock(".audit-ai-timeline")).toContain("display: grid;");
     expect(cssBlock(".audit-ai-timeline-row")).toContain(
-      "grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr) minmax(140px, 0.35fr);"
+      "grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr) minmax(140px, 0.35fr) auto;"
     );
+  });
+
+  test("turns AI review audit timeline rows into workflow actions", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function aiReviewDriftStatusText");
+    const timelineSource = sourceBetween("function AiReviewAuditTimelineBoard", "function AiReviewAuditTrailPanel");
+
+    expect(auditWorkspaceSource).toContain("onSelectWorkspace={selectProductWorkArea}");
+    expect(auditPanelSource).toContain("onSelectWorkspace");
+    expect(auditPanelSource).toContain("onSelectRecord={setSelectedRecordId}");
+    expect(timelineSource).toContain("function handleTimelineAction");
+    expect(timelineSource).toContain("item.targetRecordId");
+    expect(timelineSource).toContain("onSelectRecord(item.targetRecordId)");
+    expect(timelineSource).toContain("item.targetWorkspaceId");
+    expect(timelineSource).toContain("onSelectWorkspace(item.targetWorkspaceId)");
+    expect(timelineSource).toContain("auditTimelineActionLabel");
+    expect(cssBlock(".audit-ai-timeline-action")).toContain("cursor: pointer;");
   });
 
   test("compares current AI review evidence with the latest saved audit record", () => {

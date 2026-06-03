@@ -1953,6 +1953,7 @@ export function App() {
             onHistoryQueryChange={updateAiReviewHistoryQuery}
             onNextHistoryPage={nextAiReviewHistoryPage}
             onPreviousHistoryPage={previousAiReviewHistoryPage}
+            onSelectWorkspace={selectProductWorkArea}
             records={activeAiReviewRunRecords}
             riskApproval={riskApprovalSummary}
             roundCount={agentCommitteeRounds.length}
@@ -4151,11 +4152,25 @@ function AiReviewRecordDriftSummary({
 
 function AiReviewAuditTimelineBoard({
   i18n,
-  items
+  items,
+  onSelectRecord,
+  onSelectWorkspace
 }: {
   i18n: AppI18n;
   items: AiReviewAuditTimelineItem[];
+  onSelectRecord: (recordId: string) => void;
+  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
 }) {
+  function handleTimelineAction(item: AiReviewAuditTimelineItem) {
+    if (item.targetRecordId) {
+      onSelectRecord(item.targetRecordId);
+      return;
+    }
+    if (item.targetWorkspaceId) {
+      onSelectWorkspace(item.targetWorkspaceId);
+    }
+  }
+
   return (
     <div className="audit-ai-timeline">
       <div className="agent-rounds-title">
@@ -4168,6 +4183,9 @@ function AiReviewAuditTimelineBoard({
             <span>{auditTimelineKindLabel(i18n, item.kind)}</span>
             <strong>{auditTimelineValue(i18n, item)}</strong>
             <em>{item.reference}</em>
+            <button className="audit-ai-timeline-action" onClick={() => handleTimelineAction(item)} type="button">
+              {auditTimelineActionLabel(i18n, item)}
+            </button>
             <p>{auditTimelineDetail(i18n, item)}</p>
           </article>
         ))}
@@ -4189,6 +4207,7 @@ function AiReviewAuditTrailPanel({
   onHistoryQueryChange,
   onNextHistoryPage,
   onPreviousHistoryPage,
+  onSelectWorkspace,
   records,
   riskApproval,
   roundCount
@@ -4205,6 +4224,7 @@ function AiReviewAuditTrailPanel({
   onHistoryQueryChange: (query: string) => void;
   onNextHistoryPage: () => void;
   onPreviousHistoryPage: () => void;
+  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
   records: AiReviewRunRecordEnvelope[];
   riskApproval: RiskApprovalSummary;
   roundCount: number;
@@ -4247,7 +4267,12 @@ function AiReviewAuditTrailPanel({
           liveExecutionBlocked={liveExecutionBlocked}
           roundCount={roundCount}
         />
-        <AiReviewAuditTimelineBoard i18n={i18n} items={timelineItems} />
+        <AiReviewAuditTimelineBoard
+          i18n={i18n}
+          items={timelineItems}
+          onSelectRecord={setSelectedRecordId}
+          onSelectWorkspace={onSelectWorkspace}
+        />
         <AiReviewRiskReferenceBoard approval={riskApproval} i18n={i18n} />
         <AiReviewRecordDriftSummary
           i18n={i18n}
@@ -4336,6 +4361,16 @@ function auditTimelineDetail(i18n: AppI18n, item: AiReviewAuditTimelineItem): st
     .replace("can stage paper orders", "可提交模拟委托")
     .replace("live trading remains blocked", "实盘仍保持阻断")
     .replace("needs risk review before staging execution", "提交执行前仍需风控复核");
+}
+
+function auditTimelineActionLabel(i18n: AppI18n, item: AiReviewAuditTimelineItem): string {
+  if (i18n.locale === "en-US") {
+    return item.actionLabel;
+  }
+  return item.actionLabel
+    .replace("Open backtest evidence", "查看回测证据")
+    .replace("Compare saved review", "对照保存评审")
+    .replace("Open execution approval", "查看执行审批");
 }
 
 function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {
