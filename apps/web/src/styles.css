@@ -1712,7 +1712,7 @@ em {
 
 .research-import-event-row {
   display: grid;
-  grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(92px, 0.24fr) auto;
+  grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(132px, 0.36fr) minmax(92px, 0.24fr) auto;
   gap: 8px;
   align-items: center;
   min-width: 0;
@@ -1808,6 +1808,7 @@ em {
 .research-import-event-row > strong,
 .research-import-event-row > em,
 .research-import-event-row > time,
+.research-import-event-row > div,
 .research-import-event-row > p,
 .research-export-index-row > span,
 .research-export-index-row > strong,
@@ -1976,6 +1977,35 @@ em {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.research-import-event-recovery {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.research-import-event-recovery small {
+  color: #8fb0cc;
+  font-size: 10px;
+  font-weight: 760;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-import-event-recovery button {
+  justify-self: start;
+  width: fit-content;
+  border: 1px solid rgba(45, 212, 191, 0.34);
+  border-radius: 6px;
+  background: rgba(45, 212, 191, 0.1);
+  color: #83e6ce;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 850;
+  padding: 3px 7px;
 }
 
 .research-export-preview-row > p {

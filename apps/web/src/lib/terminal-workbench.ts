@@ -678,15 +678,20 @@ export interface ResearchRunImportDiffRow {
 }
 
 export type ResearchRunImportAuditEventStage = "preview" | "blocked" | "confirmed" | "failed" | "cancelled";
+export type ResearchRunImportFailureCategory = "schema" | "integrity" | "artifact-counts" | "core" | "unknown";
 
 export interface ResearchRunImportAuditEvent {
   id: string;
   stage: ResearchRunImportAuditEventStage;
   runId: string;
+  previousRunId: string | null;
+  rollbackTargetRunId: string | null;
   fileName: string;
   createdAt: string;
   summary: string;
   detail: string;
+  failureCategory: ResearchRunImportFailureCategory | null;
+  recoveryHint: string;
   blockedCount: number;
   changeCount: number;
   exportPath: string;
@@ -2874,11 +2879,13 @@ export function buildResearchRunImportAuditEvent({
   error,
   exportPackage,
   fileName,
+  previousRunId = null,
   rows,
   stage
 }: {
   exportPackage: Pick<ResearchRunExportBrowserPackage, "manifest"> | null | undefined;
   fileName: string;
+  previousRunId?: string | null;
   rows: ResearchRunImportDiffRow[];
   stage: "preview" | "confirmed" | "failed" | "cancelled";
   createdAt?: string;
@@ -2892,22 +2899,29 @@ export function buildResearchRunImportAuditEvent({
   const resolvedStage: ResearchRunImportAuditEventStage =
     stage === "preview" && blockedCount > 0 ? "blocked" : stage;
   const summary = researchRunImportAuditSummary(resolvedStage);
+  const failure = researchRunImportFailure(error);
   const detail = researchRunImportAuditDetail({
     blockedCount,
     changeCount,
-    error,
+    error: failure.detail ?? error,
     fileName,
     stage: resolvedStage
   });
+  const normalizedPreviousRunId = previousRunId?.trim() || null;
+  const rollbackTargetRunId = resolvedStage === "confirmed" ? normalizedPreviousRunId : null;
 
   return {
     id: `import:${runId}:${resolvedStage}:${createdAt}:${fileName || "unknown"}`,
     stage: resolvedStage,
     runId,
+    previousRunId: normalizedPreviousRunId,
+    rollbackTargetRunId,
     fileName: fileName || "unknown",
     createdAt,
     summary,
     detail,
+    failureCategory: resolvedStage === "failed" ? failure.category : null,
+    recoveryHint: researchRunImportRecoveryHint(resolvedStage, rollbackTargetRunId, failure),
     blockedCount,
     changeCount,
     exportPath: exportPackage ? `manifest:${runId}` : `import:file:${fileName || "unknown"}`,
@@ -2940,6 +2954,11 @@ export function filterResearchRunImportAuditEvents(
       event.createdAt,
       event.summary,
       event.detail,
+      event.previousRunId ?? "",
+      event.rollbackTargetRunId ?? "",
+      event.rollbackTargetRunId ? "rollback" : "",
+      event.failureCategory ?? "",
+      event.recoveryHint,
       String(event.blockedCount),
       String(event.changeCount),
       event.exportPath,
@@ -3006,6 +3025,82 @@ function researchRunImportAuditTone(stage: ResearchRunImportAuditEventStage): Re
     return "warning";
   }
   return "ai";
+}
+
+function researchRunImportFailure(error?: string | null): {
+  category: ResearchRunImportFailureCategory;
+  detail: string | null;
+} {
+  const message = error?.trim() || "";
+  const normalized = message.toLowerCase();
+  if (!message) {
+    return {
+      category: "unknown",
+      detail: null
+    };
+  }
+  if (normalized.includes("invalid research run export contract")) {
+    return {
+      category: "schema",
+      detail: `Schema contract invalid: ${message}`
+    };
+  }
+  if (normalized.includes("integrity") || normalized.includes("hash")) {
+    return {
+      category: "integrity",
+      detail: `Integrity check failed: ${message}`
+    };
+  }
+  if (normalized.includes("artifact") || normalized.includes("count") || normalized.includes("manifest")) {
+    return {
+      category: "artifact-counts",
+      detail: `Artifact manifest mismatch: ${message}`
+    };
+  }
+  if (normalized.includes("http") || normalized.includes("invalid_research_run_export")) {
+    return {
+      category: "core",
+      detail: `Core import rejected the package: ${message}`
+    };
+  }
+  return {
+    category: "unknown",
+    detail: message
+  };
+}
+
+function researchRunImportRecoveryHint(
+  stage: ResearchRunImportAuditEventStage,
+  rollbackTargetRunId: string | null,
+  failure: { category: ResearchRunImportFailureCategory; detail: string | null }
+): string {
+  if (stage === "confirmed") {
+    return rollbackTargetRunId
+      ? `Replay previous audited run ${rollbackTargetRunId} to roll back the workspace context.`
+      : "No previous audited run was bound before import; replay a run from history to change context.";
+  }
+  if (stage === "failed") {
+    if (failure.category === "schema") {
+      return "Choose a valid aiqt.researchRun.export package or a wrapped { export } payload.";
+    }
+    if (failure.category === "integrity") {
+      return "Re-export the run or choose a package whose canonical SHA-256 integrity matches its payload.";
+    }
+    if (failure.category === "artifact-counts") {
+      return "Re-export the run and ensure manifest artifact counts match the included payload arrays.";
+    }
+    if (failure.category === "core") {
+      return "Review the Python core rejection detail, fix the package, and run import preflight again.";
+    }
+    return "Inspect the import error, then retry with a verified research run export package.";
+  }
+  if (stage === "blocked") {
+    return "Import not applied; fix blocked preflight rows before confirming.";
+  }
+  if (stage === "cancelled") {
+    return "Import not applied; no rollback is required.";
+  }
+  return "Import not applied yet; confirm only after reviewing diff rows.";
 }
 
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {

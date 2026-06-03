@@ -130,4 +130,10 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: backend audit event tests failed because `quant_core.audit_events` and `/api/audit/events` did not exist.
 - GREEN: added `AuditEventStore`, searchable `research_run_import` events, POST/GET `/api/audit/events`, and frontend `saveAuditEvent`/`loadAuditEvents` client helpers.
 - GREEN: wired import preview/blocked/confirmed/cancelled/failed events to persist asynchronously and refresh from backend when entering Audit.
-- DOCS: updated product plan and architecture notes to mark backend AuditEvent persistence as implemented; rollback and richer failure explanations remain the next slice.
+- RED: `terminal-workbench.test.ts -t "audit ledger"` failed because import audit events did not retain the previous audited run, rollback target, failure category, or recovery hint.
+- RED: `layout-css.test.js -t "import audit events"` failed because the Audit import ledger had no rollback replay action or recovery column.
+- RED: `terminal-api.test.ts -t "detailed research run import errors"` failed because core 400 import rejections collapsed to generic offline fallback errors.
+- GREEN: added previous run tracking, rollback target metadata, failure classification, recovery hints, searchable rollback keywords, and a compact ledger action to replay the previous audited run.
+- GREEN: preserved Python core import `detail` errors as `source=core` results so failed import audit events can explain schema, integrity, artifact-count, and core rejections.
+- DOCS: updated product plan and architecture notes to mark import failure explanations and old-run replay recovery as implemented while leaving transaction-level import undo as the next rollback slice.
+- DOCS: updated product plan and architecture notes to mark backend AuditEvent persistence as implemented; transaction-level import rollback remained the next slice.

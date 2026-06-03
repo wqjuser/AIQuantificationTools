@@ -2676,6 +2676,7 @@ describe("terminal workbench model", () => {
       createdAt: "2026-05-26T09:12:00+00:00",
       exportPackage,
       fileName: "unsafe-import.json",
+      previousRunId: "run-current",
       rows: rows.filter((row) => row.status !== "blocked"),
       stage: "confirmed"
     });
@@ -2708,6 +2709,8 @@ describe("terminal workbench model", () => {
         summary: "Import applied",
         blockedCount: 0,
         changeCount: 1,
+        rollbackTargetRunId: "run-current",
+        recoveryHint: "Replay previous audited run run-current to roll back the workspace context.",
         tone: "positive"
       })
     );
@@ -2716,7 +2719,10 @@ describe("terminal workbench model", () => {
         stage: "failed",
         runId: "unknown",
         fileName: "broken.json",
-        detail: "Invalid research run export contract",
+        detail: "Schema contract invalid: Invalid research run export contract",
+        failureCategory: "schema",
+        recoveryHint: "Choose a valid aiqt.researchRun.export package or a wrapped { export } payload.",
+        rollbackTargetRunId: null,
         exportPath: "import:file:broken.json",
         tone: "risk"
       })
@@ -2730,6 +2736,9 @@ describe("terminal workbench model", () => {
     ]);
     expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "contract").map((event) => event.id)).toEqual([
       failed.id
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "rollback").map((event) => event.id)).toEqual([
+      confirmed.id
     ]);
     expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "unsafe-import").map((event) => event.id)).toEqual([
       blockedPreview.id,

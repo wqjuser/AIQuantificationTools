@@ -413,13 +413,18 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("<ResearchRunImportAuditEventPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-import-events-panel"');
     expect(auditWorkspaceSource).toContain("events={researchRunImportAuditEvents}");
+    expect(auditWorkspaceSource).toContain("onReplayRollbackRun={replayImportRollbackRun}");
     expect(importEventsPanelSource).toContain("research-import-events-summary");
     expect(importEventsPanelSource).toContain("research-import-event-row");
+    expect(importEventsPanelSource).toContain("event.recoveryHint");
+    expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
+    expect(importEventsPanelSource).toContain("research-import-event-recovery");
     expect(cssBlock(".workflow-import-events-panel")).toContain("grid-area: import-events;");
     expect(cssBlock(".research-import-events")).toContain("display: grid;");
     expect(cssBlock(".research-import-event-row")).toContain(
-      "grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(92px, 0.24fr) auto;"
+      "grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(132px, 0.36fr) minmax(92px, 0.24fr) auto;"
     );
+    expect(cssBlock(".research-import-event-recovery")).toContain("display: flex;");
     expect(hasCssBlockWith(".audit-layout", ['"import-diff import-diff"', '"import-events import-events"', '"index index"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"import-diff"', '"import-events"', '"index"'])).toBe(true);
   });

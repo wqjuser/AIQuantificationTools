@@ -916,10 +916,17 @@ export async function importResearchRunExport(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(exportPackage)
     });
+    const payload = await response.json();
     if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }
-    const payload = await response.json();
     if (!isResearchRunImportPayload(payload)) {
       throw new Error("Invalid research run import contract");
     }
@@ -953,6 +960,20 @@ export async function importResearchRunExport(
       error: error instanceof Error ? error.message : "Unknown research run import error"
     };
   }
+}
+
+function coreErrorDetail(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.detail === "string" && record.detail.trim()) {
+    return record.detail;
+  }
+  if (typeof record.error === "string" && record.error.trim()) {
+    return record.error;
+  }
+  return null;
 }
 
 export async function loadResearchNote(

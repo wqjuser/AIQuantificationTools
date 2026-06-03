@@ -155,6 +155,7 @@ import {
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
   ResearchRunImportAuditEvent,
+  ResearchRunImportFailureCategory,
   ResearchRunImportDiffRow,
   ResearchRunComparisonRow,
   ResearchRunExportPreviewRow,
@@ -960,6 +961,27 @@ export function App() {
     [refreshAiReviewRunHistory, resetAiReviewHistoryState]
   );
 
+  const replayImportRollbackRun = useCallback(
+    async (runId: string) => {
+      const historyRun = runHistory.find((run) => run.runId === runId);
+      if (historyRun) {
+        await replayRun(historyRun);
+        return;
+      }
+      const detail = await loadResearchRunDetail(quantCoreBaseUrl, runId);
+      if (detail.run) {
+        await replayRun(detail.run);
+        return;
+      }
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Import rollback replay failed",
+        error: detail.error ?? `Rollback target ${runId} was not found`
+      }));
+    },
+    [replayRun, runHistory]
+  );
+
   const exportRun = useCallback(async (run: ResearchRunAudit) => {
     const result = await loadResearchRunExport(quantCoreBaseUrl, run.runId);
     if (result.source === "fallback" || !result.exportPackage) {
@@ -1188,6 +1210,7 @@ export function App() {
       if (!file) {
         return;
       }
+      const previousRunId = workspace.researchRun?.runId ?? null;
 
       try {
         const parsed = JSON.parse(await file.text()) as unknown;
@@ -1198,6 +1221,7 @@ export function App() {
               error: "Invalid research run export contract",
               exportPackage: null,
               fileName: file.name,
+              previousRunId,
               rows: [],
               stage: "failed"
             })
@@ -1223,6 +1247,7 @@ export function App() {
           buildResearchRunImportAuditEvent({
             exportPackage,
             fileName: file.name,
+            previousRunId,
             rows: previewRows,
             stage: "preview"
           })
@@ -1241,6 +1266,7 @@ export function App() {
             error: importError instanceof Error ? importError.message : "Research run import failed",
             exportPackage: null,
             fileName: file.name,
+            previousRunId,
             rows: [],
             stage: "failed"
           })
@@ -1268,6 +1294,7 @@ export function App() {
       paperExecution: activePaperExecutionRecord,
       workspace
     });
+    const previousRunId = workspace.researchRun?.runId ?? null;
     const importVersion = manualSelectionVersionRef.current + 1;
     manualSelectionVersionRef.current = importVersion;
     workflowRunIdRef.current += 1;
@@ -1288,6 +1315,7 @@ export function App() {
             error: result.error ?? "Research run import failed",
             exportPackage: pendingImportPackage.exportPackage,
             fileName: pendingImportPackage.fileName,
+            previousRunId,
             rows: importRows,
             stage: "failed"
           })
@@ -1304,6 +1332,7 @@ export function App() {
         buildResearchRunImportAuditEvent({
           exportPackage: pendingImportPackage.exportPackage,
           fileName: pendingImportPackage.fileName,
+          previousRunId,
           rows: importRows,
           stage: "confirmed"
         })
@@ -1381,6 +1410,7 @@ export function App() {
           error: importError instanceof Error ? importError.message : "Research run import failed",
           exportPackage: pendingImportPackage.exportPackage,
           fileName: pendingImportPackage.fileName,
+          previousRunId,
           rows: importRows,
           stage: "failed"
         })
@@ -1412,6 +1442,7 @@ export function App() {
         buildResearchRunImportAuditEvent({
           exportPackage: pendingImportPackage.exportPackage,
           fileName: pendingImportPackage.fileName,
+          previousRunId: workspace.researchRun?.runId ?? null,
           rows: buildResearchRunImportDiffRows({
             aiReviewRecords: activeAiReviewRunRecords,
             exportPackage: pendingImportPackage.exportPackage,
@@ -2256,6 +2287,7 @@ export function App() {
             className="workflow-import-events-panel"
             events={researchRunImportAuditEvents}
             i18n={i18n}
+            onReplayRollbackRun={replayImportRollbackRun}
           />
           <ResearchRunExportIndexPanel
             className="workflow-export-index-panel"
@@ -4822,11 +4854,13 @@ function ResearchRunImportDiffPanel({
 function ResearchRunImportAuditEventPanel({
   className,
   events,
-  i18n
+  i18n,
+  onReplayRollbackRun
 }: {
   className?: string;
   events: ResearchRunImportAuditEvent[];
   i18n: AppI18n;
+  onReplayRollbackRun: (runId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const filteredEvents = filterResearchRunImportAuditEvents(events, query);
@@ -4881,6 +4915,21 @@ function ResearchRunImportAuditEventPanel({
                 <em>
                   {event.blockedCount}/{event.changeCount}
                 </em>
+                <div className="research-import-event-recovery">
+                  <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
+                  {event.rollbackTargetRunId ? (
+                    <button
+                      onClick={() => {
+                        if (event.rollbackTargetRunId) {
+                          onReplayRollbackRun(event.rollbackTargetRunId);
+                        }
+                      }}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "回放旧 run" : "Replay previous"}
+                    </button>
+                  ) : null}
+                </div>
                 <time dateTime={event.createdAt}>{researchImportAuditTimeLabel(event.createdAt)}</time>
               </article>
             ))
@@ -4895,11 +4944,14 @@ function ResearchRunImportAuditEventPanel({
                 <b>{i18n.locale === "zh-CN" ? "等待导入动作" : "Waiting for import action"}</b>
                 <small>
                   {i18n.locale === "zh-CN"
-                    ? "导入流水只记录本页操作，不会写入后端审计库。"
-                    : "This ledger tracks page actions only and does not write the backend audit store."}
+                    ? "导入流水会写入后端审计库，并保留恢复提示。"
+                    : "This ledger writes to the backend audit store and keeps recovery hints."}
                 </small>
               </p>
               <em>0/0</em>
+              <div className="research-import-event-recovery">
+                <small>{i18n.locale === "zh-CN" ? "等待预检" : "Awaiting preflight"}</small>
+              </div>
               <time>-</time>
             </article>
           )}
@@ -5506,6 +5558,10 @@ function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportA
     detail: event.detail,
     metadata: {
       fileName: event.fileName,
+      previousRunId: event.previousRunId,
+      rollbackTargetRunId: event.rollbackTargetRunId,
+      failureCategory: event.failureCategory,
+      recoveryHint: event.recoveryHint,
       blockedCount: event.blockedCount,
       changeCount: event.changeCount,
       exportPath: event.exportPath,
@@ -5522,10 +5578,14 @@ function auditEventRecordToResearchRunImportEvent(record: AuditEventRecord): Res
     id: record.eventId,
     stage: record.stage,
     runId: record.runId ?? "unknown",
+    previousRunId: auditMetadataNullableString(record.metadata.previousRunId),
+    rollbackTargetRunId: auditMetadataNullableString(record.metadata.rollbackTargetRunId),
     fileName: auditMetadataString(record.metadata.fileName, "unknown"),
     createdAt: record.createdAt,
     summary: record.summary,
     detail: record.detail,
+    failureCategory: auditMetadataFailureCategory(record.metadata.failureCategory),
+    recoveryHint: auditMetadataString(record.metadata.recoveryHint, ""),
     blockedCount: auditMetadataNumber(record.metadata.blockedCount),
     changeCount: auditMetadataNumber(record.metadata.changeCount),
     exportPath: auditMetadataString(record.metadata.exportPath, `auditEvent:${record.eventId}`),
@@ -5541,9 +5601,19 @@ function auditMetadataString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+function auditMetadataNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 function auditMetadataNumber(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function auditMetadataFailureCategory(value: unknown): ResearchRunImportFailureCategory | null {
+  return value === "schema" || value === "integrity" || value === "artifact-counts" || value === "core" || value === "unknown"
+    ? value
+    : null;
 }
 
 function auditMetadataTone(value: unknown): ResearchRunImportAuditEvent["tone"] {
@@ -5606,6 +5676,41 @@ function researchImportAuditDetailLabel(i18n: AppI18n, detail: string): string {
     .replaceAll("blocked", "阻断")
     .replaceAll("changes", "处变更")
     .replaceAll("change", "处变更");
+}
+
+function researchImportAuditRecoveryLabel(i18n: AppI18n, recoveryHint: string): string {
+  if (i18n.locale === "en-US") {
+    return recoveryHint;
+  }
+  return recoveryHint
+    .replace(/^Replay previous audited run (.+) to roll back the workspace context\.$/u, "回放旧的已审计 run $1，以恢复导入前的工作台上下文。")
+    .replace(
+      "No previous audited run was bound before import; replay a run from history to change context.",
+      "导入前没有绑定旧的已审计 run；可从历史记录回放其他 run 来切换上下文。"
+    )
+    .replace(
+      "Choose a valid aiqt.researchRun.export package or a wrapped { export } payload.",
+      "请选择有效的 aiqt.researchRun.export 复现包，或包含 { export } 的包装 payload。"
+    )
+    .replace(
+      "Re-export the run or choose a package whose canonical SHA-256 integrity matches its payload.",
+      "请重新导出该 run，或选择 canonical SHA-256 完整性与 payload 匹配的复现包。"
+    )
+    .replace(
+      "Re-export the run and ensure manifest artifact counts match the included payload arrays.",
+      "请重新导出该 run，并确认 manifest 里的产物数量与 payload 数组一致。"
+    )
+    .replace(
+      "Review the Python core rejection detail, fix the package, and run import preflight again.",
+      "请查看 Python 核心拒绝原因，修复复现包后重新运行导入预检。"
+    )
+    .replace(
+      "Inspect the import error, then retry with a verified research run export package.",
+      "请检查导入错误，再使用已验证的研究运行复现包重试。"
+    )
+    .replace("Import not applied; fix blocked preflight rows before confirming.", "导入尚未写入；请先修复预检阻断项再确认。")
+    .replace("Import not applied; no rollback is required.", "导入尚未写入；无需回滚。")
+    .replace("Import not applied yet; confirm only after reviewing diff rows.", "导入尚未写入；请审阅差异行后再确认。");
 }
 
 function researchImportAuditTimeLabel(createdAt: string): string {

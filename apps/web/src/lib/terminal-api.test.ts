@@ -2092,6 +2092,62 @@ describe("terminal workspace API client", () => {
     expect(result.strategies?.[0]?.status).toBe("audited");
   });
 
+  test("surfaces detailed research run import errors from the Python core", async () => {
+    const result = await importResearchRunExport(
+      "http://127.0.0.1:8765",
+      {
+        kind: "aiqt.researchRun.export",
+        packageVersion: 1,
+        exportedAt: "2026-05-26T08:05:00+00:00",
+        manifest: {
+          runId: "run-import-broken",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyRevision: "rev-import",
+          dataHash: "snapshot-import",
+          dataRows: 1,
+          executionMode: "paper_only",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          artifactCounts: { bars: 1, trades: 0, equityPoints: 1, decisions: 0, aiRisks: 0, researchNotes: 0 }
+        },
+        researchRun: {
+          runId: "run-import-broken",
+          createdAt: "2026-05-26T08:00:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          strategyName: "Imported SMA trend",
+          strategyRevision: "rev-import",
+          dataRows: 1,
+          metrics: { total_return_pct: 0, trade_count: 0 },
+          decisions: [],
+          executionMode: "paper_only"
+        },
+        executionHandoff: {
+          mode: "paper_only",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          requiredGates: []
+        }
+      },
+      async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: "invalid_research_run_export",
+          detail: "integrity_hash_mismatch"
+        })
+      })
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.run).toBeUndefined();
+    expect(result.error).toBe("integrity_hash_mismatch");
+  });
+
   test("submits a paper execution for an audited research run", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const result = await submitResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async (url, init) => {
