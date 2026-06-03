@@ -25,6 +25,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Attach export-package evidence anchors to AI Review Run Records and Audit timeline rows so saved records can point back to stable `researchRun`, `strategyConfig`, `dataSnapshot`, citation, committee, decision log, and boundary locations.
 - Render a searchable export evidence index inside Audit so users can inspect anchors and `exportPath` values without opening raw JSON.
 - Render a reproducible research run export preview inside Audit so users can inspect package-level readiness before opening raw JSON.
+- Render a research run export package browser inside Audit, loading a selected history run package and checking manifest counts, integrity metadata, package artifacts, AI review records, and execution handoff gates.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -98,3 +99,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package preview"` failed because Audit did not render the package preview panel.
 - GREEN: added `ResearchRunExportPreviewPanel`, compact readiness/search UI, and an `export` Audit layout area before the AI audit trail.
 - DOCS: updated product plan and architecture notes to mark the Audit export package preview as implemented and leave full package browser plus cross-package audit search as the next slice.
+- RED: `terminal-workbench.test.ts -t "export package browser"` failed because `buildResearchRunExportBrowserRows` did not exist.
+- GREEN: added research run export package browser rows and filtering across manifest, integrity, data snapshot, backtest artifacts, research notes, paper executions, promotion candidates, AI reviews, and execution handoff gates.
+- RED: `layout-css.test.js -t "export package browser"` failed because Audit did not render the package browser or wire Run History inspect actions.
+- GREEN: added `ResearchRunExportPackageBrowserPanel`, an Audit `package` grid area, Run History inspect buttons, and a backend-backed export package load action.
+- DOCS: updated product plan and architecture notes to mark the Audit export package browser as implemented and leave cross-package audit search plus import diffing as the next slice.

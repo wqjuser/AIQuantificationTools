@@ -94,6 +94,7 @@ import {
   buildProductWorkAreas,
   buildPromotionReadiness,
   buildResearchRunComparisonRows,
+  buildResearchRunExportBrowserRows,
   buildResearchRunExportPreviewRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
@@ -106,6 +107,7 @@ import {
   buildInstrumentFromSymbol,
   filterAiReviewExportEvidenceIndexRows,
   filterResearchRunExportPreviewRows,
+  filterResearchRunExportBrowserRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -139,6 +141,7 @@ import {
   ProductWorkArea,
   ProductWorkAreaId,
   ResearchRunAudit,
+  ResearchRunExportBrowserRow,
   ResearchRunComparisonRow,
   ResearchRunExportPreviewRow,
   RiskApprovalGate,
@@ -353,12 +356,14 @@ export function App() {
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
+  const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
+  const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
   const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
@@ -410,6 +415,7 @@ export function App() {
     riskApproval: riskApprovalSummary,
     workspace
   });
+  const researchRunExportBrowserRows = buildResearchRunExportBrowserRows(inspectedExportPackage);
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyTemplateOptions = buildStrategyTemplateOptions();
   const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
@@ -928,6 +934,32 @@ export function App() {
       statusLabel: "Research run export ready",
       error: undefined
     }));
+  }, []);
+
+  const inspectRunExportPackage = useCallback(async (run: ResearchRunAudit) => {
+    setIsInspectingExportPackage(true);
+    try {
+      const result = await loadResearchRunExport(quantCoreBaseUrl, run.runId);
+      if (result.source === "fallback" || !result.exportPackage) {
+        setInspectedExportPackage(null);
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research run export inspect failed",
+          error: result.error ?? "Research run export inspect failed"
+        }));
+        return;
+      }
+
+      setInspectedExportPackage(result.exportPackage);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research run export package loaded",
+        error: undefined
+      }));
+      setActiveWorkAreaId("audit");
+    } finally {
+      setIsInspectingExportPackage(false);
+    }
   }, []);
 
   const exportBacktestReportMarkdown = useCallback(() => {
@@ -1858,6 +1890,7 @@ export function App() {
             className="workflow-history-panel"
             i18n={i18n}
             onExport={exportRun}
+            onInspectExport={inspectRunExportPackage}
             onImportFile={importRunExportFile}
             onReplay={replayRun}
             runComparisonRows={runComparisonRows}
@@ -1879,6 +1912,7 @@ export function App() {
             className="workflow-history-panel"
             i18n={i18n}
             onExport={exportRun}
+            onInspectExport={inspectRunExportPackage}
             onImportFile={importRunExportFile}
             onReplay={replayRun}
             runComparisonRows={runComparisonRows}
@@ -1948,6 +1982,7 @@ export function App() {
             className="workflow-history-panel"
             i18n={i18n}
             onExport={exportRun}
+            onInspectExport={inspectRunExportPackage}
             onImportFile={importRunExportFile}
             onReplay={replayRun}
             runComparisonRows={runComparisonRows}
@@ -1958,6 +1993,12 @@ export function App() {
             className="workflow-export-preview-panel"
             i18n={i18n}
             rows={researchRunExportPreviewRows}
+          />
+          <ResearchRunExportPackageBrowserPanel
+            className="workflow-export-browser-panel"
+            i18n={i18n}
+            isLoading={isInspectingExportPackage}
+            rows={researchRunExportBrowserRows}
           />
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
@@ -4343,6 +4384,84 @@ function ResearchRunExportPreviewPanel({
   );
 }
 
+function ResearchRunExportPackageBrowserPanel({
+  className,
+  i18n,
+  isLoading,
+  rows
+}: {
+  className?: string;
+  i18n: AppI18n;
+  isLoading: boolean;
+  rows: ResearchRunExportBrowserRow[];
+}) {
+  const [query, setQuery] = useState("");
+  const filteredRows = filterResearchRunExportBrowserRows(rows, query);
+  const readyCount = rows.filter((row) => row.status === "ready").length;
+  const blockedCount = rows.filter((row) => row.status === "blocked").length;
+  const missingCount = rows.filter((row) => row.status === "missing").length;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "复现包浏览器" : "Export Package Browser"}
+      subtitle={
+        i18n.locale === "zh-CN"
+          ? "Manifest、integrity 与 artifact 数量校验"
+          : "Manifest, integrity, and artifact count checks"
+      }
+      className={className}
+      action={isLoading ? <RefreshCw className="spin" size={15} /> : undefined}
+    >
+      <div className="research-export-browser">
+        <div className="research-export-browser-toolbar">
+          <div className="research-export-browser-summary">
+            <span>
+              {i18n.locale === "zh-CN" ? "就绪" : "Ready"} <strong>{readyCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "缺失" : "Missing"} <strong>{missingCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{blockedCount}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "总项" : "Total"} <strong>{rows.length}</strong>
+            </span>
+          </div>
+          <input
+            aria-label={i18n.locale === "zh-CN" ? "搜索复现包浏览器" : "Search export package browser"}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={i18n.locale === "zh-CN" ? "搜索 manifest / exportPath / 状态" : "Search manifest / exportPath / status"}
+            type="search"
+            value={query}
+          />
+        </div>
+        <div className="research-export-browser-list">
+          {filteredRows.length ? (
+            filteredRows.map((row) => (
+              <article className={`research-export-browser-row ${row.tone} ${row.status}`} key={row.id}>
+                <span>{researchExportBrowserLabel(i18n, row)}</span>
+                <strong>{researchExportBrowserDetail(i18n, row.detail)}</strong>
+                <em>{row.value}</em>
+                <small>{row.exportPath}</small>
+                <b>{researchExportBrowserStatusLabel(i18n, row.status)}</b>
+              </article>
+            ))
+          ) : (
+            <article className="research-export-browser-row empty">
+              <span>{i18n.locale === "zh-CN" ? "无匹配" : "No match"}</span>
+              <strong>{i18n.locale === "zh-CN" ? "清空搜索查看全部 manifest 项" : "Clear search to see every manifest item"}</strong>
+              <em>-</em>
+              <small>-</small>
+              <b>{i18n.locale === "zh-CN" ? "过滤中" : "Filtered"}</b>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
   currentRecord,
@@ -4661,6 +4780,81 @@ function researchExportPreviewDetail(i18n: AppI18n, detail: string): string {
     .replace("needs risk review before staging execution", "提交执行前仍需风控复核");
 }
 
+function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowserRow): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return (
+    {
+      package: "导出包",
+      integrity: "完整性",
+      data: "数据快照",
+      backtest: "回测回放",
+      "research-note": "研究笔记",
+      "paper-executions": "模拟执行",
+      "promotion-candidate": "晋级候选",
+      "ai-reviews": "AI 评审",
+      "execution-handoff": "执行交接"
+    } satisfies Record<ResearchRunExportBrowserRow["id"], string>
+  )[row.id];
+}
+
+function researchExportBrowserStatusLabel(
+  i18n: AppI18n,
+  status: ResearchRunExportBrowserRow["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        ready: "Ready",
+        missing: "Missing",
+        blocked: "Blocked"
+      } satisfies Record<ResearchRunExportBrowserRow["status"], string>
+    )[status];
+  }
+  return (
+    {
+      ready: "就绪",
+      missing: "缺失",
+      blocked: "阻断"
+    } satisfies Record<ResearchRunExportBrowserRow["status"], string>
+  )[status];
+}
+
+function researchExportBrowserDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  const packageDetail = detail.match(/^(.+) · (.+) · exported (.+)$/);
+  if (packageDetail) {
+    return `${packageDetail[1]} · ${packageDetail[2]} · 导出 ${packageDetail[3]}`;
+  }
+  const decisionDetail = detail.match(/^(.+) decisions · (.+) AI risks$/);
+  if (decisionDetail) {
+    return `${decisionDetail[1]} 条决策 · ${decisionDetail[2]} 条 AI 风险`;
+  }
+  return detail
+    .replace("Inspect a run from history to load its manifest and artifact counts.", "在运行历史中点击查看包，加载 manifest 和 artifact 数量。")
+    .replace("Canonical SHA-256 integrity metadata is present.", "标准 SHA-256 完整性元数据已存在。")
+    .replace("Integrity metadata is missing or malformed.", "完整性元数据缺失或格式异常。")
+    .replace("Manifest and package data snapshot counts match.", "Manifest 与包内数据快照数量一致。")
+    .replace("Manifest data snapshot count does not match the package payload.", "Manifest 数据快照数量与包内载荷不一致。")
+    .replace("Manifest and package backtest artifact counts match.", "Manifest 与包内回测 artifact 数量一致。")
+    .replace("Manifest backtest artifact count does not match the package payload.", "Manifest 回测 artifact 数量与包内载荷不一致。")
+    .replace("Locked research context is attached to the package.", "锁定研究上下文已附加到导出包。")
+    .replace("No locked research note is attached to this package.", "当前导出包没有附加锁定研究笔记。")
+    .replace("Manifest and package paper execution counts match.", "Manifest 与包内模拟执行数量一致。")
+    .replace("Manifest paper execution count does not match the package payload.", "Manifest 模拟执行数量与包内载荷不一致。")
+    .replace("No paper execution payload is attached.", "没有附加模拟执行载荷。")
+    .replace("Promotion candidate is attached to the package.", "晋级候选证据已附加到导出包。")
+    .replace("No promotion candidate payload is attached.", "没有附加晋级候选载荷。")
+    .replace("Manifest and package AI review counts match.", "Manifest 与包内 AI 评审数量一致。")
+    .replace("Manifest AI review count does not match the package payload.", "Manifest AI 评审数量与包内载荷不一致。")
+    .replace("No saved AI review record is attached.", "没有附加保存的 AI 评审记录。")
+    .replace("Live execution handoff is allowed by the package gates.", "包内闸门允许实盘执行交接。")
+    .replace("Package remains paper-only; live execution is blocked.", "导出包仍为仅模拟盘；实盘执行保持阻断。");
+}
+
 function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {
   if (row.status === "matched") {
     return i18n.locale === "zh-CN" ? "匹配" : "Matched";
@@ -4790,6 +4984,7 @@ function RunHistoryPanel({
   className,
   i18n,
   onExport,
+  onInspectExport,
   onImportFile,
   onReplay,
   runComparisonRows,
@@ -4799,6 +4994,7 @@ function RunHistoryPanel({
   className?: string;
   i18n: AppI18n;
   onExport: (run: ResearchRunAudit) => void;
+  onInspectExport: (run: ResearchRunAudit) => void;
   onImportFile: (event: ChangeEvent<HTMLInputElement>) => void;
   onReplay: (run: ResearchRunAudit) => void;
   runComparisonRows: ResearchRunComparisonRow[];
@@ -4838,6 +5034,7 @@ function RunHistoryPanel({
                 run={run}
                 isActive={workspace.researchRun?.runId === run.runId}
                 onExport={onExport}
+                onInspectExport={onInspectExport}
                 onReplay={onReplay}
               />
             ))
@@ -6543,12 +6740,14 @@ function RunHistoryRow({
   run,
   isActive,
   onExport,
+  onInspectExport,
   onReplay,
   i18n
 }: {
   run: ResearchRunAudit;
   isActive: boolean;
   onExport: (run: ResearchRunAudit) => void;
+  onInspectExport: (run: ResearchRunAudit) => void;
   onReplay: (run: ResearchRunAudit) => void;
   i18n: AppI18n;
 }) {
@@ -6570,6 +6769,10 @@ function RunHistoryRow({
         <button onClick={() => onExport(run)} type="button">
           <Download size={13} />
           <small>{i18n.t("history.export")}</small>
+        </button>
+        <button onClick={() => onInspectExport(run)} type="button">
+          <Search size={13} />
+          <small>{i18n.locale === "zh-CN" ? "查看包" : "Inspect"}</small>
         </button>
       </div>
     </article>

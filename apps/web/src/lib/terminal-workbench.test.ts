@@ -11,6 +11,7 @@ import {
   buildAiReviewAuditTimelineItems,
   buildAiReviewExportEvidenceIndexRows,
   buildResearchRunExportPreviewRows,
+  buildResearchRunExportBrowserRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -47,6 +48,7 @@ import {
   executionModeLabel,
   filterAiReviewExportEvidenceIndexRows,
   filterResearchRunExportPreviewRows,
+  filterResearchRunExportBrowserRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -58,6 +60,7 @@ import {
   type AiReviewAuditTimelineItem,
   type AiReviewExportEvidenceIndexRow,
   type ResearchRunExportPreviewRow,
+  type ResearchRunExportBrowserRow,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -1977,6 +1980,148 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportPreviewRows(rows, "paperExecutions").map((row) => row.id)).toEqual([
       "paper-executions"
     ]);
+  });
+
+  test("builds a searchable research run export package browser from manifest artifacts", () => {
+    const rows = buildResearchRunExportBrowserRows({
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:50:00+00:00",
+      integrity: {
+        algorithm: "sha256",
+        hash: "b".repeat(64)
+      },
+      manifest: {
+        runId: "run-browser",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-browser",
+        dataHash: "snapshot-browser",
+        dataRows: 240,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 240,
+          trades: 12,
+          equityPoints: 240,
+          decisions: 4,
+          aiRisks: 2,
+          paperExecutions: 1,
+          promotionCandidates: 1,
+          researchNotes: 1,
+          aiReviewRuns: 2
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [
+          { id: "adapter-certified", label: "Adapter certified", passed: false, reason: "not configured" },
+          { id: "risk-approved", label: "Risk approved", passed: true, reason: "paper approved" }
+        ]
+      },
+      paperExecutions: [
+        {
+          executionId: "paper-browser",
+          runId: "run-browser",
+          createdAt: "2026-05-26T08:20:00+00:00",
+          mode: "paper_only",
+          account: { cash: 80_659, equity: 100_000, positions: { "600000": 2100 } },
+          orders: [],
+          gates: []
+        }
+      ],
+      promotionCandidate: {
+        candidateId: "promotion-browser",
+        runId: "run-browser",
+        createdAt: "2026-05-26T08:40:00+00:00",
+        liveTradingAllowed: false,
+        status: "certification_pending",
+        headline: "Live promotion pending certification",
+        summary: "Adapter certification is still required.",
+        stages: [],
+        evidence: { paperExecutions: 1, filledOrders: 1, passedPaperRiskChecks: 1 }
+      },
+      aiReviewRuns: [
+        {
+          aiReviewId: "ai-review:run-browser:rev-browser",
+          runId: "run-browser",
+          createdAt: "2026-05-26T08:45:00+00:00",
+          record: {
+            recordType: "aiqt.aiReviewRun",
+            schemaVersion: 1,
+            aiReviewId: "ai-review:run-browser:rev-browser",
+            runId: "run-browser",
+            createdAt: "2026-05-26T08:45:00+00:00",
+            strategyRevision: "rev-browser",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            executionMode: "paper_only",
+            status: "ready",
+            summary: {
+              citationCount: 1,
+              roundCount: 1,
+              decisionCount: 1,
+              parameterScanBound: false,
+              liveExecutionBlocked: true
+            },
+            dossier: { status: "ready", headline: "Evidence ready", summary: "AI evidence is bound.", citations: [] },
+            citations: [],
+            rounds: [],
+            decisionLog: [],
+            boundary: "AI can explain supplied evidence only."
+          }
+        }
+      ]
+    });
+
+    expect(rows).toEqual(
+      expect.arrayContaining<ResearchRunExportBrowserRow>([
+        expect.objectContaining({
+          id: "package",
+          status: "ready",
+          value: "run-browser · rev-browser",
+          exportPath: "manifest.runId"
+        }),
+        expect.objectContaining({
+          id: "integrity",
+          status: "ready",
+          value: "sha256 · bbbbbbbb",
+          exportPath: "integrity.hash"
+        }),
+        expect.objectContaining({
+          id: "data",
+          status: "ready",
+          value: "240/240 bars",
+          exportPath: "manifest.artifactCounts.bars"
+        }),
+        expect.objectContaining({
+          id: "backtest",
+          status: "ready",
+          value: "12 trades / 240 equity",
+          exportPath: "researchRun.backtestTrades"
+        }),
+        expect.objectContaining({
+          id: "ai-reviews",
+          status: "blocked",
+          value: "2 manifest / 1 package",
+          exportPath: "aiReviewRuns[]"
+        }),
+        expect.objectContaining({
+          id: "execution-handoff",
+          status: "blocked",
+          value: "1/2 gates",
+          exportPath: "executionHandoff.requiredGates"
+        })
+      ])
+    );
+    expect(filterResearchRunExportBrowserRows(rows, "integrity.hash").map((row) => row.id)).toEqual(["integrity"]);
+    expect(filterResearchRunExportBrowserRows(rows, "aiReviewRuns").map((row) => row.id)).toEqual(["ai-reviews"]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {

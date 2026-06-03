@@ -310,6 +310,32 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"export"', '"ai"'])).toBe(true);
   });
 
+  test("renders a research run export package browser in the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const runHistoryPanelSource = sourceBetween("function RunHistoryPanel", "function ExecutionPanel");
+    const runHistoryRowSource = sourceBetween("function RunHistoryRow", "function RunComparisonBoard");
+
+    expect(appSource).toContain("buildResearchRunExportBrowserRows");
+    expect(appSource).toContain("filterResearchRunExportBrowserRows");
+    expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
+    expect(appSource).toContain("function ResearchRunExportPackageBrowserPanel");
+    expect(appSource).toContain("const inspectRunExportPackage = useCallback");
+    expect(auditWorkspaceSource).toContain("<ResearchRunExportPackageBrowserPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-export-browser-panel"');
+    expect(auditWorkspaceSource).toContain("rows={researchRunExportBrowserRows}");
+    expect(auditWorkspaceSource).toContain("isLoading={isInspectingExportPackage}");
+    expect(auditWorkspaceSource).toContain("onInspectExport={inspectRunExportPackage}");
+    expect(runHistoryPanelSource).toContain("onInspectExport");
+    expect(runHistoryRowSource).toContain("onInspectExport(run)");
+    expect(cssBlock(".workflow-export-browser-panel")).toContain("grid-area: package;");
+    expect(cssBlock(".research-export-browser")).toContain("display: grid;");
+    expect(cssBlock(".research-export-browser-row")).toContain(
+      "grid-template-columns: minmax(116px, 0.5fr) minmax(0, 1fr) minmax(110px, 0.34fr) minmax(156px, 0.5fr) auto;"
+    );
+    expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"', '"export export"', '"package package"', '"ai ai"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"history"', '"export"', '"workflow"', '"decision"', '"package"', '"ai"'])).toBe(true);
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");

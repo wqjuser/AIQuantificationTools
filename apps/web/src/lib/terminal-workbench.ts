@@ -563,6 +563,77 @@ export interface ResearchRunExportPreviewPromotionCandidate extends Partial<Prom
   };
 }
 
+export type ResearchRunExportBrowserStatus = "ready" | "missing" | "blocked";
+
+export interface ResearchRunExportBrowserManifest {
+  runId: string;
+  createdAt: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  strategyRevision: string;
+  dataHash: string;
+  dataRows: number;
+  executionMode: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  artifactCounts: {
+    bars: number;
+    trades: number;
+    equityPoints: number;
+    decisions: number;
+    aiRisks: number;
+    paperExecutions?: number;
+    promotionCandidates?: number;
+    researchNotes?: number;
+    aiReviewRuns?: number;
+  };
+}
+
+export interface ResearchRunExportBrowserPackage {
+  kind: "aiqt.researchRun.export";
+  packageVersion: number;
+  exportedAt: string;
+  integrity?: {
+    algorithm: "sha256";
+    hash: string;
+  };
+  manifest: ResearchRunExportBrowserManifest;
+  executionHandoff: {
+    mode: string;
+    paperOnly: boolean;
+    liveTradingAllowed: boolean;
+    requiredGates: Array<{
+      id: string;
+      label: string;
+      passed: boolean;
+      reason: string;
+    }>;
+  };
+  paperExecutions?: PaperExecutionSnapshot[];
+  promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
+  aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
+}
+
+export interface ResearchRunExportBrowserRow {
+  id:
+    | "package"
+    | "integrity"
+    | "data"
+    | "backtest"
+    | "research-note"
+    | "paper-executions"
+    | "promotion-candidate"
+    | "ai-reviews"
+    | "execution-handoff";
+  label: string;
+  status: ResearchRunExportBrowserStatus;
+  value: string;
+  detail: string;
+  exportPath: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -2245,6 +2316,152 @@ export function filterResearchRunExportPreviewRows(
   }
   return rows.filter((row) =>
     [row.id, row.label, row.status, row.count, row.anchor, row.exportPath, row.detail, row.tone]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+export function buildResearchRunExportBrowserRows(
+  exportPackage: ResearchRunExportBrowserPackage | null | undefined
+): ResearchRunExportBrowserRow[] {
+  if (!exportPackage) {
+    return [
+      {
+        id: "package",
+        label: "Export package",
+        status: "blocked",
+        value: "No package selected",
+        detail: "Inspect a run from history to load its manifest and artifact counts.",
+        exportPath: "manifest.runId",
+        tone: "risk"
+      }
+    ];
+  }
+
+  const { artifactCounts } = exportPackage.manifest;
+  const paperPackageCount = exportPackage.paperExecutions?.length ?? 0;
+  const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
+  const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
+  const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
+  const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
+  const integrityHash = exportPackage.integrity?.hash ?? "";
+  const integrityIsReady = exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
+  const dataIsReady =
+    artifactCounts.bars === exportPackage.manifest.dataRows &&
+    artifactCounts.bars > 0 &&
+    exportPackage.manifest.dataHash.trim() !== "";
+  const backtestIsReady = artifactCounts.trades > 0 && artifactCounts.equityPoints > 0;
+  const paperCountMatches = (artifactCounts.paperExecutions ?? 0) === paperPackageCount;
+  const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
+  const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
+
+  return [
+    {
+      id: "package",
+      label: "Export package",
+      status: "ready",
+      value: `${exportPackage.manifest.runId} · ${exportPackage.manifest.strategyRevision}`,
+      detail: `${exportPackage.manifest.symbol} · ${exportPackage.manifest.timeframe} · exported ${exportPackage.exportedAt}`,
+      exportPath: "manifest.runId",
+      tone: "positive"
+    },
+    {
+      id: "integrity",
+      label: "Integrity",
+      status: integrityIsReady ? "ready" : "missing",
+      value: exportPackage.integrity ? `${exportPackage.integrity.algorithm} · ${integrityHash.slice(0, 8)}` : "No hash",
+      detail: integrityIsReady
+        ? "Canonical SHA-256 integrity metadata is present."
+        : "Integrity metadata is missing or malformed.",
+      exportPath: "integrity.hash",
+      tone: integrityIsReady ? "positive" : "warning"
+    },
+    {
+      id: "data",
+      label: "Data snapshot",
+      status: dataIsReady ? "ready" : "blocked",
+      value: `${artifactCounts.bars}/${exportPackage.manifest.dataRows} bars`,
+      detail: `${exportPackage.manifest.dataHash || "missing hash"} · ${exportPackage.manifest.market}`,
+      exportPath: "manifest.artifactCounts.bars",
+      tone: dataIsReady ? "positive" : "risk"
+    },
+    {
+      id: "backtest",
+      label: "Backtest replay",
+      status: backtestIsReady ? "ready" : "missing",
+      value: `${artifactCounts.trades} trades / ${artifactCounts.equityPoints} equity`,
+      detail: `${artifactCounts.decisions} decisions · ${artifactCounts.aiRisks} AI risks`,
+      exportPath: "researchRun.backtestTrades",
+      tone: backtestIsReady ? "positive" : "warning"
+    },
+    {
+      id: "research-note",
+      label: "Research note",
+      status: (artifactCounts.researchNotes ?? 0) > 0 ? "ready" : "missing",
+      value: `${artifactCounts.researchNotes ?? 0} note`,
+      detail:
+        (artifactCounts.researchNotes ?? 0) > 0
+          ? "Locked research context is declared in the manifest."
+          : "No locked research note is declared in this package.",
+      exportPath: "researchRun.researchNote",
+      tone: (artifactCounts.researchNotes ?? 0) > 0 ? "ai" : "neutral"
+    },
+    {
+      id: "paper-executions",
+      label: "Paper executions",
+      status: paperCountMatches && paperPackageCount > 0 ? "ready" : paperCountMatches ? "missing" : "blocked",
+      value: `${artifactCounts.paperExecutions ?? 0} manifest / ${paperPackageCount} package`,
+      detail: paperCountMatches
+        ? "Manifest and package paper execution counts match."
+        : "Manifest paper execution count does not match the package payload.",
+      exportPath: "paperExecutions[]",
+      tone: paperCountMatches && paperPackageCount > 0 ? "positive" : paperCountMatches ? "neutral" : "risk"
+    },
+    {
+      id: "promotion-candidate",
+      label: "Promotion candidate",
+      status: promotionCountMatches && promotionPackageCount > 0 ? "ready" : promotionCountMatches ? "missing" : "blocked",
+      value: `${artifactCounts.promotionCandidates ?? 0} manifest / ${promotionPackageCount} package`,
+      detail: exportPackage.promotionCandidate?.summary ?? "No promotion candidate payload is attached.",
+      exportPath: "promotionCandidate",
+      tone: promotionCountMatches && promotionPackageCount > 0 ? "warning" : promotionCountMatches ? "neutral" : "risk"
+    },
+    {
+      id: "ai-reviews",
+      label: "AI review records",
+      status: aiReviewCountMatches && aiReviewPackageCount > 0 ? "ready" : aiReviewCountMatches ? "missing" : "blocked",
+      value: `${artifactCounts.aiReviewRuns ?? 0} manifest / ${aiReviewPackageCount} package`,
+      detail: aiReviewCountMatches
+        ? "AI review record count matches the export package payload."
+        : "AI review manifest count does not match the package payload.",
+      exportPath: "aiReviewRuns[]",
+      tone: aiReviewCountMatches && aiReviewPackageCount > 0 ? "ai" : aiReviewCountMatches ? "neutral" : "risk"
+    },
+    {
+      id: "execution-handoff",
+      label: "Execution handoff",
+      status: exportPackage.executionHandoff.liveTradingAllowed ? "ready" : "blocked",
+      value: `${passedGateCount}/${totalGateCount} gates`,
+      detail: exportPackage.executionHandoff.liveTradingAllowed
+        ? "Live execution handoff is allowed by the package gates."
+        : "Package remains paper-only; live execution is blocked.",
+      exportPath: "executionHandoff.requiredGates",
+      tone: exportPackage.executionHandoff.liveTradingAllowed ? "positive" : "risk"
+    }
+  ];
+}
+
+export function filterResearchRunExportBrowserRows(
+  rows: ResearchRunExportBrowserRow[],
+  query: string
+): ResearchRunExportBrowserRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [row.id, row.label, row.status, row.value, row.detail, row.exportPath, row.tone]
       .join(" ")
       .toLowerCase()
       .includes(normalizedQuery)
