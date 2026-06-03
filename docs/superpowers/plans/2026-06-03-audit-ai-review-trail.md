@@ -116,3 +116,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import diff guidance"` failed because Audit did not render an import impact panel.
 - GREEN: added `ResearchRunImportDiffPanel`, the `import-diff` Audit grid area, compact diff rows, summary counts, search, and responsive styles.
 - DOCS: updated product plan and architecture notes to mark import impact diffing as implemented and leave file-picker import preview/confirmation as the next slice.
+- RED: `terminal-api.test.ts -t "normalizes raw and wrapped"` failed because file import had no shared export-package normalizer for preview.
+- RED: `layout-css.test.js -t "previews an imported"` failed because the file picker still imported immediately and the import diff panel had no confirm/cancel actions.
+- GREEN: added `normalizeResearchRunExportPackagePayload`, pending file import state, preview-only file selection, confirm/cancel actions, and blocked-diff guarded apply.
+- DOCS: updated product plan, architecture notes, and i18n status labels to mark external file import preview/confirmation as implemented.

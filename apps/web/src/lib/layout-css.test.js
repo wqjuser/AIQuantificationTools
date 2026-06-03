@@ -375,6 +375,32 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"package"', '"import-diff"', '"index"'])).toBe(true);
   });
 
+  test("previews an imported research run export file before applying it", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const importFileSource = sourceBetween("const importRunExportFile = useCallback", "const confirmPendingImportPackage = useCallback");
+    const confirmImportSource = sourceBetween("const confirmPendingImportPackage = useCallback", "const updateAiReviewHistoryQuery = useCallback");
+    const importPanelSource = sourceBetween("function ResearchRunImportDiffPanel", "function ResearchRunExportIndexPanel");
+
+    expect(appSource).toContain("normalizeResearchRunExportPackagePayload");
+    expect(appSource).toContain("const [pendingImportPackage, setPendingImportPackage]");
+    expect(appSource).toContain("const [isApplyingImportPackage, setIsApplyingImportPackage]");
+    expect(appSource).toContain("exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage");
+    expect(importFileSource).toContain("normalizeResearchRunExportPackagePayload(parsed)");
+    expect(importFileSource).toContain("setPendingImportPackage({ exportPackage, fileName: file.name })");
+    expect(importFileSource).toContain("setInspectedExportPackage(exportPackage)");
+    expect(importFileSource).not.toContain("importResearchRunExport");
+    expect(confirmImportSource).toContain("importResearchRunExport(quantCoreBaseUrl, pendingImportPackage.exportPackage)");
+    expect(auditWorkspaceSource).toContain("pendingFileName={pendingImportPackage?.fileName ?? null}");
+    expect(auditWorkspaceSource).toContain("onConfirmImport={confirmPendingImportPackage}");
+    expect(auditWorkspaceSource).toContain("onCancelImport={cancelPendingImportPackage}");
+    expect(auditWorkspaceSource).toContain("isImporting={isApplyingImportPackage}");
+    expect(importPanelSource).toContain("pendingFileName");
+    expect(importPanelSource).toContain("research-import-diff-actions");
+    expect(importPanelSource).toContain("onConfirmImport");
+    expect(importPanelSource).toContain("onCancelImport");
+    expect(cssBlock(".research-import-diff-actions")).toContain("display: flex;");
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");

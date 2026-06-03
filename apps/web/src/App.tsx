@@ -38,6 +38,7 @@ import {
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
+  normalizeResearchRunExportPackagePayload,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
@@ -371,10 +372,15 @@ export function App() {
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
   const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
+  const [pendingImportPackage, setPendingImportPackage] = useState<{
+    exportPackage: ResearchRunExportPackage;
+    fileName: string;
+  } | null>(null);
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
   const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
+  const [isApplyingImportPackage, setIsApplyingImportPackage] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -427,7 +433,7 @@ export function App() {
   const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
   const researchRunImportDiffRows = buildResearchRunImportDiffRows({
     aiReviewRecords: activeAiReviewRunRecords,
-    exportPackage: inspectedExportPackage,
+    exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage,
     paperExecution: activePaperExecutionRecord,
     workspace
   });
@@ -965,6 +971,7 @@ export function App() {
         return;
       }
 
+      setPendingImportPackage(null);
       setInspectedExportPackage(result.exportPackage);
       setWorkspaceState((current) => ({
         ...current,
@@ -1137,97 +1144,31 @@ export function App() {
         return;
       }
 
-      const importVersion = manualSelectionVersionRef.current + 1;
-      manualSelectionVersionRef.current = importVersion;
-      workflowRunIdRef.current += 1;
-      setIsRunning(false);
-      setPaperExecutionRecord(null);
-      setPromotionCandidateRecord(null);
-      resetAiReviewHistoryState();
-
       try {
-        const parsed = JSON.parse(await file.text()) as ResearchRunExportPackage | { export?: ResearchRunExportPackage };
-        const exportPackage = "export" in parsed && parsed.export ? parsed.export : parsed;
-        const result = await importResearchRunExport(quantCoreBaseUrl, exportPackage as ResearchRunExportPackage);
-        if (manualSelectionVersionRef.current !== importVersion) {
-          return;
-        }
-        if (result.source === "fallback" || !result.run) {
+        const parsed = JSON.parse(await file.text()) as unknown;
+        const exportPackage = normalizeResearchRunExportPackagePayload(parsed);
+        if (!exportPackage) {
+          setPendingImportPackage(null);
+          setInspectedExportPackage(null);
           setWorkspaceState((current) => ({
             ...current,
             statusLabel: "Research run import failed",
-            error: result.error ?? "Research run import failed"
+            error: "Invalid research run export contract"
           }));
           return;
         }
-        const importedKlines = marketKlinesFromResearchRunAudit(result.run);
+
+        setPendingImportPackage({ exportPackage, fileName: file.name });
+        setInspectedExportPackage(exportPackage);
+        setActiveWorkAreaId("audit");
         setWorkspaceState((current) => ({
-          workspace: workspaceFromResearchRunAudit(current.workspace, result.run as ResearchRunAudit),
-          source: "core",
-          statusLabel: "Research run import ready",
+          ...current,
+          statusLabel: "Research run import preview ready",
           error: undefined
         }));
-        if (importedKlines) {
-          setKlinesState(importedKlines);
-        }
-        if (result.note) {
-          setResearchNoteState({
-            note: result.note,
-            source: "core"
-          });
-          setResearchNoteDraft(result.note.body);
-        } else if (result.run.researchNote?.body) {
-          setResearchNoteState({
-            note: result.run.researchNote,
-            source: "core"
-          });
-          setResearchNoteDraft(result.run.researchNote.body);
-        }
-        if (result.strategies?.length) {
-          setStrategyLibraryState((current) => ({
-            strategies: [
-              ...result.strategies!,
-              ...current.strategies.filter(
-                (existing) => !result.strategies!.some((restored) => restored.revision === existing.revision)
-              )
-            ],
-            source: "core",
-            error: undefined
-          }));
-        }
-        const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
-          loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
-          loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),
-          refreshAiReviewRunHistory(result.run.runId, { offset: 0, query: "" })
-        ]);
-        if (manualSelectionVersionRef.current !== importVersion) {
-          return;
-        }
-        setPaperExecutionRecord(paperHistory.execution ?? null);
-        setPromotionCandidateRecord(promotionHistory.promotion ?? null);
-        setAiReviewRunRecords(aiReviewHistory.aiReviews);
-        if (paperHistory.execution) {
-          setWorkspaceState((current) => ({
-            ...current,
-            statusLabel: "Paper execution history loaded",
-            error: undefined
-          }));
-        } else if (aiReviewHistory.aiReviews.length) {
-          setWorkspaceState((current) => ({
-            ...current,
-            statusLabel: "AI review records loaded",
-            error: undefined
-          }));
-        }
-        setActiveWorkAreaId("audit");
-        setActiveLoopStepId("backtest");
-        setActiveWorkflowStageId("execution");
-        setWorkflowRunState(buildAuditReplayWorkflowState(result.run));
-        await refreshRunHistory();
       } catch (importError) {
-        if (manualSelectionVersionRef.current !== importVersion) {
-          return;
-        }
+        setPendingImportPackage(null);
+        setInspectedExportPackage(null);
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Research run import failed",
@@ -1235,8 +1176,126 @@ export function App() {
         }));
       }
     },
-    [refreshAiReviewRunHistory, refreshRunHistory, resetAiReviewHistoryState]
+    []
   );
+
+  const confirmPendingImportPackage = useCallback(async () => {
+    if (!pendingImportPackage) {
+      return;
+    }
+
+    const importVersion = manualSelectionVersionRef.current + 1;
+    manualSelectionVersionRef.current = importVersion;
+    workflowRunIdRef.current += 1;
+    setIsApplyingImportPackage(true);
+    setIsRunning(false);
+    setPaperExecutionRecord(null);
+    setPromotionCandidateRecord(null);
+    resetAiReviewHistoryState();
+
+    try {
+      const result = await importResearchRunExport(quantCoreBaseUrl, pendingImportPackage.exportPackage);
+      if (manualSelectionVersionRef.current !== importVersion) {
+        return;
+      }
+      if (result.source === "fallback" || !result.run) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research run import failed",
+          error: result.error ?? "Research run import failed"
+        }));
+        return;
+      }
+      const importedKlines = marketKlinesFromResearchRunAudit(result.run);
+      setWorkspaceState((current) => ({
+        workspace: workspaceFromResearchRunAudit(current.workspace, result.run as ResearchRunAudit),
+        source: "core",
+        statusLabel: "Research run import ready",
+        error: undefined
+      }));
+      if (importedKlines) {
+        setKlinesState(importedKlines);
+      }
+      if (result.note) {
+        setResearchNoteState({
+          note: result.note,
+          source: "core"
+        });
+        setResearchNoteDraft(result.note.body);
+      } else if (result.run.researchNote?.body) {
+        setResearchNoteState({
+          note: result.run.researchNote,
+          source: "core"
+        });
+        setResearchNoteDraft(result.run.researchNote.body);
+      }
+      if (result.strategies?.length) {
+        setStrategyLibraryState((current) => ({
+          strategies: [
+            ...result.strategies!,
+            ...current.strategies.filter(
+              (existing) => !result.strategies!.some((restored) => restored.revision === existing.revision)
+            )
+          ],
+          source: "core",
+          error: undefined
+        }));
+      }
+      const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
+        loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
+        loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),
+        refreshAiReviewRunHistory(result.run.runId, { offset: 0, query: "" })
+      ]);
+      if (manualSelectionVersionRef.current !== importVersion) {
+        return;
+      }
+      setPendingImportPackage(null);
+      setPaperExecutionRecord(paperHistory.execution ?? null);
+      setPromotionCandidateRecord(promotionHistory.promotion ?? null);
+      setAiReviewRunRecords(aiReviewHistory.aiReviews);
+      if (paperHistory.execution) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Paper execution history loaded",
+          error: undefined
+        }));
+      } else if (aiReviewHistory.aiReviews.length) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "AI review records loaded",
+          error: undefined
+        }));
+      }
+      setActiveWorkAreaId("audit");
+      setActiveLoopStepId("backtest");
+      setActiveWorkflowStageId("execution");
+      setWorkflowRunState(buildAuditReplayWorkflowState(result.run));
+      await refreshRunHistory();
+    } catch (importError) {
+      if (manualSelectionVersionRef.current !== importVersion) {
+        return;
+      }
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research run import failed",
+        error: importError instanceof Error ? importError.message : "Research run import failed"
+      }));
+    } finally {
+      if (manualSelectionVersionRef.current === importVersion) {
+        setIsApplyingImportPackage(false);
+      }
+    }
+  }, [pendingImportPackage, refreshAiReviewRunHistory, refreshRunHistory, resetAiReviewHistoryState]);
+
+  const cancelPendingImportPackage = useCallback(() => {
+    setPendingImportPackage(null);
+    setInspectedExportPackage(null);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Research run import preview cancelled",
+      error: undefined
+    }));
+  }, []);
 
   const updateAiReviewHistoryQuery = useCallback((query: string) => {
     setAiReviewHistoryQuery(query);
@@ -2047,6 +2106,10 @@ export function App() {
           <ResearchRunImportDiffPanel
             className="workflow-import-diff-panel"
             i18n={i18n}
+            isImporting={isApplyingImportPackage}
+            onCancelImport={cancelPendingImportPackage}
+            onConfirmImport={confirmPendingImportPackage}
+            pendingFileName={pendingImportPackage?.fileName ?? null}
             rows={researchRunImportDiffRows}
           />
           <ResearchRunExportIndexPanel
@@ -4521,10 +4584,18 @@ function ResearchRunExportPackageBrowserPanel({
 function ResearchRunImportDiffPanel({
   className,
   i18n,
+  isImporting = false,
+  onCancelImport,
+  onConfirmImport,
+  pendingFileName,
   rows
 }: {
   className?: string;
   i18n: AppI18n;
+  isImporting?: boolean;
+  onCancelImport?: () => void;
+  onConfirmImport?: () => void;
+  pendingFileName?: string | null;
   rows: ResearchRunImportDiffRow[];
 }) {
   const [query, setQuery] = useState("");
@@ -4532,6 +4603,7 @@ function ResearchRunImportDiffPanel({
   const changeCount = rows.filter((row) => row.status === "change" || row.status === "replace").length;
   const addCount = rows.filter((row) => row.status === "add").length;
   const blockedCount = rows.filter((row) => row.status === "blocked").length;
+  const canConfirmImport = Boolean(pendingFileName && onConfirmImport) && blockedCount === 0;
 
   return (
     <Panel
@@ -4554,6 +4626,16 @@ function ResearchRunImportDiffPanel({
             <span>
               {i18n.locale === "zh-CN" ? "字段" : "Fields"} <strong>{rows.length}</strong>
             </span>
+          </div>
+          <div className="research-import-diff-actions">
+            <span>{pendingFileName ?? (i18n.locale === "zh-CN" ? "未选择外部文件" : "No external file")}</span>
+            <button disabled={!pendingFileName || isImporting} onClick={onCancelImport} type="button">
+              {i18n.locale === "zh-CN" ? "取消" : "Cancel"}
+            </button>
+            <button disabled={!canConfirmImport || isImporting} onClick={onConfirmImport} type="button">
+              {isImporting ? <RefreshCw className="spin" size={13} /> : <Upload size={13} />}
+              {i18n.locale === "zh-CN" ? "确认导入" : "Apply import"}
+            </button>
           </div>
           <input
             aria-label={i18n.locale === "zh-CN" ? "搜索导入差异" : "Search import diff"}

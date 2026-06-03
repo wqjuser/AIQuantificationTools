@@ -1478,7 +1478,7 @@ em {
 
 .research-import-diff-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.34fr);
+  grid-template-columns: minmax(0, 0.78fr) minmax(260px, 0.34fr) minmax(280px, 0.34fr);
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -1511,6 +1511,53 @@ em {
   flex-wrap: wrap;
   gap: 7px;
   min-width: 0;
+}
+
+.research-import-diff-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.research-import-diff-actions span {
+  min-width: 0;
+  max-width: 180px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-import-diff-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid rgba(73, 104, 143, 0.78);
+  border-radius: 7px;
+  background: rgba(16, 29, 48, 0.9);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 840;
+  padding: 7px 10px;
+}
+
+.research-import-diff-actions button:last-child {
+  border-color: rgba(42, 185, 149, 0.55);
+  background: rgba(16, 126, 105, 0.22);
+  color: #a8ffee;
+}
+
+.research-import-diff-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .research-export-index-summary {
@@ -5955,6 +6002,14 @@ button.ai-review-record {
     grid-template-columns: 1fr;
   }
 
+  .research-import-diff-actions {
+    justify-content: flex-start;
+  }
+
+  .research-import-diff-actions span {
+    max-width: 100%;
+  }
+
   .health-grid,
   .strategy-draft-grid,
   .strategy-template-grid,
@@ -6171,6 +6226,11 @@ button.ai-review-record {
   .watchlist-history-panel .history-panel-body,
   .watchlist-history-panel .run-history {
     grid-template-columns: 1fr;
+  }
+
+  .research-import-diff-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .module-workspace-panel,

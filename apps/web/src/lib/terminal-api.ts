@@ -808,6 +808,16 @@ export async function loadResearchRunDetail(
   }
 }
 
+export function normalizeResearchRunExportPackagePayload(value: unknown): ResearchRunExportPackage | null {
+  if (isResearchRunExportPackage(value)) {
+    return value;
+  }
+  if (isResearchRunExportPayload(value)) {
+    return value.export;
+  }
+  return null;
+}
+
 export async function loadResearchRunExport(
   baseUrl: string,
   runId: string,

@@ -42,6 +42,7 @@ import {
   loadResearchRunAiReviews,
   saveResearchNote,
   saveStrategySnapshot,
+  normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
@@ -49,7 +50,8 @@ import {
   loadResearchRunHistory,
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
-  runTerminalResearch
+  runTerminalResearch,
+  type ResearchRunExportPackage
 } from "./terminal-api";
 
 describe("terminal workspace API client", () => {
@@ -1677,6 +1679,71 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.exportPackage).toBeUndefined();
     expect(result.error).toBe("Invalid research run export contract");
+  });
+
+  test("normalizes raw and wrapped research run export package payloads for preview", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:05:00+00:00",
+      manifest: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-preview",
+        dataHash: "hash-preview",
+        dataRows: 1,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
+      },
+      researchRun: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Preview SMA trend",
+        strategyRevision: "rev-preview",
+        dataRows: 1,
+        metrics: { total_return_pct: 1.2, trade_count: 0 },
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          hash: "hash-preview",
+          bars: [
+            {
+              timestamp: "2026-05-26T08:00:00+00:00",
+              timestampMs: 1779782400000,
+              open: 9.1,
+              high: 9.3,
+              low: 9,
+              close: 9.2,
+              volume: 1200000
+            }
+          ]
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+      }
+    } satisfies ResearchRunExportPackage;
+
+    expect(normalizeResearchRunExportPackagePayload(exportPackage)?.manifest.runId).toBe("run-preview");
+    expect(normalizeResearchRunExportPackagePayload({ export: exportPackage })?.manifest.runId).toBe("run-preview");
+    expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
   });
 
   test("returns fallback when research run export integrity is malformed", async () => {
