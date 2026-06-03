@@ -222,7 +222,8 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("roundCount={agentCommitteeRounds.length}");
     expect(auditPanelSource).toContain("const latestRecord = records[0] ?? null;");
     expect(auditPanelSource).toContain("<AiReviewAuditComparison");
-    expect(auditPanelSource).toContain("latestRecord={latestRecord}");
+    expect(auditPanelSource).toContain("const selectedRecord = records.find((record) => record.aiReviewId === selectedRecordId) ?? latestRecord;");
+    expect(auditPanelSource).toContain("latestRecord={selectedRecord}");
     expect(auditPanelSource).toContain("currentCitationCount={dossier.citations.length}");
     expect(auditPanelSource).toContain("currentStatus={dossier.status}");
     expect(auditPanelSource).toContain("roundCount={roundCount}");
@@ -280,6 +281,27 @@ describe("terminal layout css", () => {
     expect(recordHistorySource).toContain("No matching records");
   });
 
+  test("lets the audit workspace compare against a selected AI review record", () => {
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+    const comparisonSource = sourceBetween("function AiReviewAuditComparison", "function AiReviewRecordDriftSummary");
+
+    expect(auditPanelSource).toContain('const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);');
+    expect(auditPanelSource).toContain("const selectedRecord = records.find((record) => record.aiReviewId === selectedRecordId) ?? latestRecord;");
+    expect(auditPanelSource).toContain("latestRecord={selectedRecord}");
+    expect(auditPanelSource).toContain("onSelectRecord={setSelectedRecordId}");
+    expect(auditPanelSource).toContain("selectedRecordId={selectedRecord?.aiReviewId ?? null}");
+    expect(recordHistorySource).toContain("onSelectRecord");
+    expect(recordHistorySource).toContain("selectedRecordId");
+    expect(recordHistorySource).toContain("button");
+    expect(recordHistorySource).toContain("isSelectable && item.aiReviewId === selectedRecordId");
+    expect(recordHistorySource).toContain("onClick={isSelectable ? () => onSelectRecord?.(item.aiReviewId) : undefined}");
+    expect(comparisonSource).toContain("selectedRecordLabel");
+    expect(comparisonSource).toContain("Selected saved");
+    expect(cssBlock("button.ai-review-record")).toContain("cursor: pointer;");
+    expect(cssBlock(".ai-review-record.selected")).toContain("border-color: rgba(76, 201, 173, 0.72);");
+  });
+
   test("passes explicit count and query props to every AI review record history", () => {
     const recordHistoryUsages = appSource.match(/<AiReviewRunRecordHistory[\s\S]*?\/>/g) ?? [];
 
@@ -289,6 +311,18 @@ describe("terminal layout css", () => {
       expect(usage).toContain("records=");
       expect(usage).toContain("totalRecords=");
     });
+  });
+
+  test("keeps saved AI review records read-only outside the audit selector", () => {
+    const agentPanelSource = sourceBetween("const renderAgentPanel", "const renderWorkflowNodesPanel");
+    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+
+    expect(agentPanelSource).not.toContain("onSelectRecord={() => undefined}");
+    expect(recordHistorySource).toContain("const isSelectable = Boolean(onSelectRecord);");
+    expect(recordHistorySource).toContain("const RecordTag = isSelectable ? \"button\" : \"article\";");
+    expect(recordHistorySource).toContain("onClick={isSelectable ? () => onSelectRecord?.(item.aiReviewId) : undefined}");
+    expect(cssBlock(".ai-review-record")).toContain("cursor: default;");
+    expect(cssBlock("button.ai-review-record")).toContain("cursor: pointer;");
   });
 
   test("keeps workflow pages explicit and avoids passive all-in-one watchlist layout", () => {

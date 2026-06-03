@@ -4366,12 +4366,29 @@ em {
   border-left: 3px solid #4cc9ad;
   border-radius: 7px;
   background: #121b29;
+  color: inherit;
+  cursor: default;
+  font: inherit;
   padding: 8px 9px;
+  text-align: left;
+}
+
+button.ai-review-record {
+  cursor: pointer;
 }
 
 .ai-review-record.blocked,
 .ai-review-record.empty {
   border-left-color: #e8be62;
+}
+
+.ai-review-record.selected {
+  border-color: rgba(76, 201, 173, 0.72);
+  background: rgba(18, 47, 42, 0.72);
+}
+
+.ai-review-record.empty {
+  cursor: default;
 }
 
 .ai-review-record header {

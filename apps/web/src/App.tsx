@@ -3783,16 +3783,22 @@ function AiReviewDossierBoard({ dossier, i18n }: { dossier: AiReviewDossier; i18
 
 function AiReviewRunRecordHistory({
   i18n,
+  onSelectRecord,
   query,
   records,
+  selectedRecordId,
   totalRecords
 }: {
   i18n: AppI18n;
+  onSelectRecord?: (recordId: string) => void;
   query: string;
   records: AiReviewRunRecordEnvelope[];
+  selectedRecordId?: string | null;
   totalRecords: number;
 }) {
   const visibleRecords = records.slice(0, 3);
+  const isSelectable = Boolean(onSelectRecord);
+  const RecordTag = isSelectable ? "button" : "article";
   const countLabel = records.length !== totalRecords ? `${records.length}/${totalRecords}` : `${totalRecords}`;
   const emptyTitle =
     totalRecords > 0 ? (i18n.locale === "zh-CN" ? "没有匹配记录" : "No matching records") : i18n.t("aiReview.noSavedRecords");
@@ -3811,7 +3817,14 @@ function AiReviewRunRecordHistory({
       </div>
       {visibleRecords.length ? (
         visibleRecords.map((item) => (
-          <article className={`ai-review-record ${item.record.status}`} key={item.aiReviewId}>
+          <RecordTag
+            className={`ai-review-record ${item.record.status}${
+              isSelectable && item.aiReviewId === selectedRecordId ? " selected" : ""
+            }`}
+            key={item.aiReviewId}
+            onClick={isSelectable ? () => onSelectRecord?.(item.aiReviewId) : undefined}
+            {...(isSelectable ? { type: "button" as const } : {})}
+          >
             <header>
               <strong>{item.record.strategyRevision}</strong>
               <span>{formatChartDate(item.createdAt)}</span>
@@ -3822,7 +3835,7 @@ function AiReviewRunRecordHistory({
               {i18n.t("aiReview.rounds")} ·{" "}
               {item.record.summary.liveExecutionBlocked ? i18n.t("aiReview.boundary") : item.record.executionMode}
             </small>
-          </article>
+          </RecordTag>
         ))
       ) : (
         <article className="ai-review-record empty">
@@ -3855,6 +3868,7 @@ function AiReviewAuditComparison({
 }) {
   const emptyValue = i18n.locale === "zh-CN" ? "未保存" : "Not saved";
   const currentRunLabel = currentRunId ?? (i18n.locale === "zh-CN" ? "等待审计运行" : "Pending audited run");
+  const selectedRecordLabel = i18n.locale === "zh-CN" ? "选中保存" : "Selected saved";
   const savedRecord = latestRecord?.record ?? null;
   const rows = [
     {
@@ -3911,7 +3925,7 @@ function AiReviewAuditComparison({
         <div className="audit-ai-comparison-row audit-ai-comparison-head">
           <span>{i18n.locale === "zh-CN" ? "维度" : "Dimension"}</span>
           <span>{i18n.locale === "zh-CN" ? "当前证据" : "Current evidence"}</span>
-          <span>{i18n.locale === "zh-CN" ? "最近保存" : "Latest saved"}</span>
+          <span>{selectedRecordLabel}</span>
         </div>
         {rows.map((row) => (
           <article className={`audit-ai-comparison-row ${row.changed ? "changed" : "matched"}`} key={row.id}>
@@ -4025,7 +4039,9 @@ function AiReviewAuditTrailPanel({
   roundCount: number;
 }) {
   const [driftQuery, setDriftQuery] = useState("");
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const latestRecord = records[0] ?? null;
+  const selectedRecord = records.find((record) => record.aiReviewId === selectedRecordId) ?? latestRecord;
   const driftRows = buildAiReviewRecordDriftRows({
     currentCitationCount: dossier.citations.length,
     currentRunId,
@@ -4052,7 +4068,7 @@ function AiReviewAuditTrailPanel({
           currentStatus={dossier.status}
           currentStrategyRevision={currentStrategyRevision}
           i18n={i18n}
-          latestRecord={latestRecord}
+          latestRecord={selectedRecord}
           liveExecutionBlocked={liveExecutionBlocked}
           roundCount={roundCount}
         />
@@ -4065,8 +4081,10 @@ function AiReviewAuditTrailPanel({
         />
         <AiReviewRunRecordHistory
           i18n={i18n}
+          onSelectRecord={setSelectedRecordId}
           query={driftQuery}
           records={filteredRecords}
+          selectedRecordId={selectedRecord?.aiReviewId ?? null}
           totalRecords={records.length}
         />
         <div className="audit-ai-citation-list">
