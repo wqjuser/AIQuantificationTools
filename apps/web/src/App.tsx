@@ -72,6 +72,7 @@ import {
   buildAiReviewDossier,
   buildAiReviewReportMarkdown,
   buildAiReviewAuditTimelineItems,
+  buildAiReviewExportEvidenceIndexRows,
   buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
   buildAuditReplayWorkflowState,
@@ -102,6 +103,7 @@ import {
   buildStrategyVersionDiffRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
+  filterAiReviewExportEvidenceIndexRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -110,7 +112,9 @@ import {
   AiReviewDossier,
   AiReviewCitation,
   AiReviewAuditTimelineItem,
+  AiReviewExportEvidenceIndexRow,
   AiReviewRecordDriftRow,
+  AiReviewRunRecord,
   Market,
   AgentCommitteeRound,
   BacktestAssumptionField,
@@ -375,6 +379,7 @@ export function App() {
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
   const aiReviewDossier = buildAiReviewDossier(workspace);
+  const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
@@ -1942,6 +1947,7 @@ export function App() {
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
           <AiReviewAuditTrailPanel
             className="workflow-ai-audit-panel"
+            currentRecord={currentAiReviewRunRecord}
             currentRunId={workspace.researchRun?.runId ?? null}
             currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}
             dossier={aiReviewDossier}
@@ -4195,8 +4201,62 @@ function AiReviewAuditTimelineBoard({
   );
 }
 
+function AiReviewExportEvidenceIndexBoard({
+  i18n,
+  onQueryChange,
+  query,
+  rows,
+  totalRows
+}: {
+  i18n: AppI18n;
+  onQueryChange: (query: string) => void;
+  query: string;
+  rows: AiReviewExportEvidenceIndexRow[];
+  totalRows: number;
+}) {
+  return (
+    <div className="audit-ai-evidence-index">
+      <div className="agent-rounds-title">
+        <span>{i18n.locale === "zh-CN" ? "导出证据索引" : "Export Evidence Index"}</span>
+        <strong>{rows.length !== totalRows ? `${rows.length}/${totalRows}` : totalRows}</strong>
+      </div>
+      <div className="audit-ai-evidence-index-toolbar">
+        <input
+          aria-label={i18n.locale === "zh-CN" ? "搜索导出证据索引" : "Search export evidence index"}
+          className="audit-ai-evidence-index-search"
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder={i18n.locale === "zh-CN" ? "搜索 anchor / exportPath / 引用" : "Search anchor / exportPath / reference"}
+          type="search"
+          value={query}
+        />
+      </div>
+      <div className="audit-ai-evidence-index-list">
+        {rows.length ? (
+          rows.map((row) => (
+            <article className={`audit-ai-evidence-index-row ${row.tone}`} key={row.id}>
+              <span>{aiReviewEvidenceIndexGroupLabel(i18n, row.group)}</span>
+              <strong>{row.anchor}</strong>
+              <em>{row.exportPath}</em>
+              <small>{row.reference}</small>
+              <p>{aiReviewEvidenceIndexDetail(i18n, row.detail)}</p>
+            </article>
+          ))
+        ) : (
+          <article className="audit-ai-evidence-index-row empty">
+            <span>{i18n.locale === "zh-CN" ? "无匹配" : "No match"}</span>
+            <strong>{i18n.locale === "zh-CN" ? "清空搜索查看全部锚点" : "Clear search to see all anchors"}</strong>
+            <em>-</em>
+            <p>{i18n.locale === "zh-CN" ? "当前查询没有命中导出证据索引。" : "The current query did not match the export evidence index."}</p>
+          </article>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AiReviewAuditTrailPanel({
   className,
+  currentRecord,
   currentRunId,
   currentStrategyRevision,
   dossier,
@@ -4214,6 +4274,7 @@ function AiReviewAuditTrailPanel({
   roundCount
 }: {
   className?: string;
+  currentRecord: AiReviewRunRecord | null;
   currentRunId: string | null;
   currentStrategyRevision: string;
   dossier: AiReviewDossier;
@@ -4249,6 +4310,13 @@ function AiReviewAuditTrailPanel({
     records: records.map((record) => record.record),
     riskApproval
   });
+  const [evidenceIndexQuery, setEvidenceIndexQuery] = useState("");
+  const evidenceIndexRows = buildAiReviewExportEvidenceIndexRows({
+    currentRecord,
+    records: records.map((record) => record.record),
+    timelineItems
+  });
+  const filteredEvidenceIndexRows = filterAiReviewExportEvidenceIndexRows(evidenceIndexRows, evidenceIndexQuery);
   const totalHistoryRecords = historyPagination?.total ?? records.length;
 
   return (
@@ -4273,6 +4341,13 @@ function AiReviewAuditTrailPanel({
           items={timelineItems}
           onSelectRecord={setSelectedRecordId}
           onSelectWorkspace={onSelectWorkspace}
+        />
+        <AiReviewExportEvidenceIndexBoard
+          i18n={i18n}
+          onQueryChange={setEvidenceIndexQuery}
+          query={evidenceIndexQuery}
+          rows={filteredEvidenceIndexRows}
+          totalRows={evidenceIndexRows.length}
         />
         <AiReviewRiskReferenceBoard approval={riskApproval} i18n={i18n} />
         <AiReviewRecordDriftSummary
@@ -4372,6 +4447,42 @@ function auditTimelineActionLabel(i18n: AppI18n, item: AiReviewAuditTimelineItem
     .replace("Open backtest evidence", "查看回测证据")
     .replace("Compare saved review", "对照保存评审")
     .replace("Open execution approval", "查看执行审批");
+}
+
+function aiReviewEvidenceIndexGroupLabel(
+  i18n: AppI18n,
+  group: AiReviewExportEvidenceIndexRow["group"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        "current-record": "Current record",
+        "saved-record": "Saved record",
+        timeline: "Timeline"
+      } satisfies Record<AiReviewExportEvidenceIndexRow["group"], string>
+    )[group];
+  }
+  return (
+    {
+      "current-record": "当前记录",
+      "saved-record": "保存记录",
+      timeline: "审计时间线"
+    } satisfies Record<AiReviewExportEvidenceIndexRow["group"], string>
+  )[group];
+}
+
+function aiReviewEvidenceIndexDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("Current AI review record", "当前 AI 评审记录")
+    .replace("Saved AI review record", "保存 AI 评审记录")
+    .replace("Evidence dossier is ready", "证据档案已就绪")
+    .replace("Evidence dossier blocked", "证据档案阻断")
+    .replace("Paper execution approved", "模拟执行已审批")
+    .replace("Risk approval blocked", "风控审批阻断")
+    .replace("live trading remains blocked", "实盘仍保持阻断");
 }
 
 function aiReviewDriftStatusText(i18n: AppI18n, row: AiReviewRecordDriftRow): string {

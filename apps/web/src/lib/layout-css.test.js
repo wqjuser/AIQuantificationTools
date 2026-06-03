@@ -267,6 +267,29 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-ai-timeline-action")).toContain("cursor: pointer;");
   });
 
+  test("renders an export evidence index in the AI review audit trail", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function aiReviewDriftStatusText");
+    const evidenceIndexSource = sourceBetween("function AiReviewExportEvidenceIndexBoard", "function AiReviewAuditTrailPanel");
+
+    expect(appSource).toContain("buildAiReviewExportEvidenceIndexRows");
+    expect(appSource).toContain("filterAiReviewExportEvidenceIndexRows");
+    expect(appSource).toContain("function AiReviewExportEvidenceIndexBoard");
+    expect(auditWorkspaceSource).toContain("currentRecord={currentAiReviewRunRecord}");
+    expect(auditPanelSource).toContain("const evidenceIndexRows = buildAiReviewExportEvidenceIndexRows");
+    expect(auditPanelSource).toContain("const filteredEvidenceIndexRows = filterAiReviewExportEvidenceIndexRows");
+    expect(auditPanelSource).toContain("<AiReviewExportEvidenceIndexBoard");
+    expect(evidenceIndexSource).toContain("audit-ai-evidence-index-search");
+    expect(evidenceIndexSource).toContain("rows.map");
+    expect(evidenceIndexSource).toContain("row.anchor");
+    expect(evidenceIndexSource).toContain("row.exportPath");
+    expect(cssBlock(".audit-ai-evidence-index")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".audit-ai-evidence-index-toolbar")).toContain("display: grid;");
+    expect(cssBlock(".audit-ai-evidence-index-row")).toContain(
+      "grid-template-columns: minmax(120px, 0.55fr) minmax(0, 1fr) minmax(180px, 0.7fr);"
+    );
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");

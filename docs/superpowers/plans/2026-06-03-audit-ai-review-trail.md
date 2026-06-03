@@ -23,6 +23,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - Build a compact audit timeline from current evidence, saved AI Review Run Records, and risk approval so the Audit workspace has a single approval-reference chain.
 - Give timeline references action metadata so current evidence opens Backtest, saved reviews select the comparison record, and risk approval opens Execution.
 - Attach export-package evidence anchors to AI Review Run Records and Audit timeline rows so saved records can point back to stable `researchRun`, `strategyConfig`, `dataSnapshot`, citation, committee, decision log, and boundary locations.
+- Render a searchable export evidence index inside Audit so users can inspect anchors and `exportPath` values without opening raw JSON.
 - Add an explicit `ai` grid area to the Audit workspace layout.
 - Update the product plan.
 
@@ -86,3 +87,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: frontend AI review model/API/layout tests failed until run records exposed typed evidence anchors, timeline rows exposed `exportAnchor`, and API guards rejected malformed anchors.
 - GREEN: added `AiReviewEvidenceAnchor`, generated stable run/strategy/data/citation/committee/decision/boundary anchors, rendered timeline anchors, and validated anchor shape in frontend API guards.
 - DOCS: updated product plan and architecture notes to mark export-package evidence anchors as implemented.
+- RED: `terminal-workbench.test.ts -t "export evidence index"` failed because `buildAiReviewExportEvidenceIndexRows` did not exist.
+- GREEN: added export evidence index rows and filtering across current records, saved records, and timeline references.
+- RED: `layout-css.test.js -t "export evidence index"` failed because Audit did not render the index board.
+- GREEN: added `AiReviewExportEvidenceIndexBoard`, local search, compact index rows, and CSS for anchor/exportPath inspection.
+- DOCS: updated product plan and architecture notes to mark the Audit export evidence index as implemented.

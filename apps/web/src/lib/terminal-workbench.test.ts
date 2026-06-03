@@ -9,6 +9,7 @@ import {
   buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
   buildAiReviewAuditTimelineItems,
+  buildAiReviewExportEvidenceIndexRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -43,6 +44,7 @@ import {
   buildTerminalWorkspace,
   buildWorkflowStages,
   executionModeLabel,
+  filterAiReviewExportEvidenceIndexRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -52,6 +54,7 @@ import {
   resolveBacktestAssumptions,
   type AiReviewRecordDriftRow,
   type AiReviewAuditTimelineItem,
+  type AiReviewExportEvidenceIndexRow,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -1692,6 +1695,110 @@ describe("terminal workbench model", () => {
       targetRecordId: null,
       actionLabel: "Open execution approval"
     });
+  });
+
+  test("builds a searchable AI review export evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-index",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-index",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Trend improved after the audit run.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-05-26T08:00:00+00:00",
+        end: "2026-05-27T08:00:00+00:00",
+        hash: "snapshot-ai-index",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const savedRecord = {
+      ...currentRecord!,
+      aiReviewId: "ai-review:run-ai-index:rev-saved",
+      strategyRevision: "rev-saved",
+      evidenceAnchors: [
+        {
+          id: "run:run-ai-index",
+          type: "research-run" as const,
+          label: "Research run",
+          reference: "run-ai-index",
+          exportPath: "researchRun.runId"
+        },
+        {
+          id: "citation:parameter-scan",
+          type: "citation" as const,
+          label: "Parameter scan",
+          reference: "parameter-scan",
+          exportPath: "aiReviewRuns[].record.citations[parameter-scan]"
+        }
+      ]
+    };
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [savedRecord],
+      riskApproval: {
+        status: "paper_ready",
+        headline: "Paper execution approved",
+        summary: "Audited run can stage paper orders; live trading remains blocked.",
+        gates: []
+      }
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [savedRecord],
+      timelineItems
+    });
+
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: "current:run:run-ai-index",
+          group: "current-record",
+          anchor: "run:run-ai-index",
+          exportPath: "researchRun.runId",
+          reference: "run-ai-index"
+        }),
+        expect.objectContaining({
+          id: "saved:ai-review:run-ai-index:rev-saved:citation:parameter-scan",
+          group: "saved-record",
+          anchor: "citation:parameter-scan",
+          exportPath: "aiReviewRuns[].record.citations[parameter-scan]",
+          reference: "parameter-scan"
+        }),
+        expect.objectContaining({
+          id: "timeline:risk:paper_ready",
+          group: "timeline",
+          anchor: "riskApproval:paper_ready",
+          exportPath: "executionHandoff.requiredGates",
+          reference: "risk:paper_ready"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "parameter-scan").map((row) => row.anchor)).toContain(
+      "citation:parameter-scan"
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "executionHandoff").map((row) => row.group)).toEqual([
+      "timeline"
+    ]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {

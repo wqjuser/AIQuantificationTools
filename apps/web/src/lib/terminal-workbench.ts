@@ -509,6 +509,19 @@ export interface AiReviewAuditTimelineItem {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export type AiReviewExportEvidenceIndexGroup = "current-record" | "saved-record" | "timeline";
+
+export interface AiReviewExportEvidenceIndexRow {
+  id: string;
+  group: AiReviewExportEvidenceIndexGroup;
+  label: string;
+  anchor: string;
+  reference: string;
+  exportPath: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -1911,6 +1924,88 @@ export function buildAiReviewAuditTimelineItems({
         riskApproval.status === "live_ready" ? "positive" : riskApproval.status === "paper_ready" ? "warning" : "risk"
     }
   ];
+}
+
+export function buildAiReviewExportEvidenceIndexRows({
+  currentRecord,
+  records,
+  timelineItems
+}: {
+  currentRecord: AiReviewRunRecord | null;
+  records: AiReviewRunRecord[];
+  timelineItems: AiReviewAuditTimelineItem[];
+}): AiReviewExportEvidenceIndexRow[] {
+  const rows: AiReviewExportEvidenceIndexRow[] = [];
+
+  currentRecord?.evidenceAnchors?.forEach((anchor) => {
+    rows.push({
+      id: `current:${anchor.id}`,
+      group: "current-record",
+      label: anchor.label,
+      anchor: anchor.id,
+      reference: anchor.reference,
+      exportPath: anchor.exportPath,
+      detail: `Current AI review record · ${currentRecord.aiReviewId}`,
+      tone: anchor.type === "risk-boundary" ? "risk" : "ai"
+    });
+  });
+
+  records.forEach((record) => {
+    record.evidenceAnchors?.forEach((anchor) => {
+      rows.push({
+        id: `saved:${record.aiReviewId}:${anchor.id}`,
+        group: "saved-record",
+        label: `${record.strategyRevision} · ${anchor.label}`,
+        anchor: anchor.id,
+        reference: anchor.reference,
+        exportPath: anchor.exportPath,
+        detail: `Saved AI review record · ${record.aiReviewId}`,
+        tone: anchor.type === "risk-boundary" ? "risk" : "neutral"
+      });
+    });
+  });
+
+  timelineItems.forEach((item) => {
+    rows.push({
+      id: `timeline:${item.reference}`,
+      group: "timeline",
+      label: item.label,
+      anchor: item.exportAnchor,
+      reference: item.reference,
+      exportPath: auditTimelineExportPath(item),
+      detail: item.detail,
+      tone: item.tone
+    });
+  });
+
+  return rows;
+}
+
+export function filterAiReviewExportEvidenceIndexRows(
+  rows: AiReviewExportEvidenceIndexRow[],
+  query: string
+): AiReviewExportEvidenceIndexRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+
+  return rows.filter((row) =>
+    [row.group, row.label, row.anchor, row.reference, row.exportPath, row.detail, row.tone]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
+  if (item.kind === "current-evidence") {
+    return "researchRun.runId";
+  }
+  if (item.kind === "saved-review") {
+    return "aiReviewRuns[].record";
+  }
+  return "executionHandoff.requiredGates";
 }
 
 function timestampSortValue(timestamp: string): number {
