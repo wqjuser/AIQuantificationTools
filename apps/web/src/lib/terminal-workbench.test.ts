@@ -3122,14 +3122,133 @@ describe("terminal workbench model", () => {
       invalid: 1,
       latestHash: reportHash,
       ready: 1,
+      revoked: 0,
+      signed: 0,
       total: 2,
-      unsigned: 1
+      unsigned: 1,
+      verified: 0
     });
     expect(filterAuditEvidenceReportLedgerRows(rows, "manifest:run-a1").map((row) => row.id)).toEqual([
       "audit-report-run-a1-audit"
     ]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "bad").map((row) => row.id)).toEqual([
       "audit-report-run-b-bad"
+    ]);
+  });
+
+  test("promotes audit report ledger rows when signature chain metadata is present", () => {
+    const verifiedHash = "b".repeat(64);
+    const signedHash = "c".repeat(64);
+    const revokedHash = "d".repeat(64);
+    const reportEvents = [
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-verified",
+        eventType: "audit_evidence_report",
+        runId: "run-verified",
+        createdAt: "2026-06-04T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Audit evidence report generated for run-verified",
+        detail: "verified report",
+        metadata: {
+          contentSha256: verifiedHash,
+          fileName: "verified.md",
+          signature: {
+            algorithm: "ed25519-sha256",
+            chainId: "audit-chain-local",
+            keyId: "local-audit-key",
+            signedAt: "2026-06-04T09:01:00.000Z",
+            signer: "Local Audit Key",
+            status: "verified",
+            verifiedAt: "2026-06-04T09:02:00.000Z"
+          }
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-signed",
+        eventType: "audit_evidence_report",
+        runId: "run-signed",
+        createdAt: "2026-06-04T09:03:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Audit evidence report generated for run-signed",
+        detail: "signed report",
+        metadata: {
+          contentSha256: signedHash,
+          fileName: "signed.md",
+          signature: {
+            chainId: "audit-chain-local",
+            keyId: "local-audit-key",
+            signedAt: "2026-06-04T09:04:00.000Z",
+            signer: "Local Audit Key",
+            status: "signed"
+          }
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-revoked",
+        eventType: "audit_evidence_report",
+        runId: "run-revoked",
+        createdAt: "2026-06-04T09:05:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Audit evidence report generated for run-revoked",
+        detail: "revoked report",
+        metadata: {
+          contentSha256: revokedHash,
+          fileName: "revoked.md",
+          signature: {
+            chainId: "audit-chain-local",
+            keyId: "local-audit-key",
+            revokedReason: "superseded by corrected evidence package",
+            signedAt: "2026-06-04T09:06:00.000Z",
+            signer: "Local Audit Key",
+            status: "revoked"
+          }
+        }
+      }
+    ];
+
+    const rows = buildAuditEvidenceReportLedgerRows(reportEvents);
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+
+    expect(rows.map((row) => `${row.id}:${row.signatureStatus}:${row.signatureLabel}:${row.tone}`)).toEqual([
+      "audit-report-verified:verified:Verified signature:positive",
+      "audit-report-signed:signed:Signed report hash:positive",
+      "audit-report-revoked:revoked:Revoked signature:risk"
+    ]);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        chainId: "audit-chain-local",
+        signatureAlgorithm: "ed25519-sha256",
+        signatureKeyId: "local-audit-key",
+        signatureSignedAt: "2026-06-04T09:01:00.000Z",
+        signatureVerifiedAt: "2026-06-04T09:02:00.000Z",
+        signer: "Local Audit Key",
+        signatureDetail: "Local Audit Key · local-audit-key · ed25519-sha256"
+      })
+    );
+    expect(summary).toEqual(
+      expect.objectContaining({
+        attention: 1,
+        chainStatus: "attention",
+        revoked: 1,
+        signed: 1,
+        total: 3,
+        unsigned: 0,
+        verified: 1
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "local-audit-key").map((row) => row.id)).toEqual([
+      "audit-report-verified",
+      "audit-report-signed",
+      "audit-report-revoked"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "revoked").map((row) => row.id)).toEqual([
+      "audit-report-revoked"
     ]);
   });
 

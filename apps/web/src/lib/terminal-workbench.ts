@@ -830,7 +830,7 @@ export interface AuditEvidenceReportLedgerEventRecord {
 }
 
 export type AuditEvidenceReportLedgerStatus = "ready" | "invalid";
-export type AuditEvidenceReportSignatureStatus = "unsigned" | "invalid";
+export type AuditEvidenceReportSignatureStatus = "unsigned" | "signed" | "verified" | "revoked" | "invalid";
 
 export interface AuditEvidenceReportLedgerRow {
   id: string;
@@ -847,20 +847,31 @@ export interface AuditEvidenceReportLedgerRow {
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
   statusLabel: string;
+  chainId: string;
+  signer: string;
+  signatureAlgorithm: string;
+  signatureDetail: string;
+  signatureKeyId: string;
+  signatureRevokedReason: string;
+  signatureSignedAt: string;
   signatureStatus: AuditEvidenceReportSignatureStatus;
   signatureLabel: string;
+  signatureVerifiedAt: string;
   detail: string;
-  tone: "ai" | "risk";
+  tone: "ai" | "positive" | "risk";
 }
 
 export interface AuditEvidenceReportLedgerSummary {
   attention: number;
-  chainStatus: "empty" | "unsigned" | "attention";
+  chainStatus: "empty" | "unsigned" | "verified" | "attention";
   invalid: number;
   latestHash: string;
   ready: number;
+  revoked: number;
+  signed: number;
   total: number;
   unsigned: number;
+  verified: number;
 }
 
 export interface WorkflowNode {
@@ -3507,6 +3518,9 @@ export function buildAuditEvidenceReportLedgerRows(
       const focusQuery = auditReportLedgerMetadataText(event.metadata, "evidenceFocus");
       const isHashReady = /^[a-f0-9]{64}$/iu.test(contentSha256);
       const status: AuditEvidenceReportLedgerStatus = isHashReady ? "ready" : "invalid";
+      const signature = auditReportLedgerSignatureMetadata(event.metadata);
+      const signatureStatus = status === "ready" ? auditReportLedgerSignatureStatus(signature) : "invalid";
+      const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
       return {
         id: event.eventId,
         runId: event.runId ?? "unknown",
@@ -3522,10 +3536,18 @@ export function buildAuditEvidenceReportLedgerRows(
         deepLinkStatus: auditReportLedgerMetadataText(event.metadata, "deepLinkStatus") || "unknown",
         status,
         statusLabel: status === "ready" ? "Report hash recorded" : "Report hash invalid",
-        signatureStatus: status === "ready" ? "unsigned" : "invalid",
-        signatureLabel: status === "ready" ? "Unsigned report hash" : "Signature chain blocked",
+        chainId: auditReportLedgerMetadataText(signature, "chainId"),
+        signer: auditReportLedgerMetadataText(signature, "signer"),
+        signatureAlgorithm: auditReportLedgerMetadataText(signature, "algorithm"),
+        signatureDetail: auditReportLedgerSignatureDetail(signature),
+        signatureKeyId: auditReportLedgerMetadataText(signature, "keyId"),
+        signatureRevokedReason: auditReportLedgerMetadataText(signature, "revokedReason"),
+        signatureSignedAt: auditReportLedgerMetadataText(signature, "signedAt"),
+        signatureStatus,
+        signatureLabel,
+        signatureVerifiedAt: auditReportLedgerMetadataText(signature, "verifiedAt"),
         detail: event.detail,
-        tone: status === "ready" ? "ai" : "risk"
+        tone: auditReportLedgerSignatureTone(signatureStatus)
       };
     });
 }
@@ -3536,14 +3558,21 @@ export function buildAuditEvidenceReportLedgerSummary(
   const ready = rows.filter((row) => row.status === "ready").length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
   const unsigned = rows.filter((row) => row.signatureStatus === "unsigned").length;
+  const signed = rows.filter((row) => row.signatureStatus === "signed").length;
+  const verified = rows.filter((row) => row.signatureStatus === "verified").length;
+  const revoked = rows.filter((row) => row.signatureStatus === "revoked").length;
+  const attention = invalid + revoked;
   return {
-    attention: invalid,
-    chainStatus: rows.length === 0 ? "empty" : invalid > 0 ? "attention" : "unsigned",
+    attention,
+    chainStatus: rows.length === 0 ? "empty" : attention > 0 ? "attention" : unsigned > 0 ? "unsigned" : "verified",
     invalid,
     latestHash: rows.find((row) => row.status === "ready")?.contentSha256 ?? "",
     ready,
+    revoked,
+    signed,
     total: rows.length,
-    unsigned
+    unsigned,
+    verified
   };
 }
 
@@ -3566,8 +3595,16 @@ export function filterAuditEvidenceReportLedgerRows(
       row.deepLinkStatus,
       row.status,
       row.statusLabel,
+      row.chainId,
+      row.signer,
+      row.signatureAlgorithm,
+      row.signatureDetail,
+      row.signatureKeyId,
+      row.signatureRevokedReason,
+      row.signatureSignedAt,
       row.signatureStatus,
       row.signatureLabel,
+      row.signatureVerifiedAt,
       row.detail,
       String(row.packageMatched),
       String(row.packageTotal),
@@ -3583,6 +3620,52 @@ export function filterAuditEvidenceReportLedgerRows(
 function auditReportLedgerMetadataText(metadata: Record<string, unknown>, key: string): string {
   const value = metadata[key];
   return typeof value === "string" ? value : "";
+}
+
+function auditReportLedgerSignatureMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const value = metadata.signature;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function auditReportLedgerSignatureStatus(
+  signature: Record<string, unknown>
+): AuditEvidenceReportSignatureStatus {
+  const value = auditReportLedgerMetadataText(signature, "status").toLowerCase();
+  return value === "signed" || value === "verified" || value === "revoked" || value === "invalid"
+    ? value
+    : "unsigned";
+}
+
+function auditReportLedgerSignatureLabel(status: AuditEvidenceReportSignatureStatus): string {
+  if (status === "verified") {
+    return "Verified signature";
+  }
+  if (status === "signed") {
+    return "Signed report hash";
+  }
+  if (status === "revoked") {
+    return "Revoked signature";
+  }
+  if (status === "invalid") {
+    return "Signature chain blocked";
+  }
+  return "Unsigned report hash";
+}
+
+function auditReportLedgerSignatureTone(
+  status: AuditEvidenceReportSignatureStatus
+): AuditEvidenceReportLedgerRow["tone"] {
+  return status === "signed" || status === "verified" ? "positive" : status === "revoked" || status === "invalid" ? "risk" : "ai";
+}
+
+function auditReportLedgerSignatureDetail(signature: Record<string, unknown>): string {
+  return [
+    auditReportLedgerMetadataText(signature, "signer"),
+    auditReportLedgerMetadataText(signature, "keyId"),
+    auditReportLedgerMetadataText(signature, "algorithm")
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function auditReportLedgerMetadataNumber(metadata: Record<string, unknown>, key: string): number {

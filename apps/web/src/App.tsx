@@ -5478,6 +5478,12 @@ function AuditEvidenceReportLedgerPanel({
               {i18n.locale === "zh-CN" ? "未签名" : "Unsigned"} <strong>{summary.unsigned}</strong>
             </span>
             <span>
+              {i18n.locale === "zh-CN" ? "已签名" : "Signed"} <strong>{summary.signed}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "已验证" : "Verified"} <strong>{summary.verified}</strong>
+            </span>
+            <span>
               {i18n.locale === "zh-CN" ? "需关注" : "Attention"} <strong>{summary.attention}</strong>
             </span>
             <span>
@@ -5522,7 +5528,14 @@ function AuditEvidenceReportLedgerPanel({
                 </em>
                 <div>
                   <small>{auditReportLedgerSignatureLabel(i18n, row.signatureLabel)}</small>
-                  <time dateTime={row.createdAt}>{researchImportAuditTimeLabel(row.createdAt)}</time>
+                  <small>
+                    {row.signatureDetail && row.chainId
+                      ? `${row.signatureDetail} · ${row.chainId}`
+                      : row.signatureDetail || row.chainId || row.signatureRevokedReason || row.signatureStatus}
+                  </small>
+                  <time dateTime={row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt}>
+                    {researchImportAuditTimeLabel(row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt)}
+                  </time>
                 </div>
               </article>
             ))
@@ -6562,6 +6575,9 @@ function auditReportLedgerSignatureLabel(i18n: AppI18n, label: string): string {
   return (
     {
       "Unsigned report hash": "报告 hash 尚未签名",
+      "Signed report hash": "报告 hash 已签名",
+      "Verified signature": "签名已验证",
+      "Revoked signature": "签名已撤销",
       "Signature chain blocked": "签名链阻断"
     }[label] ?? label
   );

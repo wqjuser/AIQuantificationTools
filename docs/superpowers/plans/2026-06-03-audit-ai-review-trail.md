@@ -224,3 +224,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "audit evidence report history"` failed because Audit did not query report events from the backend or render a report history/signature-chain panel.
 - GREEN: added report ledger rows/summary/filter helpers, wired `eventType=audit_evidence_report` backend pagination into Audit, and rendered report history with hash, focus, package/import counts, unsigned/invalid signature status, search, and pagination.
 - DOCS: updated product plan and architecture notes; next slice is real signature-chain verification for audit reports instead of the current unsigned hash ledger.
+- RED: `terminal-workbench.test.ts -t "signature chain metadata"` failed because report ledger rows ignored `metadata.signature` and kept signed/verified/revoked report hashes as unsigned.
+- RED: `layout-css.test.js -t "audit evidence report history"` failed because the Audit report ledger did not render signature detail, chain id, signed/verified time, or localized signed/verified/revoked labels.
+- GREEN: parsed optional `metadata.signature` into signed/verified/revoked/unsigned/invalid states, added signer/key/algorithm/chain fields to report ledger rows and search, expanded summary counts, and rendered signature-chain details in the Audit report history panel.
+- DOCS: updated product plan and architecture notes; next slice is backend report signing/verification with local key metadata rather than front-end-only signature status interpretation.

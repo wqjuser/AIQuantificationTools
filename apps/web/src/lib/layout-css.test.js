@@ -638,7 +638,14 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-row");
     expect(reportLedgerPanelSource).toContain("row.shortHash");
     expect(reportLedgerPanelSource).toContain("row.signatureLabel");
+    expect(reportLedgerPanelSource).toContain("row.signatureDetail");
+    expect(reportLedgerPanelSource).toContain("row.chainId");
+    expect(reportLedgerPanelSource).toContain("row.signatureDetail && row.chainId");
+    expect(reportLedgerPanelSource).toContain("row.signatureSignedAt || row.signatureVerifiedAt");
     expect(reportLedgerPanelSource).toContain("row.focusQuery");
+    expect(appSource).toContain('"Verified signature": "签名已验证"');
+    expect(appSource).toContain('"Signed report hash": "报告 hash 已签名"');
+    expect(appSource).toContain('"Revoked signature": "签名已撤销"');
     expect(cssBlock(".workflow-report-ledger-panel")).toContain("grid-area: reports;");
     expect(cssBlock(".audit-report-ledger")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");
