@@ -14,6 +14,7 @@ import {
   buildAuditEvidenceSummary,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
+  buildAuditSigningKeyRotationLedgerRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
@@ -64,6 +65,7 @@ import {
   filterResearchRunImportDiffRows,
   filterResearchRunImportAuditEvents,
   filterAuditEvidenceReportLedgerRows,
+  filterAuditSigningKeyRotationLedgerRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -3250,6 +3252,114 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "revoked").map((row) => row.id)).toEqual([
       "audit-report-revoked"
     ]);
+  });
+
+  test("builds signing key rotation history rows from persisted audit events", () => {
+    const rotationEvents = [
+      {
+        schemaVersion: 1,
+        eventId: "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
+        eventType: "audit_signing_key_rotation_plan",
+        runId: "audit-signing-key-rotation",
+        createdAt: "2026-06-04T10:30:00+00:00",
+        stage: "prepared",
+        source: "web",
+        summary: "Audit signing key rotation plan prepared for next-audit-key",
+        detail: "active-audit-key -> next-audit-key · legacy template sha256 9b1bb415ca4c · restart required",
+        metadata: {
+          blockedReasons: [],
+          currentKeyFingerprint: "a".repeat(16),
+          currentKeyId: "active-audit-key",
+          environmentUpdateNames: [
+            "AIQT_AUDIT_SIGNING_KEY_ID",
+            "AIQT_AUDIT_SIGNING_SECRET",
+            "AIQT_AUDIT_SIGNING_KEYS_JSON"
+          ],
+          legacyRegistryTemplateSha256: "b".repeat(64),
+          proposedChainId: "audit-chain-next",
+          proposedKeyId: "next-audit-key",
+          proposedSigner: "Next Audit Key",
+          requiresRestart: true,
+          rotationRequired: true,
+          secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET", "AIQT_AUDIT_SIGNING_KEYS_JSON"],
+          stepIds: ["set-new-active-key", "verify-legacy-reports"]
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-signing-key-rotation-blocked",
+        eventType: "audit_signing_key_rotation_plan",
+        runId: "audit-signing-key-rotation",
+        createdAt: "2026-06-04T10:35:00+00:00",
+        stage: "blocked",
+        source: "web",
+        summary: "Audit signing key rotation plan prepared for active-audit-key",
+        detail: "blocked plan",
+        metadata: {
+          blockedReasons: ["proposed_key_matches_current_active_key"],
+          currentKeyFingerprint: "c".repeat(16),
+          currentKeyId: "active-audit-key",
+          environmentUpdateNames: [],
+          legacyRegistryTemplateSha256: "bad",
+          proposedChainId: "audit-chain-active",
+          proposedKeyId: "active-audit-key",
+          proposedSigner: "Active Audit Key",
+          requiresRestart: true,
+          rotationRequired: true,
+          secretPlaceholderNames: [],
+          stepIds: []
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-ignore",
+        eventType: "audit_evidence_report",
+        runId: "run-audit",
+        createdAt: "2026-06-04T10:40:00+00:00",
+        stage: "generated",
+        source: "web",
+        summary: "Ignored",
+        detail: "Ignored",
+        metadata: {}
+      }
+    ];
+
+    const rows = buildAuditSigningKeyRotationLedgerRows(rotationEvents);
+
+    expect(rows.map((row) => `${row.id}:${row.status}:${row.templateShortHash}:${row.tone}`)).toEqual([
+      "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c:prepared:bbbbbbbbbbbb:warning",
+      "audit-signing-key-rotation-blocked:blocked:invalid:risk"
+    ]);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        blockedReasonLabel: "none",
+        currentKeyFingerprint: "a".repeat(16),
+        currentKeyId: "active-audit-key",
+        environmentUpdateCount: 3,
+        proposedChainId: "audit-chain-next",
+        proposedKeyId: "next-audit-key",
+        proposedSigner: "Next Audit Key",
+        requiresRestart: true,
+        secretPlaceholderCount: 2,
+        stepCount: 2,
+        statusLabel: "Rotation plan prepared"
+      })
+    );
+    expect(rows[1]).toEqual(
+      expect.objectContaining({
+        blockedReasonLabel: "proposed_key_matches_current_active_key",
+        statusLabel: "Rotation plan blocked",
+        templateShortHash: "invalid"
+      })
+    );
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "next-audit-key").map((row) => row.id)).toEqual([
+      "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "blocked").map((row) => row.id)).toEqual([
+      "audit-signing-key-rotation-blocked"
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
+    expect(JSON.stringify(rows)).not.toContain("local-dev-audit-secret");
   });
 
   test("derives scanner candidates from the active watchlist", () => {

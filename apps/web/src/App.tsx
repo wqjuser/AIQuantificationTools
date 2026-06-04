@@ -101,6 +101,7 @@ import {
   buildAuditEvidenceSummary,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
+  buildAuditSigningKeyRotationLedgerRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -143,6 +144,7 @@ import {
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
   filterAuditEvidenceReportLedgerRows,
+  filterAuditSigningKeyRotationLedgerRows,
   filterResearchRunImportAuditEvents,
   filterResearchRunImportDiffRows,
   formatInstrumentPrice,
@@ -159,6 +161,7 @@ import {
   AiReviewRunRecord,
   AuditEvidenceSummary,
   AuditEvidenceReportLedgerRow,
+  AuditSigningKeyRotationLedgerRow,
   Market,
   AgentCommitteeRound,
   BacktestAssumptionField,
@@ -276,6 +279,7 @@ const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
 const AI_REVIEW_HISTORY_PAGE_SIZE = 5;
 const AUDIT_REPORT_EVENTS_PAGE_SIZE = 8;
+const AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE = 5;
 const IMPORT_AUDIT_EVENTS_PAGE_SIZE = 12;
 const workflowStepDelayMs = 180;
 
@@ -502,6 +506,7 @@ export function App() {
   } | null>(null);
   const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();
   const [auditEvidenceReportEvents, setAuditEvidenceReportEvents] = useState<AuditEventRecord[]>([]);
+  const [auditSigningKeyRotationEvents, setAuditSigningKeyRotationEvents] = useState<AuditEventRecord[]>([]);
   const [auditEvidenceReportPagination, setAuditEvidenceReportPagination] =
     useState<AuditEventHistoryPagination | null>(null);
   const [auditEvidenceReportQuery, setAuditEvidenceReportQuery] = useState("");
@@ -527,6 +532,7 @@ export function App() {
   const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
   const [isApplyingImportPackage, setIsApplyingImportPackage] = useState(false);
   const [isLoadingAuditEvidenceReportEvents, setIsLoadingAuditEvidenceReportEvents] = useState(false);
+  const [isLoadingAuditSigningKeyRotationEvents, setIsLoadingAuditSigningKeyRotationEvents] = useState(false);
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
   const [isPreparingAuditSigningKeyRotationPlan, setIsPreparingAuditSigningKeyRotationPlan] = useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
@@ -589,6 +595,10 @@ export function App() {
   const researchRunExportBrowserRows = buildResearchRunExportBrowserRows(inspectedExportPackage);
   const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
   const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows(auditEvidenceReportEvents);
+  const auditSigningKeyRotationLedgerRows = filterAuditSigningKeyRotationLedgerRows(
+    buildAuditSigningKeyRotationLedgerRows(auditSigningKeyRotationEvents),
+    ""
+  ).slice(0, AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE);
   const researchRunImportDiffRows = buildResearchRunImportDiffRows({
     aiReviewRecords: activeAiReviewRunRecords,
     exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage,
@@ -725,6 +735,20 @@ export function App() {
     return auditHistory;
   }, [auditEvidenceReportOffset, auditEvidenceReportQuery, quantCoreBaseUrl]);
 
+  const refreshAuditSigningKeyRotationEvents = useCallback(async () => {
+    setIsLoadingAuditSigningKeyRotationEvents(true);
+    const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
+      eventType: "audit_signing_key_rotation_plan",
+      limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+      offset: 0
+    });
+    if (auditHistory.source === "core") {
+      setAuditSigningKeyRotationEvents(auditHistory.events);
+    }
+    setIsLoadingAuditSigningKeyRotationEvents(false);
+    return auditHistory;
+  }, []);
+
   const refreshResearchRunImportAuditEvents = useCallback(async () => {
     const requestId = researchRunImportAuditRequestIdRef.current + 1;
     researchRunImportAuditRequestIdRef.current = requestId;
@@ -756,8 +780,14 @@ export function App() {
       return;
     }
     void refreshAuditEvidenceReportEvents();
+    void refreshAuditSigningKeyRotationEvents();
     void refreshResearchRunImportAuditEvents();
-  }, [activeWorkAreaId, refreshAuditEvidenceReportEvents, refreshResearchRunImportAuditEvents]);
+  }, [
+    activeWorkAreaId,
+    refreshAuditEvidenceReportEvents,
+    refreshAuditSigningKeyRotationEvents,
+    refreshResearchRunImportAuditEvents
+  ]);
 
   useEffect(() => {
     return () => {
@@ -837,6 +867,9 @@ export function App() {
             ? { detail: ledgerResult.event.eventId, state: "saved" }
             : { detail: ledgerResult.error ?? "Audit event save failed", state: "failed" }
         );
+        if (ledgerResult.event) {
+          setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, ledgerResult.event!));
+        }
       } else {
         setAuditSigningKeyRotationLedgerStatus({
           detail: result.error ?? "Rotation plan was not generated",
@@ -2915,6 +2948,8 @@ export function App() {
             onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
             registry={auditSigningKeyRegistry.registry}
             rotationError={auditSigningKeyRotationPlan.error}
+            rotationHistoryRows={auditSigningKeyRotationLedgerRows}
+            rotationHistoryState={isLoadingAuditSigningKeyRotationEvents ? "loading" : "ready"}
             rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}
             rotationPlan={auditSigningKeyRotationPlan.rotationPlan}
             source={auditSigningKeyRegistry.source}
@@ -5802,6 +5837,8 @@ function AuditSigningKeyRegistryPanel({
   onPrepareRotation,
   registry,
   rotationError,
+  rotationHistoryRows,
+  rotationHistoryState,
   rotationLedgerStatus,
   rotationPlan,
   source
@@ -5813,6 +5850,8 @@ function AuditSigningKeyRegistryPanel({
   onPrepareRotation: () => void;
   registry?: AuditSigningKeyRegistry;
   rotationError?: string;
+  rotationHistoryRows: AuditSigningKeyRotationLedgerRow[];
+  rotationHistoryState: "loading" | "ready";
   rotationLedgerStatus: AuditSigningKeyRotationLedgerStatus;
   rotationPlan?: AuditSigningKeyRotationPlan;
   source: AuditSigningKeyRegistryResult["source"];
@@ -5889,6 +5928,41 @@ function AuditSigningKeyRegistryPanel({
               <em>fingerprint:n/a</em>
               <small>{error ?? (i18n.locale === "zh-CN" ? "核心服务未返回签名 key 状态。" : "Core did not return signing key state.")}</small>
               <b>{statusCopy}</b>
+            </article>
+          )}
+        </div>
+        <div className="audit-signing-key-rotation-history">
+          <div className="audit-signing-key-rotation-history-head">
+            <span>{i18n.locale === "zh-CN" ? "轮换历史" : "Rotation history"}</span>
+            <strong>
+              {rotationHistoryState === "loading"
+                ? i18n.locale === "zh-CN"
+                  ? "读取中"
+                  : "Loading"
+                : `${rotationHistoryRows.length}`}
+            </strong>
+          </div>
+          {rotationHistoryRows.length ? (
+            rotationHistoryRows.map((row) => (
+              <article className={`audit-signing-key-rotation-history-row ${row.tone}`} key={row.id}>
+                <span>{auditSigningKeyRotationLedgerRowStatusLabel(i18n, row.statusLabel)}</span>
+                <strong>{row.proposedKeyId || "n/a"}</strong>
+                <em>{row.templateShortHash}</em>
+                <small>{row.blockedReasonLabel}</small>
+                <b>
+                  {i18n.locale === "zh-CN"
+                    ? `${row.environmentUpdateCount} 变量 / ${row.stepCount} 步`
+                    : `${row.environmentUpdateCount} vars / ${row.stepCount} steps`}
+                </b>
+              </article>
+            ))
+          ) : (
+            <article className="audit-signing-key-rotation-history-row empty">
+              <span>{i18n.locale === "zh-CN" ? "暂无历史" : "No history"}</span>
+              <strong>{i18n.locale === "zh-CN" ? "等待轮换计划入账" : "Awaiting ledger event"}</strong>
+              <em>hash:n/a</em>
+              <small>{i18n.locale === "zh-CN" ? "生成计划后会自动回读。" : "History appears after a plan is saved."}</small>
+              <b>0</b>
             </article>
           )}
         </div>
@@ -7009,6 +7083,18 @@ function rotationLedgerStatusLabel(i18n: AppI18n, state: AuditSigningKeyRotation
       saving: "正在入账"
     } satisfies Record<typeof state, string>
   )[state];
+}
+
+function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      "Rotation plan blocked": "轮换计划阻断",
+      "Rotation plan prepared": "轮换计划已准备"
+    }[statusLabel] ?? statusLabel
+  );
 }
 
 function auditSigningKeyRotationStepTitle(i18n: AppI18n, title: string): string {

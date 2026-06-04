@@ -1621,6 +1621,87 @@ em {
   font-weight: 760;
 }
 
+.audit-signing-key-rotation-history {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.audit-signing-key-rotation-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.audit-signing-key-rotation-history-head strong {
+  color: #dce6ee;
+  font-size: 11px;
+}
+
+.audit-signing-key-rotation-history-row {
+  display: grid;
+  grid-template-columns: minmax(118px, 0.26fr) minmax(150px, 0.36fr) minmax(88px, 0.2fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.72);
+  border-left: 3px solid #e8be62;
+  border-radius: 6px;
+  background: rgba(11, 18, 30, 0.56);
+  padding: 6px 8px;
+}
+
+.audit-signing-key-rotation-history-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-rotation-history-row.empty {
+  border-style: dashed;
+}
+
+.audit-signing-key-rotation-history-row > span,
+.audit-signing-key-rotation-history-row > strong,
+.audit-signing-key-rotation-history-row > em,
+.audit-signing-key-rotation-history-row > small,
+.audit-signing-key-rotation-history-row > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-history-row > span {
+  color: #f4d38a;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.audit-signing-key-rotation-history-row > strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.audit-signing-key-rotation-history-row > em,
+.audit-signing-key-rotation-history-row > small {
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 740;
+}
+
+.audit-signing-key-rotation-history-row > b {
+  justify-self: end;
+  border: 1px solid rgba(232, 190, 98, 0.28);
+  border-radius: 999px;
+  color: #f4d38a;
+  font-size: 10px;
+  padding: 3px 7px;
+}
+
 .compact-action {
   display: inline-flex;
   align-items: center;
@@ -6965,6 +7046,7 @@ button.ai-review-record {
 
   .workflow-agent-panel .agent-panel-body,
   .audit-signing-key-row,
+  .audit-signing-key-rotation-history-row,
   .audit-signing-key-rotation-head,
   .audit-signing-key-env-row,
   .audit-signing-key-step,
@@ -7199,6 +7281,7 @@ button.ai-review-record {
 
   .watchlist-ai-panel .agent-panel-body,
   .audit-signing-key-row,
+  .audit-signing-key-rotation-history-row,
   .audit-signing-key-rotation-head,
   .audit-signing-key-env-row,
   .audit-signing-key-step,

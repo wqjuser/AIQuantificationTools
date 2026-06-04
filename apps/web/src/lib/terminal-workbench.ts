@@ -874,6 +874,31 @@ export interface AuditEvidenceReportLedgerSummary {
   verified: number;
 }
 
+export type AuditSigningKeyRotationLedgerStatus = "prepared" | "blocked";
+
+export interface AuditSigningKeyRotationLedgerRow {
+  id: string;
+  createdAt: string;
+  currentKeyFingerprint: string;
+  currentKeyId: string;
+  detail: string;
+  environmentUpdateCount: number;
+  proposedChainId: string;
+  proposedKeyId: string;
+  proposedSigner: string;
+  requiresRestart: boolean;
+  rotationRequired: boolean;
+  secretPlaceholderCount: number;
+  stepCount: number;
+  status: AuditSigningKeyRotationLedgerStatus;
+  statusLabel: string;
+  templateSha256: string;
+  templateShortHash: string;
+  blockedReasons: string[];
+  blockedReasonLabel: string;
+  tone: "warning" | "risk";
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -3617,9 +3642,90 @@ export function filterAuditEvidenceReportLedgerRows(
   );
 }
 
+export function buildAuditSigningKeyRotationLedgerRows(
+  events: AuditEvidenceReportLedgerEventRecord[]
+): AuditSigningKeyRotationLedgerRow[] {
+  return events
+    .filter((event) => event.eventType === "audit_signing_key_rotation_plan")
+    .map((event) => {
+      const blockedReasons = auditReportLedgerMetadataStringList(event.metadata, "blockedReasons");
+      const status: AuditSigningKeyRotationLedgerStatus =
+        event.stage === "blocked" || blockedReasons.length > 0 ? "blocked" : "prepared";
+      const templateSha256 = auditReportLedgerMetadataText(event.metadata, "legacyRegistryTemplateSha256");
+      const isTemplateHashReady = /^[a-f0-9]{64}$/iu.test(templateSha256);
+      const environmentUpdateNames = auditReportLedgerMetadataStringList(event.metadata, "environmentUpdateNames");
+      const secretPlaceholderNames = auditReportLedgerMetadataStringList(event.metadata, "secretPlaceholderNames");
+      const stepIds = auditReportLedgerMetadataStringList(event.metadata, "stepIds");
+      return {
+        id: event.eventId,
+        createdAt: event.createdAt,
+        currentKeyFingerprint: auditReportLedgerMetadataText(event.metadata, "currentKeyFingerprint"),
+        currentKeyId: auditReportLedgerMetadataText(event.metadata, "currentKeyId"),
+        detail: event.detail,
+        environmentUpdateCount: environmentUpdateNames.length,
+        proposedChainId: auditReportLedgerMetadataText(event.metadata, "proposedChainId"),
+        proposedKeyId: auditReportLedgerMetadataText(event.metadata, "proposedKeyId"),
+        proposedSigner: auditReportLedgerMetadataText(event.metadata, "proposedSigner"),
+        requiresRestart: auditReportLedgerMetadataBoolean(event.metadata, "requiresRestart"),
+        rotationRequired: auditReportLedgerMetadataBoolean(event.metadata, "rotationRequired"),
+        secretPlaceholderCount: secretPlaceholderNames.length,
+        stepCount: stepIds.length,
+        status,
+        statusLabel: status === "blocked" ? "Rotation plan blocked" : "Rotation plan prepared",
+        templateSha256,
+        templateShortHash: isTemplateHashReady ? templateSha256.slice(0, 12) : "invalid",
+        blockedReasons,
+        blockedReasonLabel: blockedReasons.length ? blockedReasons.join(" / ") : "none",
+        tone: status === "blocked" || !isTemplateHashReady ? "risk" : "warning"
+      };
+    });
+}
+
+export function filterAuditSigningKeyRotationLedgerRows(
+  rows: AuditSigningKeyRotationLedgerRow[],
+  query: string
+): AuditSigningKeyRotationLedgerRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [
+      row.id,
+      row.createdAt,
+      row.currentKeyFingerprint,
+      row.currentKeyId,
+      row.detail,
+      row.proposedChainId,
+      row.proposedKeyId,
+      row.proposedSigner,
+      row.status,
+      row.statusLabel,
+      row.templateSha256,
+      row.templateShortHash,
+      row.blockedReasonLabel,
+      String(row.environmentUpdateCount),
+      String(row.secretPlaceholderCount),
+      String(row.stepCount)
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
 function auditReportLedgerMetadataText(metadata: Record<string, unknown>, key: string): string {
   const value = metadata[key];
   return typeof value === "string" ? value : "";
+}
+
+function auditReportLedgerMetadataBoolean(metadata: Record<string, unknown>, key: string): boolean {
+  return metadata[key] === true;
+}
+
+function auditReportLedgerMetadataStringList(metadata: Record<string, unknown>, key: string): string[] {
+  const value = metadata[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function auditReportLedgerSignatureMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
