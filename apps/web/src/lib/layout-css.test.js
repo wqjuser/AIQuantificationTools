@@ -424,6 +424,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("offset: researchRunImportAuditOffset");
     expect(appSource).toContain("query: researchRunImportAuditQuery.trim() || undefined");
     expect(appSource).toContain("setResearchRunImportAuditPagination(auditHistory.pagination ?? null)");
+    expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
+    expect(appSource).toContain("const inspectResearchRunImportAuditEvent = useCallback");
+    expect(appSource).toContain("inspectRunExportPackageByRunId(event.runId)");
     expect(appSource).toContain("function ResearchRunImportAuditEventPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunImportAuditEventPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-import-events-panel"');
@@ -434,6 +437,7 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onQueryChange={updateResearchRunImportAuditQuery}");
     expect(auditWorkspaceSource).toContain("onPreviousPage={previousResearchRunImportAuditPage}");
     expect(auditWorkspaceSource).toContain("onNextPage={nextResearchRunImportAuditPage}");
+    expect(auditWorkspaceSource).toContain("onInspectRunPackage={inspectResearchRunImportAuditEvent}");
     expect(auditWorkspaceSource).toContain("onReplayRollbackRun={replayImportRollbackRun}");
     expect(auditWorkspaceSource).toContain("onUndoImport={undoResearchRunImportEvent}");
     expect(importEventsPanelSource).toContain("research-import-events-summary");
@@ -448,6 +452,9 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("research-import-events-pagination");
     expect(importEventsPanelSource).toContain("onPreviousPage");
     expect(importEventsPanelSource).toContain("onNextPage");
+    expect(importEventsPanelSource).toContain('const canInspectRunPackage = event.stage === "confirmed" || event.stage === "undone" || event.stage === "undo-failed";');
+    expect(importEventsPanelSource).toContain("onInspectRunPackage(event)");
+    expect(importEventsPanelSource).toContain("Open evidence");
     expect(importEventsPanelSource).toContain("aggregation.failureBuckets");
     expect(importEventsPanelSource).toContain("research-import-failure-buckets");
     expect(importEventsPanelSource).toContain("research-import-event-row");

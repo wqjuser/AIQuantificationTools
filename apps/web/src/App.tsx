@@ -1088,16 +1088,16 @@ export function App() {
     }));
   }, []);
 
-  const inspectRunExportPackage = useCallback(async (run: ResearchRunAudit) => {
+  const inspectRunExportPackageByRunId = useCallback(async (runId: string) => {
     setIsInspectingExportPackage(true);
     try {
-      const result = await loadResearchRunExport(quantCoreBaseUrl, run.runId);
+      const result = await loadResearchRunExport(quantCoreBaseUrl, runId);
       if (result.source === "fallback" || !result.exportPackage) {
         setInspectedExportPackage(null);
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Research run export inspect failed",
-          error: result.error ?? "Research run export inspect failed"
+          error: result.error ?? `Research run export inspect failed for ${runId}`
         }));
         return;
       }
@@ -1114,6 +1114,20 @@ export function App() {
       setIsInspectingExportPackage(false);
     }
   }, []);
+
+  const inspectRunExportPackage = useCallback(
+    async (run: ResearchRunAudit) => {
+      await inspectRunExportPackageByRunId(run.runId);
+    },
+    [inspectRunExportPackageByRunId]
+  );
+
+  const inspectResearchRunImportAuditEvent = useCallback(
+    async (event: ResearchRunImportAuditEvent) => {
+      await inspectRunExportPackageByRunId(event.runId);
+    },
+    [inspectRunExportPackageByRunId]
+  );
 
   const indexRecentRunExportPackages = useCallback(async () => {
     if (!runHistory.length) {
@@ -2386,6 +2400,7 @@ export function App() {
             events={researchRunImportAuditEvents}
             i18n={i18n}
             isLoading={isLoadingResearchRunImportAudit}
+            onInspectRunPackage={inspectResearchRunImportAuditEvent}
             onNextPage={nextResearchRunImportAuditPage}
             onPreviousPage={previousResearchRunImportAuditPage}
             onQueryChange={updateResearchRunImportAuditQuery}
@@ -4961,6 +4976,7 @@ function ResearchRunImportAuditEventPanel({
   events,
   i18n,
   isLoading,
+  onInspectRunPackage,
   onNextPage,
   onPreviousPage,
   onQueryChange,
@@ -4973,6 +4989,7 @@ function ResearchRunImportAuditEventPanel({
   events: ResearchRunImportAuditEvent[];
   i18n: AppI18n;
   isLoading: boolean;
+  onInspectRunPackage: (event: ResearchRunImportAuditEvent) => void;
   onNextPage: () => void;
   onPreviousPage: () => void;
   onQueryChange: (query: string) => void;
@@ -5074,6 +5091,7 @@ function ResearchRunImportAuditEventPanel({
             filteredEvents.map((event) => {
               const undoConfirmation = buildResearchRunImportUndoConfirmation(event);
               const isConfirmingUndo = pendingImportUndoToken === undoConfirmation?.undoToken;
+              const canInspectRunPackage = event.stage === "confirmed" || event.stage === "undone" || event.stage === "undo-failed";
               return (
                 <article className={`research-import-event-row ${event.tone} ${event.stage}`} key={event.id}>
                   <span>{researchImportAuditStageLabel(i18n, event.stage)}</span>
@@ -5091,6 +5109,11 @@ function ResearchRunImportAuditEventPanel({
                   </em>
                   <div className="research-import-event-recovery">
                     <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
+                    {canInspectRunPackage ? (
+                      <button onClick={() => onInspectRunPackage(event)} type="button">
+                        {i18n.locale === "zh-CN" ? "打开证据" : "Open evidence"}
+                      </button>
+                    ) : null}
                     {event.stage !== "undone" && event.undoToken && undoConfirmation ? (
                       isConfirmingUndo ? (
                         <div className="research-import-undo-confirmation">
