@@ -261,6 +261,95 @@ def audit_signing_key_registry_to_payload(registry: AuditSigningKeyRegistry) -> 
     return registry.to_payload()
 
 
+def audit_signing_key_rotation_plan_to_payload(
+    registry: AuditSigningKeyRegistry,
+    *,
+    proposed_key_id: str = "",
+    proposed_signer: str = "",
+    proposed_chain_id: str = "",
+) -> dict[str, Any]:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    active_key = registry.active_key
+    next_key_id = proposed_key_id.strip() or f"{active_key.key_id}-next"
+    next_signer = proposed_signer.strip() or active_key.signer
+    next_chain_id = proposed_chain_id.strip() or f"{active_key.chain_id}-next"
+    blocked_reasons: list[str] = []
+    if next_key_id == active_key.key_id:
+        blocked_reasons.append("proposed_key_matches_current_active_key")
+    if any(key.key_id == next_key_id and key.key_id != active_key.key_id for key in registry.keys):
+        blocked_reasons.append("proposed_key_already_exists_in_registry")
+
+    legacy_template = json.dumps(
+        [
+            {
+                "keyId": active_key.key_id,
+                "signer": active_key.signer,
+                "chainId": active_key.chain_id,
+                "status": "retired",
+                "source": "rotation-plan",
+                "fingerprint": active_key.fingerprint,
+                "retiredAt": generated_at,
+                "secret": "<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>",
+            }
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    return {
+        "schemaVersion": 1,
+        "generatedAt": generated_at,
+        "currentActiveKey": {
+            "keyId": active_key.key_id,
+            "signer": active_key.signer,
+            "chainId": active_key.chain_id,
+            "fingerprint": active_key.fingerprint,
+        },
+        "proposedActiveKey": {
+            "keyId": next_key_id,
+            "signer": next_signer,
+            "chainId": next_chain_id,
+        },
+        "rotationRequired": registry.to_payload()["rotationRequired"],
+        "requiresRestart": True,
+        "environmentUpdates": [
+            {"name": "AIQT_AUDIT_SIGNING_KEY_ID", "value": next_key_id, "sensitivity": "public"},
+            {"name": "AIQT_AUDIT_SIGNER_NAME", "value": next_signer, "sensitivity": "public"},
+            {"name": "AIQT_AUDIT_CHAIN_ID", "value": next_chain_id, "sensitivity": "public"},
+            {"name": "AIQT_AUDIT_SIGNING_SECRET", "value": "<set-new-key-material-outside-ui>", "sensitivity": "secret"},
+            {"name": "AIQT_AUDIT_SIGNING_KEYS_JSON", "value": legacy_template, "sensitivity": "secret"},
+        ],
+        "legacyRegistryTemplate": legacy_template,
+        "steps": [
+            {
+                "id": "set-new-active-key",
+                "title": "Set new active signing key",
+                "detail": "Update active signing key environment variables with new locally generated key material.",
+                "status": "manual",
+            },
+            {
+                "id": "retire-current-key",
+                "title": "Retire current key into legacy registry",
+                "detail": "Keep the current active key in AIQT_AUDIT_SIGNING_KEYS_JSON so old reports remain verifiable.",
+                "status": "required",
+            },
+            {
+                "id": "restart-core",
+                "title": "Restart local core",
+                "detail": "Restart API and web containers after changing signing environment variables.",
+                "status": "required",
+            },
+            {
+                "id": "verify-legacy-reports",
+                "title": "Verify legacy reports",
+                "detail": "Run Audit report verification on old signed reports before removing any retired key.",
+                "status": "required",
+            },
+        ],
+        "blockedReasons": blocked_reasons,
+    }
+
+
 def _required_metadata_text(record: AuditEventRecord, key: str) -> str:
     value = record.metadata.get(key)
     text = value.strip() if isinstance(value, str) else ""

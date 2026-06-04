@@ -27,6 +27,7 @@ import {
   undoResearchRunImport,
   loadAuditEvents,
   loadAuditSigningKeys,
+  prepareAuditSigningKeyRotationPlan,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketSearch,
@@ -57,6 +58,8 @@ import {
   AuditEventHistoryPagination,
   AuditSigningKeyRegistry,
   AuditSigningKeyRegistryResult,
+  AuditSigningKeyRotationPlan,
+  AuditSigningKeyRotationPlanResult,
   GoldenPathStatus,
   GoldenPathStatusResult,
   PlatformSettingsResult,
@@ -256,6 +259,9 @@ const initialSettingsStatusState: PlatformSettingsResult = {
 const initialAuditSigningKeyRegistryState: AuditSigningKeyRegistryResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRotationPlanState: AuditSigningKeyRotationPlanResult = {
+  source: "fallback"
+};
 const initialGoldenPathStatusState: GoldenPathStatusResult = {
   source: "fallback"
 };
@@ -439,6 +445,9 @@ export function App() {
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
   );
+  const [auditSigningKeyRotationPlan, setAuditSigningKeyRotationPlan] = useState<AuditSigningKeyRotationPlanResult>(
+    initialAuditSigningKeyRotationPlanState
+  );
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -507,6 +516,7 @@ export function App() {
   const [isApplyingImportPackage, setIsApplyingImportPackage] = useState(false);
   const [isLoadingAuditEvidenceReportEvents, setIsLoadingAuditEvidenceReportEvents] = useState(false);
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
+  const [isPreparingAuditSigningKeyRotationPlan, setIsPreparingAuditSigningKeyRotationPlan] = useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
   const [revokingAuditReportEventId, setRevokingAuditReportEventId] = useState<string | null>(null);
@@ -789,6 +799,25 @@ export function App() {
   const refreshAuditSigningKeys = useCallback(async () => {
     setAuditSigningKeyRegistry(await loadAuditSigningKeys(quantCoreBaseUrl));
   }, []);
+
+  const prepareAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
+    const activeKey = auditSigningKeyRegistry.registry?.keys.find(
+      (key) => key.keyId === auditSigningKeyRegistry.registry?.activeKeyId
+    );
+    const suffix = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const proposedKeyId = `${activeKey?.keyId ?? "audit-key"}-${suffix}`;
+    const proposedSigner = activeKey?.signer ? `${activeKey.signer} Next` : "Next Audit Key";
+    const proposedChainId = `${activeKey?.chainId ?? "audit-chain"}-next`;
+    setIsPreparingAuditSigningKeyRotationPlan(true);
+    setAuditSigningKeyRotationPlan(
+      await prepareAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
+        proposedChainId,
+        proposedKeyId,
+        proposedSigner
+      })
+    );
+    setIsPreparingAuditSigningKeyRotationPlan(false);
+  }, [auditSigningKeyRegistry.registry]);
 
   const refreshGoldenPathStatus = useCallback(async () => {
     setGoldenPathState(
@@ -2853,7 +2882,11 @@ export function App() {
             className="workflow-signing-keys-panel"
             error={auditSigningKeyRegistry.error}
             i18n={i18n}
+            isPreparingRotation={isPreparingAuditSigningKeyRotationPlan}
+            onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
             registry={auditSigningKeyRegistry.registry}
+            rotationError={auditSigningKeyRotationPlan.error}
+            rotationPlan={auditSigningKeyRotationPlan.rotationPlan}
             source={auditSigningKeyRegistry.source}
           />
           <ResearchRunImportDiffPanel
@@ -5735,13 +5768,21 @@ function AuditSigningKeyRegistryPanel({
   className,
   error,
   i18n,
+  isPreparingRotation,
+  onPrepareRotation,
   registry,
+  rotationError,
+  rotationPlan,
   source
 }: {
   className?: string;
   error?: string;
   i18n: AppI18n;
+  isPreparingRotation: boolean;
+  onPrepareRotation: () => void;
   registry?: AuditSigningKeyRegistry;
+  rotationError?: string;
+  rotationPlan?: AuditSigningKeyRotationPlan;
   source: AuditSigningKeyRegistryResult["source"];
 }) {
   const activeKey = registry?.keys.find((key) => key.keyId === registry.activeKeyId) ?? registry?.keys[0] ?? null;
@@ -5760,6 +5801,12 @@ function AuditSigningKeyRegistryPanel({
       title={i18n.locale === "zh-CN" ? "签名 Key 注册表" : "Signing Key Registry"}
       subtitle={i18n.locale === "zh-CN" ? "审计报告验签与历史 key 追溯" : "Audit report verification and legacy key traceability"}
       className={className}
+      action={
+        <button className="compact-action" disabled={isPreparingRotation} onClick={onPrepareRotation} type="button">
+          {isPreparingRotation ? <RefreshCw className="spin" size={13} /> : <GitBranch size={13} />}
+          {i18n.locale === "zh-CN" ? "生成轮换计划" : "Prepare rotation"}
+        </button>
+      }
     >
       <div className="audit-signing-keys">
         <div className="audit-signing-key-grid">
@@ -5813,6 +5860,43 @@ function AuditSigningKeyRegistryPanel({
             </article>
           )}
         </div>
+        {rotationPlan ? (
+          <div className="audit-signing-key-rotation-plan">
+            <div className="audit-signing-key-rotation-head">
+              <span>{i18n.locale === "zh-CN" ? "轮换计划" : "Rotation plan"}</span>
+              <strong>{rotationPlan.proposedActiveKey.keyId}</strong>
+              <small>
+                {rotationPlan.requiresRestart
+                  ? i18n.locale === "zh-CN"
+                    ? "需要重启核心服务"
+                    : "Core restart required"
+                  : i18n.locale === "zh-CN"
+                    ? "无需重启"
+                    : "No restart required"}
+              </small>
+            </div>
+            <div className="audit-signing-key-env-list">
+              {rotationPlan.environmentUpdates.map((update) => (
+                <article className={`audit-signing-key-env-row ${update.sensitivity}`} key={update.name}>
+                  <span>{update.name}</span>
+                  <code>{update.value}</code>
+                  <em>{update.sensitivity === "secret" ? (i18n.locale === "zh-CN" ? "本地填写" : "Fill locally") : i18n.locale === "zh-CN" ? "可复制" : "Public"}</em>
+                </article>
+              ))}
+            </div>
+            <div className="audit-signing-key-rotation-steps">
+              {rotationPlan.steps.map((step) => (
+                <article className={`audit-signing-key-step ${step.status}`} key={step.id}>
+                  <span>{step.status}</span>
+                  <strong>{auditSigningKeyRotationStepTitle(i18n, step.title)}</strong>
+                  <p>{auditSigningKeyRotationStepDetail(i18n, step.detail)}</p>
+                </article>
+              ))}
+            </div>
+            <pre>{rotationPlan.legacyRegistryTemplate}</pre>
+          </div>
+        ) : null}
+        {rotationError ? <p className="audit-signing-key-error">{rotationError}</p> : null}
         {error ? <p className="audit-signing-key-error">{error}</p> : null}
       </div>
     </Panel>
@@ -6864,6 +6948,38 @@ function auditSigningKeyCapabilityLabel(i18n: AppI18n, canSign: boolean, canVeri
     return "可签名";
   }
   return canVerify ? "仅验签" : "已禁用";
+}
+
+function auditSigningKeyRotationStepTitle(i18n: AppI18n, title: string): string {
+  if (i18n.locale === "en-US") {
+    return title;
+  }
+  return (
+    {
+      "Set new active signing key": "设置新的活跃签名 Key",
+      "Retire current key into legacy registry": "把当前 Key 退役进 legacy 注册表",
+      "Restart local core": "重启本地核心服务",
+      "Verify legacy reports": "验签历史审计报告"
+    }[title] ?? title
+  );
+}
+
+function auditSigningKeyRotationStepDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return (
+    {
+      "Update active signing key environment variables with new locally generated key material.":
+        "用本地生成的新 key material 更新活跃签名环境变量。",
+      "Keep the current active key in AIQT_AUDIT_SIGNING_KEYS_JSON so old reports remain verifiable.":
+        "把当前活跃 Key 保留在 AIQT_AUDIT_SIGNING_KEYS_JSON 中，让旧报告继续可验签。",
+      "Restart API and web containers after changing signing environment variables.":
+        "修改签名环境变量后重启 API 和 Web 容器。",
+      "Run Audit report verification on old signed reports before removing any retired key.":
+        "移除任何退役 Key 前，先对旧签名报告运行验签。"
+    }[detail] ?? detail
+  );
 }
 
 function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAuditEvent["stage"]): string {

@@ -10,7 +10,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
-from quant_core.audit_signing import AuditReportSigner, audit_report_verification_to_payload, audit_signing_key_registry_to_payload
+from quant_core.audit_signing import (
+    AuditReportSigner,
+    audit_report_verification_to_payload,
+    audit_signing_key_registry_to_payload,
+    audit_signing_key_rotation_plan_to_payload,
+)
 from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_review_run_record_to_payload
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
@@ -247,6 +252,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_audit_event", "detail": str(error)}, status=400)
                 return
             self._send_json({"event": audit_event_record_to_payload(event)}, status=201)
+            return
+        if parsed.path == "/api/audit/signing-keys/rotation-plan":
+            payload = self._read_json_body()
+            try:
+                registry = self._audit_report_signer().registry
+                rotation_plan = audit_signing_key_rotation_plan_to_payload(
+                    registry,
+                    proposed_key_id=str(payload.get("proposedKeyId") or ""),
+                    proposed_signer=str(payload.get("proposedSigner") or ""),
+                    proposed_chain_id=str(payload.get("proposedChainId") or ""),
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_signing_key_rotation_plan", "detail": str(error)}, status=400)
+                return
+            self._send_json({"rotationPlan": rotation_plan})
             return
         if parsed.path == "/api/audit/reports/sign":
             payload = self._read_json_body()

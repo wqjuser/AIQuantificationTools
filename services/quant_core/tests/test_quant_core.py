@@ -1537,6 +1537,82 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(verify_payload["verification"]["status"], "verified")
         self.assertEqual(verify_payload["signature"]["keyId"], "legacy-audit-key")
 
+    def test_audit_signing_key_rotation_plan_preserves_legacy_verification_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory():
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_signing_secret = "active-audit-secret"
+            TestHandler.audit_signing_key_id = "active-audit-key"
+            TestHandler.audit_signer_name = "Active Audit Key"
+            TestHandler.audit_chain_id = "audit-chain-active"
+            TestHandler.audit_signing_keys_json = json.dumps(
+                [
+                    {
+                        "keyId": "legacy-audit-key",
+                        "signer": "Legacy Audit Key",
+                        "secret": "legacy-audit-secret",
+                        "chainId": "audit-chain-legacy",
+                        "status": "retired",
+                    }
+                ]
+            )
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "proposedKeyId": "next-audit-key",
+                        "proposedSigner": "Next Audit Key",
+                        "proposedChainId": "audit-chain-next",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-plan",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["rotationPlan"]["schemaVersion"], 1)
+        self.assertEqual(payload["rotationPlan"]["currentActiveKey"]["keyId"], "active-audit-key")
+        self.assertRegex(payload["rotationPlan"]["currentActiveKey"]["fingerprint"], r"^[a-f0-9]{16}$")
+        self.assertEqual(payload["rotationPlan"]["proposedActiveKey"]["keyId"], "next-audit-key")
+        self.assertEqual(payload["rotationPlan"]["proposedActiveKey"]["chainId"], "audit-chain-next")
+        self.assertEqual(
+            [item["name"] for item in payload["rotationPlan"]["environmentUpdates"]],
+            [
+                "AIQT_AUDIT_SIGNING_KEY_ID",
+                "AIQT_AUDIT_SIGNER_NAME",
+                "AIQT_AUDIT_CHAIN_ID",
+                "AIQT_AUDIT_SIGNING_SECRET",
+                "AIQT_AUDIT_SIGNING_KEYS_JSON",
+            ],
+        )
+        self.assertIn("active-audit-key", payload["rotationPlan"]["legacyRegistryTemplate"])
+        self.assertIn("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>", payload["rotationPlan"]["legacyRegistryTemplate"])
+        self.assertIn("verify-legacy-reports", [step["id"] for step in payload["rotationPlan"]["steps"]])
+        self.assertNotIn("active-audit-secret", json.dumps(payload))
+        self.assertNotIn("legacy-audit-secret", json.dumps(payload))
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit

@@ -20,6 +20,7 @@ import {
   buildAuditReportVerifyUrl,
   buildAuditReportRevokeUrl,
   buildAuditSigningKeysUrl,
+  buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -49,6 +50,7 @@ import {
   saveAuditEvent,
   loadAuditEvents,
   loadAuditSigningKeys,
+  prepareAuditSigningKeyRotationPlan,
   signAuditReportEvent,
   verifyAuditReportEvent,
   revokeAuditReportEvent,
@@ -785,6 +787,112 @@ describe("terminal workspace API client", () => {
 
     expect(result.source).toBe("fallback");
     expect(result.error).toBe("Invalid audit signing key registry contract");
+  });
+
+  test("prepares an audit signing key rotation plan without exposing secrets", async () => {
+    const calls: Array<{ init?: RequestInit; url: string }> = [];
+    const result = await prepareAuditSigningKeyRotationPlan(
+      "http://127.0.0.1:8765/",
+      {
+        proposedChainId: "audit-chain-next",
+        proposedKeyId: "next-audit-key",
+        proposedSigner: "Next Audit Key"
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            rotationPlan: {
+              schemaVersion: 1,
+              generatedAt: "2026-06-04T10:30:00+00:00",
+              currentActiveKey: {
+                keyId: "active-audit-key",
+                signer: "Active Audit Key",
+                chainId: "audit-chain-active",
+                fingerprint: "a".repeat(16)
+              },
+              proposedActiveKey: {
+                keyId: "next-audit-key",
+                signer: "Next Audit Key",
+                chainId: "audit-chain-next"
+              },
+              rotationRequired: true,
+              requiresRestart: true,
+              environmentUpdates: [
+                { name: "AIQT_AUDIT_SIGNING_KEY_ID", value: "next-audit-key", sensitivity: "public" },
+                { name: "AIQT_AUDIT_SIGNER_NAME", value: "Next Audit Key", sensitivity: "public" },
+                { name: "AIQT_AUDIT_CHAIN_ID", value: "audit-chain-next", sensitivity: "public" },
+                { name: "AIQT_AUDIT_SIGNING_SECRET", value: "<set-new-key-material-outside-ui>", sensitivity: "secret" },
+                {
+                  name: "AIQT_AUDIT_SIGNING_KEYS_JSON",
+                  value:
+                    '[{"keyId":"active-audit-key","signer":"Active Audit Key","chainId":"audit-chain-active","status":"retired","secret":"<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>"}]',
+                  sensitivity: "secret"
+                }
+              ],
+              legacyRegistryTemplate:
+                '[{"keyId":"active-audit-key","signer":"Active Audit Key","chainId":"audit-chain-active","status":"retired","secret":"<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>"}]',
+              steps: [
+                { id: "set-new-active-key", title: "Set new active key", detail: "Update active env vars.", status: "manual" },
+                { id: "verify-legacy-reports", title: "Verify legacy reports", detail: "Keep retired key available.", status: "required" }
+              ],
+              blockedReasons: []
+            }
+          })
+        };
+      }
+    );
+
+    expect(buildAuditSigningKeyRotationPlanUrl("http://127.0.0.1:8765")).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/rotation-plan"
+    );
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/audit/signing-keys/rotation-plan");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      proposedChainId: "audit-chain-next",
+      proposedKeyId: "next-audit-key",
+      proposedSigner: "Next Audit Key"
+    });
+    expect(result.source).toBe("core");
+    expect(result.rotationPlan?.proposedActiveKey.keyId).toBe("next-audit-key");
+    expect(result.rotationPlan?.steps.map((step) => step.id)).toContain("verify-legacy-reports");
+    expect(JSON.stringify(result.rotationPlan)).not.toContain("active-audit-secret");
+  });
+
+  test("rejects audit signing key rotation plans that expose raw secret material", async () => {
+    const result = await prepareAuditSigningKeyRotationPlan("http://127.0.0.1:8765/", {}, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        rotationPlan: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-04T10:30:00+00:00",
+          currentActiveKey: {
+            keyId: "active-audit-key",
+            signer: "Active Audit Key",
+            chainId: "audit-chain-active",
+            fingerprint: "a".repeat(16),
+            secretMaterial: "active-audit-secret"
+          },
+          proposedActiveKey: {
+            keyId: "next-audit-key",
+            signer: "Next Audit Key",
+            chainId: "audit-chain-next"
+          },
+          rotationRequired: true,
+          requiresRestart: true,
+          environmentUpdates: [],
+          legacyRegistryTemplate: "[]",
+          steps: [],
+          blockedReasons: []
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid audit signing key rotation plan contract");
   });
 
   test("refreshes a market cache context and returns updated settings", async () => {

@@ -353,6 +353,44 @@ export interface AuditSigningKeyRegistryResult {
   error?: string;
 }
 
+export interface AuditSigningKeyRotationPlanEnvUpdate {
+  name: string;
+  value: string;
+  sensitivity: "public" | "secret";
+}
+
+export interface AuditSigningKeyRotationPlanStep {
+  id: string;
+  title: string;
+  detail: string;
+  status: "manual" | "required" | "blocked";
+}
+
+export interface AuditSigningKeyRotationPlan {
+  schemaVersion: 1;
+  generatedAt: string;
+  currentActiveKey: Pick<AuditSigningKeyRecord, "chainId" | "fingerprint" | "keyId" | "signer">;
+  proposedActiveKey: Pick<AuditSigningKeyRecord, "chainId" | "keyId" | "signer">;
+  rotationRequired: boolean;
+  requiresRestart: boolean;
+  environmentUpdates: AuditSigningKeyRotationPlanEnvUpdate[];
+  legacyRegistryTemplate: string;
+  steps: AuditSigningKeyRotationPlanStep[];
+  blockedReasons: string[];
+}
+
+export interface AuditSigningKeyRotationPlanParams {
+  proposedChainId?: string;
+  proposedKeyId?: string;
+  proposedSigner?: string;
+}
+
+export interface AuditSigningKeyRotationPlanResult {
+  rotationPlan?: AuditSigningKeyRotationPlan;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -829,6 +867,10 @@ export function buildAuditReportRevokeUrl(baseUrl: string): string {
 
 export function buildAuditSigningKeysUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys");
+}
+
+export function buildAuditSigningKeyRotationPlanUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-plan");
 }
 
 export function buildStrategiesUrl(
@@ -1611,6 +1653,40 @@ export async function loadAuditSigningKeys(
   }
 }
 
+export async function prepareAuditSigningKeyRotationPlan(
+  baseUrl: string,
+  params: AuditSigningKeyRotationPlanParams = {},
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyRotationPlanResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeyRotationPlanUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        proposedChainId: params.proposedChainId ?? "",
+        proposedKeyId: params.proposedKeyId ?? "",
+        proposedSigner: params.proposedSigner ?? ""
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeyRotationPlanPayload(payload)) {
+      throw new Error("Invalid audit signing key rotation plan contract");
+    }
+    return {
+      rotationPlan: payload.rotationPlan,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key rotation plan error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -2324,6 +2400,100 @@ function isAuditSigningKeyRecord(value: unknown): value is AuditSigningKeyRecord
     (key.activatedAt === null || typeof key.activatedAt === "string") &&
     (key.retiredAt === null || typeof key.retiredAt === "string")
   );
+}
+
+function isAuditSigningKeyRotationPlanPayload(value: unknown): value is { rotationPlan: AuditSigningKeyRotationPlan } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { rotationPlan?: unknown };
+  return isAuditSigningKeyRotationPlan(payload.rotationPlan);
+}
+
+function isAuditSigningKeyRotationPlan(value: unknown): value is AuditSigningKeyRotationPlan {
+  if (!value || typeof value !== "object" || containsDisallowedSecretField(value)) {
+    return false;
+  }
+  const plan = value as Partial<AuditSigningKeyRotationPlan>;
+  return (
+    plan.schemaVersion === 1 &&
+    typeof plan.generatedAt === "string" &&
+    isAuditSigningKeyRotationCurrentKey(plan.currentActiveKey) &&
+    isAuditSigningKeyRotationProposedKey(plan.proposedActiveKey) &&
+    typeof plan.rotationRequired === "boolean" &&
+    typeof plan.requiresRestart === "boolean" &&
+    Array.isArray(plan.environmentUpdates) &&
+    plan.environmentUpdates.every(isAuditSigningKeyRotationEnvUpdate) &&
+    typeof plan.legacyRegistryTemplate === "string" &&
+    Array.isArray(plan.steps) &&
+    plan.steps.every(isAuditSigningKeyRotationStep) &&
+    Array.isArray(plan.blockedReasons) &&
+    plan.blockedReasons.every((reason) => typeof reason === "string")
+  );
+}
+
+function isAuditSigningKeyRotationCurrentKey(
+  value: unknown
+): value is AuditSigningKeyRotationPlan["currentActiveKey"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const key = value as Partial<AuditSigningKeyRotationPlan["currentActiveKey"]>;
+  return (
+    typeof key.keyId === "string" &&
+    typeof key.signer === "string" &&
+    typeof key.chainId === "string" &&
+    typeof key.fingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(key.fingerprint)
+  );
+}
+
+function isAuditSigningKeyRotationProposedKey(
+  value: unknown
+): value is AuditSigningKeyRotationPlan["proposedActiveKey"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const key = value as Partial<AuditSigningKeyRotationPlan["proposedActiveKey"]>;
+  return typeof key.keyId === "string" && typeof key.signer === "string" && typeof key.chainId === "string";
+}
+
+function isAuditSigningKeyRotationEnvUpdate(value: unknown): value is AuditSigningKeyRotationPlanEnvUpdate {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const update = value as Partial<AuditSigningKeyRotationPlanEnvUpdate>;
+  return (
+    typeof update.name === "string" &&
+    typeof update.value === "string" &&
+    (update.sensitivity === "public" || update.sensitivity === "secret")
+  );
+}
+
+function isAuditSigningKeyRotationStep(value: unknown): value is AuditSigningKeyRotationPlanStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const step = value as Partial<AuditSigningKeyRotationPlanStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.title === "string" &&
+    typeof step.detail === "string" &&
+    (step.status === "manual" || step.status === "required" || step.status === "blocked")
+  );
+}
+
+function containsDisallowedSecretField(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const disallowedSecretFields = new Set(["secret", "secretMaterial", "secretValue", "rawSecret", "privateKey", "keyMaterial"]);
+  return Object.entries(value as Record<string, unknown>).some(([key, child]) => {
+    if (disallowedSecretFields.has(key)) {
+      return true;
+    }
+    return typeof child === "object" && containsDisallowedSecretField(child);
+  });
 }
 
 function isAuditEventHistoryPayload(value: unknown): value is {
