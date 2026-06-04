@@ -412,10 +412,12 @@ describe("terminal layout css", () => {
   test("renders import diff guidance in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const importDiffPanelSource = sourceBetween("function ResearchRunImportDiffPanel", "function ResearchRunImportAuditEventPanel");
+    const importDiffLabelSource = sourceBetween("function researchImportDiffLabel", "function researchImportDiffStatusLabel");
 
     expect(appSource).toContain("buildResearchRunImportDiffRows");
     expect(appSource).toContain("filterResearchRunImportDiffRows");
     expect(appSource).toContain("const researchRunImportDiffRows = buildResearchRunImportDiffRows");
+    expect(importDiffLabelSource).toContain('"audit-summary": "导入审计摘要"');
     expect(appSource).toContain('const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
     expect(appSource).toContain("function ResearchRunImportDiffPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunImportDiffPanel");

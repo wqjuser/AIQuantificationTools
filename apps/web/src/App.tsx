@@ -6021,6 +6021,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "research-note": "研究笔记",
       "paper-executions": "模拟执行",
       "ai-review-runs": "AI 评审记录",
+      "audit-summary": "导入审计摘要",
       "live-boundary": "实盘边界"
     } satisfies Record<ResearchRunImportDiffRow["id"], string>
   )[row.id];
@@ -6068,6 +6069,8 @@ function researchImportDiffValue(i18n: AppI18n, value: string): string {
     .replace("No audited strategy", "无审计策略")
     .replace("No local note", "无本地笔记")
     .replace("No package note", "无包内笔记")
+    .replace("No local package summary", "无本地包摘要")
+    .replace("no focus", "无焦点")
     .replace("No package selected", "未选择复现包")
     .replace("Local live enabled", "本地实盘已开启")
     .replace("Local paper boundary", "本地模拟盘边界")
@@ -6099,6 +6102,14 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Package does not include a locked research note.", "复现包没有包含锁定研究笔记。")
     .replace("Import will restore paper execution records attached to the package run.", "导入会恢复附加在包内运行上的模拟执行记录。")
     .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
+    .replace(
+      "Audit evidence summary run id does not match the import package manifest.",
+      "审计证据摘要 run id 与导入包 manifest 不一致。"
+    )
+    .replace(
+      /Audit focus carries (\d+)\/(\d+) package matches and (\d+) import diff blockers\./u,
+      "审计焦点携带 $1/$2 条包检查命中和 $3 个导入差异阻断。"
+    )
     .replace("Local import must reject packages that claim live trading permission.", "本地导入必须拒绝声明实盘权限的复现包。")
     .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
 }

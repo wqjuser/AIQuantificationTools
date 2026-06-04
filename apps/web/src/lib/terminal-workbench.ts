@@ -695,6 +695,7 @@ export interface ResearchRunImportDiffRow {
     | "research-note"
     | "paper-executions"
     | "ai-review-runs"
+    | "audit-summary"
     | "live-boundary";
   label: string;
   status: ResearchRunImportDiffStatus;
@@ -2808,6 +2809,8 @@ export function buildResearchRunImportDiffRows({
     : 0;
   const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
   const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
+  const auditSummary = exportPackage.auditEvidenceSummary;
+  const auditSummaryMatchesPackage = auditSummary?.runId === exportPackage.manifest.runId;
   const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
     aiReviewRuns: packageAiReviewCount,
     paperExecutions: packagePaperCount,
@@ -2963,6 +2966,22 @@ export function buildResearchRunImportDiffRows({
       exportPath: "aiReviewRuns[]",
       tone: packageAiReviewCount > 0 ? "ai" : "neutral"
     },
+    ...(auditSummary
+      ? ([
+          {
+            id: "audit-summary",
+            label: "Audit evidence summary",
+            status: auditSummaryMatchesPackage ? "add" : "blocked",
+            current: "No local package summary",
+            incoming: `${auditSummary.runId} · ${auditSummary.focusQuery || auditSummary.packageQuery || "no focus"}`,
+            detail: auditSummaryMatchesPackage
+              ? `Audit focus carries ${auditSummary.package.matched}/${auditSummary.package.total} package matches and ${auditSummary.importDiff.blocked} import diff blockers.`
+              : "Audit evidence summary run id does not match the import package manifest.",
+            exportPath: "auditEvidenceSummary",
+            tone: auditSummaryMatchesPackage ? "ai" : "risk"
+          }
+        ] satisfies ResearchRunImportDiffRow[])
+      : []),
     {
       id: "live-boundary",
       label: "Live boundary",

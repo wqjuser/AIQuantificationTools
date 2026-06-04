@@ -202,3 +202,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: backend import test failed with `integrity_hash_mismatch` because front-end-added `auditEvidenceSummary` was hashed as core package content.
 - GREEN: added `aiqt.auditEvidenceSummary` as an optional top-level export artifact, attached it during front-end download, rendered an `audit-summary` package browser row, and excluded the UI metadata from core export integrity hashing while preserving tamper checks for research payload fields.
 - DOCS: updated product plan, architecture notes, and this implementation log; next slice is rendering/import-comparing the summary as a richer audit report fragment.
+- RED: `terminal-workbench.test.ts -t "import diff rows"` failed because import preflight ignored package-level `auditEvidenceSummary`.
+- RED: `layout-css.test.js -t "import diff guidance"` failed because the import diff label map had no `audit-summary` translation.
+- GREEN: added an `audit-summary` import diff row that displays the incoming summary run id, focus query, package match count, and import diff blocker count, with a blocked state for summary/manifest run id mismatches.
+- DOCS: updated product plan and architecture notes; next slice is rendering `auditEvidenceSummary` as a richer report fragment.

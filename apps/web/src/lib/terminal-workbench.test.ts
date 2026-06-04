@@ -2485,8 +2485,23 @@ describe("terminal workbench model", () => {
             boundary: "AI can explain supplied evidence only."
           }
         }
-      ]
-    };
+      ],
+      auditEvidenceSummary: {
+        kind: "aiqt.auditEvidenceSummary",
+        schemaVersion: 1,
+        runId: "run-imported",
+        generatedAt: "2026-06-04T08:05:00+00:00",
+        auditQuery: "manual-smoke",
+        packageQuery: "manifest:run-imported",
+        importDiffQuery: "manifest:run-imported",
+        focusQuery: "manifest:run-imported",
+        deepLinkStatus: "loaded",
+        deepLinkError: null,
+        package: { ready: 6, missing: 1, blocked: 1, matched: 1, total: 10 },
+        importDiff: { changes: 3, adds: 2, blocked: 0, matched: 1, total: 12 },
+        copyText: "AIQT Audit Evidence Summary\nRun: run-imported\nPackage focus: manifest:run-imported"
+      }
+    } satisfies ResearchRunExportBrowserPackage;
 
     const rows = buildResearchRunImportDiffRows({ workspace: currentWorkspace, exportPackage });
 
@@ -2525,11 +2540,22 @@ describe("terminal workbench model", () => {
           status: "add",
           current: "0 saved",
           incoming: "1 saved / 2 manifest"
+        }),
+        expect.objectContaining({
+          id: "audit-summary",
+          status: "add",
+          current: "No local package summary",
+          incoming: "run-imported · manifest:run-imported",
+          detail: "Audit focus carries 1/10 package matches and 0 import diff blockers.",
+          exportPath: "auditEvidenceSummary"
         })
       ])
     );
     expect(filterResearchRunImportDiffRows(rows, "hash-imported").map((row) => row.id)).toEqual(["data-snapshot"]);
     expect(filterResearchRunImportDiffRows(rows, "researchNote").map((row) => row.id)).toEqual(["research-note"]);
+    expect(filterResearchRunImportDiffRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
+      "audit-summary"
+    ]);
   });
 
   test("blocks import diff rows when package integrity or artifact counts are unsafe", () => {
