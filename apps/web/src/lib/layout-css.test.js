@@ -425,7 +425,7 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("pendingImportUndoToken");
     expect(importEventsPanelSource).toContain("buildResearchRunImportUndoConfirmation(event)");
     expect(importEventsPanelSource).toContain("setPendingImportUndoToken(event.undoToken)");
-    expect(importEventsPanelSource).toContain("onUndoImport(undoConfirmation.undoToken)");
+    expect(importEventsPanelSource).toContain("onUndoImport(undoConfirmation.undoToken, undoConfirmation.runId)");
     expect(importEventsPanelSource).toContain('event.stage !== "undone"');
     expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
     expect(importEventsPanelSource).toContain("research-import-event-recovery");

@@ -4598,7 +4598,12 @@ class QuantCoreContractTest(unittest.TestCase):
                 )
                 import_response = connection.getresponse()
                 import_payload = json.loads(import_response.read().decode("utf-8"))
-                undo_body = json.dumps({"undoToken": import_payload.get("undoToken")}).encode("utf-8")
+                undo_body = json.dumps(
+                    {
+                        "undoToken": import_payload.get("undoToken"),
+                        "expectedRunId": "run-import-undo",
+                    }
+                ).encode("utf-8")
                 connection.request(
                     "POST",
                     "/api/research/runs/import/undo",
@@ -4633,6 +4638,84 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(len(restored_paper), 1)
         self.assertEqual([review.ai_review_id for review in restored_reviews], ["ai-review:run-import-undo:old"])
         self.assertIsNotNone(consumed_undo.consumed_at)
+
+    def test_research_run_import_undo_rejects_cross_run_token_use(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.research_import_undo import ResearchRunImportUndoStore
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        undo_snapshot = {
+            "schemaVersion": 1,
+            "runId": "run-import-undo-owner",
+            "importedRun": None,
+            "importedNote": None,
+            "strategyRevision": "",
+            "previous": {
+                "run": None,
+                "note": None,
+                "strategy": None,
+                "paperExecutions": [],
+                "aiReviewRuns": [],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            undo_store = ResearchRunImportUndoStore(f"{tmp}/import_undo.sqlite")
+            undo_record = undo_store.record(
+                run_id="run-import-undo-owner",
+                snapshot=undo_snapshot,
+                undo_token="import-undo-cross-run-token",
+            )
+
+            class TestHandler(QuantApiHandler):
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                note_store = ResearchNoteStore(f"{tmp}/notes.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+                paper_execution_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+                ai_review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+                import_undo_store = undo_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                undo_body = json.dumps(
+                    {
+                        "undoToken": undo_record.undo_token,
+                        "expectedRunId": "run-import-undo-other",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/research/runs/import/undo",
+                    body=undo_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(undo_body))},
+                )
+                undo_response = connection.getresponse()
+                undo_payload = json.loads(undo_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            reloaded_undo = undo_store.get(undo_record.undo_token)
+
+        self.assertEqual(undo_response.status, 409)
+        self.assertEqual(undo_payload["error"], "research_run_import_undo_run_mismatch")
+        self.assertEqual(undo_payload["runId"], "run-import-undo-owner")
+        self.assertEqual(undo_payload["expectedRunId"], "run-import-undo-other")
+        self.assertIsNone(reloaded_undo.consumed_at)
 
     def test_research_run_export_import_preserves_paper_execution_history(self):
         import json

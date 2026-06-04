@@ -986,8 +986,8 @@ export function App() {
   );
 
   const undoResearchRunImportEvent = useCallback(
-    async (undoToken: string) => {
-      const result = await undoResearchRunImport(quantCoreBaseUrl, undoToken);
+    async (undoToken: string, expectedRunId: string) => {
+      const result = await undoResearchRunImport(quantCoreBaseUrl, undoToken, expectedRunId);
       if (result.source === "fallback" || !result.undo) {
         setWorkspaceState((current) => ({
           ...current,
@@ -4909,7 +4909,7 @@ function ResearchRunImportAuditEventPanel({
   events: ResearchRunImportAuditEvent[];
   i18n: AppI18n;
   onReplayRollbackRun: (runId: string) => void;
-  onUndoImport: (undoToken: string) => void;
+  onUndoImport: (undoToken: string, expectedRunId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [pendingImportUndoToken, setPendingImportUndoToken] = useState<string | null>(null);
@@ -4978,7 +4978,7 @@ function ResearchRunImportAuditEventPanel({
                           <div className="research-import-undo-confirmation-actions">
                             <button
                               onClick={() => {
-                                onUndoImport(undoConfirmation.undoToken);
+                                onUndoImport(undoConfirmation.undoToken, undoConfirmation.runId);
                                 setPendingImportUndoToken(null);
                               }}
                               type="button"

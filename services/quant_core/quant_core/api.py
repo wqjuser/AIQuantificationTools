@@ -245,9 +245,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/research/runs/import/undo":
             payload = self._read_json_body()
             undo_token = str(payload.get("undoToken") or "").strip()
+            expected_run_id = str(payload.get("expectedRunId") or "").strip()
+            if not expected_run_id:
+                self._send_json(
+                    {
+                        "error": "research_run_import_undo_expected_run_required",
+                        "undoToken": undo_token,
+                    },
+                    status=400,
+                )
+                return
             undo_record = self.import_undo_store.get(undo_token)
             if not undo_record:
                 self._send_json({"error": "research_run_import_undo_not_found", "undoToken": undo_token}, status=404)
+                return
+            if undo_record.run_id != expected_run_id:
+                self._send_json(
+                    {
+                        "error": "research_run_import_undo_run_mismatch",
+                        "runId": undo_record.run_id,
+                        "expectedRunId": expected_run_id,
+                        "undo": research_run_import_undo_record_to_payload(undo_record),
+                    },
+                    status=409,
+                )
                 return
             if undo_record.consumed_at:
                 self._send_json(

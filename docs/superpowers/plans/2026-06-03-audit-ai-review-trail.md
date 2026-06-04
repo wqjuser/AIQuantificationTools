@@ -157,3 +157,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because the Audit ledger called undo directly from the first button.
 - GREEN: added an inline undo confirmation state, confirm/cancel actions, and compact warning styling before calling `/api/research/runs/import/undo`.
 - DOCS: updated product plan and architecture notes; next slice is stricter cross-run recovery validation.
+- RED: `test_research_run_import_undo_rejects_cross_run_token_use` failed because an undo token could be consumed without checking the Audit event run id.
+- GREEN: `/api/research/runs/import/undo` now requires `expectedRunId`, rejects token/run mismatches with `research_run_import_undo_run_mismatch`, and leaves the token unconsumed.
+- RED: `terminal-api.test.ts -t "undoes a successful research run import"` failed because the frontend undo client did not send the owning run id.
+- GREEN: Audit undo confirmation passes `undoConfirmation.runId`, and `undoResearchRunImport` sends `{ undoToken, expectedRunId }`.
+- DOCS: updated product plan and architecture notes; next slice is persisted undo failure events and a recovery review view.

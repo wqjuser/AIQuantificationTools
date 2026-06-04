@@ -988,13 +988,14 @@ export async function importResearchRunExport(
 export async function undoResearchRunImport(
   baseUrl: string,
   undoToken: string,
+  expectedRunId: string,
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<ResearchRunImportUndoResult> {
   try {
     const response = await fetcher(buildResearchRunImportUndoUrl(baseUrl), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ undoToken })
+      body: JSON.stringify({ undoToken, expectedRunId })
     });
     const payload = await response.json();
     if (!response.ok) {
