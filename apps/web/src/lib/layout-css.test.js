@@ -434,12 +434,18 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const [researchRunImportAuditPagination, setResearchRunImportAuditPagination]");
     expect(appSource).toContain('const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState("");');
     expect(appSource).toContain("const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);");
+    expect(appSource).toContain("const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);");
     expect(appSource).toContain("const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);");
     expect(appSource).toContain("const researchRunImportAuditRequestIdRef = useRef(0);");
     expect(appSource).toContain("limit: IMPORT_AUDIT_EVENTS_PAGE_SIZE");
     expect(appSource).toContain("offset: researchRunImportAuditOffset");
     expect(appSource).toContain("query: researchRunImportAuditQuery.trim() || undefined");
     expect(appSource).toContain("setResearchRunImportAuditPagination(auditHistory.pagination ?? null)");
+    expect(appSource).toContain("const copyResearchRunImportAuditEvidenceAnchor = useCallback");
+    expect(appSource).toContain("const anchor = buildResearchRunImportAuditEvidenceUrl(event);");
+    expect(appSource).toContain("navigator.clipboard.writeText(anchor)");
+    expect(appSource).toContain("setCopiedImportAuditEvidenceEventId(event.id)");
+    expect(appSource).toContain("function buildResearchRunImportAuditEvidenceUrl(event: ResearchRunImportAuditEvent): string");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
     expect(appSource).toContain("const inspectResearchRunImportAuditEvent = useCallback");
     expect(appSource).toContain("function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string");
@@ -458,6 +464,8 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onPreviousPage={previousResearchRunImportAuditPage}");
     expect(auditWorkspaceSource).toContain("onNextPage={nextResearchRunImportAuditPage}");
     expect(auditWorkspaceSource).toContain("onInspectRunPackage={inspectResearchRunImportAuditEvent}");
+    expect(auditWorkspaceSource).toContain("onCopyEvidenceAnchor={copyResearchRunImportAuditEvidenceAnchor}");
+    expect(auditWorkspaceSource).toContain("copiedEvidenceEventId={copiedImportAuditEvidenceEventId}");
     expect(auditWorkspaceSource).toContain("onReplayRollbackRun={replayImportRollbackRun}");
     expect(auditWorkspaceSource).toContain("onUndoImport={undoResearchRunImportEvent}");
     expect(importEventsPanelSource).toContain("research-import-events-summary");
@@ -475,6 +483,10 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain('const canInspectRunPackage = event.stage === "confirmed" || event.stage === "undone" || event.stage === "undo-failed";');
     expect(importEventsPanelSource).toContain("onInspectRunPackage(event)");
     expect(importEventsPanelSource).toContain("Open evidence");
+    expect(importEventsPanelSource).toContain("copiedEvidenceEventId === event.id");
+    expect(importEventsPanelSource).toContain("onCopyEvidenceAnchor(event)");
+    expect(importEventsPanelSource).toContain("Copy anchor");
+    expect(importEventsPanelSource).toContain("Copied");
     expect(importEventsPanelSource).toContain("aggregation.failureBuckets");
     expect(importEventsPanelSource).toContain("research-import-failure-buckets");
     expect(importEventsPanelSource).toContain("research-import-event-row");

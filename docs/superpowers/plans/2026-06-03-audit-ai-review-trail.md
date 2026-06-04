@@ -181,3 +181,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser|import diff guidance|import audit events"` failed because the package browser and import diff kept private query state and audit evidence opening could not focus artifact rows.
 - GREEN: lifted package browser/import diff query state into App and populated both from normalized import audit evidence anchors when opening an audit event.
 - DOCS: updated product plan and architecture notes; next slice is copyable/deep-linkable import audit evidence anchors for external audit reports.
+- RED: `layout-css.test.js -t "import audit events"` failed because import audit rows had no copied evidence anchor state, clipboard action, or copied feedback.
+- GREEN: added copyable Audit evidence URLs with `workspace=audit`, `auditEvent`, `runId`, and `exportPath`, plus row-level copied feedback.
+- DOCS: updated product plan and architecture notes; next slice is auto-highlighting or scrolling to the linked import audit event when opening an `auditEvent` deep link.

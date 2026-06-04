@@ -1,6 +1,8 @@
 import {
   BarChart3,
   BrainCircuit,
+  Check,
+  Copy,
   Database,
   Download,
   GitBranch,
@@ -398,6 +400,7 @@ export function App() {
     useState<AuditEventHistoryPagination | null>(null);
   const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState("");
   const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
+  const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState("");
   const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState("");
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
@@ -412,6 +415,7 @@ export function App() {
   const strategyValidationRequestIdRef = useRef(0);
   const aiReviewHistoryRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
+  const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -592,6 +596,14 @@ export function App() {
     }
     void refreshResearchRunImportAuditEvents();
   }, [activeWorkAreaId, refreshResearchRunImportAuditEvents]);
+
+  useEffect(() => {
+    return () => {
+      if (importAuditCopyResetTimerRef.current !== null) {
+        window.clearTimeout(importAuditCopyResetTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (activeWorkAreaId !== "audit") {
@@ -1114,6 +1126,35 @@ export function App() {
       setActiveWorkAreaId("audit");
     } finally {
       setIsInspectingExportPackage(false);
+    }
+  }, []);
+
+  const copyResearchRunImportAuditEvidenceAnchor = useCallback(async (event: ResearchRunImportAuditEvent) => {
+    const anchor = buildResearchRunImportAuditEvidenceUrl(event);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(anchor);
+      setCopiedImportAuditEvidenceEventId(event.id);
+      if (importAuditCopyResetTimerRef.current !== null) {
+        window.clearTimeout(importAuditCopyResetTimerRef.current);
+      }
+      importAuditCopyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedImportAuditEvidenceEventId(null);
+        importAuditCopyResetTimerRef.current = null;
+      }, 1800);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit evidence anchor copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit evidence anchor copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
     }
   }, []);
 
@@ -2408,9 +2449,11 @@ export function App() {
           />
           <ResearchRunImportAuditEventPanel
             className="workflow-import-events-panel"
+            copiedEvidenceEventId={copiedImportAuditEvidenceEventId}
             events={researchRunImportAuditEvents}
             i18n={i18n}
             isLoading={isLoadingResearchRunImportAudit}
+            onCopyEvidenceAnchor={copyResearchRunImportAuditEvidenceAnchor}
             onInspectRunPackage={inspectResearchRunImportAuditEvent}
             onNextPage={nextResearchRunImportAuditPage}
             onPreviousPage={previousResearchRunImportAuditPage}
@@ -4990,9 +5033,11 @@ function ResearchRunImportDiffPanel({
 
 function ResearchRunImportAuditEventPanel({
   className,
+  copiedEvidenceEventId,
   events,
   i18n,
   isLoading,
+  onCopyEvidenceAnchor,
   onInspectRunPackage,
   onNextPage,
   onPreviousPage,
@@ -5003,9 +5048,11 @@ function ResearchRunImportAuditEventPanel({
   query
 }: {
   className?: string;
+  copiedEvidenceEventId: string | null;
   events: ResearchRunImportAuditEvent[];
   i18n: AppI18n;
   isLoading: boolean;
+  onCopyEvidenceAnchor: (event: ResearchRunImportAuditEvent) => void;
   onInspectRunPackage: (event: ResearchRunImportAuditEvent) => void;
   onNextPage: () => void;
   onPreviousPage: () => void;
@@ -5109,6 +5156,7 @@ function ResearchRunImportAuditEventPanel({
               const undoConfirmation = buildResearchRunImportUndoConfirmation(event);
               const isConfirmingUndo = pendingImportUndoToken === undoConfirmation?.undoToken;
               const canInspectRunPackage = event.stage === "confirmed" || event.stage === "undone" || event.stage === "undo-failed";
+              const isEvidenceAnchorCopied = copiedEvidenceEventId === event.id;
               return (
                 <article className={`research-import-event-row ${event.tone} ${event.stage}`} key={event.id}>
                   <span>{researchImportAuditStageLabel(i18n, event.stage)}</span>
@@ -5126,6 +5174,16 @@ function ResearchRunImportAuditEventPanel({
                   </em>
                   <div className="research-import-event-recovery">
                     <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
+                    <button onClick={() => onCopyEvidenceAnchor(event)} type="button">
+                      {isEvidenceAnchorCopied ? <Check size={13} /> : <Copy size={13} />}
+                      {isEvidenceAnchorCopied
+                        ? i18n.locale === "zh-CN"
+                          ? "已复制"
+                          : "Copied"
+                        : i18n.locale === "zh-CN"
+                          ? "复制锚点"
+                          : "Copy anchor"}
+                    </button>
                     {canInspectRunPackage ? (
                       <button onClick={() => onInspectRunPackage(event)} type="button">
                         {i18n.locale === "zh-CN" ? "打开证据" : "Open evidence"}
@@ -5797,6 +5855,19 @@ function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent)
     return event.runId;
   }
   return exportPath || event.runId;
+}
+
+function buildResearchRunImportAuditEvidenceUrl(event: ResearchRunImportAuditEvent): string {
+  const url =
+    typeof window === "undefined"
+      ? new URL("http://aiqt.local/?workspace=audit")
+      : new URL(window.location.href);
+  url.searchParams.set("workspace", "audit");
+  url.searchParams.set("auditEvent", event.id);
+  url.searchParams.set("runId", event.runId);
+  url.searchParams.set("exportPath", event.exportPath);
+  url.searchParams.delete("workflow");
+  return typeof window === "undefined" ? `${url.pathname}?${url.searchParams.toString()}` : url.toString();
 }
 
 function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportAuditEvent): AuditEventRecord {
