@@ -406,6 +406,7 @@ describe("terminal layout css", () => {
     const importEventsPanelSource = sourceBetween("function ResearchRunImportAuditEventPanel", "function ResearchRunExportIndexPanel");
 
     expect(appSource).toContain("buildResearchRunImportAuditEvent");
+    expect(appSource).toContain("buildResearchRunImportAuditAggregation");
     expect(appSource).toContain("buildResearchRunImportUndoAuditEvent");
     expect(appSource).toContain("buildResearchRunImportUndoConfirmation");
     expect(appSource).toContain("buildResearchRunImportUndoFailureAuditEvent");
@@ -420,6 +421,13 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onReplayRollbackRun={replayImportRollbackRun}");
     expect(auditWorkspaceSource).toContain("onUndoImport={undoResearchRunImportEvent}");
     expect(importEventsPanelSource).toContain("research-import-events-summary");
+    expect(importEventsPanelSource).toContain("const [stageFilter, setStageFilter]");
+    expect(importEventsPanelSource).toContain("filterResearchRunImportAuditEvents(events, query, stageFilter)");
+    expect(importEventsPanelSource).toContain("buildResearchRunImportAuditAggregation(events)");
+    expect(importEventsPanelSource).toContain("research-import-events-filters");
+    expect(importEventsPanelSource).toContain("data-active={stageFilter === filter.id}");
+    expect(importEventsPanelSource).toContain("aggregation.failureBuckets");
+    expect(importEventsPanelSource).toContain("research-import-failure-buckets");
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");
     expect(importEventsPanelSource).toContain("event.undoToken");
@@ -429,12 +437,15 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("onUndoImport(undoConfirmation.undoToken, undoConfirmation.runId)");
     expect(importEventsPanelSource).toContain('event.stage !== "undone"');
     expect(appSource).toContain("buildResearchRunImportUndoFailureAuditEvent({");
-    expect(appSource).toContain("stage === \"undo-failed\"");
+    expect(importEventsPanelSource).toContain("aggregation.undoFailed");
     expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
     expect(importEventsPanelSource).toContain("research-import-event-recovery");
     expect(importEventsPanelSource).toContain("research-import-undo-confirmation");
     expect(cssBlock(".workflow-import-events-panel")).toContain("grid-area: import-events;");
     expect(cssBlock(".research-import-events")).toContain("display: grid;");
+    expect(cssBlock(".research-import-events-filters")).toContain("display: flex;");
+    expect(cssBlock(".research-import-failure-buckets")).toContain("display: grid;");
+    expect(cssBlock(".research-import-failure-bucket")).toContain("display: grid;");
     expect(cssBlock(".research-import-event-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(132px, 0.36fr) minmax(92px, 0.24fr) auto;"
     );

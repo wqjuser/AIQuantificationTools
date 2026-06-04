@@ -714,6 +714,42 @@ export interface ResearchRunImportUndoConfirmation {
   detail: string;
 }
 
+export type ResearchRunImportAuditFilter =
+  | "all"
+  | "needs-review"
+  | "undoable"
+  | "recoverable"
+  | ResearchRunImportAuditEventStage;
+
+export type ResearchRunImportAuditFailureBucketCategory = ResearchRunImportFailureCategory | "blocked";
+
+export interface ResearchRunImportAuditFailureBucket {
+  category: ResearchRunImportAuditFailureBucketCategory;
+  label: string;
+  count: number;
+  latestRunId: string;
+  latestFileName: string;
+  latestCreatedAt: string;
+  recoveryHint: string;
+  stageCounts: Partial<Record<ResearchRunImportAuditEventStage, number>>;
+  tone: "risk" | "warning";
+}
+
+export interface ResearchRunImportAuditAggregation {
+  total: number;
+  preview: number;
+  blocked: number;
+  confirmed: number;
+  failed: number;
+  cancelled: number;
+  undone: number;
+  undoFailed: number;
+  needsReview: number;
+  undoable: number;
+  recoverable: number;
+  failureBuckets: ResearchRunImportAuditFailureBucket[];
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -3030,16 +3066,96 @@ export function mergeResearchRunImportAuditEvents(
   return [event, ...events.filter((item) => item.id !== event.id)].slice(0, limit);
 }
 
+export function buildResearchRunImportAuditAggregation(
+  events: ResearchRunImportAuditEvent[]
+): ResearchRunImportAuditAggregation {
+  const stageCounts: Record<ResearchRunImportAuditEventStage, number> = {
+    blocked: 0,
+    cancelled: 0,
+    confirmed: 0,
+    failed: 0,
+    preview: 0,
+    undone: 0,
+    "undo-failed": 0
+  };
+  const failureBuckets = new Map<ResearchRunImportAuditFailureBucketCategory, ResearchRunImportAuditFailureBucket>();
+  let needsReview = 0;
+  let recoverable = 0;
+  let undoable = 0;
+
+  events.forEach((event) => {
+    stageCounts[event.stage] += 1;
+    if (isResearchRunImportAuditEventUndoable(event)) {
+      undoable += 1;
+    }
+    if (isResearchRunImportAuditEventRecoverable(event)) {
+      recoverable += 1;
+    }
+    if (!isResearchRunImportAuditEventNeedsReview(event)) {
+      return;
+    }
+    needsReview += 1;
+    const category: ResearchRunImportAuditFailureBucketCategory =
+      event.stage === "blocked" ? "blocked" : event.failureCategory ?? "unknown";
+    const existing = failureBuckets.get(category);
+    if (existing) {
+      existing.count += 1;
+      existing.stageCounts[event.stage] = (existing.stageCounts[event.stage] ?? 0) + 1;
+      if (event.createdAt > existing.latestCreatedAt) {
+        existing.latestCreatedAt = event.createdAt;
+        existing.latestFileName = event.fileName;
+        existing.latestRunId = event.runId;
+        existing.recoveryHint = event.recoveryHint;
+      }
+      return;
+    }
+    failureBuckets.set(category, {
+      category,
+      count: 1,
+      label: researchRunImportFailureBucketLabel(category),
+      latestCreatedAt: event.createdAt,
+      latestFileName: event.fileName,
+      latestRunId: event.runId,
+      recoveryHint: event.recoveryHint,
+      stageCounts: {
+        [event.stage]: 1
+      },
+      tone: "risk"
+    });
+  });
+
+  return {
+    total: events.length,
+    preview: stageCounts.preview,
+    blocked: stageCounts.blocked,
+    confirmed: stageCounts.confirmed,
+    failed: stageCounts.failed,
+    cancelled: stageCounts.cancelled,
+    undone: stageCounts.undone,
+    undoFailed: stageCounts["undo-failed"],
+    needsReview,
+    undoable,
+    recoverable,
+    failureBuckets: researchRunImportFailureBucketOrder
+      .map((category) => failureBuckets.get(category))
+      .filter((bucket): bucket is ResearchRunImportAuditFailureBucket => Boolean(bucket))
+  };
+}
+
 export function filterResearchRunImportAuditEvents(
   events: ResearchRunImportAuditEvent[],
-  query: string
+  query: string,
+  filter: ResearchRunImportAuditFilter = "all"
 ): ResearchRunImportAuditEvent[] {
   const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return events;
-  }
-  return events.filter((event) =>
-    [
+  return events.filter((event) => {
+    if (!researchRunImportAuditEventMatchesFilter(event, filter)) {
+      return false;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+    return [
       event.id,
       event.stage,
       event.runId,
@@ -3052,6 +3168,9 @@ export function filterResearchRunImportAuditEvents(
       event.rollbackTargetRunId && event.stage !== "undone" ? "rollback" : "",
       event.undoToken ?? "",
       event.undoToken ? "undo" : "",
+      isResearchRunImportAuditEventUndoable(event) ? "undoable" : "",
+      isResearchRunImportAuditEventNeedsReview(event) ? "needs review" : "",
+      isResearchRunImportAuditEventRecoverable(event) ? "recoverable recovery" : "",
       event.stage === "undone" ? "undo consumed" : "",
       event.stage === "undo-failed" ? "undo failed retry recovery" : "",
       event.failureCategory ?? "",
@@ -3063,8 +3182,61 @@ export function filterResearchRunImportAuditEvents(
     ]
       .join(" ")
       .toLowerCase()
-      .includes(normalizedQuery)
-  );
+      .includes(normalizedQuery);
+  });
+}
+
+const researchRunImportFailureBucketOrder: ResearchRunImportAuditFailureBucketCategory[] = [
+  "blocked",
+  "schema",
+  "integrity",
+  "artifact-counts",
+  "core",
+  "unknown"
+];
+
+function researchRunImportFailureBucketLabel(category: ResearchRunImportAuditFailureBucketCategory): string {
+  return (
+    {
+      blocked: "Preflight blocked",
+      schema: "Schema contract",
+      integrity: "Integrity check",
+      "artifact-counts": "Artifact counts",
+      core: "Core rejection",
+      unknown: "Unknown failure"
+    } satisfies Record<ResearchRunImportAuditFailureBucketCategory, string>
+  )[category];
+}
+
+function isResearchRunImportAuditEventNeedsReview(event: ResearchRunImportAuditEvent): boolean {
+  return event.stage === "blocked" || event.stage === "failed" || event.stage === "undo-failed";
+}
+
+function isResearchRunImportAuditEventUndoable(event: ResearchRunImportAuditEvent): boolean {
+  return event.stage === "confirmed" && Boolean(event.undoToken?.trim());
+}
+
+function isResearchRunImportAuditEventRecoverable(event: ResearchRunImportAuditEvent): boolean {
+  return isResearchRunImportAuditEventNeedsReview(event) || isResearchRunImportAuditEventUndoable(event);
+}
+
+function researchRunImportAuditEventMatchesFilter(
+  event: ResearchRunImportAuditEvent,
+  filter: ResearchRunImportAuditFilter
+): boolean {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "needs-review") {
+    return isResearchRunImportAuditEventNeedsReview(event);
+  }
+  if (filter === "undoable") {
+    return isResearchRunImportAuditEventUndoable(event);
+  }
+  if (filter === "recoverable") {
+    return isResearchRunImportAuditEventRecoverable(event);
+  }
+  return event.stage === filter;
 }
 
 function researchRunImportAuditSummary(stage: ResearchRunImportAuditEventStage): string {

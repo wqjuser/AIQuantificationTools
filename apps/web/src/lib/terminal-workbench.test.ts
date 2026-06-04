@@ -15,6 +15,7 @@ import {
   buildResearchRunExportIndexRows,
   buildResearchRunImportDiffRows,
   buildResearchRunImportAuditEvent,
+  buildResearchRunImportAuditAggregation,
   buildResearchRunImportUndoAuditEvent,
   buildResearchRunImportUndoConfirmation,
   buildResearchRunImportUndoFailureAuditEvent,
@@ -2815,6 +2816,51 @@ describe("terminal workbench model", () => {
       "blocked",
       "confirmed",
       "undone"
+    ]);
+
+    const allAuditEvents = [blockedPreview, confirmed, failed, undone, undoFailed];
+    const aggregation = buildResearchRunImportAuditAggregation(allAuditEvents);
+    expect(aggregation).toEqual(
+      expect.objectContaining({
+        total: 5,
+        blocked: 1,
+        confirmed: 1,
+        failed: 1,
+        undone: 1,
+        undoFailed: 1,
+        needsReview: 3,
+        undoable: 1,
+        recoverable: 4
+      })
+    );
+    expect(aggregation.failureBuckets.map((bucket) => `${bucket.category}:${bucket.count}:${bucket.latestRunId}`)).toEqual([
+      "blocked:1:run-import-ledger",
+      "schema:1:unknown",
+      "core:1:run-import-ledger"
+    ]);
+    expect(aggregation.failureBuckets.at(-1)).toEqual(
+      expect.objectContaining({
+        category: "core",
+        label: "Core rejection",
+        stageCounts: {
+          "undo-failed": 1
+        },
+        latestFileName: "unsafe-import.json",
+        recoveryHint:
+          "Review the undo rejection detail, replay the previous audited run if needed, then retry with the matching import event.",
+        tone: "risk"
+      })
+    );
+    expect(filterResearchRunImportAuditEvents(allAuditEvents, "", "needs-review").map((event) => event.stage)).toEqual([
+      "blocked",
+      "failed",
+      "undo-failed"
+    ]);
+    expect(filterResearchRunImportAuditEvents(allAuditEvents, "", "undoable").map((event) => event.id)).toEqual([
+      confirmed.id
+    ]);
+    expect(filterResearchRunImportAuditEvents(allAuditEvents, "schema", "needs-review").map((event) => event.id)).toEqual([
+      failed.id
     ]);
   });
 

@@ -167,3 +167,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because App did not persist undo failures or render them as risk rows.
 - GREEN: failed `/api/research/runs/import/undo` calls now save an `undo-failed` AuditEvent, keep the old-run replay recovery affordance, include undo failures in failure counts, and style the row as risk.
 - DOCS: updated product plan and architecture notes; next slice is import/undo audit filtering and failure aggregation.
+- RED: `terminal-workbench.test.ts -t "audit ledger"` failed because import audit events had no aggregation model for blocked/schema/core/undo-failed review buckets or stage filters.
+- GREEN: added `buildResearchRunImportAuditAggregation`, filter modes for all/needs-review/undoable/recoverable/stage-specific views, and searchable recovery keywords.
+- RED: `layout-css.test.js -t "import audit events"` failed because the Audit import ledger had no stage filter bar or failure aggregation cards.
+- GREEN: added compact Audit import filters, undo-failed counts, failure bucket summaries, and localized bucket labels without adding another side rail.
+- DOCS: updated product plan and architecture notes; next slice is backend-backed import audit pagination/query controls so larger ledgers do not stay limited to the first 12 events.

@@ -103,6 +103,7 @@ import {
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunImportAuditEvent,
+  buildResearchRunImportAuditAggregation,
   buildResearchRunImportDiffRows,
   buildResearchRunImportUndoAuditEvent,
   buildResearchRunImportUndoConfirmation,
@@ -159,6 +160,8 @@ import {
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
   ResearchRunImportAuditEvent,
+  ResearchRunImportAuditFailureBucket,
+  ResearchRunImportAuditFilter,
   ResearchRunImportFailureCategory,
   ResearchRunImportDiffRow,
   ResearchRunComparisonRow,
@@ -4924,11 +4927,17 @@ function ResearchRunImportAuditEventPanel({
   onUndoImport: (undoToken: string, expectedRunId: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [stageFilter, setStageFilter] = useState<ResearchRunImportAuditFilter>("all");
   const [pendingImportUndoToken, setPendingImportUndoToken] = useState<string | null>(null);
-  const filteredEvents = filterResearchRunImportAuditEvents(events, query);
-  const blockedCount = events.filter((event) => event.stage === "blocked").length;
-  const failedCount = events.filter((event) => event.stage === "failed" || event.stage === "undo-failed").length;
-  const confirmedCount = events.filter((event) => event.stage === "confirmed").length;
+  const aggregation = buildResearchRunImportAuditAggregation(events);
+  const filteredEvents = filterResearchRunImportAuditEvents(events, query, stageFilter);
+  const filters: Array<{ id: ResearchRunImportAuditFilter; label: string; count: number }> = [
+    { id: "all", label: i18n.locale === "zh-CN" ? "全部" : "All", count: aggregation.total },
+    { id: "needs-review", label: i18n.locale === "zh-CN" ? "待复核" : "Needs review", count: aggregation.needsReview },
+    { id: "undoable", label: i18n.locale === "zh-CN" ? "可撤销" : "Undoable", count: aggregation.undoable },
+    { id: "recoverable", label: i18n.locale === "zh-CN" ? "可恢复" : "Recoverable", count: aggregation.recoverable },
+    { id: "undone", label: i18n.locale === "zh-CN" ? "已撤销" : "Undone", count: aggregation.undone }
+  ];
 
   return (
     <Panel
@@ -4940,16 +4949,19 @@ function ResearchRunImportAuditEventPanel({
         <div className="research-import-events-toolbar">
           <div className="research-import-events-summary">
             <span>
-              {i18n.locale === "zh-CN" ? "已确认" : "Applied"} <strong>{confirmedCount}</strong>
+              {i18n.locale === "zh-CN" ? "已确认" : "Applied"} <strong>{aggregation.confirmed}</strong>
             </span>
             <span>
-              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{blockedCount}</strong>
+              {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} <strong>{aggregation.blocked}</strong>
             </span>
             <span>
-              {i18n.locale === "zh-CN" ? "失败" : "Failed"} <strong>{failedCount}</strong>
+              {i18n.locale === "zh-CN" ? "失败" : "Failed"} <strong>{aggregation.failed + aggregation.undoFailed}</strong>
             </span>
             <span>
-              {i18n.locale === "zh-CN" ? "事件" : "Events"} <strong>{events.length}</strong>
+              {i18n.locale === "zh-CN" ? "撤销失败" : "Undo failed"} <strong>{aggregation.undoFailed}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "事件" : "Events"} <strong>{aggregation.total}</strong>
             </span>
           </div>
           <input
@@ -4960,6 +4972,33 @@ function ResearchRunImportAuditEventPanel({
             value={query}
           />
         </div>
+        <div className="research-import-events-filters" aria-label={i18n.locale === "zh-CN" ? "导入审计阶段筛选" : "Import audit stage filters"}>
+          {filters.map((filter) => (
+            <button
+              data-active={stageFilter === filter.id}
+              key={filter.id}
+              onClick={() => setStageFilter(filter.id)}
+              type="button"
+            >
+              <span>{filter.label}</span>
+              <strong>{filter.count}</strong>
+            </button>
+          ))}
+        </div>
+        {aggregation.failureBuckets.length ? (
+          <div className="research-import-failure-buckets">
+            {aggregation.failureBuckets.map((bucket) => (
+              <article className={`research-import-failure-bucket ${bucket.tone}`} key={bucket.category}>
+                <span>{researchImportAuditFailureBucketLabel(i18n, bucket)}</span>
+                <strong>{bucket.count}</strong>
+                <small>
+                  {bucket.latestFileName} · {bucket.latestRunId}
+                </small>
+                <p>{researchImportAuditRecoveryLabel(i18n, bucket.recoveryHint)}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
         <div className="research-import-events-list">
           {filteredEvents.length ? (
             filteredEvents.map((event) => {
@@ -5758,6 +5797,25 @@ function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAu
       "undo-failed": "撤销失败"
     } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
   )[stage];
+}
+
+function researchImportAuditFailureBucketLabel(
+  i18n: AppI18n,
+  bucket: ResearchRunImportAuditFailureBucket
+): string {
+  if (i18n.locale === "en-US") {
+    return bucket.label;
+  }
+  return (
+    {
+      "Preflight blocked": "预检阻断",
+      "Schema contract": "契约格式",
+      "Integrity check": "完整性校验",
+      "Artifact counts": "证据数量",
+      "Core rejection": "核心拒绝",
+      "Unknown failure": "未知失败"
+    }[bucket.label] ?? bucket.label
+  );
 }
 
 function researchImportAuditSummaryLabel(i18n: AppI18n, summary: string): string {
