@@ -193,3 +193,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser|import audit events"` failed because Audit deep-link package loading had no visible status, retry action, or inspect result contract.
 - GREEN: added `ImportAuditEvidenceDeepLinkStatus`, made package inspection return `ok/error`, rendered a compact deep-link status card in the package browser, and wired retry through the same loader.
 - DOCS: updated product plan and architecture notes; next slice is an exportable/copyable audit deep-link summary across ledger, package, and diff focus.
+- RED: `terminal-workbench.test.ts -t "audit evidence summary"` failed because there was no pure model for a copyable summary across ledger, package, and import diff focus.
+- RED: `layout-css.test.js -t "export package browser"` failed because the Audit package browser had no summary copy state, summary copy action, or compact summary card.
+- GREEN: added `buildAuditEvidenceSummary`, wired the Audit package browser to copy the generated summary text, and rendered package/diff focus counts without adding a new layout column.
+- DOCS: updated product plan and architecture notes; next slice is persisting this audit evidence summary into export manifest or a report artifact.

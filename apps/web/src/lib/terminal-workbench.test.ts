@@ -10,6 +10,7 @@ import {
   buildAiReviewRunRecord,
   buildAiReviewAuditTimelineItems,
   buildAiReviewExportEvidenceIndexRows,
+  buildAuditEvidenceSummary,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
@@ -2862,6 +2863,78 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportAuditEvents(allAuditEvents, "schema", "needs-review").map((event) => event.id)).toEqual([
       failed.id
     ]);
+  });
+
+  test("builds a copyable audit evidence summary from ledger, package, and diff focus", () => {
+    const packageRows: ResearchRunExportBrowserRow[] = [
+      {
+        id: "package",
+        label: "Package",
+        status: "ready",
+        value: "run-a1f3a5369574",
+        detail: "Manifest loaded",
+        exportPath: "manifest:run-a1f3a5369574",
+        tone: "positive"
+      },
+      {
+        id: "integrity",
+        label: "Integrity",
+        status: "blocked",
+        value: "sha256 missing",
+        detail: "Missing canonical hash",
+        exportPath: "integrity.hash",
+        tone: "risk"
+      }
+    ];
+    const diffRows: ResearchRunImportDiffRow[] = [
+      {
+        id: "data-snapshot",
+        label: "Data snapshot",
+        status: "change",
+        current: "hash-current",
+        incoming: "hash-imported",
+        detail: "Import will replay the package data hash.",
+        exportPath: "researchRun.dataHash",
+        tone: "warning"
+      },
+      {
+        id: "live-boundary",
+        label: "Live boundary",
+        status: "blocked",
+        current: "paper",
+        incoming: "live",
+        detail: "Live handoff is blocked.",
+        exportPath: "executionHandoff.liveTradingAllowed",
+        tone: "risk"
+      }
+    ];
+
+    const summary = buildAuditEvidenceSummary({
+      auditQuery: "manual-smoke",
+      deepLinkError: null,
+      deepLinkRunId: "run-a1f3a5369574",
+      deepLinkStatus: "loaded",
+      importDiffQuery: "hash-imported",
+      importDiffRows: diffRows,
+      packageQuery: "manifest:run-a1f3a5369574",
+      packageRows
+    });
+
+    expect(summary).toMatchObject({
+      auditQuery: "manual-smoke",
+      deepLinkStatus: "loaded",
+      importDiffBlockedCount: 1,
+      importDiffChangeCount: 1,
+      importDiffMatchedCount: 1,
+      packageBlockedCount: 1,
+      packageMatchedCount: 1,
+      runId: "run-a1f3a5369574"
+    });
+    expect(summary.copyText).toContain("AIQT Audit Evidence Summary");
+    expect(summary.copyText).toContain("Run: run-a1f3a5369574");
+    expect(summary.copyText).toContain("Audit query: manual-smoke");
+    expect(summary.copyText).toContain("Package checks: 1 ready / 0 missing / 1 blocked / 1 of 2 matched");
+    expect(summary.copyText).toContain("Import diff: 1 changes / 0 adds / 1 blocked / 1 of 2 matched");
   });
 
   test("derives scanner candidates from the active watchlist", () => {

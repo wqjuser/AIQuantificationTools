@@ -317,8 +317,13 @@ describe("terminal layout css", () => {
     const runHistoryRowSource = sourceBetween("function RunHistoryRow", "function RunComparisonBoard");
 
     expect(appSource).toContain("buildResearchRunExportBrowserRows");
+    expect(appSource).toContain("buildAuditEvidenceSummary");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
+    expect(appSource).toContain("const auditEvidenceSummary = buildAuditEvidenceSummary");
+    expect(appSource).toContain("const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary]");
+    expect(appSource).toContain("const copyAuditEvidenceSummary = useCallback");
+    expect(appSource).toContain("navigator.clipboard.writeText(auditEvidenceSummary.copyText)");
     expect(appSource).toContain("type ImportAuditEvidenceDeepLinkStatus");
     expect(appSource).toContain("const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus]");
     expect(appSource).toContain('const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
@@ -332,6 +337,9 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("<ResearchRunExportPackageBrowserPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-export-browser-panel"');
     expect(auditWorkspaceSource).toContain("deepLinkStatus={importAuditEvidenceDeepLinkStatus}");
+    expect(auditWorkspaceSource).toContain("evidenceSummary={auditEvidenceSummary}");
+    expect(auditWorkspaceSource).toContain("isEvidenceSummaryCopied={copiedAuditEvidenceSummary}");
+    expect(auditWorkspaceSource).toContain("onCopyEvidenceSummary={copyAuditEvidenceSummary}");
     expect(auditWorkspaceSource).toContain("onRetryDeepLink={retryImportAuditEvidenceDeepLink}");
     expect(auditWorkspaceSource).toContain("rows={researchRunExportBrowserRows}");
     expect(auditWorkspaceSource).toContain("isLoading={isInspectingExportPackage}");
@@ -339,8 +347,17 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onQueryChange={setResearchRunExportBrowserQuery}");
     expect(auditWorkspaceSource).toContain("onInspectExport={inspectRunExportPackage}");
     expect(exportBrowserPanelSource).toContain("query: string;");
+    expect(exportBrowserPanelSource).toContain("evidenceSummary: AuditEvidenceSummary;");
+    expect(exportBrowserPanelSource).toContain("isEvidenceSummaryCopied: boolean;");
+    expect(exportBrowserPanelSource).toContain("onCopyEvidenceSummary: () => void;");
     expect(exportBrowserPanelSource).toContain("deepLinkStatus?: ImportAuditEvidenceDeepLinkStatus | null;");
     expect(exportBrowserPanelSource).toContain("onRetryDeepLink?: () => void;");
+    expect(exportBrowserPanelSource).toContain("research-audit-evidence-summary");
+    expect(exportBrowserPanelSource).toContain("evidenceSummary.runId");
+    expect(exportBrowserPanelSource).toContain("evidenceSummary.packageMatchedCount");
+    expect(exportBrowserPanelSource).toContain("evidenceSummary.importDiffBlockedCount");
+    expect(exportBrowserPanelSource).toContain("onCopyEvidenceSummary");
+    expect(exportBrowserPanelSource).toContain("isEvidenceSummaryCopied");
     expect(exportBrowserPanelSource).toContain("research-export-deep-link");
     expect(exportBrowserPanelSource).toContain("deepLinkStatus.status");
     expect(exportBrowserPanelSource).toContain("deepLinkStatus.runId");
@@ -354,6 +371,8 @@ describe("terminal layout css", () => {
     expect(runHistoryRowSource).toContain("onInspectExport(run)");
     expect(cssBlock(".workflow-export-browser-panel")).toContain("grid-area: package;");
     expect(cssBlock(".research-export-browser")).toContain("display: grid;");
+    expect(cssBlock(".research-audit-evidence-summary")).toContain("display: grid;");
+    expect(cssBlock(".research-audit-evidence-summary button")).toContain("display: inline-flex;");
     expect(cssBlock(".research-export-deep-link")).toContain("display: grid;");
     expect(cssBlock(".research-export-deep-link.failed")).toContain("border-left-color: #ff7f6d;");
     expect(cssBlock(".research-export-browser-row")).toContain(

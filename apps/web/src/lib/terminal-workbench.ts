@@ -677,6 +677,29 @@ export interface ResearchRunImportDiffRow {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export type AuditEvidenceDeepLinkStatus = "none" | "idle" | "loading" | "loaded" | "failed";
+
+export interface AuditEvidenceSummary {
+  auditQuery: string;
+  copyText: string;
+  deepLinkError: string | null;
+  deepLinkStatus: AuditEvidenceDeepLinkStatus;
+  focusQuery: string;
+  importDiffAddCount: number;
+  importDiffBlockedCount: number;
+  importDiffChangeCount: number;
+  importDiffMatchedCount: number;
+  importDiffQuery: string;
+  importDiffTotalCount: number;
+  packageBlockedCount: number;
+  packageMatchedCount: number;
+  packageMissingCount: number;
+  packageQuery: string;
+  packageReadyCount: number;
+  packageTotalCount: number;
+  runId: string;
+}
+
 export type ResearchRunImportAuditEventStage =
   | "preview"
   | "blocked"
@@ -2924,6 +2947,74 @@ export function filterResearchRunImportDiffRows(
       .toLowerCase()
       .includes(normalizedQuery)
   );
+}
+
+export function buildAuditEvidenceSummary({
+  auditQuery,
+  deepLinkError,
+  deepLinkRunId,
+  deepLinkStatus = "none",
+  importDiffQuery,
+  importDiffRows,
+  packageQuery,
+  packageRows
+}: {
+  auditQuery: string;
+  deepLinkError?: string | null;
+  deepLinkRunId?: string | null;
+  deepLinkStatus?: AuditEvidenceDeepLinkStatus;
+  importDiffQuery: string;
+  importDiffRows: ResearchRunImportDiffRow[];
+  packageQuery: string;
+  packageRows: ResearchRunExportBrowserRow[];
+}): AuditEvidenceSummary {
+  const normalizedAuditQuery = auditQuery.trim();
+  const normalizedPackageQuery = packageQuery.trim();
+  const normalizedImportDiffQuery = importDiffQuery.trim();
+  const packageMatchedCount = filterResearchRunExportBrowserRows(packageRows, normalizedPackageQuery).length;
+  const importDiffMatchedCount = filterResearchRunImportDiffRows(importDiffRows, normalizedImportDiffQuery).length;
+  const packageReadyCount = packageRows.filter((row) => row.status === "ready").length;
+  const packageMissingCount = packageRows.filter((row) => row.status === "missing").length;
+  const packageBlockedCount = packageRows.filter((row) => row.status === "blocked").length;
+  const importDiffAddCount = importDiffRows.filter((row) => row.status === "add").length;
+  const importDiffChangeCount = importDiffRows.filter((row) => row.status === "change" || row.status === "replace").length;
+  const importDiffBlockedCount = importDiffRows.filter((row) => row.status === "blocked").length;
+  const runId =
+    deepLinkRunId?.trim() ||
+    packageRows.find((row) => row.exportPath.startsWith("manifest:"))?.value ||
+    normalizedPackageQuery ||
+    "unknown";
+  const focusQuery = normalizedPackageQuery || normalizedImportDiffQuery || normalizedAuditQuery || runId;
+  const copyLines = [
+    "AIQT Audit Evidence Summary",
+    `Run: ${runId}`,
+    `Audit query: ${normalizedAuditQuery || "none"}`,
+    `Package focus: ${normalizedPackageQuery || "none"}`,
+    `Import diff focus: ${normalizedImportDiffQuery || "none"}`,
+    `Deep link: ${deepLinkStatus}${deepLinkError ? ` (${deepLinkError})` : ""}`,
+    `Package checks: ${packageReadyCount} ready / ${packageMissingCount} missing / ${packageBlockedCount} blocked / ${packageMatchedCount} of ${packageRows.length} matched`,
+    `Import diff: ${importDiffChangeCount} changes / ${importDiffAddCount} adds / ${importDiffBlockedCount} blocked / ${importDiffMatchedCount} of ${importDiffRows.length} matched`
+  ];
+  return {
+    auditQuery: normalizedAuditQuery,
+    copyText: copyLines.join("\n"),
+    deepLinkError: deepLinkError ?? null,
+    deepLinkStatus,
+    focusQuery,
+    importDiffAddCount,
+    importDiffBlockedCount,
+    importDiffChangeCount,
+    importDiffMatchedCount,
+    importDiffQuery: normalizedImportDiffQuery,
+    importDiffTotalCount: importDiffRows.length,
+    packageBlockedCount,
+    packageMatchedCount,
+    packageMissingCount,
+    packageQuery: normalizedPackageQuery,
+    packageReadyCount,
+    packageTotalCount: packageRows.length,
+    runId
+  };
 }
 
 export function buildResearchRunImportAuditEvent({
