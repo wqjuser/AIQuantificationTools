@@ -1659,6 +1659,19 @@ em {
   border-left-color: #ff7f6d;
 }
 
+.audit-signing-key-rotation-history-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-rotation-history-row.positive > span,
+.audit-signing-key-rotation-history-row.positive > b {
+  color: #7cf0d2;
+}
+
+.audit-signing-key-rotation-history-row.positive > b {
+  border-color: rgba(76, 201, 173, 0.3);
+}
+
 .audit-signing-key-rotation-history-row.empty {
   border-style: dashed;
 }

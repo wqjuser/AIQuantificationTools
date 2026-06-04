@@ -3312,6 +3312,33 @@ describe("terminal workbench model", () => {
       },
       {
         schemaVersion: 1,
+        eventId: "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c",
+        eventType: "audit_signing_key_rotation_apply",
+        runId: "audit-signing-key-rotation",
+        createdAt: "2026-06-04T10:36:00+00:00",
+        stage: "blocked",
+        source: "web",
+        summary: "Audit signing key rotation apply blocked for next-audit-key",
+        detail: "active-audit-key -> next-audit-key · manual_secret_store · new_secret_material_not_confirmed / operator_review_not_confirmed",
+        metadata: {
+          applyMode: "manual_secret_store",
+          auditEventType: "audit_signing_key_rotation_apply",
+          blockedReasons: ["new_secret_material_not_confirmed", "operator_review_not_confirmed"],
+          confirmedConfirmationIds: ["legacy-secret-stored"],
+          currentActiveKeyFingerprint: "d".repeat(16),
+          currentActiveKeyId: "active-audit-key",
+          environmentUpdateNames: ["AIQT_AUDIT_SIGNING_KEY_ID", "AIQT_AUDIT_SIGNING_SECRET"],
+          missingConfirmationIds: ["new-secret-material-stored", "operator-reviewed-plan"],
+          proposedActiveKeyId: "next-audit-key",
+          proposedChainId: "audit-chain-next",
+          proposedSigner: "Next Audit Key",
+          restartRequired: true,
+          secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET", "AIQT_AUDIT_SIGNING_KEYS_JSON"],
+          status: "blocked"
+        }
+      },
+      {
+        schemaVersion: 1,
         eventId: "audit-report-ignore",
         eventType: "audit_evidence_report",
         runId: "run-audit",
@@ -3328,7 +3355,8 @@ describe("terminal workbench model", () => {
 
     expect(rows.map((row) => `${row.id}:${row.status}:${row.templateShortHash}:${row.tone}`)).toEqual([
       "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c:prepared:bbbbbbbbbbbb:warning",
-      "audit-signing-key-rotation-blocked:blocked:invalid:risk"
+      "audit-signing-key-rotation-blocked:blocked:invalid:risk",
+      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c:blocked:apply:risk"
     ]);
     expect(rows[0]).toEqual(
       expect.objectContaining({
@@ -3352,11 +3380,28 @@ describe("terminal workbench model", () => {
         templateShortHash: "invalid"
       })
     );
+    expect(rows[2]).toEqual(
+      expect.objectContaining({
+        applyMode: "manual_secret_store",
+        confirmedConfirmationCount: 1,
+        currentKeyFingerprint: "d".repeat(16),
+        eventKind: "apply",
+        missingConfirmationCount: 2,
+        proposedKeyId: "next-audit-key",
+        statusLabel: "Rotation apply blocked",
+        templateShortHash: "apply"
+      })
+    );
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "next-audit-key").map((row) => row.id)).toEqual([
-      "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c"
+      "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
+      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "blocked").map((row) => row.id)).toEqual([
-      "audit-signing-key-rotation-blocked"
+      "audit-signing-key-rotation-blocked",
+      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "operator-reviewed-plan").map((row) => row.id)).toEqual([
+      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c"
     ]);
     expect(JSON.stringify(rows)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
     expect(JSON.stringify(rows)).not.toContain("local-dev-audit-secret");

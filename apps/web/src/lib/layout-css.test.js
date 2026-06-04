@@ -631,6 +631,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain('eventType: "audit_evidence_report"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
+    expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
     expect(appSource).toContain("const [auditSigningKeyRotationEvents, setAuditSigningKeyRotationEvents]");
     expect(appSource).toContain("const [signingAuditReportEventId, setSigningAuditReportEventId]");

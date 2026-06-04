@@ -874,15 +874,22 @@ export interface AuditEvidenceReportLedgerSummary {
   verified: number;
 }
 
-export type AuditSigningKeyRotationLedgerStatus = "prepared" | "blocked";
+export type AuditSigningKeyRotationLedgerEventKind = "plan" | "apply";
+export type AuditSigningKeyRotationLedgerStatus = "prepared" | "blocked" | "ready_for_restart";
 
 export interface AuditSigningKeyRotationLedgerRow {
   id: string;
+  applyMode: string;
   createdAt: string;
+  confirmedConfirmationCount: number;
+  confirmedConfirmationIds: string[];
   currentKeyFingerprint: string;
   currentKeyId: string;
   detail: string;
   environmentUpdateCount: number;
+  eventKind: AuditSigningKeyRotationLedgerEventKind;
+  missingConfirmationCount: number;
+  missingConfirmationIds: string[];
   proposedChainId: string;
   proposedKeyId: string;
   proposedSigner: string;
@@ -896,7 +903,7 @@ export interface AuditSigningKeyRotationLedgerRow {
   templateShortHash: string;
   blockedReasons: string[];
   blockedReasonLabel: string;
-  tone: "warning" | "risk";
+  tone: "warning" | "risk" | "positive";
 }
 
 export interface WorkflowNode {
@@ -3646,37 +3653,73 @@ export function buildAuditSigningKeyRotationLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditSigningKeyRotationLedgerRow[] {
   return events
-    .filter((event) => event.eventType === "audit_signing_key_rotation_plan")
+    .filter(
+      (event) =>
+        event.eventType === "audit_signing_key_rotation_plan" ||
+        event.eventType === "audit_signing_key_rotation_apply"
+    )
     .map((event) => {
       const blockedReasons = auditReportLedgerMetadataStringList(event.metadata, "blockedReasons");
+      const isApplyEvent = event.eventType === "audit_signing_key_rotation_apply";
+      const statusMetadata = auditReportLedgerMetadataText(event.metadata, "status");
       const status: AuditSigningKeyRotationLedgerStatus =
-        event.stage === "blocked" || blockedReasons.length > 0 ? "blocked" : "prepared";
+        event.stage === "blocked" || statusMetadata === "blocked" || blockedReasons.length > 0
+          ? "blocked"
+          : isApplyEvent
+            ? "ready_for_restart"
+            : "prepared";
       const templateSha256 = auditReportLedgerMetadataText(event.metadata, "legacyRegistryTemplateSha256");
       const isTemplateHashReady = /^[a-f0-9]{64}$/iu.test(templateSha256);
       const environmentUpdateNames = auditReportLedgerMetadataStringList(event.metadata, "environmentUpdateNames");
       const secretPlaceholderNames = auditReportLedgerMetadataStringList(event.metadata, "secretPlaceholderNames");
       const stepIds = auditReportLedgerMetadataStringList(event.metadata, "stepIds");
+      const confirmedConfirmationIds = auditReportLedgerMetadataStringList(event.metadata, "confirmedConfirmationIds");
+      const missingConfirmationIds = auditReportLedgerMetadataStringList(event.metadata, "missingConfirmationIds");
       return {
         id: event.eventId,
+        applyMode: auditReportLedgerMetadataText(event.metadata, "applyMode"),
         createdAt: event.createdAt,
-        currentKeyFingerprint: auditReportLedgerMetadataText(event.metadata, "currentKeyFingerprint"),
-        currentKeyId: auditReportLedgerMetadataText(event.metadata, "currentKeyId"),
+        confirmedConfirmationCount: confirmedConfirmationIds.length,
+        confirmedConfirmationIds,
+        currentKeyFingerprint: isApplyEvent
+          ? auditReportLedgerMetadataText(event.metadata, "currentActiveKeyFingerprint")
+          : auditReportLedgerMetadataText(event.metadata, "currentKeyFingerprint"),
+        currentKeyId: isApplyEvent
+          ? auditReportLedgerMetadataText(event.metadata, "currentActiveKeyId")
+          : auditReportLedgerMetadataText(event.metadata, "currentKeyId"),
         detail: event.detail,
         environmentUpdateCount: environmentUpdateNames.length,
+        eventKind: isApplyEvent ? "apply" : "plan",
+        missingConfirmationCount: missingConfirmationIds.length,
+        missingConfirmationIds,
         proposedChainId: auditReportLedgerMetadataText(event.metadata, "proposedChainId"),
-        proposedKeyId: auditReportLedgerMetadataText(event.metadata, "proposedKeyId"),
+        proposedKeyId: isApplyEvent
+          ? auditReportLedgerMetadataText(event.metadata, "proposedActiveKeyId")
+          : auditReportLedgerMetadataText(event.metadata, "proposedKeyId"),
         proposedSigner: auditReportLedgerMetadataText(event.metadata, "proposedSigner"),
-        requiresRestart: auditReportLedgerMetadataBoolean(event.metadata, "requiresRestart"),
+        requiresRestart: isApplyEvent
+          ? auditReportLedgerMetadataBoolean(event.metadata, "restartRequired")
+          : auditReportLedgerMetadataBoolean(event.metadata, "requiresRestart"),
         rotationRequired: auditReportLedgerMetadataBoolean(event.metadata, "rotationRequired"),
         secretPlaceholderCount: secretPlaceholderNames.length,
-        stepCount: stepIds.length,
+        stepCount: isApplyEvent ? confirmedConfirmationIds.length + missingConfirmationIds.length : stepIds.length,
         status,
-        statusLabel: status === "blocked" ? "Rotation plan blocked" : "Rotation plan prepared",
+        statusLabel: isApplyEvent
+          ? status === "blocked"
+            ? "Rotation apply blocked"
+            : "Rotation apply ready"
+          : status === "blocked"
+            ? "Rotation plan blocked"
+            : "Rotation plan prepared",
         templateSha256,
-        templateShortHash: isTemplateHashReady ? templateSha256.slice(0, 12) : "invalid",
+        templateShortHash: isApplyEvent ? "apply" : isTemplateHashReady ? templateSha256.slice(0, 12) : "invalid",
         blockedReasons,
         blockedReasonLabel: blockedReasons.length ? blockedReasons.join(" / ") : "none",
-        tone: status === "blocked" || !isTemplateHashReady ? "risk" : "warning"
+        tone: status === "blocked" || (!isApplyEvent && !isTemplateHashReady)
+          ? "risk"
+          : status === "ready_for_restart"
+            ? "positive"
+            : "warning"
       };
     });
 }
@@ -3701,10 +3744,16 @@ export function filterAuditSigningKeyRotationLedgerRows(
       row.proposedSigner,
       row.status,
       row.statusLabel,
+      row.eventKind,
+      row.applyMode,
       row.templateSha256,
       row.templateShortHash,
       row.blockedReasonLabel,
+      row.confirmedConfirmationIds.join(" "),
+      row.missingConfirmationIds.join(" "),
       String(row.environmentUpdateCount),
+      String(row.confirmedConfirmationCount),
+      String(row.missingConfirmationCount),
       String(row.secretPlaceholderCount),
       String(row.stepCount)
     ]

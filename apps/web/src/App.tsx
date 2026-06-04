@@ -761,17 +761,30 @@ export function App() {
 
   const refreshAuditSigningKeyRotationEvents = useCallback(async () => {
     setIsLoadingAuditSigningKeyRotationEvents(true);
-    const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
-      eventType: "audit_signing_key_rotation_plan",
-      limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
-      offset: 0
-    });
-    if (auditHistory.source === "core") {
-      setAuditSigningKeyRotationEvents(auditHistory.events);
+    const [rotationPlanHistory, rotationApplyHistory] = await Promise.all([
+      loadAuditEvents(quantCoreBaseUrl, {
+        eventType: "audit_signing_key_rotation_plan",
+        limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+        offset: 0
+      }),
+      loadAuditEvents(quantCoreBaseUrl, {
+        eventType: "audit_signing_key_rotation_apply",
+        limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+        offset: 0
+      })
+    ]);
+    if (rotationPlanHistory.source === "core" || rotationApplyHistory.source === "core") {
+      const rotationEvents = [
+        ...(rotationPlanHistory.source === "core" ? rotationPlanHistory.events : []),
+        ...(rotationApplyHistory.source === "core" ? rotationApplyHistory.events : [])
+      ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+      setAuditSigningKeyRotationEvents(
+        rotationEvents
+      );
     }
     setIsLoadingAuditSigningKeyRotationEvents(false);
-    return auditHistory;
-  }, []);
+    return rotationPlanHistory;
+  }, [quantCoreBaseUrl]);
 
   const refreshResearchRunImportAuditEvents = useCallback(async () => {
     const requestId = researchRunImportAuditRequestIdRef.current + 1;
@@ -935,12 +948,14 @@ export function App() {
             source: ledgerResult.source,
             statusLabel: "Audit signing key rotation apply ledger save failed"
           }));
+        } else if (ledgerResult.event) {
+          setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, ledgerResult.event!));
         }
       }
     } finally {
       setIsApplyingAuditSigningKeyRotationPlan(false);
     }
-  }, [auditSigningKeyRotationApplyConfirmations, auditSigningKeyRotationPlan.rotationPlan]);
+  }, [auditSigningKeyRotationApplyConfirmations, auditSigningKeyRotationPlan.rotationPlan, quantCoreBaseUrl]);
 
   const refreshGoldenPathStatus = useCallback(async () => {
     setGoldenPathState(
@@ -6026,12 +6041,16 @@ function AuditSigningKeyRegistryPanel({
               <article className={`audit-signing-key-rotation-history-row ${row.tone}`} key={row.id}>
                 <span>{auditSigningKeyRotationLedgerRowStatusLabel(i18n, row.statusLabel)}</span>
                 <strong>{row.proposedKeyId || "n/a"}</strong>
-                <em>{row.templateShortHash}</em>
+                <em>{row.eventKind === "apply" ? row.applyMode || "apply" : row.templateShortHash}</em>
                 <small>{row.blockedReasonLabel}</small>
                 <b>
-                  {i18n.locale === "zh-CN"
-                    ? `${row.environmentUpdateCount} 变量 / ${row.stepCount} 步`
-                    : `${row.environmentUpdateCount} vars / ${row.stepCount} steps`}
+                  {row.eventKind === "apply"
+                    ? i18n.locale === "zh-CN"
+                      ? `${row.confirmedConfirmationCount}/${row.stepCount} 确认`
+                      : `${row.confirmedConfirmationCount}/${row.stepCount} checks`
+                    : i18n.locale === "zh-CN"
+                      ? `${row.environmentUpdateCount} 变量 / ${row.stepCount} 步`
+                      : `${row.environmentUpdateCount} vars / ${row.stepCount} steps`}
                 </b>
               </article>
             ))
@@ -7226,7 +7245,9 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
   return (
     {
       "Rotation plan blocked": "轮换计划阻断",
-      "Rotation plan prepared": "轮换计划已准备"
+      "Rotation plan prepared": "轮换计划已准备",
+      "Rotation apply blocked": "应用预检阻断",
+      "Rotation apply ready": "应用预检就绪"
     }[statusLabel] ?? statusLabel
   );
 }
