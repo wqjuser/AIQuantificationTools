@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
-from quant_core.audit_signing import AuditReportSigner, audit_report_verification_to_payload
+from quant_core.audit_signing import AuditReportSigner, audit_report_verification_to_payload, audit_signing_key_registry_to_payload
 from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_review_run_record_to_payload
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
@@ -138,6 +138,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     audit_signing_key_id = os.environ.get("AIQT_AUDIT_SIGNING_KEY_ID", "local-audit-key")
     audit_signer_name = os.environ.get("AIQT_AUDIT_SIGNER_NAME", "Local Audit Key")
     audit_chain_id = os.environ.get("AIQT_AUDIT_CHAIN_ID", "audit-chain-local")
+    audit_signing_keys_json = os.environ.get("AIQT_AUDIT_SIGNING_KEYS_JSON", "")
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -492,6 +493,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
             return
+        if parsed.path == "/api/audit/signing-keys":
+            try:
+                registry = self._audit_report_signer().registry
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_signing_key_registry", "detail": str(error)}, status=400)
+                return
+            self._send_json({"registry": audit_signing_key_registry_to_payload(registry)})
+            return
         if parsed.path == "/api/golden-path/status":
             query = parse_qs(parsed.query)
             market = query.get("market", ["ashare"])[0]
@@ -819,6 +828,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             key_id=str(self.audit_signing_key_id or "local-audit-key"),
             signer=str(self.audit_signer_name or "Local Audit Key"),
             chain_id=str(self.audit_chain_id or "audit-chain-local"),
+            keys_json=str(self.audit_signing_keys_json or ""),
         )
 
     def _settings_status_payload(self) -> dict[str, object]:

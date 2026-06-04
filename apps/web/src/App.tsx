@@ -26,6 +26,7 @@ import {
   importResearchRunExport,
   undoResearchRunImport,
   loadAuditEvents,
+  loadAuditSigningKeys,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketSearch,
@@ -54,6 +55,8 @@ import {
   AiReviewRunHistoryPagination,
   AuditEventRecord,
   AuditEventHistoryPagination,
+  AuditSigningKeyRegistry,
+  AuditSigningKeyRegistryResult,
   GoldenPathStatus,
   GoldenPathStatusResult,
   PlatformSettingsResult,
@@ -250,6 +253,9 @@ const initialResearchNoteState: ResearchNoteResult = {
 const initialSettingsStatusState: PlatformSettingsResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRegistryState: AuditSigningKeyRegistryResult = {
+  source: "fallback"
+};
 const initialGoldenPathStatusState: GoldenPathStatusResult = {
   source: "fallback"
 };
@@ -430,6 +436,9 @@ export function App() {
     useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
   const [settingsStatus, setSettingsStatus] = useState<PlatformSettingsResult>(initialSettingsStatusState);
+  const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
+    initialAuditSigningKeyRegistryState
+  );
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -777,6 +786,10 @@ export function App() {
     setSettingsStatus(await loadPlatformSettings(quantCoreBaseUrl));
   }, []);
 
+  const refreshAuditSigningKeys = useCallback(async () => {
+    setAuditSigningKeyRegistry(await loadAuditSigningKeys(quantCoreBaseUrl));
+  }, []);
+
   const refreshGoldenPathStatus = useCallback(async () => {
     setGoldenPathState(
       await loadGoldenPathStatus(quantCoreBaseUrl, {
@@ -803,8 +816,16 @@ export function App() {
     });
     await refreshRunHistory();
     await refreshSettingsStatus();
+    await refreshAuditSigningKeys();
     setIsRefreshing(false);
-  }, [refreshRunHistory, refreshSettingsStatus]);
+  }, [refreshAuditSigningKeys, refreshRunHistory, refreshSettingsStatus]);
+
+  useEffect(() => {
+    if (activeWorkAreaId !== "audit") {
+      return;
+    }
+    void refreshAuditSigningKeys();
+  }, [activeWorkAreaId, refreshAuditSigningKeys]);
 
   const refreshChart = useCallback(async () => {
     const requestId = chartRequestIdRef.current + 1;
@@ -2827,6 +2848,13 @@ export function App() {
             revokingEventId={revokingAuditReportEventId}
             signingEventId={signingAuditReportEventId}
             verifyingEventId={verifyingAuditReportEventId}
+          />
+          <AuditSigningKeyRegistryPanel
+            className="workflow-signing-keys-panel"
+            error={auditSigningKeyRegistry.error}
+            i18n={i18n}
+            registry={auditSigningKeyRegistry.registry}
+            source={auditSigningKeyRegistry.source}
           />
           <ResearchRunImportDiffPanel
             className="workflow-import-diff-panel"
@@ -5703,6 +5731,94 @@ function AuditEvidenceReportLedgerPanel({
   );
 }
 
+function AuditSigningKeyRegistryPanel({
+  className,
+  error,
+  i18n,
+  registry,
+  source
+}: {
+  className?: string;
+  error?: string;
+  i18n: AppI18n;
+  registry?: AuditSigningKeyRegistry;
+  source: AuditSigningKeyRegistryResult["source"];
+}) {
+  const activeKey = registry?.keys.find((key) => key.keyId === registry.activeKeyId) ?? registry?.keys[0] ?? null;
+  const verifiableCount = registry?.keys.filter((key) => key.canVerify).length ?? 0;
+  const statusCopy =
+    source === "core"
+      ? i18n.locale === "zh-CN"
+        ? "核心服务"
+        : "Core service"
+      : i18n.locale === "zh-CN"
+        ? "离线快照"
+        : "Offline";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "签名 Key 注册表" : "Signing Key Registry"}
+      subtitle={i18n.locale === "zh-CN" ? "审计报告验签与历史 key 追溯" : "Audit report verification and legacy key traceability"}
+      className={className}
+    >
+      <div className="audit-signing-keys">
+        <div className="audit-signing-key-grid">
+          <article className={`audit-signing-key-summary ${registry?.rotationRequired ? "warning" : "positive"}`}>
+            <span>{i18n.locale === "zh-CN" ? "活跃 Key" : "Active key"}</span>
+            <strong>{activeKey?.keyId ?? "n/a"}</strong>
+            <p>
+              {activeKey
+                ? `${auditSigningKeyStatusLabel(i18n, activeKey.status)} · ${activeKey.fingerprint}`
+                : i18n.locale === "zh-CN"
+                  ? "等待核心服务返回注册表"
+                  : "Awaiting registry from core"}
+            </p>
+          </article>
+          <article className={`audit-signing-key-summary ${registry?.rotationRequired ? "risk" : "neutral"}`}>
+            <span>{i18n.locale === "zh-CN" ? "轮换状态" : "Rotation"}</span>
+            <strong>
+              {registry?.rotationRequired
+                ? i18n.locale === "zh-CN"
+                  ? "需要轮换"
+                  : "Required"
+                : i18n.locale === "zh-CN"
+                  ? "已配置"
+                  : "Configured"}
+            </strong>
+            <p>
+              {i18n.locale === "zh-CN"
+                ? `${verifiableCount} 个 key 可验签 · ${statusCopy}`
+                : `${verifiableCount} verifiable keys · ${statusCopy}`}
+            </p>
+          </article>
+        </div>
+        <div className="audit-signing-key-list">
+          {registry?.keys.length ? (
+            registry.keys.map((key) => (
+              <article className={`audit-signing-key-row ${key.status}`} key={key.keyId}>
+                <span>{auditSigningKeyStatusLabel(i18n, key.status)}</span>
+                <strong>{key.keyId}</strong>
+                <em>{key.fingerprint}</em>
+                <small>{key.chainId}</small>
+                <b>{auditSigningKeyCapabilityLabel(i18n, key.canSign, key.canVerify)}</b>
+              </article>
+            ))
+          ) : (
+            <article className="audit-signing-key-row empty">
+              <span>{i18n.locale === "zh-CN" ? "未连接" : "Disconnected"}</span>
+              <strong>{i18n.locale === "zh-CN" ? "暂无注册表" : "No registry"}</strong>
+              <em>fingerprint:n/a</em>
+              <small>{error ?? (i18n.locale === "zh-CN" ? "核心服务未返回签名 key 状态。" : "Core did not return signing key state.")}</small>
+              <b>{statusCopy}</b>
+            </article>
+          )}
+        </div>
+        {error ? <p className="audit-signing-key-error">{error}</p> : null}
+      </div>
+    </Panel>
+  );
+}
+
 function ResearchRunImportAuditEventPanel({
   className,
   copiedEvidenceEventId,
@@ -6716,6 +6832,38 @@ function auditReportLedgerSignatureLabel(i18n: AppI18n, label: string): string {
       "Signature chain blocked": "签名链阻断"
     }[label] ?? label
   );
+}
+
+function auditSigningKeyStatusLabel(i18n: AppI18n, status: "active" | "retired" | "revoked"): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        active: "Active",
+        retired: "Retired",
+        revoked: "Revoked"
+      } satisfies Record<typeof status, string>
+    )[status];
+  }
+  return (
+    {
+      active: "活跃",
+      retired: "已退役",
+      revoked: "已撤销"
+    } satisfies Record<typeof status, string>
+  )[status];
+}
+
+function auditSigningKeyCapabilityLabel(i18n: AppI18n, canSign: boolean, canVerify: boolean): string {
+  if (i18n.locale === "en-US") {
+    if (canSign) {
+      return "Can sign";
+    }
+    return canVerify ? "Verify only" : "Disabled";
+  }
+  if (canSign) {
+    return "可签名";
+  }
+  return canVerify ? "仅验签" : "已禁用";
 }
 
 function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAuditEvent["stage"]): string {

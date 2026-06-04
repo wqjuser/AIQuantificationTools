@@ -322,6 +322,37 @@ export interface AuditReportSignatureResult {
   error?: string;
 }
 
+export type AuditSigningKeyStatus = "active" | "retired" | "revoked";
+
+export interface AuditSigningKeyRecord {
+  keyId: string;
+  signer: string;
+  algorithm: "hmac-sha256";
+  chainId: string;
+  status: AuditSigningKeyStatus;
+  source: string;
+  fingerprint: string;
+  canSign: boolean;
+  canVerify: boolean;
+  createdAt: string | null;
+  activatedAt: string | null;
+  retiredAt: string | null;
+}
+
+export interface AuditSigningKeyRegistry {
+  schemaVersion: 1;
+  generatedAt: string;
+  activeKeyId: string;
+  rotationRequired: boolean;
+  keys: AuditSigningKeyRecord[];
+}
+
+export interface AuditSigningKeyRegistryResult {
+  registry?: AuditSigningKeyRegistry;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -794,6 +825,10 @@ export function buildAuditReportVerifyUrl(baseUrl: string): string {
 
 export function buildAuditReportRevokeUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/reports/revoke");
+}
+
+export function buildAuditSigningKeysUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys");
 }
 
 export function buildStrategiesUrl(
@@ -1551,6 +1586,31 @@ async function mutateAuditReportSignature(
   }
 }
 
+export async function loadAuditSigningKeys(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyRegistryResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeysUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeyRegistryPayload(payload)) {
+      throw new Error("Invalid audit signing key registry contract");
+    }
+    return {
+      registry: payload.registry,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key registry error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -2215,6 +2275,54 @@ function isAuditReportSignatureVerification(value: unknown): value is AuditRepor
   return (
     (verification.status === "verified" || verification.status === "invalid") &&
     typeof verification.reason === "string"
+  );
+}
+
+function isAuditSigningKeyRegistryPayload(value: unknown): value is { registry: AuditSigningKeyRegistry } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { registry?: unknown };
+  return isAuditSigningKeyRegistry(payload.registry);
+}
+
+function isAuditSigningKeyRegistry(value: unknown): value is AuditSigningKeyRegistry {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const registry = value as Partial<AuditSigningKeyRegistry>;
+  return (
+    registry.schemaVersion === 1 &&
+    typeof registry.generatedAt === "string" &&
+    typeof registry.activeKeyId === "string" &&
+    typeof registry.rotationRequired === "boolean" &&
+    Array.isArray(registry.keys) &&
+    registry.keys.every(isAuditSigningKeyRecord)
+  );
+}
+
+function isAuditSigningKeyRecord(value: unknown): value is AuditSigningKeyRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "secret")) {
+    return false;
+  }
+  const key = value as Partial<AuditSigningKeyRecord>;
+  return (
+    typeof key.keyId === "string" &&
+    typeof key.signer === "string" &&
+    key.algorithm === "hmac-sha256" &&
+    typeof key.chainId === "string" &&
+    (key.status === "active" || key.status === "retired" || key.status === "revoked") &&
+    typeof key.source === "string" &&
+    typeof key.fingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(key.fingerprint) &&
+    typeof key.canSign === "boolean" &&
+    typeof key.canVerify === "boolean" &&
+    (key.createdAt === null || typeof key.createdAt === "string") &&
+    (key.activatedAt === null || typeof key.activatedAt === "string") &&
+    (key.retiredAt === null || typeof key.retiredAt === "string")
   );
 }
 

@@ -19,6 +19,7 @@ import {
   buildAuditReportSignUrl,
   buildAuditReportVerifyUrl,
   buildAuditReportRevokeUrl,
+  buildAuditSigningKeysUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -47,6 +48,7 @@ import {
   loadResearchRunAiReviews,
   saveAuditEvent,
   loadAuditEvents,
+  loadAuditSigningKeys,
   signAuditReportEvent,
   verifyAuditReportEvent,
   revokeAuditReportEvent,
@@ -689,6 +691,100 @@ describe("terminal workspace API client", () => {
     });
     expect((result.settings?.cache as unknown as { freshnessSummary?: { fresh?: number } }).freshnessSummary?.fresh).toBe(1);
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
+  });
+
+  test("loads audit signing key registry without exposing secrets", async () => {
+    const calls: string[] = [];
+    const result = await loadAuditSigningKeys("http://127.0.0.1:8765/", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          registry: {
+            schemaVersion: 1,
+            generatedAt: "2026-06-04T09:45:00+00:00",
+            activeKeyId: "active-audit-key",
+            rotationRequired: false,
+            keys: [
+              {
+                keyId: "active-audit-key",
+                signer: "Active Audit Key",
+                algorithm: "hmac-sha256",
+                chainId: "audit-chain-active",
+                status: "active",
+                source: "env",
+                fingerprint: "a".repeat(16),
+                canSign: true,
+                canVerify: true,
+                createdAt: null,
+                activatedAt: "2026-06-04T09:45:00+00:00",
+                retiredAt: null
+              },
+              {
+                keyId: "legacy-audit-key",
+                signer: "Legacy Audit Key",
+                algorithm: "hmac-sha256",
+                chainId: "audit-chain-legacy",
+                status: "retired",
+                source: "registry",
+                fingerprint: "b".repeat(16),
+                canSign: false,
+                canVerify: true,
+                createdAt: "2026-05-01T00:00:00+00:00",
+                activatedAt: null,
+                retiredAt: "2026-06-01T00:00:00+00:00"
+              }
+            ]
+          }
+        })
+      };
+    });
+
+    expect(buildAuditSigningKeysUrl("http://127.0.0.1:8765")).toBe("http://127.0.0.1:8765/api/audit/signing-keys");
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/audit/signing-keys"]);
+    expect(result.source).toBe("core");
+    expect(result.registry?.activeKeyId).toBe("active-audit-key");
+    expect(result.registry?.keys.map((key) => `${key.keyId}:${key.status}:${key.canVerify}`)).toEqual([
+      "active-audit-key:active:true",
+      "legacy-audit-key:retired:true"
+    ]);
+    expect(JSON.stringify(result.registry)).not.toContain("secret");
+  });
+
+  test("rejects audit signing key registry payloads that expose secret material", async () => {
+    const result = await loadAuditSigningKeys("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        registry: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-04T09:45:00+00:00",
+          activeKeyId: "active-audit-key",
+          rotationRequired: false,
+          keys: [
+            {
+              keyId: "active-audit-key",
+              signer: "Active Audit Key",
+              algorithm: "hmac-sha256",
+              chainId: "audit-chain-active",
+              status: "active",
+              source: "env",
+              fingerprint: "a".repeat(16),
+              canSign: true,
+              canVerify: true,
+              createdAt: null,
+              activatedAt: "2026-06-04T09:45:00+00:00",
+              retiredAt: null,
+              secret: "must-not-cross-wire"
+            }
+          ]
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid audit signing key registry contract");
   });
 
   test("refreshes a market cache context and returns updated settings", async () => {

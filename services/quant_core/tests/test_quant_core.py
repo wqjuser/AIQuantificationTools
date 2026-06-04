@@ -1419,6 +1419,124 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(tampered_payload["verification"]["status"], "invalid")
         self.assertEqual(tampered_payload["verification"]["reason"], "signature_mismatch")
 
+    def test_audit_signing_key_registry_lists_active_and_verifies_legacy_key(self):
+        import hashlib
+        import hmac
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        def signature_value(secret: str, event_id: str, run_id: str, file_name: str, content_sha256: str) -> str:
+            message = "\n".join(
+                [
+                    "aiqt.auditReport.v1",
+                    event_id,
+                    run_id,
+                    "aiqt.auditReport",
+                    file_name,
+                    content_sha256,
+                ]
+            )
+            return hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+        content_sha256 = "d" * 64
+        event = {
+            "schemaVersion": 1,
+            "eventId": "audit-report-api-legacy-key",
+            "eventType": "audit_evidence_report",
+            "runId": "run-legacy-key",
+            "createdAt": "2026-06-04T09:40:00+00:00",
+            "stage": "generated",
+            "source": "web",
+            "summary": "Audit evidence report generated for run-legacy-key",
+            "detail": "run-legacy-key-audit-evidence-report.md · sha256 dddddd",
+            "metadata": {
+                "artifactKind": "aiqt.auditReport",
+                "fileName": "run-legacy-key-audit-evidence-report.md",
+                "contentSha256": content_sha256,
+                "signature": {
+                    "algorithm": "hmac-sha256",
+                    "chainId": "audit-chain-legacy",
+                    "keyId": "legacy-audit-key",
+                    "signer": "Legacy Audit Key",
+                    "status": "verified",
+                    "value": signature_value(
+                        "legacy-audit-secret",
+                        "audit-report-api-legacy-key",
+                        "run-legacy-key",
+                        "run-legacy-key-audit-evidence-report.md",
+                        content_sha256,
+                    ),
+                },
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_event_store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+            audit_event_store.record(event)
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = audit_event_store
+            TestHandler.audit_signing_secret = "active-audit-secret"
+            TestHandler.audit_signing_key_id = "active-audit-key"
+            TestHandler.audit_signer_name = "Active Audit Key"
+            TestHandler.audit_chain_id = "audit-chain-active"
+            TestHandler.audit_signing_keys_json = json.dumps(
+                [
+                    {
+                        "keyId": "legacy-audit-key",
+                        "signer": "Legacy Audit Key",
+                        "secret": "legacy-audit-secret",
+                        "chainId": "audit-chain-legacy",
+                        "status": "retired",
+                        "createdAt": "2026-05-01T00:00:00+00:00",
+                        "retiredAt": "2026-06-01T00:00:00+00:00",
+                    }
+                ]
+            )
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/audit/signing-keys")
+                registry_response = connection.getresponse()
+                registry_payload = json.loads(registry_response.read().decode("utf-8"))
+
+                verify_body = json.dumps({"eventId": "audit-report-api-legacy-key"}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/verify",
+                    body=verify_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(verify_body))},
+                )
+                verify_response = connection.getresponse()
+                verify_payload = json.loads(verify_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(registry_response.status, 200)
+        self.assertEqual(registry_payload["registry"]["activeKeyId"], "active-audit-key")
+        self.assertEqual([key["keyId"] for key in registry_payload["registry"]["keys"]], ["active-audit-key", "legacy-audit-key"])
+        self.assertEqual(registry_payload["registry"]["keys"][0]["status"], "active")
+        self.assertEqual(registry_payload["registry"]["keys"][1]["status"], "retired")
+        self.assertRegex(registry_payload["registry"]["keys"][0]["fingerprint"], r"^[a-f0-9]{16}$")
+        self.assertNotIn("active-audit-secret", json.dumps(registry_payload))
+        self.assertNotIn("legacy-audit-secret", json.dumps(registry_payload))
+        self.assertEqual(verify_response.status, 200)
+        self.assertEqual(verify_payload["verification"]["status"], "verified")
+        self.assertEqual(verify_payload["signature"]["keyId"], "legacy-audit-key")
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit

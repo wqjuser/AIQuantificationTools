@@ -1217,6 +1217,7 @@ em {
     "export export"
     "package package"
     "reports reports"
+    "signing-keys signing-keys"
     "import-diff import-diff"
     "import-events import-events"
     "index index"
@@ -1433,6 +1434,11 @@ em {
   grid-area: reports;
 }
 
+.workflow-signing-keys-panel {
+  align-self: start;
+  grid-area: signing-keys;
+}
+
 .workflow-import-diff-panel {
   align-self: start;
   grid-area: import-diff;
@@ -1464,6 +1470,155 @@ em {
   display: grid;
   gap: 9px;
   min-width: 0;
+}
+
+.audit-signing-keys {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.audit-signing-key-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.audit-signing-key-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.84);
+  border-left: 3px solid #6d5dfc;
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.76);
+  padding: 8px 10px;
+}
+
+.audit-signing-key-summary.positive {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-summary.warning {
+  border-left-color: #e8be62;
+}
+
+.audit-signing-key-summary.risk {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-summary span,
+.audit-signing-key-summary strong,
+.audit-signing-key-summary p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-summary span {
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.audit-signing-key-summary strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.audit-signing-key-summary p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.audit-signing-key-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.audit-signing-key-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.22fr) minmax(150px, 0.42fr) minmax(126px, 0.32fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.74);
+  border-left: 3px solid #6d5dfc;
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.62);
+  padding: 7px 9px;
+}
+
+.audit-signing-key-row.active {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-row.retired {
+  border-left-color: #e8be62;
+}
+
+.audit-signing-key-row.revoked {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-row.empty {
+  border-style: dashed;
+}
+
+.audit-signing-key-row > span,
+.audit-signing-key-row > strong,
+.audit-signing-key-row > em,
+.audit-signing-key-row > small,
+.audit-signing-key-row > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-row > span {
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.audit-signing-key-row > strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.audit-signing-key-row > em,
+.audit-signing-key-row > small {
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 740;
+}
+
+.audit-signing-key-row > b {
+  justify-self: end;
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  border-radius: 999px;
+  color: #83e6ce;
+  font-size: 10px;
+  padding: 3px 7px;
+}
+
+.audit-signing-key-row.revoked > b {
+  border-color: rgba(255, 127, 109, 0.36);
+  color: #ffb0a2;
+}
+
+.audit-signing-key-error {
+  margin: 0;
+  color: #ffb0a2;
+  font-size: 11px;
+  font-weight: 760;
 }
 
 .research-import-diff {
@@ -6579,6 +6734,7 @@ button.ai-review-record {
       "decision"
       "package"
       "reports"
+      "signing-keys"
       "import-diff"
       "import-events"
       "index"
@@ -6592,6 +6748,7 @@ button.ai-review-record {
   }
 
   .workflow-agent-panel .agent-panel-body,
+  .audit-signing-key-row,
   .audit-ai-trail-grid,
   .research-export-preview-toolbar,
   .research-export-browser-toolbar,
@@ -6808,6 +6965,7 @@ button.ai-review-record {
       "decision"
       "package"
       "reports"
+      "signing-keys"
       "import-diff"
       "import-events"
       "index"
@@ -6821,6 +6979,7 @@ button.ai-review-record {
   }
 
   .watchlist-ai-panel .agent-panel-body,
+  .audit-signing-key-row,
   .audit-ai-trail-grid,
   .research-export-preview-toolbar,
   .research-export-browser-toolbar,

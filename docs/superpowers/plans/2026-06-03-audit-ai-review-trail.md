@@ -235,3 +235,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: extended the audit report signing API test to call `/api/audit/reports/revoke`, which failed with HTTP 404; extended the web API and layout contract tests to require `revokeAuditReportEvent` and row-level revoke actions, which failed because the helper and UI action did not exist.
 - GREEN: added signed-report revocation, `signature_revoked` verification handling, `/api/audit/reports/revoke`, web revoke URL/helper support, and Audit report history row actions that disable revoke for unsigned, invalid, or already revoked reports.
 - DOCS: updated product plan and architecture notes; next slice is key registry/rotation metadata before external certificate-chain integration.
+- RED: `test_audit_signing_key_registry_lists_active_and_verifies_legacy_key` failed because `/api/audit/signing-keys` did not exist and legacy signatures could not be verified after active key rotation.
+- RED: `terminal-api.test.ts -t "audit signing key registry"` failed because the web client had no signing-key registry URL/helper and no contract guard against leaked secret material.
+- RED: `layout-css.test.js -t "audit evidence report history"` failed because Audit did not load or render signing key registry state.
+- GREEN: added `AuditSigningKeyRegistry`, active plus retired/revoked legacy key metadata, secret-free `/api/audit/signing-keys`, legacy-key verification for report signatures, web API helpers, and a compact Audit signing key registry panel.
+- DOCS: updated product plan and architecture notes; next slice is actual key rotation operations and external signature/certificate-chain integration.

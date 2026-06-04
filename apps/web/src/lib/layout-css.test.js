@@ -620,11 +620,14 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("signAuditReportEvent");
     expect(appSource).toContain("verifyAuditReportEvent");
     expect(appSource).toContain("revokeAuditReportEvent");
+    expect(appSource).toContain("loadAuditSigningKeys");
+    expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain('eventType: "audit_evidence_report"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
     expect(appSource).toContain("const [signingAuditReportEventId, setSigningAuditReportEventId]");
     expect(appSource).toContain("const [verifyingAuditReportEventId, setVerifyingAuditReportEventId]");
     expect(appSource).toContain("const [revokingAuditReportEventId, setRevokingAuditReportEventId]");
+    expect(appSource).toContain("const [auditSigningKeyRegistry, setAuditSigningKeyRegistry]");
     expect(appSource).toContain("const refreshAuditEvidenceReportEvents = useCallback");
     expect(appSource).toContain("const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows");
     expect(appSource).toContain("setAuditEvidenceReportEvents((current) =>");
@@ -633,6 +636,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const revokeAuditEvidenceReportEvent = useCallback");
     expect(appSource).toContain("setAuditEvidenceReportEvents((current) => mergeAuditEvidenceReportEvent(current, result.event!))");
     expect(auditWorkspaceSource).toContain("<AuditEvidenceReportLedgerPanel");
+    expect(auditWorkspaceSource).toContain("<AuditSigningKeyRegistryPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-report-ledger-panel"');
     expect(auditWorkspaceSource).toContain("rows={auditEvidenceReportLedgerRows}");
     expect(auditWorkspaceSource).toContain("pagination={auditEvidenceReportPagination}");
@@ -646,6 +650,9 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onRevokeReport={revokeAuditEvidenceReportEvent}");
     expect(auditWorkspaceSource).toContain("signingEventId={signingAuditReportEventId}");
     expect(auditWorkspaceSource).toContain("verifyingEventId={verifyingAuditReportEventId}");
+    expect(auditWorkspaceSource).toContain("registry={auditSigningKeyRegistry.registry}");
+    expect(auditWorkspaceSource).toContain("source={auditSigningKeyRegistry.source}");
+    expect(auditWorkspaceSource).toContain("error={auditSigningKeyRegistry.error}");
     expect(auditWorkspaceSource).toContain("revokingEventId={revokingAuditReportEventId}");
     expect(reportLedgerPanelSource).toContain("buildAuditEvidenceReportLedgerSummary(rows)");
     expect(reportLedgerPanelSource).toContain("filterAuditEvidenceReportLedgerRows(rows, query)");
@@ -672,6 +679,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('"Signed report hash": "报告 hash 已签名"');
     expect(appSource).toContain('"Revoked signature": "签名已撤销"');
     expect(cssBlock(".workflow-report-ledger-panel")).toContain("grid-area: reports;");
+    expect(cssBlock(".workflow-signing-keys-panel")).toContain("grid-area: signing-keys;");
+    expect(cssBlock(".audit-signing-key-grid")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-pagination")).toContain("display: flex;");
@@ -679,8 +688,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-report-ledger-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(170px, 0.5fr) minmax(0, 1fr) minmax(132px, 0.34fr) auto;"
     );
-    expect(hasCssBlockWith(".audit-layout", ['"package package"', '"reports reports"', '"import-diff import-diff"'])).toBe(true);
-    expect(hasCssBlockWith("  .audit-layout", ['"package"', '"reports"', '"import-diff"'])).toBe(true);
+    expect(hasCssBlockWith(".audit-layout", ['"package package"', '"reports reports"', '"signing-keys signing-keys"', '"import-diff import-diff"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"package"', '"reports"', '"signing-keys"', '"import-diff"'])).toBe(true);
   });
 
   test("compares current AI review evidence with the latest saved audit record", () => {
