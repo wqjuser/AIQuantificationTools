@@ -316,6 +316,27 @@ function resolveInitialWorkAreaId(fallback: ProductWorkAreaId): ProductWorkAreaI
     : fallback;
 }
 
+function resolveInitialImportAuditEventId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const auditEvent = new URLSearchParams(window.location.search).get("auditEvent");
+  return auditEvent?.trim() || null;
+}
+
+function resolveInitialImportAuditEvidenceQuery(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const params = new URLSearchParams(window.location.search);
+  return (
+    params.get("auditEvent")?.trim() ||
+    params.get("exportPath")?.trim() ||
+    params.get("runId")?.trim() ||
+    ""
+  );
+}
+
 function resolveInitialWorkAreaSelection(workspace: TerminalWorkspace) {
   return resolveProductWorkAreaSelection(workspace, resolveInitialWorkAreaId("research"));
 }
@@ -398,8 +419,9 @@ export function App() {
   const [researchRunImportAuditEvents, setResearchRunImportAuditEvents] = useState<ResearchRunImportAuditEvent[]>([]);
   const [researchRunImportAuditPagination, setResearchRunImportAuditPagination] =
     useState<AuditEventHistoryPagination | null>(null);
-  const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState("");
+  const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState(resolveInitialImportAuditEvidenceQuery);
   const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
+  const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState("");
   const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState("");
@@ -1611,6 +1633,7 @@ export function App() {
   const updateResearchRunImportAuditQuery = useCallback((query: string) => {
     setResearchRunImportAuditQuery(query);
     setResearchRunImportAuditOffset(0);
+    setFocusedImportAuditEventId(null);
   }, []);
 
   const previousResearchRunImportAuditPage = useCallback(() => {
@@ -2451,6 +2474,7 @@ export function App() {
             className="workflow-import-events-panel"
             copiedEvidenceEventId={copiedImportAuditEvidenceEventId}
             events={researchRunImportAuditEvents}
+            focusedEventId={focusedImportAuditEventId}
             i18n={i18n}
             isLoading={isLoadingResearchRunImportAudit}
             onCopyEvidenceAnchor={copyResearchRunImportAuditEvidenceAnchor}
@@ -5035,6 +5059,7 @@ function ResearchRunImportAuditEventPanel({
   className,
   copiedEvidenceEventId,
   events,
+  focusedEventId,
   i18n,
   isLoading,
   onCopyEvidenceAnchor,
@@ -5050,6 +5075,7 @@ function ResearchRunImportAuditEventPanel({
   className?: string;
   copiedEvidenceEventId: string | null;
   events: ResearchRunImportAuditEvent[];
+  focusedEventId: string | null;
   i18n: AppI18n;
   isLoading: boolean;
   onCopyEvidenceAnchor: (event: ResearchRunImportAuditEvent) => void;
@@ -5064,6 +5090,7 @@ function ResearchRunImportAuditEventPanel({
 }) {
   const [stageFilter, setStageFilter] = useState<ResearchRunImportAuditFilter>("all");
   const [pendingImportUndoToken, setPendingImportUndoToken] = useState<string | null>(null);
+  const focusedEventRef = useRef<HTMLElement | null>(null);
   const aggregation = buildResearchRunImportAuditAggregation(events);
   const filteredEvents = filterResearchRunImportAuditEvents(events, "", stageFilter);
   const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
@@ -5078,6 +5105,13 @@ function ResearchRunImportAuditEventPanel({
     { id: "recoverable", label: i18n.locale === "zh-CN" ? "可恢复" : "Recoverable", count: aggregation.recoverable },
     { id: "undone", label: i18n.locale === "zh-CN" ? "已撤销" : "Undone", count: aggregation.undone }
   ];
+
+  useEffect(() => {
+    if (!focusedEventId) {
+      return;
+    }
+    focusedEventRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusedEventId, filteredEvents.length, stageFilter]);
 
   return (
     <Panel
@@ -5157,8 +5191,13 @@ function ResearchRunImportAuditEventPanel({
               const isConfirmingUndo = pendingImportUndoToken === undoConfirmation?.undoToken;
               const canInspectRunPackage = event.stage === "confirmed" || event.stage === "undone" || event.stage === "undo-failed";
               const isEvidenceAnchorCopied = copiedEvidenceEventId === event.id;
+              const isFocusedEvent = focusedEventId === event.id;
               return (
-                <article className={`research-import-event-row ${event.tone} ${event.stage}`} key={event.id}>
+                <article
+                  className={`research-import-event-row ${event.tone} ${event.stage} ${isFocusedEvent ? "focused" : ""}`}
+                  key={event.id}
+                  ref={isFocusedEvent ? focusedEventRef : undefined}
+                >
                   <span>{researchImportAuditStageLabel(i18n, event.stage)}</span>
                   <strong>
                     {event.fileName}

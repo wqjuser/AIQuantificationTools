@@ -184,3 +184,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because import audit rows had no copied evidence anchor state, clipboard action, or copied feedback.
 - GREEN: added copyable Audit evidence URLs with `workspace=audit`, `auditEvent`, `runId`, and `exportPath`, plus row-level copied feedback.
 - DOCS: updated product plan and architecture notes; next slice is auto-highlighting or scrolling to the linked import audit event when opening an `auditEvent` deep link.
+- RED: `layout-css.test.js -t "import audit events"` failed because Audit did not read `auditEvent` links into import-audit query state or highlight/scroll the matching ledger row.
+- GREEN: initialized the import audit query/focused event from `auditEvent`/`exportPath`/`runId` URL params and made the focused ledger row scroll into view with a highlighted state.
+- DOCS: updated product plan and architecture notes; next slice is chaining audit-event deep links into automatic package evidence loading.

@@ -432,8 +432,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const IMPORT_AUDIT_EVENTS_PAGE_SIZE = 12;");
     expect(appSource).toContain("const [researchRunImportAuditEvents, setResearchRunImportAuditEvents]");
     expect(appSource).toContain("const [researchRunImportAuditPagination, setResearchRunImportAuditPagination]");
-    expect(appSource).toContain('const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState("");');
+    expect(appSource).toContain("function resolveInitialImportAuditEvidenceQuery(): string");
+    expect(appSource).toContain('new URLSearchParams(window.location.search).get("auditEvent")');
+    expect(appSource).toContain("const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState(resolveInitialImportAuditEvidenceQuery);");
     expect(appSource).toContain("const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);");
+    expect(appSource).toContain("const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());");
     expect(appSource).toContain("const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);");
     expect(appSource).toContain("const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);");
     expect(appSource).toContain("const researchRunImportAuditRequestIdRef = useRef(0);");
@@ -466,6 +469,7 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onInspectRunPackage={inspectResearchRunImportAuditEvent}");
     expect(auditWorkspaceSource).toContain("onCopyEvidenceAnchor={copyResearchRunImportAuditEvidenceAnchor}");
     expect(auditWorkspaceSource).toContain("copiedEvidenceEventId={copiedImportAuditEvidenceEventId}");
+    expect(auditWorkspaceSource).toContain("focusedEventId={focusedImportAuditEventId}");
     expect(auditWorkspaceSource).toContain("onReplayRollbackRun={replayImportRollbackRun}");
     expect(auditWorkspaceSource).toContain("onUndoImport={undoResearchRunImportEvent}");
     expect(importEventsPanelSource).toContain("research-import-events-summary");
@@ -484,6 +488,11 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("onInspectRunPackage(event)");
     expect(importEventsPanelSource).toContain("Open evidence");
     expect(importEventsPanelSource).toContain("copiedEvidenceEventId === event.id");
+    expect(importEventsPanelSource).toContain("const focusedEventRef = useRef<HTMLElement | null>(null);");
+    expect(importEventsPanelSource).toContain("focusedEventRef.current?.scrollIntoView({ block: \"center\", behavior: \"smooth\" });");
+    expect(importEventsPanelSource).toContain("const isFocusedEvent = focusedEventId === event.id;");
+    expect(importEventsPanelSource).toContain("ref={isFocusedEvent ? focusedEventRef : undefined}");
+    expect(importEventsPanelSource).toContain('${isFocusedEvent ? "focused" : ""}');
     expect(importEventsPanelSource).toContain("onCopyEvidenceAnchor(event)");
     expect(importEventsPanelSource).toContain("Copy anchor");
     expect(importEventsPanelSource).toContain("Copied");
@@ -514,6 +523,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".research-import-event-recovery")).toContain("display: flex;");
     expect(cssBlock(".research-import-undo-confirmation")).toContain("display: grid;");
     expect(cssBlock(".research-import-event-row.undo-failed")).toContain("border-left-color: #ff7f6d;");
+    expect(cssBlock(".research-import-event-row.focused")).toContain("box-shadow:");
     expect(hasCssBlockWith(".audit-layout", ['"import-diff import-diff"', '"import-events import-events"', '"index index"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"import-diff"', '"import-events"', '"index"'])).toBe(true);
   });
