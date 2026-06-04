@@ -220,3 +220,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser"` failed because JSON export and Markdown report download did not call the audit event save path.
 - GREEN: added `buildAuditEvidenceReportAuditEvent` with `eventType=audit_evidence_report`, stable event ids based on run id and report SHA-256, report hash/focus/count metadata, and wired both JSON export and Markdown download through `saveAuditEvent`.
 - DOCS: updated product plan and architecture notes; next slice is a report history/signature-chain view that reads `audit_evidence_report` events back from `/api/audit/events`.
+- RED: `terminal-workbench.test.ts -t "audit report ledger"` failed because persisted `audit_evidence_report` events had no report-ledger rows, summary counts, hash validation, or signature status model.
+- RED: `layout-css.test.js -t "audit evidence report history"` failed because Audit did not query report events from the backend or render a report history/signature-chain panel.
+- GREEN: added report ledger rows/summary/filter helpers, wired `eventType=audit_evidence_report` backend pagination into Audit, and rendered report history with hash, focus, package/import counts, unsigned/invalid signature status, search, and pagination.
+- DOCS: updated product plan and architecture notes; next slice is real signature-chain verification for audit reports instead of the current unsigned hash ledger.

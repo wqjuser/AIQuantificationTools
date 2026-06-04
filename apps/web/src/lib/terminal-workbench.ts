@@ -817,6 +817,52 @@ export interface ResearchRunImportAuditAggregation {
   failureBuckets: ResearchRunImportAuditFailureBucket[];
 }
 
+export interface AuditEvidenceReportLedgerEventRecord {
+  eventId: string;
+  eventType: string;
+  runId: string | null;
+  createdAt: string;
+  stage: string;
+  source: string;
+  summary: string;
+  detail: string;
+  metadata: Record<string, unknown>;
+}
+
+export type AuditEvidenceReportLedgerStatus = "ready" | "invalid";
+export type AuditEvidenceReportSignatureStatus = "unsigned" | "invalid";
+
+export interface AuditEvidenceReportLedgerRow {
+  id: string;
+  runId: string;
+  createdAt: string;
+  fileName: string;
+  contentSha256: string;
+  shortHash: string;
+  focusQuery: string;
+  packageMatched: number;
+  packageTotal: number;
+  importDiffBlocked: number;
+  importDiffTotal: number;
+  deepLinkStatus: string;
+  status: AuditEvidenceReportLedgerStatus;
+  statusLabel: string;
+  signatureStatus: AuditEvidenceReportSignatureStatus;
+  signatureLabel: string;
+  detail: string;
+  tone: "ai" | "risk";
+}
+
+export interface AuditEvidenceReportLedgerSummary {
+  attention: number;
+  chainStatus: "empty" | "unsigned" | "attention";
+  invalid: number;
+  latestHash: string;
+  ready: number;
+  total: number;
+  unsigned: number;
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -3448,6 +3494,100 @@ export function filterResearchRunImportAuditEvents(
       .toLowerCase()
       .includes(normalizedQuery);
   });
+}
+
+export function buildAuditEvidenceReportLedgerRows(
+  events: AuditEvidenceReportLedgerEventRecord[]
+): AuditEvidenceReportLedgerRow[] {
+  return events
+    .filter((event) => event.eventType === "audit_evidence_report")
+    .map((event) => {
+      const contentSha256 = auditReportLedgerMetadataText(event.metadata, "contentSha256");
+      const fileName = auditReportLedgerMetadataText(event.metadata, "fileName") || "audit-evidence-report.md";
+      const focusQuery = auditReportLedgerMetadataText(event.metadata, "evidenceFocus");
+      const isHashReady = /^[a-f0-9]{64}$/iu.test(contentSha256);
+      const status: AuditEvidenceReportLedgerStatus = isHashReady ? "ready" : "invalid";
+      return {
+        id: event.eventId,
+        runId: event.runId ?? "unknown",
+        createdAt: event.createdAt,
+        fileName,
+        contentSha256,
+        shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
+        focusQuery,
+        packageMatched: auditReportLedgerMetadataNumber(event.metadata, "packageMatched"),
+        packageTotal: auditReportLedgerMetadataNumber(event.metadata, "packageTotal"),
+        importDiffBlocked: auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
+        importDiffTotal: auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
+        deepLinkStatus: auditReportLedgerMetadataText(event.metadata, "deepLinkStatus") || "unknown",
+        status,
+        statusLabel: status === "ready" ? "Report hash recorded" : "Report hash invalid",
+        signatureStatus: status === "ready" ? "unsigned" : "invalid",
+        signatureLabel: status === "ready" ? "Unsigned report hash" : "Signature chain blocked",
+        detail: event.detail,
+        tone: status === "ready" ? "ai" : "risk"
+      };
+    });
+}
+
+export function buildAuditEvidenceReportLedgerSummary(
+  rows: AuditEvidenceReportLedgerRow[]
+): AuditEvidenceReportLedgerSummary {
+  const ready = rows.filter((row) => row.status === "ready").length;
+  const invalid = rows.filter((row) => row.status === "invalid").length;
+  const unsigned = rows.filter((row) => row.signatureStatus === "unsigned").length;
+  return {
+    attention: invalid,
+    chainStatus: rows.length === 0 ? "empty" : invalid > 0 ? "attention" : "unsigned",
+    invalid,
+    latestHash: rows.find((row) => row.status === "ready")?.contentSha256 ?? "",
+    ready,
+    total: rows.length,
+    unsigned
+  };
+}
+
+export function filterAuditEvidenceReportLedgerRows(
+  rows: AuditEvidenceReportLedgerRow[],
+  query: string
+): AuditEvidenceReportLedgerRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [
+      row.id,
+      row.runId,
+      row.fileName,
+      row.contentSha256,
+      row.shortHash,
+      row.focusQuery,
+      row.deepLinkStatus,
+      row.status,
+      row.statusLabel,
+      row.signatureStatus,
+      row.signatureLabel,
+      row.detail,
+      String(row.packageMatched),
+      String(row.packageTotal),
+      String(row.importDiffBlocked),
+      String(row.importDiffTotal)
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+function auditReportLedgerMetadataText(metadata: Record<string, unknown>, key: string): string {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
+function auditReportLedgerMetadataNumber(metadata: Record<string, unknown>, key: string): number {
+  const value = metadata[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 const researchRunImportFailureBucketOrder: ResearchRunImportAuditFailureBucketCategory[] = [

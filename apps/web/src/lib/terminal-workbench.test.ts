@@ -12,6 +12,8 @@ import {
   buildAiReviewExportEvidenceIndexRows,
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
+  buildAuditEvidenceReportLedgerRows,
+  buildAuditEvidenceReportLedgerSummary,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
@@ -61,6 +63,7 @@ import {
   filterResearchRunExportIndexRows,
   filterResearchRunImportDiffRows,
   filterResearchRunImportAuditEvents,
+  filterAuditEvidenceReportLedgerRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -3034,6 +3037,100 @@ describe("terminal workbench model", () => {
     expect(reportMarkdown).toContain("Deep link status: `loaded`");
     expect(reportMarkdown).toContain("```text\nAIQT Audit Evidence Summary");
     expect(reportMarkdown).toContain("Import diff: 1 changes / 0 adds / 1 blocked / 1 of 2 matched\n```");
+  });
+
+  test("builds an audit report ledger from persisted report events", () => {
+    const reportHash = "a".repeat(64);
+    const reportEvents = [
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-run-a1-audit",
+        eventType: "audit_evidence_report",
+        runId: "run-a1f3a5369574",
+        createdAt: "2026-06-04T08:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Audit evidence report generated for run-a1f3a5369574",
+        detail: "run-a1f3a5369574-audit-evidence-report.md · sha256 aaaaaaaaaaaa · focus manifest:run-a1f3a5369574",
+        metadata: {
+          artifactKind: "aiqt.auditReport",
+          contentSha256: reportHash,
+          contentSha256Algorithm: "sha256",
+          deepLinkStatus: "loaded",
+          evidenceFocus: "manifest:run-a1f3a5369574",
+          fileName: "run-a1f3a5369574-audit-evidence-report.md",
+          format: "text/markdown",
+          importDiffBlocked: 1,
+          importDiffTotal: 11,
+          packageMatched: 3,
+          packageTotal: 9
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-run-b-bad",
+        eventType: "audit_evidence_report",
+        runId: "run-bad",
+        createdAt: "2026-06-04T08:05:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Audit evidence report generated for run-bad",
+        detail: "bad report",
+        metadata: {
+          contentSha256: "bad",
+          fileName: "bad-audit-evidence-report.md"
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-import-run",
+        eventType: "research_run_import",
+        runId: "run-import",
+        createdAt: "2026-06-04T08:10:00.000Z",
+        stage: "confirmed",
+        source: "web",
+        summary: "Import applied",
+        detail: "Ignored by report ledger",
+        metadata: {}
+      }
+    ];
+
+    const rows = buildAuditEvidenceReportLedgerRows(reportEvents);
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+
+    expect(rows.map((row) => `${row.id}:${row.status}:${row.shortHash}:${row.signatureStatus}`)).toEqual([
+      "audit-report-run-a1-audit:ready:aaaaaaaaaaaa:unsigned",
+      "audit-report-run-b-bad:invalid:bad:invalid"
+    ]);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        contentSha256: reportHash,
+        deepLinkStatus: "loaded",
+        fileName: "run-a1f3a5369574-audit-evidence-report.md",
+        focusQuery: "manifest:run-a1f3a5369574",
+        importDiffBlocked: 1,
+        packageMatched: 3,
+        runId: "run-a1f3a5369574",
+        signatureLabel: "Unsigned report hash",
+        statusLabel: "Report hash recorded",
+        tone: "ai"
+      })
+    );
+    expect(summary).toEqual({
+      attention: 1,
+      chainStatus: "attention",
+      invalid: 1,
+      latestHash: reportHash,
+      ready: 1,
+      total: 2,
+      unsigned: 1
+    });
+    expect(filterAuditEvidenceReportLedgerRows(rows, "manifest:run-a1").map((row) => row.id)).toEqual([
+      "audit-report-run-a1-audit"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "bad").map((row) => row.id)).toEqual([
+      "audit-report-run-b-bad"
+    ]);
   });
 
   test("derives scanner candidates from the active watchlist", () => {

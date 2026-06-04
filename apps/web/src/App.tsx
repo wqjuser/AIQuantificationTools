@@ -89,6 +89,8 @@ import {
   buildAiReviewRunRecord,
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
+  buildAuditEvidenceReportLedgerRows,
+  buildAuditEvidenceReportLedgerSummary,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -130,6 +132,7 @@ import {
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
+  filterAuditEvidenceReportLedgerRows,
   filterResearchRunImportAuditEvents,
   filterResearchRunImportDiffRows,
   formatInstrumentPrice,
@@ -145,6 +148,7 @@ import {
   AiReviewRecordDriftRow,
   AiReviewRunRecord,
   AuditEvidenceSummary,
+  AuditEvidenceReportLedgerRow,
   Market,
   AgentCommitteeRound,
   BacktestAssumptionField,
@@ -251,6 +255,7 @@ const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
 const AI_REVIEW_HISTORY_PAGE_SIZE = 5;
+const AUDIT_REPORT_EVENTS_PAGE_SIZE = 8;
 const IMPORT_AUDIT_EVENTS_PAGE_SIZE = 12;
 const workflowStepDelayMs = 180;
 
@@ -459,6 +464,11 @@ export function App() {
     fileName: string;
   } | null>(null);
   const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();
+  const [auditEvidenceReportEvents, setAuditEvidenceReportEvents] = useState<AuditEventRecord[]>([]);
+  const [auditEvidenceReportPagination, setAuditEvidenceReportPagination] =
+    useState<AuditEventHistoryPagination | null>(null);
+  const [auditEvidenceReportQuery, setAuditEvidenceReportQuery] = useState("");
+  const [auditEvidenceReportOffset, setAuditEvidenceReportOffset] = useState(0);
   const [researchRunImportAuditEvents, setResearchRunImportAuditEvents] = useState<ResearchRunImportAuditEvent[]>([]);
   const [researchRunImportAuditPagination, setResearchRunImportAuditPagination] =
     useState<AuditEventHistoryPagination | null>(null);
@@ -479,12 +489,14 @@ export function App() {
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
   const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
   const [isApplyingImportPackage, setIsApplyingImportPackage] = useState(false);
+  const [isLoadingAuditEvidenceReportEvents, setIsLoadingAuditEvidenceReportEvents] = useState(false);
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
   const aiReviewHistoryRequestIdRef = useRef(0);
+  const auditEvidenceReportRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
@@ -535,6 +547,7 @@ export function App() {
   });
   const researchRunExportBrowserRows = buildResearchRunExportBrowserRows(inspectedExportPackage);
   const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
+  const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows(auditEvidenceReportEvents);
   const researchRunImportDiffRows = buildResearchRunImportDiffRows({
     aiReviewRecords: activeAiReviewRunRecords,
     exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage,
@@ -648,6 +661,29 @@ export function App() {
     [aiReviewHistoryOffset, aiReviewHistoryQuery]
   );
 
+  const refreshAuditEvidenceReportEvents = useCallback(async () => {
+    const requestId = auditEvidenceReportRequestIdRef.current + 1;
+    auditEvidenceReportRequestIdRef.current = requestId;
+    setIsLoadingAuditEvidenceReportEvents(true);
+    const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
+      eventType: "audit_evidence_report",
+      limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
+      offset: auditEvidenceReportOffset,
+      query: auditEvidenceReportQuery.trim() || undefined
+    });
+    if (auditEvidenceReportRequestIdRef.current !== requestId) {
+      return auditHistory;
+    }
+    if (auditHistory.source === "core") {
+      setAuditEvidenceReportEvents(auditHistory.events);
+      setAuditEvidenceReportPagination(auditHistory.pagination ?? null);
+    } else {
+      setAuditEvidenceReportPagination(null);
+    }
+    setIsLoadingAuditEvidenceReportEvents(false);
+    return auditHistory;
+  }, [auditEvidenceReportOffset, auditEvidenceReportQuery, quantCoreBaseUrl]);
+
   const refreshResearchRunImportAuditEvents = useCallback(async () => {
     const requestId = researchRunImportAuditRequestIdRef.current + 1;
     researchRunImportAuditRequestIdRef.current = requestId;
@@ -672,14 +708,15 @@ export function App() {
     }
     setIsLoadingResearchRunImportAudit(false);
     return auditHistory;
-  }, [researchRunImportAuditOffset, researchRunImportAuditQuery]);
+  }, [quantCoreBaseUrl, researchRunImportAuditOffset, researchRunImportAuditQuery]);
 
   useEffect(() => {
     if (activeWorkAreaId !== "audit") {
       return;
     }
+    void refreshAuditEvidenceReportEvents();
     void refreshResearchRunImportAuditEvents();
-  }, [activeWorkAreaId, refreshResearchRunImportAuditEvents]);
+  }, [activeWorkAreaId, refreshAuditEvidenceReportEvents, refreshResearchRunImportAuditEvents]);
 
   useEffect(() => {
     return () => {
@@ -1170,6 +1207,12 @@ export function App() {
       }
       void saveAuditEvent(quantCoreBaseUrl, buildAuditEvidenceReportAuditEvent(auditReport, auditEvidenceSummary)).then((result) => {
         if (result.source === "core" && result.event) {
+          setAuditEvidenceReportEvents((current) =>
+            [result.event!, ...current.filter((event) => event.eventId !== result.event!.eventId)].slice(
+              0,
+              AUDIT_REPORT_EVENTS_PAGE_SIZE
+            )
+          );
           return;
         }
         setWorkspaceState((current) => ({
@@ -1843,6 +1886,26 @@ export function App() {
     pendingImportPackage,
     workspace
   ]);
+
+  const updateAuditEvidenceReportQuery = useCallback((query: string) => {
+    setAuditEvidenceReportQuery(query);
+    setAuditEvidenceReportOffset(0);
+  }, []);
+
+  const previousAuditEvidenceReportPage = useCallback(() => {
+    setAuditEvidenceReportOffset((current) => Math.max(0, current - AUDIT_REPORT_EVENTS_PAGE_SIZE));
+  }, []);
+
+  const nextAuditEvidenceReportPage = useCallback(() => {
+    setAuditEvidenceReportOffset((current) => {
+      const total = auditEvidenceReportPagination?.total ?? 0;
+      if (!total) {
+        return current;
+      }
+      const next = current + AUDIT_REPORT_EVENTS_PAGE_SIZE;
+      return next >= total ? current : next;
+    });
+  }, [auditEvidenceReportPagination?.total]);
 
   const updateResearchRunImportAuditQuery = useCallback((query: string) => {
     setResearchRunImportAuditQuery(query);
@@ -2680,6 +2743,17 @@ export function App() {
             onQueryChange={setResearchRunExportBrowserQuery}
             query={researchRunExportBrowserQuery}
             rows={researchRunExportBrowserRows}
+          />
+          <AuditEvidenceReportLedgerPanel
+            className="workflow-report-ledger-panel"
+            i18n={i18n}
+            isLoading={isLoadingAuditEvidenceReportEvents}
+            onNextPage={nextAuditEvidenceReportPage}
+            onPreviousPage={previousAuditEvidenceReportPage}
+            onQueryChange={updateAuditEvidenceReportQuery}
+            pagination={auditEvidenceReportPagination}
+            query={auditEvidenceReportQuery}
+            rows={auditEvidenceReportLedgerRows}
           />
           <ResearchRunImportDiffPanel
             className="workflow-import-diff-panel"
@@ -5356,6 +5430,131 @@ function ResearchRunImportDiffPanel({
   );
 }
 
+function AuditEvidenceReportLedgerPanel({
+  className,
+  i18n,
+  isLoading,
+  onNextPage,
+  onPreviousPage,
+  onQueryChange,
+  pagination,
+  query,
+  rows
+}: {
+  className?: string;
+  i18n: AppI18n;
+  isLoading: boolean;
+  onNextPage: () => void;
+  onPreviousPage: () => void;
+  onQueryChange: (query: string) => void;
+  pagination: AuditEventHistoryPagination | null;
+  query: string;
+  rows: AuditEvidenceReportLedgerRow[];
+}) {
+  const summary = buildAuditEvidenceReportLedgerSummary(rows);
+  const visibleRows = filterAuditEvidenceReportLedgerRows(rows, query);
+  const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
+  const pageEnd = pagination ? Math.min(pagination.offset + rows.length, pagination.total) : visibleRows.length;
+  const pageLabel = pagination ? `${pageStart}-${pageEnd}/${pagination.total}` : `${visibleRows.length}/${rows.length}`;
+  const canPageBack = Boolean(pagination && pagination.offset > 0);
+  const canPageForward = Boolean(pagination && pagination.offset + pagination.limit < pagination.total);
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "审计报告历史" : "Audit Report Ledger"}
+      subtitle={i18n.locale === "zh-CN" ? "从后端账本回读 Markdown 报告 hash" : "Read report hashes back from the backend ledger"}
+      className={className}
+    >
+      <div className="audit-report-ledger">
+        <div className="audit-report-ledger-toolbar">
+          <div className="audit-report-ledger-summary">
+            <span>
+              {i18n.locale === "zh-CN" ? "报告" : "Reports"} <strong>{summary.total}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "已记录" : "Recorded"} <strong>{summary.ready}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "未签名" : "Unsigned"} <strong>{summary.unsigned}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "需关注" : "Attention"} <strong>{summary.attention}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "最新" : "Latest"} <strong>{summary.latestHash ? summary.latestHash.slice(0, 12) : "n/a"}</strong>
+            </span>
+          </div>
+          <input
+            aria-label={i18n.locale === "zh-CN" ? "搜索审计报告历史" : "Search audit report ledger"}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder={i18n.locale === "zh-CN" ? "搜索 run / hash / focus" : "Search run / hash / focus"}
+            type="search"
+            value={query}
+          />
+        </div>
+        {pagination ? (
+          <div className="audit-report-ledger-pagination">
+            <button disabled={!canPageBack || isLoading} onClick={onPreviousPage} type="button">
+              {i18n.locale === "zh-CN" ? "上一页" : "Prev"}
+            </button>
+            <span>{isLoading ? (i18n.locale === "zh-CN" ? "加载中" : "Loading") : pageLabel}</span>
+            <button disabled={!canPageForward || isLoading} onClick={onNextPage} type="button">
+              {i18n.locale === "zh-CN" ? "下一页" : "Next"}
+            </button>
+          </div>
+        ) : null}
+        <div className="audit-report-ledger-list">
+          {visibleRows.length ? (
+            visibleRows.map((row) => (
+              <article className={`audit-report-ledger-row ${row.tone} ${row.status}`} key={row.id}>
+                <span>{auditReportLedgerStatusLabel(i18n, row.statusLabel)}</span>
+                <strong>
+                  {row.fileName}
+                  <small>{row.runId}</small>
+                </strong>
+                <p>
+                  <b>{row.shortHash}</b>
+                  <small>{row.detail}</small>
+                  <em>{row.focusQuery || "focus:none"}</em>
+                </p>
+                <em>
+                  {row.packageMatched}/{row.packageTotal} · {row.importDiffBlocked}/{row.importDiffTotal}
+                </em>
+                <div>
+                  <small>{auditReportLedgerSignatureLabel(i18n, row.signatureLabel)}</small>
+                  <time dateTime={row.createdAt}>{researchImportAuditTimeLabel(row.createdAt)}</time>
+                </div>
+              </article>
+            ))
+          ) : (
+            <article className="audit-report-ledger-row empty">
+              <span>{i18n.locale === "zh-CN" ? "暂无报告" : "No reports"}</span>
+              <strong>
+                {i18n.locale === "zh-CN" ? "生成审计报告" : "Generate an audit report"}
+                <small>{i18n.locale === "zh-CN" ? "下载或导出后会入账" : "Download or export writes to the ledger"}</small>
+              </strong>
+              <p>
+                <b>hash:n/a</b>
+                <small>
+                  {i18n.locale === "zh-CN"
+                    ? "报告历史会保留 SHA-256、焦点和导入 diff 摘要。"
+                    : "Report history keeps SHA-256, focus, and import diff summary."}
+                </small>
+                <em>focus:none</em>
+              </p>
+              <em>0/0 · 0/0</em>
+              <div>
+                <small>{i18n.locale === "zh-CN" ? "等待报告" : "Awaiting report"}</small>
+                <time>-</time>
+              </div>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function ResearchRunImportAuditEventPanel({
   className,
   copiedEvidenceEventId,
@@ -6342,6 +6541,30 @@ function auditMetadataTone(value: unknown): ResearchRunImportAuditEvent["tone"] 
     value === "ai"
     ? value
     : "neutral";
+}
+
+function auditReportLedgerStatusLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return (
+    {
+      "Report hash recorded": "报告 hash 已记录",
+      "Report hash invalid": "报告 hash 异常"
+    }[label] ?? label
+  );
+}
+
+function auditReportLedgerSignatureLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return (
+    {
+      "Unsigned report hash": "报告 hash 尚未签名",
+      "Signature chain blocked": "签名链阻断"
+    }[label] ?? label
+  );
 }
 
 function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAuditEvent["stage"]): string {

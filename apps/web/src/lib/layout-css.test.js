@@ -610,6 +610,46 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"import-diff"', '"import-events"', '"index"'])).toBe(true);
   });
 
+  test("renders audit evidence report history from the backend ledger", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const reportLedgerPanelSource = sourceBetween("function AuditEvidenceReportLedgerPanel", "function ResearchRunImportAuditEventPanel");
+
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRows");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerSummary");
+    expect(appSource).toContain("filterAuditEvidenceReportLedgerRows");
+    expect(appSource).toContain('eventType: "audit_evidence_report"');
+    expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
+    expect(appSource).toContain("const refreshAuditEvidenceReportEvents = useCallback");
+    expect(appSource).toContain("const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows");
+    expect(appSource).toContain("setAuditEvidenceReportEvents((current) =>");
+    expect(auditWorkspaceSource).toContain("<AuditEvidenceReportLedgerPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-report-ledger-panel"');
+    expect(auditWorkspaceSource).toContain("rows={auditEvidenceReportLedgerRows}");
+    expect(auditWorkspaceSource).toContain("pagination={auditEvidenceReportPagination}");
+    expect(auditWorkspaceSource).toContain("query={auditEvidenceReportQuery}");
+    expect(auditWorkspaceSource).toContain("isLoading={isLoadingAuditEvidenceReportEvents}");
+    expect(auditWorkspaceSource).toContain("onQueryChange={updateAuditEvidenceReportQuery}");
+    expect(auditWorkspaceSource).toContain("onPreviousPage={previousAuditEvidenceReportPage}");
+    expect(auditWorkspaceSource).toContain("onNextPage={nextAuditEvidenceReportPage}");
+    expect(reportLedgerPanelSource).toContain("buildAuditEvidenceReportLedgerSummary(rows)");
+    expect(reportLedgerPanelSource).toContain("filterAuditEvidenceReportLedgerRows(rows, query)");
+    expect(reportLedgerPanelSource).toContain("audit-report-ledger-summary");
+    expect(reportLedgerPanelSource).toContain("audit-report-ledger-pagination");
+    expect(reportLedgerPanelSource).toContain("audit-report-ledger-row");
+    expect(reportLedgerPanelSource).toContain("row.shortHash");
+    expect(reportLedgerPanelSource).toContain("row.signatureLabel");
+    expect(reportLedgerPanelSource).toContain("row.focusQuery");
+    expect(cssBlock(".workflow-report-ledger-panel")).toContain("grid-area: reports;");
+    expect(cssBlock(".audit-report-ledger")).toContain("display: grid;");
+    expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");
+    expect(cssBlock(".audit-report-ledger-pagination")).toContain("display: flex;");
+    expect(cssBlock(".audit-report-ledger-row")).toContain(
+      "grid-template-columns: minmax(118px, 0.34fr) minmax(170px, 0.5fr) minmax(0, 1fr) minmax(132px, 0.34fr) auto;"
+    );
+    expect(hasCssBlockWith(".audit-layout", ['"package package"', '"reports reports"', '"import-diff import-diff"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"package"', '"reports"', '"import-diff"'])).toBe(true);
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
