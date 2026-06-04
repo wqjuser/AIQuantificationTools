@@ -210,3 +210,9 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser"` failed because the Audit package browser had no report-copy state, action, or wiring.
 - GREEN: added `buildAuditEvidenceReportMarkdown`, covered generated-at/run/deep-link/count tables and portable summary text, and wired the package browser summary card to copy either the short summary or the Markdown report fragment.
 - DOCS: updated product plan and architecture notes; next slice is persisting the Markdown report as a downloadable/signable audit report artifact.
+- RED: `terminal-api.test.ts -t "audit evidence summary"` failed because there was no `aiqt.auditReport` builder, content SHA-256, or artifact attach helper.
+- RED: `terminal-workbench.test.ts -t "export package browser"` failed because package browser rows ignored the optional audit report artifact.
+- RED: backend import test failed with `integrity_hash_mismatch` because front-end-added `auditReport` was hashed as core package content.
+- RED: `layout-css.test.js -t "export package browser"` failed because the Audit summary card had no report download action or package export artifact wiring.
+- GREEN: added `buildResearchRunExportAuditReport`, `withResearchRunExportAuditEvidenceArtifacts`, SHA-256 content hashing, `audit-report` package browser rows, `.md` download from the Audit summary card, and backend integrity exclusion for `auditReport`.
+- DOCS: updated product plan and architecture notes; next slice is persisting audit reports into the backend audit ledger or signing chain.

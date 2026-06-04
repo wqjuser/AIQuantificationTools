@@ -43,7 +43,8 @@ import {
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   normalizeResearchRunExportPackagePayload,
-  withResearchRunExportAuditEvidenceSummary,
+  buildResearchRunExportAuditReport,
+  withResearchRunExportAuditEvidenceArtifacts,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
@@ -1172,7 +1173,7 @@ export function App() {
     }
 
     const fileName = `${run.runId}-research-export.json`;
-    const exportPackage = withResearchRunExportAuditEvidenceSummary(result.exportPackage, auditEvidenceSummary);
+    const exportPackage = await withResearchRunExportAuditEvidenceArtifacts(result.exportPackage, auditEvidenceSummary);
     const objectUrl = URL.createObjectURL(
       new Blob([JSON.stringify(exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
     );
@@ -1300,6 +1301,33 @@ export function App() {
         ...current,
         statusLabel: "Audit evidence report copy failed",
         error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [auditEvidenceSummary]);
+
+  const downloadAuditEvidenceReport = useCallback(async () => {
+    try {
+      const auditReport = await buildResearchRunExportAuditReport(auditEvidenceSummary);
+      const objectUrl = URL.createObjectURL(
+        new Blob([auditReport.contentMarkdown], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = auditReport.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit evidence report download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit evidence report download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Audit evidence report download failed"
       }));
     }
   }, [auditEvidenceSummary]);
@@ -2621,6 +2649,7 @@ export function App() {
             isLoading={isInspectingExportPackage}
             onCopyEvidenceReport={copyAuditEvidenceReport}
             onCopyEvidenceSummary={copyAuditEvidenceSummary}
+            onDownloadEvidenceReport={downloadAuditEvidenceReport}
             onRetryDeepLink={retryImportAuditEvidenceDeepLink}
             onQueryChange={setResearchRunExportBrowserQuery}
             query={researchRunExportBrowserQuery}
@@ -5055,6 +5084,7 @@ function ResearchRunExportPackageBrowserPanel({
   isLoading,
   onCopyEvidenceReport,
   onCopyEvidenceSummary,
+  onDownloadEvidenceReport,
   onRetryDeepLink,
   onQueryChange,
   query,
@@ -5069,6 +5099,7 @@ function ResearchRunExportPackageBrowserPanel({
   isLoading: boolean;
   onCopyEvidenceReport: () => void;
   onCopyEvidenceSummary: () => void;
+  onDownloadEvidenceReport: () => void;
   onRetryDeepLink?: () => void;
   onQueryChange: (query: string) => void;
   query: string;
@@ -5150,6 +5181,10 @@ function ResearchRunExportPackageBrowserPanel({
                 : i18n.locale === "zh-CN"
                   ? "复制报告"
                   : "Copy report"}
+            </button>
+            <button onClick={onDownloadEvidenceReport} type="button">
+              <Download size={13} />
+              {i18n.locale === "zh-CN" ? "下载报告" : "Download report"}
             </button>
           </div>
         </div>
@@ -5970,6 +6005,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "promotion-candidate": "晋级候选",
       "ai-reviews": "AI 评审",
       "audit-summary": "审计摘要",
+      "audit-report": "审计报告",
       "execution-handoff": "执行交接"
     } satisfies Record<ResearchRunExportBrowserRow["id"], string>
   )[row.id];

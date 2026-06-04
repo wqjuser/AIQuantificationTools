@@ -3692,7 +3692,7 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "integrity_hash_mismatch"):
             research_run_import_to_audit(tampered_package)
 
-    def test_research_run_import_allows_frontend_audit_summary_metadata(self):
+    def test_research_run_import_allows_frontend_audit_evidence_metadata(self):
         from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
 
         audit = ResearchRunAudit(
@@ -3746,6 +3746,17 @@ class QuantCoreContractTest(unittest.TestCase):
             "package": {"ready": 5, "missing": 0, "blocked": 0, "matched": 1, "total": 9},
             "importDiff": {"changes": 0, "adds": 0, "blocked": 0, "matched": 1, "total": 11},
             "copyText": "AIQT Audit Evidence Summary\nRun: run-audit-summary",
+        }
+        export_package["auditReport"] = {
+            "kind": "aiqt.auditReport",
+            "schemaVersion": 1,
+            "runId": "run-audit-summary",
+            "generatedAt": "2026-06-04T08:05:00+00:00",
+            "format": "text/markdown",
+            "fileName": "run-audit-summary-audit-evidence-report.md",
+            "contentSha256": {"algorithm": "sha256", "hash": "e" * 64},
+            "contentMarkdown": "# AIQuant Audit Evidence Report\n",
+            "evidenceSummary": export_package["auditEvidenceSummary"],
         }
 
         imported = research_run_import_to_audit(export_package)

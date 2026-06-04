@@ -1,5 +1,6 @@
 import {
   buildTerminalWorkspace,
+  buildAuditEvidenceReportMarkdown,
   resolveBacktestAssumptions,
   workspaceFromResearchRunAudit,
   workspaceWithPrimaryWorkflows,
@@ -126,6 +127,18 @@ export interface ResearchRunExportAuditEvidenceSummary {
   copyText: string;
 }
 
+export interface ResearchRunExportAuditReport {
+  kind: "aiqt.auditReport";
+  schemaVersion: 1;
+  runId: string;
+  generatedAt: string;
+  format: "text/markdown";
+  fileName: string;
+  contentSha256: ResearchRunExportIntegrity;
+  contentMarkdown: string;
+  evidenceSummary: ResearchRunExportAuditEvidenceSummary;
+}
+
 export interface ResearchRunExportPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -138,6 +151,7 @@ export interface ResearchRunExportPackage {
   promotionCandidate?: PromotionCandidateRecord | null;
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
   auditEvidenceSummary?: ResearchRunExportAuditEvidenceSummary;
+  auditReport?: ResearchRunExportAuditReport;
 }
 
 export interface ResearchRunExportResult {
@@ -971,6 +985,40 @@ export function withResearchRunExportAuditEvidenceSummary(
   return {
     ...exportPackage,
     auditEvidenceSummary: buildResearchRunExportAuditEvidenceSummary(summary, generatedAt)
+  };
+}
+
+export async function buildResearchRunExportAuditReport(
+  summary: AuditEvidenceSummary,
+  generatedAt = new Date().toISOString()
+): Promise<ResearchRunExportAuditReport> {
+  const contentMarkdown = buildAuditEvidenceReportMarkdown(summary, { generatedAt });
+  return {
+    kind: "aiqt.auditReport",
+    schemaVersion: 1,
+    runId: summary.runId,
+    generatedAt,
+    format: "text/markdown",
+    fileName: `${sanitizeDownloadFileName(summary.runId)}-audit-evidence-report.md`,
+    contentSha256: {
+      algorithm: "sha256",
+      hash: await sha256TextHex(contentMarkdown)
+    },
+    contentMarkdown,
+    evidenceSummary: buildResearchRunExportAuditEvidenceSummary(summary, generatedAt)
+  };
+}
+
+export async function withResearchRunExportAuditEvidenceArtifacts(
+  exportPackage: ResearchRunExportPackage,
+  summary: AuditEvidenceSummary,
+  generatedAt?: string
+): Promise<ResearchRunExportPackage> {
+  const resolvedGeneratedAt = generatedAt ?? new Date().toISOString();
+  return {
+    ...exportPackage,
+    auditEvidenceSummary: buildResearchRunExportAuditEvidenceSummary(summary, resolvedGeneratedAt),
+    auditReport: await buildResearchRunExportAuditReport(summary, resolvedGeneratedAt)
   };
 }
 
@@ -2733,7 +2781,8 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
     (exportPackage.aiReviewRuns === undefined ||
       (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope))) &&
     (exportPackage.auditEvidenceSummary === undefined ||
-      isResearchRunExportAuditEvidenceSummary(exportPackage.auditEvidenceSummary))
+      isResearchRunExportAuditEvidenceSummary(exportPackage.auditEvidenceSummary)) &&
+    (exportPackage.auditReport === undefined || isResearchRunExportAuditReport(exportPackage.auditReport))
   );
 }
 
@@ -2764,6 +2813,24 @@ function isResearchRunExportAuditEvidenceSummary(value: unknown): value is Resea
     isAuditEvidenceCountGroup(summary.package) &&
     isAuditEvidenceImportDiffCountGroup(summary.importDiff) &&
     typeof summary.copyText === "string"
+  );
+}
+
+function isResearchRunExportAuditReport(value: unknown): value is ResearchRunExportAuditReport {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const report = value as Partial<ResearchRunExportAuditReport>;
+  return (
+    report.kind === "aiqt.auditReport" &&
+    report.schemaVersion === 1 &&
+    typeof report.runId === "string" &&
+    typeof report.generatedAt === "string" &&
+    report.format === "text/markdown" &&
+    typeof report.fileName === "string" &&
+    isResearchRunExportIntegrity(report.contentSha256) &&
+    typeof report.contentMarkdown === "string" &&
+    isResearchRunExportAuditEvidenceSummary(report.evidenceSummary)
   );
 }
 
@@ -2801,6 +2868,18 @@ function isAuditEvidenceImportDiffCountGroup(
     typeof counts.matched === "number" &&
     typeof counts.total === "number"
   );
+}
+
+async function sha256TextHex(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function sanitizeDownloadFileName(value: string): string {
+  const normalized = value.trim().replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "");
+  return normalized || "audit-run";
 }
 
 function isResearchRunExportManifest(value: unknown): value is ResearchRunExportManifest {

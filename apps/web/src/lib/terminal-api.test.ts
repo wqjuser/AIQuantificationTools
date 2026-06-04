@@ -46,6 +46,8 @@ import {
   loadAuditEvents,
   saveResearchNote,
   saveStrategySnapshot,
+  withResearchRunExportAuditEvidenceArtifacts,
+  buildResearchRunExportAuditReport,
   withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
@@ -1753,7 +1755,7 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
   });
 
-  test("attaches audit evidence summary metadata to research run export packages", () => {
+  test("attaches audit evidence summary metadata to research run export packages", async () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export",
       packageVersion: 1,
@@ -1814,28 +1816,36 @@ describe("terminal workspace API client", () => {
       }
     } satisfies ResearchRunExportPackage;
 
+    const summary = {
+      auditQuery: "manual-smoke",
+      copyText: "AIQT Audit Evidence Summary\nRun: run-preview",
+      deepLinkError: null,
+      deepLinkStatus: "loaded" as const,
+      focusQuery: "manifest:run-preview",
+      importDiffAddCount: 0,
+      importDiffBlockedCount: 0,
+      importDiffChangeCount: 0,
+      importDiffMatchedCount: 1,
+      importDiffQuery: "manifest:run-preview",
+      importDiffTotalCount: 11,
+      packageBlockedCount: 0,
+      packageMatchedCount: 1,
+      packageMissingCount: 0,
+      packageQuery: "manifest:run-preview",
+      packageReadyCount: 5,
+      packageTotalCount: 9,
+      runId: "run-preview"
+    };
+
     const enrichedPackage = withResearchRunExportAuditEvidenceSummary(
       exportPackage,
-      {
-        auditQuery: "manual-smoke",
-        copyText: "AIQT Audit Evidence Summary\nRun: run-preview",
-        deepLinkError: null,
-        deepLinkStatus: "loaded",
-        focusQuery: "manifest:run-preview",
-        importDiffAddCount: 0,
-        importDiffBlockedCount: 0,
-        importDiffChangeCount: 0,
-        importDiffMatchedCount: 1,
-        importDiffQuery: "manifest:run-preview",
-        importDiffTotalCount: 11,
-        packageBlockedCount: 0,
-        packageMatchedCount: 1,
-        packageMissingCount: 0,
-        packageQuery: "manifest:run-preview",
-        packageReadyCount: 5,
-        packageTotalCount: 9,
-        runId: "run-preview"
-      },
+      summary,
+      "2026-06-04T08:00:00+00:00"
+    );
+    const auditReport = await buildResearchRunExportAuditReport(summary, "2026-06-04T08:00:00+00:00");
+    const enrichedArtifactPackage = await withResearchRunExportAuditEvidenceArtifacts(
+      exportPackage,
+      summary,
       "2026-06-04T08:00:00+00:00"
     );
 
@@ -1853,10 +1863,33 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload({ export: enrichedPackage })?.auditEvidenceSummary?.package.matched).toBe(
       1
     );
+    expect(auditReport).toMatchObject({
+      kind: "aiqt.auditReport",
+      schemaVersion: 1,
+      runId: "run-preview",
+      generatedAt: "2026-06-04T08:00:00+00:00",
+      format: "text/markdown",
+      fileName: "run-preview-audit-evidence-report.md",
+      contentSha256: { algorithm: "sha256" }
+    });
+    expect(auditReport.contentSha256.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(auditReport.contentMarkdown).toContain("# AIQuant Audit Evidence Report");
+    expect(auditReport.evidenceSummary.copyText).toContain("AIQT Audit Evidence Summary");
+    expect(enrichedArtifactPackage.auditEvidenceSummary?.runId).toBe("run-preview");
+    expect(enrichedArtifactPackage.auditReport?.contentSha256.hash).toBe(auditReport.contentSha256.hash);
+    expect(normalizeResearchRunExportPackagePayload(enrichedArtifactPackage)?.auditReport?.fileName).toBe(
+      "run-preview-audit-evidence-report.md"
+    );
     expect(
       normalizeResearchRunExportPackagePayload({
         ...enrichedPackage,
         auditEvidenceSummary: { ...enrichedPackage.auditEvidenceSummary, schemaVersion: 2 }
+      })
+    ).toBeNull();
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...enrichedArtifactPackage,
+        auditReport: { ...enrichedArtifactPackage.auditReport, contentSha256: { algorithm: "sha256", hash: "bad" } }
       })
     ).toBeNull();
   });

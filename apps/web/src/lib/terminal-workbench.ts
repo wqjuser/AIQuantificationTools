@@ -641,6 +641,20 @@ export interface ResearchRunExportBrowserPackage {
     };
     copyText: string;
   };
+  auditReport?: {
+    kind: "aiqt.auditReport";
+    schemaVersion: 1;
+    runId: string;
+    generatedAt: string;
+    format: "text/markdown";
+    fileName: string;
+    contentSha256: {
+      algorithm: "sha256";
+      hash: string;
+    };
+    contentMarkdown: string;
+    evidenceSummary: ResearchRunExportBrowserPackage["auditEvidenceSummary"];
+  };
 }
 
 export interface ResearchRunExportBrowserRow {
@@ -654,6 +668,7 @@ export interface ResearchRunExportBrowserRow {
     | "promotion-candidate"
     | "ai-reviews"
     | "audit-summary"
+    | "audit-report"
     | "execution-handoff";
   label: string;
   status: ResearchRunExportBrowserStatus;
@@ -2515,11 +2530,21 @@ export function buildResearchRunExportBrowserRows(
   const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
   const integrityHash = exportPackage.integrity?.hash ?? "";
   const auditSummary = exportPackage.auditEvidenceSummary;
+  const auditReport = exportPackage.auditReport;
   const auditSummaryIsReady =
     auditSummary?.kind === "aiqt.auditEvidenceSummary" &&
     auditSummary.schemaVersion === 1 &&
     auditSummary.runId === exportPackage.manifest.runId &&
     auditSummary.copyText.trim() !== "";
+  const auditReportHash = auditReport?.contentSha256.hash ?? "";
+  const auditReportIsReady =
+    auditReport?.kind === "aiqt.auditReport" &&
+    auditReport.schemaVersion === 1 &&
+    auditReport.runId === exportPackage.manifest.runId &&
+    auditReport.format === "text/markdown" &&
+    auditReport.contentSha256.algorithm === "sha256" &&
+    /^[a-f0-9]{64}$/iu.test(auditReportHash) &&
+    auditReport.contentMarkdown.trim() !== "";
   const integrityIsReady = exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
   const dataIsReady =
     artifactCounts.bars === exportPackage.manifest.dataRows &&
@@ -2624,6 +2649,23 @@ export function buildResearchRunExportBrowserRows(
               : "Audit evidence summary metadata does not match this export package.",
             exportPath: "auditEvidenceSummary",
             tone: auditSummaryIsReady ? "ai" : "risk"
+          }
+        ] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...(auditReport
+      ? ([
+          {
+            id: "audit-report",
+            label: "Audit report",
+            status: auditReportIsReady ? "ready" : "blocked",
+            value: auditReport.contentSha256
+              ? `${auditReport.contentSha256.algorithm} · ${auditReportHash.slice(0, 8)}`
+              : "No content hash",
+            detail: auditReportIsReady
+              ? `${auditReport.fileName} · generated ${auditReport.generatedAt}`
+              : "Audit report artifact is missing valid Markdown content or SHA-256 metadata.",
+            exportPath: "auditReport.contentSha256.hash",
+            tone: auditReportIsReady ? "ai" : "risk"
           }
         ] satisfies ResearchRunExportBrowserRow[])
       : []),

@@ -1816,8 +1816,8 @@ em {
 }
 
 .research-audit-evidence-actions {
-  display: grid;
-  grid-auto-flow: column;
+  display: flex;
+  flex-wrap: wrap;
   gap: 7px;
   justify-content: end;
 }

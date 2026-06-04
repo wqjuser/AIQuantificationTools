@@ -2108,6 +2108,34 @@ describe("terminal workbench model", () => {
         package: { ready: 5, missing: 1, blocked: 2, matched: 1, total: 9 },
         importDiff: { changes: 1, adds: 0, blocked: 0, matched: 1, total: 11 },
         copyText: "AIQT Audit Evidence Summary\nRun: run-browser"
+      },
+      auditReport: {
+        kind: "aiqt.auditReport",
+        schemaVersion: 1,
+        runId: "run-browser",
+        generatedAt: "2026-06-04T08:00:00+00:00",
+        format: "text/markdown",
+        fileName: "run-browser-audit-evidence-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "d".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        evidenceSummary: {
+          kind: "aiqt.auditEvidenceSummary",
+          schemaVersion: 1,
+          runId: "run-browser",
+          generatedAt: "2026-06-04T08:00:00+00:00",
+          auditQuery: "manual-smoke",
+          packageQuery: "manifest:run-browser",
+          importDiffQuery: "manifest:run-browser",
+          focusQuery: "manifest:run-browser",
+          deepLinkStatus: "loaded",
+          deepLinkError: null,
+          package: { ready: 5, missing: 1, blocked: 2, matched: 1, total: 9 },
+          importDiff: { changes: 1, adds: 0, blocked: 0, matched: 1, total: 11 },
+          copyText: "AIQT Audit Evidence Summary\nRun: run-browser"
+        }
       }
     });
 
@@ -2150,6 +2178,12 @@ describe("terminal workbench model", () => {
           exportPath: "auditEvidenceSummary"
         }),
         expect.objectContaining({
+          id: "audit-report",
+          status: "ready",
+          value: "sha256 · dddddddd",
+          exportPath: "auditReport.contentSha256.hash"
+        }),
+        expect.objectContaining({
           id: "execution-handoff",
           status: "blocked",
           value: "1/2 gates",
@@ -2162,6 +2196,7 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportBrowserRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
       "audit-summary"
     ]);
+    expect(filterResearchRunExportBrowserRows(rows, "auditReport").map((row) => row.id)).toEqual(["audit-report"]);
   });
 
   test("builds a searchable recent export package index across packages", () => {
