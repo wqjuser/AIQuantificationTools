@@ -228,3 +228,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "audit evidence report history"` failed because the Audit report ledger did not render signature detail, chain id, signed/verified time, or localized signed/verified/revoked labels.
 - GREEN: parsed optional `metadata.signature` into signed/verified/revoked/unsigned/invalid states, added signer/key/algorithm/chain fields to report ledger rows and search, expanded summary counts, and rendered signature-chain details in the Audit report history panel.
 - DOCS: updated product plan and architecture notes; next slice is backend report signing/verification with local key metadata rather than front-end-only signature status interpretation.
+- RED: `test_audit_report_sign_and_verify_api_updates_signature_metadata` failed with HTTP 404 because the local core had no report signing or verification endpoints.
+- RED: `terminal-api.test.ts -t "signs and verifies audit report"` failed because the web client had no sign/verify URL builders or mutation helpers; `layout-css.test.js -t "audit evidence report history"` failed because the Audit report ledger had no sign/verify row actions.
+- GREEN: added `AuditReportSigner` with local `hmac-sha256` signing, `/api/audit/reports/sign`, `/api/audit/reports/verify`, tamper detection with HTTP 409, web API helpers, and compact sign/verify actions in the Audit report history panel.
+- DOCS: updated product plan and architecture notes; next slice is key rotation and external certificate/signature chain integration.

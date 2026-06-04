@@ -617,11 +617,18 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditEvidenceReportLedgerRows");
     expect(appSource).toContain("buildAuditEvidenceReportLedgerSummary");
     expect(appSource).toContain("filterAuditEvidenceReportLedgerRows");
+    expect(appSource).toContain("signAuditReportEvent");
+    expect(appSource).toContain("verifyAuditReportEvent");
     expect(appSource).toContain('eventType: "audit_evidence_report"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
+    expect(appSource).toContain("const [signingAuditReportEventId, setSigningAuditReportEventId]");
+    expect(appSource).toContain("const [verifyingAuditReportEventId, setVerifyingAuditReportEventId]");
     expect(appSource).toContain("const refreshAuditEvidenceReportEvents = useCallback");
     expect(appSource).toContain("const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows");
     expect(appSource).toContain("setAuditEvidenceReportEvents((current) =>");
+    expect(appSource).toContain("const signAuditEvidenceReportEvent = useCallback");
+    expect(appSource).toContain("const verifyAuditEvidenceReportEvent = useCallback");
+    expect(appSource).toContain("setAuditEvidenceReportEvents((current) => mergeAuditEvidenceReportEvent(current, result.event!))");
     expect(auditWorkspaceSource).toContain("<AuditEvidenceReportLedgerPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-report-ledger-panel"');
     expect(auditWorkspaceSource).toContain("rows={auditEvidenceReportLedgerRows}");
@@ -631,6 +638,10 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onQueryChange={updateAuditEvidenceReportQuery}");
     expect(auditWorkspaceSource).toContain("onPreviousPage={previousAuditEvidenceReportPage}");
     expect(auditWorkspaceSource).toContain("onNextPage={nextAuditEvidenceReportPage}");
+    expect(auditWorkspaceSource).toContain("onSignReport={signAuditEvidenceReportEvent}");
+    expect(auditWorkspaceSource).toContain("onVerifyReport={verifyAuditEvidenceReportEvent}");
+    expect(auditWorkspaceSource).toContain("signingEventId={signingAuditReportEventId}");
+    expect(auditWorkspaceSource).toContain("verifyingEventId={verifyingAuditReportEventId}");
     expect(reportLedgerPanelSource).toContain("buildAuditEvidenceReportLedgerSummary(rows)");
     expect(reportLedgerPanelSource).toContain("filterAuditEvidenceReportLedgerRows(rows, query)");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-summary");
@@ -643,6 +654,11 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.signatureDetail && row.chainId");
     expect(reportLedgerPanelSource).toContain("row.signatureSignedAt || row.signatureVerifiedAt");
     expect(reportLedgerPanelSource).toContain("row.focusQuery");
+    expect(reportLedgerPanelSource).toContain("audit-report-ledger-actions");
+    expect(reportLedgerPanelSource).toContain("onSignReport(row.id)");
+    expect(reportLedgerPanelSource).toContain("onVerifyReport(row.id)");
+    expect(reportLedgerPanelSource).toContain("signingEventId === row.id");
+    expect(reportLedgerPanelSource).toContain("verifyingEventId === row.id");
     expect(appSource).toContain('"Verified signature": "签名已验证"');
     expect(appSource).toContain('"Signed report hash": "报告 hash 已签名"');
     expect(appSource).toContain('"Revoked signature": "签名已撤销"');
@@ -650,6 +666,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-report-ledger")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-pagination")).toContain("display: flex;");
+    expect(cssBlock(".audit-report-ledger-actions")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(170px, 0.5fr) minmax(0, 1fr) minmax(132px, 0.34fr) auto;"
     );

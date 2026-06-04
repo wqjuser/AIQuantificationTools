@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
+from quant_core.audit_signing import AuditReportSigner, audit_report_verification_to_payload
 from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_review_run_record_to_payload
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
@@ -133,6 +134,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
+    audit_signing_secret = os.environ.get("AIQT_AUDIT_SIGNING_SECRET", "local-dev-audit-secret")
+    audit_signing_key_id = os.environ.get("AIQT_AUDIT_SIGNING_KEY_ID", "local-audit-key")
+    audit_signer_name = os.environ.get("AIQT_AUDIT_SIGNER_NAME", "Local Audit Key")
+    audit_chain_id = os.environ.get("AIQT_AUDIT_CHAIN_ID", "audit-chain-local")
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -241,6 +246,53 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_audit_event", "detail": str(error)}, status=400)
                 return
             self._send_json({"event": audit_event_record_to_payload(event)}, status=201)
+            return
+        if parsed.path == "/api/audit/reports/sign":
+            payload = self._read_json_body()
+            event_id = str(payload.get("eventId") or "").strip()
+            record = self.audit_event_store.get(event_id)
+            if not record:
+                self._send_json({"error": "audit_event_not_found", "eventId": event_id}, status=404)
+                return
+            try:
+                signer = self._audit_report_signer()
+                signed_event = self.audit_event_store.record(signer.sign_event(record))
+                verification, verified_event_payload = signer.verify_event(signed_event)
+                verified_event = self.audit_event_store.record(verified_event_payload)
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_report_signature", "detail": str(error)}, status=400)
+                return
+            signature = verified_event.metadata.get("signature") if isinstance(verified_event.metadata, dict) else {}
+            self._send_json(
+                {
+                    "event": audit_event_record_to_payload(verified_event),
+                    "signature": signature if isinstance(signature, dict) else {},
+                    "verification": audit_report_verification_to_payload(verification),
+                }
+            )
+            return
+        if parsed.path == "/api/audit/reports/verify":
+            payload = self._read_json_body()
+            event_id = str(payload.get("eventId") or "").strip()
+            record = self.audit_event_store.get(event_id)
+            if not record:
+                self._send_json({"error": "audit_event_not_found", "eventId": event_id}, status=404)
+                return
+            try:
+                verification, verified_event_payload = self._audit_report_signer().verify_event(record)
+                verified_event = self.audit_event_store.record(verified_event_payload)
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_report_signature", "detail": str(error)}, status=400)
+                return
+            signature = verified_event.metadata.get("signature") if isinstance(verified_event.metadata, dict) else {}
+            self._send_json(
+                {
+                    "event": audit_event_record_to_payload(verified_event),
+                    "signature": signature if isinstance(signature, dict) else {},
+                    "verification": audit_report_verification_to_payload(verification),
+                },
+                status=409 if verification.status == "invalid" else 200,
+            )
             return
         if parsed.path == "/api/research/runs/import/undo":
             payload = self._read_json_body()
@@ -737,6 +789,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("request_body_must_be_object")
         return payload
+
+    def _audit_report_signer(self) -> AuditReportSigner:
+        return AuditReportSigner(
+            secret=str(self.audit_signing_secret or ""),
+            key_id=str(self.audit_signing_key_id or "local-audit-key"),
+            signer=str(self.audit_signer_name or "Local Audit Key"),
+            chain_id=str(self.audit_chain_id or "audit-chain-local"),
+        )
 
     def _settings_status_payload(self) -> dict[str, object]:
         return build_settings_status(

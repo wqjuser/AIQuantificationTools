@@ -16,6 +16,8 @@ import {
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
   buildAuditEventsUrl,
+  buildAuditReportSignUrl,
+  buildAuditReportVerifyUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -44,6 +46,8 @@ import {
   loadResearchRunAiReviews,
   saveAuditEvent,
   loadAuditEvents,
+  signAuditReportEvent,
+  verifyAuditReportEvent,
   saveResearchNote,
   saveStrategySnapshot,
   withResearchRunExportAuditEvidenceArtifacts,
@@ -2850,6 +2854,72 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.events[0]?.stage).toBe("blocked");
     expect(result.pagination).toEqual({ limit: 5, offset: 10, total: 1, query: "unsafe-import" });
+  });
+
+  test("signs and verifies audit report events through the local core", async () => {
+    const signedEvent: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "audit-report-run-signed",
+      eventType: "audit_evidence_report",
+      runId: "run-signed",
+      createdAt: "2026-06-04T09:20:00+00:00",
+      stage: "generated",
+      source: "web",
+      summary: "Audit evidence report generated for run-signed",
+      detail: "signed report",
+      metadata: {
+        contentSha256: "f".repeat(64),
+        fileName: "run-signed-audit-evidence-report.md",
+        signature: {
+          algorithm: "hmac-sha256",
+          chainId: "audit-chain-local",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          status: "verified",
+          value: "a".repeat(64)
+        }
+      }
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+    const signResult = await signAuditReportEvent("http://127.0.0.1:8765", "audit-report-run-signed", async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          event: signedEvent,
+          signature: signedEvent.metadata.signature,
+          verification: { status: "verified", reason: "signature_verified" }
+        })
+      };
+    });
+    const verifyResult = await verifyAuditReportEvent("http://127.0.0.1:8765", "audit-report-run-signed", async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          event: signedEvent,
+          signature: signedEvent.metadata.signature,
+          verification: { status: "verified", reason: "signature_verified" }
+        })
+      };
+    });
+
+    expect(buildAuditReportSignUrl("http://127.0.0.1:8765")).toBe("http://127.0.0.1:8765/api/audit/reports/sign");
+    expect(buildAuditReportVerifyUrl("http://127.0.0.1:8765")).toBe("http://127.0.0.1:8765/api/audit/reports/verify");
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://127.0.0.1:8765/api/audit/reports/sign",
+      "http://127.0.0.1:8765/api/audit/reports/verify"
+    ]);
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ eventId: "audit-report-run-signed" });
+    expect(signResult.source).toBe("core");
+    expect(signResult.event?.metadata.signature).toEqual(signedEvent.metadata.signature);
+    expect(signResult.verification).toEqual({ status: "verified", reason: "signature_verified" });
+    expect(verifyResult.source).toBe("core");
+    expect(verifyResult.signature?.keyId).toBe("local-audit-key");
   });
 
   test("returns fallback when AI review run history payload is malformed", async () => {

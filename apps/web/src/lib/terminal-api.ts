@@ -309,6 +309,19 @@ export interface AuditEventResult {
   error?: string;
 }
 
+export interface AuditReportSignatureVerification {
+  status: "verified" | "invalid";
+  reason: string;
+}
+
+export interface AuditReportSignatureResult {
+  event?: AuditEventRecord;
+  signature?: Record<string, unknown>;
+  verification?: AuditReportSignatureVerification;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -769,6 +782,14 @@ export function buildAuditEventsUrl(baseUrl: string, params: AuditEventHistoryPa
       url.searchParams.set("offset", String(Math.max(0, params.offset)));
     }
   });
+}
+
+export function buildAuditReportSignUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/reports/sign");
+}
+
+export function buildAuditReportVerifyUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/reports/verify");
 }
 
 export function buildStrategiesUrl(
@@ -1452,6 +1473,70 @@ export async function loadAuditEvents(
   }
 }
 
+export async function signAuditReportEvent(
+  baseUrl: string,
+  eventId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditReportSignatureResult> {
+  return mutateAuditReportSignature(buildAuditReportSignUrl(baseUrl), eventId, fetcher, "sign");
+}
+
+export async function verifyAuditReportEvent(
+  baseUrl: string,
+  eventId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditReportSignatureResult> {
+  return mutateAuditReportSignature(buildAuditReportVerifyUrl(baseUrl), eventId, fetcher, "verify");
+}
+
+async function mutateAuditReportSignature(
+  url: string,
+  eventId: string,
+  fetcher: WorkspaceFetcher,
+  action: "sign" | "verify"
+): Promise<AuditReportSignatureResult> {
+  try {
+    const response = await fetcher(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      if (isAuditReportSignaturePayload(payload)) {
+        return {
+          event: payload.event,
+          signature: payload.signature,
+          verification: payload.verification,
+          source: "core",
+          error: payload.verification.reason
+        };
+      }
+      if (isCoreErrorPayload(payload)) {
+        return {
+          source: "core",
+          error: payload.detail ?? payload.error
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isAuditReportSignaturePayload(payload)) {
+      throw new Error("Invalid audit report signature contract");
+    }
+    return {
+      event: payload.event,
+      signature: payload.signature,
+      verification: payload.verification,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : `Unknown audit report ${action} error`
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -2090,6 +2175,33 @@ function isAuditEventPayload(value: unknown): value is { event: AuditEventRecord
   }
   const payload = value as { event?: unknown };
   return isAuditEventRecord(payload.event);
+}
+
+function isAuditReportSignaturePayload(value: unknown): value is {
+  event: AuditEventRecord;
+  signature: Record<string, unknown>;
+  verification: AuditReportSignatureVerification;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { event?: unknown; signature?: unknown; verification?: unknown };
+  return (
+    isAuditEventRecord(payload.event) &&
+    isPlainRecord(payload.signature) &&
+    isAuditReportSignatureVerification(payload.verification)
+  );
+}
+
+function isAuditReportSignatureVerification(value: unknown): value is AuditReportSignatureVerification {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const verification = value as Partial<AuditReportSignatureVerification>;
+  return (
+    (verification.status === "verified" || verification.status === "invalid") &&
+    typeof verification.reason === "string"
+  );
 }
 
 function isAuditEventHistoryPayload(value: unknown): value is {

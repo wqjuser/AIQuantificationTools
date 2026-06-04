@@ -66,6 +66,7 @@ import {
   ResearchNoteResult,
   saveResearchNote,
   saveAuditEvent,
+  signAuditReportEvent,
   saveAiReviewRunRecord,
   saveStrategySnapshot,
   StrategyLibraryItem,
@@ -73,6 +74,7 @@ import {
   StrategyValidationResult,
   submitResearchRunPaperExecution,
   validateStrategySnapshot,
+  verifyAuditReportEvent,
   WorkspaceLoadResult
 } from "./lib/terminal-api";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
@@ -411,6 +413,10 @@ function createWorkflowLogEntry(
   };
 }
 
+function mergeAuditEvidenceReportEvent(events: AuditEventRecord[], event: AuditEventRecord): AuditEventRecord[] {
+  return [event, ...events.filter((current) => current.eventId !== event.eventId)];
+}
+
 function waitForWorkflowStep() {
   return new Promise<void>((resolve) => window.setTimeout(resolve, workflowStepDelayMs));
 }
@@ -491,6 +497,8 @@ export function App() {
   const [isApplyingImportPackage, setIsApplyingImportPackage] = useState(false);
   const [isLoadingAuditEvidenceReportEvents, setIsLoadingAuditEvidenceReportEvents] = useState(false);
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
+  const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
+  const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -1208,10 +1216,7 @@ export function App() {
       void saveAuditEvent(quantCoreBaseUrl, buildAuditEvidenceReportAuditEvent(auditReport, auditEvidenceSummary)).then((result) => {
         if (result.source === "core" && result.event) {
           setAuditEvidenceReportEvents((current) =>
-            [result.event!, ...current.filter((event) => event.eventId !== result.event!.eventId)].slice(
-              0,
-              AUDIT_REPORT_EVENTS_PAGE_SIZE
-            )
+            mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
           );
           return;
         }
@@ -1906,6 +1911,46 @@ export function App() {
       return next >= total ? current : next;
     });
   }, [auditEvidenceReportPagination?.total]);
+
+  const signAuditEvidenceReportEvent = useCallback(
+    async (eventId: string) => {
+      setSigningAuditReportEventId(eventId);
+      const result = await signAuditReportEvent(quantCoreBaseUrl, eventId);
+      if (result.event) {
+        setAuditEvidenceReportEvents((current) => mergeAuditEvidenceReportEvent(current, result.event!));
+      }
+      if (result.error) {
+        setWorkspaceState((current) => ({
+          ...current,
+          error: result.error,
+          source: result.source,
+          statusLabel: result.source === "core" ? "Audit report signature failed" : "Offline signature fallback"
+        }));
+      }
+      setSigningAuditReportEventId(null);
+    },
+    []
+  );
+
+  const verifyAuditEvidenceReportEvent = useCallback(
+    async (eventId: string) => {
+      setVerifyingAuditReportEventId(eventId);
+      const result = await verifyAuditReportEvent(quantCoreBaseUrl, eventId);
+      if (result.event) {
+        setAuditEvidenceReportEvents((current) => mergeAuditEvidenceReportEvent(current, result.event!));
+      }
+      if (result.error) {
+        setWorkspaceState((current) => ({
+          ...current,
+          error: result.error,
+          source: result.source,
+          statusLabel: result.source === "core" ? "Audit report verification failed" : "Offline verification fallback"
+        }));
+      }
+      setVerifyingAuditReportEventId(null);
+    },
+    []
+  );
 
   const updateResearchRunImportAuditQuery = useCallback((query: string) => {
     setResearchRunImportAuditQuery(query);
@@ -2751,9 +2796,13 @@ export function App() {
             onNextPage={nextAuditEvidenceReportPage}
             onPreviousPage={previousAuditEvidenceReportPage}
             onQueryChange={updateAuditEvidenceReportQuery}
+            onSignReport={signAuditEvidenceReportEvent}
+            onVerifyReport={verifyAuditEvidenceReportEvent}
             pagination={auditEvidenceReportPagination}
             query={auditEvidenceReportQuery}
             rows={auditEvidenceReportLedgerRows}
+            signingEventId={signingAuditReportEventId}
+            verifyingEventId={verifyingAuditReportEventId}
           />
           <ResearchRunImportDiffPanel
             className="workflow-import-diff-panel"
@@ -5437,9 +5486,13 @@ function AuditEvidenceReportLedgerPanel({
   onNextPage,
   onPreviousPage,
   onQueryChange,
+  onSignReport,
+  onVerifyReport,
   pagination,
   query,
-  rows
+  rows,
+  signingEventId,
+  verifyingEventId
 }: {
   className?: string;
   i18n: AppI18n;
@@ -5447,9 +5500,13 @@ function AuditEvidenceReportLedgerPanel({
   onNextPage: () => void;
   onPreviousPage: () => void;
   onQueryChange: (query: string) => void;
+  onSignReport: (eventId: string) => void;
+  onVerifyReport: (eventId: string) => void;
   pagination: AuditEventHistoryPagination | null;
   query: string;
   rows: AuditEvidenceReportLedgerRow[];
+  signingEventId: string | null;
+  verifyingEventId: string | null;
 }) {
   const summary = buildAuditEvidenceReportLedgerSummary(rows);
   const visibleRows = filterAuditEvidenceReportLedgerRows(rows, query);
@@ -5536,6 +5593,28 @@ function AuditEvidenceReportLedgerPanel({
                   <time dateTime={row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt}>
                     {researchImportAuditTimeLabel(row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt)}
                   </time>
+                  <span className="audit-report-ledger-actions">
+                    <button
+                      disabled={signingEventId === row.id || verifyingEventId === row.id || row.status === "invalid"}
+                      onClick={() => onSignReport(row.id)}
+                      type="button"
+                    >
+                      {signingEventId === row.id ? (i18n.locale === "zh-CN" ? "签名中" : "Signing") : i18n.locale === "zh-CN" ? "签名" : "Sign"}
+                    </button>
+                    <button
+                      disabled={signingEventId === row.id || verifyingEventId === row.id || row.signatureStatus === "unsigned"}
+                      onClick={() => onVerifyReport(row.id)}
+                      type="button"
+                    >
+                      {verifyingEventId === row.id
+                        ? i18n.locale === "zh-CN"
+                          ? "验签中"
+                          : "Verifying"
+                        : i18n.locale === "zh-CN"
+                          ? "验签"
+                          : "Verify"}
+                    </button>
+                  </span>
                 </div>
               </article>
             ))

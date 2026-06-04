@@ -1286,6 +1286,108 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(list_payload["events"][0]["metadata"]["fileName"], "safe-import.json")
         self.assertEqual(list_payload["pagination"], {"limit": 20, "offset": 0, "total": 1, "query": "safe-import"})
 
+    def test_audit_report_sign_and_verify_api_updates_signature_metadata(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        event = {
+            "schemaVersion": 1,
+            "eventId": "audit-report-api-signable",
+            "eventType": "audit_evidence_report",
+            "runId": "run-api-report",
+            "createdAt": "2026-06-04T09:20:00+00:00",
+            "stage": "generated",
+            "source": "web",
+            "summary": "Audit evidence report generated for run-api-report",
+            "detail": "run-api-report-audit-evidence-report.md · sha256 ffffff · focus manifest:run-api-report",
+            "metadata": {
+                "artifactKind": "aiqt.auditReport",
+                "fileName": "run-api-report-audit-evidence-report.md",
+                "contentSha256": "f" * 64,
+                "contentSha256Algorithm": "sha256",
+                "evidenceFocus": "manifest:run-api-report",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_event_store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+            audit_event_store.record(event)
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = audit_event_store
+            TestHandler.audit_signing_secret = "unit-test-audit-secret"
+            TestHandler.audit_signing_key_id = "unit-test-key"
+            TestHandler.audit_signer_name = "Unit Test Audit Key"
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                sign_body = json.dumps({"eventId": "audit-report-api-signable"}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/sign",
+                    body=sign_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(sign_body))},
+                )
+                sign_response = connection.getresponse()
+                sign_payload = json.loads(sign_response.read().decode("utf-8"))
+
+                verify_body = json.dumps({"eventId": "audit-report-api-signable"}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/verify",
+                    body=verify_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(verify_body))},
+                )
+                verify_response = connection.getresponse()
+                verify_payload = json.loads(verify_response.read().decode("utf-8"))
+
+                tampered = {
+                    **event,
+                    "metadata": {
+                        **event["metadata"],
+                        "contentSha256": "e" * 64,
+                        "signature": sign_payload.get("signature", {}),
+                    },
+                }
+                audit_event_store.record(tampered)
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/verify",
+                    body=verify_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(verify_body))},
+                )
+                tampered_response = connection.getresponse()
+                tampered_payload = json.loads(tampered_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(sign_response.status, 200)
+        self.assertEqual(sign_payload["signature"]["status"], "verified")
+        self.assertEqual(sign_payload["signature"]["algorithm"], "hmac-sha256")
+        self.assertEqual(sign_payload["signature"]["keyId"], "unit-test-key")
+        self.assertEqual(sign_payload["signature"]["signer"], "Unit Test Audit Key")
+        self.assertEqual(sign_payload["verification"]["status"], "verified")
+        self.assertRegex(sign_payload["signature"]["value"], r"^[a-f0-9]{64}$")
+        self.assertEqual(sign_payload["event"]["metadata"]["signature"]["status"], "verified")
+        self.assertEqual(verify_response.status, 200)
+        self.assertEqual(verify_payload["verification"]["status"], "verified")
+        self.assertEqual(tampered_response.status, 409)
+        self.assertEqual(tampered_payload["verification"]["status"], "invalid")
+        self.assertEqual(tampered_payload["verification"]["reason"], "signature_mismatch")
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit

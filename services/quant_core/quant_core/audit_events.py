@@ -120,6 +120,24 @@ class AuditEventStore:
             connection.close()
         return stored
 
+    def get(self, event_id: str) -> AuditEventRecord | None:
+        normalized_event_id = _optional_string(event_id)
+        if not normalized_event_id:
+            return None
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                select event_id, event_type, run_id, created_at, stage, source, summary, detail, metadata_json
+                from audit_events
+                where event_id = ?
+                """,
+                (normalized_event_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return _row_to_audit_event_record(row) if row else None
+
     def list_recent(
         self,
         *,
