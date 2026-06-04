@@ -319,17 +319,34 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildResearchRunExportBrowserRows");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
+    expect(appSource).toContain("type ImportAuditEvidenceDeepLinkStatus");
+    expect(appSource).toContain("const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus]");
     expect(appSource).toContain('const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
     expect(appSource).toContain("function ResearchRunExportPackageBrowserPanel");
     expect(appSource).toContain("const inspectRunExportPackage = useCallback");
+    expect(appSource).toContain("const loadImportAuditEvidenceDeepLink = useCallback");
+    expect(appSource).toContain('setImportAuditEvidenceDeepLinkStatus({ ...deepLink, status: "loading", error: null });');
+    expect(appSource).toContain("const inspection = await inspectRunExportPackageByRunId(deepLink.runId);");
+    expect(appSource).toContain('status: inspection.ok ? "loaded" : "failed"');
+    expect(appSource).toContain("const retryImportAuditEvidenceDeepLink = useCallback");
     expect(auditWorkspaceSource).toContain("<ResearchRunExportPackageBrowserPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-export-browser-panel"');
+    expect(auditWorkspaceSource).toContain("deepLinkStatus={importAuditEvidenceDeepLinkStatus}");
+    expect(auditWorkspaceSource).toContain("onRetryDeepLink={retryImportAuditEvidenceDeepLink}");
     expect(auditWorkspaceSource).toContain("rows={researchRunExportBrowserRows}");
     expect(auditWorkspaceSource).toContain("isLoading={isInspectingExportPackage}");
     expect(auditWorkspaceSource).toContain("query={researchRunExportBrowserQuery}");
     expect(auditWorkspaceSource).toContain("onQueryChange={setResearchRunExportBrowserQuery}");
     expect(auditWorkspaceSource).toContain("onInspectExport={inspectRunExportPackage}");
     expect(exportBrowserPanelSource).toContain("query: string;");
+    expect(exportBrowserPanelSource).toContain("deepLinkStatus?: ImportAuditEvidenceDeepLinkStatus | null;");
+    expect(exportBrowserPanelSource).toContain("onRetryDeepLink?: () => void;");
+    expect(exportBrowserPanelSource).toContain("research-export-deep-link");
+    expect(exportBrowserPanelSource).toContain("deepLinkStatus.status");
+    expect(exportBrowserPanelSource).toContain("deepLinkStatus.runId");
+    expect(exportBrowserPanelSource).toContain("deepLinkStatus.focusQuery");
+    expect(exportBrowserPanelSource).toContain("onRetryDeepLink");
+    expect(exportBrowserPanelSource).toContain("Retry");
     expect(exportBrowserPanelSource).toContain("onQueryChange: (query: string) => void;");
     expect(exportBrowserPanelSource).toContain("filterResearchRunExportBrowserRows(rows, query)");
     expect(exportBrowserPanelSource).toContain("onQueryChange(event.target.value)");
@@ -337,6 +354,8 @@ describe("terminal layout css", () => {
     expect(runHistoryRowSource).toContain("onInspectExport(run)");
     expect(cssBlock(".workflow-export-browser-panel")).toContain("grid-area: package;");
     expect(cssBlock(".research-export-browser")).toContain("display: grid;");
+    expect(cssBlock(".research-export-deep-link")).toContain("display: grid;");
+    expect(cssBlock(".research-export-deep-link.failed")).toContain("border-left-color: #ff7f6d;");
     expect(cssBlock(".research-export-browser-row")).toContain(
       "grid-template-columns: minmax(116px, 0.5fr) minmax(0, 1fr) minmax(110px, 0.34fr) minmax(156px, 0.5fr) auto;"
     );
@@ -435,6 +454,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function resolveInitialImportAuditEvidenceQuery(): string");
     expect(appSource).toContain("interface InitialImportAuditEvidenceDeepLink");
     expect(appSource).toContain("function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidenceDeepLink | null");
+    expect(appSource).toContain("interface ResearchRunExportPackageInspectionResult");
     expect(appSource).toContain('new URLSearchParams(window.location.search).get("auditEvent")');
     expect(appSource).toContain('const runId = params.get("runId")?.trim();');
     expect(appSource).toContain('const exportPath = params.get("exportPath")?.trim() || `manifest:${runId}`;');
@@ -456,12 +476,14 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setCopiedImportAuditEvidenceEventId(event.id)");
     expect(appSource).toContain("function buildResearchRunImportAuditEvidenceUrl(event: ResearchRunImportAuditEvent): string");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
+    expect(appSource).toContain("return { ok: false, error: errorMessage };");
+    expect(appSource).toContain("return { ok: true };");
     expect(appSource).toContain("const inspectResearchRunImportAuditEvent = useCallback");
     expect(appSource).toContain("const deepLink = initialImportAuditEvidenceDeepLinkRef.current;");
     expect(appSource).toContain("initialImportAuditEvidenceDeepLinkRef.current = null;");
     expect(appSource).toContain("setResearchRunExportBrowserQuery(deepLink.focusQuery);");
     expect(appSource).toContain("setResearchRunImportDiffQuery(deepLink.focusQuery);");
-    expect(appSource).toContain("void inspectRunExportPackageByRunId(deepLink.runId);");
+    expect(appSource).toContain("void loadImportAuditEvidenceDeepLink(deepLink);");
     expect(appSource).toContain("function researchRunImportAuditEvidenceAnchorQuery(runId: string, exportPath: string): string");
     expect(appSource).toContain("function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string");
     expect(appSource).toContain("return researchRunImportAuditEvidenceAnchorQuery(event.runId, event.exportPath);");

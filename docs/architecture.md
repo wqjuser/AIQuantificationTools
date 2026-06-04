@@ -78,6 +78,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 - `GET /api/research/runs/{runId}/ai-reviews?limit=20&offset=0&query=`：返回该审计运行的 AI 评审记录分页和 `pagination` 元信息，用于 AI 委员会历史、审计回放和风控审批引用。
 - `POST /api/audit/events`：保存一条通用审计事件，当前用于导入复现包的预检、阻断、取消、失败、确认写入、撤销失败和撤销完成流水；同一个 `eventId` 会 upsert，因此前端可把已确认导入事件刷新为 `undone` 状态，也可用独立 `undo-failed` 事件保留失败复盘。导入事件 metadata 会携带旧 run、可回放恢复目标、失败分类、undo token 和恢复提示，响应返回规范化后的 `event`。
 - `GET /api/audit/events?eventType=research_run_import&runId=...&limit=20&offset=0&query=`：按事件类型、run id 和全文 query 读取审计事件分页，返回 `events` 与 `pagination`；Audit 工作区的导入审计流水使用后端 query 和上一页/下一页控件读取大账本，阶段筛选只作用于当前页，并继续保留旧 run 回放入口。对于 confirmed、undone 和 undo-failed 事件，前端可按事件 `runId` 调用现有 research run export API，把该 run 的复现包重新加载到包浏览器和导入 diff 上下文，并把事件 `exportPath` 规范化为可命中的包浏览器/diff 查询以自动聚焦相关 artifact。每条导入审计事件还能复制当前应用 URL 形式的证据锚点，查询参数包含 `workspace=audit`、`auditEvent`、`runId` 和 `exportPath`，供外部审计报告引用；前端打开该 URL 时会用 `auditEvent` 初始化导入审计查询，并在当前页事件出现后滚动/高亮对应行；若 URL 同时包含 `runId` 和 `exportPath`，还会复用 `inspectRunExportPackageByRunId` 自动加载关联复现包，并用规范化后的 `exportPath` 初始化包浏览器和导入 diff 查询。
+- Audit 前端维护 `ImportAuditEvidenceDeepLinkStatus`，把 URL 中的 `runId/exportPath` 自动加载流程暴露为复现包浏览器内的状态卡；状态包括 `idle/loading/loaded/failed`，失败保存本次错误并复用同一 deep-link payload 重试，不会创建新的导入审计事件。
 - `GET /api/demo?market=ashare&symbol=600000&timeframe=1d`：拉取演示行情、运行策略回测并生成本地 AI 研究报告。
 
 ## Next Integration Points

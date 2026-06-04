@@ -1756,6 +1756,82 @@ em {
   box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.1);
 }
 
+.research-export-deep-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: rgba(13, 33, 48, 0.68);
+  padding: 8px 10px;
+}
+
+.research-export-deep-link.failed {
+  border-left-color: #ff7f6d;
+  background: rgba(58, 24, 28, 0.46);
+}
+
+.research-export-deep-link.loading {
+  border-left-color: #9d7cff;
+}
+
+.research-export-deep-link span,
+.research-export-deep-link p,
+.research-export-deep-link em {
+  margin: 0;
+  min-width: 0;
+}
+
+.research-export-deep-link span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.research-export-deep-link strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.research-export-deep-link p,
+.research-export-deep-link em {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.research-export-deep-link em {
+  color: #ffb0a8;
+}
+
+.research-export-deep-link button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(45, 212, 191, 0.34);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.13);
+  color: #a8ffee;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 840;
+  padding: 7px 9px;
+}
+
+.research-export-deep-link button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .research-export-preview-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));

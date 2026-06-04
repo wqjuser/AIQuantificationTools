@@ -262,6 +262,16 @@ interface InitialImportAuditEvidenceDeepLink {
   runId: string;
 }
 
+type ImportAuditEvidenceDeepLinkStatus = InitialImportAuditEvidenceDeepLink & {
+  error: string | null;
+  status: "idle" | "loading" | "loaded" | "failed";
+};
+
+interface ResearchRunExportPackageInspectionResult {
+  error?: string;
+  ok: boolean;
+}
+
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
@@ -449,6 +459,10 @@ export function App() {
   const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
   const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
+  const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
+    useState<ImportAuditEvidenceDeepLinkStatus | null>(
+      initialImportAuditEvidenceDeepLink ? { ...initialImportAuditEvidenceDeepLink, status: "idle", error: null } : null
+    );
   const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");
   const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
@@ -1151,18 +1165,19 @@ export function App() {
     }));
   }, []);
 
-  const inspectRunExportPackageByRunId = useCallback(async (runId: string) => {
+  const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
     setIsInspectingExportPackage(true);
     try {
       const result = await loadResearchRunExport(quantCoreBaseUrl, runId);
       if (result.source === "fallback" || !result.exportPackage) {
+        const errorMessage = result.error ?? `Research run export inspect failed for ${runId}`;
         setInspectedExportPackage(null);
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Research run export inspect failed",
-          error: result.error ?? `Research run export inspect failed for ${runId}`
+          error: errorMessage
         }));
-        return;
+        return { ok: false, error: errorMessage };
       }
 
       setPendingImportPackage(null);
@@ -1173,6 +1188,7 @@ export function App() {
         error: undefined
       }));
       setActiveWorkAreaId("audit");
+      return { ok: true };
     } finally {
       setIsInspectingExportPackage(false);
     }
@@ -1226,16 +1242,41 @@ export function App() {
     [inspectRunExportPackageByRunId]
   );
 
+  const loadImportAuditEvidenceDeepLink = useCallback(
+    async (deepLink: InitialImportAuditEvidenceDeepLink) => {
+      setImportAuditEvidenceDeepLinkStatus({ ...deepLink, status: "loading", error: null });
+      setResearchRunExportBrowserQuery(deepLink.focusQuery);
+      setResearchRunImportDiffQuery(deepLink.focusQuery);
+      const inspection = await inspectRunExportPackageByRunId(deepLink.runId);
+      setImportAuditEvidenceDeepLinkStatus({
+        ...deepLink,
+        status: inspection.ok ? "loaded" : "failed",
+        error: inspection.error ?? null
+      });
+    },
+    [inspectRunExportPackageByRunId]
+  );
+
   useEffect(() => {
     const deepLink = initialImportAuditEvidenceDeepLinkRef.current;
     if (!deepLink || activeWorkAreaId !== "audit") {
       return;
     }
     initialImportAuditEvidenceDeepLinkRef.current = null;
-    setResearchRunExportBrowserQuery(deepLink.focusQuery);
-    setResearchRunImportDiffQuery(deepLink.focusQuery);
-    void inspectRunExportPackageByRunId(deepLink.runId);
-  }, [activeWorkAreaId, inspectRunExportPackageByRunId]);
+    void loadImportAuditEvidenceDeepLink(deepLink);
+  }, [activeWorkAreaId, loadImportAuditEvidenceDeepLink]);
+
+  const retryImportAuditEvidenceDeepLink = useCallback(() => {
+    if (!importAuditEvidenceDeepLinkStatus) {
+      return;
+    }
+    void loadImportAuditEvidenceDeepLink({
+      auditEventId: importAuditEvidenceDeepLinkStatus.auditEventId,
+      exportPath: importAuditEvidenceDeepLinkStatus.exportPath,
+      focusQuery: importAuditEvidenceDeepLinkStatus.focusQuery,
+      runId: importAuditEvidenceDeepLinkStatus.runId
+    });
+  }, [importAuditEvidenceDeepLinkStatus, loadImportAuditEvidenceDeepLink]);
 
   const indexRecentRunExportPackages = useCallback(async () => {
     if (!runHistory.length) {
@@ -2491,8 +2532,10 @@ export function App() {
           />
           <ResearchRunExportPackageBrowserPanel
             className="workflow-export-browser-panel"
+            deepLinkStatus={importAuditEvidenceDeepLinkStatus}
             i18n={i18n}
             isLoading={isInspectingExportPackage}
+            onRetryDeepLink={retryImportAuditEvidenceDeepLink}
             onQueryChange={setResearchRunExportBrowserQuery}
             query={researchRunExportBrowserQuery}
             rows={researchRunExportBrowserRows}
@@ -4918,15 +4961,19 @@ function ResearchRunExportPreviewPanel({
 
 function ResearchRunExportPackageBrowserPanel({
   className,
+  deepLinkStatus,
   i18n,
   isLoading,
+  onRetryDeepLink,
   onQueryChange,
   query,
   rows
 }: {
   className?: string;
+  deepLinkStatus?: ImportAuditEvidenceDeepLinkStatus | null;
   i18n: AppI18n;
   isLoading: boolean;
+  onRetryDeepLink?: () => void;
   onQueryChange: (query: string) => void;
   query: string;
   rows: ResearchRunExportBrowserRow[];
@@ -4971,6 +5018,26 @@ function ResearchRunExportPackageBrowserPanel({
             value={query}
           />
         </div>
+        {deepLinkStatus ? (
+          <div className={`research-export-deep-link ${deepLinkStatus.status}`}>
+            <div>
+              <span>{i18n.locale === "zh-CN" ? "审计深链" : "Audit deep link"}</span>
+              <strong>{researchExportDeepLinkStatusLabel(i18n, deepLinkStatus.status)}</strong>
+              <p>
+                {deepLinkStatus.runId} · {deepLinkStatus.focusQuery}
+              </p>
+              {deepLinkStatus.error ? <em>{deepLinkStatus.error}</em> : null}
+            </div>
+            <button
+              disabled={!onRetryDeepLink || deepLinkStatus.status === "loading" || isLoading}
+              onClick={onRetryDeepLink}
+              type="button"
+            >
+              <RefreshCw size={13} />
+              {i18n.locale === "zh-CN" ? "重试" : "Retry"}
+            </button>
+          </div>
+        ) : null}
         <div className="research-export-browser-list">
           {filteredRows.length ? (
             filteredRows.map((row) => (
@@ -5791,6 +5858,30 @@ function researchExportBrowserStatusLabel(
       missing: "缺失",
       blocked: "阻断"
     } satisfies Record<ResearchRunExportBrowserRow["status"], string>
+  )[status];
+}
+
+function researchExportDeepLinkStatusLabel(
+  i18n: AppI18n,
+  status: ImportAuditEvidenceDeepLinkStatus["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        idle: "Ready to load",
+        loading: "Loading package",
+        loaded: "Evidence loaded",
+        failed: "Load failed"
+      } satisfies Record<ImportAuditEvidenceDeepLinkStatus["status"], string>
+    )[status];
+  }
+  return (
+    {
+      idle: "等待加载",
+      loading: "正在加载复现包",
+      loaded: "证据已加载",
+      failed: "加载失败"
+    } satisfies Record<ImportAuditEvidenceDeepLinkStatus["status"], string>
   )[status];
 }
 
