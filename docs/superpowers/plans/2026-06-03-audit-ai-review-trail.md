@@ -172,3 +172,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because the Audit import ledger had no stage filter bar or failure aggregation cards.
 - GREEN: added compact Audit import filters, undo-failed counts, failure bucket summaries, and localized bucket labels without adding another side rail.
 - DOCS: updated product plan and architecture notes; next slice is backend-backed import audit pagination/query controls so larger ledgers do not stay limited to the first 12 events.
+- RED: `layout-css.test.js -t "import audit events"` failed because App did not keep import-audit pagination/query/loading state, did not request `/api/audit/events` with offset/query, and the panel had no previous/next controls.
+- GREEN: wired Import Audit Ledger to backend query plus `limit/offset` pagination, added page controls, request-id loading protection, and kept stage filters scoped to the current backend page.
+- DOCS: updated product plan and architecture notes; next slice is linking import audit events back to export-package evidence/diff context so old ledger rows become actionable recovery entry points.

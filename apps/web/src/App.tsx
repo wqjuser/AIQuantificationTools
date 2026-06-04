@@ -48,6 +48,7 @@ import {
   AiReviewRunRecordEnvelope,
   AiReviewRunHistoryPagination,
   AuditEventRecord,
+  AuditEventHistoryPagination,
   GoldenPathStatus,
   GoldenPathStatusResult,
   PlatformSettingsResult,
@@ -241,6 +242,7 @@ const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
 const AI_REVIEW_HISTORY_PAGE_SIZE = 5;
+const IMPORT_AUDIT_EVENTS_PAGE_SIZE = 12;
 const workflowStepDelayMs = 180;
 
 interface WatchlistCacheSummary {
@@ -392,16 +394,22 @@ export function App() {
     fileName: string;
   } | null>(null);
   const [researchRunImportAuditEvents, setResearchRunImportAuditEvents] = useState<ResearchRunImportAuditEvent[]>([]);
+  const [researchRunImportAuditPagination, setResearchRunImportAuditPagination] =
+    useState<AuditEventHistoryPagination | null>(null);
+  const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState("");
+  const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
   const [aiReviewHistoryOffset, setAiReviewHistoryOffset] = useState(0);
   const [isApplyingImportPackage, setIsApplyingImportPackage] = useState(false);
+  const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
   const aiReviewHistoryRequestIdRef = useRef(0);
+  const researchRunImportAuditRequestIdRef = useRef(0);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -551,21 +559,30 @@ export function App() {
   );
 
   const refreshResearchRunImportAuditEvents = useCallback(async () => {
+    const requestId = researchRunImportAuditRequestIdRef.current + 1;
+    researchRunImportAuditRequestIdRef.current = requestId;
+    setIsLoadingResearchRunImportAudit(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType: "research_run_import",
-      limit: 12
+      limit: IMPORT_AUDIT_EVENTS_PAGE_SIZE,
+      offset: researchRunImportAuditOffset,
+      query: researchRunImportAuditQuery.trim() || undefined
     });
+    if (researchRunImportAuditRequestIdRef.current !== requestId) {
+      return auditHistory;
+    }
     if (auditHistory.source === "core") {
       const importedEvents = auditHistory.events
         .map(auditEventRecordToResearchRunImportEvent)
         .filter((event): event is ResearchRunImportAuditEvent => Boolean(event));
-      setResearchRunImportAuditEvents((current) => {
-        const importedIds = new Set(importedEvents.map((event) => event.id));
-        return [...importedEvents, ...current.filter((event) => !importedIds.has(event.id))].slice(0, 12);
-      });
+      setResearchRunImportAuditEvents(importedEvents);
+      setResearchRunImportAuditPagination(auditHistory.pagination ?? null);
+    } else {
+      setResearchRunImportAuditPagination(null);
     }
+    setIsLoadingResearchRunImportAudit(false);
     return auditHistory;
-  }, []);
+  }, [researchRunImportAuditOffset, researchRunImportAuditQuery]);
 
   useEffect(() => {
     if (activeWorkAreaId !== "audit") {
@@ -1529,6 +1546,26 @@ export function App() {
     workspace
   ]);
 
+  const updateResearchRunImportAuditQuery = useCallback((query: string) => {
+    setResearchRunImportAuditQuery(query);
+    setResearchRunImportAuditOffset(0);
+  }, []);
+
+  const previousResearchRunImportAuditPage = useCallback(() => {
+    setResearchRunImportAuditOffset((current) => Math.max(0, current - IMPORT_AUDIT_EVENTS_PAGE_SIZE));
+  }, []);
+
+  const nextResearchRunImportAuditPage = useCallback(() => {
+    setResearchRunImportAuditOffset((current) => {
+      const total = researchRunImportAuditPagination?.total ?? 0;
+      if (!total) {
+        return current;
+      }
+      const next = current + IMPORT_AUDIT_EVENTS_PAGE_SIZE;
+      return next >= total ? current : next;
+    });
+  }, [researchRunImportAuditPagination?.total]);
+
   const updateAiReviewHistoryQuery = useCallback((query: string) => {
     setAiReviewHistoryQuery(query);
     setAiReviewHistoryOffset(0);
@@ -2348,8 +2385,14 @@ export function App() {
             className="workflow-import-events-panel"
             events={researchRunImportAuditEvents}
             i18n={i18n}
+            isLoading={isLoadingResearchRunImportAudit}
+            onNextPage={nextResearchRunImportAuditPage}
+            onPreviousPage={previousResearchRunImportAuditPage}
+            onQueryChange={updateResearchRunImportAuditQuery}
             onReplayRollbackRun={replayImportRollbackRun}
             onUndoImport={undoResearchRunImportEvent}
+            pagination={researchRunImportAuditPagination}
+            query={researchRunImportAuditQuery}
           />
           <ResearchRunExportIndexPanel
             className="workflow-export-index-panel"
@@ -4917,20 +4960,36 @@ function ResearchRunImportAuditEventPanel({
   className,
   events,
   i18n,
+  isLoading,
+  onNextPage,
+  onPreviousPage,
+  onQueryChange,
   onReplayRollbackRun,
-  onUndoImport
+  onUndoImport,
+  pagination,
+  query
 }: {
   className?: string;
   events: ResearchRunImportAuditEvent[];
   i18n: AppI18n;
+  isLoading: boolean;
+  onNextPage: () => void;
+  onPreviousPage: () => void;
+  onQueryChange: (query: string) => void;
   onReplayRollbackRun: (runId: string) => void;
   onUndoImport: (undoToken: string, expectedRunId: string) => void;
+  pagination: AuditEventHistoryPagination | null;
+  query: string;
 }) {
-  const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<ResearchRunImportAuditFilter>("all");
   const [pendingImportUndoToken, setPendingImportUndoToken] = useState<string | null>(null);
   const aggregation = buildResearchRunImportAuditAggregation(events);
-  const filteredEvents = filterResearchRunImportAuditEvents(events, query, stageFilter);
+  const filteredEvents = filterResearchRunImportAuditEvents(events, "", stageFilter);
+  const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
+  const pageEnd = pagination ? Math.min(pagination.offset + events.length, pagination.total) : filteredEvents.length;
+  const pageLabel = pagination ? `${pageStart}-${pageEnd}/${pagination.total}` : `${filteredEvents.length}/${events.length}`;
+  const canPageBack = Boolean(pagination && pagination.offset > 0);
+  const canPageForward = Boolean(pagination && pagination.offset + pagination.limit < pagination.total);
   const filters: Array<{ id: ResearchRunImportAuditFilter; label: string; count: number }> = [
     { id: "all", label: i18n.locale === "zh-CN" ? "全部" : "All", count: aggregation.total },
     { id: "needs-review", label: i18n.locale === "zh-CN" ? "待复核" : "Needs review", count: aggregation.needsReview },
@@ -4966,12 +5025,23 @@ function ResearchRunImportAuditEventPanel({
           </div>
           <input
             aria-label={i18n.locale === "zh-CN" ? "搜索导入审计流水" : "Search import audit ledger"}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
             placeholder={i18n.locale === "zh-CN" ? "搜索文件 / run / contract / exportPath" : "Search file / run / contract / exportPath"}
             type="search"
             value={query}
           />
         </div>
+        {pagination ? (
+          <div className="research-import-events-pagination">
+            <button disabled={!canPageBack || isLoading} onClick={onPreviousPage} type="button">
+              {i18n.locale === "zh-CN" ? "上一页" : "Prev"}
+            </button>
+            <span>{isLoading ? (i18n.locale === "zh-CN" ? "加载中" : "Loading") : pageLabel}</span>
+            <button disabled={!canPageForward || isLoading} onClick={onNextPage} type="button">
+              {i18n.locale === "zh-CN" ? "下一页" : "Next"}
+            </button>
+          </div>
+        ) : null}
         <div className="research-import-events-filters" aria-label={i18n.locale === "zh-CN" ? "导入审计阶段筛选" : "Import audit stage filters"}>
           {filters.map((filter) => (
             <button
