@@ -59,6 +59,7 @@ import {
   withResearchRunExportAuditEvidenceArtifacts,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
+  buildAuditSigningKeyRotationPlanAuditEvent,
   withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
@@ -2158,6 +2159,88 @@ describe("terminal workspace API client", () => {
     expect(event.eventId).toBe(`audit-report-run-preview-${auditReport.contentSha256.hash.slice(0, 16)}`);
     expect(event.detail).toContain("run-preview-audit-evidence-report.md");
     expect(event.detail).toContain(auditReport.contentSha256.hash.slice(0, 12));
+  });
+
+  test("builds a secret-free audit event when an audit signing key rotation plan is prepared", async () => {
+    const event = await buildAuditSigningKeyRotationPlanAuditEvent({
+      schemaVersion: 1,
+      generatedAt: "2026-06-04T10:30:00+00:00",
+      currentActiveKey: {
+        keyId: "active-audit-key",
+        signer: "Active Audit Key",
+        chainId: "audit-chain-active",
+        fingerprint: "a".repeat(16)
+      },
+      proposedActiveKey: {
+        keyId: "next-audit-key",
+        signer: "Next Audit Key",
+        chainId: "audit-chain-next"
+      },
+      rotationRequired: true,
+      requiresRestart: true,
+      environmentUpdates: [
+        { name: "AIQT_AUDIT_SIGNING_KEY_ID", value: "next-audit-key", sensitivity: "public" },
+        { name: "AIQT_AUDIT_SIGNER_NAME", value: "Next Audit Key", sensitivity: "public" },
+        { name: "AIQT_AUDIT_SIGNING_SECRET", value: "<set-new-key-material-outside-ui>", sensitivity: "secret" },
+        {
+          name: "AIQT_AUDIT_SIGNING_KEYS_JSON",
+          value:
+            '[{"keyId":"active-audit-key","signer":"Active Audit Key","secret":"<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>"}]',
+          sensitivity: "secret"
+        }
+      ],
+      legacyRegistryTemplate:
+        '[{"keyId":"active-audit-key","signer":"Active Audit Key","secret":"<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>"}]',
+      steps: [
+        {
+          id: "set-new-active-key",
+          title: "Set new active signing key",
+          detail: "Update active signing key environment variables with new locally generated key material.",
+          status: "manual"
+        },
+        {
+          id: "verify-legacy-reports",
+          title: "Verify legacy reports",
+          detail: "Run Audit report verification on old signed reports before removing any retired key.",
+          status: "required"
+        }
+      ],
+      blockedReasons: []
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "audit_signing_key_rotation_plan",
+      runId: "audit-signing-key-rotation",
+      createdAt: "2026-06-04T10:30:00+00:00",
+      stage: "prepared",
+      source: "web",
+      summary: "Audit signing key rotation plan prepared for next-audit-key",
+      metadata: {
+        currentKeyId: "active-audit-key",
+        currentKeyFingerprint: "a".repeat(16),
+        proposedKeyId: "next-audit-key",
+        proposedSigner: "Next Audit Key",
+        proposedChainId: "audit-chain-next",
+        rotationRequired: true,
+        requiresRestart: true,
+        environmentUpdateNames: [
+          "AIQT_AUDIT_SIGNING_KEY_ID",
+          "AIQT_AUDIT_SIGNER_NAME",
+          "AIQT_AUDIT_SIGNING_SECRET",
+          "AIQT_AUDIT_SIGNING_KEYS_JSON"
+        ],
+        secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET", "AIQT_AUDIT_SIGNING_KEYS_JSON"],
+        stepIds: ["set-new-active-key", "verify-legacy-reports"],
+        blockedReasons: []
+      }
+    });
+    expect(event.eventId).toMatch(/^audit-signing-key-rotation-next-audit-key-[a-f0-9]{12}$/);
+    expect(String(event.metadata.legacyRegistryTemplateSha256)).toMatch(/^[a-f0-9]{64}$/);
+    expect(event.detail).toContain("legacy template sha256");
+    expect(JSON.stringify(event)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
+    expect(JSON.stringify(event)).not.toContain("<set-new-key-material-outside-ui>");
+    expect(JSON.stringify(event)).not.toContain("active-audit-secret");
   });
 
   test("returns fallback when research run export integrity is malformed", async () => {

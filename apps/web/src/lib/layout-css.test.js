@@ -623,6 +623,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("revokeAuditReportEvent");
     expect(appSource).toContain("loadAuditSigningKeys");
     expect(appSource).toContain("prepareAuditSigningKeyRotationPlan");
+    expect(appSource).toContain("buildAuditSigningKeyRotationPlanAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain('eventType: "audit_evidence_report"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
@@ -631,6 +632,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const [revokingAuditReportEventId, setRevokingAuditReportEventId]");
     expect(appSource).toContain("const [auditSigningKeyRegistry, setAuditSigningKeyRegistry]");
     expect(appSource).toContain("const [auditSigningKeyRotationPlan, setAuditSigningKeyRotationPlan]");
+    expect(appSource).toContain("const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus]");
     expect(appSource).toContain("const refreshAuditEvidenceReportEvents = useCallback");
     expect(appSource).toContain("const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows");
     expect(appSource).toContain("setAuditEvidenceReportEvents((current) =>");
@@ -655,6 +657,7 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("verifyingEventId={verifyingAuditReportEventId}");
     expect(auditWorkspaceSource).toContain("registry={auditSigningKeyRegistry.registry}");
     expect(auditWorkspaceSource).toContain("rotationPlan={auditSigningKeyRotationPlan.rotationPlan}");
+    expect(auditWorkspaceSource).toContain("rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}");
     expect(auditWorkspaceSource).toContain("source={auditSigningKeyRegistry.source}");
     expect(auditWorkspaceSource).toContain("error={auditSigningKeyRegistry.error}");
     expect(auditWorkspaceSource).toContain("onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}");
@@ -683,6 +686,8 @@ describe("terminal layout css", () => {
     expect(signingKeyPanelSource).toContain("audit-signing-key-rotation-plan");
     expect(signingKeyPanelSource).toContain("rotationPlan.environmentUpdates");
     expect(signingKeyPanelSource).toContain("rotationPlan.legacyRegistryTemplate");
+    expect(signingKeyPanelSource).toContain("audit-signing-key-rotation-ledger");
+    expect(signingKeyPanelSource).toContain("rotationLedgerStatus");
     expect(signingKeyPanelSource).toContain("onPrepareRotation");
     expect(appSource).toContain('"Verified signature": "签名已验证"');
     expect(appSource).toContain('"Signed report hash": "报告 hash 已签名"');
@@ -691,6 +696,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workflow-signing-keys-panel")).toContain("grid-area: signing-keys;");
     expect(cssBlock(".audit-signing-key-grid")).toContain("display: grid;");
     expect(cssBlock(".audit-signing-key-rotation-plan")).toContain("display: grid;");
+    expect(cssBlock(".audit-signing-key-rotation-ledger")).toContain("display: flex;");
     expect(cssBlock(".audit-signing-key-env-row")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");

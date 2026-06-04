@@ -1654,6 +1654,47 @@ em {
   padding: 8px;
 }
 
+.audit-signing-key-rotation-ledger {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.7);
+  border-radius: 6px;
+  background: rgba(11, 18, 30, 0.56);
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 780;
+  padding: 6px 8px;
+}
+
+.audit-signing-key-rotation-ledger.saved {
+  border-color: rgba(45, 212, 191, 0.26);
+  color: #83e6ce;
+}
+
+.audit-signing-key-rotation-ledger.failed {
+  border-color: rgba(255, 127, 109, 0.3);
+  color: #ffb3a7;
+}
+
+.audit-signing-key-rotation-ledger span,
+.audit-signing-key-rotation-ledger strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-ledger span {
+  flex: 0 0 auto;
+}
+
+.audit-signing-key-rotation-ledger strong {
+  color: inherit;
+  font-size: 10px;
+}
+
 .audit-signing-key-rotation-head {
   display: grid;
   grid-template-columns: minmax(120px, 0.3fr) minmax(0, 1fr) auto;

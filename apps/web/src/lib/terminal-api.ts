@@ -1148,6 +1148,45 @@ export function buildAuditEvidenceReportAuditEvent(
   };
 }
 
+export async function buildAuditSigningKeyRotationPlanAuditEvent(
+  rotationPlan: AuditSigningKeyRotationPlan
+): Promise<AuditEventRecord> {
+  const legacyRegistryTemplateSha256 = await sha256TextHex(rotationPlan.legacyRegistryTemplate);
+  const proposedKeyId = rotationPlan.proposedActiveKey.keyId;
+  const shortTemplateHash = legacyRegistryTemplateSha256.slice(0, 12);
+  const secretPlaceholderNames = rotationPlan.environmentUpdates
+    .filter((update) => update.sensitivity === "secret")
+    .map((update) => update.name);
+  const blocked = rotationPlan.blockedReasons.length > 0;
+  return {
+    schemaVersion: 1,
+    eventId: `audit-signing-key-rotation-${sanitizeDownloadFileName(proposedKeyId)}-${shortTemplateHash}`,
+    eventType: "audit_signing_key_rotation_plan",
+    runId: "audit-signing-key-rotation",
+    createdAt: rotationPlan.generatedAt,
+    stage: blocked ? "blocked" : "prepared",
+    source: "web",
+    summary: `Audit signing key rotation plan prepared for ${proposedKeyId}`,
+    detail: `${rotationPlan.currentActiveKey.keyId} -> ${proposedKeyId} · legacy template sha256 ${shortTemplateHash} · ${
+      rotationPlan.requiresRestart ? "restart required" : "no restart"
+    }`,
+    metadata: {
+      currentKeyId: rotationPlan.currentActiveKey.keyId,
+      currentKeyFingerprint: rotationPlan.currentActiveKey.fingerprint,
+      proposedKeyId,
+      proposedSigner: rotationPlan.proposedActiveKey.signer,
+      proposedChainId: rotationPlan.proposedActiveKey.chainId,
+      rotationRequired: rotationPlan.rotationRequired,
+      requiresRestart: rotationPlan.requiresRestart,
+      environmentUpdateNames: rotationPlan.environmentUpdates.map((update) => update.name),
+      secretPlaceholderNames,
+      legacyRegistryTemplateSha256,
+      stepIds: rotationPlan.steps.map((step) => step.id),
+      blockedReasons: rotationPlan.blockedReasons.slice()
+    }
+  };
+}
+
 export async function withResearchRunExportAuditEvidenceArtifacts(
   exportPackage: ResearchRunExportPackage,
   summary: AuditEvidenceSummary,

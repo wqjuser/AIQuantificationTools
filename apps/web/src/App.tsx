@@ -46,6 +46,7 @@ import {
   mergeMarketKlines,
   normalizeResearchRunExportPackagePayload,
   buildAuditEvidenceReportAuditEvent,
+  buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
   withResearchRunExportAuditEvidenceArtifacts,
   MarketKlinesResult,
@@ -262,6 +263,10 @@ const initialAuditSigningKeyRegistryState: AuditSigningKeyRegistryResult = {
 const initialAuditSigningKeyRotationPlanState: AuditSigningKeyRotationPlanResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerStatus = {
+  detail: "",
+  state: "idle"
+};
 const initialGoldenPathStatusState: GoldenPathStatusResult = {
   source: "fallback"
 };
@@ -297,6 +302,11 @@ type ImportAuditEvidenceDeepLinkStatus = InitialImportAuditEvidenceDeepLink & {
 interface ResearchRunExportPackageInspectionResult {
   error?: string;
   ok: boolean;
+}
+
+interface AuditSigningKeyRotationLedgerStatus {
+  detail: string;
+  state: "idle" | "saving" | "saved" | "failed";
 }
 
 const workflowIcons: Record<string, typeof BarChart3> = {
@@ -448,6 +458,8 @@ export function App() {
   const [auditSigningKeyRotationPlan, setAuditSigningKeyRotationPlan] = useState<AuditSigningKeyRotationPlanResult>(
     initialAuditSigningKeyRotationPlanState
   );
+  const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
+    useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -809,14 +821,31 @@ export function App() {
     const proposedSigner = activeKey?.signer ? `${activeKey.signer} Next` : "Next Audit Key";
     const proposedChainId = `${activeKey?.chainId ?? "audit-chain"}-next`;
     setIsPreparingAuditSigningKeyRotationPlan(true);
-    setAuditSigningKeyRotationPlan(
-      await prepareAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
+    setAuditSigningKeyRotationLedgerStatus({ detail: "", state: "saving" });
+    try {
+      const result = await prepareAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
         proposedChainId,
         proposedKeyId,
         proposedSigner
-      })
-    );
-    setIsPreparingAuditSigningKeyRotationPlan(false);
+      });
+      setAuditSigningKeyRotationPlan(result);
+      if (result.rotationPlan) {
+        const auditEvent = await buildAuditSigningKeyRotationPlanAuditEvent(result.rotationPlan);
+        const ledgerResult = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+        setAuditSigningKeyRotationLedgerStatus(
+          ledgerResult.event
+            ? { detail: ledgerResult.event.eventId, state: "saved" }
+            : { detail: ledgerResult.error ?? "Audit event save failed", state: "failed" }
+        );
+      } else {
+        setAuditSigningKeyRotationLedgerStatus({
+          detail: result.error ?? "Rotation plan was not generated",
+          state: "failed"
+        });
+      }
+    } finally {
+      setIsPreparingAuditSigningKeyRotationPlan(false);
+    }
   }, [auditSigningKeyRegistry.registry]);
 
   const refreshGoldenPathStatus = useCallback(async () => {
@@ -2886,6 +2915,7 @@ export function App() {
             onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
             registry={auditSigningKeyRegistry.registry}
             rotationError={auditSigningKeyRotationPlan.error}
+            rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}
             rotationPlan={auditSigningKeyRotationPlan.rotationPlan}
             source={auditSigningKeyRegistry.source}
           />
@@ -5772,6 +5802,7 @@ function AuditSigningKeyRegistryPanel({
   onPrepareRotation,
   registry,
   rotationError,
+  rotationLedgerStatus,
   rotationPlan,
   source
 }: {
@@ -5782,6 +5813,7 @@ function AuditSigningKeyRegistryPanel({
   onPrepareRotation: () => void;
   registry?: AuditSigningKeyRegistry;
   rotationError?: string;
+  rotationLedgerStatus: AuditSigningKeyRotationLedgerStatus;
   rotationPlan?: AuditSigningKeyRotationPlan;
   source: AuditSigningKeyRegistryResult["source"];
 }) {
@@ -5862,6 +5894,14 @@ function AuditSigningKeyRegistryPanel({
         </div>
         {rotationPlan ? (
           <div className="audit-signing-key-rotation-plan">
+            {rotationLedgerStatus.state !== "idle" ? (
+              <div className={`audit-signing-key-rotation-ledger ${rotationLedgerStatus.state}`}>
+                <span>
+                  {rotationLedgerStatusLabel(i18n, rotationLedgerStatus.state)}
+                </span>
+                <strong>{rotationLedgerStatus.detail || (i18n.locale === "zh-CN" ? "等待审计账本返回" : "Awaiting ledger")}</strong>
+              </div>
+            ) : null}
             <div className="audit-signing-key-rotation-head">
               <span>{i18n.locale === "zh-CN" ? "轮换计划" : "Rotation plan"}</span>
               <strong>{rotationPlan.proposedActiveKey.keyId}</strong>
@@ -6948,6 +6988,27 @@ function auditSigningKeyCapabilityLabel(i18n: AppI18n, canSign: boolean, canVeri
     return "可签名";
   }
   return canVerify ? "仅验签" : "已禁用";
+}
+
+function rotationLedgerStatusLabel(i18n: AppI18n, state: AuditSigningKeyRotationLedgerStatus["state"]): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        failed: "Ledger failed",
+        idle: "Ledger idle",
+        saved: "Ledger saved",
+        saving: "Saving ledger"
+      } satisfies Record<typeof state, string>
+    )[state];
+  }
+  return (
+    {
+      failed: "入账失败",
+      idle: "等待入账",
+      saved: "已入审计账本",
+      saving: "正在入账"
+    } satisfies Record<typeof state, string>
+  )[state];
 }
 
 function auditSigningKeyRotationStepTitle(i18n: AppI18n, title: string): string {
