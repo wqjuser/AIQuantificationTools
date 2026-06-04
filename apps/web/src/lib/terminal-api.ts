@@ -391,6 +391,45 @@ export interface AuditSigningKeyRotationPlanResult {
   error?: string;
 }
 
+export interface AuditSigningKeyRotationApplyConfirmation {
+  id: string;
+  label: string;
+  status: "confirmed" | "missing";
+}
+
+export interface AuditSigningKeyRotationApply {
+  schemaVersion: 1;
+  generatedAt: string;
+  status: "blocked" | "ready_for_restart";
+  applyMode: "manual_secret_store";
+  auditEventType: "audit_signing_key_rotation_apply";
+  currentActiveKeyId: string;
+  currentActiveKeyFingerprint: string;
+  proposedActiveKeyId: string;
+  proposedSigner: string;
+  proposedChainId: string;
+  restartRequired: boolean;
+  requiredConfirmations: AuditSigningKeyRotationApplyConfirmation[];
+  blockedReasons: string[];
+  environmentUpdateNames: string[];
+  secretPlaceholderNames: string[];
+}
+
+export interface AuditSigningKeyRotationApplyParams {
+  rotationPlan: AuditSigningKeyRotationPlan;
+  confirmations: {
+    legacySecretStored?: boolean;
+    newSecretMaterialStored?: boolean;
+    operatorReviewedPlan?: boolean;
+  };
+}
+
+export interface AuditSigningKeyRotationApplyResult {
+  rotationApply?: AuditSigningKeyRotationApply;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -873,6 +912,10 @@ export function buildAuditSigningKeyRotationPlanUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-plan");
 }
 
+export function buildAuditSigningKeyRotationApplyUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-apply");
+}
+
 export function buildStrategiesUrl(
   baseUrl: string,
   params: { market?: Market; symbol?: string; limit?: number } = {}
@@ -1183,6 +1226,64 @@ export async function buildAuditSigningKeyRotationPlanAuditEvent(
       legacyRegistryTemplateSha256,
       stepIds: rotationPlan.steps.map((step) => step.id),
       blockedReasons: rotationPlan.blockedReasons.slice()
+    }
+  };
+}
+
+export async function buildAuditSigningKeyRotationApplyAuditEvent(
+  rotationApply: AuditSigningKeyRotationApply
+): Promise<AuditEventRecord> {
+  const digest = await sha256TextHex(
+    JSON.stringify({
+      blockedReasons: rotationApply.blockedReasons,
+      generatedAt: rotationApply.generatedAt,
+      proposedActiveKeyId: rotationApply.proposedActiveKeyId,
+      requiredConfirmations: rotationApply.requiredConfirmations.map((confirmation) => [
+        confirmation.id,
+        confirmation.status
+      ]),
+      status: rotationApply.status
+    })
+  );
+  const shortHash = digest.slice(0, 12);
+  const missingConfirmationIds = rotationApply.requiredConfirmations
+    .filter((confirmation) => confirmation.status === "missing")
+    .map((confirmation) => confirmation.id);
+  const confirmedConfirmationIds = rotationApply.requiredConfirmations
+    .filter((confirmation) => confirmation.status === "confirmed")
+    .map((confirmation) => confirmation.id);
+  const blocked = rotationApply.status === "blocked";
+  return {
+    schemaVersion: 1,
+    eventId: `audit-signing-key-rotation-apply-${sanitizeDownloadFileName(
+      rotationApply.proposedActiveKeyId || "unknown"
+    )}-${shortHash}`,
+    eventType: "audit_signing_key_rotation_apply",
+    runId: "audit-signing-key-rotation",
+    createdAt: rotationApply.generatedAt,
+    stage: rotationApply.status,
+    source: "web",
+    summary: `Audit signing key rotation apply ${blocked ? "blocked" : "ready"} for ${
+      rotationApply.proposedActiveKeyId || "unknown"
+    }`,
+    detail: `${rotationApply.currentActiveKeyId} -> ${
+      rotationApply.proposedActiveKeyId || "unknown"
+    } · ${rotationApply.applyMode} · ${blocked ? rotationApply.blockedReasons.join(" / ") : "ready for restart"}`,
+    metadata: {
+      applyMode: rotationApply.applyMode,
+      auditEventType: rotationApply.auditEventType,
+      blockedReasons: rotationApply.blockedReasons.slice(),
+      confirmedConfirmationIds,
+      currentActiveKeyFingerprint: rotationApply.currentActiveKeyFingerprint,
+      currentActiveKeyId: rotationApply.currentActiveKeyId,
+      environmentUpdateNames: rotationApply.environmentUpdateNames.slice(),
+      missingConfirmationIds,
+      proposedActiveKeyId: rotationApply.proposedActiveKeyId,
+      proposedChainId: rotationApply.proposedChainId,
+      proposedSigner: rotationApply.proposedSigner,
+      restartRequired: rotationApply.restartRequired,
+      secretPlaceholderNames: rotationApply.secretPlaceholderNames.slice(),
+      status: rotationApply.status
     }
   };
 }
@@ -1722,6 +1823,43 @@ export async function prepareAuditSigningKeyRotationPlan(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown audit signing key rotation plan error"
+    };
+  }
+}
+
+export async function applyAuditSigningKeyRotationPlan(
+  baseUrl: string,
+  params: AuditSigningKeyRotationApplyParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyRotationApplyResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeyRotationApplyUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        confirmations: {
+          legacySecretStored: params.confirmations.legacySecretStored === true,
+          newSecretMaterialStored: params.confirmations.newSecretMaterialStored === true,
+          operatorReviewedPlan: params.confirmations.operatorReviewedPlan === true
+        },
+        rotationPlan: params.rotationPlan
+      })
+    });
+    if (!response.ok && response.status !== 409) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeyRotationApplyPayload(payload)) {
+      throw new Error("Invalid audit signing key rotation apply contract");
+    }
+    return {
+      rotationApply: payload.rotationApply,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key rotation apply error"
     };
   }
 }
@@ -2519,6 +2657,57 @@ function isAuditSigningKeyRotationStep(value: unknown): value is AuditSigningKey
     typeof step.title === "string" &&
     typeof step.detail === "string" &&
     (step.status === "manual" || step.status === "required" || step.status === "blocked")
+  );
+}
+
+function isAuditSigningKeyRotationApplyPayload(value: unknown): value is { rotationApply: AuditSigningKeyRotationApply } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { rotationApply?: unknown };
+  return isAuditSigningKeyRotationApply(payload.rotationApply);
+}
+
+function isAuditSigningKeyRotationApply(value: unknown): value is AuditSigningKeyRotationApply {
+  if (!value || typeof value !== "object" || containsDisallowedSecretField(value)) {
+    return false;
+  }
+  const rotationApply = value as Partial<AuditSigningKeyRotationApply>;
+  return (
+    rotationApply.schemaVersion === 1 &&
+    typeof rotationApply.generatedAt === "string" &&
+    (rotationApply.status === "blocked" || rotationApply.status === "ready_for_restart") &&
+    rotationApply.applyMode === "manual_secret_store" &&
+    rotationApply.auditEventType === "audit_signing_key_rotation_apply" &&
+    typeof rotationApply.currentActiveKeyId === "string" &&
+    typeof rotationApply.currentActiveKeyFingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(rotationApply.currentActiveKeyFingerprint) &&
+    typeof rotationApply.proposedActiveKeyId === "string" &&
+    typeof rotationApply.proposedSigner === "string" &&
+    typeof rotationApply.proposedChainId === "string" &&
+    typeof rotationApply.restartRequired === "boolean" &&
+    Array.isArray(rotationApply.requiredConfirmations) &&
+    rotationApply.requiredConfirmations.every(isAuditSigningKeyRotationApplyConfirmation) &&
+    Array.isArray(rotationApply.blockedReasons) &&
+    rotationApply.blockedReasons.every((reason) => typeof reason === "string") &&
+    Array.isArray(rotationApply.environmentUpdateNames) &&
+    rotationApply.environmentUpdateNames.every((name) => typeof name === "string") &&
+    Array.isArray(rotationApply.secretPlaceholderNames) &&
+    rotationApply.secretPlaceholderNames.every((name) => typeof name === "string")
+  );
+}
+
+function isAuditSigningKeyRotationApplyConfirmation(
+  value: unknown
+): value is AuditSigningKeyRotationApplyConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<AuditSigningKeyRotationApplyConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
   );
 }
 

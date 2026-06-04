@@ -13,6 +13,7 @@ from quant_core.audit_events import AuditEventStore, audit_event_record_to_paylo
 from quant_core.audit_signing import (
     AuditReportSigner,
     audit_report_verification_to_payload,
+    audit_signing_key_rotation_apply_to_payload,
     audit_signing_key_registry_to_payload,
     audit_signing_key_rotation_plan_to_payload,
 )
@@ -267,6 +268,23 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_audit_signing_key_rotation_plan", "detail": str(error)}, status=400)
                 return
             self._send_json({"rotationPlan": rotation_plan})
+            return
+        if parsed.path == "/api/audit/signing-keys/rotation-apply":
+            payload = self._read_json_body()
+            try:
+                registry = self._audit_report_signer().registry
+                rotation_apply = audit_signing_key_rotation_apply_to_payload(
+                    registry,
+                    rotation_plan=payload.get("rotationPlan") if isinstance(payload.get("rotationPlan"), dict) else {},
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_signing_key_rotation_apply", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {"rotationApply": rotation_apply},
+                status=409 if rotation_apply["status"] == "blocked" else 200,
+            )
             return
         if parsed.path == "/api/audit/reports/sign":
             payload = self._read_json_body()

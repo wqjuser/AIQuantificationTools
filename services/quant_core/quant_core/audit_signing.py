@@ -350,6 +350,106 @@ def audit_signing_key_rotation_plan_to_payload(
     }
 
 
+def audit_signing_key_rotation_apply_to_payload(
+    registry: AuditSigningKeyRegistry,
+    *,
+    rotation_plan: dict[str, Any],
+    confirmations: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(rotation_plan, dict):
+        raise ValueError("audit_signing_key_rotation_plan_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    _raise_if_rotation_plan_leaks_secret(registry, rotation_plan)
+
+    generated_at = datetime.now(timezone.utc).isoformat()
+    current_key = _dict_or_empty(rotation_plan.get("currentActiveKey"))
+    proposed_key = _dict_or_empty(rotation_plan.get("proposedActiveKey"))
+    current_key_id = _payload_text(current_key, "keyId")
+    current_fingerprint = _payload_text(current_key, "fingerprint")
+    proposed_key_id = _payload_text(proposed_key, "keyId")
+    proposed_signer = _payload_text(proposed_key, "signer")
+    proposed_chain_id = _payload_text(proposed_key, "chainId")
+    blocked_reasons = _payload_string_list(rotation_plan.get("blockedReasons"))
+
+    if current_key_id != registry.active_key.key_id:
+        blocked_reasons.append("current_key_mismatch")
+    if current_fingerprint != registry.active_key.fingerprint:
+        blocked_reasons.append("current_key_fingerprint_mismatch")
+    if not proposed_key_id:
+        blocked_reasons.append("proposed_key_required")
+    if proposed_key_id == registry.active_key.key_id:
+        blocked_reasons.append("proposed_key_matches_current_active_key")
+    if proposed_key_id and registry.find(proposed_key_id):
+        blocked_reasons.append("proposed_key_already_exists_in_registry")
+
+    confirmation_specs = [
+        (
+            "new-secret-material-stored",
+            "newSecretMaterialStored",
+            "New signing secret generated and stored outside the UI",
+            "new_secret_material_not_confirmed",
+        ),
+        (
+            "legacy-secret-stored",
+            "legacySecretStored",
+            "Current active secret copied into the legacy registry outside the UI",
+            "legacy_secret_not_confirmed",
+        ),
+        (
+            "operator-reviewed-plan",
+            "operatorReviewedPlan",
+            "Operator reviewed key ids, fingerprints, and restart impact",
+            "operator_review_not_confirmed",
+        ),
+    ]
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in confirmation_specs:
+        confirmed = _payload_bool(confirmations, payload_key)
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    environment_updates = rotation_plan.get("environmentUpdates")
+    environment_update_names = []
+    secret_placeholder_names = []
+    if isinstance(environment_updates, list):
+        for update in environment_updates:
+            if not isinstance(update, dict):
+                continue
+            name = _payload_text(update, "name")
+            if name:
+                environment_update_names.append(name)
+            if _payload_text(update, "sensitivity") == "secret" and name:
+                secret_placeholder_names.append(name)
+
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return {
+        "schemaVersion": 1,
+        "generatedAt": generated_at,
+        "status": "blocked" if unique_blocked_reasons else "ready_for_restart",
+        "applyMode": "manual_secret_store",
+        "auditEventType": "audit_signing_key_rotation_apply",
+        "currentActiveKeyId": registry.active_key.key_id,
+        "currentActiveKeyFingerprint": registry.active_key.fingerprint,
+        "proposedActiveKeyId": proposed_key_id,
+        "proposedSigner": proposed_signer,
+        "proposedChainId": proposed_chain_id,
+        "restartRequired": bool(rotation_plan.get("requiresRestart", True)),
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": unique_blocked_reasons,
+        "environmentUpdateNames": environment_update_names,
+        "secretPlaceholderNames": secret_placeholder_names,
+    }
+
+
 def _required_metadata_text(record: AuditEventRecord, key: str) -> str:
     value = record.metadata.get(key)
     text = value.strip() if isinstance(value, str) else ""
@@ -402,6 +502,21 @@ def _payload_text(item: dict[str, Any], key: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _payload_bool(item: dict[str, Any], key: str) -> bool:
+    return item.get(key) is True
+
+
 def _payload_optional_text(item: dict[str, Any], key: str) -> str | None:
     text = _payload_text(item, key)
     return text or None
+
+
+def _payload_string_list(value: Any) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _raise_if_rotation_plan_leaks_secret(registry: AuditSigningKeyRegistry, rotation_plan: dict[str, Any]) -> None:
+    serialized = json.dumps(rotation_plan, ensure_ascii=False, sort_keys=True)
+    for key in registry.keys:
+        if key.secret and key.secret in serialized:
+            raise ValueError("audit_signing_key_rotation_plan_secret_leak")

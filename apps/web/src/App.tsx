@@ -27,6 +27,7 @@ import {
   undoResearchRunImport,
   loadAuditEvents,
   loadAuditSigningKeys,
+  applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
   loadResearchRunAiReviews,
   loadMarketKlines,
@@ -46,6 +47,7 @@ import {
   mergeMarketKlines,
   normalizeResearchRunExportPackagePayload,
   buildAuditEvidenceReportAuditEvent,
+  buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
   withResearchRunExportAuditEvidenceArtifacts,
@@ -59,6 +61,8 @@ import {
   AuditEventHistoryPagination,
   AuditSigningKeyRegistry,
   AuditSigningKeyRegistryResult,
+  AuditSigningKeyRotationApply,
+  AuditSigningKeyRotationApplyResult,
   AuditSigningKeyRotationPlan,
   AuditSigningKeyRotationPlanResult,
   GoldenPathStatus,
@@ -266,6 +270,9 @@ const initialAuditSigningKeyRegistryState: AuditSigningKeyRegistryResult = {
 const initialAuditSigningKeyRotationPlanState: AuditSigningKeyRotationPlanResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRotationApplyState: AuditSigningKeyRotationApplyResult = {
+  source: "fallback"
+};
 const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerStatus = {
   detail: "",
   state: "idle"
@@ -312,6 +319,18 @@ interface AuditSigningKeyRotationLedgerStatus {
   detail: string;
   state: "idle" | "saving" | "saved" | "failed";
 }
+
+interface AuditSigningKeyRotationApplyConfirmations {
+  legacySecretStored: boolean;
+  newSecretMaterialStored: boolean;
+  operatorReviewedPlan: boolean;
+}
+
+const initialAuditSigningKeyRotationApplyConfirmations: AuditSigningKeyRotationApplyConfirmations = {
+  legacySecretStored: false,
+  newSecretMaterialStored: false,
+  operatorReviewedPlan: false
+};
 
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
@@ -462,6 +481,10 @@ export function App() {
   const [auditSigningKeyRotationPlan, setAuditSigningKeyRotationPlan] = useState<AuditSigningKeyRotationPlanResult>(
     initialAuditSigningKeyRotationPlanState
   );
+  const [auditSigningKeyRotationApply, setAuditSigningKeyRotationApply] =
+    useState<AuditSigningKeyRotationApplyResult>(initialAuditSigningKeyRotationApplyState);
+  const [auditSigningKeyRotationApplyConfirmations, setAuditSigningKeyRotationApplyConfirmations] =
+    useState<AuditSigningKeyRotationApplyConfirmations>(initialAuditSigningKeyRotationApplyConfirmations);
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
@@ -534,6 +557,7 @@ export function App() {
   const [isLoadingAuditEvidenceReportEvents, setIsLoadingAuditEvidenceReportEvents] = useState(false);
   const [isLoadingAuditSigningKeyRotationEvents, setIsLoadingAuditSigningKeyRotationEvents] = useState(false);
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
+  const [isApplyingAuditSigningKeyRotationPlan, setIsApplyingAuditSigningKeyRotationPlan] = useState(false);
   const [isPreparingAuditSigningKeyRotationPlan, setIsPreparingAuditSigningKeyRotationPlan] = useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
@@ -842,6 +866,13 @@ export function App() {
     setAuditSigningKeyRegistry(await loadAuditSigningKeys(quantCoreBaseUrl));
   }, []);
 
+  const updateAuditSigningKeyRotationApplyConfirmation = useCallback(
+    (field: keyof AuditSigningKeyRotationApplyConfirmations, value: boolean) => {
+      setAuditSigningKeyRotationApplyConfirmations((current) => ({ ...current, [field]: value }));
+    },
+    []
+  );
+
   const prepareAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
     const activeKey = auditSigningKeyRegistry.registry?.keys.find(
       (key) => key.keyId === auditSigningKeyRegistry.registry?.activeKeyId
@@ -851,6 +882,8 @@ export function App() {
     const proposedSigner = activeKey?.signer ? `${activeKey.signer} Next` : "Next Audit Key";
     const proposedChainId = `${activeKey?.chainId ?? "audit-chain"}-next`;
     setIsPreparingAuditSigningKeyRotationPlan(true);
+    setAuditSigningKeyRotationApply(initialAuditSigningKeyRotationApplyState);
+    setAuditSigningKeyRotationApplyConfirmations(initialAuditSigningKeyRotationApplyConfirmations);
     setAuditSigningKeyRotationLedgerStatus({ detail: "", state: "saving" });
     try {
       const result = await prepareAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
@@ -880,6 +913,34 @@ export function App() {
       setIsPreparingAuditSigningKeyRotationPlan(false);
     }
   }, [auditSigningKeyRegistry.registry]);
+
+  const applyAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
+    if (!auditSigningKeyRotationPlan.rotationPlan) {
+      return;
+    }
+    setIsApplyingAuditSigningKeyRotationPlan(true);
+    try {
+      const result = await applyAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
+        confirmations: auditSigningKeyRotationApplyConfirmations,
+        rotationPlan: auditSigningKeyRotationPlan.rotationPlan
+      });
+      setAuditSigningKeyRotationApply(result);
+      if (result.rotationApply) {
+        const auditEvent = await buildAuditSigningKeyRotationApplyAuditEvent(result.rotationApply);
+        const ledgerResult = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+        if (ledgerResult.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: ledgerResult.error,
+            source: ledgerResult.source,
+            statusLabel: "Audit signing key rotation apply ledger save failed"
+          }));
+        }
+      }
+    } finally {
+      setIsApplyingAuditSigningKeyRotationPlan(false);
+    }
+  }, [auditSigningKeyRotationApplyConfirmations, auditSigningKeyRotationPlan.rotationPlan]);
 
   const refreshGoldenPathStatus = useCallback(async () => {
     setGoldenPathState(
@@ -2944,9 +3005,15 @@ export function App() {
             className="workflow-signing-keys-panel"
             error={auditSigningKeyRegistry.error}
             i18n={i18n}
+            isApplyingRotation={isApplyingAuditSigningKeyRotationPlan}
             isPreparingRotation={isPreparingAuditSigningKeyRotationPlan}
+            onApplyConfirmationChange={updateAuditSigningKeyRotationApplyConfirmation}
+            onApplyRotation={applyAuditSigningKeyRotationPlanForAudit}
             onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
             registry={auditSigningKeyRegistry.registry}
+            rotationApply={auditSigningKeyRotationApply.rotationApply}
+            rotationApplyConfirmations={auditSigningKeyRotationApplyConfirmations}
+            rotationApplyError={auditSigningKeyRotationApply.error}
             rotationError={auditSigningKeyRotationPlan.error}
             rotationHistoryRows={auditSigningKeyRotationLedgerRows}
             rotationHistoryState={isLoadingAuditSigningKeyRotationEvents ? "loading" : "ready"}
@@ -5833,9 +5900,15 @@ function AuditSigningKeyRegistryPanel({
   className,
   error,
   i18n,
+  isApplyingRotation,
   isPreparingRotation,
+  onApplyConfirmationChange,
+  onApplyRotation,
   onPrepareRotation,
   registry,
+  rotationApply,
+  rotationApplyConfirmations,
+  rotationApplyError,
   rotationError,
   rotationHistoryRows,
   rotationHistoryState,
@@ -5846,9 +5919,15 @@ function AuditSigningKeyRegistryPanel({
   className?: string;
   error?: string;
   i18n: AppI18n;
+  isApplyingRotation: boolean;
   isPreparingRotation: boolean;
+  onApplyConfirmationChange: (field: keyof AuditSigningKeyRotationApplyConfirmations, value: boolean) => void;
+  onApplyRotation: () => void;
   onPrepareRotation: () => void;
   registry?: AuditSigningKeyRegistry;
+  rotationApply?: AuditSigningKeyRotationApply;
+  rotationApplyConfirmations: AuditSigningKeyRotationApplyConfirmations;
+  rotationApplyError?: string;
   rotationError?: string;
   rotationHistoryRows: AuditSigningKeyRotationLedgerRow[];
   rotationHistoryState: "loading" | "ready";
@@ -6008,8 +6087,63 @@ function AuditSigningKeyRegistryPanel({
               ))}
             </div>
             <pre>{rotationPlan.legacyRegistryTemplate}</pre>
+            <div className="audit-signing-key-rotation-apply">
+              <div className="audit-signing-key-rotation-apply-head">
+                <span>{i18n.locale === "zh-CN" ? "应用预检" : "Apply preflight"}</span>
+                <strong>{i18n.locale === "zh-CN" ? "只检查，不写入 secret" : "Check only, no secret write"}</strong>
+              </div>
+              <div className="audit-signing-key-rotation-apply-checks">
+                <label>
+                  <input
+                    checked={rotationApplyConfirmations.newSecretMaterialStored}
+                    onChange={(event) => onApplyConfirmationChange("newSecretMaterialStored", event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "新 secret 已在本地安全保存" : "New secret stored locally"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={rotationApplyConfirmations.legacySecretStored}
+                    onChange={(event) => onApplyConfirmationChange("legacySecretStored", event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "当前 secret 已写入 legacy 注册表" : "Current secret stored in legacy registry"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={rotationApplyConfirmations.operatorReviewedPlan}
+                    onChange={(event) => onApplyConfirmationChange("operatorReviewedPlan", event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "已人工复核 key、指纹和重启影响" : "Operator reviewed key, fingerprint, restart impact"}</span>
+                </label>
+              </div>
+              <button className="compact-action" disabled={isApplyingRotation} onClick={onApplyRotation} type="button">
+                {isApplyingRotation ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+                {i18n.locale === "zh-CN" ? "提交应用预检" : "Run apply preflight"}
+              </button>
+              {rotationApply ? (
+                <div className={`audit-signing-key-rotation-apply-result ${rotationApply.status}`}>
+                  <span>{auditSigningKeyRotationApplyStatusLabel(i18n, rotationApply.status)}</span>
+                  <strong>{rotationApply.proposedActiveKeyId || "n/a"}</strong>
+                  <small>
+                    {rotationApply.blockedReasons.length
+                      ? rotationApply.blockedReasons.map((reason) => auditSigningKeyRotationApplyReasonLabel(i18n, reason)).join(" / ")
+                      : i18n.locale === "zh-CN"
+                        ? "可进入本地重启流程"
+                        : "Ready for local restart"}
+                  </small>
+                  <em>
+                    {i18n.locale === "zh-CN"
+                      ? `${rotationApply.secretPlaceholderNames.length} 个本地 secret 项`
+                      : `${rotationApply.secretPlaceholderNames.length} local secret items`}
+                  </em>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
+        {rotationApplyError ? <p className="audit-signing-key-error">{rotationApplyError}</p> : null}
         {rotationError ? <p className="audit-signing-key-error">{rotationError}</p> : null}
         {error ? <p className="audit-signing-key-error">{error}</p> : null}
       </div>
@@ -7094,6 +7228,34 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
       "Rotation plan blocked": "轮换计划阻断",
       "Rotation plan prepared": "轮换计划已准备"
     }[statusLabel] ?? statusLabel
+  );
+}
+
+function auditSigningKeyRotationApplyStatusLabel(
+  i18n: AppI18n,
+  status: AuditSigningKeyRotationApply["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status === "blocked" ? "Apply blocked" : "Ready for restart";
+  }
+  return status === "blocked" ? "应用阻断" : "可重启生效";
+}
+
+function auditSigningKeyRotationApplyReasonLabel(i18n: AppI18n, reason: string): string {
+  if (i18n.locale === "en-US") {
+    return reason.replaceAll("_", " ");
+  }
+  return (
+    {
+      current_key_fingerprint_mismatch: "当前 key 指纹不匹配",
+      current_key_mismatch: "当前 key 不匹配",
+      legacy_secret_not_confirmed: "legacy secret 未确认",
+      new_secret_material_not_confirmed: "新 secret 未确认",
+      operator_review_not_confirmed: "人工复核未确认",
+      proposed_key_already_exists_in_registry: "拟启用 key 已在注册表",
+      proposed_key_matches_current_active_key: "拟启用 key 与当前 key 相同",
+      proposed_key_required: "缺少拟启用 key"
+    }[reason] ?? reason
   );
 }
 

@@ -20,6 +20,7 @@ import {
   buildAuditReportVerifyUrl,
   buildAuditReportRevokeUrl,
   buildAuditSigningKeysUrl,
+  buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
@@ -50,6 +51,7 @@ import {
   saveAuditEvent,
   loadAuditEvents,
   loadAuditSigningKeys,
+  applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
   signAuditReportEvent,
   verifyAuditReportEvent,
@@ -59,6 +61,7 @@ import {
   withResearchRunExportAuditEvidenceArtifacts,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
+  buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
@@ -894,6 +897,173 @@ describe("terminal workspace API client", () => {
 
     expect(result.source).toBe("fallback");
     expect(result.error).toBe("Invalid audit signing key rotation plan contract");
+  });
+
+  test("preflights audit signing key rotation apply without exposing secrets", async () => {
+    const calls: Array<{ init?: RequestInit; url: string }> = [];
+    const rotationPlan = {
+      schemaVersion: 1 as const,
+      generatedAt: "2026-06-04T10:30:00+00:00",
+      currentActiveKey: {
+        keyId: "active-audit-key",
+        signer: "Active Audit Key",
+        chainId: "audit-chain-active",
+        fingerprint: "a".repeat(16)
+      },
+      proposedActiveKey: {
+        keyId: "next-audit-key",
+        signer: "Next Audit Key",
+        chainId: "audit-chain-next"
+      },
+      rotationRequired: true,
+      requiresRestart: true,
+      environmentUpdates: [
+        { name: "AIQT_AUDIT_SIGNING_KEY_ID", value: "next-audit-key", sensitivity: "public" as const },
+        { name: "AIQT_AUDIT_SIGNING_SECRET", value: "<set-new-key-material-outside-ui>", sensitivity: "secret" as const },
+        { name: "AIQT_AUDIT_SIGNING_KEYS_JSON", value: "legacy-template-placeholder", sensitivity: "secret" as const }
+      ],
+      legacyRegistryTemplate: "legacy-template-placeholder",
+      steps: [
+        { id: "set-new-active-key", title: "Set new active key", detail: "Update active env vars.", status: "manual" as const }
+      ],
+      blockedReasons: []
+    };
+    const result = await applyAuditSigningKeyRotationPlan(
+      "http://127.0.0.1:8765/",
+      {
+        confirmations: {
+          legacySecretStored: false,
+          newSecretMaterialStored: false,
+          operatorReviewedPlan: false
+        },
+        rotationPlan
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            rotationApply: {
+              schemaVersion: 1,
+              generatedAt: "2026-06-04T10:35:00+00:00",
+              status: "blocked",
+              applyMode: "manual_secret_store",
+              auditEventType: "audit_signing_key_rotation_apply",
+              currentActiveKeyId: "active-audit-key",
+              currentActiveKeyFingerprint: "a".repeat(16),
+              proposedActiveKeyId: "next-audit-key",
+              proposedSigner: "Next Audit Key",
+              proposedChainId: "audit-chain-next",
+              restartRequired: true,
+              requiredConfirmations: [
+                {
+                  id: "new-secret-material-stored",
+                  label: "New signing secret generated and stored outside the UI",
+                  status: "missing"
+                },
+                {
+                  id: "legacy-secret-stored",
+                  label: "Current active secret copied into the legacy registry outside the UI",
+                  status: "missing"
+                },
+                {
+                  id: "operator-reviewed-plan",
+                  label: "Operator reviewed key ids, fingerprints, and restart impact",
+                  status: "missing"
+                }
+              ],
+              blockedReasons: [
+                "new_secret_material_not_confirmed",
+                "legacy_secret_not_confirmed",
+                "operator_review_not_confirmed"
+              ],
+              environmentUpdateNames: [
+                "AIQT_AUDIT_SIGNING_KEY_ID",
+                "AIQT_AUDIT_SIGNING_SECRET",
+                "AIQT_AUDIT_SIGNING_KEYS_JSON"
+              ],
+              secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET", "AIQT_AUDIT_SIGNING_KEYS_JSON"]
+            }
+          })
+        };
+      }
+    );
+
+    expect(buildAuditSigningKeyRotationApplyUrl("http://127.0.0.1:8765")).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/rotation-apply"
+    );
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/audit/signing-keys/rotation-apply");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      confirmations: {
+        legacySecretStored: false,
+        newSecretMaterialStored: false,
+        operatorReviewedPlan: false
+      },
+      rotationPlan
+    });
+    expect(result.source).toBe("core");
+    expect(result.rotationApply?.status).toBe("blocked");
+    expect(result.rotationApply?.blockedReasons).toEqual([
+      "new_secret_material_not_confirmed",
+      "legacy_secret_not_confirmed",
+      "operator_review_not_confirmed"
+    ]);
+    expect(result.rotationApply?.secretPlaceholderNames).toEqual([
+      "AIQT_AUDIT_SIGNING_SECRET",
+      "AIQT_AUDIT_SIGNING_KEYS_JSON"
+    ]);
+    expect(JSON.stringify(result.rotationApply)).not.toContain("active-audit-secret");
+    expect(JSON.stringify(result.rotationApply)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
+  });
+
+  test("rejects audit signing key rotation apply payloads that expose raw secret material", async () => {
+    const result = await applyAuditSigningKeyRotationPlan(
+      "http://127.0.0.1:8765/",
+      {
+        confirmations: {},
+        rotationPlan: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-04T10:30:00+00:00",
+          currentActiveKey: { keyId: "active-audit-key", signer: "Active Audit Key", chainId: "audit-chain-active", fingerprint: "a".repeat(16) },
+          proposedActiveKey: { keyId: "next-audit-key", signer: "Next Audit Key", chainId: "audit-chain-next" },
+          rotationRequired: true,
+          requiresRestart: true,
+          environmentUpdates: [],
+          legacyRegistryTemplate: "[]",
+          steps: [],
+          blockedReasons: []
+        }
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          rotationApply: {
+            schemaVersion: 1,
+            generatedAt: "2026-06-04T10:35:00+00:00",
+            status: "ready_for_restart",
+            applyMode: "manual_secret_store",
+            auditEventType: "audit_signing_key_rotation_apply",
+            currentActiveKeyId: "active-audit-key",
+            currentActiveKeyFingerprint: "a".repeat(16),
+            proposedActiveKeyId: "next-audit-key",
+            proposedSigner: "Next Audit Key",
+            proposedChainId: "audit-chain-next",
+            restartRequired: true,
+            requiredConfirmations: [],
+            blockedReasons: [],
+            environmentUpdateNames: [],
+            secretPlaceholderNames: [],
+            secret: "active-audit-secret"
+          }
+        })
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid audit signing key rotation apply contract");
   });
 
   test("refreshes a market cache context and returns updated settings", async () => {
@@ -2241,6 +2411,60 @@ describe("terminal workspace API client", () => {
     expect(JSON.stringify(event)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
     expect(JSON.stringify(event)).not.toContain("<set-new-key-material-outside-ui>");
     expect(JSON.stringify(event)).not.toContain("active-audit-secret");
+  });
+
+  test("builds a secret-free audit event when an audit signing key rotation apply preflight runs", async () => {
+    const event = await buildAuditSigningKeyRotationApplyAuditEvent({
+      schemaVersion: 1,
+      generatedAt: "2026-06-04T11:00:00+00:00",
+      status: "blocked",
+      applyMode: "manual_secret_store",
+      auditEventType: "audit_signing_key_rotation_apply",
+      currentActiveKeyId: "active-audit-key",
+      currentActiveKeyFingerprint: "a".repeat(16),
+      proposedActiveKeyId: "next-audit-key",
+      proposedSigner: "Next Audit Key",
+      proposedChainId: "audit-chain-next",
+      restartRequired: true,
+      requiredConfirmations: [
+        { id: "new-secret-material-stored", label: "New signing secret generated and stored outside the UI", status: "missing" },
+        { id: "legacy-secret-stored", label: "Current active secret copied into legacy registry outside the UI", status: "confirmed" }
+      ],
+      blockedReasons: ["new_secret_material_not_confirmed"],
+      environmentUpdateNames: ["AIQT_AUDIT_SIGNING_KEY_ID", "AIQT_AUDIT_SIGNING_SECRET"],
+      secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET"]
+    });
+
+    expect(event).toEqual(
+      expect.objectContaining({
+        eventType: "audit_signing_key_rotation_apply",
+        runId: "audit-signing-key-rotation",
+        source: "web",
+        stage: "blocked",
+        summary: "Audit signing key rotation apply blocked for next-audit-key"
+      })
+    );
+    expect(event.eventId).toMatch(/^audit-signing-key-rotation-apply-next-audit-key-[a-f0-9]{12}$/u);
+    expect(event.metadata).toEqual(
+      expect.objectContaining({
+        applyMode: "manual_secret_store",
+        auditEventType: "audit_signing_key_rotation_apply",
+        blockedReasons: ["new_secret_material_not_confirmed"],
+        confirmedConfirmationIds: ["legacy-secret-stored"],
+        currentActiveKeyFingerprint: "a".repeat(16),
+        currentActiveKeyId: "active-audit-key",
+        environmentUpdateNames: ["AIQT_AUDIT_SIGNING_KEY_ID", "AIQT_AUDIT_SIGNING_SECRET"],
+        missingConfirmationIds: ["new-secret-material-stored"],
+        proposedActiveKeyId: "next-audit-key",
+        proposedChainId: "audit-chain-next",
+        proposedSigner: "Next Audit Key",
+        restartRequired: true,
+        secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET"],
+        status: "blocked"
+      })
+    );
+    expect(JSON.stringify(event)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
+    expect(JSON.stringify(event)).not.toContain("local-dev-audit-secret");
   });
 
   test("returns fallback when research run export integrity is malformed", async () => {

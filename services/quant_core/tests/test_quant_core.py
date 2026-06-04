@@ -1613,6 +1613,118 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("active-audit-secret", json.dumps(payload))
         self.assertNotIn("legacy-audit-secret", json.dumps(payload))
 
+    def test_audit_signing_key_rotation_apply_preflight_requires_confirmations_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory():
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_signing_secret = "active-audit-secret"
+            TestHandler.audit_signing_key_id = "active-audit-key"
+            TestHandler.audit_signer_name = "Active Audit Key"
+            TestHandler.audit_chain_id = "audit-chain-active"
+            TestHandler.audit_signing_keys_json = json.dumps(
+                [
+                    {
+                        "keyId": "legacy-audit-key",
+                        "signer": "Legacy Audit Key",
+                        "secret": "legacy-audit-secret",
+                        "chainId": "audit-chain-legacy",
+                        "status": "retired",
+                    }
+                ]
+            )
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                plan_body = json.dumps(
+                    {
+                        "proposedKeyId": "next-audit-key",
+                        "proposedSigner": "Next Audit Key",
+                        "proposedChainId": "audit-chain-next",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-plan",
+                    body=plan_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(plan_body))},
+                )
+                plan_response = connection.getresponse()
+                plan_payload = json.loads(plan_response.read().decode("utf-8"))
+
+                blocked_body = json.dumps({"rotationPlan": plan_payload["rotationPlan"], "confirmations": {}}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-apply",
+                    body=blocked_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(blocked_body))},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                ready_body = json.dumps(
+                    {
+                        "rotationPlan": plan_payload["rotationPlan"],
+                        "confirmations": {
+                            "legacySecretStored": True,
+                            "newSecretMaterialStored": True,
+                            "operatorReviewedPlan": True,
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-apply",
+                    body=ready_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(ready_body))},
+                )
+                ready_response = connection.getresponse()
+                ready_payload = json.loads(ready_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(plan_response.status, 200)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["rotationApply"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["rotationApply"]["blockedReasons"],
+            ["new_secret_material_not_confirmed", "legacy_secret_not_confirmed", "operator_review_not_confirmed"],
+        )
+        self.assertEqual(
+            [item["id"] for item in blocked_payload["rotationApply"]["requiredConfirmations"]],
+            ["new-secret-material-stored", "legacy-secret-stored", "operator-reviewed-plan"],
+        )
+        self.assertEqual(ready_response.status, 200)
+        self.assertEqual(ready_payload["rotationApply"]["status"], "ready_for_restart")
+        self.assertEqual(ready_payload["rotationApply"]["blockedReasons"], [])
+        self.assertEqual(
+            ready_payload["rotationApply"]["environmentUpdateNames"],
+            [
+                "AIQT_AUDIT_SIGNING_KEY_ID",
+                "AIQT_AUDIT_SIGNER_NAME",
+                "AIQT_AUDIT_CHAIN_ID",
+                "AIQT_AUDIT_SIGNING_SECRET",
+                "AIQT_AUDIT_SIGNING_KEYS_JSON",
+            ],
+        )
+        serialized = json.dumps([blocked_payload, ready_payload])
+        self.assertNotIn("active-audit-secret", serialized)
+        self.assertNotIn("legacy-audit-secret", serialized)
+        self.assertNotIn("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>", serialized)
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit
