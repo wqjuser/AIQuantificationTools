@@ -178,3 +178,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because import audit rows could not open the referenced run package evidence.
 - GREEN: shared the existing research-run export package inspector behind a run-id helper and added an "Open evidence" action for confirmed, undone, and undo-failed import audit events.
 - DOCS: updated product plan and architecture notes; next slice is auto-focusing exportPath/artifact search when an audit event opens evidence.
+- RED: `layout-css.test.js -t "export package browser|import diff guidance|import audit events"` failed because the package browser and import diff kept private query state and audit evidence opening could not focus artifact rows.
+- GREEN: lifted package browser/import diff query state into App and populated both from normalized import audit evidence anchors when opening an audit event.
+- DOCS: updated product plan and architecture notes; next slice is copyable/deep-linkable import audit evidence anchors for external audit reports.

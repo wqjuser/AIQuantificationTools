@@ -312,19 +312,27 @@ describe("terminal layout css", () => {
 
   test("renders a research run export package browser in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const exportBrowserPanelSource = sourceBetween("function ResearchRunExportPackageBrowserPanel", "function ResearchRunImportDiffPanel");
     const runHistoryPanelSource = sourceBetween("function RunHistoryPanel", "function ExecutionPanel");
     const runHistoryRowSource = sourceBetween("function RunHistoryRow", "function RunComparisonBoard");
 
     expect(appSource).toContain("buildResearchRunExportBrowserRows");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
+    expect(appSource).toContain('const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState("");');
     expect(appSource).toContain("function ResearchRunExportPackageBrowserPanel");
     expect(appSource).toContain("const inspectRunExportPackage = useCallback");
     expect(auditWorkspaceSource).toContain("<ResearchRunExportPackageBrowserPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-export-browser-panel"');
     expect(auditWorkspaceSource).toContain("rows={researchRunExportBrowserRows}");
     expect(auditWorkspaceSource).toContain("isLoading={isInspectingExportPackage}");
+    expect(auditWorkspaceSource).toContain("query={researchRunExportBrowserQuery}");
+    expect(auditWorkspaceSource).toContain("onQueryChange={setResearchRunExportBrowserQuery}");
     expect(auditWorkspaceSource).toContain("onInspectExport={inspectRunExportPackage}");
+    expect(exportBrowserPanelSource).toContain("query: string;");
+    expect(exportBrowserPanelSource).toContain("onQueryChange: (query: string) => void;");
+    expect(exportBrowserPanelSource).toContain("filterResearchRunExportBrowserRows(rows, query)");
+    expect(exportBrowserPanelSource).toContain("onQueryChange(event.target.value)");
     expect(runHistoryPanelSource).toContain("onInspectExport");
     expect(runHistoryRowSource).toContain("onInspectExport(run)");
     expect(cssBlock(".workflow-export-browser-panel")).toContain("grid-area: package;");
@@ -360,14 +368,22 @@ describe("terminal layout css", () => {
 
   test("renders import diff guidance in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const importDiffPanelSource = sourceBetween("function ResearchRunImportDiffPanel", "function ResearchRunImportAuditEventPanel");
 
     expect(appSource).toContain("buildResearchRunImportDiffRows");
     expect(appSource).toContain("filterResearchRunImportDiffRows");
     expect(appSource).toContain("const researchRunImportDiffRows = buildResearchRunImportDiffRows");
+    expect(appSource).toContain('const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState("");');
     expect(appSource).toContain("function ResearchRunImportDiffPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunImportDiffPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-import-diff-panel"');
     expect(auditWorkspaceSource).toContain("rows={researchRunImportDiffRows}");
+    expect(auditWorkspaceSource).toContain("query={researchRunImportDiffQuery}");
+    expect(auditWorkspaceSource).toContain("onQueryChange={setResearchRunImportDiffQuery}");
+    expect(importDiffPanelSource).toContain("query: string;");
+    expect(importDiffPanelSource).toContain("onQueryChange: (query: string) => void;");
+    expect(importDiffPanelSource).toContain("filterResearchRunImportDiffRows(rows, query)");
+    expect(importDiffPanelSource).toContain("onQueryChange(event.target.value)");
     expect(cssBlock(".workflow-import-diff-panel")).toContain("grid-area: import-diff;");
     expect(cssBlock(".research-import-diff")).toContain("display: grid;");
     expect(cssBlock(".research-import-diff-row")).toContain("grid-template-columns: minmax(116px, 0.44fr) minmax(104px, 0.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);");
@@ -426,7 +442,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setResearchRunImportAuditPagination(auditHistory.pagination ?? null)");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
     expect(appSource).toContain("const inspectResearchRunImportAuditEvent = useCallback");
+    expect(appSource).toContain("function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string");
     expect(appSource).toContain("inspectRunExportPackageByRunId(event.runId)");
+    expect(appSource).toContain("const focusQuery = researchRunImportAuditEvidenceQuery(event);");
+    expect(appSource).toContain("setResearchRunExportBrowserQuery(focusQuery);");
+    expect(appSource).toContain("setResearchRunImportDiffQuery(focusQuery);");
     expect(appSource).toContain("function ResearchRunImportAuditEventPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunImportAuditEventPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-import-events-panel"');

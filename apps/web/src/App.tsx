@@ -398,6 +398,8 @@ export function App() {
     useState<AuditEventHistoryPagination | null>(null);
   const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState("");
   const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
+  const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState("");
+  const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState("");
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
@@ -1117,6 +1119,8 @@ export function App() {
 
   const inspectRunExportPackage = useCallback(
     async (run: ResearchRunAudit) => {
+      setResearchRunExportBrowserQuery("");
+      setResearchRunImportDiffQuery("");
       await inspectRunExportPackageByRunId(run.runId);
     },
     [inspectRunExportPackageByRunId]
@@ -1124,6 +1128,9 @@ export function App() {
 
   const inspectResearchRunImportAuditEvent = useCallback(
     async (event: ResearchRunImportAuditEvent) => {
+      const focusQuery = researchRunImportAuditEvidenceQuery(event);
+      setResearchRunExportBrowserQuery(focusQuery);
+      setResearchRunImportDiffQuery(focusQuery);
       await inspectRunExportPackageByRunId(event.runId);
     },
     [inspectRunExportPackageByRunId]
@@ -2384,6 +2391,8 @@ export function App() {
             className="workflow-export-browser-panel"
             i18n={i18n}
             isLoading={isInspectingExportPackage}
+            onQueryChange={setResearchRunExportBrowserQuery}
+            query={researchRunExportBrowserQuery}
             rows={researchRunExportBrowserRows}
           />
           <ResearchRunImportDiffPanel
@@ -2392,7 +2401,9 @@ export function App() {
             isImporting={isApplyingImportPackage}
             onCancelImport={cancelPendingImportPackage}
             onConfirmImport={confirmPendingImportPackage}
+            onQueryChange={setResearchRunImportDiffQuery}
             pendingFileName={pendingImportPackage?.fileName ?? null}
+            query={researchRunImportDiffQuery}
             rows={researchRunImportDiffRows}
           />
           <ResearchRunImportAuditEventPanel
@@ -4804,14 +4815,17 @@ function ResearchRunExportPackageBrowserPanel({
   className,
   i18n,
   isLoading,
+  onQueryChange,
+  query,
   rows
 }: {
   className?: string;
   i18n: AppI18n;
   isLoading: boolean;
+  onQueryChange: (query: string) => void;
+  query: string;
   rows: ResearchRunExportBrowserRow[];
 }) {
-  const [query, setQuery] = useState("");
   const filteredRows = filterResearchRunExportBrowserRows(rows, query);
   const readyCount = rows.filter((row) => row.status === "ready").length;
   const blockedCount = rows.filter((row) => row.status === "blocked").length;
@@ -4846,7 +4860,7 @@ function ResearchRunExportPackageBrowserPanel({
           </div>
           <input
             aria-label={i18n.locale === "zh-CN" ? "搜索复现包浏览器" : "Search export package browser"}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
             placeholder={i18n.locale === "zh-CN" ? "搜索 manifest / exportPath / 状态" : "Search manifest / exportPath / status"}
             type="search"
             value={query}
@@ -4884,7 +4898,9 @@ function ResearchRunImportDiffPanel({
   isImporting = false,
   onCancelImport,
   onConfirmImport,
+  onQueryChange,
   pendingFileName,
+  query,
   rows
 }: {
   className?: string;
@@ -4892,10 +4908,11 @@ function ResearchRunImportDiffPanel({
   isImporting?: boolean;
   onCancelImport?: () => void;
   onConfirmImport?: () => void;
+  onQueryChange: (query: string) => void;
   pendingFileName?: string | null;
+  query: string;
   rows: ResearchRunImportDiffRow[];
 }) {
-  const [query, setQuery] = useState("");
   const filteredRows = filterResearchRunImportDiffRows(rows, query);
   const changeCount = rows.filter((row) => row.status === "change" || row.status === "replace").length;
   const addCount = rows.filter((row) => row.status === "add").length;
@@ -4936,7 +4953,7 @@ function ResearchRunImportDiffPanel({
           </div>
           <input
             aria-label={i18n.locale === "zh-CN" ? "搜索导入差异" : "Search import diff"}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
             placeholder={i18n.locale === "zh-CN" ? "搜索字段 / hash / exportPath / 状态" : "Search field / hash / exportPath / status"}
             type="search"
             value={query}
@@ -5772,6 +5789,14 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
     .replace("Local import must reject packages that claim live trading permission.", "本地导入必须拒绝声明实盘权限的复现包。")
     .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
+}
+
+function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string {
+  const exportPath = event.exportPath.trim();
+  if (exportPath.startsWith("manifest:")) {
+    return event.runId;
+  }
+  return exportPath || event.runId;
 }
 
 function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportAuditEvent): AuditEventRecord {
