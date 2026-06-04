@@ -17,6 +17,7 @@ import {
   buildResearchRunImportAuditEvent,
   buildResearchRunImportUndoAuditEvent,
   buildResearchRunImportUndoConfirmation,
+  buildResearchRunImportUndoFailureAuditEvent,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -2695,6 +2696,11 @@ describe("terminal workbench model", () => {
       createdAt: "2026-05-26T09:14:00+00:00",
       event: confirmed
     });
+    const undoFailed = buildResearchRunImportUndoFailureAuditEvent({
+      createdAt: "2026-05-26T09:15:00+00:00",
+      error: "research_run_import_undo_run_mismatch",
+      event: confirmed
+    });
     const undoConfirmation = buildResearchRunImportUndoConfirmation(confirmed);
 
     expect(blockedPreview).toEqual(
@@ -2748,6 +2754,20 @@ describe("terminal workbench model", () => {
         tone: "warning"
       })
     );
+    expect(undoFailed).toEqual(
+      expect.objectContaining({
+        stage: "undo-failed",
+        summary: "Import undo failed",
+        detail: "Core import rejected the package: research_run_import_undo_run_mismatch",
+        failureCategory: "core",
+        rollbackTargetRunId: "run-current",
+        undoToken: "import-undo-ledger",
+        recoveryHint:
+          "Review the undo rejection detail, replay the previous audited run if needed, then retry with the matching import event.",
+        exportPath: "manifest:run-import-ledger",
+        tone: "risk"
+      })
+    );
     expect(undoConfirmation).toEqual({
       undoToken: "import-undo-ledger",
       runId: "run-import-ledger",
@@ -2757,11 +2777,17 @@ describe("terminal workbench model", () => {
     });
     expect(buildResearchRunImportUndoConfirmation(blockedPreview)).toBeNull();
     expect(buildResearchRunImportUndoConfirmation(undone)).toBeNull();
+    expect(buildResearchRunImportUndoConfirmation(undoFailed)).toBeNull();
 
     const merged = mergeResearchRunImportAuditEvents([blockedPreview], confirmed);
     expect(merged.map((event) => event.stage)).toEqual(["confirmed", "blocked"]);
     expect(mergeResearchRunImportAuditEvents(merged, undone).map((event) => event.stage)).toEqual([
       "undone",
+      "blocked"
+    ]);
+    expect(mergeResearchRunImportAuditEvents(merged, undoFailed).map((event) => event.stage)).toEqual([
+      "undo-failed",
+      "confirmed",
       "blocked"
     ]);
     expect(mergeResearchRunImportAuditEvents(merged, blockedPreview).map((event) => event.id)).toEqual([
@@ -2774,9 +2800,13 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "rollback").map((event) => event.id)).toEqual([
       confirmed.id
     ]);
-    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "undo").map((event) => event.stage)).toEqual([
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone, undoFailed], "undo").map((event) => event.stage)).toEqual([
       "confirmed",
-      "undone"
+      "undone",
+      "undo-failed"
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone, undoFailed], "mismatch").map((event) => event.stage)).toEqual([
+      "undo-failed"
     ]);
     expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "consumed").map((event) => event.stage)).toEqual([
       "undone"

@@ -1781,9 +1781,14 @@ em {
 .research-import-diff-row.blocked,
 .research-import-event-row.risk,
 .research-import-event-row.failed,
+.research-import-event-row.undo-failed,
 .research-import-event-row.blocked,
 .research-export-index-row.risk,
 .research-export-index-row.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.research-import-event-row.undo-failed {
   border-left-color: #ff7f6d;
 }
 

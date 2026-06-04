@@ -162,3 +162,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-api.test.ts -t "undoes a successful research run import"` failed because the frontend undo client did not send the owning run id.
 - GREEN: Audit undo confirmation passes `undoConfirmation.runId`, and `undoResearchRunImport` sends `{ undoToken, expectedRunId }`.
 - DOCS: updated product plan and architecture notes; next slice is persisted undo failure events and a recovery review view.
+- RED: `terminal-workbench.test.ts -t "audit ledger"` failed because there was no `undo-failed` import audit event model for failed undo attempts.
+- GREEN: added `buildResearchRunImportUndoFailureAuditEvent`, `undo-failed` search semantics, recovery hints, and distinct event ids so the confirmed event remains available for retry.
+- RED: `layout-css.test.js -t "import audit events"` failed because App did not persist undo failures or render them as risk rows.
+- GREEN: failed `/api/research/runs/import/undo` calls now save an `undo-failed` AuditEvent, keep the old-run replay recovery affordance, include undo failures in failure counts, and style the row as risk.
+- DOCS: updated product plan and architecture notes; next slice is import/undo audit filtering and failure aggregation.

@@ -408,6 +408,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildResearchRunImportAuditEvent");
     expect(appSource).toContain("buildResearchRunImportUndoAuditEvent");
     expect(appSource).toContain("buildResearchRunImportUndoConfirmation");
+    expect(appSource).toContain("buildResearchRunImportUndoFailureAuditEvent");
     expect(appSource).toContain("undoResearchRunImport");
     expect(appSource).toContain("mergeResearchRunImportAuditEvents");
     expect(appSource).toContain("filterResearchRunImportAuditEvents");
@@ -427,6 +428,8 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("setPendingImportUndoToken(event.undoToken)");
     expect(importEventsPanelSource).toContain("onUndoImport(undoConfirmation.undoToken, undoConfirmation.runId)");
     expect(importEventsPanelSource).toContain('event.stage !== "undone"');
+    expect(appSource).toContain("buildResearchRunImportUndoFailureAuditEvent({");
+    expect(appSource).toContain("stage === \"undo-failed\"");
     expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
     expect(importEventsPanelSource).toContain("research-import-event-recovery");
     expect(importEventsPanelSource).toContain("research-import-undo-confirmation");
@@ -437,6 +440,7 @@ describe("terminal layout css", () => {
     );
     expect(cssBlock(".research-import-event-recovery")).toContain("display: flex;");
     expect(cssBlock(".research-import-undo-confirmation")).toContain("display: grid;");
+    expect(cssBlock(".research-import-event-row.undo-failed")).toContain("border-left-color: #ff7f6d;");
     expect(hasCssBlockWith(".audit-layout", ['"import-diff import-diff"', '"import-events import-events"', '"index index"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"import-diff"', '"import-events"', '"index"'])).toBe(true);
   });

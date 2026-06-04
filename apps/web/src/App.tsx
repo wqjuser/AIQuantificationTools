@@ -106,6 +106,7 @@ import {
   buildResearchRunImportDiffRows,
   buildResearchRunImportUndoAuditEvent,
   buildResearchRunImportUndoConfirmation,
+  buildResearchRunImportUndoFailureAuditEvent,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -987,22 +988,12 @@ export function App() {
 
   const undoResearchRunImportEvent = useCallback(
     async (undoToken: string, expectedRunId: string) => {
-      const result = await undoResearchRunImport(quantCoreBaseUrl, undoToken, expectedRunId);
-      if (result.source === "fallback" || !result.undo) {
-        setWorkspaceState((current) => ({
-          ...current,
-          statusLabel: "Research run import undo failed",
-          error: result.error ?? "Research run import undo failed"
-        }));
-        return;
-      }
       const eventToUndo = researchRunImportAuditEvents.find(
         (event) => event.stage === "confirmed" && event.undoToken === undoToken
       );
-      if (eventToUndo) {
-        const undoneEvent = buildResearchRunImportUndoAuditEvent({ event: eventToUndo });
-        setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, undoneEvent));
-        void saveAuditEvent(quantCoreBaseUrl, researchRunImportAuditEventToAuditEventRecord(undoneEvent)).then((saved) => {
+      const persistUndoAuditEvent = (event: ResearchRunImportAuditEvent) => {
+        setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, event));
+        void saveAuditEvent(quantCoreBaseUrl, researchRunImportAuditEventToAuditEventRecord(event)).then((saved) => {
           if (saved.source !== "core" || !saved.event) {
             return;
           }
@@ -1011,6 +1002,27 @@ export function App() {
             setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, savedEvent));
           }
         });
+      };
+      const result = await undoResearchRunImport(quantCoreBaseUrl, undoToken, expectedRunId);
+      if (result.source === "fallback" || !result.undo) {
+        if (eventToUndo) {
+          persistUndoAuditEvent(
+            buildResearchRunImportUndoFailureAuditEvent({
+              error: result.error ?? "Research run import undo failed",
+              event: eventToUndo
+            })
+          );
+        }
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research run import undo failed",
+          error: result.error ?? "Research run import undo failed"
+        }));
+        return;
+      }
+      if (eventToUndo) {
+        const undoneEvent = buildResearchRunImportUndoAuditEvent({ event: eventToUndo });
+        persistUndoAuditEvent(undoneEvent);
       }
       if (result.run) {
         await replayRun(result.run);
@@ -1024,7 +1036,7 @@ export function App() {
       }
       await refreshRunHistory();
     },
-    [refreshRunHistory, replayRun, researchRunImportAuditEvents]
+    [quantCoreBaseUrl, refreshRunHistory, replayRun, researchRunImportAuditEvents]
   );
 
   const exportRun = useCallback(async (run: ResearchRunAudit) => {
@@ -4915,7 +4927,7 @@ function ResearchRunImportAuditEventPanel({
   const [pendingImportUndoToken, setPendingImportUndoToken] = useState<string | null>(null);
   const filteredEvents = filterResearchRunImportAuditEvents(events, query);
   const blockedCount = events.filter((event) => event.stage === "blocked").length;
-  const failedCount = events.filter((event) => event.stage === "failed").length;
+  const failedCount = events.filter((event) => event.stage === "failed" || event.stage === "undo-failed").length;
   const confirmedCount = events.filter((event) => event.stage === "confirmed").length;
 
   return (
@@ -5687,7 +5699,8 @@ function isResearchRunImportAuditEventStage(value: string): value is ResearchRun
     value === "confirmed" ||
     value === "failed" ||
     value === "cancelled" ||
-    value === "undone"
+    value === "undone" ||
+    value === "undo-failed"
   );
 }
 
@@ -5729,7 +5742,8 @@ function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAu
         confirmed: "Applied",
         failed: "Failed",
         cancelled: "Cancelled",
-        undone: "Undone"
+        undone: "Undone",
+        "undo-failed": "Undo failed"
       } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
     )[stage];
   }
@@ -5740,7 +5754,8 @@ function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAu
       confirmed: "已确认",
       failed: "失败",
       cancelled: "已取消",
-      undone: "已撤销"
+      undone: "已撤销",
+      "undo-failed": "撤销失败"
     } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
   )[stage];
 }
@@ -5753,6 +5768,7 @@ function researchImportAuditSummaryLabel(i18n: AppI18n, summary: string): string
     .replace("Import preview blocked", "导入预检已阻断")
     .replace("Import preview ready", "导入预检已就绪")
     .replace("Import applied", "导入已写入")
+    .replace("Import undo failed", "导入撤销失败")
     .replace("Import undone", "导入已撤销")
     .replace("Import failed", "导入失败")
     .replace("Import cancelled", "导入已取消");
@@ -5767,6 +5783,10 @@ function researchImportAuditDetailLabel(i18n: AppI18n, detail: string): string {
     .replace("Import preview passed preflight.", "导入预检已通过。")
     .replace("Research run import wrote to the local audit store.", "研究运行导入已写入本地审计库。")
     .replace("Research run import undo restored the previous audited stores.", "研究运行导入撤销已恢复导入前的审计存储。")
+    .replace(
+      "Research run import undo failed before the previous audited stores could be restored.",
+      "导入撤销在恢复导入前审计存储之前失败。"
+    )
     .replace("Import preview was discarded before writing to the local audit store.", "导入预检已放弃，没有写入本地审计库。")
     .replace("Import failed before the package could be applied.", "复现包写入前导入失败。")
     .replace("Invalid research run export contract", "研究运行导出契约无效")
@@ -5783,6 +5803,10 @@ function researchImportAuditRecoveryLabel(i18n: AppI18n, recoveryHint: string): 
   return recoveryHint
     .replace(/^Undo import (.+) to restore the audited stores\.$/u, "撤销导入 $1，恢复导入前的审计存储。")
     .replace(/^Import undo has already consumed (.+)\.$/u, "导入撤销已消费 $1。")
+    .replace(
+      "Review the undo rejection detail, replay the previous audited run if needed, then retry with the matching import event.",
+      "请检查撤销拒绝细节，必要时回放旧的已审计 run，再使用匹配的导入事件重试。"
+    )
     .replace(/^Replay previous audited run (.+) to roll back the workspace context\.$/u, "回放旧的已审计 run $1，以恢复导入前的工作台上下文。")
     .replace(
       "No previous audited run was bound before import; replay a run from history to change context.",

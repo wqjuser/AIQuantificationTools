@@ -683,7 +683,8 @@ export type ResearchRunImportAuditEventStage =
   | "confirmed"
   | "failed"
   | "cancelled"
-  | "undone";
+  | "undone"
+  | "undo-failed";
 export type ResearchRunImportFailureCategory = "schema" | "integrity" | "artifact-counts" | "core" | "unknown";
 
 export interface ResearchRunImportAuditEvent {
@@ -2976,6 +2977,35 @@ export function buildResearchRunImportUndoAuditEvent({
   };
 }
 
+export function buildResearchRunImportUndoFailureAuditEvent({
+  createdAt = new Date().toISOString(),
+  error,
+  event
+}: {
+  createdAt?: string;
+  error?: string | null;
+  event: ResearchRunImportAuditEvent;
+}): ResearchRunImportAuditEvent {
+  const failure = researchRunImportFailure(error);
+  return {
+    ...event,
+    id: `${event.id}:undo-failed:${createdAt}`,
+    createdAt,
+    stage: "undo-failed",
+    summary: researchRunImportAuditSummary("undo-failed"),
+    detail: researchRunImportAuditDetail({
+      blockedCount: event.blockedCount,
+      changeCount: event.changeCount,
+      error: failure.detail ?? error,
+      fileName: event.fileName,
+      stage: "undo-failed"
+    }),
+    failureCategory: failure.category,
+    recoveryHint: researchRunImportRecoveryHint("undo-failed", event.rollbackTargetRunId, failure, event.undoToken),
+    tone: researchRunImportAuditTone("undo-failed")
+  };
+}
+
 export function buildResearchRunImportUndoConfirmation(
   event: ResearchRunImportAuditEvent
 ): ResearchRunImportUndoConfirmation | null {
@@ -3023,6 +3053,7 @@ export function filterResearchRunImportAuditEvents(
       event.undoToken ?? "",
       event.undoToken ? "undo" : "",
       event.stage === "undone" ? "undo consumed" : "",
+      event.stage === "undo-failed" ? "undo failed retry recovery" : "",
       event.failureCategory ?? "",
       event.recoveryHint,
       String(event.blockedCount),
@@ -3052,6 +3083,9 @@ function researchRunImportAuditSummary(stage: ResearchRunImportAuditEventStage):
   if (stage === "undone") {
     return "Import undone";
   }
+  if (stage === "undo-failed") {
+    return "Import undo failed";
+  }
   return "Import preview ready";
 }
 
@@ -3077,6 +3111,9 @@ function researchRunImportAuditDetail({
   if (stage === "undone") {
     return "Research run import undo restored the previous audited stores.";
   }
+  if (stage === "undo-failed") {
+    return error || "Research run import undo failed before the previous audited stores could be restored.";
+  }
   if (stage === "confirmed") {
     return `Research run import wrote to the local audit store. ${counts}.`;
   }
@@ -3090,7 +3127,7 @@ function researchRunImportAuditTone(stage: ResearchRunImportAuditEventStage): Re
   if (stage === "confirmed") {
     return "positive";
   }
-  if (stage === "failed" || stage === "blocked") {
+  if (stage === "failed" || stage === "blocked" || stage === "undo-failed") {
     return "risk";
   }
   if (stage === "cancelled" || stage === "undone") {
@@ -3129,7 +3166,13 @@ function researchRunImportFailure(error?: string | null): {
       detail: `Artifact manifest mismatch: ${message}`
     };
   }
-  if (normalized.includes("http") || normalized.includes("invalid_research_run_export")) {
+  if (
+    normalized.includes("http") ||
+    normalized.includes("invalid_research_run_export") ||
+    normalized.includes("research_run_import_undo") ||
+    normalized.includes("run_mismatch") ||
+    normalized.includes("expected_run")
+  ) {
     return {
       category: "core",
       detail: `Core import rejected the package: ${message}`
@@ -3157,6 +3200,9 @@ function researchRunImportRecoveryHint(
     return rollbackTargetRunId
       ? `Replay previous audited run ${rollbackTargetRunId} to roll back the workspace context.`
       : "No previous audited run was bound before import; replay a run from history to change context.";
+  }
+  if (stage === "undo-failed") {
+    return "Review the undo rejection detail, replay the previous audited run if needed, then retry with the matching import event.";
   }
   if (stage === "failed") {
     if (failure.category === "schema") {
