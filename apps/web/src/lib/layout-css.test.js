@@ -406,6 +406,7 @@ describe("terminal layout css", () => {
     const importEventsPanelSource = sourceBetween("function ResearchRunImportAuditEventPanel", "function ResearchRunExportIndexPanel");
 
     expect(appSource).toContain("buildResearchRunImportAuditEvent");
+    expect(appSource).toContain("buildResearchRunImportUndoAuditEvent");
     expect(appSource).toContain("undoResearchRunImport");
     expect(appSource).toContain("mergeResearchRunImportAuditEvents");
     expect(appSource).toContain("filterResearchRunImportAuditEvents");
@@ -420,6 +421,7 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");
     expect(importEventsPanelSource).toContain("event.undoToken");
+    expect(importEventsPanelSource).toContain('event.stage !== "undone"');
     expect(importEventsPanelSource).toContain("onUndoImport(event.undoToken)");
     expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
     expect(importEventsPanelSource).toContain("research-import-event-recovery");

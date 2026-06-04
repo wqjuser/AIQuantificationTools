@@ -104,6 +104,7 @@ import {
   buildResearchRunExportPreviewRows,
   buildResearchRunImportAuditEvent,
   buildResearchRunImportDiffRows,
+  buildResearchRunImportUndoAuditEvent,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -994,6 +995,22 @@ export function App() {
         }));
         return;
       }
+      const eventToUndo = researchRunImportAuditEvents.find(
+        (event) => event.stage === "confirmed" && event.undoToken === undoToken
+      );
+      if (eventToUndo) {
+        const undoneEvent = buildResearchRunImportUndoAuditEvent({ event: eventToUndo });
+        setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, undoneEvent));
+        void saveAuditEvent(quantCoreBaseUrl, researchRunImportAuditEventToAuditEventRecord(undoneEvent)).then((saved) => {
+          if (saved.source !== "core" || !saved.event) {
+            return;
+          }
+          const savedEvent = auditEventRecordToResearchRunImportEvent(saved.event);
+          if (savedEvent) {
+            setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, savedEvent));
+          }
+        });
+      }
       if (result.run) {
         await replayRun(result.run);
       } else {
@@ -1006,7 +1023,7 @@ export function App() {
       }
       await refreshRunHistory();
     },
-    [refreshRunHistory, replayRun]
+    [refreshRunHistory, replayRun, researchRunImportAuditEvents]
   );
 
   const exportRun = useCallback(async (run: ResearchRunAudit) => {
@@ -4948,7 +4965,7 @@ function ResearchRunImportAuditEventPanel({
                 </em>
                 <div className="research-import-event-recovery">
                   <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
-                  {event.undoToken ? (
+                  {event.stage !== "undone" && event.undoToken ? (
                     <button
                       onClick={() => {
                         if (event.undoToken) {
@@ -5639,7 +5656,14 @@ function auditEventRecordToResearchRunImportEvent(record: AuditEventRecord): Res
 }
 
 function isResearchRunImportAuditEventStage(value: string): value is ResearchRunImportAuditEvent["stage"] {
-  return value === "preview" || value === "blocked" || value === "confirmed" || value === "failed" || value === "cancelled";
+  return (
+    value === "preview" ||
+    value === "blocked" ||
+    value === "confirmed" ||
+    value === "failed" ||
+    value === "cancelled" ||
+    value === "undone"
+  );
 }
 
 function auditMetadataString(value: unknown, fallback: string): string {
@@ -5679,7 +5703,8 @@ function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAu
         blocked: "Blocked",
         confirmed: "Applied",
         failed: "Failed",
-        cancelled: "Cancelled"
+        cancelled: "Cancelled",
+        undone: "Undone"
       } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
     )[stage];
   }
@@ -5689,7 +5714,8 @@ function researchImportAuditStageLabel(i18n: AppI18n, stage: ResearchRunImportAu
       blocked: "阻断",
       confirmed: "已确认",
       failed: "失败",
-      cancelled: "已取消"
+      cancelled: "已取消",
+      undone: "已撤销"
     } satisfies Record<ResearchRunImportAuditEvent["stage"], string>
   )[stage];
 }
@@ -5702,6 +5728,7 @@ function researchImportAuditSummaryLabel(i18n: AppI18n, summary: string): string
     .replace("Import preview blocked", "导入预检已阻断")
     .replace("Import preview ready", "导入预检已就绪")
     .replace("Import applied", "导入已写入")
+    .replace("Import undone", "导入已撤销")
     .replace("Import failed", "导入失败")
     .replace("Import cancelled", "导入已取消");
 }
@@ -5714,6 +5741,7 @@ function researchImportAuditDetailLabel(i18n: AppI18n, detail: string): string {
     .replace("Import preview found blocked preflight gates.", "导入预检发现阻断闸门。")
     .replace("Import preview passed preflight.", "导入预检已通过。")
     .replace("Research run import wrote to the local audit store.", "研究运行导入已写入本地审计库。")
+    .replace("Research run import undo restored the previous audited stores.", "研究运行导入撤销已恢复导入前的审计存储。")
     .replace("Import preview was discarded before writing to the local audit store.", "导入预检已放弃，没有写入本地审计库。")
     .replace("Import failed before the package could be applied.", "复现包写入前导入失败。")
     .replace("Invalid research run export contract", "研究运行导出契约无效")
@@ -5729,6 +5757,7 @@ function researchImportAuditRecoveryLabel(i18n: AppI18n, recoveryHint: string): 
   }
   return recoveryHint
     .replace(/^Undo import (.+) to restore the audited stores\.$/u, "撤销导入 $1，恢复导入前的审计存储。")
+    .replace(/^Import undo has already consumed (.+)\.$/u, "导入撤销已消费 $1。")
     .replace(/^Replay previous audited run (.+) to roll back the workspace context\.$/u, "回放旧的已审计 run $1，以恢复导入前的工作台上下文。")
     .replace(
       "No previous audited run was bound before import; replay a run from history to change context.",

@@ -15,6 +15,7 @@ import {
   buildResearchRunExportIndexRows,
   buildResearchRunImportDiffRows,
   buildResearchRunImportAuditEvent,
+  buildResearchRunImportUndoAuditEvent,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -2689,6 +2690,10 @@ describe("terminal workbench model", () => {
       rows: [],
       stage: "failed"
     });
+    const undone = buildResearchRunImportUndoAuditEvent({
+      createdAt: "2026-05-26T09:14:00+00:00",
+      event: confirmed
+    });
 
     expect(blockedPreview).toEqual(
       expect.objectContaining({
@@ -2729,25 +2734,46 @@ describe("terminal workbench model", () => {
         tone: "risk"
       })
     );
+    expect(undone).toEqual(
+      expect.objectContaining({
+        stage: "undone",
+        summary: "Import undone",
+        detail: "Research run import undo restored the previous audited stores.",
+        rollbackTargetRunId: "run-current",
+        undoToken: null,
+        recoveryHint: "Import undo has already consumed import-undo-ledger.",
+        exportPath: "manifest:run-import-ledger",
+        tone: "warning"
+      })
+    );
 
     const merged = mergeResearchRunImportAuditEvents([blockedPreview], confirmed);
     expect(merged.map((event) => event.stage)).toEqual(["confirmed", "blocked"]);
+    expect(mergeResearchRunImportAuditEvents(merged, undone).map((event) => event.stage)).toEqual([
+      "undone",
+      "blocked"
+    ]);
     expect(mergeResearchRunImportAuditEvents(merged, blockedPreview).map((event) => event.id)).toEqual([
       blockedPreview.id,
       confirmed.id
     ]);
-    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "contract").map((event) => event.id)).toEqual([
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "contract").map((event) => event.id)).toEqual([
       failed.id
     ]);
-    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "rollback").map((event) => event.id)).toEqual([
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "rollback").map((event) => event.id)).toEqual([
       confirmed.id
     ]);
-    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "undo").map((event) => event.id)).toEqual([
-      confirmed.id
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "undo").map((event) => event.stage)).toEqual([
+      "confirmed",
+      "undone"
     ]);
-    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed], "unsafe-import").map((event) => event.id)).toEqual([
-      blockedPreview.id,
-      confirmed.id
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "consumed").map((event) => event.stage)).toEqual([
+      "undone"
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "unsafe-import").map((event) => event.stage)).toEqual([
+      "blocked",
+      "confirmed",
+      "undone"
     ]);
   });
 

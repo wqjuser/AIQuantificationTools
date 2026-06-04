@@ -677,7 +677,13 @@ export interface ResearchRunImportDiffRow {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
-export type ResearchRunImportAuditEventStage = "preview" | "blocked" | "confirmed" | "failed" | "cancelled";
+export type ResearchRunImportAuditEventStage =
+  | "preview"
+  | "blocked"
+  | "confirmed"
+  | "failed"
+  | "cancelled"
+  | "undone";
 export type ResearchRunImportFailureCategory = "schema" | "integrity" | "artifact-counts" | "core" | "unknown";
 
 export interface ResearchRunImportAuditEvent {
@@ -2934,6 +2940,34 @@ export function buildResearchRunImportAuditEvent({
   };
 }
 
+export function buildResearchRunImportUndoAuditEvent({
+  createdAt = new Date().toISOString(),
+  event
+}: {
+  createdAt?: string;
+  event: ResearchRunImportAuditEvent;
+}): ResearchRunImportAuditEvent {
+  const consumedUndoToken = event.undoToken?.trim() || "unknown";
+  return {
+    ...event,
+    createdAt,
+    stage: "undone",
+    summary: researchRunImportAuditSummary("undone"),
+    detail: researchRunImportAuditDetail({
+      blockedCount: event.blockedCount,
+      changeCount: event.changeCount,
+      fileName: event.fileName,
+      stage: "undone"
+    }),
+    undoToken: null,
+    recoveryHint: researchRunImportRecoveryHint("undone", event.rollbackTargetRunId, {
+      category: "unknown",
+      detail: null
+    }, consumedUndoToken),
+    tone: researchRunImportAuditTone("undone")
+  };
+}
+
 export function mergeResearchRunImportAuditEvents(
   events: ResearchRunImportAuditEvent[],
   event: ResearchRunImportAuditEvent,
@@ -2961,9 +2995,10 @@ export function filterResearchRunImportAuditEvents(
       event.detail,
       event.previousRunId ?? "",
       event.rollbackTargetRunId ?? "",
-      event.rollbackTargetRunId ? "rollback" : "",
+      event.rollbackTargetRunId && event.stage !== "undone" ? "rollback" : "",
       event.undoToken ?? "",
       event.undoToken ? "undo" : "",
+      event.stage === "undone" ? "undo consumed" : "",
       event.failureCategory ?? "",
       event.recoveryHint,
       String(event.blockedCount),
@@ -2990,6 +3025,9 @@ function researchRunImportAuditSummary(stage: ResearchRunImportAuditEventStage):
   if (stage === "cancelled") {
     return "Import cancelled";
   }
+  if (stage === "undone") {
+    return "Import undone";
+  }
   return "Import preview ready";
 }
 
@@ -3012,6 +3050,9 @@ function researchRunImportAuditDetail({
   if (stage === "cancelled") {
     return `Import preview was discarded before writing to the local audit store. ${counts}.`;
   }
+  if (stage === "undone") {
+    return "Research run import undo restored the previous audited stores.";
+  }
   if (stage === "confirmed") {
     return `Research run import wrote to the local audit store. ${counts}.`;
   }
@@ -3028,7 +3069,7 @@ function researchRunImportAuditTone(stage: ResearchRunImportAuditEventStage): Re
   if (stage === "failed" || stage === "blocked") {
     return "risk";
   }
-  if (stage === "cancelled") {
+  if (stage === "cancelled" || stage === "undone") {
     return "warning";
   }
   return "ai";
@@ -3082,6 +3123,9 @@ function researchRunImportRecoveryHint(
   failure: { category: ResearchRunImportFailureCategory; detail: string | null },
   undoToken: string | null = null
 ): string {
+  if (stage === "undone") {
+    return `Import undo has already consumed ${undoToken || "the undo token"}.`;
+  }
   if (stage === "confirmed") {
     if (undoToken) {
       return `Undo import ${undoToken} to restore the audited stores.`;
