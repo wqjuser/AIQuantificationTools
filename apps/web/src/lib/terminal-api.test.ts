@@ -48,6 +48,7 @@ import {
   saveStrategySnapshot,
   withResearchRunExportAuditEvidenceArtifacts,
   buildResearchRunExportAuditReport,
+  buildAuditEvidenceReportAuditEvent,
   withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
@@ -1892,6 +1893,61 @@ describe("terminal workspace API client", () => {
         auditReport: { ...enrichedArtifactPackage.auditReport, contentSha256: { algorithm: "sha256", hash: "bad" } }
       })
     ).toBeNull();
+  });
+
+  test("builds a ledger audit event when an audit evidence report is generated", async () => {
+    const summary = {
+      auditQuery: "manifest:run-preview",
+      copyText: "AIQT Audit Evidence Summary\nRun: run-preview\nFocus: manifest:run-preview",
+      deepLinkError: null,
+      deepLinkStatus: "loaded" as const,
+      focusQuery: "manifest:run-preview",
+      importDiffAddCount: 1,
+      importDiffBlockedCount: 2,
+      importDiffChangeCount: 3,
+      importDiffMatchedCount: 4,
+      importDiffQuery: "auditReport.contentSha256.hash",
+      importDiffTotalCount: 11,
+      packageBlockedCount: 1,
+      packageMatchedCount: 2,
+      packageMissingCount: 0,
+      packageQuery: "auditReport",
+      packageReadyCount: 6,
+      packageTotalCount: 9,
+      runId: "run-preview"
+    };
+    const auditReport = await buildResearchRunExportAuditReport(summary, "2026-06-04T08:00:00+00:00");
+    const event = buildAuditEvidenceReportAuditEvent(auditReport, summary);
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "audit_evidence_report",
+      runId: "run-preview",
+      createdAt: "2026-06-04T08:00:00+00:00",
+      stage: "generated",
+      source: "web",
+      summary: "Audit evidence report generated for run-preview",
+      metadata: {
+        artifactKind: "aiqt.auditReport",
+        fileName: "run-preview-audit-evidence-report.md",
+        format: "text/markdown",
+        contentSha256: auditReport.contentSha256.hash,
+        contentSha256Algorithm: "sha256",
+        evidenceFocus: "manifest:run-preview",
+        auditQuery: "manifest:run-preview",
+        packageQuery: "auditReport",
+        importDiffQuery: "auditReport.contentSha256.hash",
+        packageMatched: 2,
+        packageTotal: 9,
+        importDiffBlocked: 2,
+        importDiffTotal: 11,
+        deepLinkStatus: "loaded",
+        deepLinkError: null
+      }
+    });
+    expect(event.eventId).toBe(`audit-report-run-preview-${auditReport.contentSha256.hash.slice(0, 16)}`);
+    expect(event.detail).toContain("run-preview-audit-evidence-report.md");
+    expect(event.detail).toContain(auditReport.contentSha256.hash.slice(0, 12));
   });
 
   test("returns fallback when research run export integrity is malformed", async () => {

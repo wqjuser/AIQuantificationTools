@@ -1009,6 +1009,43 @@ export async function buildResearchRunExportAuditReport(
   };
 }
 
+export function buildAuditEvidenceReportAuditEvent(
+  auditReport: ResearchRunExportAuditReport,
+  summary: AuditEvidenceSummary
+): AuditEventRecord {
+  const shortHash = auditReport.contentSha256.hash.slice(0, 16);
+  return {
+    schemaVersion: 1,
+    eventId: `audit-report-${sanitizeDownloadFileName(auditReport.runId)}-${shortHash}`,
+    eventType: "audit_evidence_report",
+    runId: auditReport.runId,
+    createdAt: auditReport.generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: `Audit evidence report generated for ${auditReport.runId}`,
+    detail: `${auditReport.fileName} · sha256 ${auditReport.contentSha256.hash.slice(0, 12)} · focus ${
+      summary.focusQuery || "none"
+    }`,
+    metadata: {
+      artifactKind: auditReport.kind,
+      fileName: auditReport.fileName,
+      format: auditReport.format,
+      contentSha256: auditReport.contentSha256.hash,
+      contentSha256Algorithm: auditReport.contentSha256.algorithm,
+      evidenceFocus: summary.focusQuery,
+      auditQuery: summary.auditQuery,
+      packageQuery: summary.packageQuery,
+      importDiffQuery: summary.importDiffQuery,
+      packageMatched: summary.packageMatchedCount,
+      packageTotal: summary.packageTotalCount,
+      importDiffBlocked: summary.importDiffBlockedCount,
+      importDiffTotal: summary.importDiffTotalCount,
+      deepLinkStatus: summary.deepLinkStatus,
+      deepLinkError: summary.deepLinkError
+    }
+  };
+}
+
 export async function withResearchRunExportAuditEvidenceArtifacts(
   exportPackage: ResearchRunExportPackage,
   summary: AuditEvidenceSummary,

@@ -43,6 +43,7 @@ import {
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   normalizeResearchRunExportPackagePayload,
+  buildAuditEvidenceReportAuditEvent,
   buildResearchRunExportAuditReport,
   withResearchRunExportAuditEvidenceArtifacts,
   MarketKlinesResult,
@@ -59,6 +60,7 @@ import {
   PlatformSettingsStatus,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  ResearchRunExportAuditReport,
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
   ResearchNoteResult,
@@ -1161,6 +1163,25 @@ export function App() {
     [quantCoreBaseUrl, refreshRunHistory, replayRun, researchRunImportAuditEvents]
   );
 
+  const persistAuditEvidenceReportEvent = useCallback(
+    (auditReport: ResearchRunExportAuditReport | undefined) => {
+      if (!auditReport) {
+        return;
+      }
+      void saveAuditEvent(quantCoreBaseUrl, buildAuditEvidenceReportAuditEvent(auditReport, auditEvidenceSummary)).then((result) => {
+        if (result.source === "core" && result.event) {
+          return;
+        }
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Audit evidence report ledger save failed",
+          error: result.error ?? "Audit evidence report ledger save failed"
+        }));
+      });
+    },
+    [auditEvidenceSummary, quantCoreBaseUrl]
+  );
+
   const exportRun = useCallback(async (run: ResearchRunAudit) => {
     const result = await loadResearchRunExport(quantCoreBaseUrl, run.runId);
     if (result.source === "fallback" || !result.exportPackage) {
@@ -1174,6 +1195,7 @@ export function App() {
 
     const fileName = `${run.runId}-research-export.json`;
     const exportPackage = await withResearchRunExportAuditEvidenceArtifacts(result.exportPackage, auditEvidenceSummary);
+    persistAuditEvidenceReportEvent(exportPackage.auditReport);
     const objectUrl = URL.createObjectURL(
       new Blob([JSON.stringify(exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
     );
@@ -1189,7 +1211,7 @@ export function App() {
       statusLabel: "Research run export ready",
       error: undefined
     }));
-  }, [auditEvidenceSummary, quantCoreBaseUrl]);
+  }, [auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl]);
 
   const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
     setIsInspectingExportPackage(true);
@@ -1308,6 +1330,7 @@ export function App() {
   const downloadAuditEvidenceReport = useCallback(async () => {
     try {
       const auditReport = await buildResearchRunExportAuditReport(auditEvidenceSummary);
+      persistAuditEvidenceReportEvent(auditReport);
       const objectUrl = URL.createObjectURL(
         new Blob([auditReport.contentMarkdown], { type: "text/markdown;charset=utf-8" })
       );
@@ -1330,7 +1353,7 @@ export function App() {
         error: downloadError instanceof Error ? downloadError.message : "Audit evidence report download failed"
       }));
     }
-  }, [auditEvidenceSummary]);
+  }, [auditEvidenceSummary, persistAuditEvidenceReportEvent]);
 
   const inspectRunExportPackage = useCallback(
     async (run: ResearchRunAudit) => {
@@ -1538,18 +1561,21 @@ export function App() {
     setIsSavingAiReviewRecord(false);
   }, [workspace]);
 
-  const appendResearchRunImportAuditEvent = useCallback((event: ResearchRunImportAuditEvent) => {
-    setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, event));
-    void saveAuditEvent(quantCoreBaseUrl, researchRunImportAuditEventToAuditEventRecord(event)).then((result) => {
-      if (result.source !== "core" || !result.event) {
-        return;
-      }
-      const savedEvent = auditEventRecordToResearchRunImportEvent(result.event);
-      if (savedEvent) {
-        setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, savedEvent));
-      }
-    });
-  }, []);
+  const appendResearchRunImportAuditEvent = useCallback(
+    (event: ResearchRunImportAuditEvent) => {
+      setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, event));
+      void saveAuditEvent(quantCoreBaseUrl, researchRunImportAuditEventToAuditEventRecord(event)).then((result) => {
+        if (result.source !== "core" || !result.event) {
+          return;
+        }
+        const savedEvent = auditEventRecordToResearchRunImportEvent(result.event);
+        if (savedEvent) {
+          setResearchRunImportAuditEvents((current) => mergeResearchRunImportAuditEvents(current, savedEvent));
+        }
+      });
+    },
+    [quantCoreBaseUrl]
+  );
 
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {

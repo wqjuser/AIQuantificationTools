@@ -216,3 +216,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser"` failed because the Audit summary card had no report download action or package export artifact wiring.
 - GREEN: added `buildResearchRunExportAuditReport`, `withResearchRunExportAuditEvidenceArtifacts`, SHA-256 content hashing, `audit-report` package browser rows, `.md` download from the Audit summary card, and backend integrity exclusion for `auditReport`.
 - DOCS: updated product plan and architecture notes; next slice is persisting audit reports into the backend audit ledger or signing chain.
+- RED: `terminal-api.test.ts -t "audit evidence report"` failed because there was no model helper converting `aiqt.auditReport` into a ledger-ready audit event.
+- RED: `layout-css.test.js -t "export package browser"` failed because JSON export and Markdown report download did not call the audit event save path.
+- GREEN: added `buildAuditEvidenceReportAuditEvent` with `eventType=audit_evidence_report`, stable event ids based on run id and report SHA-256, report hash/focus/count metadata, and wired both JSON export and Markdown download through `saveAuditEvent`.
+- DOCS: updated product plan and architecture notes; next slice is a report history/signature-chain view that reads `audit_evidence_report` events back from `/api/audit/events`.
