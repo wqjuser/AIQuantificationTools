@@ -255,6 +255,13 @@ interface WatchlistCacheSummary {
   rows: number;
 }
 
+interface InitialImportAuditEvidenceDeepLink {
+  auditEventId: string | null;
+  exportPath: string;
+  focusQuery: string;
+  runId: string;
+}
+
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
@@ -337,6 +344,24 @@ function resolveInitialImportAuditEvidenceQuery(): string {
   );
 }
 
+function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidenceDeepLink | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const runId = params.get("runId")?.trim();
+  if (!runId) {
+    return null;
+  }
+  const exportPath = params.get("exportPath")?.trim() || `manifest:${runId}`;
+  return {
+    auditEventId: params.get("auditEvent")?.trim() || null,
+    exportPath,
+    focusQuery: researchRunImportAuditEvidenceAnchorQuery(runId, exportPath),
+    runId
+  };
+}
+
 function resolveInitialWorkAreaSelection(workspace: TerminalWorkspace) {
   return resolveProductWorkAreaSelection(workspace, resolveInitialWorkAreaId("research"));
 }
@@ -416,6 +441,7 @@ export function App() {
     exportPackage: ResearchRunExportPackage;
     fileName: string;
   } | null>(null);
+  const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();
   const [researchRunImportAuditEvents, setResearchRunImportAuditEvents] = useState<ResearchRunImportAuditEvent[]>([]);
   const [researchRunImportAuditPagination, setResearchRunImportAuditPagination] =
     useState<AuditEventHistoryPagination | null>(null);
@@ -423,8 +449,8 @@ export function App() {
   const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
   const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
-  const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState("");
-  const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState("");
+  const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");
+  const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");
   const [indexedExportPackages, setIndexedExportPackages] = useState<ResearchRunExportPackage[]>([]);
   const [aiReviewHistoryPagination, setAiReviewHistoryPagination] = useState<AiReviewRunHistoryPagination | null>(null);
   const [aiReviewHistoryQuery, setAiReviewHistoryQuery] = useState("");
@@ -438,6 +464,7 @@ export function App() {
   const aiReviewHistoryRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
+  const initialImportAuditEvidenceDeepLinkRef = useRef(initialImportAuditEvidenceDeepLink);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -1198,6 +1225,17 @@ export function App() {
     },
     [inspectRunExportPackageByRunId]
   );
+
+  useEffect(() => {
+    const deepLink = initialImportAuditEvidenceDeepLinkRef.current;
+    if (!deepLink || activeWorkAreaId !== "audit") {
+      return;
+    }
+    initialImportAuditEvidenceDeepLinkRef.current = null;
+    setResearchRunExportBrowserQuery(deepLink.focusQuery);
+    setResearchRunImportDiffQuery(deepLink.focusQuery);
+    void inspectRunExportPackageByRunId(deepLink.runId);
+  }, [activeWorkAreaId, inspectRunExportPackageByRunId]);
 
   const indexRecentRunExportPackages = useCallback(async () => {
     if (!runHistory.length) {
@@ -5888,12 +5926,16 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
 }
 
-function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string {
-  const exportPath = event.exportPath.trim();
-  if (exportPath.startsWith("manifest:")) {
-    return event.runId;
+function researchRunImportAuditEvidenceAnchorQuery(runId: string, exportPath: string): string {
+  const normalizedExportPath = exportPath.trim();
+  if (normalizedExportPath.startsWith("manifest:")) {
+    return runId;
   }
-  return exportPath || event.runId;
+  return normalizedExportPath || runId;
+}
+
+function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string {
+  return researchRunImportAuditEvidenceAnchorQuery(event.runId, event.exportPath);
 }
 
 function buildResearchRunImportAuditEvidenceUrl(event: ResearchRunImportAuditEvent): string {

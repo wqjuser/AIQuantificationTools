@@ -319,7 +319,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildResearchRunExportBrowserRows");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
-    expect(appSource).toContain('const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState("");');
+    expect(appSource).toContain('const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
     expect(appSource).toContain("function ResearchRunExportPackageBrowserPanel");
     expect(appSource).toContain("const inspectRunExportPackage = useCallback");
     expect(auditWorkspaceSource).toContain("<ResearchRunExportPackageBrowserPanel");
@@ -373,7 +373,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildResearchRunImportDiffRows");
     expect(appSource).toContain("filterResearchRunImportDiffRows");
     expect(appSource).toContain("const researchRunImportDiffRows = buildResearchRunImportDiffRows");
-    expect(appSource).toContain('const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState("");');
+    expect(appSource).toContain('const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
     expect(appSource).toContain("function ResearchRunImportDiffPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunImportDiffPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-import-diff-panel"');
@@ -433,7 +433,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const [researchRunImportAuditEvents, setResearchRunImportAuditEvents]");
     expect(appSource).toContain("const [researchRunImportAuditPagination, setResearchRunImportAuditPagination]");
     expect(appSource).toContain("function resolveInitialImportAuditEvidenceQuery(): string");
+    expect(appSource).toContain("interface InitialImportAuditEvidenceDeepLink");
+    expect(appSource).toContain("function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidenceDeepLink | null");
     expect(appSource).toContain('new URLSearchParams(window.location.search).get("auditEvent")');
+    expect(appSource).toContain('const runId = params.get("runId")?.trim();');
+    expect(appSource).toContain('const exportPath = params.get("exportPath")?.trim() || `manifest:${runId}`;');
+    expect(appSource).toContain("const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();");
+    expect(appSource).toContain("const initialImportAuditEvidenceDeepLinkRef = useRef(initialImportAuditEvidenceDeepLink);");
     expect(appSource).toContain("const [researchRunImportAuditQuery, setResearchRunImportAuditQuery] = useState(resolveInitialImportAuditEvidenceQuery);");
     expect(appSource).toContain("const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);");
     expect(appSource).toContain("const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());");
@@ -451,7 +457,14 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function buildResearchRunImportAuditEvidenceUrl(event: ResearchRunImportAuditEvent): string");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
     expect(appSource).toContain("const inspectResearchRunImportAuditEvent = useCallback");
+    expect(appSource).toContain("const deepLink = initialImportAuditEvidenceDeepLinkRef.current;");
+    expect(appSource).toContain("initialImportAuditEvidenceDeepLinkRef.current = null;");
+    expect(appSource).toContain("setResearchRunExportBrowserQuery(deepLink.focusQuery);");
+    expect(appSource).toContain("setResearchRunImportDiffQuery(deepLink.focusQuery);");
+    expect(appSource).toContain("void inspectRunExportPackageByRunId(deepLink.runId);");
+    expect(appSource).toContain("function researchRunImportAuditEvidenceAnchorQuery(runId: string, exportPath: string): string");
     expect(appSource).toContain("function researchRunImportAuditEvidenceQuery(event: ResearchRunImportAuditEvent): string");
+    expect(appSource).toContain("return researchRunImportAuditEvidenceAnchorQuery(event.runId, event.exportPath);");
     expect(appSource).toContain("inspectRunExportPackageByRunId(event.runId)");
     expect(appSource).toContain("const focusQuery = researchRunImportAuditEvidenceQuery(event);");
     expect(appSource).toContain("setResearchRunExportBrowserQuery(focusQuery);");

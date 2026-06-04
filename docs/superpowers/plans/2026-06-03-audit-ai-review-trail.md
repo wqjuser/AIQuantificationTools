@@ -187,3 +187,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because Audit did not read `auditEvent` links into import-audit query state or highlight/scroll the matching ledger row.
 - GREEN: initialized the import audit query/focused event from `auditEvent`/`exportPath`/`runId` URL params and made the focused ledger row scroll into view with a highlighted state.
 - DOCS: updated product plan and architecture notes; next slice is chaining audit-event deep links into automatic package evidence loading.
+- RED: `layout-css.test.js -t "import audit events|export package browser|import diff guidance"` failed because Audit deep links initialized the ledger query but did not initialize package/diff focus or load the referenced run package.
+- GREEN: parsed `runId`/`exportPath` into an initial import-audit evidence deep link, reused the existing package inspector once per Audit deep link, and initialized package browser plus import diff queries from the same normalized anchor.
+- DOCS: updated product plan and architecture notes; next slice is visible deep-link load status and retry for invalid run/package anchors.
