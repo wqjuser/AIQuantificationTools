@@ -313,11 +313,13 @@ describe("terminal layout css", () => {
   test("renders a research run export package browser in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const exportBrowserPanelSource = sourceBetween("function ResearchRunExportPackageBrowserPanel", "function ResearchRunImportDiffPanel");
+    const exportRunSource = sourceBetween("const exportRun = useCallback", "const inspectRunExportPackageByRunId");
     const runHistoryPanelSource = sourceBetween("function RunHistoryPanel", "function ExecutionPanel");
     const runHistoryRowSource = sourceBetween("function RunHistoryRow", "function RunComparisonBoard");
 
     expect(appSource).toContain("buildResearchRunExportBrowserRows");
     expect(appSource).toContain("buildAuditEvidenceSummary");
+    expect(appSource).toContain("withResearchRunExportAuditEvidenceSummary");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
     expect(appSource).toContain("const auditEvidenceSummary = buildAuditEvidenceSummary");
@@ -330,6 +332,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function ResearchRunExportPackageBrowserPanel");
     expect(appSource).toContain("const inspectRunExportPackage = useCallback");
     expect(appSource).toContain("const loadImportAuditEvidenceDeepLink = useCallback");
+    expect(exportRunSource).toContain("const exportPackage = withResearchRunExportAuditEvidenceSummary");
+    expect(exportRunSource).toContain("JSON.stringify(exportPackage, null, 2)");
+    expect(exportRunSource).toContain("[auditEvidenceSummary, quantCoreBaseUrl]");
     expect(appSource).toContain('setImportAuditEvidenceDeepLinkStatus({ ...deepLink, status: "loading", error: null });');
     expect(appSource).toContain("const inspection = await inspectRunExportPackageByRunId(deepLink.runId);");
     expect(appSource).toContain('status: inspection.ok ? "loaded" : "failed"');

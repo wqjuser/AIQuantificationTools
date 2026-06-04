@@ -23,6 +23,7 @@ DEFAULT_DATA_SNAPSHOT = {
     "hash": "",
     "bars": [],
 }
+EXPORT_PACKAGE_INTEGRITY_METADATA_KEYS = {"integrity", "exportedAt", "auditEvidenceSummary"}
 
 
 def _default_ai_report() -> dict[str, Any]:
@@ -608,7 +609,7 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
 
 
 def _export_package_hash(export_package: dict[str, Any]) -> str:
-    payload = {key: value for key, value in export_package.items() if key not in {"integrity", "exportedAt"}}
+    payload = {key: value for key, value in export_package.items() if key not in EXPORT_PACKAGE_INTEGRITY_METADATA_KEYS}
     raw = json.dumps(_canonical_integrity_value(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

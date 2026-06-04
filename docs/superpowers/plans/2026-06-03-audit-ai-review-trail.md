@@ -197,3 +197,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "export package browser"` failed because the Audit package browser had no summary copy state, summary copy action, or compact summary card.
 - GREEN: added `buildAuditEvidenceSummary`, wired the Audit package browser to copy the generated summary text, and rendered package/diff focus counts without adding a new layout column.
 - DOCS: updated product plan and architecture notes; next slice is persisting this audit evidence summary into export manifest or a report artifact.
+- RED: `terminal-api.test.ts -t "audit evidence summary"` failed because export packages had no `withResearchRunExportAuditEvidenceSummary` helper or schema support for `auditEvidenceSummary`.
+- RED: `terminal-workbench.test.ts -t "export package browser"` failed because package browser rows ignored the optional audit summary artifact.
+- RED: backend import test failed with `integrity_hash_mismatch` because front-end-added `auditEvidenceSummary` was hashed as core package content.
+- GREEN: added `aiqt.auditEvidenceSummary` as an optional top-level export artifact, attached it during front-end download, rendered an `audit-summary` package browser row, and excluded the UI metadata from core export integrity hashing while preserving tamper checks for research payload fields.
+- DOCS: updated product plan, architecture notes, and this implementation log; next slice is rendering/import-comparing the summary as a richer audit report fragment.

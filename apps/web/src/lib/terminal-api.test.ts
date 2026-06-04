@@ -46,6 +46,7 @@ import {
   loadAuditEvents,
   saveResearchNote,
   saveStrategySnapshot,
+  withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
   undoResearchRunImport,
@@ -1750,6 +1751,114 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload(exportPackage)?.manifest.runId).toBe("run-preview");
     expect(normalizeResearchRunExportPackagePayload({ export: exportPackage })?.manifest.runId).toBe("run-preview");
     expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
+  });
+
+  test("attaches audit evidence summary metadata to research run export packages", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:05:00+00:00",
+      integrity: { algorithm: "sha256", hash: "a".repeat(64) },
+      manifest: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-preview",
+        dataHash: "hash-preview",
+        dataRows: 1,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
+      },
+      researchRun: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Preview SMA trend",
+        strategyRevision: "rev-preview",
+        dataRows: 1,
+        metrics: { total_return_pct: 1.2, trade_count: 0 },
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          hash: "hash-preview",
+          bars: [
+            {
+              timestamp: "2026-05-26T08:00:00+00:00",
+              timestampMs: 1779782400000,
+              open: 9.1,
+              high: 9.3,
+              low: 9,
+              close: 9.2,
+              volume: 1200000
+            }
+          ]
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+      }
+    } satisfies ResearchRunExportPackage;
+
+    const enrichedPackage = withResearchRunExportAuditEvidenceSummary(
+      exportPackage,
+      {
+        auditQuery: "manual-smoke",
+        copyText: "AIQT Audit Evidence Summary\nRun: run-preview",
+        deepLinkError: null,
+        deepLinkStatus: "loaded",
+        focusQuery: "manifest:run-preview",
+        importDiffAddCount: 0,
+        importDiffBlockedCount: 0,
+        importDiffChangeCount: 0,
+        importDiffMatchedCount: 1,
+        importDiffQuery: "manifest:run-preview",
+        importDiffTotalCount: 11,
+        packageBlockedCount: 0,
+        packageMatchedCount: 1,
+        packageMissingCount: 0,
+        packageQuery: "manifest:run-preview",
+        packageReadyCount: 5,
+        packageTotalCount: 9,
+        runId: "run-preview"
+      },
+      "2026-06-04T08:00:00+00:00"
+    );
+
+    expect(enrichedPackage.auditEvidenceSummary).toMatchObject({
+      kind: "aiqt.auditEvidenceSummary",
+      schemaVersion: 1,
+      runId: "run-preview",
+      generatedAt: "2026-06-04T08:00:00+00:00",
+      package: { ready: 5, missing: 0, blocked: 0, matched: 1, total: 9 },
+      importDiff: { changes: 0, adds: 0, blocked: 0, matched: 1, total: 11 }
+    });
+    expect(normalizeResearchRunExportPackagePayload(enrichedPackage)?.auditEvidenceSummary?.copyText).toContain(
+      "AIQT Audit Evidence Summary"
+    );
+    expect(normalizeResearchRunExportPackagePayload({ export: enrichedPackage })?.auditEvidenceSummary?.package.matched).toBe(
+      1
+    );
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...enrichedPackage,
+        auditEvidenceSummary: { ...enrichedPackage.auditEvidenceSummary, schemaVersion: 2 }
+      })
+    ).toBeNull();
   });
 
   test("returns fallback when research run export integrity is malformed", async () => {

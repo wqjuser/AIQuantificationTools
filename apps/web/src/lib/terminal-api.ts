@@ -10,6 +10,7 @@ import {
   Timeframe,
   type AiReviewEvidenceAnchor,
   type AiReviewRunRecord,
+  type AuditEvidenceSummary,
   type BacktestAssumptions,
   type StrategyReadinessGate,
   type StrategySnapshot
@@ -97,6 +98,34 @@ export interface ResearchRunExportIntegrity {
   hash: string;
 }
 
+export interface ResearchRunExportAuditEvidenceSummary {
+  kind: "aiqt.auditEvidenceSummary";
+  schemaVersion: 1;
+  runId: string;
+  generatedAt: string;
+  auditQuery: string;
+  packageQuery: string;
+  importDiffQuery: string;
+  focusQuery: string;
+  deepLinkStatus: AuditEvidenceSummary["deepLinkStatus"];
+  deepLinkError: string | null;
+  package: {
+    ready: number;
+    missing: number;
+    blocked: number;
+    matched: number;
+    total: number;
+  };
+  importDiff: {
+    changes: number;
+    adds: number;
+    blocked: number;
+    matched: number;
+    total: number;
+  };
+  copyText: string;
+}
+
 export interface ResearchRunExportPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -108,6 +137,7 @@ export interface ResearchRunExportPackage {
   paperExecutions?: PaperExecutionRecord[];
   promotionCandidate?: PromotionCandidateRecord | null;
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
+  auditEvidenceSummary?: ResearchRunExportAuditEvidenceSummary;
 }
 
 export interface ResearchRunExportResult {
@@ -898,6 +928,50 @@ export function normalizeResearchRunExportPackagePayload(value: unknown): Resear
     return value.export;
   }
   return null;
+}
+
+export function buildResearchRunExportAuditEvidenceSummary(
+  summary: AuditEvidenceSummary,
+  generatedAt = new Date().toISOString()
+): ResearchRunExportAuditEvidenceSummary {
+  return {
+    kind: "aiqt.auditEvidenceSummary",
+    schemaVersion: 1,
+    runId: summary.runId,
+    generatedAt,
+    auditQuery: summary.auditQuery,
+    packageQuery: summary.packageQuery,
+    importDiffQuery: summary.importDiffQuery,
+    focusQuery: summary.focusQuery,
+    deepLinkStatus: summary.deepLinkStatus,
+    deepLinkError: summary.deepLinkError,
+    package: {
+      ready: summary.packageReadyCount,
+      missing: summary.packageMissingCount,
+      blocked: summary.packageBlockedCount,
+      matched: summary.packageMatchedCount,
+      total: summary.packageTotalCount
+    },
+    importDiff: {
+      changes: summary.importDiffChangeCount,
+      adds: summary.importDiffAddCount,
+      blocked: summary.importDiffBlockedCount,
+      matched: summary.importDiffMatchedCount,
+      total: summary.importDiffTotalCount
+    },
+    copyText: summary.copyText
+  };
+}
+
+export function withResearchRunExportAuditEvidenceSummary(
+  exportPackage: ResearchRunExportPackage,
+  summary: AuditEvidenceSummary,
+  generatedAt?: string
+): ResearchRunExportPackage {
+  return {
+    ...exportPackage,
+    auditEvidenceSummary: buildResearchRunExportAuditEvidenceSummary(summary, generatedAt)
+  };
 }
 
 export async function loadResearchRunExport(
@@ -2657,7 +2731,9 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
       exportPackage.promotionCandidate === null ||
       isPromotionCandidateRecord(exportPackage.promotionCandidate)) &&
     (exportPackage.aiReviewRuns === undefined ||
-      (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope)))
+      (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope))) &&
+    (exportPackage.auditEvidenceSummary === undefined ||
+      isResearchRunExportAuditEvidenceSummary(exportPackage.auditEvidenceSummary))
   );
 }
 
@@ -2667,6 +2743,64 @@ function isResearchRunExportIntegrity(value: unknown): value is ResearchRunExpor
   }
   const integrity = value as Partial<ResearchRunExportIntegrity>;
   return integrity.algorithm === "sha256" && typeof integrity.hash === "string" && /^[a-f0-9]{64}$/i.test(integrity.hash);
+}
+
+function isResearchRunExportAuditEvidenceSummary(value: unknown): value is ResearchRunExportAuditEvidenceSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<ResearchRunExportAuditEvidenceSummary>;
+  return (
+    summary.kind === "aiqt.auditEvidenceSummary" &&
+    summary.schemaVersion === 1 &&
+    typeof summary.runId === "string" &&
+    typeof summary.generatedAt === "string" &&
+    typeof summary.auditQuery === "string" &&
+    typeof summary.packageQuery === "string" &&
+    typeof summary.importDiffQuery === "string" &&
+    typeof summary.focusQuery === "string" &&
+    isAuditEvidenceDeepLinkStatus(summary.deepLinkStatus) &&
+    (summary.deepLinkError === null || typeof summary.deepLinkError === "string") &&
+    isAuditEvidenceCountGroup(summary.package) &&
+    isAuditEvidenceImportDiffCountGroup(summary.importDiff) &&
+    typeof summary.copyText === "string"
+  );
+}
+
+function isAuditEvidenceDeepLinkStatus(value: unknown): value is ResearchRunExportAuditEvidenceSummary["deepLinkStatus"] {
+  return value === "none" || value === "idle" || value === "loading" || value === "loaded" || value === "failed";
+}
+
+function isAuditEvidenceCountGroup(
+  value: unknown
+): value is ResearchRunExportAuditEvidenceSummary["package"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const counts = value as Partial<ResearchRunExportAuditEvidenceSummary["package"]>;
+  return (
+    typeof counts.ready === "number" &&
+    typeof counts.missing === "number" &&
+    typeof counts.blocked === "number" &&
+    typeof counts.matched === "number" &&
+    typeof counts.total === "number"
+  );
+}
+
+function isAuditEvidenceImportDiffCountGroup(
+  value: unknown
+): value is ResearchRunExportAuditEvidenceSummary["importDiff"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const counts = value as Partial<ResearchRunExportAuditEvidenceSummary["importDiff"]>;
+  return (
+    typeof counts.changes === "number" &&
+    typeof counts.adds === "number" &&
+    typeof counts.blocked === "number" &&
+    typeof counts.matched === "number" &&
+    typeof counts.total === "number"
+  );
 }
 
 function isResearchRunExportManifest(value: unknown): value is ResearchRunExportManifest {

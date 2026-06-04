@@ -2092,7 +2092,22 @@ describe("terminal workbench model", () => {
             boundary: "AI can explain supplied evidence only."
           }
         }
-      ]
+      ],
+      auditEvidenceSummary: {
+        kind: "aiqt.auditEvidenceSummary",
+        schemaVersion: 1,
+        runId: "run-browser",
+        generatedAt: "2026-06-04T08:00:00+00:00",
+        auditQuery: "manual-smoke",
+        packageQuery: "manifest:run-browser",
+        importDiffQuery: "manifest:run-browser",
+        focusQuery: "manifest:run-browser",
+        deepLinkStatus: "loaded",
+        deepLinkError: null,
+        package: { ready: 5, missing: 1, blocked: 2, matched: 1, total: 9 },
+        importDiff: { changes: 1, adds: 0, blocked: 0, matched: 1, total: 11 },
+        copyText: "AIQT Audit Evidence Summary\nRun: run-browser"
+      }
     });
 
     expect(rows).toEqual(
@@ -2128,6 +2143,12 @@ describe("terminal workbench model", () => {
           exportPath: "aiReviewRuns[]"
         }),
         expect.objectContaining({
+          id: "audit-summary",
+          status: "ready",
+          value: "1/9 package · 0 diff blocked",
+          exportPath: "auditEvidenceSummary"
+        }),
+        expect.objectContaining({
           id: "execution-handoff",
           status: "blocked",
           value: "1/2 gates",
@@ -2137,6 +2158,9 @@ describe("terminal workbench model", () => {
     );
     expect(filterResearchRunExportBrowserRows(rows, "integrity.hash").map((row) => row.id)).toEqual(["integrity"]);
     expect(filterResearchRunExportBrowserRows(rows, "aiReviewRuns").map((row) => row.id)).toEqual(["ai-reviews"]);
+    expect(filterResearchRunExportBrowserRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
+      "audit-summary"
+    ]);
   });
 
   test("builds a searchable recent export package index across packages", () => {

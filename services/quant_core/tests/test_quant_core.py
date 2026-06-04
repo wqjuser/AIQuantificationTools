@@ -3692,6 +3692,67 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "integrity_hash_mismatch"):
             research_run_import_to_audit(tampered_package)
 
+    def test_research_run_import_allows_frontend_audit_summary_metadata(self):
+        from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
+
+        audit = ResearchRunAudit(
+            run_id="run-audit-summary",
+            created_at=datetime(2026, 6, 4, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-audit-summary",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Summary metadata", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={"summary": "Original", "risks": ["Risk"], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "start": "2026-06-04T08:00:00+00:00",
+                "end": "2026-06-04T08:00:00+00:00",
+                "hash": "snapshot-audit-summary",
+                "bars": [
+                    {
+                        "timestamp": "2026-06-04T08:00:00+00:00",
+                        "timestampMs": 1780560000000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-06-04T08:00:00+00:00", "equity": 101200.0}],
+        )
+        export_package = research_run_export_to_payload(audit)
+        export_package["auditEvidenceSummary"] = {
+            "kind": "aiqt.auditEvidenceSummary",
+            "schemaVersion": 1,
+            "runId": "run-audit-summary",
+            "generatedAt": "2026-06-04T08:05:00+00:00",
+            "auditQuery": "manual-smoke",
+            "packageQuery": "manifest:run-audit-summary",
+            "importDiffQuery": "manifest:run-audit-summary",
+            "focusQuery": "manifest:run-audit-summary",
+            "deepLinkStatus": "loaded",
+            "deepLinkError": None,
+            "package": {"ready": 5, "missing": 0, "blocked": 0, "matched": 1, "total": 9},
+            "importDiff": {"changes": 0, "adds": 0, "blocked": 0, "matched": 1, "total": 11},
+            "copyText": "AIQT Audit Evidence Summary\nRun: run-audit-summary",
+        }
+
+        imported = research_run_import_to_audit(export_package)
+
+        self.assertEqual(imported.run_id, "run-audit-summary")
+        self.assertEqual(imported.strategy_revision, "rev-audit-summary")
+
     def test_research_run_import_accepts_browser_json_number_round_trip(self):
         from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
 

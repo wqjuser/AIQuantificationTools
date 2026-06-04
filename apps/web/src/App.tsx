@@ -43,6 +43,7 @@ import {
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
   normalizeResearchRunExportPackagePayload,
+  withResearchRunExportAuditEvidenceSummary,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
@@ -1165,8 +1166,9 @@ export function App() {
     }
 
     const fileName = `${run.runId}-research-export.json`;
+    const exportPackage = withResearchRunExportAuditEvidenceSummary(result.exportPackage, auditEvidenceSummary);
     const objectUrl = URL.createObjectURL(
-      new Blob([JSON.stringify(result.exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
+      new Blob([JSON.stringify(exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
     );
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
@@ -1180,7 +1182,7 @@ export function App() {
       statusLabel: "Research run export ready",
       error: undefined
     }));
-  }, []);
+  }, [auditEvidenceSummary, quantCoreBaseUrl]);
 
   const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
     setIsInspectingExportPackage(true);
@@ -5915,6 +5917,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "paper-executions": "模拟执行",
       "promotion-candidate": "晋级候选",
       "ai-reviews": "AI 评审",
+      "audit-summary": "审计摘要",
       "execution-handoff": "执行交接"
     } satisfies Record<ResearchRunExportBrowserRow["id"], string>
   )[row.id];

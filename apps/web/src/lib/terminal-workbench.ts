@@ -614,6 +614,33 @@ export interface ResearchRunExportBrowserPackage {
   paperExecutions?: PaperExecutionSnapshot[];
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
+  auditEvidenceSummary?: {
+    kind: "aiqt.auditEvidenceSummary";
+    schemaVersion: 1;
+    runId: string;
+    generatedAt: string;
+    auditQuery: string;
+    packageQuery: string;
+    importDiffQuery: string;
+    focusQuery: string;
+    deepLinkStatus: AuditEvidenceDeepLinkStatus;
+    deepLinkError: string | null;
+    package: {
+      ready: number;
+      missing: number;
+      blocked: number;
+      matched: number;
+      total: number;
+    };
+    importDiff: {
+      changes: number;
+      adds: number;
+      blocked: number;
+      matched: number;
+      total: number;
+    };
+    copyText: string;
+  };
 }
 
 export interface ResearchRunExportBrowserRow {
@@ -626,6 +653,7 @@ export interface ResearchRunExportBrowserRow {
     | "paper-executions"
     | "promotion-candidate"
     | "ai-reviews"
+    | "audit-summary"
     | "execution-handoff";
   label: string;
   status: ResearchRunExportBrowserStatus;
@@ -2485,6 +2513,12 @@ export function buildResearchRunExportBrowserRows(
   const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
   const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
   const integrityHash = exportPackage.integrity?.hash ?? "";
+  const auditSummary = exportPackage.auditEvidenceSummary;
+  const auditSummaryIsReady =
+    auditSummary?.kind === "aiqt.auditEvidenceSummary" &&
+    auditSummary.schemaVersion === 1 &&
+    auditSummary.runId === exportPackage.manifest.runId &&
+    auditSummary.copyText.trim() !== "";
   const integrityIsReady = exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
   const dataIsReady =
     artifactCounts.bars === exportPackage.manifest.dataRows &&
@@ -2577,6 +2611,21 @@ export function buildResearchRunExportBrowserRows(
       exportPath: "aiReviewRuns[]",
       tone: aiReviewCountMatches && aiReviewPackageCount > 0 ? "ai" : aiReviewCountMatches ? "neutral" : "risk"
     },
+    ...(auditSummary
+      ? ([
+          {
+            id: "audit-summary",
+            label: "Audit evidence summary",
+            status: auditSummaryIsReady ? "ready" : "blocked",
+            value: `${auditSummary.package.matched}/${auditSummary.package.total} package · ${auditSummary.importDiff.blocked} diff blocked`,
+            detail: auditSummaryIsReady
+              ? `Copyable audit focus embedded at ${auditSummary.generatedAt}.`
+              : "Audit evidence summary metadata does not match this export package.",
+            exportPath: "auditEvidenceSummary",
+            tone: auditSummaryIsReady ? "ai" : "risk"
+          }
+        ] satisfies ResearchRunExportBrowserRow[])
+      : []),
     {
       id: "execution-handoff",
       label: "Execution handoff",
