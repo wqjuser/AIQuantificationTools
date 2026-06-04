@@ -792,6 +792,10 @@ export function buildAuditReportVerifyUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/reports/verify");
 }
 
+export function buildAuditReportRevokeUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/reports/revoke");
+}
+
 export function buildStrategiesUrl(
   baseUrl: string,
   params: { market?: Market; symbol?: string; limit?: number } = {}
@@ -1478,7 +1482,7 @@ export async function signAuditReportEvent(
   eventId: string,
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AuditReportSignatureResult> {
-  return mutateAuditReportSignature(buildAuditReportSignUrl(baseUrl), eventId, fetcher, "sign");
+  return mutateAuditReportSignature(buildAuditReportSignUrl(baseUrl), eventId, undefined, fetcher, "sign");
 }
 
 export async function verifyAuditReportEvent(
@@ -1486,20 +1490,30 @@ export async function verifyAuditReportEvent(
   eventId: string,
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AuditReportSignatureResult> {
-  return mutateAuditReportSignature(buildAuditReportVerifyUrl(baseUrl), eventId, fetcher, "verify");
+  return mutateAuditReportSignature(buildAuditReportVerifyUrl(baseUrl), eventId, undefined, fetcher, "verify");
+}
+
+export async function revokeAuditReportEvent(
+  baseUrl: string,
+  eventId: string,
+  reason = "manual audit revocation",
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditReportSignatureResult> {
+  return mutateAuditReportSignature(buildAuditReportRevokeUrl(baseUrl), eventId, reason, fetcher, "revoke");
 }
 
 async function mutateAuditReportSignature(
   url: string,
   eventId: string,
+  reason: string | undefined,
   fetcher: WorkspaceFetcher,
-  action: "sign" | "verify"
+  action: "sign" | "verify" | "revoke"
 ): Promise<AuditReportSignatureResult> {
   try {
     const response = await fetcher(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId })
+      body: JSON.stringify(reason === undefined ? { eventId } : { eventId, reason })
     });
     const payload = await response.json();
     if (!response.ok) {

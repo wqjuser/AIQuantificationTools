@@ -18,6 +18,7 @@ import {
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
   buildAuditReportVerifyUrl,
+  buildAuditReportRevokeUrl,
   buildCacheRefreshUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -48,6 +49,7 @@ import {
   loadAuditEvents,
   signAuditReportEvent,
   verifyAuditReportEvent,
+  revokeAuditReportEvent,
   saveResearchNote,
   saveStrategySnapshot,
   withResearchRunExportAuditEvidenceArtifacts,
@@ -2856,7 +2858,7 @@ describe("terminal workspace API client", () => {
     expect(result.pagination).toEqual({ limit: 5, offset: 10, total: 1, query: "unsafe-import" });
   });
 
-  test("signs and verifies audit report events through the local core", async () => {
+  test("signs verifies and revokes audit report events through the local core", async () => {
     const signedEvent: AuditEventRecord = {
       schemaVersion: 1,
       eventId: "audit-report-run-signed",
@@ -2877,6 +2879,19 @@ describe("terminal workspace API client", () => {
           signer: "Local Audit Key",
           status: "verified",
           value: "a".repeat(64)
+        }
+      }
+    };
+    const signedSignature = signedEvent.metadata.signature as Record<string, unknown>;
+    const revokedEvent: AuditEventRecord = {
+      ...signedEvent,
+      metadata: {
+        ...signedEvent.metadata,
+        signature: {
+          ...signedSignature,
+          revokedAt: "2026-06-04T09:25:00+00:00",
+          revokedReason: "superseded by corrected evidence package",
+          status: "revoked"
         }
       }
     };
@@ -2906,20 +2921,46 @@ describe("terminal workspace API client", () => {
         })
       };
     });
+    const revokeResult = await revokeAuditReportEvent(
+      "http://127.0.0.1:8765",
+      "audit-report-run-signed",
+      "superseded by corrected evidence package",
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            event: revokedEvent,
+            signature: revokedEvent.metadata.signature,
+            verification: { status: "invalid", reason: "signature_revoked" }
+          })
+        };
+      }
+    );
 
     expect(buildAuditReportSignUrl("http://127.0.0.1:8765")).toBe("http://127.0.0.1:8765/api/audit/reports/sign");
     expect(buildAuditReportVerifyUrl("http://127.0.0.1:8765")).toBe("http://127.0.0.1:8765/api/audit/reports/verify");
+    expect(buildAuditReportRevokeUrl("http://127.0.0.1:8765")).toBe("http://127.0.0.1:8765/api/audit/reports/revoke");
     expect(calls.map((call) => call.url)).toEqual([
       "http://127.0.0.1:8765/api/audit/reports/sign",
-      "http://127.0.0.1:8765/api/audit/reports/verify"
+      "http://127.0.0.1:8765/api/audit/reports/verify",
+      "http://127.0.0.1:8765/api/audit/reports/revoke"
     ]);
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ eventId: "audit-report-run-signed" });
+    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
+      eventId: "audit-report-run-signed",
+      reason: "superseded by corrected evidence package"
+    });
     expect(signResult.source).toBe("core");
     expect(signResult.event?.metadata.signature).toEqual(signedEvent.metadata.signature);
     expect(signResult.verification).toEqual({ status: "verified", reason: "signature_verified" });
     expect(verifyResult.source).toBe("core");
     expect(verifyResult.signature?.keyId).toBe("local-audit-key");
+    expect(revokeResult.source).toBe("core");
+    expect(revokeResult.signature?.status).toBe("revoked");
+    expect(revokeResult.verification).toEqual({ status: "invalid", reason: "signature_revoked" });
   });
 
   test("returns fallback when AI review run history payload is malformed", async () => {

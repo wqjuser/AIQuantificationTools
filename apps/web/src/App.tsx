@@ -67,6 +67,7 @@ import {
   saveResearchNote,
   saveAuditEvent,
   signAuditReportEvent,
+  revokeAuditReportEvent,
   saveAiReviewRunRecord,
   saveStrategySnapshot,
   StrategyLibraryItem,
@@ -499,6 +500,7 @@ export function App() {
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
+  const [revokingAuditReportEventId, setRevokingAuditReportEventId] = useState<string | null>(null);
   const manualSelectionVersionRef = useRef(0);
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -1952,6 +1954,26 @@ export function App() {
     []
   );
 
+  const revokeAuditEvidenceReportEvent = useCallback(
+    async (eventId: string) => {
+      setRevokingAuditReportEventId(eventId);
+      const result = await revokeAuditReportEvent(quantCoreBaseUrl, eventId, "manual audit revocation from Audit workspace");
+      if (result.event) {
+        setAuditEvidenceReportEvents((current) => mergeAuditEvidenceReportEvent(current, result.event!));
+      }
+      if (result.error) {
+        setWorkspaceState((current) => ({
+          ...current,
+          error: result.error,
+          source: result.source,
+          statusLabel: result.source === "core" ? "Audit report revocation failed" : "Offline revocation fallback"
+        }));
+      }
+      setRevokingAuditReportEventId(null);
+    },
+    []
+  );
+
   const updateResearchRunImportAuditQuery = useCallback((query: string) => {
     setResearchRunImportAuditQuery(query);
     setResearchRunImportAuditOffset(0);
@@ -2796,11 +2818,13 @@ export function App() {
             onNextPage={nextAuditEvidenceReportPage}
             onPreviousPage={previousAuditEvidenceReportPage}
             onQueryChange={updateAuditEvidenceReportQuery}
+            onRevokeReport={revokeAuditEvidenceReportEvent}
             onSignReport={signAuditEvidenceReportEvent}
             onVerifyReport={verifyAuditEvidenceReportEvent}
             pagination={auditEvidenceReportPagination}
             query={auditEvidenceReportQuery}
             rows={auditEvidenceReportLedgerRows}
+            revokingEventId={revokingAuditReportEventId}
             signingEventId={signingAuditReportEventId}
             verifyingEventId={verifyingAuditReportEventId}
           />
@@ -5486,11 +5510,13 @@ function AuditEvidenceReportLedgerPanel({
   onNextPage,
   onPreviousPage,
   onQueryChange,
+  onRevokeReport,
   onSignReport,
   onVerifyReport,
   pagination,
   query,
   rows,
+  revokingEventId,
   signingEventId,
   verifyingEventId
 }: {
@@ -5500,11 +5526,13 @@ function AuditEvidenceReportLedgerPanel({
   onNextPage: () => void;
   onPreviousPage: () => void;
   onQueryChange: (query: string) => void;
+  onRevokeReport: (eventId: string) => void;
   onSignReport: (eventId: string) => void;
   onVerifyReport: (eventId: string) => void;
   pagination: AuditEventHistoryPagination | null;
   query: string;
   rows: AuditEvidenceReportLedgerRow[];
+  revokingEventId: string | null;
   signingEventId: string | null;
   verifyingEventId: string | null;
 }) {
@@ -5586,7 +5614,9 @@ function AuditEvidenceReportLedgerPanel({
                 <div>
                   <small>{auditReportLedgerSignatureLabel(i18n, row.signatureLabel)}</small>
                   <small>
-                    {row.signatureDetail && row.chainId
+                    {row.signatureStatus === "revoked" && row.signatureRevokedReason
+                      ? row.signatureRevokedReason
+                      : row.signatureDetail && row.chainId
                       ? `${row.signatureDetail} · ${row.chainId}`
                       : row.signatureDetail || row.chainId || row.signatureRevokedReason || row.signatureStatus}
                   </small>
@@ -5595,14 +5625,26 @@ function AuditEvidenceReportLedgerPanel({
                   </time>
                   <span className="audit-report-ledger-actions">
                     <button
-                      disabled={signingEventId === row.id || verifyingEventId === row.id || row.status === "invalid"}
+                      disabled={
+                        signingEventId === row.id ||
+                        verifyingEventId === row.id ||
+                        revokingEventId === row.id ||
+                        row.status === "invalid" ||
+                        row.signatureStatus === "revoked"
+                      }
                       onClick={() => onSignReport(row.id)}
                       type="button"
                     >
                       {signingEventId === row.id ? (i18n.locale === "zh-CN" ? "签名中" : "Signing") : i18n.locale === "zh-CN" ? "签名" : "Sign"}
                     </button>
                     <button
-                      disabled={signingEventId === row.id || verifyingEventId === row.id || row.signatureStatus === "unsigned"}
+                      disabled={
+                        signingEventId === row.id ||
+                        verifyingEventId === row.id ||
+                        revokingEventId === row.id ||
+                        row.signatureStatus === "unsigned" ||
+                        row.signatureStatus === "revoked"
+                      }
                       onClick={() => onVerifyReport(row.id)}
                       type="button"
                     >
@@ -5613,6 +5655,20 @@ function AuditEvidenceReportLedgerPanel({
                         : i18n.locale === "zh-CN"
                           ? "验签"
                           : "Verify"}
+                    </button>
+                    <button
+                      disabled={
+                        signingEventId === row.id ||
+                        verifyingEventId === row.id ||
+                        revokingEventId === row.id ||
+                        row.signatureStatus === "unsigned" ||
+                        row.signatureStatus === "invalid" ||
+                        row.signatureStatus === "revoked"
+                      }
+                      onClick={() => onRevokeReport(row.id)}
+                      type="button"
+                    >
+                      {revokingEventId === row.id ? (i18n.locale === "zh-CN" ? "撤销中" : "Revoking") : i18n.locale === "zh-CN" ? "撤销" : "Revoke"}
                     </button>
                   </span>
                 </div>

@@ -1351,6 +1351,30 @@ class QuantCoreContractTest(unittest.TestCase):
                 verify_response = connection.getresponse()
                 verify_payload = json.loads(verify_response.read().decode("utf-8"))
 
+                revoke_body = json.dumps(
+                    {
+                        "eventId": "audit-report-api-signable",
+                        "reason": "superseded by corrected evidence package",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/revoke",
+                    body=revoke_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(revoke_body))},
+                )
+                revoke_response = connection.getresponse()
+                revoke_payload = json.loads(revoke_response.read().decode("utf-8"))
+
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/verify",
+                    body=verify_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(verify_body))},
+                )
+                revoked_verify_response = connection.getresponse()
+                revoked_verify_payload = json.loads(revoked_verify_response.read().decode("utf-8"))
+
                 tampered = {
                     **event,
                     "metadata": {
@@ -1384,6 +1408,13 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(sign_payload["event"]["metadata"]["signature"]["status"], "verified")
         self.assertEqual(verify_response.status, 200)
         self.assertEqual(verify_payload["verification"]["status"], "verified")
+        self.assertEqual(revoke_response.status, 200)
+        self.assertEqual(revoke_payload["signature"]["status"], "revoked")
+        self.assertEqual(revoke_payload["signature"]["revokedReason"], "superseded by corrected evidence package")
+        self.assertRegex(revoke_payload["signature"]["revokedAt"], r"^\d{4}-\d{2}-\d{2}T")
+        self.assertEqual(revoked_verify_response.status, 409)
+        self.assertEqual(revoked_verify_payload["verification"]["status"], "invalid")
+        self.assertEqual(revoked_verify_payload["verification"]["reason"], "signature_revoked")
         self.assertEqual(tampered_response.status, 409)
         self.assertEqual(tampered_payload["verification"]["status"], "invalid")
         self.assertEqual(tampered_payload["verification"]["reason"], "signature_mismatch")

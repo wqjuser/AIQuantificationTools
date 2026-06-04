@@ -294,6 +294,29 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if verification.status == "invalid" else 200,
             )
             return
+        if parsed.path == "/api/audit/reports/revoke":
+            payload = self._read_json_body()
+            event_id = str(payload.get("eventId") or "").strip()
+            reason = str(payload.get("reason") or "manual audit revocation").strip()
+            record = self.audit_event_store.get(event_id)
+            if not record:
+                self._send_json({"error": "audit_event_not_found", "eventId": event_id}, status=404)
+                return
+            try:
+                verification, revoked_event_payload = self._audit_report_signer().revoke_event(record, reason=reason)
+                revoked_event = self.audit_event_store.record(revoked_event_payload)
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_report_signature", "detail": str(error)}, status=409)
+                return
+            signature = revoked_event.metadata.get("signature") if isinstance(revoked_event.metadata, dict) else {}
+            self._send_json(
+                {
+                    "event": audit_event_record_to_payload(revoked_event),
+                    "signature": signature if isinstance(signature, dict) else {},
+                    "verification": audit_report_verification_to_payload(verification),
+                }
+            )
+            return
         if parsed.path == "/api/research/runs/import/undo":
             payload = self._read_json_body()
             undo_token = str(payload.get("undoToken") or "").strip()

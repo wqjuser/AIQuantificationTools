@@ -61,9 +61,35 @@ class AuditReportSigner:
             updated_signature.pop("invalidReason", None)
         return verification, self._event_payload_with_signature(record, updated_signature)
 
+    def revoke_event(
+        self,
+        record: AuditEventRecord,
+        *,
+        reason: str,
+        revoked_at: datetime | None = None,
+    ) -> tuple[AuditReportVerification, dict[str, Any]]:
+        self._validate_report_event(record)
+        signature = _dict_or_empty(record.metadata.get("signature"))
+        verification = self._verify_signature(record, signature)
+        if verification.status != "verified":
+            raise ValueError(verification.reason)
+        timestamp = (revoked_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        updated_signature = {
+            **signature,
+            "status": "revoked",
+            "revokedAt": timestamp,
+            "revokedReason": reason.strip() or "manual audit revocation",
+        }
+        updated_signature.pop("invalidReason", None)
+        return AuditReportVerification(status="invalid", reason="signature_revoked"), self._event_payload_with_signature(
+            record, updated_signature
+        )
+
     def _verify_signature(self, record: AuditEventRecord, signature: dict[str, Any]) -> AuditReportVerification:
         if not signature:
             return AuditReportVerification(status="invalid", reason="signature_missing")
+        if str(signature.get("status") or "") == "revoked":
+            return AuditReportVerification(status="invalid", reason="signature_revoked")
         if str(signature.get("algorithm") or "") != self.algorithm:
             return AuditReportVerification(status="invalid", reason="unsupported_signature_algorithm")
         if str(signature.get("keyId") or "") != self.key_id:
