@@ -152,3 +152,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import audit events"` failed because App did not build/persist undone events and the ledger would keep showing the undo button.
 - GREEN: App now saves an `undone` `AuditEvent` after `/api/research/runs/import/undo` succeeds, and the ledger hides duplicate undo actions for consumed events.
 - DOCS: updated product plan and architecture notes; next slice is stricter cross-run recovery validation plus a front-end confirmation step before irreversible undo.
+- RED: `terminal-workbench.test.ts -t "audit ledger"` failed because confirmed import events had no undo confirmation contract.
+- GREEN: added `buildResearchRunImportUndoConfirmation` so only confirmed events with an undo token expose a non-repeatable undo confirmation payload.
+- RED: `layout-css.test.js -t "import audit events"` failed because the Audit ledger called undo directly from the first button.
+- GREEN: added an inline undo confirmation state, confirm/cancel actions, and compact warning styling before calling `/api/research/runs/import/undo`.
+- DOCS: updated product plan and architecture notes; next slice is stricter cross-run recovery validation.

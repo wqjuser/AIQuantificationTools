@@ -105,6 +105,7 @@ import {
   buildResearchRunImportAuditEvent,
   buildResearchRunImportDiffRows,
   buildResearchRunImportUndoAuditEvent,
+  buildResearchRunImportUndoConfirmation,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -4911,6 +4912,7 @@ function ResearchRunImportAuditEventPanel({
   onUndoImport: (undoToken: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [pendingImportUndoToken, setPendingImportUndoToken] = useState<string | null>(null);
   const filteredEvents = filterResearchRunImportAuditEvents(events, query);
   const blockedCount = events.filter((event) => event.stage === "blocked").length;
   const failedCount = events.filter((event) => event.stage === "failed").length;
@@ -4948,51 +4950,74 @@ function ResearchRunImportAuditEventPanel({
         </div>
         <div className="research-import-events-list">
           {filteredEvents.length ? (
-            filteredEvents.map((event) => (
-              <article className={`research-import-event-row ${event.tone} ${event.stage}`} key={event.id}>
-                <span>{researchImportAuditStageLabel(i18n, event.stage)}</span>
-                <strong>
-                  {event.fileName}
-                  <small>{event.runId}</small>
-                </strong>
-                <p>
-                  <b>{researchImportAuditSummaryLabel(i18n, event.summary)}</b>
-                  <small>{researchImportAuditDetailLabel(i18n, event.detail)}</small>
-                  <em>{event.exportPath}</em>
-                </p>
-                <em>
-                  {event.blockedCount}/{event.changeCount}
-                </em>
-                <div className="research-import-event-recovery">
-                  <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
-                  {event.stage !== "undone" && event.undoToken ? (
-                    <button
-                      onClick={() => {
-                        if (event.undoToken) {
-                          onUndoImport(event.undoToken);
-                        }
-                      }}
-                      type="button"
-                    >
-                      {i18n.locale === "zh-CN" ? "撤销导入" : "Undo import"}
-                    </button>
-                  ) : null}
-                  {event.rollbackTargetRunId ? (
-                    <button
-                      onClick={() => {
-                        if (event.rollbackTargetRunId) {
-                          onReplayRollbackRun(event.rollbackTargetRunId);
-                        }
-                      }}
-                      type="button"
-                    >
-                      {i18n.locale === "zh-CN" ? "回放旧 run" : "Replay previous"}
-                    </button>
-                  ) : null}
-                </div>
-                <time dateTime={event.createdAt}>{researchImportAuditTimeLabel(event.createdAt)}</time>
-              </article>
-            ))
+            filteredEvents.map((event) => {
+              const undoConfirmation = buildResearchRunImportUndoConfirmation(event);
+              const isConfirmingUndo = pendingImportUndoToken === undoConfirmation?.undoToken;
+              return (
+                <article className={`research-import-event-row ${event.tone} ${event.stage}`} key={event.id}>
+                  <span>{researchImportAuditStageLabel(i18n, event.stage)}</span>
+                  <strong>
+                    {event.fileName}
+                    <small>{event.runId}</small>
+                  </strong>
+                  <p>
+                    <b>{researchImportAuditSummaryLabel(i18n, event.summary)}</b>
+                    <small>{researchImportAuditDetailLabel(i18n, event.detail)}</small>
+                    <em>{event.exportPath}</em>
+                  </p>
+                  <em>
+                    {event.blockedCount}/{event.changeCount}
+                  </em>
+                  <div className="research-import-event-recovery">
+                    <small>{researchImportAuditRecoveryLabel(i18n, event.recoveryHint)}</small>
+                    {event.stage !== "undone" && event.undoToken && undoConfirmation ? (
+                      isConfirmingUndo ? (
+                        <div className="research-import-undo-confirmation">
+                          <strong>{researchImportUndoConfirmationMessage(i18n, undoConfirmation.message)}</strong>
+                          <span>{researchImportUndoConfirmationDetail(i18n, undoConfirmation.detail)}</span>
+                          <div className="research-import-undo-confirmation-actions">
+                            <button
+                              onClick={() => {
+                                onUndoImport(undoConfirmation.undoToken);
+                                setPendingImportUndoToken(null);
+                              }}
+                              type="button"
+                            >
+                              {i18n.locale === "zh-CN" ? "确认撤销" : "Confirm undo"}
+                            </button>
+                            <button onClick={() => setPendingImportUndoToken(null)} type="button">
+                              {i18n.locale === "zh-CN" ? "取消" : "Cancel"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setPendingImportUndoToken(event.undoToken);
+                          }}
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "撤销导入" : "Undo import"}
+                        </button>
+                      )
+                    ) : null}
+                    {event.rollbackTargetRunId ? (
+                      <button
+                        onClick={() => {
+                          if (event.rollbackTargetRunId) {
+                            onReplayRollbackRun(event.rollbackTargetRunId);
+                          }
+                        }}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "回放旧 run" : "Replay previous"}
+                      </button>
+                    ) : null}
+                  </div>
+                  <time dateTime={event.createdAt}>{researchImportAuditTimeLabel(event.createdAt)}</time>
+                </article>
+              );
+            })
           ) : (
             <article className="research-import-event-row empty">
               <span>{i18n.locale === "zh-CN" ? "暂无事件" : "No events"}</span>
@@ -5786,6 +5811,23 @@ function researchImportAuditRecoveryLabel(i18n: AppI18n, recoveryHint: string): 
     .replace("Import not applied; fix blocked preflight rows before confirming.", "导入尚未写入；请先修复预检阻断项再确认。")
     .replace("Import not applied; no rollback is required.", "导入尚未写入；无需回滚。")
     .replace("Import not applied yet; confirm only after reviewing diff rows.", "导入尚未写入；请审阅差异行后再确认。");
+}
+
+function researchImportUndoConfirmationMessage(i18n: AppI18n, message: string): string {
+  if (i18n.locale === "en-US") {
+    return message;
+  }
+  return message.replace("Confirm import undo", "确认撤销导入");
+}
+
+function researchImportUndoConfirmationDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail.replace(
+    /^Undo import (.+) will restore previous audited stores and cannot be repeated\.$/u,
+    "撤销导入 $1 会恢复导入前的审计存储，且不能重复执行。"
+  );
 }
 
 function researchImportAuditTimeLabel(createdAt: string): string {

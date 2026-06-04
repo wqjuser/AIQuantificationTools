@@ -16,6 +16,7 @@ import {
   buildResearchRunImportDiffRows,
   buildResearchRunImportAuditEvent,
   buildResearchRunImportUndoAuditEvent,
+  buildResearchRunImportUndoConfirmation,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
@@ -2694,6 +2695,7 @@ describe("terminal workbench model", () => {
       createdAt: "2026-05-26T09:14:00+00:00",
       event: confirmed
     });
+    const undoConfirmation = buildResearchRunImportUndoConfirmation(confirmed);
 
     expect(blockedPreview).toEqual(
       expect.objectContaining({
@@ -2746,6 +2748,15 @@ describe("terminal workbench model", () => {
         tone: "warning"
       })
     );
+    expect(undoConfirmation).toEqual({
+      undoToken: "import-undo-ledger",
+      runId: "run-import-ledger",
+      fileName: "unsafe-import.json",
+      message: "Confirm import undo",
+      detail: "Undo import import-undo-ledger will restore previous audited stores and cannot be repeated."
+    });
+    expect(buildResearchRunImportUndoConfirmation(blockedPreview)).toBeNull();
+    expect(buildResearchRunImportUndoConfirmation(undone)).toBeNull();
 
     const merged = mergeResearchRunImportAuditEvents([blockedPreview], confirmed);
     expect(merged.map((event) => event.stage)).toEqual(["confirmed", "blocked"]);

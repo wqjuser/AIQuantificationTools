@@ -2008,6 +2008,49 @@ em {
   padding: 3px 7px;
 }
 
+.research-import-undo-confirmation {
+  display: grid;
+  gap: 5px;
+  max-width: 280px;
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.08);
+  padding: 6px;
+}
+
+.research-import-undo-confirmation strong,
+.research-import-undo-confirmation span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-import-undo-confirmation strong {
+  color: #f8d581;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.research-import-undo-confirmation span {
+  color: #d6b86c;
+  font-size: 9px;
+  font-weight: 740;
+}
+
+.research-import-undo-confirmation-actions {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.research-import-undo-confirmation-actions button:first-child {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.28);
+  color: #fecaca;
+}
+
 .research-export-preview-row > p {
   grid-column: 1 / -1;
   margin: 0;

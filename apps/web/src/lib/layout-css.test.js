@@ -407,6 +407,7 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("buildResearchRunImportAuditEvent");
     expect(appSource).toContain("buildResearchRunImportUndoAuditEvent");
+    expect(appSource).toContain("buildResearchRunImportUndoConfirmation");
     expect(appSource).toContain("undoResearchRunImport");
     expect(appSource).toContain("mergeResearchRunImportAuditEvents");
     expect(appSource).toContain("filterResearchRunImportAuditEvents");
@@ -421,16 +422,21 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");
     expect(importEventsPanelSource).toContain("event.undoToken");
+    expect(importEventsPanelSource).toContain("pendingImportUndoToken");
+    expect(importEventsPanelSource).toContain("buildResearchRunImportUndoConfirmation(event)");
+    expect(importEventsPanelSource).toContain("setPendingImportUndoToken(event.undoToken)");
+    expect(importEventsPanelSource).toContain("onUndoImport(undoConfirmation.undoToken)");
     expect(importEventsPanelSource).toContain('event.stage !== "undone"');
-    expect(importEventsPanelSource).toContain("onUndoImport(event.undoToken)");
     expect(importEventsPanelSource).toContain("onReplayRollbackRun(event.rollbackTargetRunId)");
     expect(importEventsPanelSource).toContain("research-import-event-recovery");
+    expect(importEventsPanelSource).toContain("research-import-undo-confirmation");
     expect(cssBlock(".workflow-import-events-panel")).toContain("grid-area: import-events;");
     expect(cssBlock(".research-import-events")).toContain("display: grid;");
     expect(cssBlock(".research-import-event-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(132px, 0.36fr) minmax(92px, 0.24fr) auto;"
     );
     expect(cssBlock(".research-import-event-recovery")).toContain("display: flex;");
+    expect(cssBlock(".research-import-undo-confirmation")).toContain("display: grid;");
     expect(hasCssBlockWith(".audit-layout", ['"import-diff import-diff"', '"import-events import-events"', '"index index"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"import-diff"', '"import-events"', '"index"'])).toBe(true);
   });

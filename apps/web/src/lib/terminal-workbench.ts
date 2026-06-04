@@ -705,6 +705,14 @@ export interface ResearchRunImportAuditEvent {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
+export interface ResearchRunImportUndoConfirmation {
+  undoToken: string;
+  runId: string;
+  fileName: string;
+  message: string;
+  detail: string;
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -2965,6 +2973,22 @@ export function buildResearchRunImportUndoAuditEvent({
       detail: null
     }, consumedUndoToken),
     tone: researchRunImportAuditTone("undone")
+  };
+}
+
+export function buildResearchRunImportUndoConfirmation(
+  event: ResearchRunImportAuditEvent
+): ResearchRunImportUndoConfirmation | null {
+  const undoToken = event.undoToken?.trim();
+  if (event.stage !== "confirmed" || !undoToken) {
+    return null;
+  }
+  return {
+    undoToken,
+    runId: event.runId,
+    fileName: event.fileName,
+    message: "Confirm import undo",
+    detail: `Undo import ${undoToken} will restore previous audited stores and cannot be repeated.`
   };
 }
 
