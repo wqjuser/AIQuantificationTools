@@ -1815,6 +1815,13 @@ em {
   white-space: nowrap;
 }
 
+.research-audit-evidence-actions {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 7px;
+  justify-content: end;
+}
+
 .research-export-deep-link {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

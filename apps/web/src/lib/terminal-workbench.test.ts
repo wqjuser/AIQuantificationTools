@@ -10,6 +10,7 @@ import {
   buildAiReviewRunRecord,
   buildAiReviewAuditTimelineItems,
   buildAiReviewExportEvidenceIndexRows,
+  buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
@@ -2985,6 +2986,19 @@ describe("terminal workbench model", () => {
     expect(summary.copyText).toContain("Audit query: manual-smoke");
     expect(summary.copyText).toContain("Package checks: 1 ready / 0 missing / 1 blocked / 1 of 2 matched");
     expect(summary.copyText).toContain("Import diff: 1 changes / 0 adds / 1 blocked / 1 of 2 matched");
+
+    const reportMarkdown = buildAuditEvidenceReportMarkdown(summary, {
+      generatedAt: "2026-06-04T08:00:00.000Z"
+    });
+
+    expect(reportMarkdown).toContain("# AIQuant Audit Evidence Report");
+    expect(reportMarkdown).toContain("Generated at: `2026-06-04T08:00:00.000Z`");
+    expect(reportMarkdown).toContain("Run ID: `run-a1f3a5369574`");
+    expect(reportMarkdown).toContain("| Package checks | 1 ready | 0 missing | 1 blocked | 1 / 2 |");
+    expect(reportMarkdown).toContain("| Import diff | 1 changes | 0 adds | 1 blocked | 1 / 2 |");
+    expect(reportMarkdown).toContain("Deep link status: `loaded`");
+    expect(reportMarkdown).toContain("```text\nAIQT Audit Evidence Summary");
+    expect(reportMarkdown).toContain("Import diff: 1 changes / 0 adds / 1 blocked / 1 of 2 matched\n```");
   });
 
   test("derives scanner candidates from the active watchlist", () => {

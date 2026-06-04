@@ -84,6 +84,7 @@ import {
   buildAiReviewExportEvidenceIndexRows,
   buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
+  buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
@@ -463,6 +464,7 @@ export function App() {
   const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
+  const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
     useState<ImportAuditEvidenceDeepLinkStatus | null>(
       initialImportAuditEvidenceDeepLink ? { ...initialImportAuditEvidenceDeepLink, status: "idle", error: null } : null
@@ -483,6 +485,7 @@ export function App() {
   const researchRunImportAuditRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
+  const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
   const initialImportAuditEvidenceDeepLinkRef = useRef(initialImportAuditEvidenceDeepLink);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
@@ -682,6 +685,9 @@ export function App() {
       }
       if (auditEvidenceSummaryCopyResetTimerRef.current !== null) {
         window.clearTimeout(auditEvidenceSummaryCopyResetTimerRef.current);
+      }
+      if (auditEvidenceReportCopyResetTimerRef.current !== null) {
+        window.clearTimeout(auditEvidenceReportCopyResetTimerRef.current);
       }
     };
   }, []);
@@ -1269,6 +1275,34 @@ export function App() {
       }));
     }
   }, [auditEvidenceSummary.copyText]);
+
+  const copyAuditEvidenceReport = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(buildAuditEvidenceReportMarkdown(auditEvidenceSummary));
+      setCopiedAuditEvidenceReport(true);
+      if (auditEvidenceReportCopyResetTimerRef.current !== null) {
+        window.clearTimeout(auditEvidenceReportCopyResetTimerRef.current);
+      }
+      auditEvidenceReportCopyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedAuditEvidenceReport(false);
+        auditEvidenceReportCopyResetTimerRef.current = null;
+      }, 1800);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit evidence report copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit evidence report copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [auditEvidenceSummary]);
 
   const inspectRunExportPackage = useCallback(
     async (run: ResearchRunAudit) => {
@@ -2582,8 +2616,10 @@ export function App() {
             deepLinkStatus={importAuditEvidenceDeepLinkStatus}
             evidenceSummary={auditEvidenceSummary}
             i18n={i18n}
+            isEvidenceReportCopied={copiedAuditEvidenceReport}
             isEvidenceSummaryCopied={copiedAuditEvidenceSummary}
             isLoading={isInspectingExportPackage}
+            onCopyEvidenceReport={copyAuditEvidenceReport}
             onCopyEvidenceSummary={copyAuditEvidenceSummary}
             onRetryDeepLink={retryImportAuditEvidenceDeepLink}
             onQueryChange={setResearchRunExportBrowserQuery}
@@ -5014,8 +5050,10 @@ function ResearchRunExportPackageBrowserPanel({
   deepLinkStatus,
   evidenceSummary,
   i18n,
+  isEvidenceReportCopied,
   isEvidenceSummaryCopied,
   isLoading,
+  onCopyEvidenceReport,
   onCopyEvidenceSummary,
   onRetryDeepLink,
   onQueryChange,
@@ -5026,8 +5064,10 @@ function ResearchRunExportPackageBrowserPanel({
   deepLinkStatus?: ImportAuditEvidenceDeepLinkStatus | null;
   evidenceSummary: AuditEvidenceSummary;
   i18n: AppI18n;
+  isEvidenceReportCopied: boolean;
   isEvidenceSummaryCopied: boolean;
   isLoading: boolean;
+  onCopyEvidenceReport: () => void;
   onCopyEvidenceSummary: () => void;
   onRetryDeepLink?: () => void;
   onQueryChange: (query: string) => void;
@@ -5090,16 +5130,28 @@ function ResearchRunExportPackageBrowserPanel({
               {researchExportDeepLinkStatusLabel(i18n, evidenceSummary.deepLinkStatus)}
             </em>
           </div>
-          <button onClick={onCopyEvidenceSummary} type="button">
-            <Copy size={13} />
-            {isEvidenceSummaryCopied
-              ? i18n.locale === "zh-CN"
-                ? "已复制"
-                : "Copied"
-              : i18n.locale === "zh-CN"
-                ? "复制摘要"
-                : "Copy summary"}
-          </button>
+          <div className="research-audit-evidence-actions">
+            <button onClick={onCopyEvidenceSummary} type="button">
+              <Copy size={13} />
+              {isEvidenceSummaryCopied
+                ? i18n.locale === "zh-CN"
+                  ? "已复制"
+                  : "Copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制摘要"
+                  : "Copy summary"}
+            </button>
+            <button onClick={onCopyEvidenceReport} type="button">
+              <Download size={13} />
+              {isEvidenceReportCopied
+                ? i18n.locale === "zh-CN"
+                  ? "报告已复制"
+                  : "Report copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制报告"
+                  : "Copy report"}
+            </button>
+          </div>
         </div>
         {deepLinkStatus ? (
           <div className={`research-export-deep-link ${deepLinkStatus.status}`}>

@@ -206,3 +206,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "import diff guidance"` failed because the import diff label map had no `audit-summary` translation.
 - GREEN: added an `audit-summary` import diff row that displays the incoming summary run id, focus query, package match count, and import diff blocker count, with a blocked state for summary/manifest run id mismatches.
 - DOCS: updated product plan and architecture notes; next slice is rendering `auditEvidenceSummary` as a richer report fragment.
+- RED: `terminal-workbench.test.ts -t "audit evidence summary"` failed because there was no Markdown report builder for the audit evidence summary.
+- RED: `layout-css.test.js -t "export package browser"` failed because the Audit package browser had no report-copy state, action, or wiring.
+- GREEN: added `buildAuditEvidenceReportMarkdown`, covered generated-at/run/deep-link/count tables and portable summary text, and wired the package browser summary card to copy either the short summary or the Markdown report fragment.
+- DOCS: updated product plan and architecture notes; next slice is persisting the Markdown report as a downloadable/signable audit report artifact.

@@ -3085,6 +3085,69 @@ export function buildAuditEvidenceSummary({
   };
 }
 
+export function buildAuditEvidenceReportMarkdown(
+  summary: AuditEvidenceSummary,
+  { generatedAt = new Date().toISOString() }: { generatedAt?: string } = {}
+): string {
+  const deepLinkDetail = summary.deepLinkError
+    ? `${summary.deepLinkStatus} (${summary.deepLinkError})`
+    : summary.deepLinkStatus;
+  const evidenceRows = [
+    [
+      "Package checks",
+      `${summary.packageReadyCount} ready`,
+      `${summary.packageMissingCount} missing`,
+      `${summary.packageBlockedCount} blocked`,
+      `${summary.packageMatchedCount} / ${summary.packageTotalCount}`
+    ],
+    [
+      "Import diff",
+      `${summary.importDiffChangeCount} changes`,
+      `${summary.importDiffAddCount} adds`,
+      `${summary.importDiffBlockedCount} blocked`,
+      `${summary.importDiffMatchedCount} / ${summary.importDiffTotalCount}`
+    ]
+  ];
+
+  return [
+    "# AIQuant Audit Evidence Report",
+    "",
+    `Generated at: \`${generatedAt}\``,
+    `Run ID: \`${summary.runId}\``,
+    `Deep link status: \`${deepLinkDetail}\``,
+    "",
+    "## Evidence Focus",
+    "",
+    markdownTable(
+      ["Area", "Query"],
+      [
+        ["Audit ledger", summary.auditQuery || "none"],
+        ["Export package", summary.packageQuery || "none"],
+        ["Import diff", summary.importDiffQuery || "none"],
+        ["Current focus", summary.focusQuery || "none"]
+      ]
+    ),
+    "",
+    "## Evidence Counts",
+    "",
+    markdownTable(["Area", "Ready / changes", "Missing / adds", "Blocked", "Matched"], evidenceRows),
+    "",
+    "## Portable Summary",
+    "",
+    "```text",
+    summary.copyText,
+    "```",
+    "",
+    "## Boundary",
+    "",
+    "This audit report fragment records reproducibility evidence and import impact context only. It does not provide buy/sell instructions, guaranteed returns, or live execution approval."
+  ]
+    .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+    .join("\n")
+    .trimEnd()
+    .concat("\n");
+}
+
 export function buildResearchRunImportAuditEvent({
   createdAt = new Date().toISOString(),
   error,

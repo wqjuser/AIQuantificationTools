@@ -318,14 +318,18 @@ describe("terminal layout css", () => {
     const runHistoryRowSource = sourceBetween("function RunHistoryRow", "function RunComparisonBoard");
 
     expect(appSource).toContain("buildResearchRunExportBrowserRows");
+    expect(appSource).toContain("buildAuditEvidenceReportMarkdown");
     expect(appSource).toContain("buildAuditEvidenceSummary");
     expect(appSource).toContain("withResearchRunExportAuditEvidenceSummary");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
     expect(appSource).toContain("const auditEvidenceSummary = buildAuditEvidenceSummary");
     expect(appSource).toContain("const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary]");
+    expect(appSource).toContain("const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport]");
     expect(appSource).toContain("const copyAuditEvidenceSummary = useCallback");
+    expect(appSource).toContain("const copyAuditEvidenceReport = useCallback");
     expect(appSource).toContain("navigator.clipboard.writeText(auditEvidenceSummary.copyText)");
+    expect(appSource).toContain("navigator.clipboard.writeText(buildAuditEvidenceReportMarkdown(auditEvidenceSummary))");
     expect(appSource).toContain("type ImportAuditEvidenceDeepLinkStatus");
     expect(appSource).toContain("const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus]");
     expect(appSource).toContain('const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
@@ -344,7 +348,9 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("deepLinkStatus={importAuditEvidenceDeepLinkStatus}");
     expect(auditWorkspaceSource).toContain("evidenceSummary={auditEvidenceSummary}");
     expect(auditWorkspaceSource).toContain("isEvidenceSummaryCopied={copiedAuditEvidenceSummary}");
+    expect(auditWorkspaceSource).toContain("isEvidenceReportCopied={copiedAuditEvidenceReport}");
     expect(auditWorkspaceSource).toContain("onCopyEvidenceSummary={copyAuditEvidenceSummary}");
+    expect(auditWorkspaceSource).toContain("onCopyEvidenceReport={copyAuditEvidenceReport}");
     expect(auditWorkspaceSource).toContain("onRetryDeepLink={retryImportAuditEvidenceDeepLink}");
     expect(auditWorkspaceSource).toContain("rows={researchRunExportBrowserRows}");
     expect(auditWorkspaceSource).toContain("isLoading={isInspectingExportPackage}");
@@ -354,7 +360,9 @@ describe("terminal layout css", () => {
     expect(exportBrowserPanelSource).toContain("query: string;");
     expect(exportBrowserPanelSource).toContain("evidenceSummary: AuditEvidenceSummary;");
     expect(exportBrowserPanelSource).toContain("isEvidenceSummaryCopied: boolean;");
+    expect(exportBrowserPanelSource).toContain("isEvidenceReportCopied: boolean;");
     expect(exportBrowserPanelSource).toContain("onCopyEvidenceSummary: () => void;");
+    expect(exportBrowserPanelSource).toContain("onCopyEvidenceReport: () => void;");
     expect(exportBrowserPanelSource).toContain("deepLinkStatus?: ImportAuditEvidenceDeepLinkStatus | null;");
     expect(exportBrowserPanelSource).toContain("onRetryDeepLink?: () => void;");
     expect(exportBrowserPanelSource).toContain("research-audit-evidence-summary");
@@ -362,7 +370,9 @@ describe("terminal layout css", () => {
     expect(exportBrowserPanelSource).toContain("evidenceSummary.packageMatchedCount");
     expect(exportBrowserPanelSource).toContain("evidenceSummary.importDiffBlockedCount");
     expect(exportBrowserPanelSource).toContain("onCopyEvidenceSummary");
+    expect(exportBrowserPanelSource).toContain("onCopyEvidenceReport");
     expect(exportBrowserPanelSource).toContain("isEvidenceSummaryCopied");
+    expect(exportBrowserPanelSource).toContain("isEvidenceReportCopied");
     expect(exportBrowserPanelSource).toContain("research-export-deep-link");
     expect(exportBrowserPanelSource).toContain("deepLinkStatus.status");
     expect(exportBrowserPanelSource).toContain("deepLinkStatus.runId");
