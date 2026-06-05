@@ -1217,6 +1217,45 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual([record.event_id for record in filtered], ["audit-import-run-ledger-blocked"])
         self.assertEqual(total, 1)
 
+    def test_audit_event_store_filters_comma_separated_report_event_types(self):
+        from quant_core.audit_events import AuditEventStore
+
+        base_event = {
+            "schemaVersion": 1,
+            "runId": "run-report-ledger",
+            "createdAt": "2026-06-05T09:12:00+00:00",
+            "stage": "generated",
+            "source": "web",
+            "summary": "Report generated",
+            "detail": "report detail",
+            "metadata": {"contentSha256": "a" * 64},
+        }
+        events = [
+            {**base_event, "eventId": "audit-report-ledger", "eventType": "audit_evidence_report"},
+            {
+                **base_event,
+                "eventId": "backtest-report-ledger",
+                "eventType": "backtest_report",
+                "createdAt": "2026-06-05T09:13:00+00:00",
+            },
+            {
+                **base_event,
+                "eventId": "import-ledger",
+                "eventType": "research_run_import",
+                "createdAt": "2026-06-05T09:14:00+00:00",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+            for event in events:
+                store.record(event)
+            report_events = store.list_recent(event_type="audit_evidence_report,backtest_report")
+            total = store.count(event_type="audit_evidence_report,backtest_report")
+
+        self.assertEqual([record.event_id for record in report_events], ["backtest-report-ledger", "audit-report-ledger"])
+        self.assertEqual(total, 2)
+
     def test_audit_event_api_records_and_lists_import_events(self):
         import json
         from http.client import HTTPConnection

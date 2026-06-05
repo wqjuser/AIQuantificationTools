@@ -257,15 +257,20 @@ def _filter_parameters(
     clauses: list[str] = []
     parameters: list[Any] = []
     normalized_run_id = _optional_string(run_id)
-    normalized_event_type = _optional_string(event_type)
+    normalized_event_types = _event_type_filter_values(event_type)
     normalized_query = str(query or "").strip()
 
     if normalized_run_id:
         clauses.append("run_id = ?")
         parameters.append(normalized_run_id)
-    if normalized_event_type:
-        clauses.append("event_type = ?")
-        parameters.append(normalized_event_type)
+    if normalized_event_types:
+        if len(normalized_event_types) == 1:
+            clauses.append("event_type = ?")
+            parameters.append(normalized_event_types[0])
+        else:
+            placeholders = ", ".join("?" for _ in normalized_event_types)
+            clauses.append(f"event_type in ({placeholders})")
+            parameters.extend(normalized_event_types)
     if normalized_query:
         clauses.append(
             """(
@@ -285,6 +290,18 @@ def _filter_parameters(
     if not clauses:
         return "1 = 1", tuple()
     return " and ".join(clauses), tuple(parameters)
+
+
+def _event_type_filter_values(event_type: str | None) -> list[str]:
+    normalized = _optional_string(event_type)
+    if not normalized:
+        return []
+    values: list[str] = []
+    for value in normalized.split(","):
+        item = value.strip()
+        if item and item not in values:
+            values.append(item)
+    return values
 
 
 def _parse_datetime(value: str) -> datetime:

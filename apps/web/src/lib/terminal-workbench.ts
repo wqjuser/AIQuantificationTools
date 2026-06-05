@@ -818,6 +818,7 @@ export interface ResearchRunImportAuditAggregation {
 }
 
 export interface AuditEvidenceReportLedgerEventRecord {
+  schemaVersion: number;
   eventId: string;
   eventType: string;
   runId: string | null;
@@ -830,10 +831,17 @@ export interface AuditEvidenceReportLedgerEventRecord {
 }
 
 export type AuditEvidenceReportLedgerStatus = "ready" | "invalid";
-export type AuditEvidenceReportSignatureStatus = "unsigned" | "signed" | "verified" | "revoked" | "invalid";
+export type AuditEvidenceReportSignatureStatus =
+  | "unsigned"
+  | "signed"
+  | "verified"
+  | "revoked"
+  | "invalid"
+  | "unsupported";
 
 export interface AuditEvidenceReportLedgerRow {
   id: string;
+  artifactKind: string;
   runId: string;
   createdAt: string;
   fileName: string;
@@ -858,6 +866,7 @@ export interface AuditEvidenceReportLedgerRow {
   signatureLabel: string;
   signatureVerifiedAt: string;
   detail: string;
+  reportKind: "audit_evidence_report" | "backtest_report";
   tone: "ai" | "positive" | "risk";
 }
 
@@ -3582,31 +3591,70 @@ export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
   return events
-    .filter((event) => event.eventType === "audit_evidence_report")
+    .filter((event) => event.eventType === "audit_evidence_report" || event.eventType === "backtest_report")
     .map((event) => {
+      const reportKind: AuditEvidenceReportLedgerRow["reportKind"] =
+        event.eventType === "backtest_report" ? "backtest_report" : "audit_evidence_report";
       const contentSha256 = auditReportLedgerMetadataText(event.metadata, "contentSha256");
-      const fileName = auditReportLedgerMetadataText(event.metadata, "fileName") || "audit-evidence-report.md";
-      const focusQuery = auditReportLedgerMetadataText(event.metadata, "evidenceFocus");
+      const artifactKind =
+        auditReportLedgerMetadataText(event.metadata, "artifactKind") ||
+        (reportKind === "backtest_report" ? "aiqt.backtestReport" : "aiqt.auditReport");
+      const fileName =
+        auditReportLedgerMetadataText(event.metadata, "fileName") ||
+        (reportKind === "backtest_report" ? "backtest-report.md" : "audit-evidence-report.md");
+      const focusQuery =
+        reportKind === "backtest_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "strategyRevision")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : auditReportLedgerMetadataText(event.metadata, "evidenceFocus");
       const isHashReady = /^[a-f0-9]{64}$/iu.test(contentSha256);
       const status: AuditEvidenceReportLedgerStatus = isHashReady ? "ready" : "invalid";
       const signature = auditReportLedgerSignatureMetadata(event.metadata);
-      const signatureStatus = status === "ready" ? auditReportLedgerSignatureStatus(signature) : "invalid";
+      const signatureStatus =
+        reportKind === "backtest_report"
+          ? "unsupported"
+          : status === "ready"
+            ? auditReportLedgerSignatureStatus(signature)
+            : "invalid";
       const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
       return {
         id: event.eventId,
+        artifactKind,
         runId: event.runId ?? "unknown",
         createdAt: event.createdAt,
         fileName,
         contentSha256,
         shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
         focusQuery,
-        packageMatched: auditReportLedgerMetadataNumber(event.metadata, "packageMatched"),
-        packageTotal: auditReportLedgerMetadataNumber(event.metadata, "packageTotal"),
-        importDiffBlocked: auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
-        importDiffTotal: auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
-        deepLinkStatus: auditReportLedgerMetadataText(event.metadata, "deepLinkStatus") || "unknown",
+        packageMatched:
+          reportKind === "backtest_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "runComparisonRows")
+            : auditReportLedgerMetadataNumber(event.metadata, "packageMatched"),
+        packageTotal:
+          reportKind === "backtest_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "dataRows")
+            : auditReportLedgerMetadataNumber(event.metadata, "packageTotal"),
+        importDiffBlocked:
+          reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
+        importDiffTotal:
+          reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
+        deepLinkStatus:
+          reportKind === "backtest_report"
+            ? "backtest-report"
+            : auditReportLedgerMetadataText(event.metadata, "deepLinkStatus") || "unknown",
         status,
-        statusLabel: status === "ready" ? "Report hash recorded" : "Report hash invalid",
+        statusLabel:
+          status === "ready"
+            ? reportKind === "backtest_report"
+              ? "Backtest report hash recorded"
+              : "Report hash recorded"
+            : "Report hash invalid",
         chainId: auditReportLedgerMetadataText(signature, "chainId"),
         signer: auditReportLedgerMetadataText(signature, "signer"),
         signatureAlgorithm: auditReportLedgerMetadataText(signature, "algorithm"),
@@ -3618,6 +3666,7 @@ export function buildAuditEvidenceReportLedgerRows(
         signatureLabel,
         signatureVerifiedAt: auditReportLedgerMetadataText(signature, "verifiedAt"),
         detail: event.detail,
+        reportKind,
         tone: auditReportLedgerSignatureTone(signatureStatus)
       };
     });
@@ -3628,7 +3677,7 @@ export function buildAuditEvidenceReportLedgerSummary(
 ): AuditEvidenceReportLedgerSummary {
   const ready = rows.filter((row) => row.status === "ready").length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
-  const unsigned = rows.filter((row) => row.signatureStatus === "unsigned").length;
+  const unsigned = rows.filter((row) => row.signatureStatus === "unsigned" || row.signatureStatus === "unsupported").length;
   const signed = rows.filter((row) => row.signatureStatus === "signed").length;
   const verified = rows.filter((row) => row.signatureStatus === "verified").length;
   const revoked = rows.filter((row) => row.signatureStatus === "revoked").length;
@@ -3655,9 +3704,11 @@ export function filterAuditEvidenceReportLedgerRows(
   if (!normalizedQuery) {
     return rows;
   }
-  return rows.filter((row) =>
-    [
+  const queryTokens = normalizedQuery.split(/\s+/u).filter(Boolean);
+  return rows.filter((row) => {
+    const searchableText = [
       row.id,
+      row.artifactKind,
       row.runId,
       row.fileName,
       row.contentSha256,
@@ -3677,15 +3728,16 @@ export function filterAuditEvidenceReportLedgerRows(
       row.signatureLabel,
       row.signatureVerifiedAt,
       row.detail,
+      row.reportKind,
       String(row.packageMatched),
       String(row.packageTotal),
       String(row.importDiffBlocked),
       String(row.importDiffTotal)
     ]
       .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery)
-  );
+      .toLowerCase();
+    return queryTokens.every((token) => searchableText.includes(token));
+  });
 }
 
 export function buildAuditSigningKeyRotationLedgerRows(
@@ -3842,6 +3894,9 @@ function auditReportLedgerSignatureLabel(status: AuditEvidenceReportSignatureSta
   }
   if (status === "invalid") {
     return "Signature chain blocked";
+  }
+  if (status === "unsupported") {
+    return "Signature not available";
   }
   return "Unsigned report hash";
 }

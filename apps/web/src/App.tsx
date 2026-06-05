@@ -750,7 +750,7 @@ export function App() {
     auditEvidenceReportRequestIdRef.current = requestId;
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
-      eventType: "audit_evidence_report",
+      eventType: "audit_evidence_report,backtest_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -1722,6 +1722,9 @@ export function App() {
 
       return saveAuditEvent(quantCoreBaseUrl, backtestReportAuditEvent).then((result) => {
         if (result.event) {
+          setAuditEvidenceReportEvents((current) =>
+            mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+          );
           setWorkspaceState((current) => ({
             ...current,
             statusLabel: "Backtest report exported and audited",
@@ -5970,7 +5973,11 @@ function AuditEvidenceReportLedgerPanel({
                 <p>
                   <b>{row.shortHash}</b>
                   <small>{row.detail}</small>
-                  <em>{row.focusQuery || "focus:none"}</em>
+                  <em>
+                    {row.reportKind === "backtest_report"
+                      ? `${row.reportKind} · ${row.focusQuery || "focus:none"}`
+                      : row.focusQuery || "focus:none"}
+                  </em>
                 </p>
                 <em>
                   {row.packageMatched}/{row.packageTotal} · {row.importDiffBlocked}/{row.importDiffTotal}
@@ -5993,6 +6000,7 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
+                        row.reportKind !== "audit_evidence_report" ||
                         row.status === "invalid" ||
                         row.signatureStatus === "revoked"
                       }
@@ -6006,6 +6014,7 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
+                        row.reportKind !== "audit_evidence_report" ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "revoked"
                       }
@@ -6025,6 +6034,7 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
+                        row.reportKind !== "audit_evidence_report" ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "invalid" ||
                         row.signatureStatus === "revoked"
@@ -7320,6 +7330,7 @@ function auditReportLedgerStatusLabel(i18n: AppI18n, label: string): string {
   }
   return (
     {
+      "Backtest report hash recorded": "回测报告 hash 已记录",
       "Report hash recorded": "报告 hash 已记录",
       "Report hash invalid": "报告 hash 异常"
     }[label] ?? label
@@ -7334,6 +7345,7 @@ function auditReportLedgerSignatureLabel(i18n: AppI18n, label: string): string {
     {
       "Unsigned report hash": "报告 hash 尚未签名",
       "Signed report hash": "报告 hash 已签名",
+      "Signature not available": "暂不支持签名",
       "Verified signature": "签名已验证",
       "Revoked signature": "签名已撤销",
       "Signature chain blocked": "签名链阻断"

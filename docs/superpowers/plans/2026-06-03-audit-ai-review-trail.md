@@ -267,3 +267,8 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `layout-css.test.js -t "backtest lab"` failed because the Backtest Markdown export path did not persist an audit event.
 - GREEN: added `buildBacktestReportAuditEvent` with `eventType=backtest_report`, stable event ids based on run id and Markdown SHA-256, report metadata for market/symbol/timeframe, strategy revision, execution mode, data rows, and comparison-matrix coverage, then wired Markdown export through `saveAuditEvent`.
 - DOCS: updated product plan and architecture notes; next slice should read `backtest_report` events back in Audit and decide whether to share the existing report-signing pipeline with Backtest reports.
+- RED: `terminal-workbench.test.ts -t "backtest markdown report events"` failed because `buildAuditEvidenceReportLedgerRows` ignored `backtest_report`.
+- RED: `layout-css.test.js -t "audit evidence report history"` failed because Audit only queried `audit_evidence_report` and did not gate signing actions by report type.
+- RED: `test_audit_event_store_filters_comma_separated_report_event_types` failed because the backend treated comma-separated event types as one exact string.
+- GREEN: added comma-separated `eventType` filtering in `AuditEventStore`, queried `audit_evidence_report,backtest_report` from Audit, rendered Backtest reports in the report ledger with `signatureStatus=unsupported`, and disabled sign/verify/revoke for non-`audit_evidence_report` rows.
+- DOCS: updated product plan and architecture notes; next slice can decide whether Backtest reports should be promoted into the same signing API or keep a separate report artifact chain.

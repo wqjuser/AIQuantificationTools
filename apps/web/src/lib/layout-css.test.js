@@ -629,7 +629,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationPlanAuditEvent");
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
-    expect(appSource).toContain('eventType: "audit_evidence_report"');
+    expect(appSource).toContain('eventType: "audit_evidence_report,backtest_report"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
@@ -684,6 +684,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-row");
     expect(reportLedgerPanelSource).toContain("row.shortHash");
     expect(reportLedgerPanelSource).toContain("row.signatureLabel");
+    expect(reportLedgerPanelSource).toContain("row.reportKind");
+    expect(reportLedgerPanelSource).toContain('row.reportKind !== "audit_evidence_report"');
     expect(reportLedgerPanelSource).toContain("row.signatureDetail");
     expect(reportLedgerPanelSource).toContain("row.chainId");
     expect(reportLedgerPanelSource).toContain("row.signatureDetail && row.chainId");

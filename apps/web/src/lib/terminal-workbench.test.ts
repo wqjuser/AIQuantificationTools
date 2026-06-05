@@ -3188,6 +3188,63 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("includes backtest markdown report events in the audit report ledger", () => {
+    const backtestHash = "e".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "backtest-report-run-a1-eeeeeeeeeeeeeeee",
+        eventType: "backtest_report",
+        runId: "run-a1",
+        createdAt: "2026-06-05T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Backtest Markdown report generated for run-a1",
+        detail: "run-a1-backtest-report.md · sha256 eeeeeeeeeeee · 3 comparable runs",
+        metadata: {
+          artifactKind: "aiqt.backtestReport",
+          boundary: "historical audited evidence only; no investment advice",
+          contentSha256: backtestHash,
+          contentSha256Algorithm: "sha256",
+          dataRows: 240,
+          executionMode: "paper_only",
+          fileName: "run-a1-backtest-report.md",
+          format: "text/markdown",
+          hasRunComparisonMatrix: true,
+          market: "ashare",
+          runComparisonRows: 3,
+          strategyRevision: "rev-a1",
+          symbol: "600000",
+          timeframe: "1d"
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.backtestReport",
+        contentSha256: backtestHash,
+        deepLinkStatus: "backtest-report",
+        fileName: "run-a1-backtest-report.md",
+        focusQuery: "ashare 600000 1d rev-a1",
+        importDiffBlocked: 0,
+        importDiffTotal: 0,
+        packageMatched: 3,
+        packageTotal: 240,
+        reportKind: "backtest_report",
+        runId: "run-a1",
+        signatureLabel: "Signature not available",
+        signatureStatus: "unsupported",
+        statusLabel: "Backtest report hash recorded",
+        tone: "ai"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "600000 rev-a1").map((row) => row.id)).toEqual([
+      "backtest-report-run-a1-eeeeeeeeeeeeeeee"
+    ]);
+  });
+
   test("promotes audit report ledger rows when signature chain metadata is present", () => {
     const verifiedHash = "b".repeat(64);
     const signedHash = "c".repeat(64);
