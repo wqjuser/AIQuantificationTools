@@ -2316,6 +2316,17 @@ describe("terminal workspace API client", () => {
       importDiffMatchedCount: 1,
       importDiffQuery: "manifest:run-preview",
       importDiffTotalCount: 11,
+      importVerificationBuckets: [
+        {
+          count: 1,
+          latestExportPath: "auditReport.contentSha256.hash",
+          latestReason: "signature_verified",
+          source: "local-core" as const,
+          status: "verified" as const
+        }
+      ],
+      importVerificationInvalidCount: 0,
+      importVerificationVerifiedCount: 1,
       packageBlockedCount: 0,
       packageMatchedCount: 1,
       packageMissingCount: 0,
@@ -2343,7 +2354,20 @@ describe("terminal workspace API client", () => {
       runId: "run-preview",
       generatedAt: "2026-06-04T08:00:00+00:00",
       package: { ready: 5, missing: 0, blocked: 0, matched: 1, total: 9 },
-      importDiff: { changes: 0, adds: 0, blocked: 0, matched: 1, total: 11 }
+      importDiff: { changes: 0, adds: 0, blocked: 0, matched: 1, total: 11 },
+      importVerification: {
+        verified: 1,
+        invalid: 0,
+        buckets: [
+          {
+            count: 1,
+            latestExportPath: "auditReport.contentSha256.hash",
+            latestReason: "signature_verified",
+            source: "local-core",
+            status: "verified"
+          }
+        ]
+      }
     });
     expect(normalizeResearchRunExportPackagePayload(enrichedPackage)?.auditEvidenceSummary?.copyText).toContain(
       "AIQT Audit Evidence Summary"
@@ -2351,6 +2375,9 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload({ export: enrichedPackage })?.auditEvidenceSummary?.package.matched).toBe(
       1
     );
+    expect(
+      normalizeResearchRunExportPackagePayload({ export: enrichedPackage })?.auditEvidenceSummary?.importVerification?.verified
+    ).toBe(1);
     expect(auditReport).toMatchObject({
       kind: "aiqt.auditReport",
       schemaVersion: 1,
@@ -2561,6 +2588,9 @@ describe("terminal workspace API client", () => {
       importDiffMatchedCount: 4,
       importDiffQuery: "auditReport.contentSha256.hash",
       importDiffTotalCount: 11,
+      importVerificationBuckets: [],
+      importVerificationInvalidCount: 0,
+      importVerificationVerifiedCount: 0,
       packageBlockedCount: 1,
       packageMatchedCount: 2,
       packageMissingCount: 0,

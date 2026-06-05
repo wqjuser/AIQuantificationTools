@@ -3608,6 +3608,39 @@ describe("terminal workbench model", () => {
       deepLinkStatus: "loaded",
       importDiffQuery: "hash-imported",
       importDiffRows: diffRows,
+      importAuditEvents: [
+        {
+          id: "import:run-a1f3a5369574:confirmed:2026-06-04T07:59:00.000Z:verified-import.json",
+          stage: "confirmed",
+          runId: "run-a1f3a5369574",
+          previousRunId: "run-previous",
+          rollbackTargetRunId: "run-previous",
+          undoToken: "import-undo-summary",
+          fileName: "verified-import.json",
+          createdAt: "2026-06-04T07:59:00.000Z",
+          summary: "Import applied",
+          detail: "Research run import applied with 1 replay changes.",
+          failureCategory: null,
+          recoveryHint: "Undo import import-undo-summary to restore the audited stores.",
+          blockedCount: 0,
+          blockedRows: [],
+          changeCount: 1,
+          exportPath: "manifest:run-a1f3a5369574",
+          tone: "positive",
+          verifiedReportSignatures: [
+            {
+              id: "audit-report",
+              label: "Audit report",
+              detail: "Local core import verification: verified · signature_verified",
+              exportPath: "auditReport.contentSha256.hash",
+              incoming: "run-a1f3a5369574 · sha256 cccccccc · Verified signature",
+              reason: "signature_verified",
+              source: "local-core",
+              status: "verified"
+            }
+          ]
+        }
+      ],
       packageQuery: "manifest:run-a1f3a5369574",
       packageRows
     });
@@ -3618,15 +3651,29 @@ describe("terminal workbench model", () => {
       importDiffBlockedCount: 1,
       importDiffChangeCount: 1,
       importDiffMatchedCount: 1,
+      importVerificationInvalidCount: 0,
+      importVerificationVerifiedCount: 1,
       packageBlockedCount: 1,
       packageMatchedCount: 1,
       runId: "run-a1f3a5369574"
     });
+    expect(summary.importVerificationBuckets).toEqual([
+      expect.objectContaining({
+        status: "verified",
+        count: 1,
+        latestExportPath: "auditReport.contentSha256.hash",
+        latestReason: "signature_verified",
+        source: "local-core"
+      })
+    ]);
     expect(summary.copyText).toContain("AIQT Audit Evidence Summary");
     expect(summary.copyText).toContain("Run: run-a1f3a5369574");
     expect(summary.copyText).toContain("Audit query: manual-smoke");
     expect(summary.copyText).toContain("Package checks: 1 ready / 0 missing / 1 blocked / 1 of 2 matched");
     expect(summary.copyText).toContain("Import diff: 1 changes / 0 adds / 1 blocked / 1 of 2 matched");
+    expect(summary.copyText).toContain(
+      "Import report verification: 1 verified / 0 invalid / latest verified auditReport.contentSha256.hash · signature_verified"
+    );
 
     const reportMarkdown = buildAuditEvidenceReportMarkdown(summary, {
       generatedAt: "2026-06-04T08:00:00.000Z"
@@ -3637,9 +3684,11 @@ describe("terminal workbench model", () => {
     expect(reportMarkdown).toContain("Run ID: `run-a1f3a5369574`");
     expect(reportMarkdown).toContain("| Package checks | 1 ready | 0 missing | 1 blocked | 1 / 2 |");
     expect(reportMarkdown).toContain("| Import diff | 1 changes | 0 adds | 1 blocked | 1 / 2 |");
+    expect(reportMarkdown).toContain("## Import Report Verification");
+    expect(reportMarkdown).toContain("| verified | 1 | local-core | auditReport.contentSha256.hash | signature_verified |");
     expect(reportMarkdown).toContain("Deep link status: `loaded`");
     expect(reportMarkdown).toContain("```text\nAIQT Audit Evidence Summary");
-    expect(reportMarkdown).toContain("Import diff: 1 changes / 0 adds / 1 blocked / 1 of 2 matched\n```");
+    expect(reportMarkdown).toContain("Import report verification: 1 verified / 0 invalid / latest verified auditReport.contentSha256.hash · signature_verified\n```");
   });
 
   test("builds an audit report ledger from persisted report events", () => {

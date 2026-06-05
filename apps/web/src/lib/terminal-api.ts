@@ -126,6 +126,11 @@ export interface ResearchRunExportAuditEvidenceSummary {
     matched: number;
     total: number;
   };
+  importVerification?: {
+    verified: number;
+    invalid: number;
+    buckets: AuditEvidenceSummary["importVerificationBuckets"];
+  };
   copyText: string;
 }
 
@@ -1168,6 +1173,9 @@ export function buildResearchRunExportAuditEvidenceSummary(
   summary: AuditEvidenceSummary,
   generatedAt = new Date().toISOString()
 ): ResearchRunExportAuditEvidenceSummary {
+  const importVerificationBuckets = summary.importVerificationBuckets ?? [];
+  const importVerificationVerifiedCount = summary.importVerificationVerifiedCount ?? 0;
+  const importVerificationInvalidCount = summary.importVerificationInvalidCount ?? 0;
   return {
     kind: "aiqt.auditEvidenceSummary",
     schemaVersion: 1,
@@ -1192,6 +1200,11 @@ export function buildResearchRunExportAuditEvidenceSummary(
       blocked: summary.importDiffBlockedCount,
       matched: summary.importDiffMatchedCount,
       total: summary.importDiffTotalCount
+    },
+    importVerification: {
+      verified: importVerificationVerifiedCount,
+      invalid: importVerificationInvalidCount,
+      buckets: importVerificationBuckets
     },
     copyText: summary.copyText
   };
@@ -3823,6 +3836,8 @@ function isResearchRunExportAuditEvidenceSummary(value: unknown): value is Resea
     (summary.deepLinkError === null || typeof summary.deepLinkError === "string") &&
     isAuditEvidenceCountGroup(summary.package) &&
     isAuditEvidenceImportDiffCountGroup(summary.importDiff) &&
+    (summary.importVerification === undefined ||
+      isAuditEvidenceImportVerificationGroup(summary.importVerification)) &&
     typeof summary.copyText === "string"
   );
 }
@@ -3963,6 +3978,34 @@ function isAuditEvidenceImportDiffCountGroup(
     typeof counts.blocked === "number" &&
     typeof counts.matched === "number" &&
     typeof counts.total === "number"
+  );
+}
+
+function isAuditEvidenceImportVerificationGroup(
+  value: unknown
+): value is NonNullable<ResearchRunExportAuditEvidenceSummary["importVerification"]> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  type ImportVerificationGroup = NonNullable<ResearchRunExportAuditEvidenceSummary["importVerification"]>;
+  const group = value as Partial<ImportVerificationGroup>;
+  return (
+    typeof group.verified === "number" &&
+    typeof group.invalid === "number" &&
+    Array.isArray(group.buckets) &&
+    group.buckets.every((bucket) => {
+      if (!bucket || typeof bucket !== "object" || Array.isArray(bucket)) {
+        return false;
+      }
+      const item = bucket as Partial<ImportVerificationGroup["buckets"][number]>;
+      return (
+        typeof item.count === "number" &&
+        typeof item.latestExportPath === "string" &&
+        typeof item.latestReason === "string" &&
+        item.source === "local-core" &&
+        (item.status === "verified" || item.status === "invalid")
+      );
+    })
   );
 }
 

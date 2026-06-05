@@ -647,6 +647,7 @@ export function App() {
     deepLinkStatus: importAuditEvidenceDeepLinkStatus?.status ?? "none",
     importDiffQuery: researchRunImportDiffQuery,
     importDiffRows: researchRunImportDiffRows,
+    importAuditEvents: researchRunImportAuditEvents,
     packageQuery: researchRunExportBrowserQuery,
     packageRows: researchRunExportBrowserRows
   });
@@ -5717,7 +5718,9 @@ function ResearchRunExportPackageBrowserPanel({
             <em>
               {i18n.locale === "zh-CN" ? "当前焦点" : "Current focus"} {evidenceSummary.focusQuery || "-"} ·{" "}
               {i18n.locale === "zh-CN" ? "深链" : "Deep link"}{" "}
-              {researchExportDeepLinkStatusLabel(i18n, evidenceSummary.deepLinkStatus)}
+              {researchExportDeepLinkStatusLabel(i18n, evidenceSummary.deepLinkStatus)} ·{" "}
+              {i18n.locale === "zh-CN" ? "验签" : "Verification"} {evidenceSummary.importVerificationVerifiedCount}/
+              {evidenceSummary.importVerificationInvalidCount}
             </em>
           </div>
           <div className="research-audit-evidence-actions">

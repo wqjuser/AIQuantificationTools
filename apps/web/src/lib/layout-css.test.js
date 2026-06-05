@@ -327,6 +327,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
     expect(appSource).toContain("const auditEvidenceSummary = buildAuditEvidenceSummary");
+    expect(appSource).toContain("importAuditEvents: researchRunImportAuditEvents");
     expect(appSource).toContain("const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary]");
     expect(appSource).toContain("const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport]");
     expect(appSource).toContain("const copyAuditEvidenceSummary = useCallback");
@@ -382,6 +383,8 @@ describe("terminal layout css", () => {
     expect(exportBrowserPanelSource).toContain("evidenceSummary.runId");
     expect(exportBrowserPanelSource).toContain("evidenceSummary.packageMatchedCount");
     expect(exportBrowserPanelSource).toContain("evidenceSummary.importDiffBlockedCount");
+    expect(exportBrowserPanelSource).toContain("evidenceSummary.importVerificationVerifiedCount");
+    expect(exportBrowserPanelSource).toContain("evidenceSummary.importVerificationInvalidCount");
     expect(exportBrowserPanelSource).toContain("onCopyEvidenceSummary");
     expect(exportBrowserPanelSource).toContain("onCopyEvidenceReport");
     expect(exportBrowserPanelSource).toContain("onDownloadEvidenceReport");
