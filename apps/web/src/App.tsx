@@ -52,6 +52,7 @@ import {
   buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
   withResearchRunExportAuditEvidenceArtifacts,
+  withResearchRunExportReportSignatures,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
@@ -1447,9 +1448,18 @@ export function App() {
       undefined,
       runHistory
     );
+    const reportHistory = await loadAuditEvents(quantCoreBaseUrl, {
+      eventType: "audit_evidence_report,backtest_report",
+      runId: run.runId,
+      limit: 50
+    });
+    const signedExportPackage =
+      reportHistory.source === "core"
+        ? withResearchRunExportReportSignatures(exportPackage, reportHistory.events)
+        : exportPackage;
     persistAuditEvidenceReportEvent(exportPackage.auditReport);
     const objectUrl = URL.createObjectURL(
-      new Blob([JSON.stringify(exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
+      new Blob([JSON.stringify(signedExportPackage, null, 2)], { type: "application/json;charset=utf-8" })
     );
     const anchor = document.createElement("a");
     anchor.href = objectUrl;

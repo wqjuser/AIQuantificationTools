@@ -49,6 +49,8 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 
 复现包报告 artifact 允许携带可选 `signature` 元数据，但只作为防篡改证明随包传递：前端类型和归一化守门接受 signed/verified/revoked/invalid/unsigned 状态、signer、key id、algorithm、chain id、签名值、签名/验签/撤销时间和原因；若签名对象或其嵌套对象包含 `secret`、`privateKey`、API token、password 或 passphrase 类字段，`normalizeResearchRunExportPackagePayload` 会拒绝整个包。`buildResearchRunExportBrowserRows`、`buildResearchRunExportIndexRows` 和 `buildResearchRunImportDiffRows` 会复用报告账本的签名状态解析，把 `Signed report hash`、`Verified signature`、撤销/无效状态和签名 key 明细拼入报告行摘要或 detail，支持按签名状态、signer 和 key id 搜索。
 
+`withResearchRunExportReportSignatures` 会把报告账本事件中的签名证明安全合并回 JSON 复现包：只有 `eventType`、run id、`metadata.artifactKind`、文件名、`contentSha256` 和 `contentSha256Algorithm` 与包内 `auditReport` 或 `backtestReport` 完全一致，且 `metadata.signature` 通过同一套 secret-free 签名 schema 校验时，才复制签名 metadata；错 hash、错文件、错 artifact kind 或含 secret/private key 的签名对象都会被忽略。App 的研究运行 JSON 下载流程会先生成当前 `auditEvidenceSummary`、`auditReport` 和 `backtestReport` artifacts，再读取当前 run 的 `audit_evidence_report,backtest_report` 账本事件并调用该 helper，匹配不到签名或账本离线时仍导出可复现的未签名包。
+
 `buildResearchRunImportAuditAggregation` 会在前端把导入审计流水汇总为 all/needs-review/undoable/recoverable/undone 阶段筛选、撤销失败计数和 blocked/schema/integrity/artifact-counts/core/unknown 失败桶；`filterResearchRunImportAuditEvents` 继续支持全文 query，并新增第三个筛选参数，让 Audit 面板可以叠加搜索词和阶段过滤，快速定位核心拒绝、完整性失败、artifact 数量不一致或撤销错配。
 
 前端风险审批现在还会把 `researchRun.dataQuality` 渲染为独立 gate：来源必须不是 `demo-fallback/unknown`，完整性必须为 true，且 rows 必须为正数；模拟委托预览、风险检查行和晋级队列都复用该 gate，保证用户提交前就能看到与后端 paper handoff 一致的数据质量阻断原因。

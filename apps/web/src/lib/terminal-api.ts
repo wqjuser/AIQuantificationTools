@@ -1435,6 +1435,72 @@ export async function withResearchRunExportAuditEvidenceArtifacts(
   };
 }
 
+export function withResearchRunExportReportSignatures(
+  exportPackage: ResearchRunExportPackage,
+  auditEvents: AuditEventRecord[]
+): ResearchRunExportPackage {
+  const auditReportSignature = researchRunExportReportSignatureFromEvents({
+    artifactKind: "aiqt.auditReport",
+    eventType: "audit_evidence_report",
+    events: auditEvents,
+    report: exportPackage.auditReport
+  });
+  const backtestReportSignature = researchRunExportReportSignatureFromEvents({
+    artifactKind: "aiqt.backtestReport",
+    eventType: "backtest_report",
+    events: auditEvents,
+    report: exportPackage.backtestReport
+  });
+
+  return {
+    ...exportPackage,
+    ...(exportPackage.auditReport && auditReportSignature
+      ? { auditReport: { ...exportPackage.auditReport, signature: auditReportSignature } }
+      : {}),
+    ...(exportPackage.backtestReport && backtestReportSignature
+      ? { backtestReport: { ...exportPackage.backtestReport, signature: backtestReportSignature } }
+      : {})
+  };
+}
+
+function researchRunExportReportSignatureFromEvents({
+  artifactKind,
+  eventType,
+  events,
+  report
+}: {
+  artifactKind: ResearchRunExportAuditReport["kind"] | ResearchRunExportBacktestReport["kind"];
+  eventType: "audit_evidence_report" | "backtest_report";
+  events: AuditEventRecord[];
+  report: ResearchRunExportAuditReport | ResearchRunExportBacktestReport | undefined;
+}): ResearchRunExportReportSignature | undefined {
+  if (!report) {
+    return undefined;
+  }
+
+  for (const event of events) {
+    const signature = event.metadata.signature;
+    if (
+      event.eventType === eventType &&
+      event.runId === report.runId &&
+      auditEventMetadataText(event.metadata, "artifactKind") === artifactKind &&
+      auditEventMetadataText(event.metadata, "fileName") === report.fileName &&
+      auditEventMetadataText(event.metadata, "contentSha256") === report.contentSha256.hash &&
+      auditEventMetadataText(event.metadata, "contentSha256Algorithm") === report.contentSha256.algorithm &&
+      isResearchRunExportReportSignature(signature)
+    ) {
+      return { ...signature };
+    }
+  }
+
+  return undefined;
+}
+
+function auditEventMetadataText(metadata: Record<string, unknown>, key: string): string {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
 export async function loadResearchRunExport(
   baseUrl: string,
   runId: string,

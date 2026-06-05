@@ -67,6 +67,7 @@ import {
   buildAuditEvidenceReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
+  withResearchRunExportReportSignatures,
   withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
@@ -2322,6 +2323,86 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload(signedArtifactPackage)?.backtestReport?.signature).toMatchObject({
       keyId: "local-audit-key",
       status: "signed"
+    });
+    const signedAuditEvent: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "audit-report-run-preview-signed",
+      eventType: "audit_evidence_report",
+      runId: "run-preview",
+      createdAt: "2026-06-04T08:04:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: "Audit evidence report generated for run-preview",
+      detail: "signed audit report",
+      metadata: {
+        artifactKind: "aiqt.auditReport",
+        fileName: enrichedArtifactPackage.auditReport?.fileName,
+        contentSha256: enrichedArtifactPackage.auditReport?.contentSha256.hash,
+        contentSha256Algorithm: "sha256",
+        signature: {
+          status: "verified",
+          algorithm: "hmac-sha256",
+          chainId: "audit-chain-local",
+          keyId: "local-audit-key",
+          signedAt: "2026-06-04T08:04:00.000Z",
+          signer: "Local Audit Key",
+          value: "c".repeat(64),
+          verifiedAt: "2026-06-04T08:05:00.000Z"
+        }
+      }
+    };
+    const signedBacktestEvent: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "backtest-report-run-preview-signed",
+      eventType: "backtest_report",
+      runId: "run-preview",
+      createdAt: "2026-06-04T08:06:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: "Backtest Markdown report generated for run-preview",
+      detail: "signed backtest report",
+      metadata: {
+        artifactKind: "aiqt.backtestReport",
+        fileName: enrichedArtifactPackage.backtestReport?.fileName,
+        contentSha256: enrichedArtifactPackage.backtestReport?.contentSha256.hash,
+        contentSha256Algorithm: "sha256",
+        signature: {
+          status: "signed",
+          algorithm: "hmac-sha256",
+          chainId: "audit-chain-local",
+          keyId: "local-audit-key",
+          signedAt: "2026-06-04T08:06:00.000Z",
+          signer: "Local Audit Key",
+          value: "d".repeat(64)
+        }
+      }
+    };
+    const signedExportPackage = withResearchRunExportReportSignatures(enrichedArtifactPackage, [
+      {
+        ...signedAuditEvent,
+        eventId: "audit-report-wrong-hash",
+        metadata: { ...signedAuditEvent.metadata, contentSha256: "0".repeat(64) }
+      },
+      signedAuditEvent,
+      {
+        ...signedBacktestEvent,
+        eventId: "backtest-report-leaky-signature",
+        metadata: {
+          ...signedBacktestEvent.metadata,
+          signature: { ...(signedBacktestEvent.metadata.signature as Record<string, unknown>), secret: "nope" }
+        }
+      },
+      signedBacktestEvent
+    ]);
+    expect(signedExportPackage.auditReport?.signature).toMatchObject({
+      keyId: "local-audit-key",
+      status: "verified",
+      verifiedAt: "2026-06-04T08:05:00.000Z"
+    });
+    expect(signedExportPackage.backtestReport?.signature).toMatchObject({
+      keyId: "local-audit-key",
+      status: "signed",
+      signedAt: "2026-06-04T08:06:00.000Z"
     });
     expect(
       normalizeResearchRunExportPackagePayload({

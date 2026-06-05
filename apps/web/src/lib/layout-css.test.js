@@ -323,6 +323,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildResearchRunExportAuditReport");
     expect(appSource).toContain("buildAuditEvidenceReportAuditEvent");
     expect(appSource).toContain("withResearchRunExportAuditEvidenceArtifacts");
+    expect(appSource).toContain("withResearchRunExportReportSignatures");
     expect(appSource).toContain("filterResearchRunExportBrowserRows");
     expect(appSource).toContain("const researchRunExportBrowserRows = buildResearchRunExportBrowserRows");
     expect(appSource).toContain("const auditEvidenceSummary = buildAuditEvidenceSummary");
@@ -343,9 +344,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const inspectRunExportPackage = useCallback");
     expect(appSource).toContain("const loadImportAuditEvidenceDeepLink = useCallback");
     expect(exportRunSource).toContain("const exportPackage = await withResearchRunExportAuditEvidenceArtifacts");
+    expect(exportRunSource).toContain('eventType: "audit_evidence_report,backtest_report"');
+    expect(exportRunSource).toContain("const signedExportPackage");
     expect(exportRunSource).toContain("runHistory");
     expect(exportRunSource).toContain("persistAuditEvidenceReportEvent(exportPackage.auditReport);");
-    expect(exportRunSource).toContain("JSON.stringify(exportPackage, null, 2)");
+    expect(exportRunSource).toContain("JSON.stringify(signedExportPackage, null, 2)");
     expect(exportRunSource).toContain("[auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory]");
     expect(appSource).toContain('setImportAuditEvidenceDeepLinkStatus({ ...deepLink, status: "loading", error: null });');
     expect(appSource).toContain("const inspection = await inspectRunExportPackageByRunId(deepLink.runId);");
