@@ -129,6 +129,22 @@ export interface ResearchRunExportAuditEvidenceSummary {
   copyText: string;
 }
 
+export interface ResearchRunExportReportSignature {
+  [key: string]: string | undefined;
+  status: "unsigned" | "signed" | "verified" | "revoked" | "invalid";
+  algorithm?: string;
+  chainId?: string;
+  invalidReason?: string;
+  keyFingerprint?: string;
+  keyId?: string;
+  revokedAt?: string;
+  revokedReason?: string;
+  signedAt?: string;
+  signer?: string;
+  value?: string;
+  verifiedAt?: string;
+}
+
 export interface ResearchRunExportAuditReport {
   kind: "aiqt.auditReport";
   schemaVersion: 1;
@@ -138,6 +154,7 @@ export interface ResearchRunExportAuditReport {
   fileName: string;
   contentSha256: ResearchRunExportIntegrity;
   contentMarkdown: string;
+  signature?: ResearchRunExportReportSignature;
   evidenceSummary: ResearchRunExportAuditEvidenceSummary;
 }
 
@@ -157,6 +174,7 @@ export interface ResearchRunExportBacktestReport {
   executionMode: string;
   dataRows: number;
   runComparisonRows: number;
+  signature?: ResearchRunExportReportSignature;
   boundary: "historical audited evidence only; no investment advice";
 }
 
@@ -3616,6 +3634,7 @@ function isResearchRunExportAuditReport(value: unknown): value is ResearchRunExp
     typeof report.fileName === "string" &&
     isResearchRunExportIntegrity(report.contentSha256) &&
     typeof report.contentMarkdown === "string" &&
+    (report.signature === undefined || isResearchRunExportReportSignature(report.signature)) &&
     isResearchRunExportAuditEvidenceSummary(report.evidenceSummary)
   );
 }
@@ -3641,8 +3660,62 @@ function isResearchRunExportBacktestReport(value: unknown): value is ResearchRun
     typeof report.executionMode === "string" &&
     typeof report.dataRows === "number" &&
     typeof report.runComparisonRows === "number" &&
+    (report.signature === undefined || isResearchRunExportReportSignature(report.signature)) &&
     report.boundary === "historical audited evidence only; no investment advice"
   );
+}
+
+function isResearchRunExportReportSignature(value: unknown): value is ResearchRunExportReportSignature {
+  if (!isPlainRecord(value) || hasForbiddenSignatureMaterial(value)) {
+    return false;
+  }
+  const signature = value as Partial<ResearchRunExportReportSignature>;
+  const status = signature.status;
+  const stringFields = [
+    "algorithm",
+    "chainId",
+    "invalidReason",
+    "keyFingerprint",
+    "keyId",
+    "revokedAt",
+    "revokedReason",
+    "signedAt",
+    "signer",
+    "value",
+    "verifiedAt"
+  ] as const;
+  return (
+    (status === "unsigned" ||
+      status === "signed" ||
+      status === "verified" ||
+      status === "revoked" ||
+      status === "invalid") &&
+    stringFields.every((field) => signature[field] === undefined || typeof signature[field] === "string")
+  );
+}
+
+function hasForbiddenSignatureMaterial(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(hasForbiddenSignatureMaterial);
+  }
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  const forbiddenKeys = new Set([
+    "accesstoken",
+    "apikey",
+    "passphrase",
+    "password",
+    "privatekey",
+    "rawprivatekey",
+    "rawsecret",
+    "refreshtoken",
+    "secret"
+  ]);
+  return Object.entries(value).some(([key, nested]) => {
+    const normalizedKey = key.toLowerCase().replace(/[-_\s]/gu, "");
+    return forbiddenKeys.has(normalizedKey) || hasForbiddenSignatureMaterial(nested);
+  });
 }
 
 function isAuditEvidenceDeepLinkStatus(value: unknown): value is ResearchRunExportAuditEvidenceSummary["deepLinkStatus"] {

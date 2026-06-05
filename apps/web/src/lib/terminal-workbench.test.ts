@@ -2176,6 +2176,16 @@ describe("terminal workbench model", () => {
           hash: "d".repeat(64)
         },
         contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        signature: {
+          status: "verified",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:01:00.000Z",
+          verifiedAt: "2026-06-04T08:02:00.000Z",
+          chainId: "audit-chain-local",
+          value: "a".repeat(64)
+        },
         evidenceSummary: {
           kind: "aiqt.auditEvidenceSummary",
           schemaVersion: 1,
@@ -2211,7 +2221,16 @@ describe("terminal workbench model", () => {
         executionMode: "paper_only",
         dataRows: 240,
         runComparisonRows: 2,
-        boundary: "historical audited evidence only; no investment advice"
+        boundary: "historical audited evidence only; no investment advice",
+        signature: {
+          status: "signed",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:03:00.000Z",
+          chainId: "audit-chain-local",
+          value: "b".repeat(64)
+        }
       }
     });
 
@@ -2245,6 +2264,7 @@ describe("terminal workbench model", () => {
           id: "backtest-report",
           status: "ready",
           value: "sha256 · eeeeeeee",
+          detail: "run-browser-backtest-report.md · 2 comparable runs · Signed report hash · Local Audit Key · local-audit-key · hmac-sha256",
           exportPath: "backtestReport.contentSha256.hash"
         }),
         expect.objectContaining({
@@ -2263,6 +2283,8 @@ describe("terminal workbench model", () => {
           id: "audit-report",
           status: "ready",
           value: "sha256 · dddddddd",
+          detail:
+            "run-browser-audit-evidence-report.md · generated 2026-06-04T08:00:00+00:00 · Verified signature · Local Audit Key · local-audit-key · hmac-sha256",
           exportPath: "auditReport.contentSha256.hash"
         }),
         expect.objectContaining({
@@ -2281,6 +2303,10 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportBrowserRows(rows, "auditReport").map((row) => row.id)).toEqual(["audit-report"]);
     expect(filterResearchRunExportBrowserRows(rows, "backtestReport").map((row) => row.id)).toEqual([
       "backtest-report"
+    ]);
+    expect(filterResearchRunExportBrowserRows(rows, "local-audit-key").map((row) => row.id)).toEqual([
+      "backtest-report",
+      "audit-report"
     ]);
   });
 
@@ -2392,6 +2418,16 @@ describe("terminal workbench model", () => {
           hash: "e".repeat(64)
         },
         contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        signature: {
+          status: "verified",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-05-26T08:48:00.000Z",
+          verifiedAt: "2026-05-26T08:49:00.000Z",
+          chainId: "audit-chain-local",
+          value: "a".repeat(64)
+        },
         evidenceSummary: {
           kind: "aiqt.auditEvidenceSummary" as const,
           schemaVersion: 1 as const,
@@ -2427,7 +2463,16 @@ describe("terminal workbench model", () => {
         executionMode: "paper_only",
         dataRows: 500,
         runComparisonRows: 3,
-        boundary: "historical audited evidence only; no investment advice" as const
+        boundary: "historical audited evidence only; no investment advice" as const,
+        signature: {
+          status: "signed",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-05-26T08:49:30.000Z",
+          chainId: "audit-chain-local",
+          value: "b".repeat(64)
+        }
       }
     };
     const rows = buildResearchRunExportIndexRows([
@@ -2472,7 +2517,8 @@ describe("terminal workbench model", () => {
           status: "review",
           context: "600000 · 1d",
           integrity: "sha256 · cccccccc",
-          artifacts: "500 bars / 18 trades / 1 AI / 2 reports / auditReport eeeeeeee / backtestReport ffffffff",
+          artifacts:
+            "500 bars / 18 trades / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
           execution: "1/2 gates · paper_only"
         })
       ])
@@ -2490,6 +2536,7 @@ describe("terminal workbench model", () => {
       "run-index-b",
       "run-index-a"
     ]);
+    expect(filterResearchRunExportIndexRows(rows, "local-audit-key").map((row) => row.id)).toEqual(["run-index-a"]);
   });
 
   test("builds searchable import diff rows before applying a research run export package", () => {
@@ -2693,6 +2740,16 @@ describe("terminal workbench model", () => {
           hash: "e".repeat(64)
         },
         contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        signature: {
+          status: "verified",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:05:40.000Z",
+          verifiedAt: "2026-06-04T08:05:50.000Z",
+          chainId: "audit-chain-local",
+          value: "a".repeat(64)
+        },
         evidenceSummary: {
           kind: "aiqt.auditEvidenceSummary",
           schemaVersion: 1,
@@ -2728,7 +2785,16 @@ describe("terminal workbench model", () => {
         executionMode: "paper_only",
         dataRows: 500,
         runComparisonRows: 3,
-        boundary: "historical audited evidence only; no investment advice"
+        boundary: "historical audited evidence only; no investment advice",
+        signature: {
+          status: "signed",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:06:20.000Z",
+          chainId: "audit-chain-local",
+          value: "b".repeat(64)
+        }
       }
     } satisfies ResearchRunExportBrowserPackage;
 
@@ -2782,16 +2848,18 @@ describe("terminal workbench model", () => {
           id: "audit-report",
           status: "add",
           current: "No local audit report",
-          incoming: "run-imported · sha256 eeeeeeee · run-imported-audit-evidence-report.md",
-          detail: "Package includes a portable Audit Markdown report bound to this manifest.",
+          incoming: "run-imported · sha256 eeeeeeee · run-imported-audit-evidence-report.md · Verified signature",
+          detail:
+            "Package includes a portable Audit Markdown report bound to this manifest. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256",
           exportPath: "auditReport.contentSha256.hash"
         }),
         expect.objectContaining({
           id: "backtest-report",
           status: "add",
           current: "No local backtest report",
-          incoming: "run-imported · sha256 ffffffff · 3 comparisons",
-          detail: "Package includes a portable Backtest Markdown report bound to this manifest.",
+          incoming: "run-imported · sha256 ffffffff · 3 comparisons · Signed report hash",
+          detail:
+            "Package includes a portable Backtest Markdown report bound to this manifest. · Signed report hash · Local Audit Key · local-audit-key · hmac-sha256",
           exportPath: "backtestReport.contentSha256.hash"
         })
       ])
@@ -2803,6 +2871,10 @@ describe("terminal workbench model", () => {
     ]);
     expect(filterResearchRunImportDiffRows(rows, "auditReport").map((row) => row.id)).toEqual(["audit-report"]);
     expect(filterResearchRunImportDiffRows(rows, "backtestReport").map((row) => row.id)).toEqual([
+      "backtest-report"
+    ]);
+    expect(filterResearchRunImportDiffRows(rows, "local-audit-key").map((row) => row.id)).toEqual([
+      "audit-report",
       "backtest-report"
     ]);
   });

@@ -47,6 +47,8 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 
 导入预检会把可选 `auditEvidenceSummary`、`auditReport` 和 `backtestReport` 作为独立行展示，而不是把它们混入核心 `researchRun` 差异：匹配 manifest 的摘要显示为新增审计摘要，并展示 run id、focus query、包检查命中数和导入 diff 阻断数；summary run id 与 manifest 不一致时会标记为 blocked。匹配 manifest 的 `auditReport` 显示为新增 Audit Markdown 报告，并展示 run id、短 hash 和文件名；匹配 manifest 的 `backtestReport` 显示为新增 Backtest Markdown 报告，并展示 run id、短 hash 和同上下文比较矩阵行数；报告上下文或内容 hash 不匹配时会标记为 blocked，让外部报告带来的 UI 审计证据在导入前可见、可搜索、可拒绝。
 
+复现包报告 artifact 允许携带可选 `signature` 元数据，但只作为防篡改证明随包传递：前端类型和归一化守门接受 signed/verified/revoked/invalid/unsigned 状态、signer、key id、algorithm、chain id、签名值、签名/验签/撤销时间和原因；若签名对象或其嵌套对象包含 `secret`、`privateKey`、API token、password 或 passphrase 类字段，`normalizeResearchRunExportPackagePayload` 会拒绝整个包。`buildResearchRunExportBrowserRows`、`buildResearchRunExportIndexRows` 和 `buildResearchRunImportDiffRows` 会复用报告账本的签名状态解析，把 `Signed report hash`、`Verified signature`、撤销/无效状态和签名 key 明细拼入报告行摘要或 detail，支持按签名状态、signer 和 key id 搜索。
+
 `buildResearchRunImportAuditAggregation` 会在前端把导入审计流水汇总为 all/needs-review/undoable/recoverable/undone 阶段筛选、撤销失败计数和 blocked/schema/integrity/artifact-counts/core/unknown 失败桶；`filterResearchRunImportAuditEvents` 继续支持全文 query，并新增第三个筛选参数，让 Audit 面板可以叠加搜索词和阶段过滤，快速定位核心拒绝、完整性失败、artifact 数量不一致或撤销错配。
 
 前端风险审批现在还会把 `researchRun.dataQuality` 渲染为独立 gate：来源必须不是 `demo-fallback/unknown`，完整性必须为 true，且 rows 必须为正数；模拟委托预览、风险检查行和晋级队列都复用该 gate，保证用户提交前就能看到与后端 paper handoff 一致的数据质量阻断原因。

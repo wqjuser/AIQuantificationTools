@@ -2287,6 +2287,60 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload(enrichedArtifactPackage)?.backtestReport?.fileName).toBe(
       "run-preview-backtest-report.md"
     );
+    const signedArtifactPackage = {
+      ...enrichedArtifactPackage,
+      auditReport: {
+        ...enrichedArtifactPackage.auditReport,
+        signature: {
+          status: "verified",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:01:00.000Z",
+          verifiedAt: "2026-06-04T08:02:00.000Z",
+          chainId: "audit-chain-local",
+          value: "a".repeat(64)
+        }
+      },
+      backtestReport: {
+        ...enrichedArtifactPackage.backtestReport,
+        signature: {
+          status: "signed",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:03:00.000Z",
+          chainId: "audit-chain-local",
+          value: "b".repeat(64)
+        }
+      }
+    };
+    expect(normalizeResearchRunExportPackagePayload(signedArtifactPackage)?.auditReport?.signature).toMatchObject({
+      keyId: "local-audit-key",
+      status: "verified"
+    });
+    expect(normalizeResearchRunExportPackagePayload(signedArtifactPackage)?.backtestReport?.signature).toMatchObject({
+      keyId: "local-audit-key",
+      status: "signed"
+    });
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...signedArtifactPackage,
+        auditReport: {
+          ...signedArtifactPackage.auditReport,
+          signature: { ...signedArtifactPackage.auditReport.signature, secret: "do-not-import" }
+        }
+      })
+    ).toBeNull();
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...signedArtifactPackage,
+        backtestReport: {
+          ...signedArtifactPackage.backtestReport,
+          signature: { ...signedArtifactPackage.backtestReport.signature, privateKey: "do-not-import" }
+        }
+      })
+    ).toBeNull();
     expect(
       normalizeResearchRunExportPackagePayload({
         ...enrichedPackage,
