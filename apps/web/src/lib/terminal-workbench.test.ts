@@ -3781,6 +3781,8 @@ describe("terminal workbench model", () => {
       attention: 1,
       chainStatus: "attention",
       invalid: 1,
+      importVerificationInvalid: 0,
+      importVerificationVerified: 1,
       latestHash: reportHash,
       ready: 1,
       revoked: 0,

@@ -5958,6 +5958,12 @@ function AuditEvidenceReportLedgerPanel({
               {i18n.locale === "zh-CN" ? "已验证" : "Verified"} <strong>{summary.verified}</strong>
             </span>
             <span>
+              {i18n.locale === "zh-CN" ? "导入验签" : "Import verify"}{" "}
+              <strong>
+                {summary.importVerificationVerified}/{summary.importVerificationInvalid}
+              </strong>
+            </span>
+            <span>
               {i18n.locale === "zh-CN" ? "需关注" : "Attention"} <strong>{summary.attention}</strong>
             </span>
             <span>

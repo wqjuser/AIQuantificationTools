@@ -976,6 +976,8 @@ export interface AuditEvidenceReportLedgerRow {
 export interface AuditEvidenceReportLedgerSummary {
   attention: number;
   chainStatus: "empty" | "unsigned" | "verified" | "attention";
+  importVerificationInvalid: number;
+  importVerificationVerified: number;
   invalid: number;
   latestHash: string;
   ready: number;
@@ -4228,10 +4230,14 @@ export function buildAuditEvidenceReportLedgerSummary(
   const signed = rows.filter((row) => row.signatureStatus === "signed").length;
   const verified = rows.filter((row) => row.signatureStatus === "verified").length;
   const revoked = rows.filter((row) => row.signatureStatus === "revoked").length;
+  const importVerificationVerified = rows.reduce((total, row) => total + row.importVerificationVerified, 0);
+  const importVerificationInvalid = rows.reduce((total, row) => total + row.importVerificationInvalid, 0);
   const attention = invalid + revoked;
   return {
     attention,
     chainStatus: rows.length === 0 ? "empty" : attention > 0 ? "attention" : unsigned > 0 ? "unsigned" : "verified",
+    importVerificationInvalid,
+    importVerificationVerified,
     invalid,
     latestHash: rows.find((row) => row.status === "ready")?.contentSha256 ?? "",
     ready,
