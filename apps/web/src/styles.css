@@ -5215,6 +5215,173 @@ em {
   padding: 8px;
 }
 
+.backtest-run-comparison-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(3, minmax(130px, 0.72fr));
+  gap: 8px;
+}
+
+.backtest-run-comparison-summary article {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.backtest-run-comparison-summary[data-tone="positive"] article:first-child,
+.backtest-run-comparison-row[data-tone="positive"] {
+  border-left-color: #4cc9ad;
+}
+
+.backtest-run-comparison-summary[data-tone="warning"] article:first-child,
+.backtest-run-comparison-row[data-tone="warning"] {
+  border-left-color: #e8be62;
+}
+
+.backtest-run-comparison-summary[data-tone="risk"] article:first-child,
+.backtest-run-comparison-row[data-tone="risk"] {
+  border-left-color: #ff7f6d;
+}
+
+.backtest-run-comparison-summary[data-tone="neutral"] article:first-child,
+.backtest-run-comparison-row[data-tone="neutral"] {
+  border-left-color: #8f7cf5;
+}
+
+.backtest-run-comparison-summary span,
+.backtest-run-comparison-row span {
+  min-width: 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.backtest-run-comparison-summary strong,
+.backtest-run-comparison-row strong {
+  display: block;
+  margin-top: 5px;
+  color: #dce6ee;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.backtest-run-comparison-summary p {
+  margin: 5px 0 0;
+  color: #a9b6c5;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.backtest-run-comparison-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.backtest-run-comparison-toolbar label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  width: min(420px, 100%);
+  min-height: 32px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  color: #8fa0b2;
+  padding: 0 9px;
+}
+
+.backtest-run-comparison-toolbar input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #dce6ee;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.backtest-run-comparison-toolbar input:focus {
+  outline: none;
+}
+
+.backtest-run-comparison-toolbar span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.backtest-run-comparison-matrix {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.backtest-run-comparison-row {
+  display: grid;
+  grid-template-columns:
+    minmax(130px, 0.92fr) minmax(128px, 0.82fr) minmax(74px, 0.45fr) minmax(74px, 0.45fr)
+    minmax(74px, 0.45fr) minmax(62px, 0.36fr) minmax(132px, 0.92fr) minmax(170px, 1.1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  color: #dce6ee;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.backtest-run-comparison-head {
+  min-height: 30px;
+  background: #0f1723;
+}
+
+.backtest-run-comparison-head span {
+  color: #8fa0b2;
+}
+
+.backtest-run-comparison-row em {
+  display: block;
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.backtest-run-comparison-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.backtest-run-comparison-badges b {
+  border: 1px solid #315f55;
+  border-radius: 999px;
+  background: #0f3a32;
+  color: #8ff5df;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 3px 6px;
+}
+
+.backtest-run-comparison-note {
+  margin: 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .parameter-scan-section {
   gap: 9px;
 }

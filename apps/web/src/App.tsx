@@ -114,6 +114,8 @@ import {
   buildBacktestReport,
   buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
+  buildBacktestRunComparisonMatrixRows,
+  buildBacktestRunComparisonMatrixSummary,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
   buildGoldenPathRunbookPreview,
@@ -144,6 +146,7 @@ import {
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   filterAiReviewExportEvidenceIndexRows,
+  filterBacktestRunComparisonMatrixRows,
   filterResearchRunExportPreviewRows,
   filterResearchRunExportBrowserRows,
   filterResearchRunExportIndexRows,
@@ -175,6 +178,9 @@ import {
   BacktestParameterScanSummary,
   BacktestReport,
   BacktestReadinessGate,
+  BacktestRunComparisonMatrixBadge,
+  BacktestRunComparisonMatrixRow,
+  BacktestRunComparisonMatrixSummary,
   BacktestTradeRow,
   BrokerAdapterRow,
   GoldenPathWorkspaceContext,
@@ -650,6 +656,8 @@ export function App() {
   const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
   const backtestParameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const backtestReport = buildBacktestReport(workspace);
+  const backtestRunComparisonMatrixRows = buildBacktestRunComparisonMatrixRows(runHistory, workspace.researchRun?.runId ?? null);
+  const backtestRunComparisonMatrixSummary = buildBacktestRunComparisonMatrixSummary(backtestRunComparisonMatrixRows);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
@@ -2872,6 +2880,8 @@ export function App() {
             parameterScanSummary={backtestParameterScanSummary}
             report={backtestReport}
             readinessGates={backtestReadinessGates}
+            runComparisonMatrixRows={backtestRunComparisonMatrixRows}
+            runComparisonMatrixSummary={backtestRunComparisonMatrixSummary}
             rows={backtestTradeRows}
           />
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
@@ -4200,6 +4210,8 @@ function BacktestReportPanel({
   parameterScanSummary,
   report,
   readinessGates,
+  runComparisonMatrixRows,
+  runComparisonMatrixSummary,
   rows
 }: {
   assumptionRows: BacktestAssumptionRow[];
@@ -4213,13 +4225,32 @@ function BacktestReportPanel({
   parameterScanSummary: BacktestParameterScanSummary | null;
   report: BacktestReport;
   readinessGates: BacktestReadinessGate[];
+  runComparisonMatrixRows: BacktestRunComparisonMatrixRow[];
+  runComparisonMatrixSummary: BacktestRunComparisonMatrixSummary | null;
   rows: BacktestTradeRow[];
 }) {
+  const [runComparisonMatrixQuery, setRunComparisonMatrixQuery] = useState("");
   const diagnosticCard = evidenceCards.find((card) => card.id === "diagnostics");
   const reportCards = evidenceCards.filter((card) => card.id !== "diagnostics");
   const diagnostics = report.diagnostics.length ? report.diagnostics : [];
   const equityStart = report.equityCurve[0]?.equity ?? null;
   const equityEnd = report.equityCurve.at(-1)?.equity ?? null;
+  const filteredRunComparisonMatrixRows = filterBacktestRunComparisonMatrixRows(
+    runComparisonMatrixRows,
+    runComparisonMatrixQuery
+  );
+  const currentComparisonRow = runComparisonMatrixSummary?.currentRunId
+    ? runComparisonMatrixRows.find((row) => row.runId === runComparisonMatrixSummary.currentRunId) ?? null
+    : null;
+  const bestReturnComparisonRow = runComparisonMatrixSummary?.bestReturnRunId
+    ? runComparisonMatrixRows.find((row) => row.runId === runComparisonMatrixSummary.bestReturnRunId) ?? null
+    : null;
+  const lowestDrawdownComparisonRow = runComparisonMatrixSummary?.lowestDrawdownRunId
+    ? runComparisonMatrixRows.find((row) => row.runId === runComparisonMatrixSummary.lowestDrawdownRunId) ?? null
+    : null;
+  const previousComparisonRow = runComparisonMatrixSummary?.previousRunId
+    ? runComparisonMatrixRows.find((row) => row.runId === runComparisonMatrixSummary.previousRunId) ?? null
+    : null;
 
   return (
     <Panel
@@ -4292,6 +4323,102 @@ function BacktestReportPanel({
             <p>{i18n.locale === "zh-CN" ? "实盘仍必须通过后续闸门。" : "Live trading still requires downstream gates."}</p>
           </article>
         </div>
+
+        <section className="backtest-report-section">
+          <div className="backtest-replay-title">
+            <span>{i18n.locale === "zh-CN" ? "运行对比矩阵" : "Run comparison matrix"}</span>
+            <strong>{runComparisonMatrixRows.length}</strong>
+          </div>
+          {runComparisonMatrixSummary ? (
+            <div className="backtest-run-comparison-summary" data-tone={runComparisonMatrixSummary.tone}>
+              <article>
+                <span>{i18n.locale === "zh-CN" ? "同类上下文" : "Comparable context"}</span>
+                <strong>{runComparisonMatrixSummary.context}</strong>
+                <p>{backtestRunComparisonSummaryDetail(i18n, runComparisonMatrixSummary)}</p>
+              </article>
+              <article>
+                <span>{i18n.locale === "zh-CN" ? "当前运行" : "Current run"}</span>
+                <strong>{currentComparisonRow?.runId ?? "N/A"}</strong>
+                <p>{currentComparisonRow ? `${currentComparisonRow.returnPct} · ${currentComparisonRow.maxDrawdownPct}` : "N/A"}</p>
+              </article>
+              <article>
+                <span>{i18n.locale === "zh-CN" ? "最佳收益" : "Best return"}</span>
+                <strong>{bestReturnComparisonRow?.runId ?? "N/A"}</strong>
+                <p>{bestReturnComparisonRow ? `${bestReturnComparisonRow.returnPct} · DD ${bestReturnComparisonRow.maxDrawdownPct}` : "N/A"}</p>
+              </article>
+              <article>
+                <span>{i18n.locale === "zh-CN" ? "最低回撤" : "Lowest drawdown"}</span>
+                <strong>{lowestDrawdownComparisonRow?.runId ?? "N/A"}</strong>
+                <p>{lowestDrawdownComparisonRow ? `${lowestDrawdownComparisonRow.maxDrawdownPct} · ${lowestDrawdownComparisonRow.returnPct}` : "N/A"}</p>
+              </article>
+            </div>
+          ) : null}
+          <div className="backtest-run-comparison-toolbar">
+            <label>
+              <Search size={13} />
+              <input
+                aria-label={i18n.locale === "zh-CN" ? "搜索运行对比矩阵" : "Search run comparison matrix"}
+                onChange={(event) => setRunComparisonMatrixQuery(event.currentTarget.value)}
+                placeholder={i18n.locale === "zh-CN" ? "搜索运行、版本、标签或质量状态" : "Search run, revision, badge, or quality"}
+                type="search"
+                value={runComparisonMatrixQuery}
+              />
+            </label>
+            <span>
+              {i18n.locale === "zh-CN"
+                ? `显示 ${filteredRunComparisonMatrixRows.length}/${runComparisonMatrixRows.length}`
+                : `${filteredRunComparisonMatrixRows.length}/${runComparisonMatrixRows.length} shown`}
+            </span>
+          </div>
+          <div className="backtest-run-comparison-matrix">
+            <div className="backtest-run-comparison-row backtest-run-comparison-head">
+              <span>{i18n.locale === "zh-CN" ? "运行" : "Run"}</span>
+              <span>{i18n.locale === "zh-CN" ? "标签" : "Badges"}</span>
+              <span>{i18n.metricLabel("Return")}</span>
+              <span>{i18n.metricLabel("Max DD")}</span>
+              <span>{i18n.metricLabel("Win rate")}</span>
+              <span>{i18n.metricLabel("Trades")}</span>
+              <span>{i18n.locale === "zh-CN" ? "数据质量" : "Data quality"}</span>
+              <span>{i18n.locale === "zh-CN" ? "假设" : "Assumptions"}</span>
+            </div>
+            {filteredRunComparisonMatrixRows.length ? (
+              filteredRunComparisonMatrixRows.map((row) => (
+                <article className="backtest-run-comparison-row" data-tone={row.tone} key={row.id}>
+                  <span>
+                    <strong>{row.runId}</strong>
+                    <em>{row.strategyName} · {row.strategyRevision}</em>
+                  </span>
+                  <span className="backtest-run-comparison-badges">
+                    {row.badges.map((badge) => (
+                      <b key={badge}>{backtestRunComparisonBadgeLabel(i18n, badge)}</b>
+                    ))}
+                  </span>
+                  <span>{row.returnPct}</span>
+                  <span>{row.maxDrawdownPct}</span>
+                  <span>{row.winRatePct}</span>
+                  <span>{row.tradeCount}</span>
+                  <span>{row.dataQualityLabel}</span>
+                  <span>{row.assumptions}</span>
+                </article>
+              ))
+            ) : (
+              <article className="backtest-run-comparison-row" data-tone="neutral">
+                <span>
+                  {i18n.locale === "zh-CN"
+                    ? "没有匹配的同上下文审计运行。"
+                    : "No comparable audited runs match the filter."}
+                </span>
+              </article>
+            )}
+          </div>
+          {previousComparisonRow ? (
+            <p className="backtest-run-comparison-note">
+              {i18n.locale === "zh-CN"
+                ? `上一轮可比运行：${previousComparisonRow.runId}。矩阵仅用于复盘历史证据，不构成投资建议。`
+                : `Previous comparable run: ${previousComparisonRow.runId}. Matrix is historical evidence only, not investment advice.`}
+            </p>
+          ) : null}
+        </section>
 
         <section className="backtest-report-section">
           <div className="backtest-replay-title">
@@ -8339,6 +8466,29 @@ function parameterScanStatusLabel(i18n: AppI18n, status: BacktestParameterScanRo
     return status;
   }
   return { current: "当前", candidate: "候选" }[status];
+}
+
+function backtestRunComparisonBadgeLabel(i18n: AppI18n, badge: BacktestRunComparisonMatrixBadge): string {
+  if (i18n.locale === "en-US") {
+    return badge.replace("_", " ");
+  }
+  return {
+    best_return: "最佳收益",
+    current: "当前",
+    history: "历史",
+    lowest_drawdown: "最低回撤",
+    previous_run: "上一轮"
+  }[badge];
+}
+
+function backtestRunComparisonSummaryDetail(
+  i18n: AppI18n,
+  summary: BacktestRunComparisonMatrixSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  return `${summary.totalRows} 个同市场、同标的、同周期的已审计运行；只做历史证据对比，不构成投资建议。`;
 }
 
 function backtestExposureLabel(i18n: AppI18n, exposure: string): string {

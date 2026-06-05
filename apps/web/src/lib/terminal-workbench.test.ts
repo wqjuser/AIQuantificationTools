@@ -31,6 +31,8 @@ import {
   buildBacktestParameterScanSummary,
   buildBacktestReport,
   buildBacktestReportMarkdown,
+  buildBacktestRunComparisonMatrixRows,
+  buildBacktestRunComparisonMatrixSummary,
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
@@ -66,6 +68,7 @@ import {
   filterResearchRunImportAuditEvents,
   filterAuditEvidenceReportLedgerRows,
   filterAuditSigningKeyRotationLedgerRows,
+  filterBacktestRunComparisonMatrixRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
   researchRunEvidenceLogLabel,
@@ -82,6 +85,7 @@ import {
   type ResearchRunExportIndexRow,
   type ResearchRunExportBrowserPackage,
   type ResearchRunImportDiffRow,
+  type ResearchRunAudit,
   type TerminalWorkspace,
   type WorkflowRunState,
   visiblePanels,
@@ -105,6 +109,52 @@ function quantLoopStatuses(workspace: TerminalWorkspace): Record<string, string>
 
 function activeQuantLoopStep(workspace: TerminalWorkspace): string | undefined {
   return workspace.quantLoop.find((step) => step.status === "active")?.id;
+}
+
+function auditedRunFixture(
+  overrides: Partial<ResearchRunAudit> & {
+    drawdown?: number;
+    returnPct?: number;
+    source?: string;
+    tradeCount?: number;
+    warnings?: string[];
+  }
+): ResearchRunAudit {
+  const returnPct = overrides.returnPct ?? 5;
+  const drawdown = overrides.drawdown ?? 4;
+  const tradeCount = overrides.tradeCount ?? 8;
+  const warnings = overrides.warnings ?? [];
+  const source = overrides.source ?? "tencent";
+  return {
+    runId: overrides.runId ?? "run-fixture",
+    createdAt: overrides.createdAt ?? "2026-05-26T08:00:00+00:00",
+    market: overrides.market ?? "ashare",
+    symbol: overrides.symbol ?? "600000",
+    timeframe: overrides.timeframe ?? "1d",
+    strategyName: overrides.strategyName ?? "SMA Trend / Bank Sector",
+    strategyRevision: overrides.strategyRevision ?? "rev-fixture",
+    dataRows: overrides.dataRows ?? 240,
+    metrics: {
+      total_return_pct: returnPct,
+      max_drawdown_pct: drawdown,
+      win_rate_pct: overrides.metrics?.win_rate_pct ?? 52,
+      trade_count: tradeCount,
+      ...overrides.metrics
+    },
+    decisions: overrides.decisions ?? [],
+    executionMode: overrides.executionMode ?? "paper_only",
+    dataQuality: overrides.dataQuality ?? {
+      source,
+      isComplete: true,
+      warnings,
+      rows: overrides.dataRows ?? 240
+    },
+    backtestAssumptions: overrides.backtestAssumptions ?? {
+      initialCash: 100_000,
+      feeBps: 3,
+      slippageBps: 2
+    }
+  };
 }
 
 describe("terminal workbench model", () => {
@@ -5728,6 +5778,88 @@ describe("terminal workbench model", () => {
         }
       ])
     ).toEqual([]);
+  });
+
+  test("builds a like-for-like backtest run comparison matrix for the selected audit context", () => {
+    const runs: ResearchRunAudit[] = [
+      auditedRunFixture({
+        createdAt: "2026-05-26T08:00:00+00:00",
+        drawdown: 4,
+        returnPct: 5,
+        runId: "run-current",
+        strategyRevision: "rev-current",
+        tradeCount: 8
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-25T08:00:00+00:00",
+        drawdown: 6,
+        returnPct: 2,
+        runId: "run-previous",
+        source: "local-cache",
+        strategyRevision: "rev-previous",
+        tradeCount: 7,
+        warnings: ["upstream unavailable"]
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-24T08:00:00+00:00",
+        drawdown: 9,
+        returnPct: 8,
+        runId: "run-best-return",
+        strategyRevision: "rev-best",
+        tradeCount: 12
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-23T08:00:00+00:00",
+        drawdown: 2,
+        returnPct: 3,
+        runId: "run-low-drawdown",
+        strategyRevision: "rev-lowdd",
+        tradeCount: 5
+      }),
+      auditedRunFixture({
+        market: "us",
+        runId: "run-other-symbol",
+        symbol: "AAPL",
+        returnPct: 40,
+        strategyRevision: "rev-ignore"
+      })
+    ];
+
+    const rows = buildBacktestRunComparisonMatrixRows(runs, "run-current");
+
+    expect(rows.map((row) => `${row.runId}:${row.badges.join("+")}:${row.returnPct}:${row.maxDrawdownPct}`)).toEqual([
+      "run-current:current:+5.00%:4.00%",
+      "run-previous:previous_run:+2.00%:6.00%",
+      "run-best-return:best_return:+8.00%:9.00%",
+      "run-low-drawdown:lowest_drawdown:+3.00%:2.00%"
+    ]);
+    expect(rows[1]).toMatchObject({
+      dataQualityLabel: "local-cache complete · 1 warning",
+      tone: "warning"
+    });
+    expect(rows.some((row) => row.runId === "run-other-symbol")).toBe(false);
+
+    const summary = buildBacktestRunComparisonMatrixSummary(rows);
+    expect(summary).toMatchObject({
+      bestReturnRunId: "run-best-return",
+      context: "ashare 600000 1d",
+      currentRunId: "run-current",
+      headline: "4 comparable audited runs",
+      lowestDrawdownRunId: "run-low-drawdown",
+      previousRunId: "run-previous",
+      tone: "warning",
+      totalRows: 4
+    });
+    expect(summary?.detail).toContain("Best return run-best-return +8.00%");
+    expect(summary?.detail).toContain("Lowest drawdown run-low-drawdown 2.00%");
+    expect(summary?.detail).toContain("not investment advice");
+
+    expect(filterBacktestRunComparisonMatrixRows(rows, "REV-BEST").map((row) => row.runId)).toEqual([
+      "run-best-return"
+    ]);
+    expect(filterBacktestRunComparisonMatrixRows(rows, "lowest_drawdown").map((row) => row.runId)).toEqual([
+      "run-low-drawdown"
+    ]);
   });
 
   test("formats optional live quote prices for watchlist display", () => {

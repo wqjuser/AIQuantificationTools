@@ -1078,6 +1078,9 @@ describe("terminal layout css", () => {
   test("renders the backtest lab as an auditable evidence report", () => {
     expect(appSource).toContain("buildBacktestReport(workspace)");
     expect(appSource).toContain("buildBacktestParameterScanRows(workspace)");
+    expect(appSource).toContain("buildBacktestRunComparisonMatrixRows(runHistory");
+    expect(appSource).toContain("buildBacktestRunComparisonMatrixSummary(backtestRunComparisonMatrixRows)");
+    expect(appSource).toContain("filterBacktestRunComparisonMatrixRows");
     expect(appSource).toContain("workspaceWithBacktestParameterCandidate");
     expect(appSource).toContain("buildBacktestReportMarkdown(workspace)");
     expect(appSource).toContain("<BacktestReportPanel");
@@ -1095,7 +1098,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildBacktestReadinessGates(workspace)");
     expect(appSource).toContain("evidenceCards={backtestEvidenceCards}");
     expect(appSource).toContain("readinessGates={backtestReadinessGates}");
+    expect(appSource).toContain("runComparisonMatrixRows={backtestRunComparisonMatrixRows}");
+    expect(appSource).toContain("runComparisonMatrixSummary={backtestRunComparisonMatrixSummary}");
     expect(appSource).toContain('className="backtest-evidence-grid"');
+    expect(appSource).toContain('className="backtest-run-comparison-matrix"');
     expect(appSource).toContain('className="backtest-readiness-list"');
     expect(appSource).toContain('className="backtest-diagnostic-strip"');
     expect(styles).toContain(".backtest-evidence-grid");
@@ -1105,6 +1111,8 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".backtest-report-hero");
     expect(styles).toContain(".backtest-benchmark-strip");
     expect(styles).toContain(".backtest-report-grid");
+    expect(styles).toContain(".backtest-run-comparison-matrix");
+    expect(styles).toContain(".backtest-run-comparison-row");
     expect(styles).toContain(".parameter-scan-table");
     expect(styles).toContain(".parameter-scan-row");
     expect(styles).toContain(".parameter-scan-row button");

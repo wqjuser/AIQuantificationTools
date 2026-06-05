@@ -1195,6 +1195,45 @@ export interface ResearchRunComparisonRow {
   tone: "positive" | "warning" | "neutral";
 }
 
+export type BacktestRunComparisonMatrixBadge =
+  | "best_return"
+  | "current"
+  | "history"
+  | "lowest_drawdown"
+  | "previous_run";
+
+export interface BacktestRunComparisonMatrixRow {
+  id: string;
+  assumptions: string;
+  badges: BacktestRunComparisonMatrixBadge[];
+  context: string;
+  createdAt: string;
+  dataQualityLabel: string;
+  dataRows: number;
+  maxDrawdownPct: string;
+  returnPct: string;
+  runId: string;
+  strategyName: string;
+  strategyRevision: string;
+  symbol: string;
+  timeframe: Timeframe;
+  tone: "neutral" | "positive" | "risk" | "warning";
+  tradeCount: string;
+  winRatePct: string;
+}
+
+export interface BacktestRunComparisonMatrixSummary {
+  bestReturnRunId: string | null;
+  context: string;
+  currentRunId: string | null;
+  detail: string;
+  headline: string;
+  lowestDrawdownRunId: string | null;
+  previousRunId: string | null;
+  tone: "neutral" | "positive" | "risk" | "warning";
+  totalRows: number;
+}
+
 export interface TerminalWorkspace {
   schemaVersion: number;
   selectedInstrument: Instrument;
@@ -6524,6 +6563,190 @@ export function buildResearchRunComparisonRows(runs: ResearchRunAudit[]): Resear
       tone: assumptionsChanged ? "warning" : "neutral"
     }
   ];
+}
+
+export function buildBacktestRunComparisonMatrixRows(
+  runs: ResearchRunAudit[],
+  currentRunId?: string | null
+): BacktestRunComparisonMatrixRow[] {
+  const selectedRun = runs.find((run) => run.runId === currentRunId) ?? runs[0] ?? null;
+  if (!selectedRun) {
+    return [];
+  }
+
+  const comparableRuns = runs
+    .filter(
+      (run) =>
+        run.market === selectedRun.market &&
+        run.symbol === selectedRun.symbol &&
+        run.timeframe === selectedRun.timeframe
+    )
+    .slice()
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+
+  if (!comparableRuns.length) {
+    return [];
+  }
+
+  const bestReturnRun = comparableRuns.reduce((best, run) =>
+    metricNumber(run, "total_return_pct") > metricNumber(best, "total_return_pct") ? run : best
+  );
+  const lowestDrawdownRun = comparableRuns.reduce((best, run) =>
+    metricNumber(run, "max_drawdown_pct") < metricNumber(best, "max_drawdown_pct") ? run : best
+  );
+  const selectedTimestamp = Date.parse(selectedRun.createdAt);
+  const previousRun =
+    comparableRuns.find((run) => run.runId !== selectedRun.runId && Date.parse(run.createdAt) < selectedTimestamp) ??
+    comparableRuns.find((run) => run.runId !== selectedRun.runId) ??
+    null;
+
+  return comparableRuns.map((run) => {
+    const badges = buildBacktestRunComparisonMatrixBadges(run, {
+      bestReturnRun,
+      currentRunId: selectedRun.runId,
+      lowestDrawdownRun,
+      previousRun
+    });
+    return {
+      id: `backtest-run-compare-${run.runId}`,
+      assumptions: formatAssumptionsForAudit(normalizeBacktestAssumptions(run.backtestAssumptions)),
+      badges,
+      context: `${run.market} ${run.symbol} ${run.timeframe}`,
+      createdAt: run.createdAt,
+      dataQualityLabel: backtestRunComparisonDataQualityLabel(run),
+      dataRows: run.dataRows,
+      maxDrawdownPct: formatPct(metricNumber(run, "max_drawdown_pct")),
+      returnPct: formatSignedPct(metricNumber(run, "total_return_pct")),
+      runId: run.runId,
+      strategyName: run.strategyName,
+      strategyRevision: run.strategyRevision,
+      symbol: run.symbol,
+      timeframe: run.timeframe,
+      tone: backtestRunComparisonTone(run, badges),
+      tradeCount: String(metricNumber(run, "trade_count")),
+      winRatePct: formatPct(metricNumber(run, "win_rate_pct"))
+    };
+  });
+}
+
+export function buildBacktestRunComparisonMatrixSummary(
+  rows: BacktestRunComparisonMatrixRow[]
+): BacktestRunComparisonMatrixSummary | null {
+  if (!rows.length) {
+    return null;
+  }
+  const currentRow = rows.find((row) => row.badges.includes("current")) ?? null;
+  const bestReturnRow = rows.find((row) => row.badges.includes("best_return")) ?? null;
+  const lowestDrawdownRow = rows.find((row) => row.badges.includes("lowest_drawdown")) ?? null;
+  const previousRow = rows.find((row) => row.badges.includes("previous_run")) ?? null;
+  const hasRisk = rows.some((row) => row.tone === "risk");
+  const hasWarning = rows.some((row) => row.tone === "warning");
+  const tone: BacktestRunComparisonMatrixSummary["tone"] = hasRisk ? "risk" : hasWarning ? "warning" : "positive";
+
+  return {
+    bestReturnRunId: bestReturnRow?.runId ?? null,
+    context: rows[0].context,
+    currentRunId: currentRow?.runId ?? null,
+    detail: [
+      bestReturnRow ? `Best return ${bestReturnRow.runId} ${bestReturnRow.returnPct}.` : "Best return unavailable.",
+      lowestDrawdownRow
+        ? `Lowest drawdown ${lowestDrawdownRow.runId} ${lowestDrawdownRow.maxDrawdownPct}.`
+        : "Lowest drawdown unavailable.",
+      previousRow ? `Previous comparable run ${previousRow.runId}.` : "No previous comparable run.",
+      "This is historical audited evidence, not investment advice."
+    ].join(" "),
+    headline: `${rows.length} comparable audited runs`,
+    lowestDrawdownRunId: lowestDrawdownRow?.runId ?? null,
+    previousRunId: previousRow?.runId ?? null,
+    tone,
+    totalRows: rows.length
+  };
+}
+
+export function filterBacktestRunComparisonMatrixRows(
+  rows: BacktestRunComparisonMatrixRow[],
+  query: string
+): BacktestRunComparisonMatrixRow[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    [
+      row.assumptions,
+      row.badges.join(" "),
+      row.context,
+      row.createdAt,
+      row.dataQualityLabel,
+      row.maxDrawdownPct,
+      row.returnPct,
+      row.runId,
+      row.strategyName,
+      row.strategyRevision,
+      row.tradeCount,
+      row.winRatePct
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+}
+
+function buildBacktestRunComparisonMatrixBadges(
+  run: ResearchRunAudit,
+  context: {
+    bestReturnRun: ResearchRunAudit;
+    currentRunId: string;
+    lowestDrawdownRun: ResearchRunAudit;
+    previousRun: ResearchRunAudit | null;
+  }
+): BacktestRunComparisonMatrixBadge[] {
+  const badges: BacktestRunComparisonMatrixBadge[] = [];
+  if (run.runId === context.currentRunId) {
+    badges.push("current");
+  }
+  if (run.runId === context.previousRun?.runId) {
+    badges.push("previous_run");
+  }
+  if (run.runId === context.bestReturnRun.runId) {
+    badges.push("best_return");
+  }
+  if (run.runId === context.lowestDrawdownRun.runId) {
+    badges.push("lowest_drawdown");
+  }
+  return badges.length ? badges : ["history"];
+}
+
+function backtestRunComparisonDataQualityLabel(run: ResearchRunAudit): string {
+  const dataQuality = run.dataQuality;
+  if (!dataQuality) {
+    return "data quality not attached";
+  }
+  return `${dataQuality.source} ${dataQuality.isComplete ? "complete" : "review"} · ${formatWarningCount(
+    dataQuality.warnings.length
+  )}`;
+}
+
+function backtestRunComparisonTone(
+  run: ResearchRunAudit,
+  badges: BacktestRunComparisonMatrixBadge[]
+): BacktestRunComparisonMatrixRow["tone"] {
+  const dataQuality = run.dataQuality;
+  if (
+    !dataQuality ||
+    !dataQuality.isComplete ||
+    dataQuality.source === "demo-fallback" ||
+    dataQuality.source === "unknown"
+  ) {
+    return "risk";
+  }
+  if (dataQuality.warnings.length > 0) {
+    return "warning";
+  }
+  if (badges.includes("best_return") || badges.includes("lowest_drawdown") || badges.includes("current")) {
+    return "positive";
+  }
+  return "neutral";
 }
 
 export function formatInstrumentPrice(value: number | null | undefined): string {
