@@ -343,9 +343,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const inspectRunExportPackage = useCallback");
     expect(appSource).toContain("const loadImportAuditEvidenceDeepLink = useCallback");
     expect(exportRunSource).toContain("const exportPackage = await withResearchRunExportAuditEvidenceArtifacts");
+    expect(exportRunSource).toContain("runHistory");
     expect(exportRunSource).toContain("persistAuditEvidenceReportEvent(exportPackage.auditReport);");
     expect(exportRunSource).toContain("JSON.stringify(exportPackage, null, 2)");
-    expect(exportRunSource).toContain("[auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl]");
+    expect(exportRunSource).toContain("[auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory]");
     expect(appSource).toContain('setImportAuditEvidenceDeepLinkStatus({ ...deepLink, status: "loading", error: null });');
     expect(appSource).toContain("const inspection = await inspectRunExportPackageByRunId(deepLink.runId);");
     expect(appSource).toContain('status: inspection.ok ? "loaded" : "failed"');

@@ -4323,6 +4323,24 @@ class QuantCoreContractTest(unittest.TestCase):
             "contentMarkdown": "# AIQuant Audit Evidence Report\n",
             "evidenceSummary": export_package["auditEvidenceSummary"],
         }
+        export_package["backtestReport"] = {
+            "kind": "aiqt.backtestReport",
+            "schemaVersion": 1,
+            "runId": "run-audit-summary",
+            "generatedAt": "2026-06-04T08:05:00+00:00",
+            "format": "text/markdown",
+            "fileName": "run-audit-summary-backtest-report.md",
+            "contentSha256": {"algorithm": "sha256", "hash": "b" * 64},
+            "contentMarkdown": "# AIQuant Audited Backtest Report\n",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-audit-summary",
+            "executionMode": "paper_only",
+            "dataRows": 1,
+            "runComparisonRows": 1,
+            "boundary": "historical audited evidence only; no investment advice",
+        }
 
         imported = research_run_import_to_audit(export_package)
 

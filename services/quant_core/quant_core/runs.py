@@ -23,7 +23,13 @@ DEFAULT_DATA_SNAPSHOT = {
     "hash": "",
     "bars": [],
 }
-EXPORT_PACKAGE_INTEGRITY_METADATA_KEYS = {"integrity", "exportedAt", "auditEvidenceSummary", "auditReport"}
+EXPORT_PACKAGE_INTEGRITY_METADATA_KEYS = {
+    "integrity",
+    "exportedAt",
+    "auditEvidenceSummary",
+    "auditReport",
+    "backtestReport",
+}
 
 
 def _default_ai_report() -> dict[str, Any]:

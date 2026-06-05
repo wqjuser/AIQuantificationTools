@@ -1,6 +1,7 @@
 import {
   buildTerminalWorkspace,
   buildAuditEvidenceReportMarkdown,
+  buildBacktestReportMarkdown,
   buildBacktestRunComparisonMatrixRows,
   resolveBacktestAssumptions,
   workspaceFromResearchRunAudit,
@@ -140,6 +141,25 @@ export interface ResearchRunExportAuditReport {
   evidenceSummary: ResearchRunExportAuditEvidenceSummary;
 }
 
+export interface ResearchRunExportBacktestReport {
+  kind: "aiqt.backtestReport";
+  schemaVersion: 1;
+  runId: string;
+  generatedAt: string;
+  format: "text/markdown";
+  fileName: string;
+  contentSha256: ResearchRunExportIntegrity;
+  contentMarkdown: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  strategyRevision: string;
+  executionMode: string;
+  dataRows: number;
+  runComparisonRows: number;
+  boundary: "historical audited evidence only; no investment advice";
+}
+
 export interface ResearchRunExportPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -153,6 +173,7 @@ export interface ResearchRunExportPackage {
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
   auditEvidenceSummary?: ResearchRunExportAuditEvidenceSummary;
   auditReport?: ResearchRunExportAuditReport;
+  backtestReport?: ResearchRunExportBacktestReport;
 }
 
 export interface ResearchRunExportResult {
@@ -1155,6 +1176,46 @@ export async function buildResearchRunExportAuditReport(
   };
 }
 
+export async function buildResearchRunExportBacktestReport(
+  exportPackage: ResearchRunExportPackage,
+  runHistory: ResearchRunAudit[] = [],
+  generatedAt = new Date().toISOString()
+): Promise<ResearchRunExportBacktestReport | null> {
+  const run = exportPackage.researchRun;
+  if (!run.dataSnapshot) {
+    return null;
+  }
+
+  const comparisonHistory = [run, ...runHistory.filter((candidate) => candidate.runId !== run.runId)];
+  const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), run);
+  const contentMarkdown = buildBacktestReportMarkdown(workspace, comparisonHistory);
+  if (!contentMarkdown) {
+    return null;
+  }
+
+  return {
+    kind: "aiqt.backtestReport",
+    schemaVersion: 1,
+    runId: run.runId,
+    generatedAt,
+    format: "text/markdown",
+    fileName: `${sanitizeDownloadFileName(run.runId)}-backtest-report.md`,
+    contentSha256: {
+      algorithm: "sha256",
+      hash: await sha256TextHex(contentMarkdown)
+    },
+    contentMarkdown,
+    market: run.market,
+    symbol: run.symbol,
+    timeframe: run.timeframe,
+    strategyRevision: run.strategyRevision,
+    executionMode: run.executionMode,
+    dataRows: run.dataRows,
+    runComparisonRows: buildBacktestRunComparisonMatrixRows(comparisonHistory, run.runId).length,
+    boundary: "historical audited evidence only; no investment advice"
+  };
+}
+
 export function buildAuditEvidenceReportAuditEvent(
   auditReport: ResearchRunExportAuditReport,
   summary: AuditEvidenceSummary
@@ -1343,13 +1404,16 @@ export async function buildAuditSigningKeyRotationApplyAuditEvent(
 export async function withResearchRunExportAuditEvidenceArtifacts(
   exportPackage: ResearchRunExportPackage,
   summary: AuditEvidenceSummary,
-  generatedAt?: string
+  generatedAt?: string,
+  runHistory: ResearchRunAudit[] = []
 ): Promise<ResearchRunExportPackage> {
   const resolvedGeneratedAt = generatedAt ?? new Date().toISOString();
+  const backtestReport = await buildResearchRunExportBacktestReport(exportPackage, runHistory, resolvedGeneratedAt);
   return {
     ...exportPackage,
     auditEvidenceSummary: buildResearchRunExportAuditEvidenceSummary(summary, resolvedGeneratedAt),
-    auditReport: await buildResearchRunExportAuditReport(summary, resolvedGeneratedAt)
+    auditReport: await buildResearchRunExportAuditReport(summary, resolvedGeneratedAt),
+    ...(backtestReport ? { backtestReport } : {})
   };
 }
 
@@ -3503,7 +3567,8 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
       (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope))) &&
     (exportPackage.auditEvidenceSummary === undefined ||
       isResearchRunExportAuditEvidenceSummary(exportPackage.auditEvidenceSummary)) &&
-    (exportPackage.auditReport === undefined || isResearchRunExportAuditReport(exportPackage.auditReport))
+    (exportPackage.auditReport === undefined || isResearchRunExportAuditReport(exportPackage.auditReport)) &&
+    (exportPackage.backtestReport === undefined || isResearchRunExportBacktestReport(exportPackage.backtestReport))
   );
 }
 
@@ -3552,6 +3617,31 @@ function isResearchRunExportAuditReport(value: unknown): value is ResearchRunExp
     isResearchRunExportIntegrity(report.contentSha256) &&
     typeof report.contentMarkdown === "string" &&
     isResearchRunExportAuditEvidenceSummary(report.evidenceSummary)
+  );
+}
+
+function isResearchRunExportBacktestReport(value: unknown): value is ResearchRunExportBacktestReport {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const report = value as Partial<ResearchRunExportBacktestReport>;
+  return (
+    report.kind === "aiqt.backtestReport" &&
+    report.schemaVersion === 1 &&
+    typeof report.runId === "string" &&
+    typeof report.generatedAt === "string" &&
+    report.format === "text/markdown" &&
+    typeof report.fileName === "string" &&
+    isResearchRunExportIntegrity(report.contentSha256) &&
+    typeof report.contentMarkdown === "string" &&
+    isMarket(report.market) &&
+    typeof report.symbol === "string" &&
+    isTimeframe(report.timeframe) &&
+    typeof report.strategyRevision === "string" &&
+    typeof report.executionMode === "string" &&
+    typeof report.dataRows === "number" &&
+    typeof report.runComparisonRows === "number" &&
+    report.boundary === "historical audited evidence only; no investment advice"
   );
 }
 

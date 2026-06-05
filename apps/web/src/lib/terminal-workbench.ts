@@ -655,6 +655,27 @@ export interface ResearchRunExportBrowserPackage {
     contentMarkdown: string;
     evidenceSummary: ResearchRunExportBrowserPackage["auditEvidenceSummary"];
   };
+  backtestReport?: {
+    kind: "aiqt.backtestReport";
+    schemaVersion: 1;
+    runId: string;
+    generatedAt: string;
+    format: "text/markdown";
+    fileName: string;
+    contentSha256: {
+      algorithm: "sha256";
+      hash: string;
+    };
+    contentMarkdown: string;
+    market: Market;
+    symbol: string;
+    timeframe: Timeframe;
+    strategyRevision: string;
+    executionMode: string;
+    dataRows: number;
+    runComparisonRows: number;
+    boundary: "historical audited evidence only; no investment advice";
+  };
 }
 
 export interface ResearchRunExportBrowserRow {
@@ -663,6 +684,7 @@ export interface ResearchRunExportBrowserRow {
     | "integrity"
     | "data"
     | "backtest"
+    | "backtest-report"
     | "research-note"
     | "paper-executions"
     | "promotion-candidate"
@@ -2667,6 +2689,7 @@ export function buildResearchRunExportBrowserRows(
   const integrityHash = exportPackage.integrity?.hash ?? "";
   const auditSummary = exportPackage.auditEvidenceSummary;
   const auditReport = exportPackage.auditReport;
+  const backtestReport = exportPackage.backtestReport;
   const auditSummaryIsReady =
     auditSummary?.kind === "aiqt.auditEvidenceSummary" &&
     auditSummary.schemaVersion === 1 &&
@@ -2681,6 +2704,15 @@ export function buildResearchRunExportBrowserRows(
     auditReport.contentSha256.algorithm === "sha256" &&
     /^[a-f0-9]{64}$/iu.test(auditReportHash) &&
     auditReport.contentMarkdown.trim() !== "";
+  const backtestReportHash = backtestReport?.contentSha256.hash ?? "";
+  const backtestReportIsReady =
+    backtestReport?.kind === "aiqt.backtestReport" &&
+    backtestReport.schemaVersion === 1 &&
+    backtestReport.runId === exportPackage.manifest.runId &&
+    backtestReport.format === "text/markdown" &&
+    backtestReport.contentSha256.algorithm === "sha256" &&
+    /^[a-f0-9]{64}$/iu.test(backtestReportHash) &&
+    backtestReport.contentMarkdown.trim() !== "";
   const integrityIsReady = exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
   const dataIsReady =
     artifactCounts.bars === exportPackage.manifest.dataRows &&
@@ -2730,6 +2762,23 @@ export function buildResearchRunExportBrowserRows(
       exportPath: "researchRun.backtestTrades",
       tone: backtestIsReady ? "positive" : "warning"
     },
+    ...(backtestReport
+      ? ([
+          {
+            id: "backtest-report",
+            label: "Backtest report",
+            status: backtestReportIsReady ? "ready" : "blocked",
+            value: backtestReport.contentSha256
+              ? `${backtestReport.contentSha256.algorithm} · ${backtestReportHash.slice(0, 8)}`
+              : "No content hash",
+            detail: backtestReportIsReady
+              ? `${backtestReport.fileName} · ${backtestReport.runComparisonRows} comparable runs`
+              : "Backtest report artifact is missing valid Markdown content or SHA-256 metadata.",
+            exportPath: "backtestReport.contentSha256.hash",
+            tone: backtestReportIsReady ? "ai" : "risk"
+          }
+        ] satisfies ResearchRunExportBrowserRow[])
+      : []),
     {
       id: "research-note",
       label: "Research note",

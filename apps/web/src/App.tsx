@@ -1441,7 +1441,12 @@ export function App() {
     }
 
     const fileName = `${run.runId}-research-export.json`;
-    const exportPackage = await withResearchRunExportAuditEvidenceArtifacts(result.exportPackage, auditEvidenceSummary);
+    const exportPackage = await withResearchRunExportAuditEvidenceArtifacts(
+      result.exportPackage,
+      auditEvidenceSummary,
+      undefined,
+      runHistory
+    );
     persistAuditEvidenceReportEvent(exportPackage.auditReport);
     const objectUrl = URL.createObjectURL(
       new Blob([JSON.stringify(exportPackage, null, 2)], { type: "application/json;charset=utf-8" })
@@ -1458,7 +1463,7 @@ export function App() {
       statusLabel: "Research run export ready",
       error: undefined
     }));
-  }, [auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl]);
+  }, [auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory]);
 
   const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
     setIsInspectingExportPackage(true);
@@ -7003,6 +7008,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       integrity: "完整性",
       data: "数据快照",
       backtest: "回测回放",
+      "backtest-report": "回测报告",
       "research-note": "研究笔记",
       "paper-executions": "模拟执行",
       "promotion-candidate": "晋级候选",

@@ -2191,6 +2191,27 @@ describe("terminal workbench model", () => {
           importDiff: { changes: 1, adds: 0, blocked: 0, matched: 1, total: 11 },
           copyText: "AIQT Audit Evidence Summary\nRun: run-browser"
         }
+      },
+      backtestReport: {
+        kind: "aiqt.backtestReport",
+        schemaVersion: 1,
+        runId: "run-browser",
+        generatedAt: "2026-06-04T08:00:00+00:00",
+        format: "text/markdown",
+        fileName: "run-browser-backtest-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "e".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audited Backtest Report\n",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-browser",
+        executionMode: "paper_only",
+        dataRows: 240,
+        runComparisonRows: 2,
+        boundary: "historical audited evidence only; no investment advice"
       }
     });
 
@@ -2219,6 +2240,12 @@ describe("terminal workbench model", () => {
           status: "ready",
           value: "12 trades / 240 equity",
           exportPath: "researchRun.backtestTrades"
+        }),
+        expect.objectContaining({
+          id: "backtest-report",
+          status: "ready",
+          value: "sha256 · eeeeeeee",
+          exportPath: "backtestReport.contentSha256.hash"
         }),
         expect.objectContaining({
           id: "ai-reviews",
@@ -2252,6 +2279,9 @@ describe("terminal workbench model", () => {
       "audit-summary"
     ]);
     expect(filterResearchRunExportBrowserRows(rows, "auditReport").map((row) => row.id)).toEqual(["audit-report"]);
+    expect(filterResearchRunExportBrowserRows(rows, "backtestReport").map((row) => row.id)).toEqual([
+      "backtest-report"
+    ]);
   });
 
   test("builds a searchable recent export package index across packages", () => {

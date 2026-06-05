@@ -2263,8 +2263,29 @@ describe("terminal workspace API client", () => {
     expect(auditReport.evidenceSummary.copyText).toContain("AIQT Audit Evidence Summary");
     expect(enrichedArtifactPackage.auditEvidenceSummary?.runId).toBe("run-preview");
     expect(enrichedArtifactPackage.auditReport?.contentSha256.hash).toBe(auditReport.contentSha256.hash);
+    expect(enrichedArtifactPackage.backtestReport).toMatchObject({
+      kind: "aiqt.backtestReport",
+      schemaVersion: 1,
+      runId: "run-preview",
+      generatedAt: "2026-06-04T08:00:00+00:00",
+      format: "text/markdown",
+      fileName: "run-preview-backtest-report.md",
+      contentSha256: { algorithm: "sha256" },
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyRevision: "rev-preview",
+      executionMode: "paper_only",
+      dataRows: 1,
+      boundary: "historical audited evidence only; no investment advice"
+    });
+    expect(enrichedArtifactPackage.backtestReport?.contentSha256.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(enrichedArtifactPackage.backtestReport?.contentMarkdown).toContain("# AIQuant Audited Backtest Report");
     expect(normalizeResearchRunExportPackagePayload(enrichedArtifactPackage)?.auditReport?.fileName).toBe(
       "run-preview-audit-evidence-report.md"
+    );
+    expect(normalizeResearchRunExportPackagePayload(enrichedArtifactPackage)?.backtestReport?.fileName).toBe(
+      "run-preview-backtest-report.md"
     );
     expect(
       normalizeResearchRunExportPackagePayload({
@@ -2276,6 +2297,15 @@ describe("terminal workspace API client", () => {
       normalizeResearchRunExportPackagePayload({
         ...enrichedArtifactPackage,
         auditReport: { ...enrichedArtifactPackage.auditReport, contentSha256: { algorithm: "sha256", hash: "bad" } }
+      })
+    ).toBeNull();
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...enrichedArtifactPackage,
+        backtestReport: {
+          ...enrichedArtifactPackage.backtestReport,
+          contentSha256: { algorithm: "sha256", hash: "bad" }
+        }
       })
     ).toBeNull();
   });
