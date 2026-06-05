@@ -2879,6 +2879,198 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("blocks import diff report rows when package report signatures are unsafe", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export" as const,
+      packageVersion: 1,
+      exportedAt: "2026-05-26T09:00:00+00:00",
+      integrity: {
+        algorithm: "sha256" as const,
+        hash: "a".repeat(64)
+      },
+      manifest: {
+        runId: "run-unsafe-signature",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-unsafe-signature",
+        dataHash: "hash-safe",
+        dataRows: 240,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 240,
+          trades: 0,
+          equityPoints: 0,
+          decisions: 0,
+          aiRisks: 0,
+          paperExecutions: 0,
+          promotionCandidates: 0,
+          researchNotes: 0,
+          aiReviewRuns: 0
+        }
+      },
+      researchRun: {
+        runId: "run-unsafe-signature",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyName: "Unsafe signature package",
+        strategyRevision: "rev-unsafe-signature",
+        dataRows: 240,
+        dataSnapshot: {
+          rows: 240,
+          hash: "hash-safe",
+          source: "local-cache",
+          isComplete: true,
+          warnings: [],
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:30:00+00:00",
+          bars: []
+        },
+        metrics: { totalReturnPct: 1.2, maxDrawdownPct: 2.4, winRatePct: 51, profitFactor: 1.1, tradeCount: 0 },
+        decisions: [],
+        backtestTrades: [],
+        backtestEquityCurve: [],
+        executionMode: "paper_only"
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: []
+      },
+      auditReport: {
+        kind: "aiqt.auditReport",
+        schemaVersion: 1,
+        runId: "run-unsafe-signature",
+        generatedAt: "2026-06-04T08:05:30+00:00",
+        format: "text/markdown",
+        fileName: "run-unsafe-signature-audit-evidence-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "c".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        signature: {
+          status: "revoked",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:05:40.000Z",
+          revokedAt: "2026-06-04T09:05:40.000Z",
+          revokedReason: "operator revoked this report",
+          chainId: "audit-chain-local",
+          value: "c".repeat(64)
+        },
+        evidenceSummary: {
+          kind: "aiqt.auditEvidenceSummary",
+          schemaVersion: 1,
+          runId: "run-unsafe-signature",
+          generatedAt: "2026-06-04T08:05:00+00:00",
+          auditQuery: "",
+          packageQuery: "manifest:run-unsafe-signature",
+          importDiffQuery: "manifest:run-unsafe-signature",
+          focusQuery: "manifest:run-unsafe-signature",
+          deepLinkStatus: "loaded",
+          deepLinkError: null,
+          package: { ready: 1, missing: 0, blocked: 0, matched: 1, total: 1 },
+          importDiff: { changes: 0, adds: 0, blocked: 0, matched: 1, total: 1 },
+          copyText: "Run: run-unsafe-signature"
+        }
+      },
+      backtestReport: {
+        kind: "aiqt.backtestReport",
+        schemaVersion: 1,
+        runId: "run-unsafe-signature",
+        generatedAt: "2026-06-04T08:06:00+00:00",
+        format: "text/markdown",
+        fileName: "run-unsafe-signature-backtest-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "d".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audited Backtest Report\n",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-unsafe-signature",
+        executionMode: "paper_only",
+        dataRows: 240,
+        runComparisonRows: 1,
+        boundary: "historical audited evidence only; no investment advice",
+        signature: {
+          status: "invalid",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          invalidReason: "content hash mismatch",
+          chainId: "audit-chain-local",
+          value: "d".repeat(64)
+        }
+      }
+    } satisfies ResearchRunExportBrowserPackage;
+
+    const rows = buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage });
+
+    expect(rows).toEqual(
+      expect.arrayContaining<ResearchRunImportDiffRow>([
+        expect.objectContaining({
+          id: "audit-report",
+          status: "blocked",
+          incoming: "run-unsafe-signature · sha256 cccccccc · run-unsafe-signature-audit-evidence-report.md · Revoked signature",
+          detail:
+            "Audit report signature is revoked or invalid and cannot be trusted for import. · Revoked signature · Local Audit Key · local-audit-key · hmac-sha256",
+          tone: "risk"
+        }),
+        expect.objectContaining({
+          id: "backtest-report",
+          status: "blocked",
+          incoming: "run-unsafe-signature · sha256 dddddddd · 1 comparisons · Signature chain blocked",
+          detail:
+            "Backtest report signature is revoked or invalid and cannot be trusted for import. · Signature chain blocked · Local Audit Key · local-audit-key · hmac-sha256",
+          tone: "risk"
+        })
+      ])
+    );
+    expect(filterResearchRunImportDiffRows(rows, "revoked signature").map((row) => row.id)).toEqual([
+      "audit-report"
+    ]);
+    expect(filterResearchRunImportDiffRows(rows, "signature chain blocked").map((row) => row.id)).toEqual([
+      "backtest-report"
+    ]);
+
+    const incompleteSignaturePackage = {
+      ...exportPackage,
+      auditReport: {
+        ...exportPackage.auditReport,
+        signature: {
+          status: "signed",
+          algorithm: "hmac-sha256",
+          keyId: "local-audit-key"
+        }
+      }
+    } satisfies ResearchRunExportBrowserPackage;
+    const incompleteRows = buildResearchRunImportDiffRows({
+      workspace: buildTerminalWorkspace(),
+      exportPackage: incompleteSignaturePackage
+    });
+
+    expect(incompleteRows).toEqual(
+      expect.arrayContaining<ResearchRunImportDiffRow>([
+        expect.objectContaining({
+          id: "audit-report",
+          status: "blocked",
+          detail:
+            "Audit report signature metadata is incomplete and cannot be trusted for import. · Signed report hash · local-audit-key · hmac-sha256"
+        })
+      ])
+    );
+  });
+
   test("blocks import diff rows when package integrity or artifact counts are unsafe", () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export" as const,

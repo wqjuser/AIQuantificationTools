@@ -2905,6 +2905,35 @@ function researchRunExportReportSignatureStatus(signature: Record<string, unknow
   return auditReportLedgerSignatureStatus(researchRunExportReportSignatureMetadata(signature));
 }
 
+function researchRunExportReportSignatureImportBlockReason(
+  signature: Record<string, unknown> | undefined,
+  reportLabel: string
+): string {
+  const status = researchRunExportReportSignatureStatus(signature);
+  if (status === "invalid" || status === "revoked") {
+    return `${reportLabel} signature is revoked or invalid and cannot be trusted for import.`;
+  }
+  if (
+    (status === "signed" || status === "verified") &&
+    !researchRunExportReportSignatureHasRequiredFields(signature, status)
+  ) {
+    return `${reportLabel} signature metadata is incomplete and cannot be trusted for import.`;
+  }
+  return "";
+}
+
+function researchRunExportReportSignatureHasRequiredFields(
+  signature: Record<string, unknown> | undefined,
+  status: "signed" | "verified"
+): boolean {
+  const metadata = researchRunExportReportSignatureMetadata(signature);
+  const requiredFields = ["algorithm", "chainId", "keyId", "signedAt", "signer", "value"];
+  if (status === "verified") {
+    requiredFields.push("verifiedAt");
+  }
+  return requiredFields.every((field) => auditReportLedgerMetadataText(metadata, field).trim() !== "");
+}
+
 function researchRunExportReportSignatureDetail(signature: Record<string, unknown> | undefined): string {
   const metadata = researchRunExportReportSignatureMetadata(signature);
   const status = auditReportLedgerSignatureStatus(metadata);
@@ -3145,8 +3174,14 @@ export function buildResearchRunImportDiffRows({
     /^[a-f0-9]{64}$/iu.test(auditReportHash) &&
     auditReport.contentMarkdown.trim() !== "";
   const auditReportSignatureDetail = researchRunExportReportSignatureDetail(auditReport?.signature);
+  const auditReportSignatureStatus = researchRunExportReportSignatureStatus(auditReport?.signature);
+  const auditReportSignatureImportBlockReason = researchRunExportReportSignatureImportBlockReason(
+    auditReport?.signature,
+    "Audit report"
+  );
+  const auditReportSignatureIsImportable = auditReportSignatureImportBlockReason === "";
   const auditReportSignatureLabel = auditReportSignatureDetail
-    ? auditReportLedgerSignatureLabel(researchRunExportReportSignatureStatus(auditReport?.signature))
+    ? auditReportLedgerSignatureLabel(auditReportSignatureStatus)
     : "";
   const backtestReport = exportPackage.backtestReport;
   const backtestReportHash = backtestReport?.contentSha256.hash ?? "";
@@ -3160,8 +3195,14 @@ export function buildResearchRunImportDiffRows({
     /^[a-f0-9]{64}$/iu.test(backtestReportHash) &&
     backtestReport.contentMarkdown.trim() !== "";
   const backtestReportSignatureDetail = researchRunExportReportSignatureDetail(backtestReport?.signature);
+  const backtestReportSignatureStatus = researchRunExportReportSignatureStatus(backtestReport?.signature);
+  const backtestReportSignatureImportBlockReason = researchRunExportReportSignatureImportBlockReason(
+    backtestReport?.signature,
+    "Backtest report"
+  );
+  const backtestReportSignatureIsImportable = backtestReportSignatureImportBlockReason === "";
   const backtestReportSignatureLabel = backtestReportSignatureDetail
-    ? auditReportLedgerSignatureLabel(researchRunExportReportSignatureStatus(backtestReport?.signature))
+    ? auditReportLedgerSignatureLabel(backtestReportSignatureStatus)
     : "";
   const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
     aiReviewRuns: packageAiReviewCount,
@@ -3339,7 +3380,7 @@ export function buildResearchRunImportDiffRows({
           {
             id: "audit-report",
             label: "Audit report",
-            status: auditReportMatchesPackage ? "add" : "blocked",
+            status: auditReportMatchesPackage && auditReportSignatureIsImportable ? "add" : "blocked",
             current: "No local audit report",
             incoming: [
               `${auditReport.runId} · ${auditReport.contentSha256.algorithm} ${auditReportHash.slice(0, 8)} · ${
@@ -3350,12 +3391,17 @@ export function buildResearchRunImportDiffRows({
               .filter(Boolean)
               .join(" · "),
             detail: auditReportMatchesPackage
-              ? ["Package includes a portable Audit Markdown report bound to this manifest.", auditReportSignatureDetail]
+              ? [
+                  auditReportSignatureIsImportable
+                    ? "Package includes a portable Audit Markdown report bound to this manifest."
+                    : auditReportSignatureImportBlockReason,
+                  auditReportSignatureDetail
+                ]
                   .filter(Boolean)
                   .join(" · ")
               : "Audit report artifact does not match the import package manifest or content hash.",
             exportPath: "auditReport.contentSha256.hash",
-            tone: auditReportMatchesPackage ? "ai" : "risk"
+            tone: auditReportMatchesPackage && auditReportSignatureIsImportable ? "ai" : "risk"
           }
         ] satisfies ResearchRunImportDiffRow[])
       : []),
@@ -3364,7 +3410,7 @@ export function buildResearchRunImportDiffRows({
           {
             id: "backtest-report",
             label: "Backtest report",
-            status: backtestReportMatchesPackage ? "add" : "blocked",
+            status: backtestReportMatchesPackage && backtestReportSignatureIsImportable ? "add" : "blocked",
             current: "No local backtest report",
             incoming: [
               `${backtestReport.runId} · ${backtestReport.contentSha256.algorithm} ${backtestReportHash.slice(
@@ -3377,14 +3423,16 @@ export function buildResearchRunImportDiffRows({
               .join(" · "),
             detail: backtestReportMatchesPackage
               ? [
-                  "Package includes a portable Backtest Markdown report bound to this manifest.",
+                  backtestReportSignatureIsImportable
+                    ? "Package includes a portable Backtest Markdown report bound to this manifest."
+                    : backtestReportSignatureImportBlockReason,
                   backtestReportSignatureDetail
                 ]
                   .filter(Boolean)
                   .join(" · ")
               : "Backtest report artifact does not match the import package manifest or content hash.",
             exportPath: "backtestReport.contentSha256.hash",
-            tone: backtestReportMatchesPackage ? "ai" : "risk"
+            tone: backtestReportMatchesPackage && backtestReportSignatureIsImportable ? "ai" : "risk"
           }
         ] satisfies ResearchRunImportDiffRow[])
       : []),
