@@ -199,6 +199,7 @@ import {
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
   ResearchRunImportAuditEvent,
+  ResearchRunImportBlockedEvidenceBucket,
   ResearchRunImportAuditFailureBucket,
   ResearchRunImportAuditFilter,
   ResearchRunImportFailureCategory,
@@ -6463,7 +6464,7 @@ function ResearchRunImportAuditEventPanel({
             </button>
           ))}
         </div>
-        {aggregation.failureBuckets.length ? (
+        {aggregation.failureBuckets.length || aggregation.blockedEvidenceBuckets.length ? (
           <div className="research-import-failure-buckets">
             {aggregation.failureBuckets.map((bucket) => (
               <article className={`research-import-failure-bucket ${bucket.tone}`} key={bucket.category}>
@@ -6473,6 +6474,18 @@ function ResearchRunImportAuditEventPanel({
                   {bucket.latestFileName} · {bucket.latestRunId}
                 </small>
                 <p>{researchImportAuditRecoveryLabel(i18n, bucket.recoveryHint)}</p>
+              </article>
+            ))}
+            {aggregation.blockedEvidenceBuckets.map((bucket) => (
+              <article className={`research-import-failure-bucket ${bucket.tone}`} key={`blocked-${bucket.category}`}>
+                <span>{researchImportBlockedEvidenceBucketLabel(i18n, bucket)}</span>
+                <strong>{bucket.count}</strong>
+                <small>
+                  {bucket.latestFileName} · {bucket.latestRunId}
+                </small>
+                <p>
+                  {bucket.latestExportPath} · {bucket.latestDetail}
+                </p>
               </article>
             ))}
           </div>
@@ -7599,6 +7612,25 @@ function researchImportAuditFailureBucketLabel(
       "Artifact counts": "证据数量",
       "Core rejection": "核心拒绝",
       "Unknown failure": "未知失败"
+    }[bucket.label] ?? bucket.label
+  );
+}
+
+function researchImportBlockedEvidenceBucketLabel(
+  i18n: AppI18n,
+  bucket: ResearchRunImportBlockedEvidenceBucket
+): string {
+  if (i18n.locale === "en-US") {
+    return bucket.label;
+  }
+  return (
+    {
+      "Report signature": "报告签名",
+      "Package integrity": "复现包完整性",
+      "Artifact counts": "证据数量",
+      "Live boundary": "实盘边界",
+      "Data snapshot": "数据快照",
+      "Other blocked evidence": "其他阻断证据"
     }[bucket.label] ?? bucket.label
   );
 }

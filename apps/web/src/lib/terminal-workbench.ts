@@ -837,6 +837,27 @@ export interface ResearchRunImportAuditFailureBucket {
   tone: "risk" | "warning";
 }
 
+export type ResearchRunImportBlockedEvidenceBucketCategory =
+  | "report-signature"
+  | "package-integrity"
+  | "artifact-counts"
+  | "live-boundary"
+  | "data-snapshot"
+  | "unknown";
+
+export interface ResearchRunImportBlockedEvidenceBucket {
+  category: ResearchRunImportBlockedEvidenceBucketCategory;
+  label: string;
+  count: number;
+  latestRunId: string;
+  latestFileName: string;
+  latestCreatedAt: string;
+  latestDetail: string;
+  latestExportPath: string;
+  rowIds: ResearchRunImportDiffRow["id"][];
+  tone: "risk" | "warning";
+}
+
 export interface ResearchRunImportAuditAggregation {
   total: number;
   preview: number;
@@ -850,6 +871,7 @@ export interface ResearchRunImportAuditAggregation {
   undoable: number;
   recoverable: number;
   failureBuckets: ResearchRunImportAuditFailureBucket[];
+  blockedEvidenceBuckets: ResearchRunImportBlockedEvidenceBucket[];
 }
 
 export interface AuditEvidenceReportLedgerEventRecord {
@@ -3778,6 +3800,10 @@ export function buildResearchRunImportAuditAggregation(
     "undo-failed": 0
   };
   const failureBuckets = new Map<ResearchRunImportAuditFailureBucketCategory, ResearchRunImportAuditFailureBucket>();
+  const blockedEvidenceBuckets = new Map<
+    ResearchRunImportBlockedEvidenceBucketCategory,
+    ResearchRunImportBlockedEvidenceBucket
+  >();
   let needsReview = 0;
   let recoverable = 0;
   let undoable = 0;
@@ -3821,6 +3847,36 @@ export function buildResearchRunImportAuditAggregation(
       },
       tone: "risk"
     });
+    event.blockedRows.forEach((row) => {
+      const blockedCategory = researchRunImportBlockedEvidenceBucketCategory(row);
+      const existingBlockedBucket = blockedEvidenceBuckets.get(blockedCategory);
+      if (existingBlockedBucket) {
+        existingBlockedBucket.count += 1;
+        if (!existingBlockedBucket.rowIds.includes(row.id)) {
+          existingBlockedBucket.rowIds.push(row.id);
+        }
+        if (event.createdAt >= existingBlockedBucket.latestCreatedAt) {
+          existingBlockedBucket.latestCreatedAt = event.createdAt;
+          existingBlockedBucket.latestDetail = row.detail;
+          existingBlockedBucket.latestExportPath = row.exportPath;
+          existingBlockedBucket.latestFileName = event.fileName;
+          existingBlockedBucket.latestRunId = event.runId;
+        }
+        return;
+      }
+      blockedEvidenceBuckets.set(blockedCategory, {
+        category: blockedCategory,
+        count: 1,
+        label: researchRunImportBlockedEvidenceBucketLabel(blockedCategory),
+        latestCreatedAt: event.createdAt,
+        latestDetail: row.detail,
+        latestExportPath: row.exportPath,
+        latestFileName: event.fileName,
+        latestRunId: event.runId,
+        rowIds: [row.id],
+        tone: researchRunImportBlockedEvidenceBucketTone(blockedCategory)
+      });
+    });
   });
 
   return {
@@ -3837,7 +3893,10 @@ export function buildResearchRunImportAuditAggregation(
     recoverable,
     failureBuckets: researchRunImportFailureBucketOrder
       .map((category) => failureBuckets.get(category))
-      .filter((bucket): bucket is ResearchRunImportAuditFailureBucket => Boolean(bucket))
+      .filter((bucket): bucket is ResearchRunImportAuditFailureBucket => Boolean(bucket)),
+    blockedEvidenceBuckets: researchRunImportBlockedEvidenceBucketOrder
+      .map((category) => blockedEvidenceBuckets.get(category))
+      .filter((bucket): bucket is ResearchRunImportBlockedEvidenceBucket => Boolean(bucket))
   };
 }
 
@@ -4235,6 +4294,58 @@ function researchRunImportFailureBucketLabel(category: ResearchRunImportAuditFai
       unknown: "Unknown failure"
     } satisfies Record<ResearchRunImportAuditFailureBucketCategory, string>
   )[category];
+}
+
+const researchRunImportBlockedEvidenceBucketOrder: ResearchRunImportBlockedEvidenceBucketCategory[] = [
+  "report-signature",
+  "package-integrity",
+  "artifact-counts",
+  "live-boundary",
+  "data-snapshot",
+  "unknown"
+];
+
+function researchRunImportBlockedEvidenceBucketCategory(
+  row: ResearchRunImportAuditBlockedRow
+): ResearchRunImportBlockedEvidenceBucketCategory {
+  const searchableText = [row.id, row.label, row.incoming, row.detail, row.exportPath].join(" ").toLowerCase();
+  if (row.id === "audit-report" || row.id === "backtest-report" || searchableText.includes("signature")) {
+    return "report-signature";
+  }
+  if (row.id === "package-integrity" || searchableText.includes("integrity")) {
+    return "package-integrity";
+  }
+  if (row.id === "artifact-counts" || searchableText.includes("artifact")) {
+    return "artifact-counts";
+  }
+  if (row.id === "live-boundary" || searchableText.includes("live boundary")) {
+    return "live-boundary";
+  }
+  if (row.id === "data-snapshot" || searchableText.includes("data snapshot")) {
+    return "data-snapshot";
+  }
+  return "unknown";
+}
+
+function researchRunImportBlockedEvidenceBucketLabel(
+  category: ResearchRunImportBlockedEvidenceBucketCategory
+): string {
+  return (
+    {
+      "report-signature": "Report signature",
+      "package-integrity": "Package integrity",
+      "artifact-counts": "Artifact counts",
+      "live-boundary": "Live boundary",
+      "data-snapshot": "Data snapshot",
+      unknown: "Other blocked evidence"
+    } satisfies Record<ResearchRunImportBlockedEvidenceBucketCategory, string>
+  )[category];
+}
+
+function researchRunImportBlockedEvidenceBucketTone(
+  category: ResearchRunImportBlockedEvidenceBucketCategory
+): ResearchRunImportBlockedEvidenceBucket["tone"] {
+  return category === "data-snapshot" || category === "unknown" ? "warning" : "risk";
 }
 
 function isResearchRunImportAuditEventNeedsReview(event: ResearchRunImportAuditEvent): boolean {

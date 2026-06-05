@@ -588,6 +588,10 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("Copy anchor");
     expect(importEventsPanelSource).toContain("Copied");
     expect(importEventsPanelSource).toContain("aggregation.failureBuckets");
+    expect(importEventsPanelSource).toContain("aggregation.blockedEvidenceBuckets");
+    expect(importEventsPanelSource).toContain("researchImportBlockedEvidenceBucketLabel");
+    expect(importEventsPanelSource).toContain("bucket.latestExportPath");
+    expect(importEventsPanelSource).toContain("bucket.latestDetail");
     expect(importEventsPanelSource).toContain("research-import-failure-buckets");
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");

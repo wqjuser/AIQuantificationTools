@@ -3462,6 +3462,25 @@ describe("terminal workbench model", () => {
         tone: "risk"
       })
     );
+    expect(
+      aggregation.blockedEvidenceBuckets.map(
+        (bucket) => `${bucket.category}:${bucket.count}:${bucket.latestRunId}:${bucket.rowIds.join(",")}`
+      )
+    ).toEqual([
+      "report-signature:2:run-import-ledger:audit-report,backtest-report",
+      "package-integrity:1:run-import-ledger:package-integrity"
+    ]);
+    expect(aggregation.blockedEvidenceBuckets.at(0)).toEqual(
+      expect.objectContaining({
+        category: "report-signature",
+        label: "Report signature",
+        latestDetail:
+          "Backtest report signature is revoked or invalid and cannot be trusted for import. · Signature chain blocked · Local Audit Key · local-audit-key · hmac-sha256",
+        latestExportPath: "backtestReport.contentSha256.hash",
+        latestFileName: "unsafe-import.json",
+        tone: "risk"
+      })
+    );
     expect(filterResearchRunImportAuditEvents(allAuditEvents, "", "needs-review").map((event) => event.stage)).toEqual([
       "blocked",
       "failed",
