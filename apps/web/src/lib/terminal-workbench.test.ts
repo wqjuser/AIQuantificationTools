@@ -2622,6 +2622,34 @@ describe("terminal workbench model", () => {
         importDiff: { changes: 3, adds: 2, blocked: 0, matched: 1, total: 12 },
         copyText: "AIQT Audit Evidence Summary\nRun: run-imported\nPackage focus: manifest:run-imported"
       },
+      auditReport: {
+        kind: "aiqt.auditReport",
+        schemaVersion: 1,
+        runId: "run-imported",
+        generatedAt: "2026-06-04T08:05:30+00:00",
+        format: "text/markdown",
+        fileName: "run-imported-audit-evidence-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "e".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        evidenceSummary: {
+          kind: "aiqt.auditEvidenceSummary",
+          schemaVersion: 1,
+          runId: "run-imported",
+          generatedAt: "2026-06-04T08:05:00+00:00",
+          auditQuery: "manual-smoke",
+          packageQuery: "manifest:run-imported",
+          importDiffQuery: "manifest:run-imported",
+          focusQuery: "manifest:run-imported",
+          deepLinkStatus: "loaded",
+          deepLinkError: null,
+          package: { ready: 6, missing: 1, blocked: 1, matched: 1, total: 10 },
+          importDiff: { changes: 3, adds: 2, blocked: 0, matched: 1, total: 12 },
+          copyText: "AIQT Audit Evidence Summary\nRun: run-imported\nPackage focus: manifest:run-imported"
+        }
+      },
       backtestReport: {
         kind: "aiqt.backtestReport",
         schemaVersion: 1,
@@ -2692,6 +2720,14 @@ describe("terminal workbench model", () => {
           exportPath: "auditEvidenceSummary"
         }),
         expect.objectContaining({
+          id: "audit-report",
+          status: "add",
+          current: "No local audit report",
+          incoming: "run-imported · sha256 eeeeeeee · run-imported-audit-evidence-report.md",
+          detail: "Package includes a portable Audit Markdown report bound to this manifest.",
+          exportPath: "auditReport.contentSha256.hash"
+        }),
+        expect.objectContaining({
           id: "backtest-report",
           status: "add",
           current: "No local backtest report",
@@ -2706,6 +2742,7 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportDiffRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
       "audit-summary"
     ]);
+    expect(filterResearchRunImportDiffRows(rows, "auditReport").map((row) => row.id)).toEqual(["audit-report"]);
     expect(filterResearchRunImportDiffRows(rows, "backtestReport").map((row) => row.id)).toEqual([
       "backtest-report"
     ]);

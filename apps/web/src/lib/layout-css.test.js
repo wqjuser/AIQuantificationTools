@@ -440,6 +440,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("filterResearchRunImportDiffRows");
     expect(appSource).toContain("const researchRunImportDiffRows = buildResearchRunImportDiffRows");
     expect(importDiffLabelSource).toContain('"audit-summary": "导入审计摘要"');
+    expect(importDiffLabelSource).toContain('"audit-report": "导入审计报告"');
     expect(importDiffLabelSource).toContain('"backtest-report": "导入回测报告"');
     expect(appSource).toContain('const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
     expect(appSource).toContain("function ResearchRunImportDiffPanel");

@@ -733,6 +733,7 @@ export interface ResearchRunImportDiffRow {
     | "paper-executions"
     | "ai-review-runs"
     | "audit-summary"
+    | "audit-report"
     | "backtest-report"
     | "live-boundary";
   label: string;
@@ -3039,6 +3040,14 @@ export function buildResearchRunImportDiffRows({
   const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
   const auditSummary = exportPackage.auditEvidenceSummary;
   const auditSummaryMatchesPackage = auditSummary?.runId === exportPackage.manifest.runId;
+  const auditReport = exportPackage.auditReport;
+  const auditReportHash = auditReport?.contentSha256.hash ?? "";
+  const auditReportMatchesPackage =
+    auditReport?.runId === exportPackage.manifest.runId &&
+    auditReport.evidenceSummary?.runId === exportPackage.manifest.runId &&
+    auditReport.contentSha256.algorithm === "sha256" &&
+    /^[a-f0-9]{64}$/iu.test(auditReportHash) &&
+    auditReport.contentMarkdown.trim() !== "";
   const backtestReport = exportPackage.backtestReport;
   const backtestReportHash = backtestReport?.contentSha256.hash ?? "";
   const backtestReportMatchesPackage =
@@ -3218,6 +3227,24 @@ export function buildResearchRunImportDiffRows({
               : "Audit evidence summary run id does not match the import package manifest.",
             exportPath: "auditEvidenceSummary",
             tone: auditSummaryMatchesPackage ? "ai" : "risk"
+          }
+        ] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...(auditReport
+      ? ([
+          {
+            id: "audit-report",
+            label: "Audit report",
+            status: auditReportMatchesPackage ? "add" : "blocked",
+            current: "No local audit report",
+            incoming: `${auditReport.runId} · ${auditReport.contentSha256.algorithm} ${auditReportHash.slice(0, 8)} · ${
+              auditReport.fileName
+            }`,
+            detail: auditReportMatchesPackage
+              ? "Package includes a portable Audit Markdown report bound to this manifest."
+              : "Audit report artifact does not match the import package manifest or content hash.",
+            exportPath: "auditReport.contentSha256.hash",
+            tone: auditReportMatchesPackage ? "ai" : "risk"
           }
         ] satisfies ResearchRunImportDiffRow[])
       : []),
