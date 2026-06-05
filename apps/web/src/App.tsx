@@ -201,6 +201,7 @@ import {
   ResearchRunExportIndexRow,
   ResearchRunImportAuditEvent,
   ResearchRunImportBlockedEvidenceBucket,
+  ResearchRunImportVerifiedReportSignatureBucket,
   ResearchRunImportAuditFailureBucket,
   ResearchRunImportAuditFilter,
   ResearchRunImportFailureCategory,
@@ -6466,7 +6467,7 @@ function ResearchRunImportAuditEventPanel({
             </button>
           ))}
         </div>
-        {aggregation.failureBuckets.length || aggregation.blockedEvidenceBuckets.length ? (
+        {aggregation.failureBuckets.length || aggregation.blockedEvidenceBuckets.length || aggregation.verifiedReportSignatureBuckets.length ? (
           <div className="research-import-failure-buckets">
             {aggregation.failureBuckets.map((bucket) => (
               <article className={`research-import-failure-bucket ${bucket.tone}`} key={bucket.category}>
@@ -6487,6 +6488,21 @@ function ResearchRunImportAuditEventPanel({
                 </small>
                 <p>
                   {bucket.latestExportPath} · {bucket.latestDetail}
+                </p>
+              </article>
+            ))}
+            {aggregation.verifiedReportSignatureBuckets.map((bucket) => (
+              <article
+                className={`research-import-failure-bucket research-import-verification-bucket ${bucket.tone}`}
+                key={`verified-${bucket.status}`}
+              >
+                <span>{researchImportVerifiedReportSignatureBucketLabel(i18n, bucket)}</span>
+                <strong>{bucket.count}</strong>
+                <small>
+                  {bucket.latestFileName} · {bucket.latestRunId}
+                </small>
+                <p>
+                  {bucket.latestExportPath} · {bucket.latestReason}
                 </p>
               </article>
             ))}
@@ -7709,6 +7725,21 @@ function researchImportBlockedEvidenceBucketLabel(
       "Live boundary": "实盘边界",
       "Data snapshot": "数据快照",
       "Other blocked evidence": "其他阻断证据"
+    }[bucket.label] ?? bucket.label
+  );
+}
+
+function researchImportVerifiedReportSignatureBucketLabel(
+  i18n: AppI18n,
+  bucket: ResearchRunImportVerifiedReportSignatureBucket
+): string {
+  if (i18n.locale === "en-US") {
+    return bucket.label;
+  }
+  return (
+    {
+      "Local core verified": "本地核心验签通过",
+      "Local core invalid": "本地核心验签失败"
     }[bucket.label] ?? bucket.label
   );
 }

@@ -3523,6 +3523,24 @@ describe("terminal workbench model", () => {
         tone: "risk"
       })
     );
+    expect(
+      aggregation.verifiedReportSignatureBuckets.map(
+        (bucket) =>
+          `${bucket.status}:${bucket.count}:${bucket.latestRunId}:${bucket.rowIds.join(",")}:${bucket.latestReason}:${bucket.source}`
+      )
+    ).toEqual(["verified:1:run-import-ledger:audit-report:signature_verified:local-core"]);
+    expect(aggregation.verifiedReportSignatureBuckets.at(0)).toEqual(
+      expect.objectContaining({
+        status: "verified",
+        label: "Local core verified",
+        latestDetail: "Local core import verification: verified · signature_verified",
+        latestExportPath: "auditReport.contentSha256.hash",
+        latestFileName: "unsafe-import.json",
+        latestReason: "signature_verified",
+        source: "local-core",
+        tone: "positive"
+      })
+    );
     expect(filterResearchRunImportAuditEvents(allAuditEvents, "", "needs-review").map((event) => event.stage)).toEqual([
       "blocked",
       "failed",

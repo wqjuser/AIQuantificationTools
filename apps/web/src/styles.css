@@ -2256,6 +2256,15 @@ em {
   padding: 8px 9px;
 }
 
+.research-import-failure-bucket.positive {
+  border-left-color: #4cc9ad;
+  background: rgba(14, 89, 70, 0.22);
+}
+
+.research-import-failure-bucket.positive span {
+  color: #8ff5dd;
+}
+
 .research-import-failure-bucket span,
 .research-import-failure-bucket strong,
 .research-import-failure-bucket small,

@@ -594,10 +594,14 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("Copied");
     expect(importEventsPanelSource).toContain("aggregation.failureBuckets");
     expect(importEventsPanelSource).toContain("aggregation.blockedEvidenceBuckets");
+    expect(importEventsPanelSource).toContain("aggregation.verifiedReportSignatureBuckets");
     expect(importEventsPanelSource).toContain("researchImportBlockedEvidenceBucketLabel");
+    expect(importEventsPanelSource).toContain("researchImportVerifiedReportSignatureBucketLabel");
     expect(importEventsPanelSource).toContain("bucket.latestExportPath");
     expect(importEventsPanelSource).toContain("bucket.latestDetail");
+    expect(importEventsPanelSource).toContain("bucket.latestReason");
     expect(importEventsPanelSource).toContain("research-import-failure-buckets");
+    expect(importEventsPanelSource).toContain("research-import-verification-bucket");
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");
     expect(importEventsPanelSource).toContain("event.blockedRows.length");
@@ -620,6 +624,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".research-import-events-pagination")).toContain("display: flex;");
     expect(cssBlock(".research-import-failure-buckets")).toContain("display: grid;");
     expect(cssBlock(".research-import-failure-bucket")).toContain("display: grid;");
+    expect(cssBlock(".research-import-failure-bucket.positive")).toContain("border-left-color: #4cc9ad;");
     expect(cssBlock(".research-import-event-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(130px, 0.42fr) minmax(0, 1fr) minmax(132px, 0.36fr) minmax(92px, 0.24fr) auto;"
     );

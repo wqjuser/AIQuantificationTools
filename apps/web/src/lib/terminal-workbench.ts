@@ -870,6 +870,21 @@ export interface ResearchRunImportBlockedEvidenceBucket {
   tone: "risk" | "warning";
 }
 
+export interface ResearchRunImportVerifiedReportSignatureBucket {
+  status: ResearchRunImportVerifiedReportSignature["status"];
+  label: string;
+  count: number;
+  latestRunId: string;
+  latestFileName: string;
+  latestCreatedAt: string;
+  latestDetail: string;
+  latestExportPath: string;
+  latestReason: string;
+  rowIds: ResearchRunImportVerifiedReportSignature["id"][];
+  source: "local-core";
+  tone: "positive" | "risk";
+}
+
 export interface ResearchRunImportAuditAggregation {
   total: number;
   preview: number;
@@ -884,6 +899,7 @@ export interface ResearchRunImportAuditAggregation {
   recoverable: number;
   failureBuckets: ResearchRunImportAuditFailureBucket[];
   blockedEvidenceBuckets: ResearchRunImportBlockedEvidenceBucket[];
+  verifiedReportSignatureBuckets: ResearchRunImportVerifiedReportSignatureBucket[];
 }
 
 export interface AuditEvidenceReportLedgerEventRecord {
@@ -3868,6 +3884,10 @@ export function buildResearchRunImportAuditAggregation(
     ResearchRunImportBlockedEvidenceBucketCategory,
     ResearchRunImportBlockedEvidenceBucket
   >();
+  const verifiedReportSignatureBuckets = new Map<
+    ResearchRunImportVerifiedReportSignatureBucket["status"],
+    ResearchRunImportVerifiedReportSignatureBucket
+  >();
   let needsReview = 0;
   let recoverable = 0;
   let undoable = 0;
@@ -3880,6 +3900,38 @@ export function buildResearchRunImportAuditAggregation(
     if (isResearchRunImportAuditEventRecoverable(event)) {
       recoverable += 1;
     }
+    event.verifiedReportSignatures.forEach((row) => {
+      const existingSignatureBucket = verifiedReportSignatureBuckets.get(row.status);
+      if (existingSignatureBucket) {
+        existingSignatureBucket.count += 1;
+        if (!existingSignatureBucket.rowIds.includes(row.id)) {
+          existingSignatureBucket.rowIds.push(row.id);
+        }
+        if (event.createdAt >= existingSignatureBucket.latestCreatedAt) {
+          existingSignatureBucket.latestCreatedAt = event.createdAt;
+          existingSignatureBucket.latestDetail = row.detail;
+          existingSignatureBucket.latestExportPath = row.exportPath;
+          existingSignatureBucket.latestFileName = event.fileName;
+          existingSignatureBucket.latestReason = row.reason;
+          existingSignatureBucket.latestRunId = event.runId;
+        }
+        return;
+      }
+      verifiedReportSignatureBuckets.set(row.status, {
+        status: row.status,
+        count: 1,
+        label: researchRunImportVerifiedReportSignatureBucketLabel(row.status),
+        latestCreatedAt: event.createdAt,
+        latestDetail: row.detail,
+        latestExportPath: row.exportPath,
+        latestFileName: event.fileName,
+        latestReason: row.reason,
+        latestRunId: event.runId,
+        rowIds: [row.id],
+        source: row.source,
+        tone: researchRunImportVerifiedReportSignatureBucketTone(row.status)
+      });
+    });
     if (!isResearchRunImportAuditEventNeedsReview(event)) {
       return;
     }
@@ -3960,7 +4012,10 @@ export function buildResearchRunImportAuditAggregation(
       .filter((bucket): bucket is ResearchRunImportAuditFailureBucket => Boolean(bucket)),
     blockedEvidenceBuckets: researchRunImportBlockedEvidenceBucketOrder
       .map((category) => blockedEvidenceBuckets.get(category))
-      .filter((bucket): bucket is ResearchRunImportBlockedEvidenceBucket => Boolean(bucket))
+      .filter((bucket): bucket is ResearchRunImportBlockedEvidenceBucket => Boolean(bucket)),
+    verifiedReportSignatureBuckets: researchRunImportVerifiedReportSignatureBucketOrder
+      .map((status) => verifiedReportSignatureBuckets.get(status))
+      .filter((bucket): bucket is ResearchRunImportVerifiedReportSignatureBucket => Boolean(bucket))
   };
 }
 
@@ -4413,6 +4468,28 @@ function researchRunImportBlockedEvidenceBucketTone(
   category: ResearchRunImportBlockedEvidenceBucketCategory
 ): ResearchRunImportBlockedEvidenceBucket["tone"] {
   return category === "data-snapshot" || category === "unknown" ? "warning" : "risk";
+}
+
+const researchRunImportVerifiedReportSignatureBucketOrder: ResearchRunImportVerifiedReportSignatureBucket["status"][] = [
+  "verified",
+  "invalid"
+];
+
+function researchRunImportVerifiedReportSignatureBucketLabel(
+  status: ResearchRunImportVerifiedReportSignatureBucket["status"]
+): string {
+  return (
+    {
+      verified: "Local core verified",
+      invalid: "Local core invalid"
+    } satisfies Record<ResearchRunImportVerifiedReportSignatureBucket["status"], string>
+  )[status];
+}
+
+function researchRunImportVerifiedReportSignatureBucketTone(
+  status: ResearchRunImportVerifiedReportSignatureBucket["status"]
+): ResearchRunImportVerifiedReportSignatureBucket["tone"] {
+  return status === "verified" ? "positive" : "risk";
 }
 
 function isResearchRunImportAuditEventNeedsReview(event: ResearchRunImportAuditEvent): boolean {
