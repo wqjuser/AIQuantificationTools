@@ -10,6 +10,9 @@ from typing import Any
 from quant_core.audit_events import AuditEventRecord, audit_event_record_to_payload
 
 
+SIGNABLE_REPORT_EVENT_TYPES = {"audit_evidence_report", "backtest_report"}
+
+
 @dataclass(frozen=True)
 class AuditReportVerification:
     status: str
@@ -241,7 +244,7 @@ class AuditReportSigner:
         return hmac.new(key.secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
 
     def _validate_report_event(self, record: AuditEventRecord) -> None:
-        if record.event_type != "audit_evidence_report":
+        if record.event_type not in SIGNABLE_REPORT_EVENT_TYPES:
             raise ValueError("audit_report_event_required")
         content_sha256 = _required_metadata_text(record, "contentSha256")
         if len(content_sha256) != 64 or any(character not in "0123456789abcdefABCDEF" for character in content_sha256):

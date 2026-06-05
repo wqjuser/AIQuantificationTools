@@ -6000,7 +6000,6 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
-                        row.reportKind !== "audit_evidence_report" ||
                         row.status === "invalid" ||
                         row.signatureStatus === "revoked"
                       }
@@ -6014,7 +6013,6 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
-                        row.reportKind !== "audit_evidence_report" ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "revoked"
                       }
@@ -6034,7 +6032,6 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
-                        row.reportKind !== "audit_evidence_report" ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "invalid" ||
                         row.signatureStatus === "revoked"
@@ -7345,7 +7342,6 @@ function auditReportLedgerSignatureLabel(i18n: AppI18n, label: string): string {
     {
       "Unsigned report hash": "报告 hash 尚未签名",
       "Signed report hash": "报告 hash 已签名",
-      "Signature not available": "暂不支持签名",
       "Verified signature": "签名已验证",
       "Revoked signature": "签名已撤销",
       "Signature chain blocked": "签名链阻断"

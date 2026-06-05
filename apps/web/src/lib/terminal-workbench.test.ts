@@ -3234,14 +3234,68 @@ describe("terminal workbench model", () => {
         packageTotal: 240,
         reportKind: "backtest_report",
         runId: "run-a1",
-        signatureLabel: "Signature not available",
-        signatureStatus: "unsupported",
+        signatureLabel: "Unsigned report hash",
+        signatureStatus: "unsigned",
         statusLabel: "Backtest report hash recorded",
         tone: "ai"
       })
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, "600000 rev-a1").map((row) => row.id)).toEqual([
       "backtest-report-run-a1-eeeeeeeeeeeeeeee"
+    ]);
+  });
+
+  test("promotes backtest report ledger rows when signature chain metadata is present", () => {
+    const backtestHash = "e".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "backtest-report-run-signed",
+        eventType: "backtest_report",
+        runId: "run-signed",
+        createdAt: "2026-06-05T10:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Backtest Markdown report generated for run-signed",
+        detail: "signed backtest report",
+        metadata: {
+          artifactKind: "aiqt.backtestReport",
+          contentSha256: backtestHash,
+          dataRows: 240,
+          fileName: "run-signed-backtest-report.md",
+          market: "ashare",
+          runComparisonRows: 3,
+          signature: {
+            algorithm: "hmac-sha256",
+            chainId: "audit-chain-local",
+            keyId: "local-audit-key",
+            signer: "Local Audit Key",
+            signedAt: "2026-06-05T10:01:00.000Z",
+            status: "verified",
+            value: "a".repeat(64),
+            verifiedAt: "2026-06-05T10:02:00.000Z"
+          },
+          strategyRevision: "rev-signed",
+          symbol: "600000",
+          timeframe: "1d"
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.backtestReport",
+        chainId: "audit-chain-local",
+        reportKind: "backtest_report",
+        signatureDetail: "Local Audit Key · local-audit-key · hmac-sha256",
+        signatureLabel: "Verified signature",
+        signatureStatus: "verified",
+        tone: "positive"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "backtest_report verified").map((row) => row.id)).toEqual([
+      "backtest-report-run-signed"
     ]);
   });
 

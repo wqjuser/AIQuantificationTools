@@ -836,8 +836,7 @@ export type AuditEvidenceReportSignatureStatus =
   | "signed"
   | "verified"
   | "revoked"
-  | "invalid"
-  | "unsupported";
+  | "invalid";
 
 export interface AuditEvidenceReportLedgerRow {
   id: string;
@@ -3616,12 +3615,7 @@ export function buildAuditEvidenceReportLedgerRows(
       const isHashReady = /^[a-f0-9]{64}$/iu.test(contentSha256);
       const status: AuditEvidenceReportLedgerStatus = isHashReady ? "ready" : "invalid";
       const signature = auditReportLedgerSignatureMetadata(event.metadata);
-      const signatureStatus =
-        reportKind === "backtest_report"
-          ? "unsupported"
-          : status === "ready"
-            ? auditReportLedgerSignatureStatus(signature)
-            : "invalid";
+      const signatureStatus = status === "ready" ? auditReportLedgerSignatureStatus(signature) : "invalid";
       const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
       return {
         id: event.eventId,
@@ -3677,7 +3671,7 @@ export function buildAuditEvidenceReportLedgerSummary(
 ): AuditEvidenceReportLedgerSummary {
   const ready = rows.filter((row) => row.status === "ready").length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
-  const unsigned = rows.filter((row) => row.signatureStatus === "unsigned" || row.signatureStatus === "unsupported").length;
+  const unsigned = rows.filter((row) => row.signatureStatus === "unsigned").length;
   const signed = rows.filter((row) => row.signatureStatus === "signed").length;
   const verified = rows.filter((row) => row.signatureStatus === "verified").length;
   const revoked = rows.filter((row) => row.signatureStatus === "revoked").length;
@@ -3894,9 +3888,6 @@ function auditReportLedgerSignatureLabel(status: AuditEvidenceReportSignatureSta
   }
   if (status === "invalid") {
     return "Signature chain blocked";
-  }
-  if (status === "unsupported") {
-    return "Signature not available";
   }
   return "Unsigned report hash";
 }
