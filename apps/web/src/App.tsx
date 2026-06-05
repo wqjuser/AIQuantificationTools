@@ -7119,6 +7119,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "paper-executions": "模拟执行",
       "ai-review-runs": "AI 评审记录",
       "audit-summary": "导入审计摘要",
+      "backtest-report": "导入回测报告",
       "live-boundary": "实盘边界"
     } satisfies Record<ResearchRunImportDiffRow["id"], string>
   )[row.id];

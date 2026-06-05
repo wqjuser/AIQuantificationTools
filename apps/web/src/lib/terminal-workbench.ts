@@ -733,6 +733,7 @@ export interface ResearchRunImportDiffRow {
     | "paper-executions"
     | "ai-review-runs"
     | "audit-summary"
+    | "backtest-report"
     | "live-boundary";
   label: string;
   status: ResearchRunImportDiffStatus;
@@ -3038,6 +3039,17 @@ export function buildResearchRunImportDiffRows({
   const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
   const auditSummary = exportPackage.auditEvidenceSummary;
   const auditSummaryMatchesPackage = auditSummary?.runId === exportPackage.manifest.runId;
+  const backtestReport = exportPackage.backtestReport;
+  const backtestReportHash = backtestReport?.contentSha256.hash ?? "";
+  const backtestReportMatchesPackage =
+    backtestReport?.runId === exportPackage.manifest.runId &&
+    backtestReport.market === exportPackage.manifest.market &&
+    backtestReport.symbol === exportPackage.manifest.symbol &&
+    backtestReport.timeframe === exportPackage.manifest.timeframe &&
+    backtestReport.strategyRevision === exportPackage.manifest.strategyRevision &&
+    backtestReport.contentSha256.algorithm === "sha256" &&
+    /^[a-f0-9]{64}$/iu.test(backtestReportHash) &&
+    backtestReport.contentMarkdown.trim() !== "";
   const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
     aiReviewRuns: packageAiReviewCount,
     paperExecutions: packagePaperCount,
@@ -3206,6 +3218,25 @@ export function buildResearchRunImportDiffRows({
               : "Audit evidence summary run id does not match the import package manifest.",
             exportPath: "auditEvidenceSummary",
             tone: auditSummaryMatchesPackage ? "ai" : "risk"
+          }
+        ] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...(backtestReport
+      ? ([
+          {
+            id: "backtest-report",
+            label: "Backtest report",
+            status: backtestReportMatchesPackage ? "add" : "blocked",
+            current: "No local backtest report",
+            incoming: `${backtestReport.runId} · ${backtestReport.contentSha256.algorithm} ${backtestReportHash.slice(
+              0,
+              8
+            )} · ${backtestReport.runComparisonRows} comparisons`,
+            detail: backtestReportMatchesPackage
+              ? "Package includes a portable Backtest Markdown report bound to this manifest."
+              : "Backtest report artifact does not match the import package manifest or content hash.",
+            exportPath: "backtestReport.contentSha256.hash",
+            tone: backtestReportMatchesPackage ? "ai" : "risk"
           }
         ] satisfies ResearchRunImportDiffRow[])
       : []),

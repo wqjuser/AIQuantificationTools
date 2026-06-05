@@ -2621,6 +2621,27 @@ describe("terminal workbench model", () => {
         package: { ready: 6, missing: 1, blocked: 1, matched: 1, total: 10 },
         importDiff: { changes: 3, adds: 2, blocked: 0, matched: 1, total: 12 },
         copyText: "AIQT Audit Evidence Summary\nRun: run-imported\nPackage focus: manifest:run-imported"
+      },
+      backtestReport: {
+        kind: "aiqt.backtestReport",
+        schemaVersion: 1,
+        runId: "run-imported",
+        generatedAt: "2026-06-04T08:06:00+00:00",
+        format: "text/markdown",
+        fileName: "run-imported-backtest-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "f".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audited Backtest Report\n",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "5m",
+        strategyRevision: "rev-imported",
+        executionMode: "paper_only",
+        dataRows: 500,
+        runComparisonRows: 3,
+        boundary: "historical audited evidence only; no investment advice"
       }
     } satisfies ResearchRunExportBrowserPackage;
 
@@ -2669,6 +2690,14 @@ describe("terminal workbench model", () => {
           incoming: "run-imported · manifest:run-imported",
           detail: "Audit focus carries 1/10 package matches and 0 import diff blockers.",
           exportPath: "auditEvidenceSummary"
+        }),
+        expect.objectContaining({
+          id: "backtest-report",
+          status: "add",
+          current: "No local backtest report",
+          incoming: "run-imported · sha256 ffffffff · 3 comparisons",
+          detail: "Package includes a portable Backtest Markdown report bound to this manifest.",
+          exportPath: "backtestReport.contentSha256.hash"
         })
       ])
     );
@@ -2676,6 +2705,9 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportDiffRows(rows, "researchNote").map((row) => row.id)).toEqual(["research-note"]);
     expect(filterResearchRunImportDiffRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
       "audit-summary"
+    ]);
+    expect(filterResearchRunImportDiffRows(rows, "backtestReport").map((row) => row.id)).toEqual([
+      "backtest-report"
     ]);
   });
 
