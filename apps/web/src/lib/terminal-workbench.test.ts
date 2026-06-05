@@ -2379,7 +2379,56 @@ describe("terminal workbench model", () => {
             boundary: "AI can explain supplied evidence only."
           }
         }
-      ]
+      ],
+      auditReport: {
+        kind: "aiqt.auditReport" as const,
+        schemaVersion: 1 as const,
+        runId: "run-index-a",
+        generatedAt: "2026-05-26T08:46:00+00:00",
+        format: "text/markdown" as const,
+        fileName: "run-index-a-audit-evidence-report.md",
+        contentSha256: {
+          algorithm: "sha256" as const,
+          hash: "e".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        evidenceSummary: {
+          kind: "aiqt.auditEvidenceSummary" as const,
+          schemaVersion: 1 as const,
+          runId: "run-index-a",
+          generatedAt: "2026-05-26T08:46:00+00:00",
+          auditQuery: "manual-smoke",
+          packageQuery: "manifest:run-index-a",
+          importDiffQuery: "manifest:run-index-a",
+          focusQuery: "manifest:run-index-a",
+          deepLinkStatus: "loaded" as const,
+          deepLinkError: null,
+          package: { ready: 6, missing: 1, blocked: 1, matched: 1, total: 10 },
+          importDiff: { changes: 3, adds: 2, blocked: 0, matched: 1, total: 12 },
+          copyText: "AIQT Audit Evidence Summary\nRun: run-index-a"
+        }
+      },
+      backtestReport: {
+        kind: "aiqt.backtestReport" as const,
+        schemaVersion: 1 as const,
+        runId: "run-index-a",
+        generatedAt: "2026-05-26T08:47:00+00:00",
+        format: "text/markdown" as const,
+        fileName: "run-index-a-backtest-report.md",
+        contentSha256: {
+          algorithm: "sha256" as const,
+          hash: "f".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audited Backtest Report\n",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-index-a",
+        executionMode: "paper_only",
+        dataRows: 500,
+        runComparisonRows: 3,
+        boundary: "historical audited evidence only; no investment advice" as const
+      }
     };
     const rows = buildResearchRunExportIndexRows([
       basePackage,
@@ -2414,7 +2463,8 @@ describe("terminal workbench model", () => {
           status: "blocked",
           context: "AAPL · 1d",
           integrity: "No hash",
-          detail: "Integrity missing; Data snapshot mismatch; Paper execution count mismatch; AI review count mismatch"
+          detail:
+            "Integrity missing; Data snapshot mismatch; Paper execution count mismatch; AI review count mismatch; Audit report mismatch; Backtest report mismatch"
         }),
         expect.objectContaining({
           id: "run-index-a",
@@ -2422,7 +2472,7 @@ describe("terminal workbench model", () => {
           status: "review",
           context: "600000 · 1d",
           integrity: "sha256 · cccccccc",
-          artifacts: "500 bars / 18 trades / 1 AI",
+          artifacts: "500 bars / 18 trades / 1 AI / 2 reports / auditReport eeeeeeee / backtestReport ffffffff",
           execution: "1/2 gates · paper_only"
         })
       ])
@@ -2431,6 +2481,15 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportIndexRows(rows, "AAPL").map((row) => row.id)).toEqual(["run-index-b"]);
     expect(filterResearchRunExportIndexRows(rows, "integrity missing").map((row) => row.id)).toEqual(["run-index-b"]);
     expect(filterResearchRunExportIndexRows(rows, "hash-index-a").map((row) => row.id)).toEqual(["run-index-a"]);
+    expect(filterResearchRunExportIndexRows(rows, "auditReport").map((row) => row.id)).toEqual(["run-index-b", "run-index-a"]);
+    expect(filterResearchRunExportIndexRows(rows, "backtestReport").map((row) => row.id)).toEqual([
+      "run-index-b",
+      "run-index-a"
+    ]);
+    expect(filterResearchRunExportIndexRows(rows, "2 reports").map((row) => row.id)).toEqual([
+      "run-index-b",
+      "run-index-a"
+    ]);
   });
 
   test("builds searchable import diff rows before applying a research run export package", () => {

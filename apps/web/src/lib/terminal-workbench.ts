@@ -2899,6 +2899,35 @@ export function buildResearchRunExportIndexRows(
       const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
       const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
       const integrityHash = exportPackage.integrity?.hash ?? "";
+      const auditReport = exportPackage.auditReport;
+      const auditReportHash = auditReport?.contentSha256.hash ?? "";
+      const auditReportIsReady =
+        auditReport?.kind === "aiqt.auditReport" &&
+        auditReport.schemaVersion === 1 &&
+        auditReport.runId === exportPackage.manifest.runId &&
+        auditReport.evidenceSummary?.runId === exportPackage.manifest.runId &&
+        auditReport.format === "text/markdown" &&
+        auditReport.contentSha256.algorithm === "sha256" &&
+        /^[a-f0-9]{64}$/iu.test(auditReportHash) &&
+        auditReport.contentMarkdown.trim() !== "";
+      const backtestReport = exportPackage.backtestReport;
+      const backtestReportHash = backtestReport?.contentSha256.hash ?? "";
+      const backtestReportIsReady =
+        backtestReport?.kind === "aiqt.backtestReport" &&
+        backtestReport.schemaVersion === 1 &&
+        backtestReport.runId === exportPackage.manifest.runId &&
+        backtestReport.market === exportPackage.manifest.market &&
+        backtestReport.symbol === exportPackage.manifest.symbol &&
+        backtestReport.timeframe === exportPackage.manifest.timeframe &&
+        backtestReport.strategyRevision === exportPackage.manifest.strategyRevision &&
+        backtestReport.format === "text/markdown" &&
+        backtestReport.contentSha256.algorithm === "sha256" &&
+        /^[a-f0-9]{64}$/iu.test(backtestReportHash) &&
+        backtestReport.contentMarkdown.trim() !== "";
+      const reportArtifactLabels = [
+        auditReport ? `auditReport ${auditReportIsReady ? auditReportHash.slice(0, 8) : "blocked"}` : null,
+        backtestReport ? `backtestReport ${backtestReportIsReady ? backtestReportHash.slice(0, 8) : "blocked"}` : null
+      ].filter((label): label is string => Boolean(label));
       const integrityIsReady =
         exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
       const dataIsReady =
@@ -2913,7 +2942,9 @@ export function buildResearchRunExportIndexRows(
         dataIsReady ? null : "Data snapshot mismatch",
         paperCountMatches ? null : "Paper execution count mismatch",
         promotionCountMatches ? null : "Promotion candidate count mismatch",
-        aiReviewCountMatches ? null : "AI review count mismatch"
+        aiReviewCountMatches ? null : "AI review count mismatch",
+        auditReport && !auditReportIsReady ? "Audit report mismatch" : null,
+        backtestReport && !backtestReportIsReady ? "Backtest report mismatch" : null
       ].filter((reason): reason is string => Boolean(reason));
       const status: ResearchRunExportIndexStatus = mismatchReasons.length
         ? "blocked"
@@ -2932,7 +2963,15 @@ export function buildResearchRunExportIndexRows(
           ? `${exportPackage.integrity.algorithm} · ${integrityHash.slice(0, 8)}`
           : "No hash",
         dataHash: exportPackage.manifest.dataHash || "missing hash",
-        artifacts: `${artifactCounts.bars} bars / ${artifactCounts.trades} trades / ${artifactCounts.aiReviewRuns ?? 0} AI`,
+        artifacts: [
+          `${artifactCounts.bars} bars`,
+          `${artifactCounts.trades} trades`,
+          `${artifactCounts.aiReviewRuns ?? 0} AI`,
+          reportArtifactLabels.length ? `${reportArtifactLabels.length} reports` : null,
+          ...reportArtifactLabels
+        ]
+          .filter((artifact): artifact is string => Boolean(artifact))
+          .join(" / "),
         execution: `${passedGateCount}/${totalGateCount} gates · ${exportPackage.executionHandoff.mode}`,
         detail: mismatchReasons.length
           ? mismatchReasons.join("; ")

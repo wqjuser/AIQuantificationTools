@@ -287,3 +287,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "builds searchable import diff rows"` failed because import preflight ignored package-level `auditReport`.
 - GREEN: added an `audit-report` import diff row that displays incoming Audit Markdown report run id, short SHA-256, and file name, with a blocked state when report metadata, embedded summary, hash, or Markdown content does not match the manifest.
 - DOCS: updated product plan and architecture notes; next slice can move toward signed report package handoff or richer report evidence comparison.
+- RED: `terminal-workbench.test.ts -t "recent export package index"` failed because the cross-package export index ignored package-level `auditReport` and `backtestReport` artifacts.
+- GREEN: added searchable report artifact summaries to `buildResearchRunExportIndexRows`, including report counts, short hashes, blocked labels, and mismatch reasons when report metadata or Markdown does not match the manifest.
+- DOCS: updated product plan, architecture notes, and this implementation log; next slice can move toward report package signature handoff or broader cross-symbol backtest evidence.
