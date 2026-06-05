@@ -600,6 +600,7 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("aggregation.verifiedReportSignatureBuckets");
     expect(importEventsPanelSource).toContain("researchImportBlockedEvidenceBucketLabel");
     expect(importEventsPanelSource).toContain("researchImportVerifiedReportSignatureBucketLabel");
+    expect(appSource).toContain('"Import verification": "导入验签"');
     expect(importEventsPanelSource).toContain("bucket.latestExportPath");
     expect(importEventsPanelSource).toContain("bucket.latestDetail");
     expect(importEventsPanelSource).toContain("bucket.latestReason");

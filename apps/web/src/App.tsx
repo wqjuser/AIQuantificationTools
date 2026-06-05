@@ -7744,6 +7744,7 @@ function researchImportBlockedEvidenceBucketLabel(
   }
   return (
     {
+      "Import verification": "导入验签",
       "Report signature": "报告签名",
       "Package integrity": "复现包完整性",
       "Artifact counts": "证据数量",

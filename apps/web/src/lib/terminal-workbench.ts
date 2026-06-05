@@ -866,6 +866,7 @@ export interface ResearchRunImportAuditFailureBucket {
 }
 
 export type ResearchRunImportBlockedEvidenceBucketCategory =
+  | "import-verification"
   | "report-signature"
   | "package-integrity"
   | "artifact-counts"
@@ -4528,6 +4529,7 @@ function researchRunImportFailureBucketLabel(category: ResearchRunImportAuditFai
 }
 
 const researchRunImportBlockedEvidenceBucketOrder: ResearchRunImportBlockedEvidenceBucketCategory[] = [
+  "import-verification",
   "report-signature",
   "package-integrity",
   "artifact-counts",
@@ -4540,6 +4542,13 @@ function researchRunImportBlockedEvidenceBucketCategory(
   row: ResearchRunImportAuditBlockedRow
 ): ResearchRunImportBlockedEvidenceBucketCategory {
   const searchableText = [row.id, row.label, row.incoming, row.detail, row.exportPath].join(" ").toLowerCase();
+  if (
+    searchableText.includes("invalid imported evidence") ||
+    searchableText.includes("import verification") ||
+    searchableText.includes("local core import verification")
+  ) {
+    return "import-verification";
+  }
   if (row.id === "audit-report" || row.id === "backtest-report" || searchableText.includes("signature")) {
     return "report-signature";
   }
@@ -4563,6 +4572,7 @@ function researchRunImportBlockedEvidenceBucketLabel(
 ): string {
   return (
     {
+      "import-verification": "Import verification",
       "report-signature": "Report signature",
       "package-integrity": "Package integrity",
       "artifact-counts": "Artifact counts",

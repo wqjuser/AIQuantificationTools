@@ -84,6 +84,7 @@ import {
   type ResearchRunExportBrowserRow,
   type ResearchRunExportIndexRow,
   type ResearchRunExportBrowserPackage,
+  type ResearchRunImportAuditEvent,
   type ResearchRunImportDiffRow,
   type ResearchRunAudit,
   type TerminalWorkspace,
@@ -3693,6 +3694,58 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportAuditEvents(allAuditEvents, "signature chain blocked").map((event) => event.id)).toEqual([
       blockedPreview.id
     ]);
+  });
+
+  test("groups invalid imported evidence blockers separately from signature chain blockers", () => {
+    const invalidEvidenceBlockedEvent: ResearchRunImportAuditEvent = {
+      id: "import:run-invalid-import-evidence:blocked:2026-06-04T09:00:00.000Z:invalid-evidence.json",
+      stage: "blocked",
+      runId: "run-invalid-import-evidence",
+      previousRunId: "run-current",
+      rollbackTargetRunId: "run-current",
+      undoToken: null,
+      fileName: "invalid-evidence.json",
+      createdAt: "2026-06-04T09:00:00.000Z",
+      summary: "Import blocked",
+      detail: "Research run import blocked by invalid imported evidence.",
+      failureCategory: null,
+      recoveryHint: "Review the blocked audit report evidence, then re-export after fixing imported signatures.",
+      blockedCount: 1,
+      blockedRows: [
+        {
+          id: "audit-report",
+          label: "Audit report",
+          incoming:
+            "run-invalid-import-evidence · sha256 cccccccc · run-invalid-import-evidence-audit-evidence-report.md · Verified signature",
+          detail:
+            "Audit report carries invalid imported evidence and cannot be trusted for import. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256",
+          exportPath: "auditReport.contentSha256.hash"
+        }
+      ],
+      changeCount: 0,
+      exportPath: "manifest:run-invalid-import-evidence",
+      tone: "risk",
+      verifiedReportSignatures: []
+    };
+
+    const aggregation = buildResearchRunImportAuditAggregation([invalidEvidenceBlockedEvent]);
+
+    expect(
+      aggregation.blockedEvidenceBuckets.map(
+        (bucket) => `${bucket.category}:${bucket.count}:${bucket.latestRunId}:${bucket.rowIds.join(",")}`
+      )
+    ).toEqual(["import-verification:1:run-invalid-import-evidence:audit-report"]);
+    expect(aggregation.blockedEvidenceBuckets.at(0)).toEqual(
+      expect.objectContaining({
+        category: "import-verification",
+        label: "Import verification",
+        latestDetail:
+          "Audit report carries invalid imported evidence and cannot be trusted for import. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256",
+        latestExportPath: "auditReport.contentSha256.hash",
+        latestFileName: "invalid-evidence.json",
+        tone: "risk"
+      })
+    );
   });
 
   test("builds a copyable audit evidence summary from ledger, package, and diff focus", () => {

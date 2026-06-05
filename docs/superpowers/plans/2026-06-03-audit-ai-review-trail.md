@@ -332,3 +332,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "invalid imported evidence"` failed because an imported package could carry a signed/verified Audit report whose embedded evidence summary still had invalid import verification.
 - GREEN: `buildResearchRunImportDiffRows` now blocks those Audit report rows with `Audit report carries invalid imported evidence...`, while leaving Backtest reports outside that Audit-only import evidence policy.
 - DOCS: updated product plan, architecture notes, and this implementation log; next slice can persist this policy blocker into import audit aggregation or continue toward external certificate-chain support.
+- RED: `terminal-workbench.test.ts -t "invalid imported evidence blockers"` failed because invalid imported evidence blockers were grouped with report signature chain blockers.
+- GREEN: `blockedEvidenceBuckets` now has an `import-verification` category and Audit UI maps it to `导入验签`, so old signed reports carrying invalid import evidence are separated from signature-chain failures.
+- DOCS: updated product plan, architecture notes, and this implementation log; next slice can continue toward external certificate-chain support or richer import policy exports.
