@@ -3084,6 +3084,144 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("blocks import diff audit reports that carry invalid imported evidence", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export" as const,
+      packageVersion: 1,
+      exportedAt: "2026-05-26T09:00:00+00:00",
+      integrity: {
+        algorithm: "sha256" as const,
+        hash: "a".repeat(64)
+      },
+      manifest: {
+        runId: "run-invalid-import-evidence",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-invalid-import-evidence",
+        dataHash: "hash-safe",
+        dataRows: 240,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 240,
+          trades: 0,
+          equityPoints: 0,
+          decisions: 0,
+          aiRisks: 0,
+          paperExecutions: 0,
+          promotionCandidates: 0,
+          researchNotes: 0,
+          aiReviewRuns: 0
+        }
+      },
+      researchRun: {
+        runId: "run-invalid-import-evidence",
+        createdAt: "2026-05-26T08:30:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyName: "Invalid imported evidence package",
+        strategyRevision: "rev-invalid-import-evidence",
+        dataRows: 240,
+        dataSnapshot: {
+          rows: 240,
+          hash: "hash-safe",
+          source: "local-cache",
+          isComplete: true,
+          warnings: [],
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:30:00+00:00",
+          bars: []
+        },
+        metrics: { totalReturnPct: 1.2, maxDrawdownPct: 2.4, winRatePct: 51, profitFactor: 1.1, tradeCount: 0 },
+        decisions: [],
+        backtestTrades: [],
+        backtestEquityCurve: [],
+        executionMode: "paper_only"
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: []
+      },
+      auditReport: {
+        kind: "aiqt.auditReport",
+        schemaVersion: 1,
+        runId: "run-invalid-import-evidence",
+        generatedAt: "2026-06-04T08:05:30+00:00",
+        format: "text/markdown",
+        fileName: "run-invalid-import-evidence-audit-evidence-report.md",
+        contentSha256: {
+          algorithm: "sha256",
+          hash: "c".repeat(64)
+        },
+        contentMarkdown: "# AIQuant Audit Evidence Report\n",
+        signature: {
+          status: "verified",
+          algorithm: "hmac-sha256",
+          eventId: "audit-report-run-invalid-import-evidence",
+          keyId: "local-audit-key",
+          signer: "Local Audit Key",
+          signedAt: "2026-06-04T08:05:40.000Z",
+          verifiedAt: "2026-06-04T08:05:50.000Z",
+          chainId: "audit-chain-local",
+          value: "c".repeat(64)
+        },
+        evidenceSummary: {
+          kind: "aiqt.auditEvidenceSummary",
+          schemaVersion: 1,
+          runId: "run-invalid-import-evidence",
+          generatedAt: "2026-06-04T08:05:00+00:00",
+          auditQuery: "",
+          packageQuery: "manifest:run-invalid-import-evidence",
+          importDiffQuery: "manifest:run-invalid-import-evidence",
+          focusQuery: "manifest:run-invalid-import-evidence",
+          deepLinkStatus: "loaded",
+          deepLinkError: null,
+          package: { ready: 1, missing: 0, blocked: 0, matched: 1, total: 1 },
+          importDiff: { changes: 0, adds: 0, blocked: 0, matched: 1, total: 1 },
+          importVerification: {
+            verified: 0,
+            invalid: 1,
+            buckets: [
+              {
+                count: 1,
+                latestExportPath: "auditReport.contentSha256.hash",
+                latestReason: "signature_mismatch",
+                source: "local-core",
+                status: "invalid"
+              }
+            ]
+          },
+          copyText: "Run: run-invalid-import-evidence"
+        }
+      }
+    } satisfies ResearchRunExportBrowserPackage;
+
+    const rows = buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage });
+
+    expect(rows).toEqual(
+      expect.arrayContaining<ResearchRunImportDiffRow>([
+        expect.objectContaining({
+          id: "audit-report",
+          status: "blocked",
+          incoming:
+            "run-invalid-import-evidence · sha256 cccccccc · run-invalid-import-evidence-audit-evidence-report.md · Verified signature",
+          detail:
+            "Audit report carries invalid imported evidence and cannot be trusted for import. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256",
+          tone: "risk"
+        })
+      ])
+    );
+    expect(filterResearchRunImportDiffRows(rows, "invalid imported evidence").map((row) => row.id)).toEqual([
+      "audit-report"
+    ]);
+  });
+
   test("blocks import diff rows when package integrity or artifact counts are unsafe", () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export" as const,

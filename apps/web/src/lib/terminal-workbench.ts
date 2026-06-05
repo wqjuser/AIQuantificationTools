@@ -3002,6 +3002,16 @@ function researchRunExportReportSignatureImportBlockReason(
   return "";
 }
 
+function researchRunExportAuditReportImportPolicyBlockReason(
+  auditReport: ResearchRunExportBrowserPackage["auditReport"] | undefined
+): string {
+  const invalidImportVerificationCount = auditReport?.evidenceSummary?.importVerification?.invalid ?? 0;
+  if (Number.isFinite(invalidImportVerificationCount) && invalidImportVerificationCount > 0) {
+    return "Audit report carries invalid imported evidence and cannot be trusted for import.";
+  }
+  return "";
+}
+
 function researchRunExportReportSignatureHasRequiredFields(
   signature: Record<string, unknown> | undefined,
   status: "signed" | "verified"
@@ -3274,7 +3284,9 @@ export function buildResearchRunImportDiffRows({
     auditReport?.signature,
     "Audit report"
   );
-  const auditReportSignatureIsImportable = auditReportSignatureImportBlockReason === "";
+  const auditReportImportPolicyBlockReason = researchRunExportAuditReportImportPolicyBlockReason(auditReport);
+  const auditReportImportBlockReason = auditReportSignatureImportBlockReason || auditReportImportPolicyBlockReason;
+  const auditReportSignatureIsImportable = auditReportImportBlockReason === "";
   const auditReportSignatureLabel = auditReportSignatureDetail
     ? auditReportLedgerSignatureLabel(auditReportSignatureStatus)
     : "";
@@ -3492,7 +3504,7 @@ export function buildResearchRunImportDiffRows({
               ? [
                    auditReportSignatureIsImportable
                      ? "Package includes a portable Audit Markdown report bound to this manifest."
-                     : auditReportSignatureImportBlockReason,
+                     : auditReportImportBlockReason,
                    auditReportSignatureDetail,
                    auditReportSignatureImportVerificationDetail
                  ]
