@@ -5503,7 +5503,10 @@ export function buildBacktestParameterScanSummary(workspace: TerminalWorkspace):
   };
 }
 
-export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): string | null {
+export function buildBacktestReportMarkdown(
+  workspace: TerminalWorkspace,
+  runHistory: ResearchRunAudit[] = []
+): string | null {
   const run = workspace.researchRun;
   if (!run) {
     return null;
@@ -5528,6 +5531,18 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
     row.tradeCount,
     row.alphaVsCurrent,
     row.status
+  ]);
+  const runComparisonRows = buildBacktestRunComparisonMatrixRows(runHistory, run.runId);
+  const runComparisonSummary = buildBacktestRunComparisonMatrixSummary(runComparisonRows);
+  const runComparisonMarkdownRows = runComparisonRows.map((row) => [
+    row.runId,
+    row.badges.join(", "),
+    row.returnPct,
+    row.maxDrawdownPct,
+    row.winRatePct,
+    row.tradeCount,
+    row.dataQualityLabel,
+    row.assumptions
   ]);
   const gateRows = report.readinessGates.map((gate) => [gate.label, gate.status, gate.detail]);
   const aiCitationRows = aiDossier.citations.map((citation) => [
@@ -5609,6 +5624,21 @@ export function buildBacktestReportMarkdown(workspace: TerminalWorkspace): strin
     parameterScanRows.length
       ? markdownTable(["Condition", "Return", "Max drawdown", "Trades", "Delta", "Status"], parameterScanRows)
       : "Parameter sensitivity requires an audited data snapshot.",
+    "",
+    "## Run Comparison Matrix",
+    "",
+    runComparisonSummary
+      ? [
+          runComparisonSummary.headline,
+          "",
+          runComparisonSummary.detail,
+          "",
+          markdownTable(
+            ["Run", "Badges", "Return", "Max drawdown", "Win rate", "Trades", "Data quality", "Assumptions"],
+            runComparisonMarkdownRows
+          )
+        ].join("\n")
+      : "Run comparison matrix requires at least one audited run in history for the same market, symbol, and timeframe.",
     "",
     "## AI Evidence Boundary",
     "",
@@ -6653,7 +6683,7 @@ export function buildBacktestRunComparisonMatrixSummary(
         ? `Lowest drawdown ${lowestDrawdownRow.runId} ${lowestDrawdownRow.maxDrawdownPct}.`
         : "Lowest drawdown unavailable.",
       previousRow ? `Previous comparable run ${previousRow.runId}.` : "No previous comparable run.",
-      "This is historical audited evidence, not investment advice."
+      "This is historical audited evidence only, not investment advice."
     ].join(" "),
     headline: `${rows.length} comparable audited runs`,
     lowestDrawdownRunId: lowestDrawdownRow?.runId ?? null,

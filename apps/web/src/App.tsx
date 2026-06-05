@@ -1686,7 +1686,7 @@ export function App() {
   }, [runHistory]);
 
   const exportBacktestReportMarkdown = useCallback(() => {
-    const markdown = buildBacktestReportMarkdown(workspace);
+    const markdown = buildBacktestReportMarkdown(workspace, runHistory);
     const runId = workspace.researchRun?.runId;
     if (!markdown || !runId) {
       setWorkspaceState((current) => ({
@@ -1710,7 +1710,7 @@ export function App() {
       statusLabel: "Backtest report export ready",
       error: undefined
     }));
-  }, [workspace]);
+  }, [runHistory, workspace]);
 
   const exportAiReviewMarkdown = useCallback(() => {
     const markdown = buildAiReviewReportMarkdown(workspace);

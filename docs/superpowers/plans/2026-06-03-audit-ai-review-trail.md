@@ -260,3 +260,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - GREEN: added backtest run comparison matrix rows, summary, and search helpers; wired Backtest Report to render searchable same-market/symbol/timeframe evidence rows without turning them into optimization or trade advice.
 - DOCS: updated product plan and architecture notes; next slice should continue core product capability beyond single-run evidence, likely toward stronger report export coverage or multi-run/multi-symbol backtest comparison.
 - VERIFY: Docker images rebuilt successfully, but this Windows host currently excludes TCP ports 5141-5240, so binding the default 5173 failed with WinError 10013; container smoke passed with `AIQT_WEB_PORT=8080` and `--base-url http://127.0.0.1:8080`.
+- RED: `terminal-workbench.test.ts -t "markdown backtest reports"` failed because the exported Markdown backtest report did not include the same-context run comparison matrix.
+- GREEN: extended `buildBacktestReportMarkdown(workspace, runHistory)` and the App export action so Markdown reports include current/previous/best-return/lowest-drawdown rows from the same matrix model.
+- DOCS: updated product plan and architecture notes; next slice can move toward multi-symbol comparison or signing/persisting Backtest Markdown reports as audit artifacts.

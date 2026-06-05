@@ -5220,6 +5220,64 @@ describe("terminal workbench model", () => {
     expect(buildBacktestReportMarkdown(buildTerminalWorkspace())).toBeNull();
   });
 
+  test("includes the like-for-like run comparison matrix in markdown backtest reports", () => {
+    const currentRun = auditedRunFixture({
+      createdAt: "2026-05-26T08:00:00+00:00",
+      drawdown: 4,
+      returnPct: 5,
+      runId: "run-md-current",
+      strategyRevision: "rev-md-current",
+      tradeCount: 8
+    });
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), currentRun);
+    const runHistory: ResearchRunAudit[] = [
+      currentRun,
+      auditedRunFixture({
+        createdAt: "2026-05-25T08:00:00+00:00",
+        drawdown: 6,
+        returnPct: 2,
+        runId: "run-md-previous",
+        source: "local-cache",
+        strategyRevision: "rev-md-previous",
+        warnings: ["upstream unavailable"]
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-24T08:00:00+00:00",
+        drawdown: 9,
+        returnPct: 8,
+        runId: "run-md-best",
+        strategyRevision: "rev-md-best",
+        tradeCount: 12
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-23T08:00:00+00:00",
+        drawdown: 2,
+        returnPct: 3,
+        runId: "run-md-lowdd",
+        strategyRevision: "rev-md-lowdd"
+      }),
+      auditedRunFixture({
+        market: "us",
+        runId: "run-md-other",
+        symbol: "AAPL",
+        returnPct: 40,
+        strategyRevision: "rev-md-other"
+      })
+    ];
+
+    const markdown = buildBacktestReportMarkdown(workspace, runHistory);
+
+    expect(markdown).toContain("## Run Comparison Matrix");
+    expect(markdown).toContain("4 comparable audited runs");
+    expect(markdown).toContain("| run-md-current | current | +5.00% | 4.00% |");
+    expect(markdown).toContain("| run-md-previous | previous_run | +2.00% | 6.00% |");
+    expect(markdown).toContain("| run-md-best | best_return | +8.00% | 9.00% |");
+    expect(markdown).toContain("| run-md-lowdd | lowest_drawdown | +3.00% | 2.00% |");
+    expect(markdown).not.toContain("run-md-other");
+    expect(markdown).toContain("local-cache complete · 1 warning");
+    expect(markdown).toContain("historical audited evidence only, not investment advice");
+  });
+
   test("blocks the backtest report until a reproducible run exists", () => {
     const report = buildBacktestReport(buildTerminalWorkspace());
 
