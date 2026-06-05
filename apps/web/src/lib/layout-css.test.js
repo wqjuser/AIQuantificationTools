@@ -528,6 +528,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("navigator.clipboard.writeText(anchor)");
     expect(appSource).toContain("setCopiedImportAuditEvidenceEventId(event.id)");
     expect(appSource).toContain("function buildResearchRunImportAuditEvidenceUrl(event: ResearchRunImportAuditEvent): string");
+    expect(appSource).toContain("blockedRows: event.blockedRows");
+    expect(appSource).toContain("blockedRows: auditMetadataBlockedRows(record.metadata.blockedRows)");
+    expect(appSource).toContain("function auditMetadataBlockedRows(value: unknown): ResearchRunImportAuditEvent[\"blockedRows\"]");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
     expect(appSource).toContain("return { ok: false, error: errorMessage };");
     expect(appSource).toContain("return { ok: true };");
@@ -588,6 +591,9 @@ describe("terminal layout css", () => {
     expect(importEventsPanelSource).toContain("research-import-failure-buckets");
     expect(importEventsPanelSource).toContain("research-import-event-row");
     expect(importEventsPanelSource).toContain("event.recoveryHint");
+    expect(importEventsPanelSource).toContain("event.blockedRows.length");
+    expect(importEventsPanelSource).toContain("event.blockedRows");
+    expect(importEventsPanelSource).toContain("`${row.label}: ${row.incoming}`");
     expect(importEventsPanelSource).toContain("event.undoToken");
     expect(importEventsPanelSource).toContain("pendingImportUndoToken");
     expect(importEventsPanelSource).toContain("buildResearchRunImportUndoConfirmation(event)");

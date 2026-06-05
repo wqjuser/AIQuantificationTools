@@ -6499,6 +6499,13 @@ function ResearchRunImportAuditEventPanel({
                   <p>
                     <b>{researchImportAuditSummaryLabel(i18n, event.summary)}</b>
                     <small>{researchImportAuditDetailLabel(i18n, event.detail)}</small>
+                    {event.blockedRows.length ? (
+                      <small>
+                        {event.blockedRows
+                          .map((row) => `${row.label}: ${row.incoming}`)
+                          .join(" · ")}
+                      </small>
+                    ) : null}
                     <em>{event.exportPath}</em>
                   </p>
                   <em>
@@ -7267,6 +7274,7 @@ function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportA
       failureCategory: event.failureCategory,
       recoveryHint: event.recoveryHint,
       blockedCount: event.blockedCount,
+      blockedRows: event.blockedRows,
       changeCount: event.changeCount,
       exportPath: event.exportPath,
       tone: event.tone
@@ -7292,6 +7300,7 @@ function auditEventRecordToResearchRunImportEvent(record: AuditEventRecord): Res
     failureCategory: auditMetadataFailureCategory(record.metadata.failureCategory),
     recoveryHint: auditMetadataString(record.metadata.recoveryHint, ""),
     blockedCount: auditMetadataNumber(record.metadata.blockedCount),
+    blockedRows: auditMetadataBlockedRows(record.metadata.blockedRows),
     changeCount: auditMetadataNumber(record.metadata.changeCount),
     exportPath: auditMetadataString(record.metadata.exportPath, `auditEvent:${record.eventId}`),
     tone: auditMetadataTone(record.metadata.tone)
@@ -7321,6 +7330,60 @@ function auditMetadataNullableString(value: unknown): string | null {
 function auditMetadataNumber(value: unknown): number {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function auditMetadataBlockedRows(value: unknown): ResearchRunImportAuditEvent["blockedRows"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      const row = item as Record<string, unknown>;
+      const id = row.id;
+      const label = auditMetadataString(row.label, "");
+      const detail = auditMetadataString(row.detail, "");
+      const exportPath = auditMetadataString(row.exportPath, "");
+      const incoming = auditMetadataString(row.incoming, "");
+      if (
+        !isResearchRunImportDiffRowId(id) ||
+        !label ||
+        !detail ||
+        !exportPath ||
+        !incoming
+      ) {
+        return null;
+      }
+      return {
+        id,
+        label,
+        detail,
+        exportPath,
+        incoming
+      };
+    })
+    .filter((row): row is ResearchRunImportAuditEvent["blockedRows"][number] => Boolean(row));
+}
+
+function isResearchRunImportDiffRowId(value: unknown): value is ResearchRunImportDiffRow["id"] {
+  return (
+    value === "package-integrity" ||
+    value === "artifact-counts" ||
+    value === "run-id" ||
+    value === "context" ||
+    value === "timeframe" ||
+    value === "data-snapshot" ||
+    value === "strategy-revision" ||
+    value === "research-note" ||
+    value === "paper-executions" ||
+    value === "ai-review-runs" ||
+    value === "audit-summary" ||
+    value === "audit-report" ||
+    value === "backtest-report" ||
+    value === "live-boundary"
+  );
 }
 
 function auditMetadataFailureCategory(value: unknown): ResearchRunImportFailureCategory | null {

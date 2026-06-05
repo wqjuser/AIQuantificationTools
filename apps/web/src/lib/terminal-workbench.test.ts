@@ -3230,6 +3230,28 @@ describe("terminal workbench model", () => {
         detail: "Import will replace the current replay context with the package run.",
         exportPath: "researchRun.runId",
         tone: "warning"
+      },
+      {
+        id: "audit-report",
+        label: "Audit report",
+        status: "blocked",
+        current: "No local audit report",
+        incoming: "run-import-ledger · sha256 aaaaaaaa · Revoked signature",
+        detail:
+          "Audit report signature is revoked or invalid and cannot be trusted for import. · Revoked signature · Local Audit Key · local-audit-key · hmac-sha256",
+        exportPath: "auditReport.contentSha256.hash",
+        tone: "risk"
+      },
+      {
+        id: "backtest-report",
+        label: "Backtest report",
+        status: "blocked",
+        current: "No local backtest report",
+        incoming: "run-import-ledger · sha256 bbbbbbbb · Signature chain blocked",
+        detail:
+          "Backtest report signature is revoked or invalid and cannot be trusted for import. · Signature chain blocked · Local Audit Key · local-audit-key · hmac-sha256",
+        exportPath: "backtestReport.contentSha256.hash",
+        tone: "risk"
       }
     ];
 
@@ -3274,14 +3296,39 @@ describe("terminal workbench model", () => {
         runId: "run-import-ledger",
         fileName: "unsafe-import.json",
         summary: "Import preview blocked",
-        blockedCount: 1,
+        blockedCount: 3,
         changeCount: 1,
         exportPath: "manifest:run-import-ledger",
         tone: "risk"
       })
     );
-    expect(blockedPreview.detail).toContain("1 blocked");
+    expect(blockedPreview.detail).toContain("3 blocked");
     expect(blockedPreview.detail).toContain("1 change");
+    expect(blockedPreview.blockedRows).toEqual([
+      {
+        id: "package-integrity",
+        label: "Package integrity",
+        detail: "Import must stop until the package has valid canonical SHA-256 metadata.",
+        exportPath: "integrity.hash",
+        incoming: "sha256 · invalid"
+      },
+      {
+        id: "audit-report",
+        label: "Audit report",
+        detail:
+          "Audit report signature is revoked or invalid and cannot be trusted for import. · Revoked signature · Local Audit Key · local-audit-key · hmac-sha256",
+        exportPath: "auditReport.contentSha256.hash",
+        incoming: "run-import-ledger · sha256 aaaaaaaa · Revoked signature"
+      },
+      {
+        id: "backtest-report",
+        label: "Backtest report",
+        detail:
+          "Backtest report signature is revoked or invalid and cannot be trusted for import. · Signature chain blocked · Local Audit Key · local-audit-key · hmac-sha256",
+        exportPath: "backtestReport.contentSha256.hash",
+        incoming: "run-import-ledger · sha256 bbbbbbbb · Signature chain blocked"
+      }
+    ]);
     expect(confirmed).toEqual(
       expect.objectContaining({
         stage: "confirmed",
@@ -3425,6 +3472,9 @@ describe("terminal workbench model", () => {
     ]);
     expect(filterResearchRunImportAuditEvents(allAuditEvents, "schema", "needs-review").map((event) => event.id)).toEqual([
       failed.id
+    ]);
+    expect(filterResearchRunImportAuditEvents(allAuditEvents, "signature chain blocked").map((event) => event.id)).toEqual([
+      blockedPreview.id
     ]);
   });
 

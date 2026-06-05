@@ -780,6 +780,14 @@ export type ResearchRunImportAuditEventStage =
   | "undo-failed";
 export type ResearchRunImportFailureCategory = "schema" | "integrity" | "artifact-counts" | "core" | "unknown";
 
+export interface ResearchRunImportAuditBlockedRow {
+  id: ResearchRunImportDiffRow["id"];
+  label: string;
+  detail: string;
+  exportPath: string;
+  incoming: string;
+}
+
 export interface ResearchRunImportAuditEvent {
   id: string;
   stage: ResearchRunImportAuditEventStage;
@@ -794,6 +802,7 @@ export interface ResearchRunImportAuditEvent {
   failureCategory: ResearchRunImportFailureCategory | null;
   recoveryHint: string;
   blockedCount: number;
+  blockedRows: ResearchRunImportAuditBlockedRow[];
   changeCount: number;
   exportPath: string;
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
@@ -3623,6 +3632,7 @@ export function buildResearchRunImportAuditEvent({
 }): ResearchRunImportAuditEvent {
   const runId = exportPackage?.manifest.runId ?? "unknown";
   const blockedCount = rows.filter((row) => row.status === "blocked").length;
+  const blockedRows = researchRunImportAuditBlockedRows(rows);
   const changeCount = rows.filter(
     (row) => row.status === "add" || row.status === "change" || row.status === "replace"
   ).length;
@@ -3655,10 +3665,23 @@ export function buildResearchRunImportAuditEvent({
     failureCategory: resolvedStage === "failed" ? failure.category : null,
     recoveryHint: researchRunImportRecoveryHint(resolvedStage, rollbackTargetRunId, failure, normalizedUndoToken),
     blockedCount,
+    blockedRows,
     changeCount,
     exportPath: exportPackage ? `manifest:${runId}` : `import:file:${fileName || "unknown"}`,
     tone: researchRunImportAuditTone(resolvedStage)
   };
+}
+
+function researchRunImportAuditBlockedRows(rows: ResearchRunImportDiffRow[]): ResearchRunImportAuditBlockedRow[] {
+  return rows
+    .filter((row) => row.status === "blocked")
+    .map((row) => ({
+      id: row.id,
+      label: row.label,
+      detail: row.detail,
+      exportPath: row.exportPath,
+      incoming: row.incoming
+    }));
 }
 
 export function buildResearchRunImportUndoAuditEvent({
@@ -3852,6 +3875,9 @@ export function filterResearchRunImportAuditEvents(
       event.failureCategory ?? "",
       event.recoveryHint,
       String(event.blockedCount),
+      event.blockedRows
+        .map((row) => [row.id, row.label, row.incoming, row.detail, row.exportPath].join(" "))
+        .join(" "),
       String(event.changeCount),
       event.exportPath,
       event.tone
