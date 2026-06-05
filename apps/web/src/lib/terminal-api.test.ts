@@ -2588,9 +2588,17 @@ describe("terminal workspace API client", () => {
       importDiffMatchedCount: 4,
       importDiffQuery: "auditReport.contentSha256.hash",
       importDiffTotalCount: 11,
-      importVerificationBuckets: [],
+      importVerificationBuckets: [
+        {
+          count: 1,
+          latestExportPath: "auditReport.contentSha256.hash",
+          latestReason: "signature_verified",
+          source: "local-core" as const,
+          status: "verified" as const
+        }
+      ],
       importVerificationInvalidCount: 0,
-      importVerificationVerifiedCount: 0,
+      importVerificationVerifiedCount: 1,
       packageBlockedCount: 1,
       packageMatchedCount: 2,
       packageMissingCount: 0,
@@ -2624,6 +2632,12 @@ describe("terminal workspace API client", () => {
         packageTotal: 9,
         importDiffBlocked: 2,
         importDiffTotal: 11,
+        importVerificationInvalid: 0,
+        importVerificationLatestExportPath: "auditReport.contentSha256.hash",
+        importVerificationLatestReason: "signature_verified",
+        importVerificationLatestSource: "local-core",
+        importVerificationLatestStatus: "verified",
+        importVerificationVerified: 1,
         deepLinkStatus: "loaded",
         deepLinkError: null
       }

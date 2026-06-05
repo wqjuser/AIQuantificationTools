@@ -715,6 +715,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.signatureLabel");
     expect(reportLedgerPanelSource).toContain("row.reportKind");
     expect(reportLedgerPanelSource).not.toContain('row.reportKind !== "audit_evidence_report"');
+    expect(reportLedgerPanelSource).toContain("row.importVerificationDetail");
+    expect(reportLedgerPanelSource).toContain("导入验签");
     expect(reportLedgerPanelSource).toContain("row.signatureDetail");
     expect(reportLedgerPanelSource).toContain("row.chainId");
     expect(reportLedgerPanelSource).toContain("row.signatureDetail && row.chainId");

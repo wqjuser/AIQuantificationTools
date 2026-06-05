@@ -3714,6 +3714,12 @@ describe("terminal workbench model", () => {
           format: "text/markdown",
           importDiffBlocked: 1,
           importDiffTotal: 11,
+          importVerificationInvalid: 0,
+          importVerificationLatestExportPath: "auditReport.contentSha256.hash",
+          importVerificationLatestReason: "signature_verified",
+          importVerificationLatestSource: "local-core",
+          importVerificationLatestStatus: "verified",
+          importVerificationVerified: 1,
           packageMatched: 3,
           packageTotal: 9
         }
@@ -3761,6 +3767,9 @@ describe("terminal workbench model", () => {
         fileName: "run-a1f3a5369574-audit-evidence-report.md",
         focusQuery: "manifest:run-a1f3a5369574",
         importDiffBlocked: 1,
+        importVerificationDetail: "Import report verification: 1 verified / 0 invalid · latest verified auditReport.contentSha256.hash · signature_verified · local-core",
+        importVerificationInvalid: 0,
+        importVerificationVerified: 1,
         packageMatched: 3,
         runId: "run-a1f3a5369574",
         signatureLabel: "Unsigned report hash",
@@ -3781,6 +3790,9 @@ describe("terminal workbench model", () => {
       verified: 0
     });
     expect(filterAuditEvidenceReportLedgerRows(rows, "manifest:run-a1").map((row) => row.id)).toEqual([
+      "audit-report-run-a1-audit"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "local-core signature_verified").map((row) => row.id)).toEqual([
       "audit-report-run-a1-audit"
     ]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "bad").map((row) => row.id)).toEqual([

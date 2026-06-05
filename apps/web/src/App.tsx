@@ -6003,6 +6003,13 @@ function AuditEvidenceReportLedgerPanel({
                 </p>
                 <em>
                   {row.packageMatched}/{row.packageTotal} · {row.importDiffBlocked}/{row.importDiffTotal}
+                  {row.importVerificationDetail ? (
+                    <span title={row.importVerificationDetail}>
+                      {" "}
+                      · {i18n.locale === "zh-CN" ? "导入验签" : "Import verify"} {row.importVerificationVerified}/
+                      {row.importVerificationInvalid}
+                    </span>
+                  ) : null}
                 </em>
                 <div>
                   <small>{auditReportLedgerSignatureLabel(i18n, row.signatureLabel)}</small>

@@ -952,6 +952,9 @@ export interface AuditEvidenceReportLedgerRow {
   packageTotal: number;
   importDiffBlocked: number;
   importDiffTotal: number;
+  importVerificationDetail: string;
+  importVerificationInvalid: number;
+  importVerificationVerified: number;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
   statusLabel: string;
@@ -4156,6 +4159,14 @@ export function buildAuditEvidenceReportLedgerRows(
       const signature = auditReportLedgerSignatureMetadata(event.metadata);
       const signatureStatus = status === "ready" ? auditReportLedgerSignatureStatus(signature) : "invalid";
       const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
+      const importVerificationVerified =
+        reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importVerificationVerified");
+      const importVerificationInvalid =
+        reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importVerificationInvalid");
+      const importVerificationDetail =
+        reportKind === "backtest_report"
+          ? ""
+          : auditReportLedgerImportVerificationDetail(event.metadata, importVerificationVerified, importVerificationInvalid);
       return {
         id: event.eventId,
         artifactKind,
@@ -4177,6 +4188,9 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
         importDiffTotal:
           reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
+        importVerificationDetail,
+        importVerificationInvalid,
+        importVerificationVerified,
         deepLinkStatus:
           reportKind === "backtest_report"
             ? "backtest-report"
@@ -4260,6 +4274,9 @@ export function filterAuditEvidenceReportLedgerRows(
       row.signatureStatus,
       row.signatureLabel,
       row.signatureVerifiedAt,
+      row.importVerificationDetail,
+      String(row.importVerificationVerified),
+      String(row.importVerificationInvalid),
       row.detail,
       row.reportKind,
       String(row.packageMatched),
@@ -4445,6 +4462,24 @@ function auditReportLedgerSignatureDetail(signature: Record<string, unknown>): s
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function auditReportLedgerImportVerificationDetail(
+  metadata: Record<string, unknown>,
+  verified: number,
+  invalid: number
+): string {
+  const latestStatus = auditReportLedgerMetadataText(metadata, "importVerificationLatestStatus");
+  const latestExportPath = auditReportLedgerMetadataText(metadata, "importVerificationLatestExportPath");
+  const latestReason = auditReportLedgerMetadataText(metadata, "importVerificationLatestReason");
+  const latestSource = auditReportLedgerMetadataText(metadata, "importVerificationLatestSource");
+  const latestDetail =
+    latestStatus && latestExportPath
+      ? ` · latest ${latestStatus} ${latestExportPath}${latestReason ? ` · ${latestReason}` : ""}${
+          latestSource ? ` · ${latestSource}` : ""
+        }`
+      : "";
+  return `Import report verification: ${verified} verified / ${invalid} invalid${latestDetail}`;
 }
 
 function auditReportLedgerMetadataNumber(metadata: Record<string, unknown>, key: string): number {

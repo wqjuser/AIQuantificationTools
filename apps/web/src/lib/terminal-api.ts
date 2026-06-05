@@ -1287,6 +1287,8 @@ export function buildAuditEvidenceReportAuditEvent(
   summary: AuditEvidenceSummary
 ): AuditEventRecord {
   const shortHash = auditReport.contentSha256.hash.slice(0, 16);
+  const importVerificationBuckets = summary.importVerificationBuckets ?? [];
+  const latestImportVerification = importVerificationBuckets[0] ?? null;
   return {
     schemaVersion: 1,
     eventId: `audit-report-${sanitizeDownloadFileName(auditReport.runId)}-${shortHash}`,
@@ -1313,6 +1315,12 @@ export function buildAuditEvidenceReportAuditEvent(
       packageTotal: summary.packageTotalCount,
       importDiffBlocked: summary.importDiffBlockedCount,
       importDiffTotal: summary.importDiffTotalCount,
+      importVerificationVerified: summary.importVerificationVerifiedCount ?? 0,
+      importVerificationInvalid: summary.importVerificationInvalidCount ?? 0,
+      importVerificationLatestStatus: latestImportVerification?.status ?? "",
+      importVerificationLatestSource: latestImportVerification?.source ?? "",
+      importVerificationLatestExportPath: latestImportVerification?.latestExportPath ?? "",
+      importVerificationLatestReason: latestImportVerification?.latestReason ?? "",
       deepLinkStatus: summary.deepLinkStatus,
       deepLinkError: summary.deepLinkError
     }
