@@ -134,6 +134,7 @@ export interface ResearchRunExportReportSignature {
   status: "unsigned" | "signed" | "verified" | "revoked" | "invalid";
   algorithm?: string;
   chainId?: string;
+  eventId?: string;
   invalidReason?: string;
   keyFingerprint?: string;
   keyId?: string;
@@ -940,6 +941,10 @@ export function buildAuditReportVerifyUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/reports/verify");
 }
 
+export function buildAuditReportVerifyPackageUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/reports/verify-package");
+}
+
 export function buildAuditReportRevokeUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/reports/revoke");
 }
@@ -1489,7 +1494,7 @@ function researchRunExportReportSignatureFromEvents({
       auditEventMetadataText(event.metadata, "contentSha256Algorithm") === report.contentSha256.algorithm &&
       isResearchRunExportReportSignature(signature)
     ) {
-      return { ...signature };
+      return { ...signature, eventId: event.eventId };
     }
   }
 
@@ -1910,6 +1915,30 @@ export async function verifyAuditReportEvent(
   return mutateAuditReportSignature(buildAuditReportVerifyUrl(baseUrl), eventId, undefined, fetcher, "verify");
 }
 
+export async function verifyResearchRunExportReportSignature(
+  baseUrl: string,
+  report: ResearchRunExportAuditReport | ResearchRunExportBacktestReport,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditReportSignatureResult> {
+  return mutateAuditReportPackageSignature(buildAuditReportVerifyPackageUrl(baseUrl), report, fetcher);
+}
+
+export async function withVerifiedResearchRunExportPackageReportSignatures(
+  baseUrl: string,
+  exportPackage: ResearchRunExportPackage,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchRunExportPackage> {
+  const [auditReport, backtestReport] = await Promise.all([
+    verifyResearchRunExportPackageReportIfNeeded(baseUrl, exportPackage.auditReport, fetcher),
+    verifyResearchRunExportPackageReportIfNeeded(baseUrl, exportPackage.backtestReport, fetcher)
+  ]);
+  return {
+    ...exportPackage,
+    ...(auditReport ? { auditReport } : {}),
+    ...(backtestReport ? { backtestReport } : {})
+  };
+}
+
 export async function revokeAuditReportEvent(
   baseUrl: string,
   eventId: string,
@@ -1964,6 +1993,79 @@ async function mutateAuditReportSignature(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : `Unknown audit report ${action} error`
+    };
+  }
+}
+
+async function verifyResearchRunExportPackageReportIfNeeded<
+  TReport extends ResearchRunExportAuditReport | ResearchRunExportBacktestReport
+>(
+  baseUrl: string,
+  report: TReport | undefined,
+  fetcher: WorkspaceFetcher
+): Promise<TReport | undefined> {
+  if (!report || !researchRunExportReportSignatureNeedsVerification(report.signature)) {
+    return report;
+  }
+  const result = await verifyResearchRunExportReportSignature(baseUrl, report, fetcher);
+  if (result.source !== "core" || !isResearchRunExportReportSignature(result.signature)) {
+    return report;
+  }
+  return { ...report, signature: result.signature };
+}
+
+function researchRunExportReportSignatureNeedsVerification(
+  signature: ResearchRunExportReportSignature | undefined
+): boolean {
+  return (
+    Boolean(signature?.eventId?.trim()) &&
+    (signature?.status === "signed" || signature?.status === "verified")
+  );
+}
+
+async function mutateAuditReportPackageSignature(
+  url: string,
+  report: ResearchRunExportAuditReport | ResearchRunExportBacktestReport,
+  fetcher: WorkspaceFetcher
+): Promise<AuditReportSignatureResult> {
+  try {
+    const response = await fetcher(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ report })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      if (isAuditReportSignaturePayload(payload)) {
+        return {
+          event: payload.event,
+          signature: payload.signature,
+          verification: payload.verification,
+          source: "core",
+          error: payload.verification.reason
+        };
+      }
+      if (isCoreErrorPayload(payload)) {
+        return {
+          source: "core",
+          error: payload.detail ?? payload.error
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isAuditReportSignaturePayload(payload)) {
+      throw new Error("Invalid package report signature contract");
+    }
+    return {
+      event: payload.event,
+      signature: payload.signature,
+      verification: payload.verification,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown package report signature verification error"
     };
   }
 }
@@ -3740,6 +3842,7 @@ function isResearchRunExportReportSignature(value: unknown): value is ResearchRu
   const stringFields = [
     "algorithm",
     "chainId",
+    "eventId",
     "invalidReason",
     "keyFingerprint",
     "keyId",

@@ -21,6 +21,7 @@ import {
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
   buildAuditReportVerifyUrl,
+  buildAuditReportVerifyPackageUrl,
   buildAuditReportRevokeUrl,
   buildAuditSigningKeysUrl,
   buildAuditSigningKeyRotationApplyUrl,
@@ -58,6 +59,7 @@ import {
   prepareAuditSigningKeyRotationPlan,
   signAuditReportEvent,
   verifyAuditReportEvent,
+  verifyResearchRunExportReportSignature,
   revokeAuditReportEvent,
   saveResearchNote,
   saveStrategySnapshot,
@@ -2395,11 +2397,13 @@ describe("terminal workspace API client", () => {
       signedBacktestEvent
     ]);
     expect(signedExportPackage.auditReport?.signature).toMatchObject({
+      eventId: "audit-report-run-preview-signed",
       keyId: "local-audit-key",
       status: "verified",
       verifiedAt: "2026-06-04T08:05:00.000Z"
     });
     expect(signedExportPackage.backtestReport?.signature).toMatchObject({
+      eventId: "backtest-report-run-preview-signed",
       keyId: "local-audit-key",
       status: "signed",
       signedAt: "2026-06-04T08:06:00.000Z"
@@ -3723,6 +3727,80 @@ describe("terminal workspace API client", () => {
     expect(revokeResult.source).toBe("core");
     expect(revokeResult.signature?.status).toBe("revoked");
     expect(revokeResult.verification).toEqual({ status: "invalid", reason: "signature_revoked" });
+  });
+
+  test("verifies external package report signatures through the local core", async () => {
+    const report: NonNullable<ResearchRunExportPackage["backtestReport"]> = {
+      kind: "aiqt.backtestReport",
+      schemaVersion: 1,
+      runId: "run-package-verify",
+      generatedAt: "2026-06-05T10:00:00+00:00",
+      format: "text/markdown",
+      fileName: "run-package-verify-backtest-report.md",
+      contentSha256: { algorithm: "sha256", hash: "a".repeat(64) },
+      contentMarkdown: "# Backtest report",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyRevision: "rev-package-verify",
+      executionMode: "paper_only",
+      dataRows: 240,
+      runComparisonRows: 3,
+      signature: {
+        eventId: "backtest-report-package-verify",
+        status: "signed",
+        algorithm: "hmac-sha256",
+        chainId: "audit-chain-local",
+        keyId: "local-audit-key",
+        signedAt: "2026-06-05T10:00:00+00:00",
+        signer: "Local Audit Key",
+        value: "a".repeat(64)
+      },
+      boundary: "historical audited evidence only; no investment advice"
+    };
+    const verifiedEvent: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "backtest-report-package-verify",
+      eventType: "backtest_report",
+      runId: "run-package-verify",
+      createdAt: "2026-06-05T10:00:00+00:00",
+      stage: "generated",
+      source: "package",
+      summary: "Backtest package report signature verified",
+      detail: "run-package-verify-backtest-report.md · sha256 aaaaaaaa",
+      metadata: {
+        artifactKind: "aiqt.backtestReport",
+        contentSha256: "a".repeat(64),
+        contentSha256Algorithm: "sha256",
+        fileName: "run-package-verify-backtest-report.md",
+        signature: { ...report.signature, status: "verified", verifiedAt: "2026-06-05T10:01:00+00:00" }
+      }
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+
+    const result = await verifyResearchRunExportReportSignature("http://127.0.0.1:8765", report, async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          event: verifiedEvent,
+          signature: verifiedEvent.metadata.signature,
+          verification: { status: "verified", reason: "signature_verified" }
+        })
+      };
+    });
+
+    expect(buildAuditReportVerifyPackageUrl("http://127.0.0.1:8765")).toBe(
+      "http://127.0.0.1:8765/api/audit/reports/verify-package"
+    );
+    expect(calls.map((call) => call.url)).toEqual(["http://127.0.0.1:8765/api/audit/reports/verify-package"]);
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ report });
+    expect(result.source).toBe("core");
+    expect(result.event?.eventType).toBe("backtest_report");
+    expect(result.signature?.status).toBe("verified");
+    expect(result.verification).toEqual({ status: "verified", reason: "signature_verified" });
   });
 
   test("returns fallback when AI review run history payload is malformed", async () => {

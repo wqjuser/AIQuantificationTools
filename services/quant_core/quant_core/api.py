@@ -333,6 +333,26 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if verification.status == "invalid" else 200,
             )
             return
+        if parsed.path == "/api/audit/reports/verify-package":
+            payload = self._read_json_body()
+            try:
+                verification, verified_event_payload = self._audit_report_signer().verify_report_artifact(
+                    payload.get("report") if isinstance(payload.get("report"), dict) else {}
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_audit_report_package_signature", "detail": str(error)}, status=400)
+                return
+            metadata = verified_event_payload.get("metadata", {})
+            signature = metadata.get("signature", {}) if isinstance(metadata, dict) else {}
+            self._send_json(
+                {
+                    "event": verified_event_payload,
+                    "signature": signature if isinstance(signature, dict) else {},
+                    "verification": audit_report_verification_to_payload(verification),
+                },
+                status=409 if verification.status == "invalid" else 200,
+            )
+            return
         if parsed.path == "/api/audit/reports/revoke":
             payload = self._read_json_body()
             event_id = str(payload.get("eventId") or "").strip()

@@ -52,6 +52,7 @@ import {
   buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
   withResearchRunExportAuditEvidenceArtifacts,
+  withVerifiedResearchRunExportPackageReportSignatures,
   withResearchRunExportReportSignatures,
   MarketKlinesResult,
   MarketSearchSuggestion,
@@ -1883,7 +1884,7 @@ export function App() {
 
       try {
         const parsed = JSON.parse(await file.text()) as unknown;
-        const exportPackage = normalizeResearchRunExportPackagePayload(parsed);
+        let exportPackage = normalizeResearchRunExportPackagePayload(parsed);
         if (!exportPackage) {
           appendResearchRunImportAuditEvent(
             buildResearchRunImportAuditEvent({
@@ -1904,6 +1905,7 @@ export function App() {
           }));
           return;
         }
+        exportPackage = await withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage);
 
         const previewRows = buildResearchRunImportDiffRows({
           aiReviewRecords: activeAiReviewRunRecords,

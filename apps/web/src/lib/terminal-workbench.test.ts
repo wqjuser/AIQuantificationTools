@@ -2179,6 +2179,7 @@ describe("terminal workbench model", () => {
         signature: {
           status: "verified",
           algorithm: "hmac-sha256",
+          eventId: "audit-report-run-imported-signed",
           keyId: "local-audit-key",
           signer: "Local Audit Key",
           signedAt: "2026-06-04T08:01:00.000Z",
@@ -2225,6 +2226,7 @@ describe("terminal workbench model", () => {
         signature: {
           status: "signed",
           algorithm: "hmac-sha256",
+          eventId: "backtest-report-run-imported-signed",
           keyId: "local-audit-key",
           signer: "Local Audit Key",
           signedAt: "2026-06-04T08:03:00.000Z",
@@ -2421,6 +2423,7 @@ describe("terminal workbench model", () => {
         signature: {
           status: "verified",
           algorithm: "hmac-sha256",
+          eventId: "audit-report-run-imported-signed",
           keyId: "local-audit-key",
           signer: "Local Audit Key",
           signedAt: "2026-05-26T08:48:00.000Z",
@@ -2467,6 +2470,7 @@ describe("terminal workbench model", () => {
         signature: {
           status: "signed",
           algorithm: "hmac-sha256",
+          eventId: "backtest-report-run-imported-signed",
           keyId: "local-audit-key",
           signer: "Local Audit Key",
           signedAt: "2026-05-26T08:49:30.000Z",
@@ -2743,6 +2747,7 @@ describe("terminal workbench model", () => {
         signature: {
           status: "verified",
           algorithm: "hmac-sha256",
+          eventId: "audit-report-run-imported-import-diff",
           keyId: "local-audit-key",
           signer: "Local Audit Key",
           signedAt: "2026-06-04T08:05:40.000Z",
@@ -2789,6 +2794,7 @@ describe("terminal workbench model", () => {
         signature: {
           status: "signed",
           algorithm: "hmac-sha256",
+          eventId: "backtest-report-run-imported-import-diff",
           keyId: "local-audit-key",
           signer: "Local Audit Key",
           signedAt: "2026-06-04T08:06:20.000Z",

@@ -2958,7 +2958,7 @@ function researchRunExportReportSignatureHasRequiredFields(
   status: "signed" | "verified"
 ): boolean {
   const metadata = researchRunExportReportSignatureMetadata(signature);
-  const requiredFields = ["algorithm", "chainId", "keyId", "signedAt", "signer", "value"];
+  const requiredFields = ["algorithm", "chainId", "eventId", "keyId", "signedAt", "signer", "value"];
   if (status === "verified") {
     requiredFields.push("verifiedAt");
   }

@@ -180,6 +180,12 @@ class AuditReportSigner:
             updated_signature.pop("invalidReason", None)
         return verification, self._event_payload_with_signature(record, updated_signature)
 
+    def verify_report_artifact(
+        self, report: dict[str, Any], *, verified_at: datetime | None = None
+    ) -> tuple[AuditReportVerification, dict[str, Any]]:
+        record = audit_report_event_record_from_package_report(report)
+        return self.verify_event(record, verified_at=verified_at)
+
     def revoke_event(
         self,
         record: AuditEventRecord,
@@ -258,6 +264,46 @@ class AuditReportSigner:
 
 def audit_report_verification_to_payload(verification: AuditReportVerification) -> dict[str, str]:
     return {"status": verification.status, "reason": verification.reason}
+
+
+def audit_report_event_record_from_package_report(report: dict[str, Any]) -> AuditEventRecord:
+    if not isinstance(report, dict):
+        raise ValueError("audit_report_package_report_required")
+    artifact_kind = _required_report_text(report, "kind")
+    event_type = _report_event_type_for_artifact_kind(artifact_kind)
+    signature = _dict_or_empty(report.get("signature"))
+    event_id = _required_signature_text(signature, "eventId")
+    run_id = _required_report_text(report, "runId")
+    file_name = _required_report_text(report, "fileName")
+    content_sha256 = _dict_or_empty(report.get("contentSha256"))
+    content_algorithm = _required_report_text(content_sha256, "algorithm")
+    content_hash = _required_report_text(content_sha256, "hash")
+    generated_at = _parse_report_generated_at(str(report.get("generatedAt") or ""))
+    return AuditEventRecord(
+        event_id=event_id,
+        event_type=event_type,
+        run_id=run_id,
+        created_at=generated_at,
+        stage="generated",
+        source="package",
+        summary=f"{artifact_kind} package report signature checked",
+        detail=f"{file_name} · {content_algorithm} {content_hash[:12]}",
+        metadata={
+            "artifactKind": artifact_kind,
+            "fileName": file_name,
+            "contentSha256": content_hash,
+            "contentSha256Algorithm": content_algorithm,
+            "signature": signature,
+        },
+    )
+
+
+def _report_event_type_for_artifact_kind(artifact_kind: str) -> str:
+    if artifact_kind == "aiqt.auditReport":
+        return "audit_evidence_report"
+    if artifact_kind == "aiqt.backtestReport":
+        return "backtest_report"
+    raise ValueError("audit_report_artifact_kind_required")
 
 
 def audit_signing_key_registry_to_payload(registry: AuditSigningKeyRegistry) -> dict[str, Any]:
@@ -459,6 +505,29 @@ def _required_metadata_text(record: AuditEventRecord, key: str) -> str:
     if not text:
         raise ValueError(f"audit_report_{key}_required")
     return text
+
+
+def _required_report_text(container: dict[str, Any], key: str) -> str:
+    value = container.get(key)
+    text = value.strip() if isinstance(value, str) else ""
+    if not text:
+        raise ValueError(f"audit_report_{key}_required")
+    return text
+
+
+def _required_signature_text(signature: dict[str, Any], key: str) -> str:
+    value = signature.get(key)
+    text = value.strip() if isinstance(value, str) else ""
+    if not text:
+        raise ValueError(f"audit_report_signature_{key}_required")
+    return text
+
+
+def _parse_report_generated_at(value: str) -> datetime:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return datetime.now(timezone.utc)
 
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:

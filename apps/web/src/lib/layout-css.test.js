@@ -470,10 +470,12 @@ describe("terminal layout css", () => {
     const importPanelSource = sourceBetween("function ResearchRunImportDiffPanel", "function ResearchRunExportIndexPanel");
 
     expect(appSource).toContain("normalizeResearchRunExportPackagePayload");
+    expect(appSource).toContain("withVerifiedResearchRunExportPackageReportSignatures");
     expect(appSource).toContain("const [pendingImportPackage, setPendingImportPackage]");
     expect(appSource).toContain("const [isApplyingImportPackage, setIsApplyingImportPackage]");
     expect(appSource).toContain("exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage");
     expect(importFileSource).toContain("normalizeResearchRunExportPackagePayload(parsed)");
+    expect(importFileSource).toContain("withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage)");
     expect(importFileSource).toContain("setPendingImportPackage({ exportPackage, fileName: file.name })");
     expect(importFileSource).toContain("setInspectedExportPackage(exportPackage)");
     expect(importFileSource).not.toContain("importResearchRunExport");
