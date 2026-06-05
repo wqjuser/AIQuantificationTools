@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from quant_core.adapters import DemoMarketDataAdapter
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
 from quant_core.audit_signing import (
+    AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON,
     AuditReportSigner,
     audit_report_verification_to_payload,
     audit_signing_key_rotation_apply_to_payload,
@@ -299,7 +300,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 verification, verified_event_payload = signer.verify_event(signed_event)
                 verified_event = self.audit_event_store.record(verified_event_payload)
             except ValueError as error:
-                self._send_json({"error": "invalid_audit_report_signature", "detail": str(error)}, status=400)
+                detail = str(error)
+                self._send_json(
+                    {"error": "invalid_audit_report_signature", "detail": detail},
+                    status=409 if detail == AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON else 400,
+                )
                 return
             signature = verified_event.metadata.get("signature") if isinstance(verified_event.metadata, dict) else {}
             self._send_json(

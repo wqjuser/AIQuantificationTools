@@ -6020,11 +6020,12 @@ function AuditEvidenceReportLedgerPanel({
                 <div>
                   <small>{auditReportLedgerSignatureLabel(i18n, row.signatureLabel)}</small>
                   <small>
-                    {row.signatureStatus === "revoked" && row.signatureRevokedReason
-                      ? row.signatureRevokedReason
-                      : row.signatureDetail && row.chainId
-                      ? `${row.signatureDetail} · ${row.chainId}`
-                      : row.signatureDetail || row.chainId || row.signatureRevokedReason || row.signatureStatus}
+                    {auditReportLedgerSigningPolicyDetail(i18n, row) ||
+                      (row.signatureStatus === "revoked" && row.signatureRevokedReason
+                        ? row.signatureRevokedReason
+                        : row.signatureDetail && row.chainId
+                          ? `${row.signatureDetail} · ${row.chainId}`
+                          : row.signatureDetail || row.chainId || row.signatureRevokedReason || row.signatureStatus)}
                   </small>
                   <time dateTime={row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt}>
                     {researchImportAuditTimeLabel(row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt)}
@@ -6036,6 +6037,7 @@ function AuditEvidenceReportLedgerPanel({
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
                         row.status === "invalid" ||
+                        row.importVerificationInvalid > 0 ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onSignReport(row.id)}
@@ -6107,6 +6109,13 @@ function AuditEvidenceReportLedgerPanel({
       </div>
     </Panel>
   );
+}
+
+function auditReportLedgerSigningPolicyDetail(i18n: AppI18n, row: AuditEvidenceReportLedgerRow): string {
+  if (row.importVerificationInvalid <= 0) {
+    return "";
+  }
+  return i18n.locale === "zh-CN" ? "导入验签失败，需先更正证据再签名" : "Import verification failed; correct evidence before signing";
 }
 
 function AuditSigningKeyRegistryPanel({

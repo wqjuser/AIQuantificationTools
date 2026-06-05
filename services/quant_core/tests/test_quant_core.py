@@ -1458,6 +1458,77 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(tampered_payload["verification"]["status"], "invalid")
         self.assertEqual(tampered_payload["verification"]["reason"], "signature_mismatch")
 
+    def test_audit_report_sign_api_rejects_invalid_import_verification_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        event = {
+            "schemaVersion": 1,
+            "eventId": "audit-report-api-invalid-import-verification",
+            "eventType": "audit_evidence_report",
+            "runId": "run-api-report-invalid-import-verification",
+            "createdAt": "2026-06-04T09:20:00+00:00",
+            "stage": "generated",
+            "source": "web",
+            "summary": "Audit evidence report generated with invalid imported evidence",
+            "detail": "run-api-report-invalid-import-verification.md · sha256 dddddd · import verification failed",
+            "metadata": {
+                "artifactKind": "aiqt.auditReport",
+                "fileName": "run-api-report-invalid-import-verification.md",
+                "contentSha256": "d" * 64,
+                "contentSha256Algorithm": "sha256",
+                "evidenceFocus": "manifest:run-api-report-invalid-import-verification",
+                "importVerificationInvalid": 1,
+                "importVerificationVerified": 0,
+                "importVerificationLatestReason": "signature_mismatch",
+                "importVerificationLatestSource": "local-core",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_event_store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+            audit_event_store.record(event)
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = audit_event_store
+            TestHandler.audit_signing_secret = "unit-test-audit-secret"
+            TestHandler.audit_signing_key_id = "unit-test-key"
+            TestHandler.audit_signer_name = "Unit Test Audit Key"
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                sign_body = json.dumps({"eventId": "audit-report-api-invalid-import-verification"}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/sign",
+                    body=sign_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(sign_body))},
+                )
+                sign_response = connection.getresponse()
+                sign_payload = json.loads(sign_response.read().decode("utf-8"))
+                saved_event = audit_event_store.get("audit-report-api-invalid-import-verification")
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(sign_response.status, 409)
+        self.assertEqual(sign_payload["error"], "invalid_audit_report_signature")
+        self.assertEqual(sign_payload["detail"], "audit_report_import_verification_invalid")
+        self.assertIsNotNone(saved_event)
+        self.assertNotIn("signature", saved_event.metadata)
+
     def test_backtest_report_sign_and_verify_api_updates_signature_metadata(self):
         import json
         from http.client import HTTPConnection

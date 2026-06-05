@@ -11,6 +11,7 @@ from quant_core.audit_events import AuditEventRecord, audit_event_record_to_payl
 
 
 SIGNABLE_REPORT_EVENT_TYPES = {"audit_evidence_report", "backtest_report"}
+AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON = "audit_report_import_verification_invalid"
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,7 @@ class AuditReportSigner:
 
     def sign_event(self, record: AuditEventRecord, *, signed_at: datetime | None = None) -> dict[str, Any]:
         self._validate_report_event(record)
+        self._validate_signing_policy(record)
         key = self.registry.active_key
         timestamp = (signed_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
         signature = {
@@ -255,6 +257,15 @@ class AuditReportSigner:
         content_sha256 = _required_metadata_text(record, "contentSha256")
         if len(content_sha256) != 64 or any(character not in "0123456789abcdefABCDEF" for character in content_sha256):
             raise ValueError("audit_report_hash_invalid")
+
+    def _validate_signing_policy(self, record: AuditEventRecord) -> None:
+        if record.event_type != "audit_evidence_report":
+            return
+        invalid_count = record.metadata.get("importVerificationInvalid")
+        if isinstance(invalid_count, bool):
+            return
+        if isinstance(invalid_count, (int, float)) and invalid_count > 0:
+            raise ValueError(AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON)
 
     def _event_payload_with_signature(self, record: AuditEventRecord, signature: dict[str, Any]) -> dict[str, Any]:
         payload = audit_event_record_to_payload(record)
