@@ -6521,6 +6521,16 @@ function ResearchRunImportAuditEventPanel({
                           .join(" · ")}
                       </small>
                     ) : null}
+                    {event.verifiedReportSignatures.length ? (
+                      <small>
+                        {event.verifiedReportSignatures
+                          .map(
+                            (row) =>
+                              `${researchImportVerifiedReportSignatureLabel(i18n, row)}: ${researchImportAuditDetailLabel(i18n, row.detail)}`
+                          )
+                          .join(" · ")}
+                      </small>
+                    ) : null}
                     <em>{event.exportPath}</em>
                   </p>
                   <em>
@@ -7158,6 +7168,16 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
   )[row.id];
 }
 
+function researchImportVerifiedReportSignatureLabel(
+  i18n: AppI18n,
+  row: ResearchRunImportAuditEvent["verifiedReportSignatures"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return row.id === "audit-report" ? "导入审计报告" : "导入回测报告";
+}
+
 function researchImportDiffStatusLabel(
   i18n: AppI18n,
   status: ResearchRunImportDiffRow["status"]
@@ -7302,7 +7322,8 @@ function researchRunImportAuditEventToAuditEventRecord(event: ResearchRunImportA
       blockedRows: event.blockedRows,
       changeCount: event.changeCount,
       exportPath: event.exportPath,
-      tone: event.tone
+      tone: event.tone,
+      verifiedReportSignatures: event.verifiedReportSignatures
     }
   };
 }
@@ -7328,7 +7349,8 @@ function auditEventRecordToResearchRunImportEvent(record: AuditEventRecord): Res
     blockedRows: auditMetadataBlockedRows(record.metadata.blockedRows),
     changeCount: auditMetadataNumber(record.metadata.changeCount),
     exportPath: auditMetadataString(record.metadata.exportPath, `auditEvent:${record.eventId}`),
-    tone: auditMetadataTone(record.metadata.tone)
+    tone: auditMetadataTone(record.metadata.tone),
+    verifiedReportSignatures: auditMetadataVerifiedReportSignatures(record.metadata.verifiedReportSignatures)
   };
 }
 
@@ -7390,6 +7412,50 @@ function auditMetadataBlockedRows(value: unknown): ResearchRunImportAuditEvent["
       };
     })
     .filter((row): row is ResearchRunImportAuditEvent["blockedRows"][number] => Boolean(row));
+}
+
+function auditMetadataVerifiedReportSignatures(value: unknown): ResearchRunImportAuditEvent["verifiedReportSignatures"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      const row = item as Record<string, unknown>;
+      const id = row.id;
+      const label = auditMetadataString(row.label, "");
+      const detail = auditMetadataString(row.detail, "");
+      const exportPath = auditMetadataString(row.exportPath, "");
+      const incoming = auditMetadataString(row.incoming, "");
+      const reason = auditMetadataString(row.reason, "");
+      const source = row.source;
+      const status = row.status;
+      if (
+        (id !== "audit-report" && id !== "backtest-report") ||
+        !label ||
+        !detail ||
+        !exportPath ||
+        !incoming ||
+        !reason ||
+        source !== "local-core" ||
+        (status !== "verified" && status !== "invalid")
+      ) {
+        return null;
+      }
+      return {
+        id,
+        label,
+        detail,
+        exportPath,
+        incoming,
+        reason,
+        source,
+        status
+      };
+    })
+    .filter((row): row is ResearchRunImportAuditEvent["verifiedReportSignatures"][number] => Boolean(row));
 }
 
 function isResearchRunImportDiffRowId(value: unknown): value is ResearchRunImportDiffRow["id"] {

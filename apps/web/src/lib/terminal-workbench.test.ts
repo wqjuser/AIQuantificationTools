@@ -3275,12 +3275,26 @@ describe("terminal workbench model", () => {
       rows,
       stage: "preview"
     });
+    const confirmedRows: ResearchRunImportDiffRow[] = [
+      rows[1] as ResearchRunImportDiffRow,
+      {
+        id: "audit-report",
+        label: "Audit report",
+        status: "add",
+        current: "No local audit report",
+        incoming: "run-import-ledger · sha256 cccccccc · Verified signature",
+        detail:
+          "Package includes a portable Audit Markdown report bound to this manifest. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256 · Local core import verification: verified · signature_verified",
+        exportPath: "auditReport.contentSha256.hash",
+        tone: "ai"
+      }
+    ];
     const confirmed = buildResearchRunImportAuditEvent({
       createdAt: "2026-05-26T09:12:00+00:00",
       exportPackage,
       fileName: "unsafe-import.json",
       previousRunId: "run-current",
-      rows: rows.filter((row) => row.status !== "blocked"),
+      rows: confirmedRows,
       stage: "confirmed",
       undoToken: "import-undo-ledger"
     });
@@ -3347,13 +3361,25 @@ describe("terminal workbench model", () => {
         stage: "confirmed",
         summary: "Import applied",
         blockedCount: 0,
-        changeCount: 1,
+        changeCount: 2,
         rollbackTargetRunId: "run-current",
         undoToken: "import-undo-ledger",
         recoveryHint: "Undo import import-undo-ledger to restore the audited stores.",
         tone: "positive"
       })
     );
+    expect(confirmed.verifiedReportSignatures).toEqual([
+      {
+        id: "audit-report",
+        label: "Audit report",
+        detail: "Local core import verification: verified · signature_verified",
+        exportPath: "auditReport.contentSha256.hash",
+        incoming: "run-import-ledger · sha256 cccccccc · Verified signature",
+        reason: "signature_verified",
+        source: "local-core",
+        status: "verified"
+      }
+    ]);
     expect(failed).toEqual(
       expect.objectContaining({
         stage: "failed",
@@ -3440,6 +3466,9 @@ describe("terminal workbench model", () => {
       "blocked",
       "confirmed",
       "undone"
+    ]);
+    expect(filterResearchRunImportAuditEvents([blockedPreview, confirmed, failed, undone], "local core import verification").map((event) => event.stage)).toEqual([
+      "confirmed"
     ]);
 
     const allAuditEvents = [blockedPreview, confirmed, failed, undone, undoFailed];

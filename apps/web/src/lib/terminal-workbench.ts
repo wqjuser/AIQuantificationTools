@@ -788,6 +788,17 @@ export interface ResearchRunImportAuditBlockedRow {
   incoming: string;
 }
 
+export interface ResearchRunImportVerifiedReportSignature {
+  id: Extract<ResearchRunImportDiffRow["id"], "audit-report" | "backtest-report">;
+  label: string;
+  detail: string;
+  exportPath: string;
+  incoming: string;
+  reason: string;
+  source: "local-core";
+  status: "verified" | "invalid";
+}
+
 export interface ResearchRunImportAuditEvent {
   id: string;
   stage: ResearchRunImportAuditEventStage;
@@ -806,6 +817,7 @@ export interface ResearchRunImportAuditEvent {
   changeCount: number;
   exportPath: string;
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
+  verifiedReportSignatures: ResearchRunImportVerifiedReportSignature[];
 }
 
 export interface ResearchRunImportUndoConfirmation {
@@ -3675,6 +3687,7 @@ export function buildResearchRunImportAuditEvent({
   const runId = exportPackage?.manifest.runId ?? "unknown";
   const blockedCount = rows.filter((row) => row.status === "blocked").length;
   const blockedRows = researchRunImportAuditBlockedRows(rows);
+  const verifiedReportSignatures = researchRunImportVerifiedReportSignatures(rows);
   const changeCount = rows.filter(
     (row) => row.status === "add" || row.status === "change" || row.status === "replace"
   ).length;
@@ -3710,7 +3723,8 @@ export function buildResearchRunImportAuditEvent({
     blockedRows,
     changeCount,
     exportPath: exportPackage ? `manifest:${runId}` : `import:file:${fileName || "unknown"}`,
-    tone: researchRunImportAuditTone(resolvedStage)
+    tone: researchRunImportAuditTone(resolvedStage),
+    verifiedReportSignatures
   };
 }
 
@@ -3724,6 +3738,34 @@ function researchRunImportAuditBlockedRows(rows: ResearchRunImportDiffRow[]): Re
       exportPath: row.exportPath,
       incoming: row.incoming
     }));
+}
+
+function researchRunImportVerifiedReportSignatures(
+  rows: ResearchRunImportDiffRow[]
+): ResearchRunImportVerifiedReportSignature[] {
+  return rows
+    .map((row) => {
+      if (row.id !== "audit-report" && row.id !== "backtest-report") {
+        return null;
+      }
+      const match = row.detail.match(/Local core import verification: (verified|invalid)(?: · ([^·]+))?/u);
+      if (!match) {
+        return null;
+      }
+      const status = match[1] as ResearchRunImportVerifiedReportSignature["status"];
+      const reason = match[2]?.trim() || status;
+      return {
+        id: row.id,
+        label: row.label,
+        detail: `Local core import verification: ${status} · ${reason}`,
+        exportPath: row.exportPath,
+        incoming: row.incoming,
+        reason,
+        source: "local-core" as const,
+        status
+      };
+    })
+    .filter((row): row is ResearchRunImportVerifiedReportSignature => Boolean(row));
 }
 
 export function buildResearchRunImportUndoAuditEvent({
@@ -3750,7 +3792,8 @@ export function buildResearchRunImportUndoAuditEvent({
       category: "unknown",
       detail: null
     }, consumedUndoToken),
-    tone: researchRunImportAuditTone("undone")
+    tone: researchRunImportAuditTone("undone"),
+    verifiedReportSignatures: []
   };
 }
 
@@ -3779,7 +3822,8 @@ export function buildResearchRunImportUndoFailureAuditEvent({
     }),
     failureCategory: failure.category,
     recoveryHint: researchRunImportRecoveryHint("undo-failed", event.rollbackTargetRunId, failure, event.undoToken),
-    tone: researchRunImportAuditTone("undo-failed")
+    tone: researchRunImportAuditTone("undo-failed"),
+    verifiedReportSignatures: []
   };
 }
 
@@ -3956,6 +4000,9 @@ export function filterResearchRunImportAuditEvents(
       String(event.blockedCount),
       event.blockedRows
         .map((row) => [row.id, row.label, row.incoming, row.detail, row.exportPath].join(" "))
+        .join(" "),
+      event.verifiedReportSignatures
+        .map((row) => [row.id, row.label, row.incoming, row.detail, row.exportPath, row.source, row.status, row.reason].join(" "))
         .join(" "),
       String(event.changeCount),
       event.exportPath,

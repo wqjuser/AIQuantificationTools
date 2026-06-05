@@ -533,6 +533,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("blockedRows: event.blockedRows");
     expect(appSource).toContain("blockedRows: auditMetadataBlockedRows(record.metadata.blockedRows)");
     expect(appSource).toContain("function auditMetadataBlockedRows(value: unknown): ResearchRunImportAuditEvent[\"blockedRows\"]");
+    expect(appSource).toContain("verifiedReportSignatures: event.verifiedReportSignatures");
+    expect(appSource).toContain("verifiedReportSignatures: auditMetadataVerifiedReportSignatures(record.metadata.verifiedReportSignatures)");
+    expect(appSource).toContain("function auditMetadataVerifiedReportSignatures(value: unknown): ResearchRunImportAuditEvent[\"verifiedReportSignatures\"]");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
     expect(appSource).toContain("return { ok: false, error: errorMessage };");
     expect(appSource).toContain("return { ok: true };");
