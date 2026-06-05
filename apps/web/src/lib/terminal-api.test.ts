@@ -70,6 +70,7 @@ import {
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   withResearchRunExportReportSignatures,
+  withVerifiedResearchRunExportPackageReportSignatures,
   withResearchRunExportAuditEvidenceSummary,
   normalizeResearchRunExportPackagePayload,
   importResearchRunExport,
@@ -2144,6 +2145,104 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
   });
 
+  test("strips untrusted local package verification markers from external package signatures", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:05:00+00:00",
+      manifest: {
+        runId: "run-untrusted-verification",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-untrusted-verification",
+        dataHash: "hash-untrusted-verification",
+        dataRows: 1,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
+      },
+      researchRun: {
+        runId: "run-untrusted-verification",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Untrusted marker test",
+        strategyRevision: "rev-untrusted-verification",
+        dataRows: 1,
+        metrics: { total_return_pct: 1.2, trade_count: 0 },
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          hash: "hash-untrusted-verification",
+          bars: []
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+      },
+      auditReport: {
+        kind: "aiqt.auditReport",
+        schemaVersion: 1,
+        runId: "run-untrusted-verification",
+        generatedAt: "2026-05-26T08:01:00+00:00",
+        format: "text/markdown",
+        fileName: "run-untrusted-verification-audit-evidence-report.md",
+        contentSha256: { algorithm: "sha256", hash: "b".repeat(64) },
+        contentMarkdown: "# report",
+        signature: {
+          eventId: "audit-report-untrusted-verification",
+          status: "signed",
+          algorithm: "hmac-sha256",
+          chainId: "audit-chain-local",
+          keyId: "local-audit-key",
+          signedAt: "2026-05-26T08:01:00+00:00",
+          signer: "Local Audit Key",
+          value: "c".repeat(64),
+          importVerificationReason: "signature_verified",
+          importVerificationSource: "local-core",
+          importVerificationStatus: "verified",
+          importVerifiedAt: "2026-05-26T08:02:00+00:00"
+        },
+        evidenceSummary: {
+          kind: "aiqt.auditEvidenceSummary",
+          schemaVersion: 1,
+          runId: "run-untrusted-verification",
+          generatedAt: "2026-05-26T08:01:00+00:00",
+          auditQuery: "manifest:run-untrusted-verification",
+          packageQuery: "manifest:run-untrusted-verification",
+          importDiffQuery: "manifest:run-untrusted-verification",
+          focusQuery: "manifest:run-untrusted-verification",
+          deepLinkStatus: "loaded",
+          deepLinkError: null,
+          package: { ready: 1, missing: 0, blocked: 0, matched: 1, total: 1 },
+          importDiff: { changes: 0, adds: 1, blocked: 0, matched: 1, total: 1 },
+          copyText: "Run: run-untrusted-verification"
+        }
+      }
+    };
+
+    const normalized = normalizeResearchRunExportPackagePayload(exportPackage);
+
+    expect(normalized?.auditReport?.signature?.status).toBe("signed");
+    expect(normalized?.auditReport?.signature?.importVerificationSource).toBeUndefined();
+    expect(normalized?.auditReport?.signature?.importVerificationStatus).toBeUndefined();
+    expect(normalized?.auditReport?.signature?.importVerificationReason).toBeUndefined();
+    expect(normalized?.auditReport?.signature?.importVerifiedAt).toBeUndefined();
+  });
+
   test("attaches audit evidence summary metadata to research run export packages", async () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export",
@@ -3801,6 +3900,78 @@ describe("terminal workspace API client", () => {
     expect(result.event?.eventType).toBe("backtest_report");
     expect(result.signature?.status).toBe("verified");
     expect(result.verification).toEqual({ status: "verified", reason: "signature_verified" });
+
+    const exportPackage = {
+      kind: "aiqt.researchRun.export" as const,
+      packageVersion: 1,
+      exportedAt: "2026-06-05T10:00:00+00:00",
+      manifest: {
+        runId: "run-package-verify",
+        createdAt: "2026-06-05T10:00:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-package-verify",
+        dataHash: "hash-package-verify",
+        dataRows: 240,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: { bars: 240, trades: 12, equityPoints: 240, decisions: 1, aiRisks: 0 }
+      },
+      researchRun: {
+        runId: "run-package-verify",
+        createdAt: "2026-06-05T10:00:00+00:00",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyName: "Package verify",
+        strategyRevision: "rev-package-verify",
+        dataRows: 240,
+        metrics: {},
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 240,
+          start: "2026-06-05T10:00:00+00:00",
+          end: "2026-06-05T10:00:00+00:00",
+          hash: "hash-package-verify",
+          bars: []
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: []
+      },
+      backtestReport: report
+    };
+
+    const verifiedPackage = await withVerifiedResearchRunExportPackageReportSignatures(
+      "http://127.0.0.1:8765",
+      exportPackage,
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          event: verifiedEvent,
+          signature: verifiedEvent.metadata.signature,
+          verification: { status: "verified", reason: "signature_verified" }
+        })
+      })
+    );
+
+    expect(verifiedPackage.backtestReport?.signature).toMatchObject({
+      importVerificationReason: "signature_verified",
+      importVerificationSource: "local-core",
+      importVerificationStatus: "verified",
+      importVerifiedAt: "2026-06-05T10:01:00+00:00",
+      status: "verified"
+    });
   });
 
   test("returns fallback when AI review run history payload is malformed", async () => {

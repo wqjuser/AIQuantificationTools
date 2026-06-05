@@ -135,6 +135,10 @@ export interface ResearchRunExportReportSignature {
   algorithm?: string;
   chainId?: string;
   eventId?: string;
+  importVerificationReason?: string;
+  importVerificationSource?: "local-core";
+  importVerificationStatus?: "verified" | "invalid";
+  importVerifiedAt?: string;
   invalidReason?: string;
   keyFingerprint?: string;
   keyId?: string;
@@ -1126,12 +1130,38 @@ export async function loadResearchRunDetail(
 
 export function normalizeResearchRunExportPackagePayload(value: unknown): ResearchRunExportPackage | null {
   if (isResearchRunExportPackage(value)) {
-    return value;
+    return stripUntrustedPackageReportVerification(value);
   }
   if (isResearchRunExportPayload(value)) {
-    return value.export;
+    return stripUntrustedPackageReportVerification(value.export);
   }
   return null;
+}
+
+function stripUntrustedPackageReportVerification(exportPackage: ResearchRunExportPackage): ResearchRunExportPackage {
+  return {
+    ...exportPackage,
+    ...(exportPackage.auditReport
+      ? { auditReport: stripUntrustedPackageReportSignatureVerification(exportPackage.auditReport) }
+      : {}),
+    ...(exportPackage.backtestReport
+      ? { backtestReport: stripUntrustedPackageReportSignatureVerification(exportPackage.backtestReport) }
+      : {})
+  };
+}
+
+function stripUntrustedPackageReportSignatureVerification<
+  TReport extends ResearchRunExportAuditReport | ResearchRunExportBacktestReport
+>(report: TReport): TReport {
+  if (!report.signature) {
+    return report;
+  }
+  const signature = { ...report.signature };
+  delete signature.importVerificationReason;
+  delete signature.importVerificationSource;
+  delete signature.importVerificationStatus;
+  delete signature.importVerifiedAt;
+  return { ...report, signature } as TReport;
 }
 
 export function buildResearchRunExportAuditEvidenceSummary(
@@ -2008,10 +2038,19 @@ async function verifyResearchRunExportPackageReportIfNeeded<
     return report;
   }
   const result = await verifyResearchRunExportReportSignature(baseUrl, report, fetcher);
-  if (result.source !== "core" || !isResearchRunExportReportSignature(result.signature)) {
+  if (result.source !== "core" || !isResearchRunExportReportSignature(result.signature) || !result.verification) {
     return report;
   }
-  return { ...report, signature: result.signature };
+  return {
+    ...report,
+    signature: {
+      ...result.signature,
+      importVerificationReason: result.verification.reason,
+      importVerificationSource: "local-core",
+      importVerificationStatus: result.verification.status,
+      ...(result.signature.verifiedAt ? { importVerifiedAt: result.signature.verifiedAt } : {})
+    }
+  };
 }
 
 function researchRunExportReportSignatureNeedsVerification(
@@ -3843,6 +3882,10 @@ function isResearchRunExportReportSignature(value: unknown): value is ResearchRu
     "algorithm",
     "chainId",
     "eventId",
+    "importVerificationReason",
+    "importVerificationSource",
+    "importVerificationStatus",
+    "importVerifiedAt",
     "invalidReason",
     "keyFingerprint",
     "keyId",

@@ -2975,6 +2975,18 @@ function researchRunExportReportSignatureDetail(signature: Record<string, unknow
   return [auditReportLedgerSignatureLabel(status), detail].filter(Boolean).join(" · ");
 }
 
+function researchRunExportReportSignatureImportVerificationDetail(signature: Record<string, unknown> | undefined): string {
+  const metadata = researchRunExportReportSignatureMetadata(signature);
+  const source = auditReportLedgerMetadataText(metadata, "importVerificationSource");
+  const status = auditReportLedgerMetadataText(metadata, "importVerificationStatus");
+  if (source !== "local-core" || (status !== "verified" && status !== "invalid")) {
+    return "";
+  }
+  return [`Local core import verification: ${status}`, auditReportLedgerMetadataText(metadata, "importVerificationReason")]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function researchRunExportReportSignatureArtifactSuffix(signature: Record<string, unknown> | undefined): string {
   const status = researchRunExportReportSignatureStatus(signature);
   return status === "unsigned" ? "" : status;
@@ -3205,6 +3217,9 @@ export function buildResearchRunImportDiffRows({
     /^[a-f0-9]{64}$/iu.test(auditReportHash) &&
     auditReport.contentMarkdown.trim() !== "";
   const auditReportSignatureDetail = researchRunExportReportSignatureDetail(auditReport?.signature);
+  const auditReportSignatureImportVerificationDetail = researchRunExportReportSignatureImportVerificationDetail(
+    auditReport?.signature
+  );
   const auditReportSignatureStatus = researchRunExportReportSignatureStatus(auditReport?.signature);
   const auditReportSignatureImportBlockReason = researchRunExportReportSignatureImportBlockReason(
     auditReport?.signature,
@@ -3226,6 +3241,9 @@ export function buildResearchRunImportDiffRows({
     /^[a-f0-9]{64}$/iu.test(backtestReportHash) &&
     backtestReport.contentMarkdown.trim() !== "";
   const backtestReportSignatureDetail = researchRunExportReportSignatureDetail(backtestReport?.signature);
+  const backtestReportSignatureImportVerificationDetail = researchRunExportReportSignatureImportVerificationDetail(
+    backtestReport?.signature
+  );
   const backtestReportSignatureStatus = researchRunExportReportSignatureStatus(backtestReport?.signature);
   const backtestReportSignatureImportBlockReason = researchRunExportReportSignatureImportBlockReason(
     backtestReport?.signature,
@@ -3423,11 +3441,12 @@ export function buildResearchRunImportDiffRows({
               .join(" · "),
             detail: auditReportMatchesPackage
               ? [
-                  auditReportSignatureIsImportable
-                    ? "Package includes a portable Audit Markdown report bound to this manifest."
-                    : auditReportSignatureImportBlockReason,
-                  auditReportSignatureDetail
-                ]
+                   auditReportSignatureIsImportable
+                     ? "Package includes a portable Audit Markdown report bound to this manifest."
+                     : auditReportSignatureImportBlockReason,
+                   auditReportSignatureDetail,
+                   auditReportSignatureImportVerificationDetail
+                 ]
                   .filter(Boolean)
                   .join(" · ")
               : "Audit report artifact does not match the import package manifest or content hash.",
@@ -3454,11 +3473,12 @@ export function buildResearchRunImportDiffRows({
               .join(" · "),
             detail: backtestReportMatchesPackage
               ? [
-                  backtestReportSignatureIsImportable
-                    ? "Package includes a portable Backtest Markdown report bound to this manifest."
-                    : backtestReportSignatureImportBlockReason,
-                  backtestReportSignatureDetail
-                ]
+                   backtestReportSignatureIsImportable
+                     ? "Package includes a portable Backtest Markdown report bound to this manifest."
+                     : backtestReportSignatureImportBlockReason,
+                   backtestReportSignatureDetail,
+                   backtestReportSignatureImportVerificationDetail
+                 ]
                   .filter(Boolean)
                   .join(" · ")
               : "Backtest report artifact does not match the import package manifest or content hash.",

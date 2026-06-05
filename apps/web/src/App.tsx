@@ -7241,6 +7241,16 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
       /Audit focus carries (\d+)\/(\d+) package matches and (\d+) import diff blockers\./u,
       "审计焦点携带 $1/$2 条包检查命中和 $3 个导入差异阻断。"
     )
+    .replace(
+      "Package includes a portable Audit Markdown report bound to this manifest.",
+      "复现包包含已绑定该 manifest 的便携 Audit Markdown 报告。"
+    )
+    .replace(
+      "Package includes a portable Backtest Markdown report bound to this manifest.",
+      "复现包包含已绑定该 manifest 的便携 Backtest Markdown 报告。"
+    )
+    .replace("Local core import verification: verified", "本地核心导入验签：通过")
+    .replace("Local core import verification: invalid", "本地核心导入验签：失败")
     .replace("Local import must reject packages that claim live trading permission.", "本地导入必须拒绝声明实盘权限的复现包。")
     .replace("Import keeps the package inside the paper-only execution boundary.", "导入会把复现包保持在仅模拟盘执行边界内。");
 }

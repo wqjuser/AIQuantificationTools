@@ -2752,6 +2752,10 @@ describe("terminal workbench model", () => {
           signer: "Local Audit Key",
           signedAt: "2026-06-04T08:05:40.000Z",
           verifiedAt: "2026-06-04T08:05:50.000Z",
+          importVerificationReason: "signature_verified",
+          importVerificationSource: "local-core",
+          importVerificationStatus: "verified",
+          importVerifiedAt: "2026-06-04T08:05:50.000Z",
           chainId: "audit-chain-local",
           value: "a".repeat(64)
         },
@@ -2856,7 +2860,7 @@ describe("terminal workbench model", () => {
           current: "No local audit report",
           incoming: "run-imported · sha256 eeeeeeee · run-imported-audit-evidence-report.md · Verified signature",
           detail:
-            "Package includes a portable Audit Markdown report bound to this manifest. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256",
+            "Package includes a portable Audit Markdown report bound to this manifest. · Verified signature · Local Audit Key · local-audit-key · hmac-sha256 · Local core import verification: verified · signature_verified",
           exportPath: "auditReport.contentSha256.hash"
         }),
         expect.objectContaining({
@@ -2882,6 +2886,9 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunImportDiffRows(rows, "local-audit-key").map((row) => row.id)).toEqual([
       "audit-report",
       "backtest-report"
+    ]);
+    expect(filterResearchRunImportDiffRows(rows, "local core import verification").map((row) => row.id)).toEqual([
+      "audit-report"
     ]);
   });
 
