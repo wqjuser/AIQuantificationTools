@@ -47,6 +47,7 @@ import {
   mergeMarketKlines,
   normalizeResearchRunExportPackagePayload,
   buildAuditEvidenceReportAuditEvent,
+  buildBacktestReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
@@ -1710,6 +1711,34 @@ export function App() {
       statusLabel: "Backtest report export ready",
       error: undefined
     }));
+    void buildBacktestReportAuditEvent({
+      markdown,
+      runHistory,
+      workspace
+    }).then((backtestReportAuditEvent) => {
+      if (!backtestReportAuditEvent) {
+        return;
+      }
+
+      return saveAuditEvent(quantCoreBaseUrl, backtestReportAuditEvent).then((result) => {
+        if (result.event) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Backtest report exported and audited",
+            error: undefined
+          }));
+          return;
+        }
+
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Backtest report export ready",
+            error: `Audit ledger save failed: ${result.error}`
+          }));
+        }
+      });
+    });
   }, [runHistory, workspace]);
 
   const exportAiReviewMarkdown = useCallback(() => {

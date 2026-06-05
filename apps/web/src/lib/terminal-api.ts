@@ -1,6 +1,7 @@
 import {
   buildTerminalWorkspace,
   buildAuditEvidenceReportMarkdown,
+  buildBacktestRunComparisonMatrixRows,
   resolveBacktestAssumptions,
   workspaceFromResearchRunAudit,
   workspaceWithPrimaryWorkflows,
@@ -1187,6 +1188,57 @@ export function buildAuditEvidenceReportAuditEvent(
       importDiffTotal: summary.importDiffTotalCount,
       deepLinkStatus: summary.deepLinkStatus,
       deepLinkError: summary.deepLinkError
+    }
+  };
+}
+
+export async function buildBacktestReportAuditEvent({
+  generatedAt = new Date().toISOString(),
+  markdown,
+  runHistory = [],
+  workspace
+}: {
+  generatedAt?: string;
+  markdown: string;
+  runHistory?: ResearchRunAudit[];
+  workspace: TerminalWorkspace;
+}): Promise<AuditEventRecord | null> {
+  const run = workspace.researchRun;
+  if (!run) {
+    return null;
+  }
+
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = `${sanitizeDownloadFileName(run.runId)}-backtest-report.md`;
+  const auditedRun = runHistory.find((candidate) => candidate.runId === run.runId);
+  const runComparisonRows = buildBacktestRunComparisonMatrixRows(runHistory, run.runId);
+
+  return {
+    schemaVersion: 1,
+    eventId: `backtest-report-${sanitizeDownloadFileName(run.runId)}-${shortHash}`,
+    eventType: "backtest_report",
+    runId: run.runId,
+    createdAt: generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: `Backtest Markdown report generated for ${run.runId}`,
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${runComparisonRows.length} comparable runs`,
+    metadata: {
+      artifactKind: "aiqt.backtestReport",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      market: auditedRun?.market ?? workspace.selectedInstrument.market,
+      symbol: auditedRun?.symbol ?? workspace.selectedInstrument.symbol,
+      timeframe: run.timeframe,
+      strategyRevision: run.strategyRevision,
+      executionMode: auditedRun?.executionMode ?? run.executionMode,
+      dataRows: auditedRun?.dataRows ?? run.dataRows,
+      runComparisonRows: runComparisonRows.length,
+      hasRunComparisonMatrix: markdown.includes("## Run Comparison Matrix"),
+      boundary: "historical audited evidence only; no investment advice"
     }
   };
 }

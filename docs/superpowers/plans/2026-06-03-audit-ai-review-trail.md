@@ -263,3 +263,7 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "markdown backtest reports"` failed because the exported Markdown backtest report did not include the same-context run comparison matrix.
 - GREEN: extended `buildBacktestReportMarkdown(workspace, runHistory)` and the App export action so Markdown reports include current/previous/best-return/lowest-drawdown rows from the same matrix model.
 - DOCS: updated product plan and architecture notes; next slice can move toward multi-symbol comparison or signing/persisting Backtest Markdown reports as audit artifacts.
+- RED: `terminal-api.test.ts -t "backtest markdown report is exported"` failed because there was no ledger-ready Backtest Markdown report event helper.
+- RED: `layout-css.test.js -t "backtest lab"` failed because the Backtest Markdown export path did not persist an audit event.
+- GREEN: added `buildBacktestReportAuditEvent` with `eventType=backtest_report`, stable event ids based on run id and Markdown SHA-256, report metadata for market/symbol/timeframe, strategy revision, execution mode, data rows, and comparison-matrix coverage, then wired Markdown export through `saveAuditEvent`.
+- DOCS: updated product plan and architecture notes; next slice should read `backtest_report` events back in Audit and decide whether to share the existing report-signing pipeline with Backtest reports.

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 import {
   type AiReviewRunRecord,
+  buildBacktestReportMarkdown,
   buildTerminalWorkspace,
+  workspaceFromResearchRunAudit,
   workspaceWithBacktestAssumption,
-  workspaceWithStrategyField
+  workspaceWithStrategyField,
+  type ResearchRunAudit
 } from "./terminal-workbench";
 import {
   buildResearchRunUrl,
@@ -59,6 +62,7 @@ import {
   saveResearchNote,
   saveStrategySnapshot,
   withResearchRunExportAuditEvidenceArtifacts,
+  buildBacktestReportAuditEvent,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
@@ -2329,6 +2333,88 @@ describe("terminal workspace API client", () => {
     expect(event.eventId).toBe(`audit-report-run-preview-${auditReport.contentSha256.hash.slice(0, 16)}`);
     expect(event.detail).toContain("run-preview-audit-evidence-report.md");
     expect(event.detail).toContain(auditReport.contentSha256.hash.slice(0, 12));
+  });
+
+  test("builds a ledger audit event when a backtest markdown report is exported", async () => {
+    const run: ResearchRunAudit = {
+      runId: "run-backtest-report",
+      createdAt: "2026-06-05T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-backtest-report",
+      dataRows: 240,
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      },
+      metrics: {
+        total_return_pct: 5,
+        max_drawdown_pct: 4,
+        win_rate_pct: 52,
+        trade_count: 8
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    };
+    const previousRun: ResearchRunAudit = {
+      ...run,
+      runId: "run-backtest-report-prev",
+      createdAt: "2026-06-04T08:00:00+00:00",
+      strategyRevision: "rev-backtest-report-prev",
+      metrics: {
+        total_return_pct: 2,
+        max_drawdown_pct: 6,
+        win_rate_pct: 48,
+        trade_count: 7
+      }
+    };
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), run);
+    const markdown = buildBacktestReportMarkdown(workspace, [run, previousRun]);
+
+    expect(markdown).toContain("## Run Comparison Matrix");
+
+    const event = await buildBacktestReportAuditEvent({
+      generatedAt: "2026-06-05T09:00:00+00:00",
+      markdown: markdown ?? "",
+      runHistory: [run, previousRun],
+      workspace
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "backtest_report",
+      runId: "run-backtest-report",
+      createdAt: "2026-06-05T09:00:00+00:00",
+      stage: "generated",
+      source: "web",
+      summary: "Backtest Markdown report generated for run-backtest-report",
+      metadata: {
+        artifactKind: "aiqt.backtestReport",
+        fileName: "run-backtest-report-backtest-report.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-backtest-report",
+        executionMode: "paper_only",
+        dataRows: 240,
+        runComparisonRows: 2,
+        hasRunComparisonMatrix: true,
+        boundary: "historical audited evidence only; no investment advice"
+      }
+    });
+    expect(typeof event?.metadata.contentSha256).toBe("string");
+    expect(event?.eventId).toBe(
+      `backtest-report-run-backtest-report-${String(event?.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event?.detail).toContain("run-backtest-report-backtest-report.md");
+    expect(event?.detail).toContain("2 comparable runs");
+    expect(event?.detail).not.toContain(markdown ?? "");
   });
 
   test("builds a secret-free audit event when an audit signing key rotation plan is prepared", async () => {

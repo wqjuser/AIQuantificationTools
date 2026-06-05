@@ -1083,6 +1083,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("filterBacktestRunComparisonMatrixRows");
     expect(appSource).toContain("workspaceWithBacktestParameterCandidate");
     expect(appSource).toContain("buildBacktestReportMarkdown(workspace, runHistory)");
+    expect(appSource).toContain("buildBacktestReportAuditEvent({");
+    expect(appSource).toContain("saveAuditEvent(quantCoreBaseUrl, backtestReportAuditEvent)");
     expect(appSource).toContain("<BacktestReportPanel");
     expect(appSource).toContain("onExportMarkdown={exportBacktestReportMarkdown}");
     expect(appSource).toContain('className="backtest-report"');
