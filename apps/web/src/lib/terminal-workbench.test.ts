@@ -48,6 +48,7 @@ import {
   buildPromotionReadiness,
   buildPortfolioRiskRows,
   buildPortfolioBacktestDraft,
+  buildPortfolioBacktestDiagnosticRows,
   buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
@@ -4572,6 +4573,68 @@ describe("terminal workbench model", () => {
       "600000:audited:run-current-600000",
       "000300:audited:run-peer-000300"
     ]);
+  });
+
+  test("derives portfolio backtest diagnostics from combined run evidence", () => {
+    const diagnostics = buildPortfolioBacktestDiagnosticRows({
+      name: "ashare 1d audited basket",
+      market: "ashare",
+      timeframe: "1d",
+      initialCash: 100000,
+      cashWeight: 0.1,
+      metrics: {
+        totalReturnPct: 6.2,
+        annualReturnPct: 12.4,
+        maxDrawdownPct: 8.1,
+        winRatePct: 52,
+        profitFactor: 1.2,
+        tradeCount: 18
+      },
+      equityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 106200 }
+      ],
+      legs: [
+        {
+          symbol: "600000",
+          targetWeight: 0.65,
+          startingValue: 65000,
+          endingValue: 71500,
+          contributionValue: 6500,
+          contributionReturnPct: 10,
+          maxDrawdownPct: 5.1,
+          tradeCount: 12,
+          dataQuality: { source: "local-cache", isComplete: true, warnings: [], rows: 2 }
+        },
+        {
+          symbol: "000300",
+          targetWeight: 0.25,
+          startingValue: 25000,
+          endingValue: 24000,
+          contributionValue: -1000,
+          contributionReturnPct: -4,
+          maxDrawdownPct: 7.3,
+          tradeCount: 6,
+          dataQuality: { source: "local-cache", isComplete: false, warnings: ["missing 1 bar"], rows: 2 }
+        }
+      ],
+      dataQuality: {
+        source: "portfolio-composite(600000:local-cache,000300:local-cache)",
+        isComplete: false,
+        warnings: ["000300: missing 1 bar"],
+        rows: 2
+      }
+    });
+
+    expect(diagnostics.map((row) => `${row.id}:${row.status}:${row.value}`)).toEqual([
+      "concentration:review:600000 65.0%",
+      "cash-buffer:passed:10.0%",
+      "negative-contribution:review:000300 -4.0%",
+      "data-quality:blocked:incomplete"
+    ]);
+    expect(diagnostics[0].detail).toContain("50%");
+    expect(diagnostics[2].detail).toContain("negative contribution");
+    expect(diagnostics[3].detail).toContain("000300: missing 1 bar");
   });
 
   test("blocks execution approval until audited evidence is bound", () => {

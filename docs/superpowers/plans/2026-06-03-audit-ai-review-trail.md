@@ -350,3 +350,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "peer audit plan"` failed because Portfolio had no model for identifying same-market watchlist peers that still needed audited equity curves before a basket could run.
 - GREEN: added `buildPortfolioPeerAuditPlan`, a compact peer audit queue in Portfolio, and a "Prepare peer audits" action that runs the minimum missing same-market watchlist peer audits through the existing research pipeline before refreshing run history.
 - DOCS: updated product plan, architecture notes, and this implementation log; next slice can add portfolio diagnostics/report export once the basket can reliably reach ready state.
+- RED: `terminal-workbench.test.ts -t "portfolio backtest diagnostics"` failed because Portfolio had no model for turning a combined backtest result into concentration, cash, negative contribution, and data-quality review rows.
+- GREEN: added `buildPortfolioBacktestDiagnosticRows`, wired the diagnostics into the Portfolio result panel, and localized the compact diagnostics title while keeping the rows tied to audited portfolio evidence only.
+- DOCS: updated product plan and architecture notes to record static-weight portfolio diagnostics and the remaining no-rebalance/no-auto-allocation boundary.

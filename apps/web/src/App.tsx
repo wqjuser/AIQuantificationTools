@@ -129,6 +129,7 @@ import {
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioBacktestDraft,
+  buildPortfolioBacktestDiagnosticRows,
   buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
@@ -196,6 +197,7 @@ import {
   PaperExecutionSummaryTile,
   PaperTradingRow,
   PortfolioBacktestDraft,
+  PortfolioBacktestDiagnosticRow,
   PortfolioPeerAuditPlan,
   PortfolioRiskRow,
   PromotionQueueStage,
@@ -615,6 +617,7 @@ export function App() {
   const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
+  const portfolioBacktestDiagnosticRows = buildPortfolioBacktestDiagnosticRows(portfolioBacktestState.portfolio);
   const portfolioBacktestDraft = buildPortfolioBacktestDraft(runHistory, workspace.researchRun?.runId ?? null);
   const portfolioBacktestDraftKey =
     portfolioBacktestDraft.request?.legs.map((leg) => `${leg.runId}:${leg.targetWeight}`).join("|") ??
@@ -3085,6 +3088,7 @@ export function App() {
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
             portfolioBacktestDraft={portfolioBacktestDraft}
+            portfolioBacktestDiagnosticRows={portfolioBacktestDiagnosticRows}
             portfolioBacktestResult={portfolioBacktestState}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
@@ -8369,6 +8373,7 @@ function PortfolioWorkspace({
   paperRows,
   positionRows,
   portfolioBacktestDraft,
+  portfolioBacktestDiagnosticRows,
   portfolioBacktestResult,
   portfolioPeerAuditPlan,
   riskApproval,
@@ -8388,6 +8393,7 @@ function PortfolioWorkspace({
   paperRows: PaperTradingRow[];
   positionRows: PaperPositionRow[];
   portfolioBacktestDraft: PortfolioBacktestDraft;
+  portfolioBacktestDiagnosticRows: PortfolioBacktestDiagnosticRow[];
   portfolioBacktestResult: PortfolioBacktestResult;
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
@@ -8516,6 +8522,23 @@ function PortfolioWorkspace({
                       <strong>{portfolioBacktest.equityCurve.length}</strong>
                     </article>
                   </div>
+                  {portfolioBacktestDiagnosticRows.length ? (
+                    <div className="portfolio-diagnostic-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.diagnostics")}</span>
+                        <strong>{portfolioBacktestDiagnosticRows.length}</strong>
+                      </div>
+                      <div className="portfolio-diagnostic-grid">
+                        {portfolioBacktestDiagnosticRows.map((row) => (
+                          <article className={`risk-ledger-row ${row.tone}`} key={row.id}>
+                            <span>{portfolioDiagnosticLabel(i18n, row)}</span>
+                            <strong>{row.value}</strong>
+                            <p>{portfolioDiagnosticDetail(i18n, row)}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="portfolio-backtest-leg-table result">
                     {portfolioBacktest.legs.map((leg) => (
                       <div className="portfolio-backtest-leg-row" key={leg.symbol}>
@@ -9215,6 +9238,59 @@ function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
   }
   if (row.id === "live-gates") {
     return "需要完成适配器认证、风控审批和人工确认。";
+  }
+  return row.detail;
+}
+
+function portfolioDiagnosticLabel(i18n: AppI18n, row: PortfolioBacktestDiagnosticRow): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return (
+    {
+      concentration: "集中度",
+      "cash-buffer": "现金缓冲",
+      "negative-contribution": "负贡献",
+      "data-quality": "数据质量"
+    }[row.id] ?? row.label
+  );
+}
+
+function portfolioDiagnosticDetail(i18n: AppI18n, row: PortfolioBacktestDiagnosticRow): string {
+  if (i18n.locale === "en-US") {
+    return row.detail;
+  }
+  if (row.id === "concentration") {
+    if (row.status === "passed") {
+      return "最大组合腿未超过 50% 集中度复核阈值。";
+    }
+    if (row.status === "blocked") {
+      return "最大组合腿超过 75% 硬性集中度阈值。";
+    }
+    return "最大组合腿超过 50% 集中度复核阈值。";
+  }
+  if (row.id === "cash-buffer") {
+    if (row.detail.includes("under-invested")) {
+      return "现金缓冲偏高，组合可能没有充分配置。";
+    }
+    if (row.detail.includes("thin")) {
+      return "现金缓冲偏薄，执行滑点或整手约束需要复核。";
+    }
+    return "现金缓冲处于静态权重复核区间内。";
+  }
+  if (row.id === "negative-contribution") {
+    return row.status === "passed"
+      ? "本次组合聚合未发现负贡献标的。"
+      : `${row.value} 对组合产生负贡献，需要复核权重或策略证据。`;
+  }
+  if (row.id === "data-quality") {
+    if (row.status === "passed") {
+      return "组合聚合数据质量完整。";
+    }
+    return `组合数据质量需要复核：${row.detail
+      .replace("Portfolio data quality is incomplete", "不完整")
+      .replace("Portfolio data quality has warnings", "存在告警")
+      .replace("review source completeness before promotion", "晋级前复核来源完整性")}`;
   }
   return row.detail;
 }

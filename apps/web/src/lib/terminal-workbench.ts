@@ -1124,6 +1124,40 @@ export interface PortfolioPeerAuditPlan {
   candidates: PortfolioPeerAuditCandidate[];
 }
 
+export type PortfolioBacktestDiagnosticStatus = "passed" | "review" | "blocked";
+
+export interface PortfolioBacktestDiagnosticRow {
+  id: "concentration" | "cash-buffer" | "negative-contribution" | "data-quality";
+  label: string;
+  value: string;
+  detail: string;
+  status: PortfolioBacktestDiagnosticStatus;
+  tone: "positive" | "warning" | "risk" | "neutral";
+}
+
+interface PortfolioBacktestDiagnosticQuality {
+  source: string;
+  isComplete: boolean;
+  warnings: string[];
+  rows: number;
+}
+
+interface PortfolioBacktestDiagnosticLeg {
+  symbol: string;
+  targetWeight: number;
+  contributionValue: number;
+  contributionReturnPct: number;
+  maxDrawdownPct: number;
+  tradeCount: number;
+  dataQuality: PortfolioBacktestDiagnosticQuality;
+}
+
+interface PortfolioBacktestDiagnosticInput {
+  cashWeight: number;
+  legs: PortfolioBacktestDiagnosticLeg[];
+  dataQuality: PortfolioBacktestDiagnosticQuality;
+}
+
 export type RiskApprovalStatus = "blocked" | "paper_ready" | "live_ready";
 
 export interface RiskApprovalGate {
@@ -5122,6 +5156,97 @@ export function buildPortfolioPeerAuditPlan(
   };
 }
 
+export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktestDiagnosticInput>(
+  portfolio: T | null | undefined
+): PortfolioBacktestDiagnosticRow[] {
+  if (!portfolio || !portfolio.legs.length) {
+    return [];
+  }
+
+  const largestLeg = [...portfolio.legs].sort((left, right) => right.targetWeight - left.targetWeight)[0];
+  const concentrationStatus =
+    largestLeg.targetWeight >= 0.75 ? "blocked" : largestLeg.targetWeight > 0.5 ? "review" : "passed";
+  const concentrationDetail =
+    concentrationStatus === "passed"
+      ? "Largest leg remains under the 50% concentration review threshold."
+      : concentrationStatus === "blocked"
+        ? "Largest leg exceeds the 75% hard concentration threshold."
+        : "Largest leg exceeds the 50% concentration review threshold.";
+
+  const cashStatus = portfolio.cashWeight > 0.3 || portfolio.cashWeight < 0.02 ? "review" : "passed";
+  const cashDetail =
+    portfolio.cashWeight > 0.3
+      ? "Cash buffer is high, so the basket may be under-invested."
+      : portfolio.cashWeight < 0.02
+        ? "Cash buffer is thin; execution slippage or round lots may need review."
+        : "Cash buffer is inside the static-weight review band.";
+
+  const negativeLegs = portfolio.legs.filter((leg) => leg.contributionValue < 0);
+  const worstLeg = negativeLegs.sort((left, right) => left.contributionReturnPct - right.contributionReturnPct)[0];
+  const negativeStatus = worstLeg ? "review" : "passed";
+  const negativeValue = worstLeg
+    ? `${worstLeg.symbol} ${formatDiagnosticPercent(worstLeg.contributionReturnPct)}`
+    : "none";
+
+  const warnings = [
+    ...portfolio.dataQuality.warnings,
+    ...portfolio.legs.flatMap((leg) => leg.dataQuality.warnings.map((warning) => `${leg.symbol}: ${warning}`))
+  ].filter((warning, index, items) => items.indexOf(warning) === index);
+  const incompleteLegs = portfolio.legs.filter((leg) => !leg.dataQuality.isComplete).map((leg) => leg.symbol);
+  const dataQualityStatus: PortfolioBacktestDiagnosticStatus = !portfolio.dataQuality.isComplete
+    ? "blocked"
+    : warnings.length
+      ? "review"
+      : "passed";
+  const dataQualityValue =
+    dataQualityStatus === "blocked" ? "incomplete" : warnings.length ? `${warnings.length} warning${warnings.length === 1 ? "" : "s"}` : "complete";
+  const dataQualityDetail =
+    dataQualityStatus === "blocked"
+      ? `Portfolio data quality is incomplete${incompleteLegs.length ? ` for ${incompleteLegs.join(", ")}` : ""}: ${
+          warnings.slice(0, 3).join("; ") || "review source completeness before promotion"
+        }.`
+      : warnings.length
+        ? `Portfolio data quality has warnings: ${warnings.slice(0, 3).join("; ")}.`
+        : "Portfolio composite data quality is complete.";
+
+  return [
+    {
+      id: "concentration",
+      label: "Concentration",
+      value: `${largestLeg.symbol} ${formatDiagnosticWeight(largestLeg.targetWeight)}`,
+      detail: concentrationDetail,
+      status: concentrationStatus,
+      tone: diagnosticTone(concentrationStatus)
+    },
+    {
+      id: "cash-buffer",
+      label: "Cash buffer",
+      value: formatDiagnosticWeight(portfolio.cashWeight),
+      detail: cashDetail,
+      status: cashStatus,
+      tone: diagnosticTone(cashStatus)
+    },
+    {
+      id: "negative-contribution",
+      label: "Negative contribution",
+      value: negativeValue,
+      detail: worstLeg
+        ? `${worstLeg.symbol} has negative contribution in the audited portfolio backtest.`
+        : "No negative contribution leg in the audited portfolio backtest.",
+      status: negativeStatus,
+      tone: diagnosticTone(negativeStatus)
+    },
+    {
+      id: "data-quality",
+      label: "Data quality",
+      value: dataQualityValue,
+      detail: dataQualityDetail,
+      status: dataQualityStatus,
+      tone: diagnosticTone(dataQualityStatus)
+    }
+  ];
+}
+
 function blockedPortfolioBacktestDraft(headline: string, summary: string): PortfolioBacktestDraft {
   return {
     status: "blocked",
@@ -5139,6 +5264,21 @@ function roundWeight(value: number): number {
 
 function formatWeightLabel(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDiagnosticWeight(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDiagnosticPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function diagnosticTone(status: PortfolioBacktestDiagnosticStatus): PortfolioBacktestDiagnosticRow["tone"] {
+  if (status === "passed") {
+    return "positive";
+  }
+  return status === "blocked" ? "risk" : "warning";
 }
 
 function formatMetricPercent(metrics: Record<string, number>, snakeKey: string, camelKey: string): string {
