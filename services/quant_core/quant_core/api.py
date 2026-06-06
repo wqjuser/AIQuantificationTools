@@ -22,7 +22,18 @@ from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_re
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
-from quant_core.domain import AiResearchRequest, Condition, DataQuality, MarketDataRequest, OHLCVBar, RiskRules, StrategyConfig
+from quant_core.domain import (
+    AiResearchRequest,
+    BacktestMetrics,
+    BacktestRun,
+    Condition,
+    DataQuality,
+    EquityPoint,
+    MarketDataRequest,
+    OHLCVBar,
+    RiskRules,
+    StrategyConfig,
+)
 from quant_core.execution import (
     PaperExecutionRecord,
     PaperExecutionStore,
@@ -36,6 +47,7 @@ from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
+from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
 from quant_core.research_import_undo import (
     ResearchRunImportUndoRecord,
@@ -232,6 +244,17 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "settings": self._settings_status_payload(),
                 }
             )
+            return
+        if parsed.path == "/api/portfolio/backtest":
+            try:
+                portfolio = _portfolio_backtest_from_payload(self._read_json_body(), self.run_store)
+            except LookupError as error:
+                self._send_json({"error": "research_run_not_found", "detail": str(error)}, status=404)
+                return
+            except ValueError as error:
+                self._send_json({"error": "invalid_portfolio_backtest", "detail": str(error)}, status=400)
+                return
+            self._send_json({"portfolio": portfolio_backtest_run_to_payload(portfolio)})
             return
         if parsed.path == "/api/research/notes":
             try:
@@ -960,6 +983,100 @@ def _parse_research_data_limit(raw: str) -> int:
     except ValueError:
         return 500
     return max(1, min(value, 500))
+
+
+def _portfolio_backtest_from_payload(payload: dict[str, object], run_store: ResearchRunStore):
+    name = str(payload.get("name") or "Portfolio backtest").strip() or "Portfolio backtest"
+    initial_cash = _number_or_default(payload.get("initialCash"), 100_000)
+    legs_payload = payload.get("legs")
+    if initial_cash <= 0:
+        raise ValueError("initial_cash_must_be_positive")
+    if not isinstance(legs_payload, list) or not legs_payload:
+        raise ValueError("portfolio_legs_required")
+
+    legs: list[PortfolioLeg] = []
+    for item in legs_payload:
+        if not isinstance(item, dict):
+            raise ValueError("portfolio_leg_must_be_object")
+        run_id = str(item.get("runId") or "").strip()
+        if not run_id:
+            raise ValueError("portfolio_leg_run_id_required")
+        audit = run_store.get(run_id)
+        if not audit:
+            raise LookupError(run_id)
+        legs.append(
+            PortfolioLeg(
+                target_weight=_number_or_default(item.get("targetWeight"), -1),
+                run=_backtest_run_from_audit(audit),
+            )
+        )
+
+    return PortfolioBacktestEngine(initial_cash=initial_cash).run(name=name, legs=legs)
+
+
+def _backtest_run_from_audit(audit: ResearchRunAudit) -> BacktestRun:
+    return BacktestRun(
+        strategy_name=audit.strategy_name,
+        strategy_revision=audit.strategy_revision,
+        symbol=audit.symbol,
+        market=audit.market,
+        timeframe=audit.timeframe,
+        metrics=_backtest_metrics_from_audit(audit.metrics),
+        trades=[],
+        equity_curve=_equity_curve_from_audit(audit),
+        data_quality=_data_quality_from_audit(audit),
+    )
+
+
+def _backtest_metrics_from_audit(metrics: dict[str, object]) -> BacktestMetrics:
+    total_return = _metric_value(metrics, "total_return_pct", "totalReturnPct")
+    return BacktestMetrics(
+        total_return_pct=total_return,
+        annual_return_pct=_metric_value(metrics, "annual_return_pct", "annualReturnPct", default=total_return),
+        max_drawdown_pct=_metric_value(metrics, "max_drawdown_pct", "maxDrawdownPct"),
+        win_rate_pct=_metric_value(metrics, "win_rate_pct", "winRatePct"),
+        profit_factor=_metric_value(metrics, "profit_factor", "profitFactor"),
+        trade_count=int(_metric_value(metrics, "trade_count", "tradeCount")),
+    )
+
+
+def _metric_value(metrics: dict[str, object], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key in metrics:
+            return _number_or_default(metrics.get(key), default)
+    return default
+
+
+def _equity_curve_from_audit(audit: ResearchRunAudit) -> list[EquityPoint]:
+    if not audit.backtest_equity_curve:
+        raise ValueError(f"backtest_equity_curve_required:{audit.run_id}")
+    points: list[EquityPoint] = []
+    for row in audit.backtest_equity_curve:
+        if not isinstance(row, dict):
+            raise ValueError(f"backtest_equity_point_must_be_object:{audit.run_id}")
+        timestamp = row.get("timestamp")
+        equity = row.get("equity")
+        if not timestamp:
+            raise ValueError(f"backtest_equity_point_timestamp_required:{audit.run_id}")
+        points.append(
+            EquityPoint(
+                timestamp=_parse_iso_datetime(str(timestamp)),
+                equity=_number_or_default(equity, 0.0),
+            )
+        )
+    return points
+
+
+def _data_quality_from_audit(audit: ResearchRunAudit) -> DataQuality:
+    quality = audit.data_quality if isinstance(audit.data_quality, dict) else {}
+    raw_warnings = quality.get("warnings", [])
+    warnings = [str(warning) for warning in raw_warnings] if isinstance(raw_warnings, list) else []
+    return DataQuality(
+        source=str(quality.get("source") or "unknown"),
+        is_complete=bool(quality.get("isComplete", quality.get("is_complete", False))),
+        warnings=warnings,
+        rows=int(_number_or_default(quality.get("rows"), audit.data_rows)),
+    )
 
 
 def _strategy_snapshot_from_query(query: dict[str, list[str]]) -> StrategySnapshot | None:

@@ -240,6 +240,58 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(result.trades[0].reason, "entry_conditions")
         self.assertEqual(result.trades[1].reason, "exit_conditions")
 
+    def test_portfolio_backtest_combines_symbol_runs_with_weights_and_cash_buffer(self):
+        from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
+        from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        timestamps = [start + timedelta(days=index) for index in range(3)]
+
+        def audited_run(symbol: str, equities: list[float], return_pct: float, drawdown_pct: float) -> BacktestRun:
+            return BacktestRun(
+                strategy_name="Audited SMA plan",
+                strategy_revision=f"rev-{symbol}",
+                symbol=symbol,
+                market="ashare",
+                timeframe="1d",
+                metrics=BacktestMetrics(
+                    total_return_pct=return_pct,
+                    annual_return_pct=return_pct,
+                    max_drawdown_pct=drawdown_pct,
+                    win_rate_pct=50.0,
+                    profit_factor=1.5,
+                    trade_count=2,
+                ),
+                trades=[],
+                equity_curve=[
+                    EquityPoint(timestamp=timestamp, equity=equity)
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+                data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(equities)),
+            )
+
+        result = PortfolioBacktestEngine(initial_cash=100_000).run(
+            name="A-share core basket",
+            legs=[
+                PortfolioLeg(target_weight=0.6, run=audited_run("600000", [100_000, 110_000, 105_000], 5.0, 4.5)),
+                PortfolioLeg(target_weight=0.3, run=audited_run("000300", [100_000, 95_000, 120_000], 20.0, 5.0)),
+            ],
+        )
+
+        self.assertEqual(result.name, "A-share core basket")
+        self.assertEqual(result.market, "ashare")
+        self.assertEqual(result.timeframe, "1d")
+        self.assertAlmostEqual(result.cash_weight, 0.1)
+        self.assertEqual([point.equity for point in result.equity_curve], [100_000, 104_500, 109_000])
+        self.assertAlmostEqual(result.metrics.total_return_pct, 9.0)
+        self.assertEqual(result.metrics.trade_count, 4)
+        self.assertEqual(result.data_quality.rows, 3)
+        self.assertTrue(result.data_quality.is_complete)
+        self.assertEqual(
+            [(leg.symbol, leg.target_weight, leg.contribution_return_pct, leg.contribution_value) for leg in result.legs],
+            [("600000", 0.6, 5.0, 3000.0), ("000300", 0.3, 20.0, 6000.0)],
+        )
+
     def test_strategy_library_store_persists_stable_strategy_versions(self):
         from quant_core.research import strategy_config_from_snapshot
         from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload
@@ -2249,6 +2301,86 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["promotion"]["latestPaperExecutionId"], payload["execution"]["executionId"])
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
+
+    def test_portfolio_backtest_api_combines_audited_runs_by_weight(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        timestamps = [start + timedelta(days=index) for index in range(3)]
+
+        def audit(run_id: str, symbol: str, equities: list[float], return_pct: float) -> ResearchRunAudit:
+            return ResearchRunAudit(
+                run_id=run_id,
+                created_at=start,
+                market="ashare",
+                symbol=symbol,
+                timeframe="1d",
+                strategy_name="Audited SMA plan",
+                strategy_revision=f"rev-{symbol}",
+                data_rows=len(equities),
+                metrics={"total_return_pct": return_pct, "win_rate_pct": 50.0, "profit_factor": 1.5, "trade_count": 2},
+                decisions=[],
+                execution_mode="paper_only",
+                ai_report={"summary": "Audited", "risks": [], "improvements": [], "disclaimer": "No advice"},
+                data_quality={"source": "local-cache", "isComplete": True, "warnings": [], "rows": len(equities)},
+                backtest_equity_curve=[
+                    {"timestamp": timestamp.isoformat(), "equity": equity}
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            research_store.record(audit("run-a", "600000", [100_000, 110_000, 105_000], 5.0))
+            research_store.record(audit("run-b", "000300", [100_000, 95_000, 120_000], 20.0))
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "name": "A-share core basket",
+                        "initialCash": 100000,
+                        "legs": [
+                            {"runId": "run-a", "targetWeight": 0.6},
+                            {"runId": "run-b", "targetWeight": 0.3},
+                        ],
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/backtest",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["portfolio"]["name"], "A-share core basket")
+        self.assertEqual(payload["portfolio"]["metrics"]["totalReturnPct"], 9.0)
+        self.assertEqual(payload["portfolio"]["cashWeight"], 0.1)
+        self.assertEqual(payload["portfolio"]["equityCurve"][-1]["equity"], 109000.0)
+        self.assertEqual(
+            [(leg["symbol"], leg["targetWeight"], leg["contributionValue"]) for leg in payload["portfolio"]["legs"]],
+            [("600000", 0.6, 3000.0), ("000300", 0.3, 6000.0)],
+        )
 
     def test_research_run_ai_review_api_records_review_for_run(self):
         import json
