@@ -762,6 +762,17 @@ export interface AuditEvidenceImportVerificationBucket {
   status: "verified" | "invalid";
 }
 
+export interface AuditEvidenceImportPolicyBlockerBucket {
+  category: ResearchRunImportBlockedEvidenceBucketCategory;
+  count: number;
+  label: string;
+  latestDetail: string;
+  latestExportPath: string;
+  latestFileName: string;
+  latestRunId: string;
+  tone: "risk" | "warning";
+}
+
 export interface AuditEvidenceSummary {
   auditQuery: string;
   copyText: string;
@@ -774,6 +785,8 @@ export interface AuditEvidenceSummary {
   importDiffMatchedCount: number;
   importDiffQuery: string;
   importDiffTotalCount: number;
+  importPolicyBlockedCount: number;
+  importPolicyBlockerBuckets: AuditEvidenceImportPolicyBlockerBucket[];
   importVerificationBuckets: AuditEvidenceImportVerificationBucket[];
   importVerificationInvalidCount: number;
   importVerificationVerifiedCount: number;
@@ -3617,6 +3630,17 @@ export function buildAuditEvidenceSummary({
   const importDiffChangeCount = importDiffRows.filter((row) => row.status === "change" || row.status === "replace").length;
   const importDiffBlockedCount = importDiffRows.filter((row) => row.status === "blocked").length;
   const importAuditAggregation = buildResearchRunImportAuditAggregation(importAuditEvents);
+  const importPolicyBlockerBuckets = importAuditAggregation.blockedEvidenceBuckets.map((bucket) => ({
+    category: bucket.category,
+    count: bucket.count,
+    label: bucket.label,
+    latestDetail: bucket.latestDetail,
+    latestExportPath: bucket.latestExportPath,
+    latestFileName: bucket.latestFileName,
+    latestRunId: bucket.latestRunId,
+    tone: bucket.tone
+  }));
+  const importPolicyBlockedCount = importPolicyBlockerBuckets.reduce((total, bucket) => total + bucket.count, 0);
   const importVerificationBuckets = importAuditAggregation.verifiedReportSignatureBuckets.map((bucket) => ({
     count: bucket.count,
     latestExportPath: bucket.latestExportPath,
@@ -3630,6 +3654,9 @@ export function buildAuditEvidenceSummary({
     importVerificationBuckets.find((bucket) => bucket.status === "invalid")?.count ?? 0;
   const latestImportVerification = importVerificationBuckets[0]
     ? `latest ${importVerificationBuckets[0].status} ${importVerificationBuckets[0].latestExportPath} · ${importVerificationBuckets[0].latestReason}`
+    : "none";
+  const latestImportPolicyBlocker = importPolicyBlockerBuckets[0]
+    ? `latest ${importPolicyBlockerBuckets[0].label} ${importPolicyBlockerBuckets[0].latestExportPath} · ${importPolicyBlockerBuckets[0].latestDetail}`
     : "none";
   const runId =
     deepLinkRunId?.trim() ||
@@ -3646,6 +3673,7 @@ export function buildAuditEvidenceSummary({
     `Deep link: ${deepLinkStatus}${deepLinkError ? ` (${deepLinkError})` : ""}`,
     `Package checks: ${packageReadyCount} ready / ${packageMissingCount} missing / ${packageBlockedCount} blocked / ${packageMatchedCount} of ${packageRows.length} matched`,
     `Import diff: ${importDiffChangeCount} changes / ${importDiffAddCount} adds / ${importDiffBlockedCount} blocked / ${importDiffMatchedCount} of ${importDiffRows.length} matched`,
+    `Import policy blockers: ${importPolicyBlockedCount} blocked / ${latestImportPolicyBlocker}`,
     `Import report verification: ${importVerificationVerifiedCount} verified / ${importVerificationInvalidCount} invalid / ${latestImportVerification}`
   ];
   return {
@@ -3660,6 +3688,8 @@ export function buildAuditEvidenceSummary({
     importDiffMatchedCount,
     importDiffQuery: normalizedImportDiffQuery,
     importDiffTotalCount: importDiffRows.length,
+    importPolicyBlockedCount,
+    importPolicyBlockerBuckets,
     importVerificationBuckets,
     importVerificationInvalidCount,
     importVerificationVerifiedCount,
@@ -3678,6 +3708,7 @@ export function buildAuditEvidenceReportMarkdown(
   { generatedAt = new Date().toISOString() }: { generatedAt?: string } = {}
 ): string {
   const importVerificationBuckets = summary.importVerificationBuckets ?? [];
+  const importPolicyBlockerBuckets = summary.importPolicyBlockerBuckets ?? [];
   const deepLinkDetail = summary.deepLinkError
     ? `${summary.deepLinkStatus} (${summary.deepLinkError})`
     : summary.deepLinkStatus;
@@ -3714,6 +3745,23 @@ export function buildAuditEvidenceReportMarkdown(
         )
       ]
     : [];
+  const importPolicyBlockerSection = importPolicyBlockerBuckets.length
+    ? [
+        "",
+        "## Import Policy Blockers",
+        "",
+        markdownTable(
+          ["Category", "Count", "Latest run", "Latest exportPath", "Latest detail"],
+          importPolicyBlockerBuckets.map((bucket) => [
+            bucket.label,
+            String(bucket.count),
+            bucket.latestRunId,
+            bucket.latestExportPath,
+            bucket.latestDetail
+          ])
+        )
+      ]
+    : [];
 
   return [
     "# AIQuant Audit Evidence Report",
@@ -3737,6 +3785,7 @@ export function buildAuditEvidenceReportMarkdown(
     "## Evidence Counts",
     "",
     markdownTable(["Area", "Ready / changes", "Missing / adds", "Blocked", "Matched"], evidenceRows),
+    ...importPolicyBlockerSection,
     ...importVerificationSection,
     "",
     "## Portable Summary",

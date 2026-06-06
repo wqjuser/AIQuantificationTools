@@ -2327,6 +2327,19 @@ describe("terminal workspace API client", () => {
       ],
       importVerificationInvalidCount: 0,
       importVerificationVerifiedCount: 1,
+      importPolicyBlockedCount: 1,
+      importPolicyBlockerBuckets: [
+        {
+          category: "import-verification" as const,
+          count: 1,
+          label: "Import verification",
+          latestDetail: "Audit report carries invalid imported evidence and cannot be trusted for import.",
+          latestExportPath: "auditReport.contentSha256.hash",
+          latestFileName: "invalid-evidence.json",
+          latestRunId: "run-preview",
+          tone: "risk" as const
+        }
+      ],
       packageBlockedCount: 0,
       packageMatchedCount: 1,
       packageMissingCount: 0,
@@ -2367,6 +2380,21 @@ describe("terminal workspace API client", () => {
             status: "verified"
           }
         ]
+      },
+      importPolicyBlockers: {
+        blocked: 1,
+        buckets: [
+          {
+            category: "import-verification",
+            count: 1,
+            label: "Import verification",
+            latestDetail: "Audit report carries invalid imported evidence and cannot be trusted for import.",
+            latestExportPath: "auditReport.contentSha256.hash",
+            latestFileName: "invalid-evidence.json",
+            latestRunId: "run-preview",
+            tone: "risk"
+          }
+        ]
       }
     });
     expect(normalizeResearchRunExportPackagePayload(enrichedPackage)?.auditEvidenceSummary?.copyText).toContain(
@@ -2377,6 +2405,9 @@ describe("terminal workspace API client", () => {
     );
     expect(
       normalizeResearchRunExportPackagePayload({ export: enrichedPackage })?.auditEvidenceSummary?.importVerification?.verified
+    ).toBe(1);
+    expect(
+      normalizeResearchRunExportPackagePayload({ export: enrichedPackage })?.auditEvidenceSummary?.importPolicyBlockers?.blocked
     ).toBe(1);
     expect(auditReport).toMatchObject({
       kind: "aiqt.auditReport",
@@ -2588,6 +2619,8 @@ describe("terminal workspace API client", () => {
       importDiffMatchedCount: 4,
       importDiffQuery: "auditReport.contentSha256.hash",
       importDiffTotalCount: 11,
+      importPolicyBlockedCount: 0,
+      importPolicyBlockerBuckets: [],
       importVerificationBuckets: [
         {
           count: 1,

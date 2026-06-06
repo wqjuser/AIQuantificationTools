@@ -131,6 +131,10 @@ export interface ResearchRunExportAuditEvidenceSummary {
     invalid: number;
     buckets: AuditEvidenceSummary["importVerificationBuckets"];
   };
+  importPolicyBlockers?: {
+    blocked: number;
+    buckets: AuditEvidenceSummary["importPolicyBlockerBuckets"];
+  };
   copyText: string;
 }
 
@@ -1176,6 +1180,8 @@ export function buildResearchRunExportAuditEvidenceSummary(
   const importVerificationBuckets = summary.importVerificationBuckets ?? [];
   const importVerificationVerifiedCount = summary.importVerificationVerifiedCount ?? 0;
   const importVerificationInvalidCount = summary.importVerificationInvalidCount ?? 0;
+  const importPolicyBlockerBuckets = summary.importPolicyBlockerBuckets ?? [];
+  const importPolicyBlockedCount = summary.importPolicyBlockedCount ?? 0;
   return {
     kind: "aiqt.auditEvidenceSummary",
     schemaVersion: 1,
@@ -1205,6 +1211,10 @@ export function buildResearchRunExportAuditEvidenceSummary(
       verified: importVerificationVerifiedCount,
       invalid: importVerificationInvalidCount,
       buckets: importVerificationBuckets
+    },
+    importPolicyBlockers: {
+      blocked: importPolicyBlockedCount,
+      buckets: importPolicyBlockerBuckets
     },
     copyText: summary.copyText
   };
@@ -3846,6 +3856,8 @@ function isResearchRunExportAuditEvidenceSummary(value: unknown): value is Resea
     isAuditEvidenceImportDiffCountGroup(summary.importDiff) &&
     (summary.importVerification === undefined ||
       isAuditEvidenceImportVerificationGroup(summary.importVerification)) &&
+    (summary.importPolicyBlockers === undefined ||
+      isAuditEvidenceImportPolicyBlockerGroup(summary.importPolicyBlockers)) &&
     typeof summary.copyText === "string"
   );
 }
@@ -4012,6 +4024,46 @@ function isAuditEvidenceImportVerificationGroup(
         typeof item.latestReason === "string" &&
         item.source === "local-core" &&
         (item.status === "verified" || item.status === "invalid")
+      );
+    })
+  );
+}
+
+function isAuditEvidenceImportPolicyBlockerGroup(
+  value: unknown
+): value is NonNullable<ResearchRunExportAuditEvidenceSummary["importPolicyBlockers"]> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  type ImportPolicyBlockerGroup = NonNullable<ResearchRunExportAuditEvidenceSummary["importPolicyBlockers"]>;
+  const group = value as Partial<ImportPolicyBlockerGroup>;
+  const categories = new Set([
+    "import-verification",
+    "report-signature",
+    "package-integrity",
+    "artifact-counts",
+    "live-boundary",
+    "data-snapshot",
+    "unknown"
+  ]);
+  return (
+    typeof group.blocked === "number" &&
+    Array.isArray(group.buckets) &&
+    group.buckets.every((bucket) => {
+      if (!bucket || typeof bucket !== "object" || Array.isArray(bucket)) {
+        return false;
+      }
+      const item = bucket as Partial<ImportPolicyBlockerGroup["buckets"][number]>;
+      return (
+        typeof item.category === "string" &&
+        categories.has(item.category) &&
+        typeof item.count === "number" &&
+        typeof item.label === "string" &&
+        typeof item.latestDetail === "string" &&
+        typeof item.latestExportPath === "string" &&
+        typeof item.latestFileName === "string" &&
+        typeof item.latestRunId === "string" &&
+        (item.tone === "risk" || item.tone === "warning")
       );
     })
   );

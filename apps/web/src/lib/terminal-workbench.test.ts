@@ -3830,6 +3830,35 @@ describe("terminal workbench model", () => {
               status: "verified"
             }
           ]
+        },
+        {
+          id: "import:run-a1f3a5369574:blocked:2026-06-04T08:02:00.000Z:invalid-evidence.json",
+          stage: "blocked",
+          runId: "run-a1f3a5369574",
+          previousRunId: "run-previous",
+          rollbackTargetRunId: "run-previous",
+          undoToken: null,
+          fileName: "invalid-evidence.json",
+          createdAt: "2026-06-04T08:02:00.000Z",
+          summary: "Import blocked",
+          detail: "Research run import blocked by invalid imported evidence.",
+          failureCategory: null,
+          recoveryHint: "Fix the imported report evidence and export again.",
+          blockedCount: 1,
+          blockedRows: [
+            {
+              id: "audit-report",
+              label: "Audit report",
+              incoming: "run-a1f3a5369574 · sha256 cccccccc · Verified signature",
+              detail:
+                "Audit report carries invalid imported evidence and cannot be trusted for import. · Verified signature · Local Audit Key",
+              exportPath: "auditReport.contentSha256.hash"
+            }
+          ],
+          changeCount: 0,
+          exportPath: "manifest:run-a1f3a5369574",
+          tone: "risk",
+          verifiedReportSignatures: []
         }
       ],
       packageQuery: "manifest:run-a1f3a5369574",
@@ -3844,10 +3873,21 @@ describe("terminal workbench model", () => {
       importDiffMatchedCount: 1,
       importVerificationInvalidCount: 0,
       importVerificationVerifiedCount: 1,
+      importPolicyBlockedCount: 1,
       packageBlockedCount: 1,
       packageMatchedCount: 1,
       runId: "run-a1f3a5369574"
     });
+    expect(summary.importPolicyBlockerBuckets).toEqual([
+      expect.objectContaining({
+        category: "import-verification",
+        count: 1,
+        label: "Import verification",
+        latestExportPath: "auditReport.contentSha256.hash",
+        latestRunId: "run-a1f3a5369574",
+        tone: "risk"
+      })
+    ]);
     expect(summary.importVerificationBuckets).toEqual([
       expect.objectContaining({
         status: "verified",
@@ -3865,6 +3905,9 @@ describe("terminal workbench model", () => {
     expect(summary.copyText).toContain(
       "Import report verification: 1 verified / 0 invalid / latest verified auditReport.contentSha256.hash · signature_verified"
     );
+    expect(summary.copyText).toContain(
+      "Import policy blockers: 1 blocked / latest Import verification auditReport.contentSha256.hash · Audit report carries invalid imported evidence"
+    );
 
     const reportMarkdown = buildAuditEvidenceReportMarkdown(summary, {
       generatedAt: "2026-06-04T08:00:00.000Z"
@@ -3877,6 +3920,10 @@ describe("terminal workbench model", () => {
     expect(reportMarkdown).toContain("| Import diff | 1 changes | 0 adds | 1 blocked | 1 / 2 |");
     expect(reportMarkdown).toContain("## Import Report Verification");
     expect(reportMarkdown).toContain("| verified | 1 | local-core | auditReport.contentSha256.hash | signature_verified |");
+    expect(reportMarkdown).toContain("## Import Policy Blockers");
+    expect(reportMarkdown).toContain(
+      "| Import verification | 1 | run-a1f3a5369574 | auditReport.contentSha256.hash | Audit report carries invalid imported evidence"
+    );
     expect(reportMarkdown).toContain("Deep link status: `loaded`");
     expect(reportMarkdown).toContain("```text\nAIQT Audit Evidence Summary");
     expect(reportMarkdown).toContain("Import report verification: 1 verified / 0 invalid / latest verified auditReport.contentSha256.hash · signature_verified\n```");
