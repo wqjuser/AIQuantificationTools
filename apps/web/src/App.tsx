@@ -39,6 +39,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadPlatformSettings,
+  runPortfolioBacktest,
   refreshMarketCache,
   refreshMarketCacheBatch,
   loadStrategyLibrary,
@@ -72,6 +73,7 @@ import {
   GoldenPathStatusResult,
   PlatformSettingsResult,
   PlatformSettingsStatus,
+  PortfolioBacktestResult,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunExportAuditReport,
@@ -126,6 +128,7 @@ import {
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
+  buildPortfolioBacktestDraft,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   buildPromotionReadiness,
@@ -191,6 +194,7 @@ import {
   PaperPositionRow,
   PaperExecutionSummaryTile,
   PaperTradingRow,
+  PortfolioBacktestDraft,
   PortfolioRiskRow,
   PromotionQueueStage,
   PromotionReadiness,
@@ -289,6 +293,9 @@ const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerS
   state: "idle"
 };
 const initialGoldenPathStatusState: GoldenPathStatusResult = {
+  source: "fallback"
+};
+const initialPortfolioBacktestState: PortfolioBacktestResult = {
   source: "fallback"
 };
 
@@ -499,6 +506,8 @@ export function App() {
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
+  const [portfolioBacktestState, setPortfolioBacktestState] =
+    useState<PortfolioBacktestResult>(initialPortfolioBacktestState);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
@@ -523,6 +532,7 @@ export function App() {
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
+  const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
@@ -602,6 +612,10 @@ export function App() {
   const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
+  const portfolioBacktestDraft = buildPortfolioBacktestDraft(runHistory, workspace.researchRun?.runId ?? null);
+  const portfolioBacktestDraftKey =
+    portfolioBacktestDraft.request?.legs.map((leg) => `${leg.runId}:${leg.targetWeight}`).join("|") ??
+    portfolioBacktestDraft.status;
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
   const activePaperExecutionRecord =
     paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId ? paperExecutionRecord : null;
@@ -689,6 +703,10 @@ export function App() {
   useEffect(() => {
     klinesStateRef.current = klinesState;
   }, [klinesState]);
+
+  useEffect(() => {
+    setPortfolioBacktestState(initialPortfolioBacktestState);
+  }, [portfolioBacktestDraftKey]);
 
   useEffect(() => {
     const requestId = strategyValidationRequestIdRef.current + 1;
@@ -1282,6 +1300,21 @@ export function App() {
     await refreshStrategyLibrary();
     setIsRunning(false);
   }, [refreshRunHistory, refreshStrategyLibrary, resetAiReviewHistoryState, workspace]);
+
+  const runPortfolioBacktestDraft = useCallback(async () => {
+    if (!portfolioBacktestDraft.request) {
+      setPortfolioBacktestState({
+        source: "fallback",
+        error: portfolioBacktestDraft.summary
+      });
+      return;
+    }
+
+    setIsRunningPortfolioBacktest(true);
+    const result = await runPortfolioBacktest(quantCoreBaseUrl, portfolioBacktestDraft.request);
+    setPortfolioBacktestState(result);
+    setIsRunningPortfolioBacktest(false);
+  }, [portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
 
   const replayRun = useCallback(
     async (run: ResearchRunAudit) => {
@@ -2981,10 +3014,14 @@ export function App() {
             className="workflow-portfolio-panel"
             executionClassName="workflow-execution-panel"
             i18n={i18n}
+            isRunningPortfolioBacktest={isRunningPortfolioBacktest}
             isSubmittingPaperExecution={isSubmittingPaperExecution}
+            onRunPortfolioBacktest={runPortfolioBacktestDraft}
             onSubmitPaperExecution={submitPaperExecution}
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
+            portfolioBacktestDraft={portfolioBacktestDraft}
+            portfolioBacktestResult={portfolioBacktestState}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
             summaryTiles={paperExecutionSummaryTiles}
@@ -8258,10 +8295,14 @@ function PortfolioWorkspace({
   className = "module-workspace-panel",
   executionClassName,
   i18n,
+  isRunningPortfolioBacktest = false,
   isSubmittingPaperExecution = false,
+  onRunPortfolioBacktest,
   onSubmitPaperExecution,
   paperRows,
   positionRows,
+  portfolioBacktestDraft,
+  portfolioBacktestResult,
   riskApproval,
   rows,
   summaryTiles,
@@ -8270,15 +8311,22 @@ function PortfolioWorkspace({
   className?: string;
   executionClassName?: string;
   i18n: AppI18n;
+  isRunningPortfolioBacktest?: boolean;
   isSubmittingPaperExecution?: boolean;
+  onRunPortfolioBacktest?: () => void;
   onSubmitPaperExecution?: () => void;
   paperRows: PaperTradingRow[];
   positionRows: PaperPositionRow[];
+  portfolioBacktestDraft: PortfolioBacktestDraft;
+  portfolioBacktestResult: PortfolioBacktestResult;
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
   summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
+  const portfolioBacktest = portfolioBacktestResult.portfolio;
+  const canRunPortfolioBacktest = portfolioBacktestDraft.status === "ready" && Boolean(onRunPortfolioBacktest);
+
   return (
     <>
       <Panel title={i18n.t("module.portfolio.title")} subtitle={i18n.t("module.portfolio.subtitle")} className={className}>
@@ -8291,6 +8339,110 @@ function PortfolioWorkspace({
             </article>
           ))}
         </div>
+        <section className={`portfolio-backtest-panel ${portfolioBacktestDraft.status}`}>
+          <div className="portfolio-backtest-header">
+            <div>
+              <span>{i18n.t("portfolio.backtest")}</span>
+              <strong>{portfolioBacktestHeadline(i18n, portfolioBacktestDraft.headline)}</strong>
+              <p>{portfolioBacktestSummary(i18n, portfolioBacktestDraft.summary)}</p>
+            </div>
+            <button
+              className="run-button compact"
+              disabled={!canRunPortfolioBacktest || isRunningPortfolioBacktest}
+              onClick={onRunPortfolioBacktest}
+              type="button"
+            >
+              <Play size={14} />
+              {isRunningPortfolioBacktest ? i18n.t("portfolio.backtestRunning") : i18n.t("portfolio.backtestRun")}
+            </button>
+          </div>
+          <div className="portfolio-backtest-content">
+            <div className="portfolio-backtest-section">
+              <div className="portfolio-backtest-title">
+                <span>{i18n.t("portfolio.backtestDraft")}</span>
+                <strong>{portfolioBacktestDraft.rows.length}</strong>
+              </div>
+              <div className="portfolio-backtest-leg-table">
+                {portfolioBacktestDraft.rows.map((row) => (
+                  <div className={`portfolio-backtest-leg-row ${row.current ? "current" : ""}`} key={row.runId}>
+                    <span>
+                      {row.symbol}
+                      {row.current ? <em>{i18n.locale === "zh-CN" ? "当前" : "Current"}</em> : null}
+                    </span>
+                    <span>
+                      <small>{i18n.t("portfolio.weight")}</small>
+                      {row.weightLabel}
+                    </span>
+                    <span>
+                      <small>{i18n.t("portfolio.totalReturn")}</small>
+                      {row.totalReturnPct}
+                    </span>
+                    <span>
+                      <small>{i18n.t("portfolio.maxDrawdown")}</small>
+                      {row.maxDrawdownPct}
+                    </span>
+                  </div>
+                ))}
+                {!portfolioBacktestDraft.rows.length ? (
+                  <p className="portfolio-backtest-empty">
+                    {portfolioBacktestSummary(i18n, portfolioBacktestDraft.summary)}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="portfolio-backtest-section">
+              <div className="portfolio-backtest-title">
+                <span>{i18n.t("portfolio.backtestResult")}</span>
+                <strong>{portfolioBacktest?.legs.length ?? 0}</strong>
+              </div>
+              {portfolioBacktest ? (
+                <>
+                  <div className="portfolio-backtest-metrics">
+                    <article>
+                      <span>{i18n.t("portfolio.totalReturn")}</span>
+                      <strong>{formatSignedPercent(portfolioBacktest.metrics.totalReturnPct)}</strong>
+                    </article>
+                    <article>
+                      <span>{i18n.t("portfolio.maxDrawdown")}</span>
+                      <strong>{formatPlainPercent(portfolioBacktest.metrics.maxDrawdownPct)}</strong>
+                    </article>
+                    <article>
+                      <span>{i18n.t("portfolio.cash")}</span>
+                      <strong>{formatPlainPercent(portfolioBacktest.cashWeight * 100)}</strong>
+                    </article>
+                    <article>
+                      <span>{i18n.t("portfolio.dataRows")}</span>
+                      <strong>{portfolioBacktest.equityCurve.length}</strong>
+                    </article>
+                  </div>
+                  <div className="portfolio-backtest-leg-table result">
+                    {portfolioBacktest.legs.map((leg) => (
+                      <div className="portfolio-backtest-leg-row" key={leg.symbol}>
+                        <span>{leg.symbol}</span>
+                        <span>
+                          <small>{i18n.t("portfolio.weight")}</small>
+                          {formatPlainPercent(leg.targetWeight * 100)}
+                        </span>
+                        <span>
+                          <small>{i18n.t("portfolio.contribution")}</small>
+                          {formatSignedPercent(leg.contributionReturnPct)}
+                        </span>
+                        <span>
+                          <small>{i18n.t("portfolio.tradeCount")}</small>
+                          {leg.tradeCount}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="portfolio-backtest-empty">
+                  {portfolioBacktestResult.error ?? i18n.t("portfolio.backtestNoResult")}
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
         <div className="paper-position-ledger">
           <div className="paper-position-title">
             <span>{i18n.t("portfolio.paperPositions")}</span>
@@ -8964,6 +9116,47 @@ function portfolioRiskDetail(i18n: AppI18n, row: PortfolioRiskRow): string {
     return "需要完成适配器认证、风控审批和人工确认。";
   }
   return row.detail;
+}
+
+function formatSignedPercent(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatPlainPercent(value: number): string {
+  return Number.isFinite(value) ? `${value.toFixed(2)}%` : "N/A";
+}
+
+function portfolioBacktestHeadline(i18n: AppI18n, headline: string): string {
+  if (i18n.locale === "en-US") {
+    return headline;
+  }
+  return (
+    {
+      "Portfolio backtest ready": "组合回测就绪",
+      "Portfolio backtest blocked": "组合回测阻断",
+      "Portfolio backtest needs peers": "组合回测需要对照标的"
+    }[headline] ?? headline
+  );
+}
+
+function portfolioBacktestSummary(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  if (summary === "Run at least one audited research pipeline first.") {
+    return "先至少运行一次审计研究流水线。";
+  }
+  if (summary === "Need at least two audited runs from the same market and timeframe with equity curves.") {
+    return "需要至少两个同市场、同周期且带权益曲线的审计运行。";
+  }
+  const ready = summary.match(/^(\d+) audited runs from (ashare|us|crypto) (1d|1m|5m|15m|30m|60m); cash buffer (.+)\.$/u);
+  if (ready) {
+    return `${ready[1]} 个同市场同周期审计运行 · ${i18n.marketLabel(ready[2] as Market)} ${ready[3]} · 现金缓冲 ${ready[4]}。`;
+  }
+  return summary;
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

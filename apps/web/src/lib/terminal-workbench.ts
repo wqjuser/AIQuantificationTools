@@ -1080,6 +1080,30 @@ export interface PortfolioRiskRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PortfolioBacktestDraftLeg {
+  runId: string;
+  symbol: string;
+  targetWeight: number;
+  weightLabel: string;
+  strategyRevision: string;
+  totalReturnPct: string;
+  maxDrawdownPct: string;
+  current: boolean;
+}
+
+export interface PortfolioBacktestDraft {
+  status: "ready" | "blocked";
+  headline: string;
+  summary: string;
+  cashWeight: number;
+  request: {
+    name: string;
+    initialCash: number;
+    legs: { runId: string; targetWeight: number }[];
+  } | null;
+  rows: PortfolioBacktestDraftLeg[];
+}
+
 export type RiskApprovalStatus = "blocked" | "paper_ready" | "live_ready";
 
 export interface RiskApprovalGate {
@@ -4933,6 +4957,90 @@ export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioR
       tone: workspace.execution.liveEnabled ? "positive" : "warning"
     }
   ];
+}
+
+export function buildPortfolioBacktestDraft(
+  runs: ResearchRunAudit[],
+  currentRunId: string | null | undefined
+): PortfolioBacktestDraft {
+  const current = currentRunId ? runs.find((run) => run.runId === currentRunId) : runs[0];
+  if (!current) {
+    return blockedPortfolioBacktestDraft("Portfolio backtest blocked", "Run at least one audited research pipeline first.");
+  }
+
+  const candidates = runs
+    .filter(
+      (run) =>
+        run.market === current.market &&
+        run.timeframe === current.timeframe &&
+        Array.isArray(run.backtestEquityCurve) &&
+        run.backtestEquityCurve.length > 0
+    )
+    .sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt));
+
+  const selected = [
+    current,
+    ...candidates.filter((run) => run.runId !== current.runId && run.symbol !== current.symbol)
+  ].slice(0, 3);
+
+  if (selected.length < 2) {
+    return blockedPortfolioBacktestDraft(
+      "Portfolio backtest needs peers",
+      "Need at least two audited runs from the same market and timeframe with equity curves."
+    );
+  }
+
+  const peerWeight = selected.length > 1 ? roundWeight(0.4 / (selected.length - 1)) : 0;
+  const weights = selected.map((run, index) => (index === 0 ? 0.5 : peerWeight));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const cashWeight = roundWeight(Math.max(0, 1 - totalWeight));
+  const rows = selected.map((run, index) => ({
+    runId: run.runId,
+    symbol: run.symbol,
+    targetWeight: weights[index],
+    weightLabel: formatWeightLabel(weights[index]),
+    strategyRevision: run.strategyRevision,
+    totalReturnPct: formatMetricPercent(run.metrics, "total_return_pct", "totalReturnPct"),
+    maxDrawdownPct: formatMetricPercent(run.metrics, "max_drawdown_pct", "maxDrawdownPct"),
+    current: run.runId === current.runId
+  }));
+
+  return {
+    status: "ready",
+    headline: "Portfolio backtest ready",
+    summary: `${selected.length} audited runs from ${current.market} ${current.timeframe}; cash buffer ${formatWeightLabel(cashWeight)}.`,
+    cashWeight,
+    request: {
+      name: `${current.market} ${current.timeframe} audited basket`,
+      initialCash: current.backtestAssumptions?.initialCash ?? 100000,
+      legs: selected.map((run, index) => ({ runId: run.runId, targetWeight: weights[index] }))
+    },
+    rows
+  };
+}
+
+function blockedPortfolioBacktestDraft(headline: string, summary: string): PortfolioBacktestDraft {
+  return {
+    status: "blocked",
+    headline,
+    summary,
+    cashWeight: 1,
+    request: null,
+    rows: []
+  };
+}
+
+function roundWeight(value: number): number {
+  return Math.round(value * 10000) / 10000;
+}
+
+function formatWeightLabel(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatMetricPercent(metrics: Record<string, number>, snakeKey: string, camelKey: string): string {
+  const value = metrics[snakeKey] ?? metrics[camelKey];
+  return Number.isFinite(value) ? `${formatPercentValue(value)}%` : "N/A";
 }
 
 export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskApprovalSummary {

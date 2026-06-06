@@ -47,6 +47,7 @@ import {
   buildPaperTradingRows,
   buildPromotionReadiness,
   buildPortfolioRiskRows,
+  buildPortfolioBacktestDraft,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
   resolveQuantLoopSelection,
@@ -4445,6 +4446,66 @@ describe("terminal workbench model", () => {
     expect(rows[0].value).toBe("4 watched");
     expect(rows[1].detail).toContain("600000");
     expect(rows[2].tone).toBe("warning");
+  });
+
+  test("builds a default portfolio backtest draft from audited run history", () => {
+    const current = {
+      ...auditedRunFixture({
+        runId: "run-current-600000",
+        symbol: "600000",
+        market: "ashare",
+        timeframe: "1d",
+        createdAt: "2026-05-26T08:00:00+00:00"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 105000 }
+      ]
+    };
+    const peer = {
+      ...auditedRunFixture({
+        runId: "run-peer-000300",
+        symbol: "000300",
+        market: "ashare",
+        timeframe: "1d",
+        createdAt: "2026-05-26T07:00:00+00:00"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 120000 }
+      ]
+    };
+    const otherMarket = {
+      ...auditedRunFixture({
+        runId: "run-us-aapl",
+        symbol: "AAPL",
+        market: "us",
+        timeframe: "1d",
+        createdAt: "2026-05-26T09:00:00+00:00"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
+      ]
+    };
+
+    const draft = buildPortfolioBacktestDraft([otherMarket, peer, current], current.runId);
+
+    expect(draft.status).toBe("ready");
+    expect(draft.request).toEqual({
+      name: "ashare 1d audited basket",
+      initialCash: 100000,
+      legs: [
+        { runId: "run-current-600000", targetWeight: 0.5 },
+        { runId: "run-peer-000300", targetWeight: 0.4 }
+      ]
+    });
+    expect(draft.cashWeight).toBe(0.1);
+    expect(draft.rows.map((row) => `${row.symbol}:${row.weightLabel}:${row.current}`)).toEqual([
+      "600000:50.0%:true",
+      "000300:40.0%:false"
+    ]);
+    expect(draft.summary).toContain("2 audited runs");
   });
 
   test("blocks execution approval until audited evidence is bound", () => {

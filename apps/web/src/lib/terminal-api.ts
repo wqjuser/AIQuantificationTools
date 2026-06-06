@@ -790,6 +790,61 @@ export interface CacheBatchRefreshResult {
   error?: string;
 }
 
+export interface PortfolioBacktestLegRequest {
+  runId: string;
+  targetWeight: number;
+}
+
+export interface PortfolioBacktestRequest {
+  name: string;
+  initialCash: number;
+  legs: PortfolioBacktestLegRequest[];
+}
+
+export interface PortfolioBacktestMetrics {
+  totalReturnPct: number;
+  annualReturnPct: number;
+  maxDrawdownPct: number;
+  winRatePct: number;
+  profitFactor: number;
+  tradeCount: number;
+}
+
+export interface PortfolioBacktestEquityPoint {
+  timestamp: string;
+  equity: number;
+}
+
+export interface PortfolioBacktestLeg {
+  symbol: string;
+  targetWeight: number;
+  startingValue: number;
+  endingValue: number;
+  contributionValue: number;
+  contributionReturnPct: number;
+  maxDrawdownPct: number;
+  tradeCount: number;
+  dataQuality: MarketKlineQuality;
+}
+
+export interface PortfolioBacktestRun {
+  name: string;
+  market: Market;
+  timeframe: ResearchTimeframe;
+  initialCash: number;
+  cashWeight: number;
+  metrics: PortfolioBacktestMetrics;
+  equityCurve: PortfolioBacktestEquityPoint[];
+  legs: PortfolioBacktestLeg[];
+  dataQuality: MarketKlineQuality;
+}
+
+export interface PortfolioBacktestResult {
+  portfolio?: PortfolioBacktestRun;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface WorkspaceResponse {
   ok: boolean;
   status?: number;
@@ -1040,6 +1095,10 @@ export function buildCacheRefreshUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/cache/refresh");
 }
 
+export function buildPortfolioBacktestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/portfolio/backtest");
+}
+
 export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
   return {
     market: params.market,
@@ -1133,6 +1192,36 @@ export async function loadResearchRunDetail(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run detail error"
+    };
+  }
+}
+
+export async function runPortfolioBacktest(
+  baseUrl: string,
+  request: PortfolioBacktestRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioBacktestResult> {
+  try {
+    const response = await fetcher(buildPortfolioBacktestUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPortfolioBacktestPayload(payload)) {
+      throw new Error("Invalid portfolio backtest contract");
+    }
+    return {
+      portfolio: payload.portfolio,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio backtest error"
     };
   }
 }
@@ -4179,6 +4268,75 @@ function isMarketKlineBar(value: unknown): value is MarketKlineBar {
     typeof bar.low === "number" &&
     typeof bar.close === "number" &&
     typeof bar.volume === "number"
+  );
+}
+
+function isPortfolioBacktestPayload(value: unknown): value is { portfolio: PortfolioBacktestRun } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { portfolio?: unknown };
+  return isPortfolioBacktestRun(payload.portfolio);
+}
+
+function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const run = value as Partial<PortfolioBacktestRun>;
+  return (
+    typeof run.name === "string" &&
+    isMarket(run.market) &&
+    isTimeframe(run.timeframe) &&
+    typeof run.initialCash === "number" &&
+    typeof run.cashWeight === "number" &&
+    isPortfolioBacktestMetrics(run.metrics) &&
+    Array.isArray(run.equityCurve) &&
+    run.equityCurve.every(isPortfolioBacktestEquityPoint) &&
+    Array.isArray(run.legs) &&
+    run.legs.every(isPortfolioBacktestLeg) &&
+    isMarketKlineQuality(run.dataQuality)
+  );
+}
+
+function isPortfolioBacktestMetrics(value: unknown): value is PortfolioBacktestMetrics {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const metrics = value as Partial<PortfolioBacktestMetrics>;
+  return (
+    typeof metrics.totalReturnPct === "number" &&
+    typeof metrics.annualReturnPct === "number" &&
+    typeof metrics.maxDrawdownPct === "number" &&
+    typeof metrics.winRatePct === "number" &&
+    typeof metrics.profitFactor === "number" &&
+    typeof metrics.tradeCount === "number"
+  );
+}
+
+function isPortfolioBacktestEquityPoint(value: unknown): value is PortfolioBacktestEquityPoint {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const point = value as Partial<PortfolioBacktestEquityPoint>;
+  return typeof point.timestamp === "string" && typeof point.equity === "number";
+}
+
+function isPortfolioBacktestLeg(value: unknown): value is PortfolioBacktestLeg {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const leg = value as Partial<PortfolioBacktestLeg>;
+  return (
+    typeof leg.symbol === "string" &&
+    typeof leg.targetWeight === "number" &&
+    typeof leg.startingValue === "number" &&
+    typeof leg.endingValue === "number" &&
+    typeof leg.contributionValue === "number" &&
+    typeof leg.contributionReturnPct === "number" &&
+    typeof leg.maxDrawdownPct === "number" &&
+    typeof leg.tradeCount === "number" &&
+    isMarketKlineQuality(leg.dataQuality)
   );
 }
 

@@ -18,6 +18,7 @@ import {
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
+  buildPortfolioBacktestUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
   buildAuditReportVerifyUrl,
@@ -43,6 +44,7 @@ import {
   loadResearchRunExport,
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
+  runPortfolioBacktest,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -186,6 +188,10 @@ describe("terminal workspace API client", () => {
     );
   });
 
+  test("builds the portfolio backtest URL", () => {
+    expect(buildPortfolioBacktestUrl("/")).toBe("/api/portfolio/backtest");
+  });
+
   test("builds the settings status URL", () => {
     expect(buildSettingsStatusUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/settings/status");
   });
@@ -277,6 +283,91 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.statusLabel).toBe("Core connected");
     expect(result.workspace.selectedInstrument.symbol).toBe("AAPL");
+  });
+
+  test("runs a portfolio backtest against audited run ids", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          portfolio: {
+            name: "A-share core basket",
+            market: "ashare",
+            timeframe: "1d",
+            initialCash: 100000,
+            cashWeight: 0.1,
+            metrics: {
+              totalReturnPct: 9,
+              annualReturnPct: 109,
+              maxDrawdownPct: 1.2,
+              winRatePct: 50,
+              profitFactor: 1.5,
+              tradeCount: 4
+            },
+            equityCurve: [
+              { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+              { timestamp: "2026-05-27T08:00:00+00:00", equity: 109000 }
+            ],
+            legs: [
+              {
+                symbol: "600000",
+                targetWeight: 0.6,
+                startingValue: 60000,
+                endingValue: 63000,
+                contributionValue: 3000,
+                contributionReturnPct: 5,
+                maxDrawdownPct: 4.5,
+                tradeCount: 2,
+                dataQuality: { source: "local-cache", isComplete: true, warnings: [], rows: 2 }
+              },
+              {
+                symbol: "000300",
+                targetWeight: 0.3,
+                startingValue: 30000,
+                endingValue: 36000,
+                contributionValue: 6000,
+                contributionReturnPct: 20,
+                maxDrawdownPct: 5,
+                tradeCount: 2,
+                dataQuality: { source: "local-cache", isComplete: true, warnings: [], rows: 2 }
+              }
+            ],
+            dataQuality: { source: "portfolio-composite(600000:local-cache,000300:local-cache)", isComplete: true, warnings: [], rows: 2 }
+          }
+        })
+      };
+    };
+
+    const result = await runPortfolioBacktest(
+      "/",
+      {
+        name: "A-share core basket",
+        initialCash: 100000,
+        legs: [
+          { runId: "run-a", targetWeight: 0.6 },
+          { runId: "run-b", targetWeight: 0.3 }
+        ]
+      },
+      fetcher
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.portfolio?.metrics.totalReturnPct).toBe(9);
+    expect(result.portfolio?.cashWeight).toBe(0.1);
+    expect(result.portfolio?.legs.map((leg) => `${leg.symbol}:${leg.contributionValue}`)).toEqual(["600000:3000", "000300:6000"]);
+    expect(calls[0]).toMatchObject({ url: "/api/portfolio/backtest" });
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      name: "A-share core basket",
+      initialCash: 100000,
+      legs: [
+        { runId: "run-a", targetWeight: 0.6 },
+        { runId: "run-b", targetWeight: 0.3 }
+      ]
+    });
   });
 
   test("loads golden path status from the Python core", async () => {
