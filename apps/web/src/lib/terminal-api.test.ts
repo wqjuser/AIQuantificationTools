@@ -2909,6 +2909,7 @@ describe("terminal workspace API client", () => {
           }
         }
       ],
+      correlationPairs: [{ leftSymbol: "600000", rightSymbol: "000300", correlation: 0.91 }],
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -2986,7 +2987,7 @@ describe("terminal workspace API client", () => {
         cashWeight: 0.1,
         legCount: 2,
         equityRows: 2,
-        diagnosticsCount: 7,
+        diagnosticsCount: 8,
         incompleteDataQuality: true,
         negativeContributionLegs: 1,
         boundary: "historical audited portfolio evidence only; no investment advice"
@@ -2998,7 +2999,7 @@ describe("terminal workspace API client", () => {
     );
     expect(event?.detail).toContain("run-current-600000-ashare-1d-portfolio-report.md");
     expect(event?.detail).toContain("2 legs");
-    expect(event?.detail).toContain("7 diagnostics");
+    expect(event?.detail).toContain("8 diagnostics");
     expect(event?.detail).not.toContain(markdown ?? "");
   });
 

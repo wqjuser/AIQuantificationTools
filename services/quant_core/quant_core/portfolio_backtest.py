@@ -28,6 +28,13 @@ class PortfolioLegResult:
 
 
 @dataclass(frozen=True)
+class PortfolioCorrelationPair:
+    left_symbol: str
+    right_symbol: str
+    correlation: float
+
+
+@dataclass(frozen=True)
 class PortfolioBacktestRun:
     name: str
     market: Market
@@ -37,6 +44,7 @@ class PortfolioBacktestRun:
     metrics: BacktestMetrics
     equity_curve: list[EquityPoint]
     legs: list[PortfolioLegResult]
+    correlation_pairs: list[PortfolioCorrelationPair]
     data_quality: DataQuality
 
 
@@ -80,6 +88,7 @@ class PortfolioBacktestEngine:
 
         metrics = self._metrics(equity_curve, legs, timeframe)
         data_quality = self._data_quality(legs, rows=len(timestamps))
+        correlation_pairs = self._correlation_pairs(legs)
         return PortfolioBacktestRun(
             name=name,
             market=market,
@@ -89,6 +98,7 @@ class PortfolioBacktestEngine:
             metrics=metrics,
             equity_curve=equity_curve,
             legs=leg_results,
+            correlation_pairs=correlation_pairs,
             data_quality=data_quality,
         )
 
@@ -158,6 +168,45 @@ class PortfolioBacktestEngine:
             rows=rows,
         )
 
+    def _correlation_pairs(self, legs: list[PortfolioLeg]) -> list[PortfolioCorrelationPair]:
+        pairs: list[PortfolioCorrelationPair] = []
+        leg_returns = {leg.run.symbol: self._period_returns(leg.run.equity_curve) for leg in legs}
+        for left_index, left in enumerate(legs):
+            for right in legs[left_index + 1 :]:
+                correlation = self._pearson_correlation(leg_returns[left.run.symbol], leg_returns[right.run.symbol])
+                pairs.append(
+                    PortfolioCorrelationPair(
+                        left_symbol=left.run.symbol,
+                        right_symbol=right.run.symbol,
+                        correlation=round(correlation, 4),
+                    )
+                )
+        return pairs
+
+    def _period_returns(self, equity_curve: list[EquityPoint]) -> list[float]:
+        returns: list[float] = []
+        for previous, current in zip(equity_curve, equity_curve[1:], strict=False):
+            if previous.equity <= 0:
+                returns.append(0.0)
+            else:
+                returns.append(current.equity / previous.equity - 1)
+        return returns
+
+    def _pearson_correlation(self, left: list[float], right: list[float]) -> float:
+        if len(left) != len(right) or len(left) < 2:
+            return 0.0
+        left_mean = sum(left) / len(left)
+        right_mean = sum(right) / len(right)
+        left_centered = [value - left_mean for value in left]
+        right_centered = [value - right_mean for value in right]
+        numerator = sum(left_value * right_value for left_value, right_value in zip(left_centered, right_centered, strict=True))
+        left_variance = sum(value * value for value in left_centered)
+        right_variance = sum(value * value for value in right_centered)
+        denominator = (left_variance * right_variance) ** 0.5
+        if denominator <= 0:
+            return 0.0
+        return numerator / denominator
+
 
 def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, Any]:
     return {
@@ -191,6 +240,14 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
                 "dataQuality": _data_quality_to_payload(leg.data_quality),
             }
             for leg in run.legs
+        ],
+        "correlationPairs": [
+            {
+                "leftSymbol": pair.left_symbol,
+                "rightSymbol": pair.right_symbol,
+                "correlation": pair.correlation,
+            }
+            for pair in run.correlation_pairs
         ],
         "dataQuality": _data_quality_to_payload(run.data_quality),
     }

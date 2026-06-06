@@ -4678,6 +4678,7 @@ describe("terminal workbench model", () => {
           dataQuality: { source: "local-cache", isComplete: false, warnings: ["missing 1 bar"], rows: 2 }
         }
       ],
+      correlationPairs: [{ leftSymbol: "600000", rightSymbol: "000300", correlation: 0.91 }],
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -4692,6 +4693,7 @@ describe("terminal workbench model", () => {
       "exposure-utilization:passed:90.0%",
       "rebalance-drift:review:000300 -2.4pp",
       "risk-contribution:review:600000 64.5%",
+      "correlation-risk:review:600000/000300 0.91",
       "negative-contribution:review:000300 -4.0%",
       "data-quality:blocked:incomplete"
     ]);
@@ -4699,8 +4701,9 @@ describe("terminal workbench model", () => {
     expect(diagnostics[2].detail).toContain("cash/slippage");
     expect(diagnostics[3].detail).toContain("rebalance review");
     expect(diagnostics[4].detail).toContain("risk-budget contribution");
-    expect(diagnostics[5].detail).toContain("negative contribution");
-    expect(diagnostics[6].detail).toContain("000300: missing 1 bar");
+    expect(diagnostics[5].detail).toContain("pairwise correlation");
+    expect(diagnostics[6].detail).toContain("negative contribution");
+    expect(diagnostics[7].detail).toContain("000300: missing 1 bar");
   });
 
   test("builds a markdown report from portfolio backtest evidence", () => {
@@ -4746,6 +4749,7 @@ describe("terminal workbench model", () => {
           dataQuality: { source: "local-cache", isComplete: false, warnings: ["missing 1 bar"], rows: 2 }
         }
       ],
+      correlationPairs: [{ leftSymbol: "600000", rightSymbol: "000300", correlation: 0.91 }],
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -4803,6 +4807,7 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| Gross exposure | 90.0% | passed |");
     expect(markdown).toContain("| Rebalance drift | 000300 -2.4pp | review |");
     expect(markdown).toContain("| Risk contribution | 600000 64.5% | review |");
+    expect(markdown).toContain("| Correlation risk | 600000/000300 0.91 | review |");
     expect(markdown).toContain("| Data quality | incomplete | blocked |");
     expect(markdown).toContain("| 000300 | run-peer-000300 | 25.0% | -1000.00 | -4.00% |");
     expect(markdown).toContain("historical audited portfolio evidence only");

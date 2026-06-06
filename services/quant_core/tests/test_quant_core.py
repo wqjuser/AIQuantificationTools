@@ -292,6 +292,52 @@ class QuantCoreContractTest(unittest.TestCase):
             [("600000", 0.6, 5.0, 3000.0), ("000300", 0.3, 20.0, 6000.0)],
         )
 
+    def test_portfolio_backtest_outputs_pairwise_correlation_evidence(self):
+        from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
+        from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        timestamps = [start + timedelta(days=index) for index in range(4)]
+
+        def audited_run(symbol: str, equities: list[float]) -> BacktestRun:
+            return BacktestRun(
+                strategy_name="Audited SMA plan",
+                strategy_revision=f"rev-{symbol}",
+                symbol=symbol,
+                market="ashare",
+                timeframe="1d",
+                metrics=BacktestMetrics(
+                    total_return_pct=equities[-1] / equities[0] * 100 - 100,
+                    annual_return_pct=0.0,
+                    max_drawdown_pct=5.0,
+                    win_rate_pct=50.0,
+                    profit_factor=1.5,
+                    trade_count=2,
+                ),
+                trades=[],
+                equity_curve=[
+                    EquityPoint(timestamp=timestamp, equity=equity)
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+                data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(equities)),
+            )
+
+        result = PortfolioBacktestEngine(initial_cash=100_000).run(
+            name="A-share correlated basket",
+            legs=[
+                PortfolioLeg(target_weight=0.5, run=audited_run("600000", [100_000, 105_000, 102_000, 108_000])),
+                PortfolioLeg(target_weight=0.4, run=audited_run("000300", [100_000, 104_000, 101_000, 107_000])),
+            ],
+        )
+
+        self.assertEqual(len(result.correlation_pairs), 1)
+        self.assertEqual((result.correlation_pairs[0].left_symbol, result.correlation_pairs[0].right_symbol), ("600000", "000300"))
+        self.assertGreater(result.correlation_pairs[0].correlation, 0.99)
+        payload = portfolio_backtest_run_to_payload(result)
+        self.assertEqual(payload["correlationPairs"][0]["leftSymbol"], "600000")
+        self.assertEqual(payload["correlationPairs"][0]["rightSymbol"], "000300")
+        self.assertGreater(payload["correlationPairs"][0]["correlation"], 0.99)
+
     def test_strategy_library_store_persists_stable_strategy_versions(self):
         from quant_core.research import strategy_config_from_snapshot
         from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload

@@ -1133,6 +1133,7 @@ export interface PortfolioBacktestDiagnosticRow {
     | "exposure-utilization"
     | "rebalance-drift"
     | "risk-contribution"
+    | "correlation-risk"
     | "negative-contribution"
     | "data-quality";
   label: string;
@@ -1165,6 +1166,7 @@ interface PortfolioBacktestDiagnosticInput {
   initialCash?: number;
   cashWeight: number;
   legs: PortfolioBacktestDiagnosticLeg[];
+  correlationPairs?: Array<{ leftSymbol: string; rightSymbol: string; correlation: number }>;
   dataQuality: PortfolioBacktestDiagnosticQuality;
   equityCurve?: Array<{ timestamp: string; equity: number }>;
 }
@@ -5263,6 +5265,7 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
 
   const driftReview = buildPortfolioRebalanceDriftReview(portfolio);
   const riskContributionReview = buildPortfolioRiskContributionReview(portfolio);
+  const correlationReview = buildPortfolioCorrelationReview(portfolio);
 
   const negativeLegs = portfolio.legs.filter((leg) => leg.contributionValue < 0);
   const worstLeg = negativeLegs.sort((left, right) => left.contributionReturnPct - right.contributionReturnPct)[0];
@@ -5332,6 +5335,14 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
       detail: riskContributionReview.detail,
       status: riskContributionReview.status,
       tone: diagnosticTone(riskContributionReview.status)
+    },
+    {
+      id: "correlation-risk",
+      label: "Correlation risk",
+      value: correlationReview.value,
+      detail: correlationReview.detail,
+      status: correlationReview.status,
+      tone: diagnosticTone(correlationReview.status)
     },
     {
       id: "negative-contribution",
@@ -5581,6 +5592,40 @@ function buildPortfolioRiskContributionReview<T extends PortfolioBacktestDiagnos
 
   return {
     value: `${largest.symbol} ${formatDiagnosticWeight(contributionShare)}`,
+    detail,
+    status
+  };
+}
+
+function buildPortfolioCorrelationReview<T extends PortfolioBacktestDiagnosticInput>(portfolio: T): {
+  value: string;
+  detail: string;
+  status: PortfolioBacktestDiagnosticStatus;
+} {
+  const pairs = (portfolio.correlationPairs ?? []).filter(
+    (pair) => typeof pair.leftSymbol === "string" && typeof pair.rightSymbol === "string" && Number.isFinite(pair.correlation)
+  );
+  if (!pairs.length) {
+    return {
+      value: "n/a",
+      detail: "Pairwise correlation evidence is unavailable; rerun the portfolio backtest to refresh correlation risk.",
+      status: "review"
+    };
+  }
+
+  const largest = [...pairs].sort((left, right) => Math.abs(right.correlation) - Math.abs(left.correlation))[0];
+  const absoluteCorrelation = Math.abs(largest.correlation);
+  const status: PortfolioBacktestDiagnosticStatus =
+    absoluteCorrelation >= 0.95 ? "blocked" : absoluteCorrelation > 0.85 ? "review" : "passed";
+  const detail =
+    status === "blocked"
+      ? "Highest pairwise correlation exceeds the 0.95 hard clustering threshold."
+      : status === "review"
+        ? "Highest pairwise correlation exceeds the 0.85 review threshold."
+        : "Highest pairwise correlation remains inside the 0.85 review threshold.";
+
+  return {
+    value: `${largest.leftSymbol}/${largest.rightSymbol} ${largest.correlation.toFixed(2)}`,
     detail,
     status
   };

@@ -9325,6 +9325,7 @@ function portfolioDiagnosticLabel(i18n: AppI18n, row: PortfolioBacktestDiagnosti
       "exposure-utilization": "总暴露",
       "rebalance-drift": "再平衡漂移",
       "risk-contribution": "风险贡献",
+      "correlation-risk": "相关性风险",
       "negative-contribution": "负贡献",
       "data-quality": "数据质量"
     }[row.id] ?? row.label
@@ -9382,6 +9383,15 @@ function portfolioDiagnosticDetail(i18n: AppI18n, row: PortfolioBacktestDiagnost
       return "最大风险预算贡献超过 60% 复核阈值。";
     }
     return "最大风险预算贡献仍在 60% 复核阈值内。";
+  }
+  if (row.id === "correlation-risk") {
+    if (row.status === "blocked") {
+      return "最高成对相关性超过 0.95 硬性聚集阈值。";
+    }
+    if (row.status === "review") {
+      return "最高成对相关性超过 0.85 复核阈值。";
+    }
+    return "最高成对相关性仍在 0.85 复核阈值内。";
   }
   if (row.id === "negative-contribution") {
     return row.status === "passed"

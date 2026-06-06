@@ -828,6 +828,12 @@ export interface PortfolioBacktestLeg {
   dataQuality: MarketKlineQuality;
 }
 
+export interface PortfolioCorrelationPair {
+  leftSymbol: string;
+  rightSymbol: string;
+  correlation: number;
+}
+
 export interface PortfolioBacktestRun {
   name: string;
   market: Market;
@@ -837,6 +843,7 @@ export interface PortfolioBacktestRun {
   metrics: PortfolioBacktestMetrics;
   equityCurve: PortfolioBacktestEquityPoint[];
   legs: PortfolioBacktestLeg[];
+  correlationPairs?: PortfolioCorrelationPair[];
   dataQuality: MarketKlineQuality;
 }
 
@@ -4355,6 +4362,8 @@ function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
     run.equityCurve.every(isPortfolioBacktestEquityPoint) &&
     Array.isArray(run.legs) &&
     run.legs.every(isPortfolioBacktestLeg) &&
+    (run.correlationPairs === undefined ||
+      (Array.isArray(run.correlationPairs) && run.correlationPairs.every(isPortfolioCorrelationPair))) &&
     isMarketKlineQuality(run.dataQuality)
   );
 }
@@ -4398,6 +4407,14 @@ function isPortfolioBacktestLeg(value: unknown): value is PortfolioBacktestLeg {
     typeof leg.tradeCount === "number" &&
     isMarketKlineQuality(leg.dataQuality)
   );
+}
+
+function isPortfolioCorrelationPair(value: unknown): value is PortfolioCorrelationPair {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const pair = value as Partial<PortfolioCorrelationPair>;
+  return typeof pair.leftSymbol === "string" && typeof pair.rightSymbol === "string" && typeof pair.correlation === "number";
 }
 
 function isMarketSearchPayload(value: unknown): value is Omit<MarketSearchResult, "source" | "error"> {
