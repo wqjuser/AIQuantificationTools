@@ -1127,7 +1127,14 @@ export interface PortfolioPeerAuditPlan {
 export type PortfolioBacktestDiagnosticStatus = "passed" | "review" | "blocked";
 
 export interface PortfolioBacktestDiagnosticRow {
-  id: "concentration" | "cash-buffer" | "exposure-utilization" | "rebalance-drift" | "negative-contribution" | "data-quality";
+  id:
+    | "concentration"
+    | "cash-buffer"
+    | "exposure-utilization"
+    | "rebalance-drift"
+    | "risk-contribution"
+    | "negative-contribution"
+    | "data-quality";
   label: string;
   value: string;
   detail: string;
@@ -5255,6 +5262,7 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
           : "Gross target exposure leaves a cash/slippage buffer.";
 
   const driftReview = buildPortfolioRebalanceDriftReview(portfolio);
+  const riskContributionReview = buildPortfolioRiskContributionReview(portfolio);
 
   const negativeLegs = portfolio.legs.filter((leg) => leg.contributionValue < 0);
   const worstLeg = negativeLegs.sort((left, right) => left.contributionReturnPct - right.contributionReturnPct)[0];
@@ -5316,6 +5324,14 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
       detail: driftReview.detail,
       status: driftReview.status,
       tone: diagnosticTone(driftReview.status)
+    },
+    {
+      id: "risk-contribution",
+      label: "Risk contribution",
+      value: riskContributionReview.value,
+      detail: riskContributionReview.detail,
+      status: riskContributionReview.status,
+      tone: diagnosticTone(riskContributionReview.status)
     },
     {
       id: "negative-contribution",
@@ -5529,6 +5545,45 @@ function portfolioEndingValue<T extends PortfolioBacktestDiagnosticInput>(portfo
 
   const cashValue = Number.isFinite(portfolio.initialCash) ? (portfolio.initialCash ?? 0) * portfolio.cashWeight : 0;
   return legEndingValue + Math.max(0, cashValue);
+}
+
+function buildPortfolioRiskContributionReview<T extends PortfolioBacktestDiagnosticInput>(portfolio: T): {
+  value: string;
+  detail: string;
+  status: PortfolioBacktestDiagnosticStatus;
+} {
+  const riskBudgets = portfolio.legs
+    .map((leg) => ({
+      symbol: leg.symbol,
+      riskBudget: Math.abs(leg.maxDrawdownPct) * leg.targetWeight
+    }))
+    .filter((row) => Number.isFinite(row.riskBudget) && row.riskBudget > 0);
+
+  const totalRiskBudget = riskBudgets.reduce((sum, row) => sum + row.riskBudget, 0);
+  if (!riskBudgets.length || totalRiskBudget <= 0) {
+    return {
+      value: "n/a",
+      detail: "Leg drawdown evidence is unavailable; risk-budget contribution needs review.",
+      status: "review"
+    };
+  }
+
+  const largest = riskBudgets.sort((left, right) => right.riskBudget - left.riskBudget)[0];
+  const contributionShare = largest.riskBudget / totalRiskBudget;
+  const status: PortfolioBacktestDiagnosticStatus =
+    contributionShare >= 0.75 ? "blocked" : contributionShare > 0.6 ? "review" : "passed";
+  const detail =
+    status === "blocked"
+      ? "Largest risk-budget contribution exceeds the 75% hard concentration threshold."
+      : status === "review"
+        ? "Largest risk-budget contribution exceeds the 60% review threshold."
+        : "Largest risk-budget contribution remains inside the 60% review threshold.";
+
+  return {
+    value: `${largest.symbol} ${formatDiagnosticWeight(contributionShare)}`,
+    detail,
+    status
+  };
 }
 
 function formatMetricPercent(metrics: Record<string, number>, snakeKey: string, camelKey: string): string {

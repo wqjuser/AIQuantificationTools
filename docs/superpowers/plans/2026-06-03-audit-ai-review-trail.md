@@ -365,3 +365,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "portfolio backtest"` failed because Portfolio diagnostics and Markdown reports did not include gross exposure utilization or end-weight rebalance drift review rows.
 - GREEN: added Portfolio gross exposure and rebalance drift diagnostics, deriving exposure from target weights and drift from ending leg values/equity evidence, and localized the new rows in the Portfolio diagnostics UI and Markdown report.
 - DOCS: updated product plan and architecture notes to move exposure/rebalance drift review out of the future bucket while keeping the no-live-rebalance/no-auto-trading boundary explicit.
+- RED: `terminal-workbench.test.ts terminal-api.test.ts -t "portfolio"` failed because Portfolio diagnostics, Markdown reports, and report audit metadata did not include risk-budget contribution review.
+- GREEN: added a Portfolio risk contribution diagnostic using `abs(maxDrawdownPct) * targetWeight` as the leg risk-budget proxy, localized the UI row, and let Portfolio Markdown/report events carry the expanded diagnostics count.
+- DOCS: updated product plan and architecture notes to record risk-budget contribution as a current audit proxy while leaving full covariance/correlation risk modeling as a future slice.

@@ -4691,14 +4691,16 @@ describe("terminal workbench model", () => {
       "cash-buffer:passed:10.0%",
       "exposure-utilization:passed:90.0%",
       "rebalance-drift:review:000300 -2.4pp",
+      "risk-contribution:review:600000 64.5%",
       "negative-contribution:review:000300 -4.0%",
       "data-quality:blocked:incomplete"
     ]);
     expect(diagnostics[0].detail).toContain("50%");
     expect(diagnostics[2].detail).toContain("cash/slippage");
     expect(diagnostics[3].detail).toContain("rebalance review");
-    expect(diagnostics[4].detail).toContain("negative contribution");
-    expect(diagnostics[5].detail).toContain("000300: missing 1 bar");
+    expect(diagnostics[4].detail).toContain("risk-budget contribution");
+    expect(diagnostics[5].detail).toContain("negative contribution");
+    expect(diagnostics[6].detail).toContain("000300: missing 1 bar");
   });
 
   test("builds a markdown report from portfolio backtest evidence", () => {
@@ -4800,6 +4802,7 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| Concentration | 600000 65.0% | review |");
     expect(markdown).toContain("| Gross exposure | 90.0% | passed |");
     expect(markdown).toContain("| Rebalance drift | 000300 -2.4pp | review |");
+    expect(markdown).toContain("| Risk contribution | 600000 64.5% | review |");
     expect(markdown).toContain("| Data quality | incomplete | blocked |");
     expect(markdown).toContain("| 000300 | run-peer-000300 | 25.0% | -1000.00 | -4.00% |");
     expect(markdown).toContain("historical audited portfolio evidence only");

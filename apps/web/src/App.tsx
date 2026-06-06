@@ -9324,6 +9324,7 @@ function portfolioDiagnosticLabel(i18n: AppI18n, row: PortfolioBacktestDiagnosti
       "cash-buffer": "现金缓冲",
       "exposure-utilization": "总暴露",
       "rebalance-drift": "再平衡漂移",
+      "risk-contribution": "风险贡献",
       "negative-contribution": "负贡献",
       "data-quality": "数据质量"
     }[row.id] ?? row.label
@@ -9372,6 +9373,15 @@ function portfolioDiagnosticDetail(i18n: AppI18n, row: PortfolioBacktestDiagnost
       return "期末权重漂移超过 2 个百分点再平衡复核阈值。";
     }
     return "期末权重漂移仍在 2 个百分点再平衡复核阈值内。";
+  }
+  if (row.id === "risk-contribution") {
+    if (row.status === "blocked") {
+      return "最大风险预算贡献超过 75% 硬性集中度阈值。";
+    }
+    if (row.status === "review") {
+      return "最大风险预算贡献超过 60% 复核阈值。";
+    }
+    return "最大风险预算贡献仍在 60% 复核阈值内。";
   }
   if (row.id === "negative-contribution") {
     return row.status === "passed"
