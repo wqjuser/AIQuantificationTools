@@ -10,7 +10,7 @@ from typing import Any
 from quant_core.audit_events import AuditEventRecord, audit_event_record_to_payload
 
 
-SIGNABLE_REPORT_EVENT_TYPES = {"audit_evidence_report", "backtest_report"}
+SIGNABLE_REPORT_EVENT_TYPES = {"audit_evidence_report", "backtest_report", "portfolio_report"}
 AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON = "audit_report_import_verification_invalid"
 
 

@@ -1668,6 +1668,97 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(verify_payload["verification"]["status"], "verified")
         self.assertEqual(verify_payload["event"]["metadata"]["signature"]["status"], "verified")
 
+    def test_portfolio_report_sign_and_verify_api_updates_signature_metadata(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        event = {
+            "schemaVersion": 1,
+            "eventId": "portfolio-report-api-signable",
+            "eventType": "portfolio_report",
+            "runId": "run-api-portfolio-report",
+            "createdAt": "2026-06-06T10:20:00+00:00",
+            "stage": "generated",
+            "source": "web",
+            "summary": "Portfolio Markdown report generated for ashare 1d audited basket",
+            "detail": "run-api-portfolio-report-ashare-1d-portfolio-report.md · sha256 dddddd · 2 legs · 4 diagnostics",
+            "metadata": {
+                "artifactKind": "aiqt.portfolioReport",
+                "fileName": "run-api-portfolio-report-ashare-1d-portfolio-report.md",
+                "contentSha256": "d" * 64,
+                "contentSha256Algorithm": "sha256",
+                "format": "text/markdown",
+                "market": "ashare",
+                "timeframe": "1d",
+                "portfolioName": "ashare 1d audited basket",
+                "initialCash": 100000,
+                "cashWeight": 0.1,
+                "legCount": 2,
+                "equityRows": 240,
+                "diagnosticsCount": 4,
+                "negativeContributionLegs": 1,
+                "incompleteDataQuality": False,
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_event_store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+            audit_event_store.record(event)
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = audit_event_store
+            TestHandler.audit_signing_secret = "unit-test-audit-secret"
+            TestHandler.audit_signing_key_id = "unit-test-key"
+            TestHandler.audit_signer_name = "Unit Test Audit Key"
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                sign_body = json.dumps({"eventId": "portfolio-report-api-signable"}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/sign",
+                    body=sign_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(sign_body))},
+                )
+                sign_response = connection.getresponse()
+                sign_payload = json.loads(sign_response.read().decode("utf-8"))
+
+                verify_body = json.dumps({"eventId": "portfolio-report-api-signable"}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/reports/verify",
+                    body=verify_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(verify_body))},
+                )
+                verify_response = connection.getresponse()
+                verify_payload = json.loads(verify_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(sign_response.status, 200)
+        self.assertEqual(sign_payload["event"]["eventType"], "portfolio_report")
+        self.assertEqual(sign_payload["event"]["metadata"]["artifactKind"], "aiqt.portfolioReport")
+        self.assertEqual(sign_payload["signature"]["status"], "verified")
+        self.assertEqual(sign_payload["signature"]["algorithm"], "hmac-sha256")
+        self.assertEqual(sign_payload["signature"]["keyId"], "unit-test-key")
+        self.assertRegex(sign_payload["signature"]["value"], r"^[a-f0-9]{64}$")
+        self.assertEqual(verify_response.status, 200)
+        self.assertEqual(verify_payload["verification"]["status"], "verified")
+        self.assertEqual(verify_payload["event"]["metadata"]["signature"]["status"], "verified")
+
     def test_package_report_signature_verify_api_checks_external_artifact_without_recording(self):
         import hashlib
         import hmac

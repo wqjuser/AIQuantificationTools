@@ -782,7 +782,7 @@ export function App() {
     auditEvidenceReportRequestIdRef.current = requestId;
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
-      eventType: "audit_evidence_report,backtest_report",
+      eventType: "audit_evidence_report,backtest_report,portfolio_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined

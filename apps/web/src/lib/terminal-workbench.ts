@@ -983,7 +983,7 @@ export interface AuditEvidenceReportLedgerRow {
   signatureLabel: string;
   signatureVerifiedAt: string;
   detail: string;
-  reportKind: "audit_evidence_report" | "backtest_report";
+  reportKind: "audit_evidence_report" | "backtest_report" | "portfolio_report";
   tone: "ai" | "positive" | "risk";
 }
 
@@ -4294,19 +4294,44 @@ export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
   return events
-    .filter((event) => event.eventType === "audit_evidence_report" || event.eventType === "backtest_report")
+    .filter(
+      (event) =>
+        event.eventType === "audit_evidence_report" ||
+        event.eventType === "backtest_report" ||
+        event.eventType === "portfolio_report"
+    )
     .map((event) => {
       const reportKind: AuditEvidenceReportLedgerRow["reportKind"] =
-        event.eventType === "backtest_report" ? "backtest_report" : "audit_evidence_report";
+        event.eventType === "portfolio_report"
+          ? "portfolio_report"
+          : event.eventType === "backtest_report"
+            ? "backtest_report"
+            : "audit_evidence_report";
       const contentSha256 = auditReportLedgerMetadataText(event.metadata, "contentSha256");
       const artifactKind =
         auditReportLedgerMetadataText(event.metadata, "artifactKind") ||
-        (reportKind === "backtest_report" ? "aiqt.backtestReport" : "aiqt.auditReport");
+        (reportKind === "portfolio_report"
+          ? "aiqt.portfolioReport"
+          : reportKind === "backtest_report"
+            ? "aiqt.backtestReport"
+            : "aiqt.auditReport");
       const fileName =
         auditReportLedgerMetadataText(event.metadata, "fileName") ||
-        (reportKind === "backtest_report" ? "backtest-report.md" : "audit-evidence-report.md");
+        (reportKind === "portfolio_report"
+          ? "portfolio-report.md"
+          : reportKind === "backtest_report"
+            ? "backtest-report.md"
+            : "audit-evidence-report.md");
       const focusQuery =
-        reportKind === "backtest_report"
+        reportKind === "portfolio_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "portfolioName")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "backtest_report"
           ? [
               auditReportLedgerMetadataText(event.metadata, "market"),
               auditReportLedgerMetadataText(event.metadata, "symbol"),
@@ -4339,28 +4364,40 @@ export function buildAuditEvidenceReportLedgerRows(
         shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
         focusQuery,
         packageMatched:
-          reportKind === "backtest_report"
+          reportKind === "portfolio_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "legCount")
+            : reportKind === "backtest_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "runComparisonRows")
             : auditReportLedgerMetadataNumber(event.metadata, "packageMatched"),
         packageTotal:
-          reportKind === "backtest_report"
+          reportKind === "portfolio_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "equityRows")
+            : reportKind === "backtest_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "dataRows")
             : auditReportLedgerMetadataNumber(event.metadata, "packageTotal"),
         importDiffBlocked:
-          reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
+          reportKind === "backtest_report" || reportKind === "portfolio_report"
+            ? 0
+            : auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
         importDiffTotal:
-          reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
+          reportKind === "backtest_report" || reportKind === "portfolio_report"
+            ? 0
+            : auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
         importVerificationDetail,
         importVerificationInvalid,
         importVerificationVerified,
         deepLinkStatus:
-          reportKind === "backtest_report"
+          reportKind === "portfolio_report"
+            ? "portfolio-report"
+            : reportKind === "backtest_report"
             ? "backtest-report"
             : auditReportLedgerMetadataText(event.metadata, "deepLinkStatus") || "unknown",
         status,
         statusLabel:
           status === "ready"
-            ? reportKind === "backtest_report"
+            ? reportKind === "portfolio_report"
+              ? "Portfolio report hash recorded"
+              : reportKind === "backtest_report"
               ? "Backtest report hash recorded"
               : "Report hash recorded"
             : "Report hash invalid",

@@ -4158,6 +4158,65 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("includes portfolio markdown report events in the audit report ledger", () => {
+    const portfolioHash = "f".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "portfolio-report-run-a1-ffffffffffffffff",
+        eventType: "portfolio_report",
+        runId: "run-a1",
+        createdAt: "2026-06-06T10:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Portfolio Markdown report generated for ashare 1d audited basket",
+        detail: "run-a1-ashare-1d-portfolio-report.md · sha256 ffffffffffff · 2 legs · 4 diagnostics",
+        metadata: {
+          artifactKind: "aiqt.portfolioReport",
+          boundary: "historical audited portfolio evidence only; no investment advice",
+          cashWeight: 0.1,
+          contentSha256: portfolioHash,
+          contentSha256Algorithm: "sha256",
+          diagnosticsCount: 4,
+          equityRows: 240,
+          fileName: "run-a1-ashare-1d-portfolio-report.md",
+          format: "text/markdown",
+          incompleteDataQuality: false,
+          initialCash: 100000,
+          legCount: 2,
+          market: "ashare",
+          negativeContributionLegs: 1,
+          portfolioName: "ashare 1d audited basket",
+          timeframe: "1d"
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.portfolioReport",
+        contentSha256: portfolioHash,
+        deepLinkStatus: "portfolio-report",
+        fileName: "run-a1-ashare-1d-portfolio-report.md",
+        focusQuery: "ashare 1d ashare 1d audited basket",
+        importDiffBlocked: 0,
+        importDiffTotal: 0,
+        packageMatched: 2,
+        packageTotal: 240,
+        reportKind: "portfolio_report",
+        runId: "run-a1",
+        signatureLabel: "Unsigned report hash",
+        signatureStatus: "unsigned",
+        statusLabel: "Portfolio report hash recorded",
+        tone: "ai"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "portfolio_report basket").map((row) => row.id)).toEqual([
+      "portfolio-report-run-a1-ffffffffffffffff"
+    ]);
+  });
+
   test("promotes audit report ledger rows when signature chain metadata is present", () => {
     const verifiedHash = "b".repeat(64);
     const signedHash = "c".repeat(64);
