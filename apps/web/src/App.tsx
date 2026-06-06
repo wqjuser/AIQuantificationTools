@@ -9322,6 +9322,8 @@ function portfolioDiagnosticLabel(i18n: AppI18n, row: PortfolioBacktestDiagnosti
     {
       concentration: "集中度",
       "cash-buffer": "现金缓冲",
+      "exposure-utilization": "总暴露",
+      "rebalance-drift": "再平衡漂移",
       "negative-contribution": "负贡献",
       "data-quality": "数据质量"
     }[row.id] ?? row.label
@@ -9349,6 +9351,27 @@ function portfolioDiagnosticDetail(i18n: AppI18n, row: PortfolioBacktestDiagnost
       return "现金缓冲偏薄，执行滑点或整手约束需要复核。";
     }
     return "现金缓冲处于静态权重复核区间内。";
+  }
+  if (row.id === "exposure-utilization") {
+    if (row.status === "blocked") {
+      return "总目标暴露超过 100%，晋级前必须重新调整权重。";
+    }
+    if (row.detail.includes("fully invested")) {
+      return "总目标暴露接近满仓，现金和滑点缓冲需要复核。";
+    }
+    if (row.detail.includes("under-invested")) {
+      return "总目标暴露偏低，组合可能没有充分配置。";
+    }
+    return "总目标暴露保留了现金和滑点缓冲。";
+  }
+  if (row.id === "rebalance-drift") {
+    if (row.status === "blocked") {
+      return "期末权重漂移超过 10 个百分点硬性再平衡阈值。";
+    }
+    if (row.status === "review") {
+      return "期末权重漂移超过 2 个百分点再平衡复核阈值。";
+    }
+    return "期末权重漂移仍在 2 个百分点再平衡复核阈值内。";
   }
   if (row.id === "negative-contribution") {
     return row.status === "passed"

@@ -2986,7 +2986,7 @@ describe("terminal workspace API client", () => {
         cashWeight: 0.1,
         legCount: 2,
         equityRows: 2,
-        diagnosticsCount: 4,
+        diagnosticsCount: 6,
         incompleteDataQuality: true,
         negativeContributionLegs: 1,
         boundary: "historical audited portfolio evidence only; no investment advice"
@@ -2998,7 +2998,7 @@ describe("terminal workspace API client", () => {
     );
     expect(event?.detail).toContain("run-current-600000-ashare-1d-portfolio-report.md");
     expect(event?.detail).toContain("2 legs");
-    expect(event?.detail).toContain("4 diagnostics");
+    expect(event?.detail).toContain("6 diagnostics");
     expect(event?.detail).not.toContain(markdown ?? "");
   });
 

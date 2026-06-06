@@ -1127,7 +1127,7 @@ export interface PortfolioPeerAuditPlan {
 export type PortfolioBacktestDiagnosticStatus = "passed" | "review" | "blocked";
 
 export interface PortfolioBacktestDiagnosticRow {
-  id: "concentration" | "cash-buffer" | "negative-contribution" | "data-quality";
+  id: "concentration" | "cash-buffer" | "exposure-utilization" | "rebalance-drift" | "negative-contribution" | "data-quality";
   label: string;
   value: string;
   detail: string;
@@ -1145,6 +1145,8 @@ interface PortfolioBacktestDiagnosticQuality {
 interface PortfolioBacktestDiagnosticLeg {
   symbol: string;
   targetWeight: number;
+  startingValue?: number;
+  endingValue?: number;
   contributionValue: number;
   contributionReturnPct: number;
   maxDrawdownPct: number;
@@ -1153,9 +1155,11 @@ interface PortfolioBacktestDiagnosticLeg {
 }
 
 interface PortfolioBacktestDiagnosticInput {
+  initialCash?: number;
   cashWeight: number;
   legs: PortfolioBacktestDiagnosticLeg[];
   dataQuality: PortfolioBacktestDiagnosticQuality;
+  equityCurve?: Array<{ timestamp: string; equity: number }>;
 }
 
 interface PortfolioBacktestReportInput extends PortfolioBacktestDiagnosticInput {
@@ -5238,6 +5242,20 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
         ? "Cash buffer is thin; execution slippage or round lots may need review."
         : "Cash buffer is inside the static-weight review band.";
 
+  const grossExposure = portfolio.legs.reduce((sum, leg) => sum + leg.targetWeight, 0);
+  const exposureStatus: PortfolioBacktestDiagnosticStatus =
+    grossExposure > 1.0001 ? "blocked" : grossExposure >= 0.98 || grossExposure < 0.65 ? "review" : "passed";
+  const exposureDetail =
+    exposureStatus === "blocked"
+      ? "Gross target exposure exceeds 100%; the basket cannot be promoted without resizing."
+      : grossExposure >= 0.98
+        ? "Gross target exposure is near fully invested; cash/slippage buffer needs review."
+        : grossExposure < 0.65
+          ? "Gross target exposure is low, so the basket may be under-invested."
+          : "Gross target exposure leaves a cash/slippage buffer.";
+
+  const driftReview = buildPortfolioRebalanceDriftReview(portfolio);
+
   const negativeLegs = portfolio.legs.filter((leg) => leg.contributionValue < 0);
   const worstLeg = negativeLegs.sort((left, right) => left.contributionReturnPct - right.contributionReturnPct)[0];
   const negativeStatus = worstLeg ? "review" : "passed";
@@ -5282,6 +5300,22 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
       detail: cashDetail,
       status: cashStatus,
       tone: diagnosticTone(cashStatus)
+    },
+    {
+      id: "exposure-utilization",
+      label: "Gross exposure",
+      value: formatDiagnosticWeight(grossExposure),
+      detail: exposureDetail,
+      status: exposureStatus,
+      tone: diagnosticTone(exposureStatus)
+    },
+    {
+      id: "rebalance-drift",
+      label: "Rebalance drift",
+      value: driftReview.value,
+      detail: driftReview.detail,
+      status: driftReview.status,
+      tone: diagnosticTone(driftReview.status)
     },
     {
       id: "negative-contribution",
@@ -5409,6 +5443,13 @@ function formatDiagnosticWeight(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatDiagnosticPointDrift(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}pp`;
+}
+
 function formatDiagnosticPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
@@ -5426,6 +5467,68 @@ function diagnosticTone(status: PortfolioBacktestDiagnosticStatus): PortfolioBac
     return "positive";
   }
   return status === "blocked" ? "risk" : "warning";
+}
+
+function buildPortfolioRebalanceDriftReview<T extends PortfolioBacktestDiagnosticInput>(portfolio: T): {
+  value: string;
+  detail: string;
+  status: PortfolioBacktestDiagnosticStatus;
+} {
+  const endingPortfolioValue = portfolioEndingValue(portfolio);
+  if (!endingPortfolioValue) {
+    return {
+      value: "n/a",
+      detail: "Ending weights are unavailable; run a portfolio backtest before rebalance drift review.",
+      status: "review"
+    };
+  }
+
+  const drifts = portfolio.legs
+    .filter((leg) => Number.isFinite(leg.endingValue) && (leg.endingValue ?? 0) > 0)
+    .map((leg) => ({
+      symbol: leg.symbol,
+      drift: (leg.endingValue ?? 0) / endingPortfolioValue - leg.targetWeight
+    }));
+
+  if (!drifts.length) {
+    return {
+      value: "n/a",
+      detail: "Ending leg values are unavailable; run a portfolio backtest before rebalance drift review.",
+      status: "review"
+    };
+  }
+
+  const rankedDrifts = drifts.sort((left, right) => Math.abs(right.drift) - Math.abs(left.drift));
+  const largestDrift = rankedDrifts[0];
+  const absoluteDrift = Math.abs(largestDrift.drift);
+  const status: PortfolioBacktestDiagnosticStatus = absoluteDrift >= 0.1 ? "blocked" : absoluteDrift > 0.02 ? "review" : "passed";
+  const detail =
+    status === "blocked"
+      ? "Largest end-weight drift exceeds the 10pp hard rebalance threshold."
+      : status === "review"
+        ? "Largest end-weight drift exceeds the 2pp rebalance review threshold."
+        : "Largest end-weight drift remains inside the 2pp rebalance review threshold.";
+
+  return {
+    value: `${largestDrift.symbol} ${formatDiagnosticPointDrift(largestDrift.drift)}`,
+    detail,
+    status
+  };
+}
+
+function portfolioEndingValue<T extends PortfolioBacktestDiagnosticInput>(portfolio: T): number | null {
+  const lastEquity = portfolio.equityCurve?.at(-1)?.equity;
+  if (Number.isFinite(lastEquity) && (lastEquity ?? 0) > 0) {
+    return lastEquity ?? null;
+  }
+
+  const legEndingValue = portfolio.legs.reduce((sum, leg) => sum + (Number.isFinite(leg.endingValue) ? (leg.endingValue ?? 0) : 0), 0);
+  if (legEndingValue <= 0) {
+    return null;
+  }
+
+  const cashValue = Number.isFinite(portfolio.initialCash) ? (portfolio.initialCash ?? 0) * portfolio.cashWeight : 0;
+  return legEndingValue + Math.max(0, cashValue);
 }
 
 function formatMetricPercent(metrics: Record<string, number>, snakeKey: string, camelKey: string): string {
