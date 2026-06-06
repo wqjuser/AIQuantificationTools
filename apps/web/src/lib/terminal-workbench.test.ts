@@ -48,6 +48,7 @@ import {
   buildPromotionReadiness,
   buildPortfolioRiskRows,
   buildPortfolioBacktestDraft,
+  buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
   resolveQuantLoopSelection,
@@ -4506,6 +4507,71 @@ describe("terminal workbench model", () => {
       "000300:40.0%:false"
     ]);
     expect(draft.summary).toContain("2 audited runs");
+  });
+
+  test("builds a peer audit plan for missing same-market portfolio runs", () => {
+    const current = {
+      ...auditedRunFixture({
+        runId: "run-current-600000",
+        symbol: "600000",
+        market: "ashare",
+        timeframe: "1d"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 105000 }
+      ]
+    };
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), current);
+
+    const plan = buildPortfolioPeerAuditPlan(workspace, [current]);
+
+    expect(plan.status).toBe("ready");
+    expect(plan.auditedCount).toBe(1);
+    expect(plan.missingCount).toBe(1);
+    expect(plan.candidates.map((candidate) => `${candidate.symbol}:${candidate.status}:${candidate.runId ?? "missing"}`)).toEqual([
+      "600000:audited:run-current-600000",
+      "000300:missing:missing"
+    ]);
+    expect(plan.summary).toContain("1 peer audit");
+  });
+
+  test("marks the peer audit plan complete when enough audited legs exist", () => {
+    const current = {
+      ...auditedRunFixture({
+        runId: "run-current-600000",
+        symbol: "600000",
+        market: "ashare",
+        timeframe: "1d"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 105000 }
+      ]
+    };
+    const peer = {
+      ...auditedRunFixture({
+        runId: "run-peer-000300",
+        symbol: "000300",
+        market: "ashare",
+        timeframe: "1d"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
+      ]
+    };
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), current);
+
+    const plan = buildPortfolioPeerAuditPlan(workspace, [peer, current]);
+
+    expect(plan.status).toBe("complete");
+    expect(plan.auditedCount).toBe(2);
+    expect(plan.missingCount).toBe(0);
+    expect(plan.candidates.map((candidate) => `${candidate.symbol}:${candidate.status}:${candidate.runId ?? "missing"}`)).toEqual([
+      "600000:audited:run-current-600000",
+      "000300:audited:run-peer-000300"
+    ]);
   });
 
   test("blocks execution approval until audited evidence is bound", () => {

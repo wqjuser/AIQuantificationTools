@@ -4096,6 +4096,14 @@ em {
   gap: 12px;
 }
 
+.portfolio-backtest-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .portfolio-backtest-header span,
 .portfolio-backtest-title span,
 .portfolio-backtest-metrics span,
@@ -4118,6 +4126,65 @@ em {
   color: #a8b7c7;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.portfolio-peer-audit-plan {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #111b29;
+  padding: 8px;
+}
+
+.portfolio-peer-audit-plan.ready {
+  border-color: #614e20;
+}
+
+.portfolio-peer-audit-plan.complete {
+  border-color: #2b6f62;
+}
+
+.portfolio-peer-audit-plan p {
+  margin: 0;
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.portfolio-peer-audit-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.portfolio-peer-audit-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #27364a;
+  border-radius: 999px;
+  background: #0f1722;
+  color: #dce6ee;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 4px 8px;
+}
+
+.portfolio-peer-audit-list span.audited {
+  border-color: #2b6f62;
+  color: #71dfc5;
+}
+
+.portfolio-peer-audit-list span.missing {
+  border-color: #614e20;
+  color: #e8be62;
+}
+
+.portfolio-peer-audit-list em {
+  color: inherit;
+  font-size: 10px;
+  opacity: 0.88;
 }
 
 .portfolio-backtest-content {

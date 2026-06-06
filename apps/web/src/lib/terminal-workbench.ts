@@ -1104,6 +1104,26 @@ export interface PortfolioBacktestDraft {
   rows: PortfolioBacktestDraftLeg[];
 }
 
+export type PortfolioPeerAuditCandidateStatus = "audited" | "missing";
+
+export interface PortfolioPeerAuditCandidate {
+  market: Market;
+  symbol: string;
+  name: string;
+  timeframe: Timeframe;
+  status: PortfolioPeerAuditCandidateStatus;
+  runId: string | null;
+}
+
+export interface PortfolioPeerAuditPlan {
+  status: "ready" | "complete" | "blocked";
+  headline: string;
+  summary: string;
+  auditedCount: number;
+  missingCount: number;
+  candidates: PortfolioPeerAuditCandidate[];
+}
+
 export type RiskApprovalStatus = "blocked" | "paper_ready" | "live_ready";
 
 export interface RiskApprovalGate {
@@ -5016,6 +5036,89 @@ export function buildPortfolioBacktestDraft(
       legs: selected.map((run, index) => ({ runId: run.runId, targetWeight: weights[index] }))
     },
     rows
+  };
+}
+
+export function buildPortfolioPeerAuditPlan(
+  workspace: TerminalWorkspace,
+  runs: ResearchRunAudit[]
+): PortfolioPeerAuditPlan {
+  const market = workspace.selectedInstrument.market;
+  const timeframe = workspace.selectedTimeframe;
+  const sameMarketWatchlist = workspace.watchlist
+    .filter((instrument) => instrument.market === market)
+    .filter(
+      (instrument, index, instruments) =>
+        instruments.findIndex((candidate) => candidate.symbol === instrument.symbol && candidate.market === instrument.market) === index
+    )
+    .slice(0, 4);
+
+  if (!workspace.researchRun?.runId) {
+    return {
+      status: "blocked",
+      headline: "Peer audit blocked",
+      summary: "Run the selected instrument pipeline before preparing portfolio peers.",
+      auditedCount: 0,
+      missingCount: sameMarketWatchlist.length,
+      candidates: sameMarketWatchlist.map((instrument) => ({
+        market: instrument.market,
+        symbol: instrument.symbol,
+        name: instrument.name,
+        timeframe,
+        status: "missing",
+        runId: null
+      }))
+    };
+  }
+
+  const auditedBySymbol = new Map<string, ResearchRunAudit>();
+  for (const run of runs) {
+    if (
+      run.market === market &&
+      run.timeframe === timeframe &&
+      Array.isArray(run.backtestEquityCurve) &&
+      run.backtestEquityCurve.length > 0 &&
+      !auditedBySymbol.has(run.symbol)
+    ) {
+      auditedBySymbol.set(run.symbol, run);
+    }
+  }
+
+  const candidates: PortfolioPeerAuditCandidate[] = sameMarketWatchlist.map((instrument) => {
+    const auditedRun = auditedBySymbol.get(instrument.symbol);
+    return {
+      market: instrument.market,
+      symbol: instrument.symbol,
+      name: instrument.name,
+      timeframe,
+      status: auditedRun ? "audited" : "missing",
+      runId: auditedRun?.runId ?? null
+    };
+  });
+  const auditedCount = candidates.filter((candidate) => candidate.status === "audited").length;
+  const missingCount = candidates.filter((candidate) => candidate.status === "missing").length;
+
+  if (auditedCount >= 2) {
+    return {
+      status: "complete",
+      headline: "Peer audits complete",
+      summary: `${auditedCount} audited portfolio legs are ready for a static-weight portfolio backtest.`,
+      auditedCount,
+      missingCount,
+      candidates
+    };
+  }
+
+  return {
+    status: missingCount > 0 ? "ready" : "blocked",
+    headline: missingCount > 0 ? "Peer audits available" : "Peer audit blocked",
+    summary:
+      missingCount > 0
+        ? `${missingCount} peer audit${missingCount === 1 ? "" : "s"} can be generated from the current watchlist.`
+        : "Add another same-market watchlist instrument before preparing a portfolio backtest.",
+    auditedCount,
+    missingCount,
+    candidates
   };
 }
 

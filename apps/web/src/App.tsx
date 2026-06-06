@@ -129,6 +129,7 @@ import {
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPortfolioBacktestDraft,
+  buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   buildPromotionReadiness,
@@ -195,6 +196,7 @@ import {
   PaperExecutionSummaryTile,
   PaperTradingRow,
   PortfolioBacktestDraft,
+  PortfolioPeerAuditPlan,
   PortfolioRiskRow,
   PromotionQueueStage,
   PromotionReadiness,
@@ -533,6 +535,7 @@ export function App() {
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
+  const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
@@ -616,6 +619,7 @@ export function App() {
   const portfolioBacktestDraftKey =
     portfolioBacktestDraft.request?.legs.map((leg) => `${leg.runId}:${leg.targetWeight}`).join("|") ??
     portfolioBacktestDraft.status;
+  const portfolioPeerAuditPlan = buildPortfolioPeerAuditPlan(workspace, runHistory);
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
   const activePaperExecutionRecord =
     paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId ? paperExecutionRecord : null;
@@ -1315,6 +1319,64 @@ export function App() {
     setPortfolioBacktestState(result);
     setIsRunningPortfolioBacktest(false);
   }, [portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
+
+  const preparePortfolioPeerAudits = useCallback(async () => {
+    const missingCandidates = portfolioPeerAuditPlan.candidates
+      .filter((candidate) => candidate.status === "missing")
+      .slice(0, Math.max(1, 2 - portfolioPeerAuditPlan.auditedCount));
+    if (!missingCandidates.length) {
+      return;
+    }
+
+    setIsPreparingPortfolioPeers(true);
+    const failures: string[] = [];
+    try {
+      for (const candidate of missingCandidates) {
+        const instrument =
+          workspace.watchlist.find(
+            (item) => item.market === candidate.market && item.symbol === candidate.symbol
+          ) ??
+          buildInstrumentFromSymbol(candidate.market, candidate.symbol) ?? {
+            market: candidate.market,
+            symbol: candidate.symbol,
+            name: candidate.name,
+            changePct: 0,
+            price: null
+          };
+        const peerWorkspace = workspaceWithSelectedInstrument(workspace, instrument);
+        const result = await runTerminalResearch(
+          quantCoreBaseUrl,
+          {
+            market: candidate.market,
+            symbol: candidate.symbol,
+            timeframe: candidate.timeframe,
+            limit: chartKlineLimit
+          },
+          peerWorkspace
+        );
+        if (result.source === "fallback") {
+          failures.push(`${candidate.symbol}: ${result.error ?? result.statusLabel}`);
+        }
+      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : "Portfolio peer audit failed");
+    } finally {
+      await refreshRunHistory();
+      await refreshStrategyLibrary();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: failures.length ? "Portfolio peer audit failed" : "Portfolio peer audits prepared",
+        error: failures[0]
+      }));
+      setIsPreparingPortfolioPeers(false);
+    }
+  }, [
+    portfolioPeerAuditPlan.auditedCount,
+    portfolioPeerAuditPlan.candidates,
+    refreshRunHistory,
+    refreshStrategyLibrary,
+    workspace
+  ]);
 
   const replayRun = useCallback(
     async (run: ResearchRunAudit) => {
@@ -3014,14 +3076,17 @@ export function App() {
             className="workflow-portfolio-panel"
             executionClassName="workflow-execution-panel"
             i18n={i18n}
+            isPreparingPortfolioPeers={isPreparingPortfolioPeers}
             isRunningPortfolioBacktest={isRunningPortfolioBacktest}
             isSubmittingPaperExecution={isSubmittingPaperExecution}
+            onPreparePortfolioPeers={preparePortfolioPeerAudits}
             onRunPortfolioBacktest={runPortfolioBacktestDraft}
             onSubmitPaperExecution={submitPaperExecution}
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
             portfolioBacktestDraft={portfolioBacktestDraft}
             portfolioBacktestResult={portfolioBacktestState}
+            portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
             summaryTiles={paperExecutionSummaryTiles}
@@ -8295,14 +8360,17 @@ function PortfolioWorkspace({
   className = "module-workspace-panel",
   executionClassName,
   i18n,
+  isPreparingPortfolioPeers = false,
   isRunningPortfolioBacktest = false,
   isSubmittingPaperExecution = false,
+  onPreparePortfolioPeers,
   onRunPortfolioBacktest,
   onSubmitPaperExecution,
   paperRows,
   positionRows,
   portfolioBacktestDraft,
   portfolioBacktestResult,
+  portfolioPeerAuditPlan,
   riskApproval,
   rows,
   summaryTiles,
@@ -8311,14 +8379,17 @@ function PortfolioWorkspace({
   className?: string;
   executionClassName?: string;
   i18n: AppI18n;
+  isPreparingPortfolioPeers?: boolean;
   isRunningPortfolioBacktest?: boolean;
   isSubmittingPaperExecution?: boolean;
+  onPreparePortfolioPeers?: () => void;
   onRunPortfolioBacktest?: () => void;
   onSubmitPaperExecution?: () => void;
   paperRows: PaperTradingRow[];
   positionRows: PaperPositionRow[];
   portfolioBacktestDraft: PortfolioBacktestDraft;
   portfolioBacktestResult: PortfolioBacktestResult;
+  portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
   summaryTiles: PaperExecutionSummaryTile[];
@@ -8326,6 +8397,8 @@ function PortfolioWorkspace({
 }) {
   const portfolioBacktest = portfolioBacktestResult.portfolio;
   const canRunPortfolioBacktest = portfolioBacktestDraft.status === "ready" && Boolean(onRunPortfolioBacktest);
+  const canPreparePortfolioPeers =
+    portfolioPeerAuditPlan.status === "ready" && portfolioPeerAuditPlan.missingCount > 0 && Boolean(onPreparePortfolioPeers);
 
   return (
     <>
@@ -8346,15 +8419,43 @@ function PortfolioWorkspace({
               <strong>{portfolioBacktestHeadline(i18n, portfolioBacktestDraft.headline)}</strong>
               <p>{portfolioBacktestSummary(i18n, portfolioBacktestDraft.summary)}</p>
             </div>
-            <button
-              className="run-button compact"
-              disabled={!canRunPortfolioBacktest || isRunningPortfolioBacktest}
-              onClick={onRunPortfolioBacktest}
-              type="button"
-            >
-              <Play size={14} />
-              {isRunningPortfolioBacktest ? i18n.t("portfolio.backtestRunning") : i18n.t("portfolio.backtestRun")}
-            </button>
+            <div className="portfolio-backtest-actions">
+              <button
+                className="run-button compact"
+                disabled={!canPreparePortfolioPeers || isPreparingPortfolioPeers}
+                onClick={onPreparePortfolioPeers}
+                type="button"
+              >
+                <RefreshCw size={14} />
+                {isPreparingPortfolioPeers ? i18n.t("portfolio.peerAuditsRunning") : i18n.t("portfolio.peerAuditsRun")}
+              </button>
+              <button
+                className="run-button compact"
+                disabled={!canRunPortfolioBacktest || isRunningPortfolioBacktest}
+                onClick={onRunPortfolioBacktest}
+                type="button"
+              >
+                <Play size={14} />
+                {isRunningPortfolioBacktest ? i18n.t("portfolio.backtestRunning") : i18n.t("portfolio.backtestRun")}
+              </button>
+            </div>
+          </div>
+          <div className={`portfolio-peer-audit-plan ${portfolioPeerAuditPlan.status}`}>
+            <div className="portfolio-backtest-title">
+              <span>{i18n.t("portfolio.peerAudits")}</span>
+              <strong>
+                {portfolioPeerAuditPlan.auditedCount}/{portfolioPeerAuditPlan.candidates.length}
+              </strong>
+            </div>
+            <p>{portfolioPeerAuditSummary(i18n, portfolioPeerAuditPlan.summary)}</p>
+            <div className="portfolio-peer-audit-list">
+              {portfolioPeerAuditPlan.candidates.map((candidate) => (
+                <span className={candidate.status} key={`${candidate.market}:${candidate.symbol}`}>
+                  <b>{candidate.symbol}</b>
+                  <em>{portfolioPeerAuditStatusLabel(i18n, candidate.status)}</em>
+                </span>
+              ))}
+            </div>
           </div>
           <div className="portfolio-backtest-content">
             <div className="portfolio-backtest-section">
@@ -9157,6 +9258,34 @@ function portfolioBacktestSummary(i18n: AppI18n, summary: string): string {
     return `${ready[1]} 个同市场同周期审计运行 · ${i18n.marketLabel(ready[2] as Market)} ${ready[3]} · 现金缓冲 ${ready[4]}。`;
   }
   return summary;
+}
+
+function portfolioPeerAuditSummary(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  if (summary === "Run the selected instrument pipeline before preparing portfolio peers.") {
+    return "先运行当前标的流水线，再生成组合对照审计。";
+  }
+  if (summary === "Add another same-market watchlist instrument before preparing a portfolio backtest.") {
+    return "先添加另一个同市场自选标的，再准备组合回测。";
+  }
+  const complete = summary.match(/^(\d+) audited portfolio legs are ready for a static-weight portfolio backtest\.$/u);
+  if (complete) {
+    return `${complete[1]} 个组合腿已完成审计，可以运行静态权重组合回测。`;
+  }
+  const ready = summary.match(/^(\d+) peer audits? can be generated from the current watchlist\.$/u);
+  if (ready) {
+    return `可从当前自选列表生成 ${ready[1]} 个对照审计。`;
+  }
+  return summary;
+}
+
+function portfolioPeerAuditStatusLabel(
+  i18n: AppI18n,
+  status: "audited" | "missing"
+): string {
+  return status === "audited" ? i18n.t("portfolio.peerAudited") : i18n.t("portfolio.peerMissing");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {
