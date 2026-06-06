@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   type AiReviewRunRecord,
   buildBacktestReportMarkdown,
+  buildPortfolioBacktestReportMarkdown,
   buildTerminalWorkspace,
   workspaceFromResearchRunAudit,
   workspaceWithBacktestAssumption,
@@ -67,6 +68,7 @@ import {
   saveStrategySnapshot,
   withResearchRunExportAuditEvidenceArtifacts,
   buildBacktestReportAuditEvent,
+  buildPortfolioBacktestReportAuditEvent,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
@@ -85,6 +87,7 @@ import {
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   type AuditEventRecord,
+  type PortfolioBacktestRun,
   type ResearchRunExportPackage
 } from "./terminal-api";
 
@@ -2851,6 +2854,162 @@ describe("terminal workspace API client", () => {
     expect(event?.detail).toContain("run-backtest-report-backtest-report.md");
     expect(event?.detail).toContain("2 comparable runs");
     expect(event?.detail).not.toContain(markdown ?? "");
+  });
+
+  test("builds a portfolio report audit event from a combined backtest report", async () => {
+    const portfolio: PortfolioBacktestRun = {
+      name: "ashare 1d audited basket",
+      market: "ashare",
+      timeframe: "1d",
+      initialCash: 100000,
+      cashWeight: 0.1,
+      metrics: {
+        totalReturnPct: 6.2,
+        annualReturnPct: 12.4,
+        maxDrawdownPct: 8.1,
+        winRatePct: 52,
+        profitFactor: 1.2,
+        tradeCount: 18
+      },
+      equityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 106200 }
+      ],
+      legs: [
+        {
+          symbol: "600000",
+          targetWeight: 0.65,
+          startingValue: 65000,
+          endingValue: 71500,
+          contributionValue: 6500,
+          contributionReturnPct: 10,
+          maxDrawdownPct: 5.1,
+          tradeCount: 12,
+          dataQuality: {
+            source: "local-cache",
+            isComplete: true,
+            warnings: [],
+            rows: 2
+          }
+        },
+        {
+          symbol: "000300",
+          targetWeight: 0.25,
+          startingValue: 25000,
+          endingValue: 24000,
+          contributionValue: -1000,
+          contributionReturnPct: -4,
+          maxDrawdownPct: 7.3,
+          tradeCount: 6,
+          dataQuality: {
+            source: "local-cache",
+            isComplete: false,
+            warnings: ["missing 1 bar"],
+            rows: 2
+          }
+        }
+      ],
+      dataQuality: {
+        source: "portfolio-composite(600000:local-cache,000300:local-cache)",
+        isComplete: false,
+        warnings: ["000300: missing 1 bar"],
+        rows: 2
+      }
+    };
+    const markdown = buildPortfolioBacktestReportMarkdown(
+      portfolio,
+      {
+        status: "ready",
+        headline: "Audited basket ready",
+        summary: "2 legs from audited runs",
+        cashWeight: 0.1,
+        request: {
+          name: portfolio.name,
+          initialCash: portfolio.initialCash,
+          legs: [
+            { runId: "run-current-600000", targetWeight: 0.65 },
+            { runId: "run-peer-000300", targetWeight: 0.25 }
+          ]
+        },
+        rows: [
+          {
+            runId: "run-current-600000",
+            symbol: "600000",
+            targetWeight: 0.65,
+            weightLabel: "65.0%",
+            strategyRevision: "rev-current",
+            totalReturnPct: "+10.0%",
+            maxDrawdownPct: "5.1%",
+            current: true
+          },
+          {
+            runId: "run-peer-000300",
+            symbol: "000300",
+            targetWeight: 0.25,
+            weightLabel: "25.0%",
+            strategyRevision: "rev-peer",
+            totalReturnPct: "-4.0%",
+            maxDrawdownPct: "7.3%",
+            current: false
+          }
+        ]
+      },
+      { generatedAt: "2026-06-06T10:00:00+08:00" }
+    );
+
+    expect(markdown).toContain("## Diagnostics");
+
+    const event = await buildPortfolioBacktestReportAuditEvent({
+      baseRunId: "run-current-600000",
+      generatedAt: "2026-06-06T10:00:00+08:00",
+      markdown: markdown ?? "",
+      portfolio
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "portfolio_report",
+      runId: "run-current-600000",
+      createdAt: "2026-06-06T10:00:00+08:00",
+      stage: "generated",
+      source: "web",
+      summary: "Portfolio Markdown report generated for ashare 1d audited basket",
+      metadata: {
+        artifactKind: "aiqt.portfolioReport",
+        fileName: "run-current-600000-ashare-1d-portfolio-report.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        portfolioName: "ashare 1d audited basket",
+        market: "ashare",
+        timeframe: "1d",
+        initialCash: 100000,
+        cashWeight: 0.1,
+        legCount: 2,
+        equityRows: 2,
+        diagnosticsCount: 4,
+        incompleteDataQuality: true,
+        negativeContributionLegs: 1,
+        boundary: "historical audited portfolio evidence only; no investment advice"
+      }
+    });
+    expect(event?.metadata.contentSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(event?.eventId).toBe(
+      `portfolio-report-run-current-600000-${String(event?.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event?.detail).toContain("run-current-600000-ashare-1d-portfolio-report.md");
+    expect(event?.detail).toContain("2 legs");
+    expect(event?.detail).toContain("4 diagnostics");
+    expect(event?.detail).not.toContain(markdown ?? "");
+  });
+
+  test("does not build a portfolio report audit event without an anchored research run", async () => {
+    const event = await buildPortfolioBacktestReportAuditEvent({
+      baseRunId: null,
+      markdown: "# Portfolio report",
+      portfolio: null
+    });
+
+    expect(event).toBeNull();
   });
 
   test("builds a secret-free audit event when an audit signing key rotation plan is prepared", async () => {

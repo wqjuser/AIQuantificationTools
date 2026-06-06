@@ -955,7 +955,9 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workflow-portfolio-panel .paper-position-row span:nth-child(3),\n.workflow-portfolio-panel .paper-position-row span:nth-child(5),\n.workflow-portfolio-panel .paper-position-row span:nth-child(6)")).toContain(
       "display: none;"
     );
-    expect(appSource).toContain("buildPortfolioBacktestReportMarkdown(portfolioBacktestState.portfolio");
+    expect(appSource).toContain("buildPortfolioBacktestReportMarkdown(portfolio, portfolioBacktestDraft)");
+    expect(appSource).toContain("buildPortfolioBacktestReportAuditEvent({");
+    expect(appSource).toContain("saveAuditEvent(quantCoreBaseUrl, portfolioReportAuditEvent)");
     expect(appSource).toContain("onExportPortfolioMarkdown={exportPortfolioBacktestMarkdown}");
     expect(appSource).toContain('i18n.t("portfolio.exportMarkdown")');
     expect(appSource).toContain("portfolio-report-action");

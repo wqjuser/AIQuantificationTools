@@ -3,6 +3,7 @@ import {
   buildAuditEvidenceReportMarkdown,
   buildBacktestReportMarkdown,
   buildBacktestRunComparisonMatrixRows,
+  buildPortfolioBacktestDiagnosticRows,
   resolveBacktestAssumptions,
   workspaceFromResearchRunAudit,
   workspaceWithPrimaryWorkflows,
@@ -1473,6 +1474,65 @@ export async function buildBacktestReportAuditEvent({
       runComparisonRows: runComparisonRows.length,
       hasRunComparisonMatrix: markdown.includes("## Run Comparison Matrix"),
       boundary: "historical audited evidence only; no investment advice"
+    }
+  };
+}
+
+export async function buildPortfolioBacktestReportAuditEvent({
+  baseRunId,
+  generatedAt = new Date().toISOString(),
+  markdown,
+  portfolio
+}: {
+  baseRunId?: string | null;
+  generatedAt?: string;
+  markdown: string;
+  portfolio?: PortfolioBacktestRun | null;
+}): Promise<AuditEventRecord | null> {
+  const anchoredRunId = baseRunId?.trim();
+  if (!anchoredRunId || !portfolio || !markdown.trim()) {
+    return null;
+  }
+
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = `${sanitizeDownloadFileName(anchoredRunId)}-${sanitizeDownloadFileName(
+    portfolio.market
+  )}-${sanitizeDownloadFileName(portfolio.timeframe)}-portfolio-report.md`;
+  const diagnostics = buildPortfolioBacktestDiagnosticRows(portfolio);
+  const negativeContributionLegs = portfolio.legs.filter((leg) => leg.contributionValue < 0).length;
+  const incompleteDataQuality =
+    !portfolio.dataQuality.isComplete || portfolio.legs.some((leg) => !leg.dataQuality.isComplete);
+
+  return {
+    schemaVersion: 1,
+    eventId: `portfolio-report-${sanitizeDownloadFileName(anchoredRunId)}-${shortHash}`,
+    eventType: "portfolio_report",
+    runId: anchoredRunId,
+    createdAt: generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: `Portfolio Markdown report generated for ${portfolio.name}`,
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${portfolio.legs.length} legs · ${
+      diagnostics.length
+    } diagnostics`,
+    metadata: {
+      artifactKind: "aiqt.portfolioReport",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      portfolioName: portfolio.name,
+      market: portfolio.market,
+      timeframe: portfolio.timeframe,
+      initialCash: portfolio.initialCash,
+      cashWeight: portfolio.cashWeight,
+      legCount: portfolio.legs.length,
+      equityRows: portfolio.equityCurve.length,
+      diagnosticsCount: diagnostics.length,
+      incompleteDataQuality,
+      negativeContributionLegs,
+      boundary: "historical audited portfolio evidence only; no investment advice"
     }
   };
 }

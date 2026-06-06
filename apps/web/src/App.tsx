@@ -49,6 +49,7 @@ import {
   normalizeResearchRunExportPackagePayload,
   buildAuditEvidenceReportAuditEvent,
   buildBacktestReportAuditEvent,
+  buildPortfolioBacktestReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
@@ -1325,8 +1326,9 @@ export function App() {
   }, [portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
-    const markdown = buildPortfolioBacktestReportMarkdown(portfolioBacktestState.portfolio, portfolioBacktestDraft);
-    if (!markdown || !portfolioBacktestState.portfolio) {
+    const portfolio = portfolioBacktestState.portfolio;
+    const markdown = buildPortfolioBacktestReportMarkdown(portfolio, portfolioBacktestDraft);
+    if (!markdown || !portfolio) {
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Portfolio report export failed",
@@ -1335,7 +1337,7 @@ export function App() {
       return;
     }
 
-    const context = `${workspace.researchRun?.runId ?? "portfolio"}-${portfolioBacktestState.portfolio.market}-${portfolioBacktestState.portfolio.timeframe}`;
+    const context = `${workspace.researchRun?.runId ?? "portfolio"}-${portfolio.market}-${portfolio.timeframe}`;
     const objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
@@ -1349,6 +1351,34 @@ export function App() {
       statusLabel: "Portfolio report export ready",
       error: undefined
     }));
+    void buildPortfolioBacktestReportAuditEvent({
+      baseRunId: workspace.researchRun?.runId ?? null,
+      markdown,
+      portfolio
+    }).then((portfolioReportAuditEvent) => {
+      if (!portfolioReportAuditEvent) {
+        return;
+      }
+
+      return saveAuditEvent(quantCoreBaseUrl, portfolioReportAuditEvent).then((result) => {
+        if (result.event) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Portfolio report exported and audited",
+            error: undefined
+          }));
+          return;
+        }
+
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Portfolio report export ready",
+            error: `Audit ledger save failed: ${result.error}`
+          }));
+        }
+      });
+    });
   }, [portfolioBacktestDraft, portfolioBacktestState.portfolio, workspace.researchRun?.runId]);
 
   const preparePortfolioPeerAudits = useCallback(async () => {
