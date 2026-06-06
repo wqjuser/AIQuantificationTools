@@ -4256,6 +4256,10 @@ em {
   margin-bottom: 2px;
 }
 
+.portfolio-allocation-ledger {
+  margin-top: 10px;
+}
+
 .portfolio-backtest-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

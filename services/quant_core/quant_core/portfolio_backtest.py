@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
-from typing import Any
+from typing import Any, Literal
 
 from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint, Market, Timeframe
 from quant_core.indicators import max_drawdown_pct
@@ -12,6 +13,7 @@ from quant_core.indicators import max_drawdown_pct
 class PortfolioLeg:
     target_weight: float
     run: BacktestRun
+    run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,17 @@ class PortfolioCorrelationPair:
 
 
 @dataclass(frozen=True)
+class PortfolioAllocationEvent:
+    timestamp: datetime
+    event_type: Literal["allocate", "cash_buffer"]
+    symbol: str
+    source_run_id: str | None
+    target_weight: float
+    notional_value: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class PortfolioBacktestRun:
     name: str
     market: Market
@@ -44,6 +57,7 @@ class PortfolioBacktestRun:
     metrics: BacktestMetrics
     equity_curve: list[EquityPoint]
     legs: list[PortfolioLegResult]
+    allocation_events: list[PortfolioAllocationEvent]
     correlation_pairs: list[PortfolioCorrelationPair]
     data_quality: DataQuality
 
@@ -88,6 +102,7 @@ class PortfolioBacktestEngine:
 
         metrics = self._metrics(equity_curve, legs, timeframe)
         data_quality = self._data_quality(legs, rows=len(timestamps))
+        allocation_events = self._allocation_events(legs, cash_weight, timestamps[0])
         correlation_pairs = self._correlation_pairs(legs)
         return PortfolioBacktestRun(
             name=name,
@@ -98,6 +113,7 @@ class PortfolioBacktestEngine:
             metrics=metrics,
             equity_curve=equity_curve,
             legs=leg_results,
+            allocation_events=allocation_events,
             correlation_pairs=correlation_pairs,
             data_quality=data_quality,
         )
@@ -167,6 +183,35 @@ class PortfolioBacktestEngine:
             warnings=warnings,
             rows=rows,
         )
+
+    def _allocation_events(
+        self, legs: list[PortfolioLeg], cash_weight: float, timestamp: datetime
+    ) -> list[PortfolioAllocationEvent]:
+        events = [
+            PortfolioAllocationEvent(
+                timestamp=timestamp,
+                event_type="allocate",
+                symbol=leg.run.symbol,
+                source_run_id=leg.run_id,
+                target_weight=round(leg.target_weight, 10),
+                notional_value=round(self.initial_cash * leg.target_weight, 4),
+                reason="static target allocation from audited single-symbol run",
+            )
+            for leg in legs
+        ]
+        if cash_weight > 0:
+            events.append(
+                PortfolioAllocationEvent(
+                    timestamp=timestamp,
+                    event_type="cash_buffer",
+                    symbol="CASH",
+                    source_run_id=None,
+                    target_weight=cash_weight,
+                    notional_value=round(self.initial_cash * cash_weight, 4),
+                    reason="unallocated cash buffer; no order is routed",
+                )
+            )
+        return events
 
     def _correlation_pairs(self, legs: list[PortfolioLeg]) -> list[PortfolioCorrelationPair]:
         pairs: list[PortfolioCorrelationPair] = []
@@ -240,6 +285,18 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
                 "dataQuality": _data_quality_to_payload(leg.data_quality),
             }
             for leg in run.legs
+        ],
+        "allocationEvents": [
+            {
+                "timestamp": event.timestamp.isoformat(),
+                "eventType": event.event_type,
+                "symbol": event.symbol,
+                "sourceRunId": event.source_run_id,
+                "targetWeight": event.target_weight,
+                "notionalValue": event.notional_value,
+                "reason": event.reason,
+            }
+            for event in run.allocation_events
         ],
         "correlationPairs": [
             {

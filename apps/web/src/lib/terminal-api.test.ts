@@ -314,6 +314,26 @@ describe("terminal workspace API client", () => {
               { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
               { timestamp: "2026-05-27T08:00:00+00:00", equity: 109000 }
             ],
+            allocationEvents: [
+              {
+                timestamp: "2026-05-26T08:00:00+00:00",
+                eventType: "allocate",
+                symbol: "600000",
+                sourceRunId: "run-a",
+                targetWeight: 0.6,
+                notionalValue: 60000,
+                reason: "static target allocation"
+              },
+              {
+                timestamp: "2026-05-26T08:00:00+00:00",
+                eventType: "cash_buffer",
+                symbol: "CASH",
+                sourceRunId: null,
+                targetWeight: 0.1,
+                notionalValue: 10000,
+                reason: "unallocated cash buffer"
+              }
+            ],
             legs: [
               {
                 symbol: "600000",
@@ -361,6 +381,10 @@ describe("terminal workspace API client", () => {
     expect(result.portfolio?.metrics.totalReturnPct).toBe(9);
     expect(result.portfolio?.cashWeight).toBe(0.1);
     expect(result.portfolio?.legs.map((leg) => `${leg.symbol}:${leg.contributionValue}`)).toEqual(["600000:3000", "000300:6000"]);
+    expect(result.portfolio?.allocationEvents?.map((event) => `${event.eventType}:${event.symbol}:${event.notionalValue}`)).toEqual([
+      "allocate:600000:60000",
+      "cash_buffer:CASH:10000"
+    ]);
     expect(calls[0]).toMatchObject({ url: "/api/portfolio/backtest" });
     expect(calls[0].init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({

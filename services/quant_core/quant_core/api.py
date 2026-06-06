@@ -1008,6 +1008,7 @@ def _portfolio_backtest_from_payload(payload: dict[str, object], run_store: Rese
             PortfolioLeg(
                 target_weight=_number_or_default(item.get("targetWeight"), -1),
                 run=_backtest_run_from_audit(audit),
+                run_id=run_id,
             )
         )
 

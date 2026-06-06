@@ -4654,6 +4654,35 @@ describe("terminal workbench model", () => {
         { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
         { timestamp: "2026-05-27T08:00:00+00:00", equity: 106200 }
       ],
+      allocationEvents: [
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          eventType: "allocate" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          targetWeight: 0.65,
+          notionalValue: 65000,
+          reason: "static target allocation"
+        },
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          eventType: "allocate" as const,
+          symbol: "000300",
+          sourceRunId: "run-peer-000300",
+          targetWeight: 0.25,
+          notionalValue: 25000,
+          reason: "static target allocation"
+        },
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          eventType: "cash_buffer" as const,
+          symbol: "CASH",
+          sourceRunId: null,
+          targetWeight: 0.1,
+          notionalValue: 10000,
+          reason: "unallocated cash buffer"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4724,6 +4753,35 @@ describe("terminal workbench model", () => {
       equityCurve: [
         { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
         { timestamp: "2026-05-27T08:00:00+00:00", equity: 106200 }
+      ],
+      allocationEvents: [
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          eventType: "allocate" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          targetWeight: 0.65,
+          notionalValue: 65000,
+          reason: "static target allocation"
+        },
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          eventType: "allocate" as const,
+          symbol: "000300",
+          sourceRunId: "run-peer-000300",
+          targetWeight: 0.25,
+          notionalValue: 25000,
+          reason: "static target allocation"
+        },
+        {
+          timestamp: "2026-05-26T08:00:00+00:00",
+          eventType: "cash_buffer" as const,
+          symbol: "CASH",
+          sourceRunId: null,
+          targetWeight: 0.1,
+          notionalValue: 10000,
+          reason: "unallocated cash buffer"
+        }
       ],
       legs: [
         {
@@ -4810,6 +4868,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| Correlation risk | 600000/000300 0.91 | review |");
     expect(markdown).toContain("| Data quality | incomplete | blocked |");
     expect(markdown).toContain("| 000300 | run-peer-000300 | 25.0% | -1000.00 | -4.00% |");
+    expect(markdown).toContain("## Allocation Ledger");
+    expect(markdown).toContain("| 2026-05-26T08:00:00+00:00 | allocate | 600000 | run-current-600000 | 65.0% | 65000.00 |");
+    expect(markdown).toContain("| 2026-05-26T08:00:00+00:00 | cash_buffer | CASH | - | 10.0% | 10000.00 |");
     expect(markdown).toContain("historical audited portfolio evidence only");
     expect(markdown).toContain("No investment advice");
   });

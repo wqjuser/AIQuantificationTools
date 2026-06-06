@@ -816,6 +816,16 @@ export interface PortfolioBacktestEquityPoint {
   equity: number;
 }
 
+export interface PortfolioAllocationEvent {
+  timestamp: string;
+  eventType: "allocate" | "cash_buffer";
+  symbol: string;
+  sourceRunId: string | null;
+  targetWeight: number;
+  notionalValue: number;
+  reason: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -843,6 +853,7 @@ export interface PortfolioBacktestRun {
   metrics: PortfolioBacktestMetrics;
   equityCurve: PortfolioBacktestEquityPoint[];
   legs: PortfolioBacktestLeg[];
+  allocationEvents?: PortfolioAllocationEvent[];
   correlationPairs?: PortfolioCorrelationPair[];
   dataQuality: MarketKlineQuality;
 }
@@ -1536,6 +1547,7 @@ export async function buildPortfolioBacktestReportAuditEvent({
       cashWeight: portfolio.cashWeight,
       legCount: portfolio.legs.length,
       equityRows: portfolio.equityCurve.length,
+      allocationEventCount: portfolio.allocationEvents?.length ?? 0,
       diagnosticsCount: diagnostics.length,
       incompleteDataQuality,
       negativeContributionLegs,
@@ -4362,6 +4374,8 @@ function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
     run.equityCurve.every(isPortfolioBacktestEquityPoint) &&
     Array.isArray(run.legs) &&
     run.legs.every(isPortfolioBacktestLeg) &&
+    (run.allocationEvents === undefined ||
+      (Array.isArray(run.allocationEvents) && run.allocationEvents.every(isPortfolioAllocationEvent))) &&
     (run.correlationPairs === undefined ||
       (Array.isArray(run.correlationPairs) && run.correlationPairs.every(isPortfolioCorrelationPair))) &&
     isMarketKlineQuality(run.dataQuality)
@@ -4389,6 +4403,22 @@ function isPortfolioBacktestEquityPoint(value: unknown): value is PortfolioBackt
   }
   const point = value as Partial<PortfolioBacktestEquityPoint>;
   return typeof point.timestamp === "string" && typeof point.equity === "number";
+}
+
+function isPortfolioAllocationEvent(value: unknown): value is PortfolioAllocationEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const event = value as Partial<PortfolioAllocationEvent>;
+  return (
+    typeof event.timestamp === "string" &&
+    (event.eventType === "allocate" || event.eventType === "cash_buffer") &&
+    typeof event.symbol === "string" &&
+    (event.sourceRunId === null || typeof event.sourceRunId === "string") &&
+    typeof event.targetWeight === "number" &&
+    typeof event.notionalValue === "number" &&
+    typeof event.reason === "string"
+  );
 }
 
 function isPortfolioBacktestLeg(value: unknown): value is PortfolioBacktestLeg {

@@ -1166,6 +1166,15 @@ interface PortfolioBacktestDiagnosticInput {
   initialCash?: number;
   cashWeight: number;
   legs: PortfolioBacktestDiagnosticLeg[];
+  allocationEvents?: Array<{
+    timestamp: string;
+    eventType: "allocate" | "cash_buffer";
+    symbol: string;
+    sourceRunId: string | null;
+    targetWeight: number;
+    notionalValue: number;
+    reason: string;
+  }>;
   correlationPairs?: Array<{ leftSymbol: string; rightSymbol: string; correlation: number }>;
   dataQuality: PortfolioBacktestDiagnosticQuality;
   equityCurve?: Array<{ timestamp: string; equity: number }>;
@@ -5398,6 +5407,15 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     leg.dataQuality.isComplete ? "complete" : "incomplete",
     leg.dataQuality.warnings.join("; ")
   ]);
+  const allocationRows = (portfolio.allocationEvents ?? []).map((event) => [
+    event.timestamp,
+    event.eventType,
+    event.symbol,
+    event.sourceRunId ?? "-",
+    formatDiagnosticWeight(event.targetWeight),
+    formatReportNumber(event.notionalValue),
+    event.reason
+  ]);
 
   return [
     "# AIQuant Portfolio Backtest Report",
@@ -5426,6 +5444,12 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
       ["Symbol", "Run ID", "Weight", "Contribution value", "Contribution return", "Max drawdown", "Trades", "Data quality", "Warnings"],
       legRows
     ),
+    "",
+    "## Allocation Ledger",
+    "",
+    allocationRows.length
+      ? markdownTable(["Timestamp", "Event", "Symbol", "Run ID", "Weight", "Notional", "Reason"], allocationRows)
+      : "No static allocation ledger is attached to this portfolio run.",
     "",
     "## Composite Data Quality",
     "",

@@ -8630,6 +8630,36 @@ function PortfolioWorkspace({
                       </div>
                     ))}
                   </div>
+                  {portfolioBacktest.allocationEvents?.length ? (
+                    <div className="portfolio-allocation-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.allocationLedger")}</span>
+                        <strong>{portfolioBacktest.allocationEvents.length}</strong>
+                      </div>
+                      <div className="portfolio-backtest-leg-table allocation">
+                        {portfolioBacktest.allocationEvents.map((event, index) => (
+                          <div className="portfolio-backtest-leg-row" key={`${event.eventType}:${event.symbol}:${index}`}>
+                            <span>
+                              {event.symbol}
+                              <em>{portfolioAllocationEventTypeLabel(i18n, event.eventType)}</em>
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.sourceRun")}</small>
+                              {event.sourceRunId ?? "-"}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.weight")}</small>
+                              {formatPlainPercent(event.targetWeight * 100)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.notional")}</small>
+                              {formatPlainNumber(event.notionalValue)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="portfolio-backtest-empty">
@@ -9421,6 +9451,10 @@ function formatPlainPercent(value: number): string {
   return Number.isFinite(value) ? `${value.toFixed(2)}%` : "N/A";
 }
 
+function formatPlainNumber(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : "N/A";
+}
+
 function portfolioBacktestHeadline(i18n: AppI18n, headline: string): string {
   if (i18n.locale === "en-US") {
     return headline;
@@ -9477,6 +9511,10 @@ function portfolioPeerAuditStatusLabel(
   status: "audited" | "missing"
 ): string {
   return status === "audited" ? i18n.t("portfolio.peerAudited") : i18n.t("portfolio.peerMissing");
+}
+
+function portfolioAllocationEventTypeLabel(i18n: AppI18n, eventType: "allocate" | "cash_buffer"): string {
+  return eventType === "allocate" ? i18n.t("portfolio.allocationAllocate") : i18n.t("portfolio.allocationCashBuffer");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {
