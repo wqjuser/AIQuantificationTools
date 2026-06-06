@@ -1175,6 +1175,20 @@ interface PortfolioBacktestDiagnosticInput {
     notionalValue: number;
     reason: string;
   }>;
+  rebalanceEvents?: Array<{
+    timestamp: string;
+    eventType: "rebalance_review";
+    symbol: string;
+    sourceRunId: string | null;
+    targetWeight: number;
+    endingWeight: number;
+    currentValue: number;
+    targetValue: number;
+    deltaValue: number;
+    driftPct: number;
+    status: "within_band" | "review" | "blocked";
+    reason: string;
+  }>;
   correlationPairs?: Array<{ leftSymbol: string; rightSymbol: string; correlation: number }>;
   dataQuality: PortfolioBacktestDiagnosticQuality;
   equityCurve?: Array<{ timestamp: string; equity: number }>;
@@ -5416,6 +5430,16 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     formatReportNumber(event.notionalValue),
     event.reason
   ]);
+  const rebalanceRows = (portfolio.rebalanceEvents ?? []).map((event) => [
+    event.timestamp,
+    event.symbol,
+    event.sourceRunId ?? "-",
+    formatDiagnosticWeight(event.targetWeight),
+    formatDiagnosticWeight(event.endingWeight),
+    formatReportNumber(event.deltaValue),
+    event.status,
+    event.reason
+  ]);
 
   return [
     "# AIQuant Portfolio Backtest Report",
@@ -5450,6 +5474,12 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     allocationRows.length
       ? markdownTable(["Timestamp", "Event", "Symbol", "Run ID", "Weight", "Notional", "Reason"], allocationRows)
       : "No static allocation ledger is attached to this portfolio run.",
+    "",
+    "## Rebalance Review Ledger",
+    "",
+    rebalanceRows.length
+      ? markdownTable(["Timestamp", "Symbol", "Run ID", "Target weight", "Ending weight", "Delta value", "Status", "Reason"], rebalanceRows)
+      : "No rebalance review ledger is attached to this portfolio run.",
     "",
     "## Composite Data Quality",
     "",

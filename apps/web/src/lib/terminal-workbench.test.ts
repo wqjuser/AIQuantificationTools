@@ -4683,6 +4683,36 @@ describe("terminal workbench model", () => {
           reason: "unallocated cash buffer"
         }
       ],
+      rebalanceEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "rebalance_review" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          targetWeight: 0.65,
+          endingWeight: 0.6733,
+          currentValue: 71500,
+          targetValue: 69030,
+          deltaValue: -2470,
+          driftPct: 2.33,
+          status: "review" as const,
+          reason: "ending weight drift requires review; no order is routed"
+        },
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "rebalance_review" as const,
+          symbol: "CASH",
+          sourceRunId: null,
+          targetWeight: 0.1,
+          endingWeight: 0.0942,
+          currentValue: 10000,
+          targetValue: 10620,
+          deltaValue: 620,
+          driftPct: -0.58,
+          status: "within_band" as const,
+          reason: "ending weight remains inside the review band"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4783,6 +4813,36 @@ describe("terminal workbench model", () => {
           reason: "unallocated cash buffer"
         }
       ],
+      rebalanceEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "rebalance_review" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          targetWeight: 0.65,
+          endingWeight: 0.6733,
+          currentValue: 71500,
+          targetValue: 69030,
+          deltaValue: -2470,
+          driftPct: 2.33,
+          status: "review" as const,
+          reason: "ending weight drift requires review; no order is routed"
+        },
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "rebalance_review" as const,
+          symbol: "CASH",
+          sourceRunId: null,
+          targetWeight: 0.1,
+          endingWeight: 0.0942,
+          currentValue: 10000,
+          targetValue: 10620,
+          deltaValue: 620,
+          driftPct: -0.58,
+          status: "within_band" as const,
+          reason: "ending weight remains inside the review band"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4871,6 +4931,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("## Allocation Ledger");
     expect(markdown).toContain("| 2026-05-26T08:00:00+00:00 | allocate | 600000 | run-current-600000 | 65.0% | 65000.00 |");
     expect(markdown).toContain("| 2026-05-26T08:00:00+00:00 | cash_buffer | CASH | - | 10.0% | 10000.00 |");
+    expect(markdown).toContain("## Rebalance Review Ledger");
+    expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | 600000 | run-current-600000 | 65.0% | 67.3% | -2470.00 | review |");
+    expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | CASH | - | 10.0% | 9.4% | 620.00 | within_band |");
     expect(markdown).toContain("historical audited portfolio evidence only");
     expect(markdown).toContain("No investment advice");
   });

@@ -826,6 +826,21 @@ export interface PortfolioAllocationEvent {
   reason: string;
 }
 
+export interface PortfolioRebalanceEvent {
+  timestamp: string;
+  eventType: "rebalance_review";
+  symbol: string;
+  sourceRunId: string | null;
+  targetWeight: number;
+  endingWeight: number;
+  currentValue: number;
+  targetValue: number;
+  deltaValue: number;
+  driftPct: number;
+  status: "within_band" | "review" | "blocked";
+  reason: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -854,6 +869,7 @@ export interface PortfolioBacktestRun {
   equityCurve: PortfolioBacktestEquityPoint[];
   legs: PortfolioBacktestLeg[];
   allocationEvents?: PortfolioAllocationEvent[];
+  rebalanceEvents?: PortfolioRebalanceEvent[];
   correlationPairs?: PortfolioCorrelationPair[];
   dataQuality: MarketKlineQuality;
 }
@@ -1548,6 +1564,7 @@ export async function buildPortfolioBacktestReportAuditEvent({
       legCount: portfolio.legs.length,
       equityRows: portfolio.equityCurve.length,
       allocationEventCount: portfolio.allocationEvents?.length ?? 0,
+      rebalanceEventCount: portfolio.rebalanceEvents?.length ?? 0,
       diagnosticsCount: diagnostics.length,
       incompleteDataQuality,
       negativeContributionLegs,
@@ -4376,6 +4393,8 @@ function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
     run.legs.every(isPortfolioBacktestLeg) &&
     (run.allocationEvents === undefined ||
       (Array.isArray(run.allocationEvents) && run.allocationEvents.every(isPortfolioAllocationEvent))) &&
+    (run.rebalanceEvents === undefined ||
+      (Array.isArray(run.rebalanceEvents) && run.rebalanceEvents.every(isPortfolioRebalanceEvent))) &&
     (run.correlationPairs === undefined ||
       (Array.isArray(run.correlationPairs) && run.correlationPairs.every(isPortfolioCorrelationPair))) &&
     isMarketKlineQuality(run.dataQuality)
@@ -4417,6 +4436,27 @@ function isPortfolioAllocationEvent(value: unknown): value is PortfolioAllocatio
     (event.sourceRunId === null || typeof event.sourceRunId === "string") &&
     typeof event.targetWeight === "number" &&
     typeof event.notionalValue === "number" &&
+    typeof event.reason === "string"
+  );
+}
+
+function isPortfolioRebalanceEvent(value: unknown): value is PortfolioRebalanceEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const event = value as Partial<PortfolioRebalanceEvent>;
+  return (
+    typeof event.timestamp === "string" &&
+    event.eventType === "rebalance_review" &&
+    typeof event.symbol === "string" &&
+    (event.sourceRunId === null || typeof event.sourceRunId === "string") &&
+    typeof event.targetWeight === "number" &&
+    typeof event.endingWeight === "number" &&
+    typeof event.currentValue === "number" &&
+    typeof event.targetValue === "number" &&
+    typeof event.deltaValue === "number" &&
+    typeof event.driftPct === "number" &&
+    (event.status === "within_band" || event.status === "review" || event.status === "blocked") &&
     typeof event.reason === "string"
   );
 }

@@ -8660,6 +8660,36 @@ function PortfolioWorkspace({
                       </div>
                     </div>
                   ) : null}
+                  {portfolioBacktest.rebalanceEvents?.length ? (
+                    <div className="portfolio-allocation-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.rebalanceReviewLedger")}</span>
+                        <strong>{portfolioBacktest.rebalanceEvents.length}</strong>
+                      </div>
+                      <div className="portfolio-backtest-leg-table allocation">
+                        {portfolioBacktest.rebalanceEvents.map((event, index) => (
+                          <div className={`portfolio-backtest-leg-row ${event.status}`} key={`${event.eventType}:${event.symbol}:${index}`}>
+                            <span>
+                              {event.symbol}
+                              <em>{portfolioRebalanceStatusLabel(i18n, event.status)}</em>
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.endingWeight")}</small>
+                              {formatPlainPercent(event.endingWeight * 100)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.deltaValue")}</small>
+                              {formatSignedNumber(event.deltaValue)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.sourceRun")}</small>
+                              {event.sourceRunId ?? "-"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="portfolio-backtest-empty">
@@ -9455,6 +9485,10 @@ function formatPlainNumber(value: number): string {
   return Number.isFinite(value) ? value.toFixed(2) : "N/A";
 }
 
+function formatSignedNumber(value: number): string {
+  return Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}` : "N/A";
+}
+
 function portfolioBacktestHeadline(i18n: AppI18n, headline: string): string {
   if (i18n.locale === "en-US") {
     return headline;
@@ -9515,6 +9549,16 @@ function portfolioPeerAuditStatusLabel(
 
 function portfolioAllocationEventTypeLabel(i18n: AppI18n, eventType: "allocate" | "cash_buffer"): string {
   return eventType === "allocate" ? i18n.t("portfolio.allocationAllocate") : i18n.t("portfolio.allocationCashBuffer");
+}
+
+function portfolioRebalanceStatusLabel(i18n: AppI18n, status: "within_band" | "review" | "blocked"): string {
+  if (status === "blocked") {
+    return i18n.t("portfolio.rebalanceBlocked");
+  }
+  if (status === "review") {
+    return i18n.t("portfolio.rebalanceReview");
+  }
+  return i18n.t("portfolio.rebalanceWithinBand");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

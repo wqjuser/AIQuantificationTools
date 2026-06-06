@@ -334,6 +334,36 @@ describe("terminal workspace API client", () => {
                 reason: "unallocated cash buffer"
               }
             ],
+            rebalanceEvents: [
+              {
+                timestamp: "2026-05-27T08:00:00+00:00",
+                eventType: "rebalance_review",
+                symbol: "600000",
+                sourceRunId: "run-a",
+                targetWeight: 0.6,
+                endingWeight: 0.578,
+                currentValue: 63000,
+                targetValue: 65400,
+                deltaValue: 2400,
+                driftPct: -2.2,
+                status: "review",
+                reason: "ending weight drift requires review; no order is routed"
+              },
+              {
+                timestamp: "2026-05-27T08:00:00+00:00",
+                eventType: "rebalance_review",
+                symbol: "CASH",
+                sourceRunId: null,
+                targetWeight: 0.1,
+                endingWeight: 0.092,
+                currentValue: 10000,
+                targetValue: 10900,
+                deltaValue: 900,
+                driftPct: -0.8,
+                status: "within_band",
+                reason: "ending weight remains inside the review band"
+              }
+            ],
             legs: [
               {
                 symbol: "600000",
@@ -384,6 +414,10 @@ describe("terminal workspace API client", () => {
     expect(result.portfolio?.allocationEvents?.map((event) => `${event.eventType}:${event.symbol}:${event.notionalValue}`)).toEqual([
       "allocate:600000:60000",
       "cash_buffer:CASH:10000"
+    ]);
+    expect(result.portfolio?.rebalanceEvents?.map((event) => `${event.symbol}:${event.status}:${event.deltaValue}`)).toEqual([
+      "600000:review:2400",
+      "CASH:within_band:900"
     ]);
     expect(calls[0]).toMatchObject({ url: "/api/portfolio/backtest" });
     expect(calls[0].init?.method).toBe("POST");

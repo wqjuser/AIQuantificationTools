@@ -48,6 +48,22 @@ class PortfolioAllocationEvent:
 
 
 @dataclass(frozen=True)
+class PortfolioRebalanceEvent:
+    timestamp: datetime
+    event_type: Literal["rebalance_review"]
+    symbol: str
+    source_run_id: str | None
+    target_weight: float
+    ending_weight: float
+    current_value: float
+    target_value: float
+    delta_value: float
+    drift_pct: float
+    status: Literal["within_band", "review", "blocked"]
+    reason: str
+
+
+@dataclass(frozen=True)
 class PortfolioBacktestRun:
     name: str
     market: Market
@@ -58,6 +74,7 @@ class PortfolioBacktestRun:
     equity_curve: list[EquityPoint]
     legs: list[PortfolioLegResult]
     allocation_events: list[PortfolioAllocationEvent]
+    rebalance_events: list[PortfolioRebalanceEvent]
     correlation_pairs: list[PortfolioCorrelationPair]
     data_quality: DataQuality
 
@@ -103,6 +120,14 @@ class PortfolioBacktestEngine:
         metrics = self._metrics(equity_curve, legs, timeframe)
         data_quality = self._data_quality(legs, rows=len(timestamps))
         allocation_events = self._allocation_events(legs, cash_weight, timestamps[0])
+        rebalance_events = self._rebalance_events(
+            legs=legs,
+            leg_results=leg_results,
+            cash_weight=cash_weight,
+            cash_value=cash_value,
+            ending_equity=equity_curve[-1].equity,
+            timestamp=timestamps[-1],
+        )
         correlation_pairs = self._correlation_pairs(legs)
         return PortfolioBacktestRun(
             name=name,
@@ -114,6 +139,7 @@ class PortfolioBacktestEngine:
             equity_curve=equity_curve,
             legs=leg_results,
             allocation_events=allocation_events,
+            rebalance_events=rebalance_events,
             correlation_pairs=correlation_pairs,
             data_quality=data_quality,
         )
@@ -213,6 +239,85 @@ class PortfolioBacktestEngine:
             )
         return events
 
+    def _rebalance_events(
+        self,
+        legs: list[PortfolioLeg],
+        leg_results: list[PortfolioLegResult],
+        cash_weight: float,
+        cash_value: float,
+        ending_equity: float,
+        timestamp: datetime,
+    ) -> list[PortfolioRebalanceEvent]:
+        if ending_equity <= 0:
+            return []
+
+        events: list[PortfolioRebalanceEvent] = []
+        for leg, result in zip(legs, leg_results, strict=True):
+            events.append(
+                self._rebalance_event(
+                    timestamp=timestamp,
+                    symbol=result.symbol,
+                    source_run_id=leg.run_id,
+                    target_weight=result.target_weight,
+                    current_value=result.ending_value,
+                    ending_equity=ending_equity,
+                )
+            )
+        if cash_weight > 0:
+            events.append(
+                self._rebalance_event(
+                    timestamp=timestamp,
+                    symbol="CASH",
+                    source_run_id=None,
+                    target_weight=cash_weight,
+                    current_value=cash_value,
+                    ending_equity=ending_equity,
+                )
+            )
+        return events
+
+    def _rebalance_event(
+        self,
+        timestamp: datetime,
+        symbol: str,
+        source_run_id: str | None,
+        target_weight: float,
+        current_value: float,
+        ending_equity: float,
+    ) -> PortfolioRebalanceEvent:
+        ending_weight = current_value / ending_equity
+        target_value = ending_equity * target_weight
+        delta_value = target_value - current_value
+        drift = ending_weight - target_weight
+        status: Literal["within_band", "review", "blocked"]
+        if abs(drift) >= 0.1:
+            status = "blocked"
+        elif abs(drift) > 0.02:
+            status = "review"
+        else:
+            status = "within_band"
+        reason = (
+            "ending weight drift exceeds the hard threshold; no order is routed"
+            if status == "blocked"
+            else "ending weight drift requires review; no order is routed"
+            if status == "review"
+            else "ending weight remains inside the review band"
+        )
+        return PortfolioRebalanceEvent(
+            timestamp=timestamp,
+            event_type="rebalance_review",
+            symbol=symbol,
+            source_run_id=source_run_id,
+            target_weight=round(target_weight, 10),
+            ending_weight=round(ending_weight, 4),
+            current_value=round(current_value, 4),
+            target_value=round(target_value, 4),
+            delta_value=round(delta_value, 4),
+            drift_pct=round(drift * 100, 4),
+            status=status,
+            reason=reason,
+        )
+
     def _correlation_pairs(self, legs: list[PortfolioLeg]) -> list[PortfolioCorrelationPair]:
         pairs: list[PortfolioCorrelationPair] = []
         leg_returns = {leg.run.symbol: self._period_returns(leg.run.equity_curve) for leg in legs}
@@ -297,6 +402,23 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
                 "reason": event.reason,
             }
             for event in run.allocation_events
+        ],
+        "rebalanceEvents": [
+            {
+                "timestamp": event.timestamp.isoformat(),
+                "eventType": event.event_type,
+                "symbol": event.symbol,
+                "sourceRunId": event.source_run_id,
+                "targetWeight": event.target_weight,
+                "endingWeight": event.ending_weight,
+                "currentValue": event.current_value,
+                "targetValue": event.target_value,
+                "deltaValue": event.delta_value,
+                "driftPct": event.drift_pct,
+                "status": event.status,
+                "reason": event.reason,
+            }
+            for event in run.rebalance_events
         ],
         "correlationPairs": [
             {
