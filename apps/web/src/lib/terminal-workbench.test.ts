@@ -49,6 +49,7 @@ import {
   buildPortfolioRiskRows,
   buildPortfolioBacktestDraft,
   buildPortfolioBacktestDiagnosticRows,
+  buildPortfolioBacktestReportMarkdown,
   buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
@@ -4635,6 +4636,113 @@ describe("terminal workbench model", () => {
     expect(diagnostics[0].detail).toContain("50%");
     expect(diagnostics[2].detail).toContain("negative contribution");
     expect(diagnostics[3].detail).toContain("000300: missing 1 bar");
+  });
+
+  test("builds a markdown report from portfolio backtest evidence", () => {
+    const portfolio = {
+      name: "ashare 1d audited basket",
+      market: "ashare" as const,
+      timeframe: "1d" as const,
+      initialCash: 100000,
+      cashWeight: 0.1,
+      metrics: {
+        totalReturnPct: 6.2,
+        annualReturnPct: 12.4,
+        maxDrawdownPct: 8.1,
+        winRatePct: 52,
+        profitFactor: 1.2,
+        tradeCount: 18
+      },
+      equityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 106200 }
+      ],
+      legs: [
+        {
+          symbol: "600000",
+          targetWeight: 0.65,
+          startingValue: 65000,
+          endingValue: 71500,
+          contributionValue: 6500,
+          contributionReturnPct: 10,
+          maxDrawdownPct: 5.1,
+          tradeCount: 12,
+          dataQuality: { source: "local-cache", isComplete: true, warnings: [], rows: 2 }
+        },
+        {
+          symbol: "000300",
+          targetWeight: 0.25,
+          startingValue: 25000,
+          endingValue: 24000,
+          contributionValue: -1000,
+          contributionReturnPct: -4,
+          maxDrawdownPct: 7.3,
+          tradeCount: 6,
+          dataQuality: { source: "local-cache", isComplete: false, warnings: ["missing 1 bar"], rows: 2 }
+        }
+      ],
+      dataQuality: {
+        source: "portfolio-composite(600000:local-cache,000300:local-cache)",
+        isComplete: false,
+        warnings: ["000300: missing 1 bar"],
+        rows: 2
+      }
+    };
+    const draft = {
+      status: "ready" as const,
+      headline: "Portfolio backtest ready",
+      summary: "2 audited runs from ashare 1d; cash buffer 10.0%.",
+      cashWeight: 0.1,
+      request: {
+        name: "ashare 1d audited basket",
+        initialCash: 100000,
+        legs: [
+          { runId: "run-current-600000", targetWeight: 0.65 },
+          { runId: "run-peer-000300", targetWeight: 0.25 }
+        ]
+      },
+      rows: [
+        {
+          runId: "run-current-600000",
+          symbol: "600000",
+          targetWeight: 0.65,
+          weightLabel: "65.0%",
+          strategyRevision: "rev-current",
+          totalReturnPct: "+10.00%",
+          maxDrawdownPct: "5.10%",
+          current: true
+        },
+        {
+          runId: "run-peer-000300",
+          symbol: "000300",
+          targetWeight: 0.25,
+          weightLabel: "25.0%",
+          strategyRevision: "rev-peer",
+          totalReturnPct: "-4.00%",
+          maxDrawdownPct: "7.30%",
+          current: false
+        }
+      ]
+    };
+
+    const markdown = buildPortfolioBacktestReportMarkdown(portfolio, draft, {
+      generatedAt: "2026-06-06T09:00:00+08:00"
+    });
+
+    expect(markdown).toContain("# AIQuant Portfolio Backtest Report");
+    expect(markdown).toContain("Portfolio: `ashare 1d audited basket`");
+    expect(markdown).toContain("Generated at: `2026-06-06T09:00:00+08:00`");
+    expect(markdown).toContain("| Total return | 6.20% |");
+    expect(markdown).toContain("| Cash weight | 10.00% |");
+    expect(markdown).toContain("| Concentration | 600000 65.0% | review |");
+    expect(markdown).toContain("| Data quality | incomplete | blocked |");
+    expect(markdown).toContain("| 000300 | run-peer-000300 | 25.0% | -1000.00 | -4.00% |");
+    expect(markdown).toContain("historical audited portfolio evidence only");
+    expect(markdown).toContain("No investment advice");
+  });
+
+  test("does not build a portfolio markdown report before a portfolio run exists", () => {
+    expect(buildPortfolioBacktestReportMarkdown(null)).toBeNull();
   });
 
   test("blocks execution approval until audited evidence is bound", () => {

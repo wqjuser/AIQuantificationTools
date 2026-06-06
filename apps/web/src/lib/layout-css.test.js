@@ -955,6 +955,10 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workflow-portfolio-panel .paper-position-row span:nth-child(3),\n.workflow-portfolio-panel .paper-position-row span:nth-child(5),\n.workflow-portfolio-panel .paper-position-row span:nth-child(6)")).toContain(
       "display: none;"
     );
+    expect(appSource).toContain("buildPortfolioBacktestReportMarkdown(portfolioBacktestState.portfolio");
+    expect(appSource).toContain("onExportPortfolioMarkdown={exportPortfolioBacktestMarkdown}");
+    expect(appSource).toContain('i18n.t("portfolio.exportMarkdown")');
+    expect(appSource).toContain("portfolio-report-action");
     expect(cssBlock(".workflow-decision-panel")).toContain("grid-area: decision;");
     expect(cssBlock(".workflow-history-panel")).toContain("grid-area: history;");
     expect(cssBlock(".center-grid")).toContain("align-content: start;");

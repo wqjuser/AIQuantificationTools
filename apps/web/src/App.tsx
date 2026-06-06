@@ -130,6 +130,7 @@ import {
   buildPaperTradingRows,
   buildPortfolioBacktestDraft,
   buildPortfolioBacktestDiagnosticRows,
+  buildPortfolioBacktestReportMarkdown,
   buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
@@ -1322,6 +1323,33 @@ export function App() {
     setPortfolioBacktestState(result);
     setIsRunningPortfolioBacktest(false);
   }, [portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
+
+  const exportPortfolioBacktestMarkdown = useCallback(() => {
+    const markdown = buildPortfolioBacktestReportMarkdown(portfolioBacktestState.portfolio, portfolioBacktestDraft);
+    if (!markdown || !portfolioBacktestState.portfolio) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Portfolio report export failed",
+        error: "Run a portfolio backtest before exporting the portfolio report"
+      }));
+      return;
+    }
+
+    const context = `${workspace.researchRun?.runId ?? "portfolio"}-${portfolioBacktestState.portfolio.market}-${portfolioBacktestState.portfolio.timeframe}`;
+    const objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `${context}-portfolio-report.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Portfolio report export ready",
+      error: undefined
+    }));
+  }, [portfolioBacktestDraft, portfolioBacktestState.portfolio, workspace.researchRun?.runId]);
 
   const preparePortfolioPeerAudits = useCallback(async () => {
     const missingCandidates = portfolioPeerAuditPlan.candidates
@@ -3082,6 +3110,7 @@ export function App() {
             isPreparingPortfolioPeers={isPreparingPortfolioPeers}
             isRunningPortfolioBacktest={isRunningPortfolioBacktest}
             isSubmittingPaperExecution={isSubmittingPaperExecution}
+            onExportPortfolioMarkdown={exportPortfolioBacktestMarkdown}
             onPreparePortfolioPeers={preparePortfolioPeerAudits}
             onRunPortfolioBacktest={runPortfolioBacktestDraft}
             onSubmitPaperExecution={submitPaperExecution}
@@ -8367,6 +8396,7 @@ function PortfolioWorkspace({
   isPreparingPortfolioPeers = false,
   isRunningPortfolioBacktest = false,
   isSubmittingPaperExecution = false,
+  onExportPortfolioMarkdown,
   onPreparePortfolioPeers,
   onRunPortfolioBacktest,
   onSubmitPaperExecution,
@@ -8387,6 +8417,7 @@ function PortfolioWorkspace({
   isPreparingPortfolioPeers?: boolean;
   isRunningPortfolioBacktest?: boolean;
   isSubmittingPaperExecution?: boolean;
+  onExportPortfolioMarkdown?: () => void;
   onPreparePortfolioPeers?: () => void;
   onRunPortfolioBacktest?: () => void;
   onSubmitPaperExecution?: () => void;
@@ -8402,6 +8433,7 @@ function PortfolioWorkspace({
   workspace: TerminalWorkspace;
 }) {
   const portfolioBacktest = portfolioBacktestResult.portfolio;
+  const canExportPortfolioMarkdown = Boolean(portfolioBacktest && onExportPortfolioMarkdown);
   const canRunPortfolioBacktest = portfolioBacktestDraft.status === "ready" && Boolean(onRunPortfolioBacktest);
   const canPreparePortfolioPeers =
     portfolioPeerAuditPlan.status === "ready" && portfolioPeerAuditPlan.missingCount > 0 && Boolean(onPreparePortfolioPeers);
@@ -8443,6 +8475,16 @@ function PortfolioWorkspace({
               >
                 <Play size={14} />
                 {isRunningPortfolioBacktest ? i18n.t("portfolio.backtestRunning") : i18n.t("portfolio.backtestRun")}
+              </button>
+              <button
+                className="run-button compact portfolio-report-action"
+                disabled={!canExportPortfolioMarkdown}
+                onClick={onExportPortfolioMarkdown}
+                title={i18n.t("portfolio.exportMarkdown")}
+                type="button"
+              >
+                <Download size={14} />
+                {i18n.t("portfolio.exportMarkdown")}
               </button>
             </div>
           </div>

@@ -353,3 +353,6 @@ Add a compact AI review audit trail to the Audit workspace. It should show saved
 - RED: `terminal-workbench.test.ts -t "portfolio backtest diagnostics"` failed because Portfolio had no model for turning a combined backtest result into concentration, cash, negative contribution, and data-quality review rows.
 - GREEN: added `buildPortfolioBacktestDiagnosticRows`, wired the diagnostics into the Portfolio result panel, and localized the compact diagnostics title while keeping the rows tied to audited portfolio evidence only.
 - DOCS: updated product plan and architecture notes to record static-weight portfolio diagnostics and the remaining no-rebalance/no-auto-allocation boundary.
+- RED: `terminal-workbench.test.ts -t "portfolio markdown report"` failed because Portfolio had no Markdown report builder; `layout-css.test.js -t "keeps workflow pages"` failed because the Portfolio workspace had no report export hook or button.
+- GREEN: added `buildPortfolioBacktestReportMarkdown`, Portfolio report export wiring, a compact export button, and i18n copy so combined metrics, diagnostics, leg contributions, data quality, and evidence boundaries can be archived from the Portfolio workspace.
+- DOCS: updated product plan and architecture notes to record Portfolio Markdown reports and leave signed portfolio report audit events as a future slice.

@@ -1158,6 +1158,26 @@ interface PortfolioBacktestDiagnosticInput {
   dataQuality: PortfolioBacktestDiagnosticQuality;
 }
 
+interface PortfolioBacktestReportInput extends PortfolioBacktestDiagnosticInput {
+  name: string;
+  market: Market;
+  timeframe: Timeframe;
+  initialCash: number;
+  metrics: {
+    totalReturnPct: number;
+    annualReturnPct: number;
+    maxDrawdownPct: number;
+    winRatePct: number;
+    profitFactor: number;
+    tradeCount: number;
+  };
+  equityCurve: Array<{ timestamp: string; equity: number }>;
+}
+
+export interface PortfolioBacktestReportOptions {
+  generatedAt?: string;
+}
+
 export type RiskApprovalStatus = "blocked" | "paper_ready" | "live_ready";
 
 export interface RiskApprovalGate {
@@ -5247,6 +5267,88 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
   ];
 }
 
+export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktestReportInput>(
+  portfolio: T | null | undefined,
+  draft?: PortfolioBacktestDraft | null,
+  options: PortfolioBacktestReportOptions = {}
+): string | null {
+  if (!portfolio) {
+    return null;
+  }
+
+  const runIdBySymbol = new Map((draft?.rows ?? []).map((row) => [row.symbol, row.runId]));
+  const diagnostics = buildPortfolioBacktestDiagnosticRows(portfolio);
+  const metricRows = [
+    ["Total return", formatReportPercent(portfolio.metrics.totalReturnPct)],
+    ["Annual return", formatReportPercent(portfolio.metrics.annualReturnPct)],
+    ["Max drawdown", formatReportPercent(portfolio.metrics.maxDrawdownPct)],
+    ["Win rate", formatReportPercent(portfolio.metrics.winRatePct)],
+    ["Profit factor", formatReportNumber(portfolio.metrics.profitFactor)],
+    ["Trade count", portfolio.metrics.tradeCount],
+    ["Cash weight", formatReportPercent(portfolio.cashWeight * 100)],
+    ["Equity points", portfolio.equityCurve.length]
+  ];
+  const diagnosticRows = diagnostics.map((row) => [row.label, row.value, row.status, row.detail]);
+  const legRows = portfolio.legs.map((leg) => [
+    leg.symbol,
+    runIdBySymbol.get(leg.symbol) ?? "unknown",
+    formatDiagnosticWeight(leg.targetWeight),
+    formatReportNumber(leg.contributionValue),
+    formatReportPercent(leg.contributionReturnPct),
+    formatReportPercent(leg.maxDrawdownPct),
+    leg.tradeCount,
+    leg.dataQuality.isComplete ? "complete" : "incomplete",
+    leg.dataQuality.warnings.join("; ")
+  ]);
+
+  return [
+    "# AIQuant Portfolio Backtest Report",
+    "",
+    `Portfolio: \`${portfolio.name}\``,
+    `Market: \`${portfolio.market}\``,
+    `Timeframe: \`${portfolio.timeframe}\``,
+    `Initial cash: \`${formatReportNumber(portfolio.initialCash)}\``,
+    `Generated at: \`${options.generatedAt ?? new Date().toISOString()}\``,
+    "",
+    "## Summary",
+    "",
+    "Static-weight portfolio report built from already audited single-symbol backtest evidence.",
+    "",
+    "## Metrics",
+    "",
+    markdownTable(["Metric", "Value"], metricRows),
+    "",
+    "## Diagnostics",
+    "",
+    markdownTable(["Diagnostic", "Value", "Status", "Detail"], diagnosticRows),
+    "",
+    "## Legs",
+    "",
+    markdownTable(
+      ["Symbol", "Run ID", "Weight", "Contribution value", "Contribution return", "Max drawdown", "Trades", "Data quality", "Warnings"],
+      legRows
+    ),
+    "",
+    "## Composite Data Quality",
+    "",
+    markdownTable(
+      ["Field", "Value"],
+      [
+        ["Source", portfolio.dataQuality.source],
+        ["Complete", portfolio.dataQuality.isComplete],
+        ["Rows", portfolio.dataQuality.rows],
+        ["Warnings", portfolio.dataQuality.warnings.join("; ")]
+      ]
+    ),
+    "",
+    "## Evidence Boundary",
+    "",
+    "This report uses historical audited portfolio evidence only. It does not rebalance, optimize allocations, route orders, or certify live trading readiness.",
+    "",
+    "No investment advice. No guaranteed outcome."
+  ].join("\n");
+}
+
 function blockedPortfolioBacktestDraft(headline: string, summary: string): PortfolioBacktestDraft {
   return {
     status: "blocked",
@@ -5272,6 +5374,14 @@ function formatDiagnosticWeight(value: number): string {
 
 function formatDiagnosticPercent(value: number): string {
   return `${value.toFixed(1)}%`;
+}
+
+function formatReportPercent(value: number): string {
+  return Number.isFinite(value) ? `${value.toFixed(2)}%` : "N/A";
+}
+
+function formatReportNumber(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : "N/A";
 }
 
 function diagnosticTone(status: PortfolioBacktestDiagnosticStatus): PortfolioBacktestDiagnosticRow["tone"] {
