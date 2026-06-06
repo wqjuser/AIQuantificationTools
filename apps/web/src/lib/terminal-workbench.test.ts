@@ -31,6 +31,8 @@ import {
   buildBacktestParameterScanSummary,
   buildBacktestReport,
   buildBacktestReportMarkdown,
+  buildBacktestCrossSymbolComparisonRows,
+  buildBacktestCrossSymbolComparisonSummary,
   buildBacktestRunComparisonMatrixRows,
   buildBacktestRunComparisonMatrixSummary,
   buildBacktestReadinessGates,
@@ -68,6 +70,7 @@ import {
   filterResearchRunImportAuditEvents,
   filterAuditEvidenceReportLedgerRows,
   filterAuditSigningKeyRotationLedgerRows,
+  filterBacktestCrossSymbolComparisonRows,
   filterBacktestRunComparisonMatrixRows,
   filterAiReviewRecordDriftRows,
   formatInstrumentPrice,
@@ -6881,6 +6884,116 @@ describe("terminal workbench model", () => {
     expect(filterBacktestRunComparisonMatrixRows(rows, "lowest_drawdown").map((row) => row.runId)).toEqual([
       "run-low-drawdown"
     ]);
+  });
+
+  test("builds cross-symbol backtest comparison rows for the selected market and timeframe", () => {
+    const runs: ResearchRunAudit[] = [
+      auditedRunFixture({
+        createdAt: "2026-05-26T08:00:00+00:00",
+        drawdown: 4,
+        returnPct: 5,
+        runId: "run-current",
+        strategyRevision: "rev-current",
+        symbol: "600000",
+        tradeCount: 9
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-26T08:10:00+00:00",
+        drawdown: 5,
+        returnPct: 11,
+        runId: "run-peer-000300",
+        strategyRevision: "rev-peer-best",
+        symbol: "000300",
+        tradeCount: 6
+      }),
+      auditedRunFixture({
+        createdAt: "2026-05-26T08:20:00+00:00",
+        drawdown: 1.5,
+        returnPct: 3,
+        runId: "run-peer-600519",
+        strategyRevision: "rev-peer-lowdd",
+        symbol: "600519",
+        tradeCount: 4
+      }),
+      auditedRunFixture({
+        runId: "run-other-timeframe",
+        symbol: "601398",
+        timeframe: "5m"
+      }),
+      auditedRunFixture({
+        market: "us",
+        runId: "run-other-market",
+        symbol: "AAPL"
+      })
+    ];
+
+    const rows = buildBacktestCrossSymbolComparisonRows(runs, "run-current");
+
+    expect(rows.map((row) => `${row.symbol}:${row.badges.join("+")}:${row.returnPct}:${row.maxDrawdownPct}`)).toEqual([
+      "600519:lowest_drawdown:+3.00%:1.50%",
+      "000300:best_return:+11.00%:5.00%",
+      "600000:current:+5.00%:4.00%"
+    ]);
+    expect(rows.some((row) => row.runId === "run-other-timeframe")).toBe(false);
+    expect(rows.some((row) => row.runId === "run-other-market")).toBe(false);
+
+    const summary = buildBacktestCrossSymbolComparisonSummary(rows);
+    expect(summary).toMatchObject({
+      bestReturnRunId: "run-peer-000300",
+      context: "ashare 1d cross-symbol",
+      currentRunId: "run-current",
+      headline: "3 audited symbols compared",
+      lowestDrawdownRunId: "run-peer-600519",
+      tone: "positive",
+      totalRows: 3
+    });
+    expect(summary?.detail).toContain("Best return 000300 run-peer-000300 +11.00%");
+    expect(summary?.detail).toContain("Lowest drawdown 600519 run-peer-600519 1.50%");
+    expect(summary?.detail).toContain("not investment advice");
+
+    expect(filterBacktestCrossSymbolComparisonRows(rows, "600519").map((row) => row.runId)).toEqual([
+      "run-peer-600519"
+    ]);
+    expect(filterBacktestCrossSymbolComparisonRows(rows, "REV-PEER-BEST").map((row) => row.runId)).toEqual([
+      "run-peer-000300"
+    ]);
+  });
+
+  test("adds cross-symbol comparison evidence to exported backtest markdown", () => {
+    const currentRun = auditedRunFixture({
+      drawdown: 4,
+      returnPct: 5,
+      runId: "run-current",
+      strategyRevision: "rev-current",
+      symbol: "600000",
+      tradeCount: 9
+    });
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), currentRun);
+    const runHistory = [
+      currentRun,
+      auditedRunFixture({
+        drawdown: 5,
+        returnPct: 11,
+        runId: "run-peer-000300",
+        symbol: "000300",
+        strategyRevision: "rev-peer-best",
+        tradeCount: 6
+      }),
+      auditedRunFixture({
+        drawdown: 1.5,
+        returnPct: 3,
+        runId: "run-peer-600519",
+        symbol: "600519",
+        strategyRevision: "rev-peer-lowdd",
+        tradeCount: 4
+      })
+    ] satisfies ResearchRunAudit[];
+    const markdown = buildBacktestReportMarkdown(workspace, runHistory);
+
+    expect(markdown).toContain("## Cross-Symbol Comparison");
+    expect(markdown).toContain("3 audited symbols compared");
+    expect(markdown).toContain("| 000300 | run-peer-000300 | best_return | +11.00% | 5.00% |");
+    expect(markdown).toContain("historical audited evidence only");
   });
 
   test("formats optional live quote prices for watchlist display", () => {

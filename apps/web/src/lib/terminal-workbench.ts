@@ -6315,6 +6315,18 @@ export function buildBacktestReportMarkdown(
     row.dataQualityLabel,
     row.assumptions
   ]);
+  const crossSymbolComparisonRows = buildBacktestCrossSymbolComparisonRows(runHistory, run.runId);
+  const crossSymbolComparisonSummary = buildBacktestCrossSymbolComparisonSummary(crossSymbolComparisonRows);
+  const crossSymbolComparisonMarkdownRows = crossSymbolComparisonRows.map((row) => [
+    row.symbol,
+    row.runId,
+    row.badges.join(", "),
+    row.returnPct,
+    row.maxDrawdownPct,
+    row.winRatePct,
+    row.tradeCount,
+    row.dataQualityLabel
+  ]);
   const gateRows = report.readinessGates.map((gate) => [gate.label, gate.status, gate.detail]);
   const aiCitationRows = aiDossier.citations.map((citation) => [
     citation.label,
@@ -6410,6 +6422,21 @@ export function buildBacktestReportMarkdown(
           )
         ].join("\n")
       : "Run comparison matrix requires at least one audited run in history for the same market, symbol, and timeframe.",
+    "",
+    "## Cross-Symbol Comparison",
+    "",
+    crossSymbolComparisonSummary
+      ? [
+          crossSymbolComparisonSummary.headline,
+          "",
+          crossSymbolComparisonSummary.detail,
+          "",
+          markdownTable(
+            ["Symbol", "Run", "Badges", "Return", "Max drawdown", "Win rate", "Trades", "Data quality"],
+            crossSymbolComparisonMarkdownRows
+          )
+        ].join("\n")
+      : "Cross-symbol comparison requires audited runs in history for the same market and timeframe.",
     "",
     "## AI Evidence Boundary",
     "",
@@ -7430,6 +7457,72 @@ export function buildBacktestRunComparisonMatrixRows(
   });
 }
 
+export function buildBacktestCrossSymbolComparisonRows(
+  runs: ResearchRunAudit[],
+  currentRunId?: string | null
+): BacktestRunComparisonMatrixRow[] {
+  const selectedRun = runs.find((run) => run.runId === currentRunId) ?? runs[0] ?? null;
+  if (!selectedRun) {
+    return [];
+  }
+
+  const latestRunBySymbol = new Map<string, ResearchRunAudit>();
+  runs
+    .filter((run) => run.market === selectedRun.market && run.timeframe === selectedRun.timeframe)
+    .forEach((run) => {
+      const existing = latestRunBySymbol.get(run.symbol);
+      if (
+        run.runId === selectedRun.runId ||
+        !existing ||
+        (existing.runId !== selectedRun.runId && Date.parse(run.createdAt) > Date.parse(existing.createdAt))
+      ) {
+        latestRunBySymbol.set(run.symbol, run);
+      }
+    });
+
+  const comparableRuns = Array.from(latestRunBySymbol.values()).sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
+  );
+
+  if (!comparableRuns.length) {
+    return [];
+  }
+
+  const bestReturnRun = comparableRuns.reduce((best, run) =>
+    metricNumber(run, "total_return_pct") > metricNumber(best, "total_return_pct") ? run : best
+  );
+  const lowestDrawdownRun = comparableRuns.reduce((best, run) =>
+    metricNumber(run, "max_drawdown_pct") < metricNumber(best, "max_drawdown_pct") ? run : best
+  );
+
+  return comparableRuns.map((run) => {
+    const badges = buildBacktestCrossSymbolComparisonBadges(run, {
+      bestReturnRun,
+      currentRunId: selectedRun.runId,
+      lowestDrawdownRun
+    });
+    return {
+      id: `backtest-cross-symbol-${run.runId}`,
+      assumptions: formatAssumptionsForAudit(normalizeBacktestAssumptions(run.backtestAssumptions)),
+      badges,
+      context: `${run.market} ${run.timeframe} cross-symbol`,
+      createdAt: run.createdAt,
+      dataQualityLabel: backtestRunComparisonDataQualityLabel(run),
+      dataRows: run.dataRows,
+      maxDrawdownPct: formatPct(metricNumber(run, "max_drawdown_pct")),
+      returnPct: formatSignedPct(metricNumber(run, "total_return_pct")),
+      runId: run.runId,
+      strategyName: run.strategyName,
+      strategyRevision: run.strategyRevision,
+      symbol: run.symbol,
+      timeframe: run.timeframe,
+      tone: backtestRunComparisonTone(run, badges),
+      tradeCount: String(metricNumber(run, "trade_count")),
+      winRatePct: formatPct(metricNumber(run, "win_rate_pct"))
+    };
+  });
+}
+
 export function buildBacktestRunComparisonMatrixSummary(
   rows: BacktestRunComparisonMatrixRow[]
 ): BacktestRunComparisonMatrixSummary | null {
@@ -7464,6 +7557,40 @@ export function buildBacktestRunComparisonMatrixSummary(
   };
 }
 
+export function buildBacktestCrossSymbolComparisonSummary(
+  rows: BacktestRunComparisonMatrixRow[]
+): BacktestRunComparisonMatrixSummary | null {
+  if (!rows.length) {
+    return null;
+  }
+  const currentRow = rows.find((row) => row.badges.includes("current")) ?? null;
+  const bestReturnRow = rows.find((row) => row.badges.includes("best_return")) ?? null;
+  const lowestDrawdownRow = rows.find((row) => row.badges.includes("lowest_drawdown")) ?? null;
+  const hasRisk = rows.some((row) => row.tone === "risk");
+  const hasWarning = rows.some((row) => row.tone === "warning");
+  const tone: BacktestRunComparisonMatrixSummary["tone"] = hasRisk ? "risk" : hasWarning ? "warning" : "positive";
+
+  return {
+    bestReturnRunId: bestReturnRow?.runId ?? null,
+    context: rows[0].context,
+    currentRunId: currentRow?.runId ?? null,
+    detail: [
+      bestReturnRow
+        ? `Best return ${bestReturnRow.symbol} ${bestReturnRow.runId} ${bestReturnRow.returnPct}.`
+        : "Best return unavailable.",
+      lowestDrawdownRow
+        ? `Lowest drawdown ${lowestDrawdownRow.symbol} ${lowestDrawdownRow.runId} ${lowestDrawdownRow.maxDrawdownPct}.`
+        : "Lowest drawdown unavailable.",
+      "This is historical audited evidence only, not investment advice."
+    ].join(" "),
+    headline: `${rows.length} audited symbols compared`,
+    lowestDrawdownRunId: lowestDrawdownRow?.runId ?? null,
+    previousRunId: null,
+    tone,
+    totalRows: rows.length
+  };
+}
+
 export function filterBacktestRunComparisonMatrixRows(
   rows: BacktestRunComparisonMatrixRow[],
   query: string
@@ -7491,6 +7618,29 @@ export function filterBacktestRunComparisonMatrixRows(
       .toLowerCase()
       .includes(normalizedQuery)
   );
+}
+
+export const filterBacktestCrossSymbolComparisonRows = filterBacktestRunComparisonMatrixRows;
+
+function buildBacktestCrossSymbolComparisonBadges(
+  run: ResearchRunAudit,
+  context: {
+    bestReturnRun: ResearchRunAudit;
+    currentRunId: string;
+    lowestDrawdownRun: ResearchRunAudit;
+  }
+): BacktestRunComparisonMatrixBadge[] {
+  const badges: BacktestRunComparisonMatrixBadge[] = [];
+  if (run.runId === context.currentRunId) {
+    badges.push("current");
+  }
+  if (run.runId === context.bestReturnRun.runId) {
+    badges.push("best_return");
+  }
+  if (run.runId === context.lowestDrawdownRun.runId) {
+    badges.push("lowest_drawdown");
+  }
+  return badges.length ? badges : ["history"];
 }
 
 function buildBacktestRunComparisonMatrixBadges(
