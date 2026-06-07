@@ -854,6 +854,19 @@ export interface PortfolioTradeReviewEvent {
   reason: string;
 }
 
+export interface PortfolioPreTradeRiskCheck {
+  timestamp: string;
+  eventType: "pre_trade_risk_check";
+  scope: "portfolio" | "trade";
+  symbol: string | null;
+  sourceRunId: string | null;
+  checkId: "portfolio_data_quality" | "trade_review_status" | "trade_notional_limit";
+  status: "passed" | "review" | "blocked";
+  value: number;
+  limit: number;
+  reason: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -901,6 +914,7 @@ export interface PortfolioBacktestRun {
   allocationEvents?: PortfolioAllocationEvent[];
   rebalanceEvents?: PortfolioRebalanceEvent[];
   tradeReviewEvents?: PortfolioTradeReviewEvent[];
+  preTradeRiskChecks?: PortfolioPreTradeRiskCheck[];
   correlationPairs?: PortfolioCorrelationPair[];
   covarianceRisk?: PortfolioCovarianceRisk;
   dataQuality: MarketKlineQuality;
@@ -1598,6 +1612,7 @@ export async function buildPortfolioBacktestReportAuditEvent({
       allocationEventCount: portfolio.allocationEvents?.length ?? 0,
       rebalanceEventCount: portfolio.rebalanceEvents?.length ?? 0,
       tradeReviewEventCount: portfolio.tradeReviewEvents?.length ?? 0,
+      preTradeRiskCheckCount: portfolio.preTradeRiskChecks?.length ?? 0,
       covarianceRiskContributionCount: portfolio.covarianceRisk?.contributions.length ?? 0,
       covarianceRiskAnnualizedVolatilityPct: portfolio.covarianceRisk?.annualizedVolatilityPct ?? null,
       diagnosticsCount: diagnostics.length,
@@ -4432,6 +4447,8 @@ function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
       (Array.isArray(run.rebalanceEvents) && run.rebalanceEvents.every(isPortfolioRebalanceEvent))) &&
     (run.tradeReviewEvents === undefined ||
       (Array.isArray(run.tradeReviewEvents) && run.tradeReviewEvents.every(isPortfolioTradeReviewEvent))) &&
+    (run.preTradeRiskChecks === undefined ||
+      (Array.isArray(run.preTradeRiskChecks) && run.preTradeRiskChecks.every(isPortfolioPreTradeRiskCheck))) &&
     (run.correlationPairs === undefined ||
       (Array.isArray(run.correlationPairs) && run.correlationPairs.every(isPortfolioCorrelationPair))) &&
     (run.covarianceRisk === undefined || isPortfolioCovarianceRisk(run.covarianceRisk)) &&
@@ -4515,6 +4532,27 @@ function isPortfolioTradeReviewEvent(value: unknown): value is PortfolioTradeRev
     typeof event.endingWeight === "number" &&
     (event.status === "paper_review" || event.status === "blocked" || event.status === "no_action") &&
     typeof event.reason === "string"
+  );
+}
+
+function isPortfolioPreTradeRiskCheck(value: unknown): value is PortfolioPreTradeRiskCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<PortfolioPreTradeRiskCheck>;
+  return (
+    typeof check.timestamp === "string" &&
+    check.eventType === "pre_trade_risk_check" &&
+    (check.scope === "portfolio" || check.scope === "trade") &&
+    (check.symbol === null || typeof check.symbol === "string") &&
+    (check.sourceRunId === null || typeof check.sourceRunId === "string") &&
+    (check.checkId === "portfolio_data_quality" ||
+      check.checkId === "trade_review_status" ||
+      check.checkId === "trade_notional_limit") &&
+    (check.status === "passed" || check.status === "review" || check.status === "blocked") &&
+    typeof check.value === "number" &&
+    typeof check.limit === "number" &&
+    typeof check.reason === "string"
   );
 }
 

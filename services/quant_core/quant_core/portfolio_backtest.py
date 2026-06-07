@@ -97,6 +97,20 @@ class PortfolioTradeReviewEvent:
 
 
 @dataclass(frozen=True)
+class PortfolioPreTradeRiskCheck:
+    timestamp: datetime
+    event_type: Literal["pre_trade_risk_check"]
+    scope: Literal["portfolio", "trade"]
+    symbol: str | None
+    source_run_id: str | None
+    check_id: Literal["portfolio_data_quality", "trade_review_status", "trade_notional_limit"]
+    status: Literal["passed", "review", "blocked"]
+    value: float
+    limit: float
+    reason: str
+
+
+@dataclass(frozen=True)
 class PortfolioBacktestRun:
     name: str
     market: Market
@@ -109,6 +123,7 @@ class PortfolioBacktestRun:
     allocation_events: list[PortfolioAllocationEvent]
     rebalance_events: list[PortfolioRebalanceEvent]
     trade_review_events: list[PortfolioTradeReviewEvent]
+    pre_trade_risk_checks: list[PortfolioPreTradeRiskCheck]
     correlation_pairs: list[PortfolioCorrelationPair]
     covariance_risk: PortfolioCovarianceRiskSummary
     data_quality: DataQuality
@@ -164,6 +179,12 @@ class PortfolioBacktestEngine:
             timestamp=timestamps[-1],
         )
         trade_review_events = self._trade_review_events(rebalance_events)
+        pre_trade_risk_checks = self._pre_trade_risk_checks(
+            trade_review_events=trade_review_events,
+            data_quality=data_quality,
+            portfolio_value=equity_curve[-1].equity,
+            timestamp=timestamps[-1],
+        )
         correlation_pairs = self._correlation_pairs(legs)
         covariance_risk = self._covariance_risk(legs, timeframe)
         return PortfolioBacktestRun(
@@ -178,6 +199,7 @@ class PortfolioBacktestEngine:
             allocation_events=allocation_events,
             rebalance_events=rebalance_events,
             trade_review_events=trade_review_events,
+            pre_trade_risk_checks=pre_trade_risk_checks,
             correlation_pairs=correlation_pairs,
             covariance_risk=covariance_risk,
             data_quality=data_quality,
@@ -393,6 +415,85 @@ class PortfolioBacktestEngine:
             )
         return events
 
+    def _pre_trade_risk_checks(
+        self,
+        trade_review_events: list[PortfolioTradeReviewEvent],
+        data_quality: DataQuality,
+        portfolio_value: float,
+        timestamp: datetime,
+    ) -> list[PortfolioPreTradeRiskCheck]:
+        checks: list[PortfolioPreTradeRiskCheck] = [
+            PortfolioPreTradeRiskCheck(
+                timestamp=timestamp,
+                event_type="pre_trade_risk_check",
+                scope="portfolio",
+                symbol=None,
+                source_run_id=None,
+                check_id="portfolio_data_quality",
+                status="passed" if data_quality.is_complete and not data_quality.warnings else "review" if data_quality.is_complete else "blocked",
+                value=1.0 if data_quality.is_complete else 0.0,
+                limit=1.0,
+                reason=(
+                    "portfolio composite data quality is complete for pre-trade review"
+                    if data_quality.is_complete and not data_quality.warnings
+                    else "portfolio composite data quality has warnings; review before staging paper orders"
+                    if data_quality.is_complete
+                    else "portfolio composite data quality is incomplete; no paper order should be staged"
+                ),
+            )
+        ]
+        for event in trade_review_events:
+            status: Literal["passed", "review", "blocked"]
+            if event.status == "blocked":
+                status = "blocked"
+                reason = "trade review intent is blocked by rebalance drift; no paper order should be staged"
+            elif event.status == "paper_review":
+                status = "review"
+                reason = "trade review intent is paper-only and requires operator review before staging"
+            else:
+                status = "passed"
+                reason = "trade review intent requires no action"
+            checks.append(
+                PortfolioPreTradeRiskCheck(
+                    timestamp=event.timestamp,
+                    event_type="pre_trade_risk_check",
+                    scope="trade",
+                    symbol=event.symbol,
+                    source_run_id=event.source_run_id,
+                    check_id="trade_review_status",
+                    status=status,
+                    value=0.0 if event.status == "blocked" else 1.0,
+                    limit=1.0,
+                    reason=reason,
+                )
+            )
+
+            notional_pct = event.notional_value / portfolio_value if portfolio_value > 0 else 0.0
+            notional_status: Literal["passed", "review", "blocked"] = (
+                "blocked" if notional_pct >= 0.2 else "review" if notional_pct > 0.1 else "passed"
+            )
+            checks.append(
+                PortfolioPreTradeRiskCheck(
+                    timestamp=event.timestamp,
+                    event_type="pre_trade_risk_check",
+                    scope="trade",
+                    symbol=event.symbol,
+                    source_run_id=event.source_run_id,
+                    check_id="trade_notional_limit",
+                    status=notional_status,
+                    value=round(notional_pct, 4),
+                    limit=0.2,
+                    reason=(
+                        "trade notional exceeds the hard pre-trade limit; no paper order should be staged"
+                        if notional_status == "blocked"
+                        else "trade notional exceeds the review threshold; operator review required"
+                        if notional_status == "review"
+                        else "trade notional remains inside the hard pre-trade limit"
+                    ),
+                )
+            )
+        return checks
+
     def _correlation_pairs(self, legs: list[PortfolioLeg]) -> list[PortfolioCorrelationPair]:
         pairs: list[PortfolioCorrelationPair] = []
         leg_returns = {leg.run.symbol: self._period_returns(leg.run.equity_curve) for leg in legs}
@@ -596,6 +697,21 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
                 "reason": event.reason,
             }
             for event in run.trade_review_events
+        ],
+        "preTradeRiskChecks": [
+            {
+                "timestamp": check.timestamp.isoformat(),
+                "eventType": check.event_type,
+                "scope": check.scope,
+                "symbol": check.symbol,
+                "sourceRunId": check.source_run_id,
+                "checkId": check.check_id,
+                "status": check.status,
+                "value": check.value,
+                "limit": check.limit,
+                "reason": check.reason,
+            }
+            for check in run.pre_trade_risk_checks
         ],
         "correlationPairs": [
             {

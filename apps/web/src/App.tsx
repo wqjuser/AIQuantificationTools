@@ -8720,6 +8720,36 @@ function PortfolioWorkspace({
                       </div>
                     </div>
                   ) : null}
+                  {portfolioBacktest.preTradeRiskChecks?.length ? (
+                    <div className="portfolio-allocation-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.preTradeRiskChecks")}</span>
+                        <strong>{portfolioBacktest.preTradeRiskChecks.length}</strong>
+                      </div>
+                      <div className="portfolio-backtest-leg-table allocation">
+                        {portfolioBacktest.preTradeRiskChecks.map((check, index) => (
+                          <div className={`portfolio-backtest-leg-row ${check.status}`} key={`${check.checkId}:${check.symbol ?? "portfolio"}:${index}`}>
+                            <span>
+                              {check.symbol ?? i18n.t("portfolio.scopePortfolio")}
+                              <em>{portfolioPreTradeRiskCheckLabel(i18n, check.checkId)}</em>
+                            </span>
+                            <span>
+                              <small>{i18n.t("strategy.status")}</small>
+                              {portfolioPreTradeRiskStatusLabel(i18n, check.status)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.preTradeRiskValue")}</small>
+                              {formatPlainNumber(check.value)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.preTradeRiskLimit")}</small>
+                              {formatPlainNumber(check.limit)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="portfolio-backtest-empty">
@@ -9619,6 +9649,29 @@ function portfolioTradeReviewSideLabel(i18n: AppI18n, side: "buy" | "sell" | "ho
     return i18n.t("portfolio.tradeSideSell");
   }
   return i18n.t("portfolio.tradeSideHold");
+}
+
+function portfolioPreTradeRiskStatusLabel(i18n: AppI18n, status: "passed" | "review" | "blocked"): string {
+  if (status === "passed") {
+    return i18n.t("portfolio.preTradeRiskPassed");
+  }
+  if (status === "review") {
+    return i18n.t("portfolio.preTradeRiskReview");
+  }
+  return i18n.t("portfolio.preTradeRiskBlocked");
+}
+
+function portfolioPreTradeRiskCheckLabel(
+  i18n: AppI18n,
+  checkId: "portfolio_data_quality" | "trade_review_status" | "trade_notional_limit"
+): string {
+  if (checkId === "portfolio_data_quality") {
+    return i18n.t("portfolio.preTradeRiskDataQuality");
+  }
+  if (checkId === "trade_review_status") {
+    return i18n.t("portfolio.preTradeRiskTradeStatus");
+  }
+  return i18n.t("portfolio.preTradeRiskNotional");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

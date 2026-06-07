@@ -378,6 +378,20 @@ describe("terminal workspace API client", () => {
                 reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
               }
             ],
+            preTradeRiskChecks: [
+              {
+                timestamp: "2026-05-27T08:00:00+00:00",
+                eventType: "pre_trade_risk_check",
+                scope: "trade",
+                symbol: "600000",
+                sourceRunId: "run-a",
+                checkId: "trade_notional_limit",
+                status: "passed",
+                value: 0.022,
+                limit: 0.2,
+                reason: "trade notional remains inside the hard pre-trade limit"
+              }
+            ],
             covarianceRisk: {
               method: "population_covariance",
               observations: 1,
@@ -459,6 +473,9 @@ describe("terminal workspace API client", () => {
     ]);
     expect(result.portfolio?.tradeReviewEvents?.map((event) => `${event.symbol}:${event.side}:${event.status}:${event.notionalValue}`)).toEqual([
       "600000:buy:paper_review:2400"
+    ]);
+    expect(result.portfolio?.preTradeRiskChecks?.map((check) => `${check.symbol}:${check.checkId}:${check.status}:${check.limit}`)).toEqual([
+      "600000:trade_notional_limit:passed:0.2"
     ]);
     expect(result.portfolio?.covarianceRisk?.contributions.map((item) => `${item.symbol}:${item.contributionPct}`)).toEqual([
       "600000:68.4",
@@ -3051,6 +3068,20 @@ describe("terminal workspace API client", () => {
           reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
         }
       ],
+      preTradeRiskChecks: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "pre_trade_risk_check",
+          scope: "portfolio",
+          symbol: null,
+          sourceRunId: null,
+          checkId: "portfolio_data_quality",
+          status: "blocked",
+          value: 0,
+          limit: 1,
+          reason: "portfolio composite data quality is incomplete; no paper order should be staged"
+        }
+      ],
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -3129,6 +3160,7 @@ describe("terminal workspace API client", () => {
         legCount: 2,
         equityRows: 2,
         tradeReviewEventCount: 1,
+        preTradeRiskCheckCount: 1,
         covarianceRiskContributionCount: 2,
         covarianceRiskAnnualizedVolatilityPct: 28.6,
         diagnosticsCount: 9,

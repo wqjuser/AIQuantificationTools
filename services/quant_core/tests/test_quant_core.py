@@ -573,6 +573,62 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["tradeReviewEvents"][0]["notionalValue"], 6600.0)
         self.assertNotIn("CASH", [event["symbol"] for event in payload["tradeReviewEvents"]])
 
+    def test_portfolio_backtest_outputs_pre_trade_risk_checks_for_trade_reviews(self):
+        from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
+        from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        timestamps = [start + timedelta(days=index) for index in range(2)]
+
+        def audited_run(symbol: str, equities: list[float]) -> BacktestRun:
+            return BacktestRun(
+                strategy_name="Audited SMA plan",
+                strategy_revision=f"rev-{symbol}",
+                symbol=symbol,
+                market="ashare",
+                timeframe="1d",
+                metrics=BacktestMetrics(
+                    total_return_pct=equities[-1] / equities[0] * 100 - 100,
+                    annual_return_pct=0.0,
+                    max_drawdown_pct=3.0,
+                    win_rate_pct=50.0,
+                    profit_factor=1.5,
+                    trade_count=2,
+                ),
+                trades=[],
+                equity_curve=[
+                    EquityPoint(timestamp=timestamp, equity=equity)
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+                data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(equities)),
+            )
+
+        result = PortfolioBacktestEngine(initial_cash=100_000).run(
+            name="A-share pre-trade checks basket",
+            legs=[
+                PortfolioLeg(target_weight=0.6, run=audited_run("600000", [100_000, 200_000]), run_id="run-a"),
+                PortfolioLeg(target_weight=0.3, run=audited_run("000300", [100_000, 50_000]), run_id="run-b"),
+            ],
+        )
+
+        self.assertEqual(
+            [(check.scope, check.symbol, check.check_id, check.status) for check in result.pre_trade_risk_checks],
+            [
+                ("portfolio", None, "portfolio_data_quality", "passed"),
+                ("trade", "600000", "trade_review_status", "blocked"),
+                ("trade", "600000", "trade_notional_limit", "blocked"),
+                ("trade", "000300", "trade_review_status", "blocked"),
+                ("trade", "000300", "trade_notional_limit", "review"),
+            ],
+        )
+        self.assertGreater(result.pre_trade_risk_checks[2].value, 0.2)
+        self.assertEqual(result.pre_trade_risk_checks[2].limit, 0.2)
+        payload = portfolio_backtest_run_to_payload(result)
+        self.assertEqual(payload["preTradeRiskChecks"][0]["eventType"], "pre_trade_risk_check")
+        self.assertEqual(payload["preTradeRiskChecks"][0]["checkId"], "portfolio_data_quality")
+        self.assertEqual(payload["preTradeRiskChecks"][2]["status"], "blocked")
+        self.assertEqual(payload["preTradeRiskChecks"][2]["limit"], 0.2)
+
     def test_strategy_library_store_persists_stable_strategy_versions(self):
         from quant_core.research import strategy_config_from_snapshot
         from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload

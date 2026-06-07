@@ -1202,6 +1202,18 @@ interface PortfolioBacktestDiagnosticInput {
     status: "paper_review" | "blocked" | "no_action";
     reason: string;
   }>;
+  preTradeRiskChecks?: Array<{
+    timestamp: string;
+    eventType: "pre_trade_risk_check";
+    scope: "portfolio" | "trade";
+    symbol: string | null;
+    sourceRunId: string | null;
+    checkId: "portfolio_data_quality" | "trade_review_status" | "trade_notional_limit";
+    status: "passed" | "review" | "blocked";
+    value: number;
+    limit: number;
+    reason: string;
+  }>;
   covarianceRisk?: {
     method: "population_covariance";
     observations: number;
@@ -5491,6 +5503,17 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     event.status,
     event.reason
   ]);
+  const preTradeRiskRows = (portfolio.preTradeRiskChecks ?? []).map((check) => [
+    check.timestamp,
+    check.scope,
+    check.symbol ?? "-",
+    check.sourceRunId ?? "-",
+    check.checkId,
+    check.status,
+    formatReportNumber(check.value),
+    formatReportNumber(check.limit),
+    check.reason
+  ]);
   const covarianceSummaryRows = portfolio.covarianceRisk
     ? [
         ["Method", portfolio.covarianceRisk.method],
@@ -5569,6 +5592,15 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
           tradeReviewRows
         )
       : "No trade review ledger is attached to this portfolio run.",
+    "",
+    "## Pre-Trade Risk Checks",
+    "",
+    preTradeRiskRows.length
+      ? markdownTable(
+          ["Timestamp", "Scope", "Symbol", "Run ID", "Check", "Status", "Value", "Limit", "Reason"],
+          preTradeRiskRows
+        )
+      : "No pre-trade risk checks are attached to this portfolio run.",
     "",
     "## Composite Data Quality",
     "",

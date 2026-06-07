@@ -4727,6 +4727,32 @@ describe("terminal workbench model", () => {
           reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
         }
       ],
+      preTradeRiskChecks: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "pre_trade_risk_check" as const,
+          scope: "portfolio" as const,
+          symbol: null,
+          sourceRunId: null,
+          checkId: "portfolio_data_quality" as const,
+          status: "blocked" as const,
+          value: 0,
+          limit: 1,
+          reason: "portfolio composite data quality is incomplete; no paper order should be staged"
+        },
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "pre_trade_risk_check" as const,
+          scope: "trade" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          checkId: "trade_notional_limit" as const,
+          status: "passed" as const,
+          value: 0.0233,
+          limit: 0.2,
+          reason: "trade notional remains inside the hard pre-trade limit"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4897,6 +4923,32 @@ describe("terminal workbench model", () => {
           reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
         }
       ],
+      preTradeRiskChecks: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "pre_trade_risk_check" as const,
+          scope: "portfolio" as const,
+          symbol: null,
+          sourceRunId: null,
+          checkId: "portfolio_data_quality" as const,
+          status: "blocked" as const,
+          value: 0,
+          limit: 1,
+          reason: "portfolio composite data quality is incomplete; no paper order should be staged"
+        },
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "pre_trade_risk_check" as const,
+          scope: "trade" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          checkId: "trade_notional_limit" as const,
+          status: "passed" as const,
+          value: 0.0233,
+          limit: 0.2,
+          reason: "trade notional remains inside the hard pre-trade limit"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -5018,6 +5070,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | CASH | - | 10.0% | 9.4% | 620.00 | within_band |");
     expect(markdown).toContain("## Trade Review Ledger");
     expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | 600000 | run-current-600000 | sell | 2470.00 | 65.0% | 67.3% | paper_review |");
+    expect(markdown).toContain("## Pre-Trade Risk Checks");
+    expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | portfolio | - | - | portfolio_data_quality | blocked | 0.00 | 1.00 |");
+    expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | trade | 600000 | run-current-600000 | trade_notional_limit | passed | 0.02 | 0.20 |");
     expect(markdown).toContain("historical audited portfolio evidence only");
     expect(markdown).toContain("No investment advice");
   });
