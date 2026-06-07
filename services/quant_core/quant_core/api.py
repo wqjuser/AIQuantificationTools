@@ -44,6 +44,7 @@ from quant_core.execution import (
     PortfolioPaperOrderSimulationStore,
     PortfolioPaperOrderStore,
     build_portfolio_paper_order_lifecycle,
+    build_portfolio_paper_order_replay,
     build_promotion_candidate,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
@@ -765,6 +766,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     ]
                 }
             )
+            return
+        if parsed.path == "/api/portfolio/paper-order-replay":
+            query = parse_qs(parsed.query)
+            base_run_id = query.get("baseRunId", [""])[0].strip()
+            if not base_run_id:
+                self._send_json({"error": "portfolio_paper_order_replay_base_run_id_required"}, status=400)
+                return
+            initial_cash = _parse_positive_float(query.get("initialCash", ["100000"])[0], default=100_000.0)
+            simulations = self.portfolio_paper_order_simulation_store.list_all_by_base_run(base_run_id)
+            replay = build_portfolio_paper_order_replay(
+                simulations,
+                base_run_id=base_run_id,
+                initial_cash=initial_cash,
+            )
+            self._send_json({"replay": replay})
             return
         if parsed.path == "/api/portfolio/paper-order-approvals":
             query = parse_qs(parsed.query)

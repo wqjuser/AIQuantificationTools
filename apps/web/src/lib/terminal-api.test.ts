@@ -22,6 +22,7 @@ import {
   buildPortfolioBacktestUrl,
   buildPortfolioPaperOrderApprovalsUrl,
   buildPortfolioPaperOrdersUrl,
+  buildPortfolioPaperOrderReplayUrl,
   buildPortfolioPaperOrderSimulationsUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
@@ -50,6 +51,7 @@ import {
   loadResearchRunPromotion,
   loadPortfolioPaperOrderBatches,
   loadPortfolioPaperOrderApprovals,
+  loadPortfolioPaperOrderReplay,
   loadPortfolioPaperOrderSimulations,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
@@ -229,6 +231,12 @@ describe("terminal workspace API client", () => {
       })
     ).toBe(
       "/api/portfolio/paper-order-simulations?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&batchId=portfolio-paper-batch%2F1"
+    );
+  });
+
+  test("builds the portfolio paper order replay URL with initial cash", () => {
+    expect(buildPortfolioPaperOrderReplayUrl("/", { baseRunId: "portfolio run/你好", initialCash: 50000 })).toBe(
+      "/api/portfolio/paper-order-replay?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&initialCash=50000"
     );
   });
 
@@ -887,6 +895,73 @@ describe("terminal workspace API client", () => {
     expect(calls[1].url).toBe(
       "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-1&batchId=portfolio-paper-batch-1"
     );
+  });
+
+  test("loads portfolio paper order replay account snapshots", async () => {
+    const replay = {
+      schemaVersion: 1 as const,
+      baseRunId: "portfolio-run-1",
+      generatedAt: "2026-05-27T09:00:00+00:00",
+      mode: "portfolio_paper_order_replay" as const,
+      initialCash: 50000,
+      account: { cash: 40800, positions: { "600000": 1000 }, equity: 50000 },
+      positions: [
+        {
+          symbol: "600000",
+          quantity: 1000,
+          avgCost: 9.2,
+          lastPrice: 9.2,
+          marketValue: 9200,
+          unrealizedPnl: 0
+        }
+      ],
+      orders: [
+        {
+          simulationId: "sim-replay-api",
+          batchId: "portfolio-paper-batch-1",
+          orderId: "portfolio-paper-run-a-buy",
+          simulatedAt: "2026-05-27T08:46:00+00:00",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 1000,
+          fillPrice: 9.2,
+          notionalValue: 9200,
+          cashAfter: 40800,
+          positionAfter: 1000,
+          replayState: "applied" as const,
+          paperOnly: true,
+          liveExecutionBlocked: true
+        }
+      ],
+      summary: {
+        filledOrders: 1,
+        buyNotional: 9200,
+        sellNotional: 0,
+        netNotional: 9200,
+        realizedPnl: 0,
+        unrealizedPnl: 0,
+        positionCount: 1,
+        warnings: []
+      },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ replay }) };
+    };
+
+    const result = await loadPortfolioPaperOrderReplay("/", "portfolio-run-1", fetcher, 50000);
+
+    expect(buildPortfolioPaperOrderReplayUrl("/", { baseRunId: "portfolio-run-1", initialCash: 50000 })).toBe(
+      "/api/portfolio/paper-order-replay?baseRunId=portfolio-run-1&initialCash=50000"
+    );
+    expect(calls[0]).toBe("/api/portfolio/paper-order-replay?baseRunId=portfolio-run-1&initialCash=50000");
+    expect(result.source).toBe("core");
+    expect(result.replay?.account.cash).toBe(40800);
+    expect(result.replay?.positions[0].symbol).toBe("600000");
+    expect(result.replay?.orders[0].replayState).toBe("applied");
   });
 
   test("loads golden path status from the Python core", async () => {

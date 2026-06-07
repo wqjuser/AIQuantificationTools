@@ -1256,6 +1256,20 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".portfolio-order-simulation-list");
   });
 
+  test("renders portfolio paper order replay as account and position state", () => {
+    expect(appSource).toContain("loadPortfolioPaperOrderReplay");
+    expect(appSource).toContain("buildPortfolioPaperOrderReplaySummaryTiles(portfolioPaperOrderReplay)");
+    expect(appSource).toContain("buildPortfolioPaperOrderReplayPositionRows(portfolioPaperOrderReplay)");
+    expect(appSource).toContain("portfolioOrderReplaySummaryTiles");
+    expect(appSource).toContain("portfolioOrderReplayPositionRows");
+    expect(appSource).toContain('className="execution-grid portfolio-replay-grid"');
+    expect(appSource).toContain('className="portfolio-order-replay"');
+    expect(appSource).toContain('className="portfolio-order-replay-table"');
+    expect(styles).toContain(".portfolio-replay-grid");
+    expect(styles).toContain(".portfolio-order-replay");
+    expect(styles).toContain(".portfolio-order-replay-row");
+  });
+
   test("renders paper execution account summaries from persisted execution records", () => {
     expect(appSource).toContain("buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord)");
     expect(appSource).toContain("buildPaperPositionRows(workspace, activePaperExecutionRecord)");

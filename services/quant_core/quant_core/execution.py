@@ -901,6 +901,137 @@ def portfolio_paper_order_payload_to_simulation(payload: dict[str, Any]) -> Port
     )
 
 
+def build_portfolio_paper_order_replay(
+    simulations: list[PortfolioPaperOrderSimulation],
+    *,
+    base_run_id: str,
+    initial_cash: float = 100_000,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    normalized_base_run_id = str(base_run_id or "").strip()
+    if not normalized_base_run_id:
+        raise ValueError("portfolio_paper_order_replay_base_run_id_required")
+    cash = _positive_number(initial_cash, 100_000)
+    starting_cash = cash
+    positions: dict[str, float] = {}
+    avg_costs: dict[str, float] = {}
+    last_prices: dict[str, float] = {}
+    orders: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    buy_notional = 0.0
+    sell_notional = 0.0
+    realized_pnl = 0.0
+    replay_simulations = sorted(
+        [simulation for simulation in simulations if simulation.base_run_id == normalized_base_run_id],
+        key=lambda simulation: (simulation.simulated_at, simulation.batch_id, simulation.order_id),
+    )
+
+    for simulation in replay_simulations:
+        symbol = simulation.symbol
+        quantity = _positive_number(simulation.quantity, 0)
+        fill_price = _positive_number(simulation.fill_price, 0)
+        notional_value = _positive_number(simulation.notional_value, quantity * fill_price)
+        replay_state = "applied"
+        if simulation.fill_status != "filled" or simulation.order_state != "filled" or quantity <= 0 or fill_price <= 0:
+            replay_state = "ignored"
+            warnings.append(f"{simulation.order_id}:ignored_non_filled_simulation")
+        elif simulation.side == "buy":
+            previous_quantity = positions.get(symbol, 0.0)
+            previous_cost = avg_costs.get(symbol, fill_price)
+            new_quantity = previous_quantity + quantity
+            avg_costs[symbol] = (
+                ((previous_quantity * previous_cost) + notional_value) / new_quantity if new_quantity else fill_price
+            )
+            positions[symbol] = new_quantity
+            cash -= notional_value
+            buy_notional += notional_value
+        elif simulation.side == "sell":
+            previous_quantity = positions.get(symbol, 0.0)
+            previous_cost = avg_costs.get(symbol, fill_price)
+            if quantity > previous_quantity:
+                warnings.append(f"{simulation.order_id}:sell_exceeds_replayed_position")
+            realized_quantity = min(quantity, max(previous_quantity, 0.0))
+            realized_pnl += (fill_price - previous_cost) * realized_quantity
+            new_quantity = previous_quantity - quantity
+            positions[symbol] = new_quantity
+            if new_quantity <= 0:
+                avg_costs.pop(symbol, None)
+            cash += notional_value
+            sell_notional += notional_value
+        else:
+            replay_state = "ignored"
+            warnings.append(f"{simulation.order_id}:unsupported_side")
+        if symbol:
+            last_prices[symbol] = fill_price
+        orders.append(
+            {
+                "simulationId": simulation.simulation_id,
+                "batchId": simulation.batch_id,
+                "orderId": simulation.order_id,
+                "simulatedAt": simulation.simulated_at.isoformat(),
+                "symbol": symbol,
+                "side": simulation.side,
+                "quantity": _round_number(quantity),
+                "fillPrice": _round_number(fill_price),
+                "notionalValue": _round_number(notional_value),
+                "cashAfter": _round_number(cash),
+                "positionAfter": _round_number(positions.get(symbol, 0.0)),
+                "replayState": replay_state,
+                "paperOnly": True,
+                "liveExecutionBlocked": True,
+            }
+        )
+
+    position_rows = []
+    account_positions: dict[str, float] = {}
+    for symbol in sorted(positions):
+        quantity = positions[symbol]
+        if abs(quantity) < 1e-9:
+            continue
+        last_price = last_prices.get(symbol, avg_costs.get(symbol, 0.0))
+        avg_cost = avg_costs.get(symbol, last_price)
+        market_value = quantity * last_price
+        unrealized_pnl = (last_price - avg_cost) * quantity
+        account_positions[symbol] = _round_number(quantity)
+        position_rows.append(
+            {
+                "symbol": symbol,
+                "quantity": _round_number(quantity),
+                "avgCost": _round_number(avg_cost),
+                "lastPrice": _round_number(last_price),
+                "marketValue": _round_number(market_value),
+                "unrealizedPnl": _round_number(unrealized_pnl),
+            }
+        )
+    equity = cash + sum(row["marketValue"] for row in position_rows)
+    return {
+        "schemaVersion": 1,
+        "baseRunId": normalized_base_run_id,
+        "generatedAt": (generated_at or datetime.now(timezone.utc)).isoformat(),
+        "mode": "portfolio_paper_order_replay",
+        "initialCash": _round_number(starting_cash),
+        "account": {
+            "cash": _round_number(cash),
+            "positions": account_positions,
+            "equity": _round_number(equity),
+        },
+        "positions": position_rows,
+        "orders": orders,
+        "summary": {
+            "filledOrders": sum(1 for order in orders if order["replayState"] == "applied"),
+            "buyNotional": _round_number(buy_notional),
+            "sellNotional": _round_number(sell_notional),
+            "netNotional": _round_number(buy_notional - sell_notional),
+            "realizedPnl": _round_number(realized_pnl),
+            "unrealizedPnl": _round_number(sum(row["unrealizedPnl"] for row in position_rows)),
+            "positionCount": len(position_rows),
+            "warnings": warnings,
+        },
+        "paperOnly": True,
+        "liveExecutionBlocked": True,
+    }
+
+
 def portfolio_paper_order_approvals_to_map(
     approvals: list[PortfolioPaperOrderApproval],
 ) -> dict[str, dict[str, Any]]:
@@ -1259,6 +1390,17 @@ def _strict_positive_number(value: Any) -> float | None:
     if not math.isfinite(number) or number <= 0:
         return None
     return number
+
+
+def _round_number(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = 0.0
+    if not math.isfinite(number):
+        number = 0.0
+    rounded = round(number, 6)
+    return 0.0 if rounded == -0.0 else rounded
 
 
 def _account_to_payload(account: PaperAccount) -> dict[str, Any]:

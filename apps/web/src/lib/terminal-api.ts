@@ -1035,6 +1035,63 @@ export interface PortfolioPaperOrderSimulationHistoryResult {
   error?: string;
 }
 
+export interface PortfolioPaperOrderReplayPosition {
+  symbol: string;
+  quantity: number;
+  avgCost: number;
+  lastPrice: number;
+  marketValue: number;
+  unrealizedPnl: number;
+}
+
+export interface PortfolioPaperOrderReplayOrder {
+  simulationId: string;
+  batchId: string;
+  orderId: string;
+  simulatedAt: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  fillPrice: number;
+  notionalValue: number;
+  cashAfter: number;
+  positionAfter: number;
+  replayState: "applied" | "ignored";
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderReplaySummary {
+  filledOrders: number;
+  buyNotional: number;
+  sellNotional: number;
+  netNotional: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  positionCount: number;
+  warnings: string[];
+}
+
+export interface PortfolioPaperOrderReplay {
+  schemaVersion: 1;
+  baseRunId: string;
+  generatedAt: string;
+  mode: "portfolio_paper_order_replay";
+  initialCash: number;
+  account: PaperExecutionAccount;
+  positions: PortfolioPaperOrderReplayPosition[];
+  orders: PortfolioPaperOrderReplayOrder[];
+  summary: PortfolioPaperOrderReplaySummary;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderReplayResult {
+  replay?: PortfolioPaperOrderReplay;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -1387,6 +1444,20 @@ export function buildPortfolioPaperOrderSimulationsUrl(
     }
     if (params.batchId?.trim()) {
       url.searchParams.set("batchId", params.batchId.trim());
+    }
+  });
+}
+
+export function buildPortfolioPaperOrderReplayUrl(
+  baseUrl: string,
+  params: { baseRunId?: string; initialCash?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/portfolio/paper-order-replay", (url) => {
+    if (params.baseRunId?.trim()) {
+      url.searchParams.set("baseRunId", params.baseRunId.trim());
+    }
+    if (params.initialCash !== undefined) {
+      url.searchParams.set("initialCash", String(params.initialCash));
     }
   });
 }
@@ -2920,6 +2991,33 @@ export async function loadPortfolioPaperOrderSimulations(
       lifecycle: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown portfolio paper order simulation history error"
+    };
+  }
+}
+
+export async function loadPortfolioPaperOrderReplay(
+  baseUrl: string,
+  baseRunId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  initialCash = 100_000
+): Promise<PortfolioPaperOrderReplayResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderReplayUrl(baseUrl, { baseRunId, initialCash }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPortfolioPaperOrderReplayPayload(payload)) {
+      throw new Error("Invalid portfolio paper order replay contract");
+    }
+    return {
+      replay: payload.replay,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order replay error"
     };
   }
 }
@@ -4985,6 +5083,92 @@ function isPortfolioPaperOrderSimulationHistoryPayload(
     payload.simulations.every(isPortfolioPaperOrderSimulation) &&
     Array.isArray(payload.portfolioPaperOrderLifecycle) &&
     payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)
+  );
+}
+
+function isPortfolioPaperOrderReplayPayload(value: unknown): value is { replay: PortfolioPaperOrderReplay } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { replay?: unknown };
+  return isPortfolioPaperOrderReplay(payload.replay);
+}
+
+function isPortfolioPaperOrderReplay(value: unknown): value is PortfolioPaperOrderReplay {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const replay = value as Partial<PortfolioPaperOrderReplay>;
+  return (
+    replay.schemaVersion === 1 &&
+    typeof replay.baseRunId === "string" &&
+    typeof replay.generatedAt === "string" &&
+    replay.mode === "portfolio_paper_order_replay" &&
+    typeof replay.initialCash === "number" &&
+    isPaperExecutionAccount(replay.account) &&
+    Array.isArray(replay.positions) &&
+    replay.positions.every(isPortfolioPaperOrderReplayPosition) &&
+    Array.isArray(replay.orders) &&
+    replay.orders.every(isPortfolioPaperOrderReplayOrder) &&
+    isPortfolioPaperOrderReplaySummary(replay.summary) &&
+    replay.paperOnly === true &&
+    replay.liveExecutionBlocked === true
+  );
+}
+
+function isPortfolioPaperOrderReplayPosition(value: unknown): value is PortfolioPaperOrderReplayPosition {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const position = value as Partial<PortfolioPaperOrderReplayPosition>;
+  return (
+    typeof position.symbol === "string" &&
+    typeof position.quantity === "number" &&
+    typeof position.avgCost === "number" &&
+    typeof position.lastPrice === "number" &&
+    typeof position.marketValue === "number" &&
+    typeof position.unrealizedPnl === "number"
+  );
+}
+
+function isPortfolioPaperOrderReplayOrder(value: unknown): value is PortfolioPaperOrderReplayOrder {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const order = value as Partial<PortfolioPaperOrderReplayOrder>;
+  return (
+    typeof order.simulationId === "string" &&
+    typeof order.batchId === "string" &&
+    typeof order.orderId === "string" &&
+    typeof order.simulatedAt === "string" &&
+    typeof order.symbol === "string" &&
+    (order.side === "buy" || order.side === "sell") &&
+    typeof order.quantity === "number" &&
+    typeof order.fillPrice === "number" &&
+    typeof order.notionalValue === "number" &&
+    typeof order.cashAfter === "number" &&
+    typeof order.positionAfter === "number" &&
+    (order.replayState === "applied" || order.replayState === "ignored") &&
+    order.paperOnly === true &&
+    order.liveExecutionBlocked === true
+  );
+}
+
+function isPortfolioPaperOrderReplaySummary(value: unknown): value is PortfolioPaperOrderReplaySummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<PortfolioPaperOrderReplaySummary>;
+  return (
+    typeof summary.filledOrders === "number" &&
+    typeof summary.buyNotional === "number" &&
+    typeof summary.sellNotional === "number" &&
+    typeof summary.netNotional === "number" &&
+    typeof summary.realizedPnl === "number" &&
+    typeof summary.unrealizedPnl === "number" &&
+    typeof summary.positionCount === "number" &&
+    Array.isArray(summary.warnings) &&
+    summary.warnings.every((warning) => typeof warning === "string")
   );
 }
 

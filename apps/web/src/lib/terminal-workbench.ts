@@ -655,6 +655,78 @@ export interface PortfolioPaperOrderSimulationSnapshot {
   liveExecutionBlocked: boolean;
 }
 
+export interface PortfolioPaperOrderReplayPositionSnapshot {
+  symbol: string;
+  quantity: number;
+  avgCost: number;
+  lastPrice: number;
+  marketValue: number;
+  unrealizedPnl: number;
+}
+
+export interface PortfolioPaperOrderReplayOrderSnapshot {
+  simulationId: string;
+  batchId: string;
+  orderId: string;
+  simulatedAt: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  fillPrice: number;
+  notionalValue: number;
+  cashAfter: number;
+  positionAfter: number;
+  replayState: "applied" | "ignored";
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderReplaySnapshot {
+  schemaVersion: 1;
+  baseRunId: string;
+  generatedAt: string;
+  mode: "portfolio_paper_order_replay";
+  initialCash: number;
+  account: {
+    cash: number;
+    equity: number;
+    positions: Record<string, number>;
+  };
+  positions: PortfolioPaperOrderReplayPositionSnapshot[];
+  orders: PortfolioPaperOrderReplayOrderSnapshot[];
+  summary: {
+    filledOrders: number;
+    buyNotional: number;
+    sellNotional: number;
+    netNotional: number;
+    realizedPnl: number;
+    unrealizedPnl: number;
+    positionCount: number;
+    warnings: string[];
+  };
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderReplaySummaryTile {
+  id: "portfolio-account" | "portfolio-positions" | "portfolio-replay-boundary";
+  label: string;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export interface PortfolioPaperOrderReplayPositionRow {
+  id: string;
+  symbol: string;
+  quantity: string;
+  avgCost: string;
+  lastPrice: string;
+  marketValue: string;
+  unrealizedPnl: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface PortfolioPaperOrderLifecycleRow {
   id: string;
   portfolioName: string;
@@ -6728,6 +6800,84 @@ export function buildPaperExecutionSummaryTiles(
       tone: blockedGates ? "warning" : "positive"
     }
   ];
+}
+
+export function buildPortfolioPaperOrderReplaySummaryTiles(
+  replay: PortfolioPaperOrderReplaySnapshot | null | undefined
+): PortfolioPaperOrderReplaySummaryTile[] {
+  if (!replay) {
+    return [
+      {
+        id: "portfolio-account",
+        label: "Portfolio account",
+        value: "No portfolio replay",
+        detail: "Simulate approved portfolio orders to rebuild paper cash and positions.",
+        tone: "warning"
+      },
+      {
+        id: "portfolio-positions",
+        label: "Replay positions",
+        value: "0 position / 0 fills",
+        detail: "No applied paper fills are linked to this portfolio run yet.",
+        tone: "neutral"
+      },
+      {
+        id: "portfolio-replay-boundary",
+        label: "Execution boundary",
+        value: "Paper only",
+        detail: "Live execution remains blocked until adapter certification and human confirmation pass.",
+        tone: "warning"
+      }
+    ];
+  }
+
+  const warningCount = replay.summary.warnings.length;
+  return [
+    {
+      id: "portfolio-account",
+      label: "Portfolio account",
+      value: `Cash ${formatAssumptionCurrency(replay.account.cash)} / Equity ${formatAssumptionCurrency(replay.account.equity)}`,
+      detail: `Replay ${replay.baseRunId} · ${replay.mode}`,
+      tone: warningCount ? "warning" : "positive"
+    },
+    {
+      id: "portfolio-positions",
+      label: "Replay positions",
+      value: `${replay.summary.positionCount} position${replay.summary.positionCount === 1 ? "" : "s"} / ${
+        replay.summary.filledOrders
+      } fill${replay.summary.filledOrders === 1 ? "" : "s"}`,
+      detail: `Buy ${formatAssumptionCurrency(replay.summary.buyNotional)} / Sell ${formatAssumptionCurrency(
+        replay.summary.sellNotional
+      )} / Net ${formatAssumptionCurrency(replay.summary.netNotional)}`,
+      tone: replay.summary.positionCount ? "positive" : "neutral"
+    },
+    {
+      id: "portfolio-replay-boundary",
+      label: "Execution boundary",
+      value: replay.liveExecutionBlocked ? "Paper only" : "Live route open",
+      detail: warningCount
+        ? `${warningCount} replay warning${warningCount === 1 ? "" : "s"}: ${replay.summary.warnings.slice(0, 2).join(" · ")}`
+        : "Replay is derived from approved local paper fills; no broker route is used.",
+      tone: replay.liveExecutionBlocked ? (warningCount ? "warning" : "neutral") : "risk"
+    }
+  ];
+}
+
+export function buildPortfolioPaperOrderReplayPositionRows(
+  replay: PortfolioPaperOrderReplaySnapshot | null | undefined
+): PortfolioPaperOrderReplayPositionRow[] {
+  return [...(replay?.positions ?? [])]
+    .sort((left, right) => right.marketValue - left.marketValue)
+    .map((position) => ({
+      id: `portfolio-replay-position-${position.symbol}`,
+      symbol: position.symbol,
+      quantity: formatQuantity(position.quantity),
+      avgCost: position.avgCost.toFixed(2),
+      lastPrice: position.lastPrice.toFixed(2),
+      marketValue: position.marketValue.toFixed(2),
+      unrealizedPnl: formatSignedCurrency(position.unrealizedPnl),
+      tone: position.unrealizedPnl > 0 ? "positive" : position.unrealizedPnl < 0 ? "warning" : "neutral"
+    }));
 }
 
 export function buildPaperPositionRows(

@@ -52,6 +52,8 @@ import {
   buildPortfolioBacktestReportMarkdown,
   buildPortfolioPaperOrderApprovalRows,
   buildPortfolioPaperOrderLifecycleRows,
+  buildPortfolioPaperOrderReplayPositionRows,
+  buildPortfolioPaperOrderReplaySummaryTiles,
   buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
@@ -5934,6 +5936,87 @@ describe("terminal workbench model", () => {
         returnPct: "-5.97%",
         status: "paper",
         tone: "warning"
+      }
+    ]);
+  });
+
+  test("summarizes portfolio paper order replay account and positions", () => {
+    const replay = {
+      schemaVersion: 1 as const,
+      baseRunId: "portfolio-run-replay",
+      generatedAt: "2026-05-27T09:00:00+00:00",
+      mode: "portfolio_paper_order_replay" as const,
+      initialCash: 50000,
+      account: {
+        cash: 40800,
+        equity: 50000,
+        positions: { "600000": 1000 }
+      },
+      positions: [
+        {
+          symbol: "600000",
+          quantity: 1000,
+          avgCost: 9.2,
+          lastPrice: 9.2,
+          marketValue: 9200,
+          unrealizedPnl: 0
+        }
+      ],
+      orders: [
+        {
+          simulationId: "sim-replay-api",
+          batchId: "portfolio-paper-batch-1",
+          orderId: "portfolio-paper-run-a-buy",
+          simulatedAt: "2026-05-27T08:46:00+00:00",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 1000,
+          fillPrice: 9.2,
+          notionalValue: 9200,
+          cashAfter: 40800,
+          positionAfter: 1000,
+          replayState: "applied" as const,
+          paperOnly: true,
+          liveExecutionBlocked: true
+        }
+      ],
+      summary: {
+        filledOrders: 1,
+        buyNotional: 9200,
+        sellNotional: 0,
+        netNotional: 9200,
+        realizedPnl: 0,
+        unrealizedPnl: 0,
+        positionCount: 1,
+        warnings: []
+      },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+
+    const tiles = buildPortfolioPaperOrderReplaySummaryTiles(replay);
+    const rows = buildPortfolioPaperOrderReplayPositionRows(replay);
+
+    expect(tiles.map((tile) => tile.id)).toEqual(["portfolio-account", "portfolio-positions", "portfolio-replay-boundary"]);
+    expect(tiles[0]).toMatchObject({
+      label: "Portfolio account",
+      value: "Cash 40,800 / Equity 50,000",
+      tone: "positive"
+    });
+    expect(tiles[1]).toMatchObject({
+      value: "1 position / 1 fill",
+      detail: "Buy 9,200 / Sell 0 / Net 9,200"
+    });
+    expect(rows).toEqual([
+      {
+        id: "portfolio-replay-position-600000",
+        symbol: "600000",
+        quantity: "1000",
+        avgCost: "9.20",
+        lastPrice: "9.20",
+        marketValue: "9200.00",
+        unrealizedPnl: "+0.00",
+        tone: "neutral"
       }
     ]);
   });

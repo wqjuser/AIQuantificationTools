@@ -5892,6 +5892,10 @@ em {
   gap: 8px;
 }
 
+.portfolio-replay-grid {
+  margin-top: 10px;
+}
+
 .risk-approval {
   display: grid;
   gap: 10px;
@@ -6230,6 +6234,60 @@ em {
   color: #71dfc5;
   font-style: normal;
   font-weight: 900;
+}
+
+.portfolio-order-replay {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.portfolio-order-replay-table {
+  display: grid;
+  gap: 7px;
+}
+
+.portfolio-order-replay-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) repeat(5, minmax(76px, 0.6fr));
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101925;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.portfolio-order-replay-head {
+  min-height: 32px;
+  background: #0f1723;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.portfolio-order-replay-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.portfolio-order-replay-row.warning {
+  border-left-color: #e8be62;
+}
+
+.portfolio-order-replay-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.portfolio-order-replay-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.portfolio-order-replay-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .promotion-queue {
@@ -7873,6 +7931,7 @@ button.ai-review-record {
   .risk-approval-grid,
   .promotion-stage-list,
   .paper-blotter-row,
+  .portfolio-order-replay-row,
   .risk-ledger,
   .portfolio-backtest-content,
   .portfolio-backtest-leg-row,

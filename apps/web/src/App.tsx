@@ -35,6 +35,7 @@ import {
   loadLatestResearchRunPaperExecution,
   loadPortfolioPaperOrderBatches,
   loadPortfolioPaperOrderApprovals,
+  loadPortfolioPaperOrderReplay,
   loadPortfolioPaperOrderSimulations,
   loadResearchRunDetail,
   loadResearchRunExport,
@@ -81,6 +82,7 @@ import {
   PortfolioBacktestResult,
   PortfolioPaperOrderBatch,
   PortfolioPaperOrderLifecycleEvent,
+  PortfolioPaperOrderReplay,
   PortfolioPaperOrderSimulation,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
@@ -143,6 +145,8 @@ import {
   buildPortfolioBacktestReportMarkdown,
   buildPortfolioPaperOrderApprovalRows,
   buildPortfolioPaperOrderLifecycleRows,
+  buildPortfolioPaperOrderReplayPositionRows,
+  buildPortfolioPaperOrderReplaySummaryTiles,
   buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
@@ -213,6 +217,8 @@ import {
   PortfolioBacktestDiagnosticRow,
   PortfolioPaperOrderApprovalRow,
   PortfolioPaperOrderLifecycleRow,
+  PortfolioPaperOrderReplayPositionRow,
+  PortfolioPaperOrderReplaySummaryTile,
   PortfolioPeerAuditPlan,
   PortfolioRiskRow,
   PromotionQueueStage,
@@ -548,6 +554,7 @@ export function App() {
     PortfolioPaperOrderLifecycleEvent[]
   >([]);
   const [portfolioPaperOrderSimulations, setPortfolioPaperOrderSimulations] = useState<PortfolioPaperOrderSimulation[]>([]);
+  const [portfolioPaperOrderReplay, setPortfolioPaperOrderReplay] = useState<PortfolioPaperOrderReplay | null>(null);
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -684,6 +691,8 @@ export function App() {
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
   );
+  const portfolioPaperOrderReplaySummaryTiles = buildPortfolioPaperOrderReplaySummaryTiles(portfolioPaperOrderReplay);
+  const portfolioPaperOrderReplayPositionRows = buildPortfolioPaperOrderReplayPositionRows(portfolioPaperOrderReplay);
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -769,11 +778,21 @@ export function App() {
       setPortfolioPaperOrderBatches([]);
       setPortfolioPaperOrderLifecycleEvents([]);
       setPortfolioPaperOrderSimulations([]);
+      setPortfolioPaperOrderReplay(null);
       setPortfolioPaperOrderHistoryError(null);
       return;
     }
     let cancelled = false;
     setPortfolioPaperOrderHistoryError(null);
+    void loadPortfolioPaperOrderReplay(quantCoreBaseUrl, baseRunId).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setPortfolioPaperOrderReplay(result.replay ?? null);
+      if (result.error) {
+        setPortfolioPaperOrderHistoryError(result.error);
+      }
+    });
     void loadPortfolioPaperOrderBatches(quantCoreBaseUrl, baseRunId).then((result) => {
       if (cancelled) {
         return;
@@ -1496,6 +1515,12 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, row.batchId, result.lifecycle ?? [])
         );
       }
+      void loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId).then((replayResult) => {
+        setPortfolioPaperOrderReplay(replayResult.replay ?? null);
+        if (replayResult.error) {
+          setPortfolioPaperOrderHistoryError(replayResult.error);
+        }
+      });
       setPortfolioPaperOrderHistoryError(null);
       setWorkspaceState((current) => ({
         ...current,
@@ -3397,6 +3422,8 @@ export function App() {
             portfolioPaperOrderApprovalRows={portfolioPaperOrderApprovalRows}
             portfolioPaperOrderHistoryError={portfolioPaperOrderHistoryError}
             portfolioPaperOrderLifecycleRows={portfolioPaperOrderLifecycleRows}
+            portfolioPaperOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
+            portfolioPaperOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
             portfolioPaperOrderSimulations={portfolioPaperOrderSimulations}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
@@ -3425,6 +3452,8 @@ export function App() {
             onSimulatePortfolioOrder={simulatePortfolioPaperOrder}
             portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
             portfolioOrderRows={portfolioPaperOrderLifecycleRows}
+            portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
+            portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
             portfolioOrderSimulations={portfolioPaperOrderSimulations}
             rows={visiblePaperTradingRows}
             simulatingPortfolioOrderId={simulatingPortfolioPaperOrderId}
@@ -8553,6 +8582,8 @@ function ExecutionPanel({
   onSimulatePortfolioOrder,
   onSubmit,
   portfolioOrderApprovalRows = [],
+  portfolioOrderReplayPositionRows = [],
+  portfolioOrderReplaySummaryTiles = [],
   portfolioOrderRows = [],
   portfolioOrderSimulations = [],
   rows,
@@ -8570,6 +8601,8 @@ function ExecutionPanel({
   onSimulatePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSubmit?: () => void;
   portfolioOrderApprovalRows?: PortfolioPaperOrderApprovalRow[];
+  portfolioOrderReplayPositionRows?: PortfolioPaperOrderReplayPositionRow[];
+  portfolioOrderReplaySummaryTiles?: PortfolioPaperOrderReplaySummaryTile[];
   portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
   portfolioOrderSimulations?: PortfolioPaperOrderSimulation[];
   rows: PaperTradingRow[];
@@ -8610,6 +8643,20 @@ function ExecutionPanel({
           />
         ))}
       </div>
+      {portfolioOrderReplaySummaryTiles.length ? (
+        <div className="execution-grid portfolio-replay-grid">
+          {portfolioOrderReplaySummaryTiles.map((tile) => (
+            <ExecutionTile
+              detail={portfolioReplayTileDetail(i18n, tile)}
+              icon={portfolioReplayTileIcon(tile.id)}
+              key={tile.id}
+              label={portfolioReplayTileLabel(i18n, tile)}
+              tone={tile.tone}
+              value={portfolioReplayTileValue(i18n, tile)}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="gate-list">
         {workspace.execution.gates.map((gate) => (
           <span key={gate.id} className={gate.passed ? "passed" : "blocked"}>
@@ -8755,6 +8802,34 @@ function ExecutionPanel({
           </div>
         </div>
       ) : null}
+      {portfolioOrderReplayPositionRows.length ? (
+        <div className="portfolio-order-replay">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "组合模拟账户持仓" : "Portfolio replay positions"}</span>
+            <strong>{portfolioOrderReplayPositionRows.length}</strong>
+          </div>
+          <div className="portfolio-order-replay-table">
+            <div className="portfolio-order-replay-row portfolio-order-replay-head">
+              <span>{i18n.t("chart.symbol")}</span>
+              <span>{i18n.t("execution.quantity")}</span>
+              <span>{i18n.t("portfolio.avgCost")}</span>
+              <span>{i18n.t("portfolio.markPrice")}</span>
+              <span>{i18n.t("portfolio.marketValue")}</span>
+              <span>{i18n.t("portfolio.unrealizedPnl")}</span>
+            </div>
+            {portfolioOrderReplayPositionRows.map((row) => (
+              <div className={`portfolio-order-replay-row ${row.tone}`} key={row.id}>
+                <span>{row.symbol}</span>
+                <span>{row.quantity}</span>
+                <span>{row.avgCost}</span>
+                <span>{row.lastPrice}</span>
+                <span>{row.marketValue}</span>
+                <span>{row.unrealizedPnl}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {portfolioOrderSimulations.length ? (
         <div className="portfolio-order-simulation">
           <div className="paper-blotter-title">
@@ -8855,6 +8930,8 @@ function PortfolioWorkspace({
   portfolioPaperOrderApprovalRows,
   portfolioPaperOrderHistoryError,
   portfolioPaperOrderLifecycleRows,
+  portfolioPaperOrderReplayPositionRows,
+  portfolioPaperOrderReplaySummaryTiles,
   portfolioPaperOrderSimulations,
   portfolioPeerAuditPlan,
   riskApproval,
@@ -8888,6 +8965,8 @@ function PortfolioWorkspace({
   portfolioPaperOrderApprovalRows: PortfolioPaperOrderApprovalRow[];
   portfolioPaperOrderHistoryError: string | null;
   portfolioPaperOrderLifecycleRows: PortfolioPaperOrderLifecycleRow[];
+  portfolioPaperOrderReplayPositionRows: PortfolioPaperOrderReplayPositionRow[];
+  portfolioPaperOrderReplaySummaryTiles: PortfolioPaperOrderReplaySummaryTile[];
   portfolioPaperOrderSimulations: PortfolioPaperOrderSimulation[];
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
@@ -9321,6 +9400,8 @@ function PortfolioWorkspace({
         onSimulatePortfolioOrder={onSimulatePortfolioOrder}
         onSubmit={onSubmitPaperExecution}
         portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
+        portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
+        portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
         portfolioOrderRows={portfolioPaperOrderLifecycleRows}
         portfolioOrderSimulations={portfolioPaperOrderSimulations}
         rows={paperRows}
@@ -10470,6 +10551,61 @@ function paperExecutionTileDetail(i18n: AppI18n, tile: PaperExecutionSummaryTile
     .replace("Audit run bound: passed", "审计运行绑定：通过")
     .replace("Paper risk check: passed", "模拟风控检查：通过")
     .replace("Live route blocked: blocked", "实盘通道：阻断");
+}
+
+function portfolioReplayTileIcon(id: PortfolioPaperOrderReplaySummaryTile["id"]): typeof Database {
+  if (id === "portfolio-account") {
+    return Database;
+  }
+  if (id === "portfolio-positions") {
+    return WalletCards;
+  }
+  return ShieldCheck;
+}
+
+function portfolioReplayTileLabel(i18n: AppI18n, tile: PortfolioPaperOrderReplaySummaryTile): string {
+  if (i18n.locale === "en-US") {
+    return tile.label;
+  }
+  return {
+    "portfolio-account": "组合账户",
+    "portfolio-positions": "回放持仓",
+    "portfolio-replay-boundary": "执行边界"
+  }[tile.id];
+}
+
+function portfolioReplayTileValue(i18n: AppI18n, tile: PortfolioPaperOrderReplaySummaryTile): string {
+  if (i18n.locale === "en-US") {
+    return tile.value;
+  }
+  return tile.value
+    .replace("No portfolio replay", "尚无组合回放")
+    .replace("Cash", "现金")
+    .replace("Equity", "权益")
+    .replace("positions", "持仓")
+    .replace("position", "持仓")
+    .replace("fills", "成交")
+    .replace("fill", "成交")
+    .replace("Paper only", "仅模拟盘")
+    .replace("Live route open", "实盘通道开启");
+}
+
+function portfolioReplayTileDetail(i18n: AppI18n, tile: PortfolioPaperOrderReplaySummaryTile): string {
+  if (i18n.locale === "en-US") {
+    return tile.detail;
+  }
+  return tile.detail
+    .replace("Simulate approved portfolio orders to rebuild paper cash and positions.", "模拟已批准的组合委托后，会重建本地现金与持仓。")
+    .replace("No applied paper fills are linked to this portfolio run yet.", "当前组合运行尚未绑定已应用的模拟成交。")
+    .replace("Live execution remains blocked until adapter certification and human confirmation pass.", "实盘执行仍需适配器认证与人工确认通过。")
+    .replace("Replay", "回放")
+    .replace("portfolio_paper_order_replay", "组合模拟委托回放")
+    .replace("Buy", "买入")
+    .replace("Sell", "卖出")
+    .replace("Net", "净额")
+    .replace("Replay is derived from approved local paper fills; no broker route is used.", "回放仅来自本地已批准模拟成交，不使用券商通道。")
+    .replace("replay warning", "条回放警告")
+    .replace("replay warnings", "条回放警告");
 }
 
 function paperPositionStatusLabel(i18n: AppI18n, status: PaperPositionRow["status"]): string {

@@ -3416,6 +3416,133 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(audit_response.status, 200)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
 
+    def test_portfolio_paper_order_replay_rebuilds_cash_positions_and_orders(self):
+        from quant_core.execution import (
+            PortfolioPaperOrderSimulation,
+            build_portfolio_paper_order_replay,
+        )
+
+        simulations = [
+            PortfolioPaperOrderSimulation(
+                simulation_id="sim-buy-late",
+                base_run_id="portfolio-run-replay",
+                batch_id="batch-replay",
+                order_id="order-buy-late",
+                simulated_at=datetime(2026, 5, 26, 8, 48, tzinfo=timezone.utc),
+                mode="portfolio_paper_order_simulation",
+                symbol="600000",
+                source_run_id="run-a",
+                side="buy",
+                quantity=500,
+                fill_price=10.0,
+                notional_value=5000.0,
+                order_state="filled",
+                fill_status="filled",
+                reason="Second fill.",
+                approved_by="operator-a",
+            ),
+            PortfolioPaperOrderSimulation(
+                simulation_id="sim-buy-early",
+                base_run_id="portfolio-run-replay",
+                batch_id="batch-replay",
+                order_id="order-buy-early",
+                simulated_at=datetime(2026, 5, 26, 8, 46, tzinfo=timezone.utc),
+                mode="portfolio_paper_order_simulation",
+                symbol="600000",
+                source_run_id="run-a",
+                side="buy",
+                quantity=1000,
+                fill_price=9.2,
+                notional_value=9200.0,
+                order_state="filled",
+                fill_status="filled",
+                reason="First fill.",
+                approved_by="operator-a",
+            ),
+        ]
+
+        replay = build_portfolio_paper_order_replay(
+            simulations,
+            base_run_id="portfolio-run-replay",
+            initial_cash=50_000,
+            generated_at=datetime(2026, 5, 26, 9, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(replay["baseRunId"], "portfolio-run-replay")
+        self.assertEqual(replay["mode"], "portfolio_paper_order_replay")
+        self.assertEqual(replay["account"]["cash"], 35800.0)
+        self.assertEqual(replay["account"]["positions"], {"600000": 1500.0})
+        self.assertEqual(replay["summary"]["filledOrders"], 2)
+        self.assertEqual(replay["summary"]["buyNotional"], 14200.0)
+        self.assertEqual(replay["summary"]["positionCount"], 1)
+        self.assertEqual(replay["positions"][0]["symbol"], "600000")
+        self.assertEqual(replay["positions"][0]["quantity"], 1500.0)
+        self.assertAlmostEqual(replay["positions"][0]["avgCost"], 9.466667, places=6)
+        self.assertEqual([order["orderId"] for order in replay["orders"]], ["order-buy-early", "order-buy-late"])
+        self.assertEqual(replay["orders"][0]["cashAfter"], 40800.0)
+        self.assertTrue(replay["paperOnly"])
+        self.assertTrue(replay["liveExecutionBlocked"])
+
+    def test_portfolio_paper_order_replay_api_returns_base_run_account_snapshot(self):
+        import json
+        import tempfile
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PortfolioPaperOrderSimulation, PortfolioPaperOrderSimulationStore
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            simulation_store = PortfolioPaperOrderSimulationStore(Path(temp_dir) / "portfolio_paper_simulations.sqlite")
+            simulation_store.record(
+                PortfolioPaperOrderSimulation(
+                    simulation_id="sim-replay-api",
+                    base_run_id="portfolio-run-replay-api",
+                    batch_id="batch-replay-api",
+                    order_id="order-replay-api",
+                    simulated_at=datetime(2026, 5, 26, 8, 46, tzinfo=timezone.utc),
+                    mode="portfolio_paper_order_simulation",
+                    symbol="600000",
+                    source_run_id="run-a",
+                    side="buy",
+                    quantity=1000,
+                    fill_price=9.2,
+                    notional_value=9200.0,
+                    order_state="filled",
+                    fill_status="filled",
+                    reason="API replay fill.",
+                    approved_by="operator-a",
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_simulation_store = simulation_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-replay?baseRunId=portfolio-run-replay-api&initialCash=50000",
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["replay"]["baseRunId"], "portfolio-run-replay-api")
+        self.assertEqual(payload["replay"]["account"]["cash"], 40800.0)
+        self.assertEqual(payload["replay"]["positions"][0]["symbol"], "600000")
+        self.assertEqual(payload["replay"]["orders"][0]["simulationId"], "sim-replay-api")
+        self.assertTrue(payload["replay"]["liveExecutionBlocked"])
+
     def test_research_run_ai_review_api_records_review_for_run(self):
         import json
         from http.client import HTTPConnection
