@@ -859,6 +859,23 @@ export interface PortfolioCorrelationPair {
   correlation: number;
 }
 
+export interface PortfolioCovarianceRiskContribution {
+  symbol: string;
+  sourceRunId: string | null;
+  targetWeight: number;
+  annualizedVolatilityPct: number;
+  marginalContributionPct: number;
+  contributionPct: number;
+}
+
+export interface PortfolioCovarianceRisk {
+  method: "population_covariance";
+  observations: number;
+  periodVolatilityPct: number;
+  annualizedVolatilityPct: number;
+  contributions: PortfolioCovarianceRiskContribution[];
+}
+
 export interface PortfolioBacktestRun {
   name: string;
   market: Market;
@@ -871,6 +888,7 @@ export interface PortfolioBacktestRun {
   allocationEvents?: PortfolioAllocationEvent[];
   rebalanceEvents?: PortfolioRebalanceEvent[];
   correlationPairs?: PortfolioCorrelationPair[];
+  covarianceRisk?: PortfolioCovarianceRisk;
   dataQuality: MarketKlineQuality;
 }
 
@@ -1565,6 +1583,8 @@ export async function buildPortfolioBacktestReportAuditEvent({
       equityRows: portfolio.equityCurve.length,
       allocationEventCount: portfolio.allocationEvents?.length ?? 0,
       rebalanceEventCount: portfolio.rebalanceEvents?.length ?? 0,
+      covarianceRiskContributionCount: portfolio.covarianceRisk?.contributions.length ?? 0,
+      covarianceRiskAnnualizedVolatilityPct: portfolio.covarianceRisk?.annualizedVolatilityPct ?? null,
       diagnosticsCount: diagnostics.length,
       incompleteDataQuality,
       negativeContributionLegs,
@@ -4397,6 +4417,7 @@ function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
       (Array.isArray(run.rebalanceEvents) && run.rebalanceEvents.every(isPortfolioRebalanceEvent))) &&
     (run.correlationPairs === undefined ||
       (Array.isArray(run.correlationPairs) && run.correlationPairs.every(isPortfolioCorrelationPair))) &&
+    (run.covarianceRisk === undefined || isPortfolioCovarianceRisk(run.covarianceRisk)) &&
     isMarketKlineQuality(run.dataQuality)
   );
 }
@@ -4485,6 +4506,36 @@ function isPortfolioCorrelationPair(value: unknown): value is PortfolioCorrelati
   }
   const pair = value as Partial<PortfolioCorrelationPair>;
   return typeof pair.leftSymbol === "string" && typeof pair.rightSymbol === "string" && typeof pair.correlation === "number";
+}
+
+function isPortfolioCovarianceRisk(value: unknown): value is PortfolioCovarianceRisk {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const risk = value as Partial<PortfolioCovarianceRisk>;
+  return (
+    risk.method === "population_covariance" &&
+    typeof risk.observations === "number" &&
+    typeof risk.periodVolatilityPct === "number" &&
+    typeof risk.annualizedVolatilityPct === "number" &&
+    Array.isArray(risk.contributions) &&
+    risk.contributions.every(isPortfolioCovarianceRiskContribution)
+  );
+}
+
+function isPortfolioCovarianceRiskContribution(value: unknown): value is PortfolioCovarianceRiskContribution {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const contribution = value as Partial<PortfolioCovarianceRiskContribution>;
+  return (
+    typeof contribution.symbol === "string" &&
+    (contribution.sourceRunId === null || typeof contribution.sourceRunId === "string") &&
+    typeof contribution.targetWeight === "number" &&
+    typeof contribution.annualizedVolatilityPct === "number" &&
+    typeof contribution.marginalContributionPct === "number" &&
+    typeof contribution.contributionPct === "number"
+  );
 }
 
 function isMarketSearchPayload(value: unknown): value is Omit<MarketSearchResult, "source" | "error"> {

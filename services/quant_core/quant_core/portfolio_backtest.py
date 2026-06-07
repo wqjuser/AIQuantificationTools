@@ -37,6 +37,25 @@ class PortfolioCorrelationPair:
 
 
 @dataclass(frozen=True)
+class PortfolioCovarianceRiskContribution:
+    symbol: str
+    source_run_id: str | None
+    target_weight: float
+    annualized_volatility_pct: float
+    marginal_contribution_pct: float
+    contribution_pct: float
+
+
+@dataclass(frozen=True)
+class PortfolioCovarianceRiskSummary:
+    method: Literal["population_covariance"]
+    observations: int
+    period_volatility_pct: float
+    annualized_volatility_pct: float
+    contributions: list[PortfolioCovarianceRiskContribution]
+
+
+@dataclass(frozen=True)
 class PortfolioAllocationEvent:
     timestamp: datetime
     event_type: Literal["allocate", "cash_buffer"]
@@ -76,6 +95,7 @@ class PortfolioBacktestRun:
     allocation_events: list[PortfolioAllocationEvent]
     rebalance_events: list[PortfolioRebalanceEvent]
     correlation_pairs: list[PortfolioCorrelationPair]
+    covariance_risk: PortfolioCovarianceRiskSummary
     data_quality: DataQuality
 
 
@@ -129,6 +149,7 @@ class PortfolioBacktestEngine:
             timestamp=timestamps[-1],
         )
         correlation_pairs = self._correlation_pairs(legs)
+        covariance_risk = self._covariance_risk(legs, timeframe)
         return PortfolioBacktestRun(
             name=name,
             market=market,
@@ -141,6 +162,7 @@ class PortfolioBacktestEngine:
             allocation_events=allocation_events,
             rebalance_events=rebalance_events,
             correlation_pairs=correlation_pairs,
+            covariance_risk=covariance_risk,
             data_quality=data_quality,
         )
 
@@ -333,6 +355,93 @@ class PortfolioBacktestEngine:
                 )
         return pairs
 
+    def _covariance_risk(self, legs: list[PortfolioLeg], timeframe: Timeframe) -> PortfolioCovarianceRiskSummary:
+        returns_by_leg = [self._period_returns(leg.run.equity_curve) for leg in legs]
+        observations = min((len(returns) for returns in returns_by_leg), default=0)
+        periods_per_year = self._periods_per_year(timeframe)
+
+        if observations <= 0:
+            return PortfolioCovarianceRiskSummary(
+                method="population_covariance",
+                observations=0,
+                period_volatility_pct=0.0,
+                annualized_volatility_pct=0.0,
+                contributions=[
+                    PortfolioCovarianceRiskContribution(
+                        symbol=leg.run.symbol,
+                        source_run_id=leg.run_id,
+                        target_weight=round(leg.target_weight, 10),
+                        annualized_volatility_pct=0.0,
+                        marginal_contribution_pct=0.0,
+                        contribution_pct=0.0,
+                    )
+                    for leg in legs
+                ],
+            )
+
+        clipped_returns = [returns[:observations] for returns in returns_by_leg]
+        covariance_matrix = self._covariance_matrix(clipped_returns)
+        weights = [leg.target_weight for leg in legs]
+        weighted_covariance = [
+            sum(covariance_matrix[row_index][column_index] * weights[column_index] for column_index in range(len(weights)))
+            for row_index in range(len(weights))
+        ]
+        portfolio_variance = sum(weights[index] * weighted_covariance[index] for index in range(len(weights)))
+        portfolio_variance = max(portfolio_variance, 0.0)
+        period_volatility = portfolio_variance ** 0.5
+        annualization = periods_per_year ** 0.5
+
+        contributions = []
+        for index, leg in enumerate(legs):
+            leg_variance = max(covariance_matrix[index][index], 0.0)
+            marginal_period_risk = weighted_covariance[index] / period_volatility if period_volatility > 0 else 0.0
+            contribution_share = (
+                weights[index] * weighted_covariance[index] / portfolio_variance
+                if portfolio_variance > 0
+                else 0.0
+            )
+            contributions.append(
+                PortfolioCovarianceRiskContribution(
+                    symbol=leg.run.symbol,
+                    source_run_id=leg.run_id,
+                    target_weight=round(leg.target_weight, 10),
+                    annualized_volatility_pct=round((leg_variance ** 0.5) * annualization * 100, 4),
+                    marginal_contribution_pct=round(marginal_period_risk * annualization * 100, 4),
+                    contribution_pct=round(contribution_share * 100, 4),
+                )
+            )
+
+        return PortfolioCovarianceRiskSummary(
+            method="population_covariance",
+            observations=observations,
+            period_volatility_pct=round(period_volatility * 100, 4),
+            annualized_volatility_pct=round(period_volatility * annualization * 100, 4),
+            contributions=contributions,
+        )
+
+    def _covariance_matrix(self, returns_by_leg: list[list[float]]) -> list[list[float]]:
+        if not returns_by_leg:
+            return []
+        observations = len(returns_by_leg[0])
+        means = [sum(returns) / observations if observations else 0.0 for returns in returns_by_leg]
+        matrix: list[list[float]] = []
+        for left_index, left_returns in enumerate(returns_by_leg):
+            row: list[float] = []
+            for right_index, right_returns in enumerate(returns_by_leg):
+                if observations <= 0:
+                    row.append(0.0)
+                    continue
+                covariance = sum(
+                    (left_returns[index] - means[left_index]) * (right_returns[index] - means[right_index])
+                    for index in range(observations)
+                ) / observations
+                row.append(covariance)
+            matrix.append(row)
+        return matrix
+
+    def _periods_per_year(self, timeframe: Timeframe) -> int:
+        return 252 if timeframe == "1d" else 252 * 240
+
     def _period_returns(self, equity_curve: list[EquityPoint]) -> list[float]:
         returns: list[float] = []
         for previous, current in zip(equity_curve, equity_curve[1:], strict=False):
@@ -428,6 +537,23 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
             }
             for pair in run.correlation_pairs
         ],
+        "covarianceRisk": {
+            "method": run.covariance_risk.method,
+            "observations": run.covariance_risk.observations,
+            "periodVolatilityPct": run.covariance_risk.period_volatility_pct,
+            "annualizedVolatilityPct": run.covariance_risk.annualized_volatility_pct,
+            "contributions": [
+                {
+                    "symbol": contribution.symbol,
+                    "sourceRunId": contribution.source_run_id,
+                    "targetWeight": contribution.target_weight,
+                    "annualizedVolatilityPct": contribution.annualized_volatility_pct,
+                    "marginalContributionPct": contribution.marginal_contribution_pct,
+                    "contributionPct": contribution.contribution_pct,
+                }
+                for contribution in run.covariance_risk.contributions
+            ],
+        },
         "dataQuality": _data_quality_to_payload(run.data_quality),
     }
 

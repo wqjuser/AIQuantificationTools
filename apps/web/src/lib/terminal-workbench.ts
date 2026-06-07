@@ -1133,6 +1133,7 @@ export interface PortfolioBacktestDiagnosticRow {
     | "exposure-utilization"
     | "rebalance-drift"
     | "risk-contribution"
+    | "covariance-risk"
     | "correlation-risk"
     | "negative-contribution"
     | "data-quality";
@@ -1189,6 +1190,20 @@ interface PortfolioBacktestDiagnosticInput {
     status: "within_band" | "review" | "blocked";
     reason: string;
   }>;
+  covarianceRisk?: {
+    method: "population_covariance";
+    observations: number;
+    periodVolatilityPct: number;
+    annualizedVolatilityPct: number;
+    contributions: Array<{
+      symbol: string;
+      sourceRunId: string | null;
+      targetWeight: number;
+      annualizedVolatilityPct: number;
+      marginalContributionPct: number;
+      contributionPct: number;
+    }>;
+  };
   correlationPairs?: Array<{ leftSymbol: string; rightSymbol: string; correlation: number }>;
   dataQuality: PortfolioBacktestDiagnosticQuality;
   equityCurve?: Array<{ timestamp: string; equity: number }>;
@@ -5288,6 +5303,7 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
 
   const driftReview = buildPortfolioRebalanceDriftReview(portfolio);
   const riskContributionReview = buildPortfolioRiskContributionReview(portfolio);
+  const covarianceRiskReview = buildPortfolioCovarianceRiskReview(portfolio);
   const correlationReview = buildPortfolioCorrelationReview(portfolio);
 
   const negativeLegs = portfolio.legs.filter((leg) => leg.contributionValue < 0);
@@ -5359,6 +5375,18 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
       status: riskContributionReview.status,
       tone: diagnosticTone(riskContributionReview.status)
     },
+    ...(covarianceRiskReview
+      ? [
+          {
+            id: "covariance-risk" as const,
+            label: "Covariance risk",
+            value: covarianceRiskReview.value,
+            detail: covarianceRiskReview.detail,
+            status: covarianceRiskReview.status,
+            tone: diagnosticTone(covarianceRiskReview.status)
+          }
+        ]
+      : []),
     {
       id: "correlation-risk",
       label: "Correlation risk",
@@ -5440,6 +5468,22 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     event.status,
     event.reason
   ]);
+  const covarianceSummaryRows = portfolio.covarianceRisk
+    ? [
+        ["Method", portfolio.covarianceRisk.method],
+        ["Observations", portfolio.covarianceRisk.observations],
+        ["Portfolio period volatility", formatReportPercent(portfolio.covarianceRisk.periodVolatilityPct)],
+        ["Portfolio annualized volatility", formatReportPercent(portfolio.covarianceRisk.annualizedVolatilityPct)]
+      ]
+    : [];
+  const covarianceContributionRows = (portfolio.covarianceRisk?.contributions ?? []).map((contribution) => [
+    contribution.symbol,
+    contribution.sourceRunId ?? "-",
+    formatDiagnosticWeight(contribution.targetWeight),
+    formatReportPercent(contribution.annualizedVolatilityPct),
+    formatReportPercent(contribution.marginalContributionPct),
+    formatReportPercent(contribution.contributionPct)
+  ]);
 
   return [
     "# AIQuant Portfolio Backtest Report",
@@ -5468,6 +5512,19 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
       ["Symbol", "Run ID", "Weight", "Contribution value", "Contribution return", "Max drawdown", "Trades", "Data quality", "Warnings"],
       legRows
     ),
+    "",
+    "## Covariance Risk",
+    "",
+    covarianceSummaryRows.length
+      ? [
+          markdownTable(["Field", "Value"], covarianceSummaryRows),
+          "",
+          markdownTable(
+            ["Symbol", "Run ID", "Target weight", "Annualized volatility", "Marginal contribution", "Contribution share"],
+            covarianceContributionRows
+          )
+        ].join("\n")
+      : "No covariance risk summary is attached to this portfolio run.",
     "",
     "## Allocation Ledger",
     "",
@@ -5647,6 +5704,39 @@ function buildPortfolioRiskContributionReview<T extends PortfolioBacktestDiagnos
   return {
     value: `${largest.symbol} ${formatDiagnosticWeight(contributionShare)}`,
     detail,
+    status
+  };
+}
+
+function buildPortfolioCovarianceRiskReview<T extends PortfolioBacktestDiagnosticInput>(
+  portfolio: T
+): {
+  value: string;
+  detail: string;
+  status: PortfolioBacktestDiagnosticStatus;
+} | null {
+  const contributions = portfolio.covarianceRisk?.contributions.filter((contribution) =>
+    Number.isFinite(contribution.contributionPct)
+  );
+  if (!portfolio.covarianceRisk || !contributions?.length) {
+    return null;
+  }
+
+  const largest = [...contributions].sort((left, right) => right.contributionPct - left.contributionPct)[0];
+  const status: PortfolioBacktestDiagnosticStatus =
+    largest.contributionPct >= 75 ? "blocked" : largest.contributionPct > 60 ? "review" : "passed";
+  const detail =
+    status === "blocked"
+      ? "Largest covariance risk contribution exceeds the 75% hard concentration threshold."
+      : status === "review"
+        ? "Largest covariance risk contribution exceeds the 60% review threshold."
+        : "Largest covariance risk contribution remains inside the 60% review threshold.";
+
+  return {
+    value: `${largest.symbol} ${formatDiagnosticPercent(largest.contributionPct)}`,
+    detail: `${detail} Portfolio annualized volatility ${formatReportPercent(
+      portfolio.covarianceRisk.annualizedVolatilityPct
+    )}; observations ${portfolio.covarianceRisk.observations}.`,
     status
   };
 }

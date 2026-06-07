@@ -4738,6 +4738,30 @@ describe("terminal workbench model", () => {
         }
       ],
       correlationPairs: [{ leftSymbol: "600000", rightSymbol: "000300", correlation: 0.91 }],
+      covarianceRisk: {
+        method: "population_covariance" as const,
+        observations: 4,
+        periodVolatilityPct: 1.8,
+        annualizedVolatilityPct: 28.6,
+        contributions: [
+          {
+            symbol: "600000",
+            sourceRunId: "run-current-600000",
+            targetWeight: 0.65,
+            annualizedVolatilityPct: 31.2,
+            marginalContributionPct: 24.8,
+            contributionPct: 68.4
+          },
+          {
+            symbol: "000300",
+            sourceRunId: "run-peer-000300",
+            targetWeight: 0.25,
+            annualizedVolatilityPct: 18.5,
+            marginalContributionPct: 12.6,
+            contributionPct: 31.6
+          }
+        ]
+      },
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -4752,6 +4776,7 @@ describe("terminal workbench model", () => {
       "exposure-utilization:passed:90.0%",
       "rebalance-drift:review:000300 -2.4pp",
       "risk-contribution:review:600000 64.5%",
+      "covariance-risk:review:600000 68.4%",
       "correlation-risk:review:600000/000300 0.91",
       "negative-contribution:review:000300 -4.0%",
       "data-quality:blocked:incomplete"
@@ -4760,9 +4785,10 @@ describe("terminal workbench model", () => {
     expect(diagnostics[2].detail).toContain("cash/slippage");
     expect(diagnostics[3].detail).toContain("rebalance review");
     expect(diagnostics[4].detail).toContain("risk-budget contribution");
-    expect(diagnostics[5].detail).toContain("pairwise correlation");
-    expect(diagnostics[6].detail).toContain("negative contribution");
-    expect(diagnostics[7].detail).toContain("000300: missing 1 bar");
+    expect(diagnostics[5].detail).toContain("covariance risk contribution");
+    expect(diagnostics[6].detail).toContain("pairwise correlation");
+    expect(diagnostics[7].detail).toContain("negative contribution");
+    expect(diagnostics[8].detail).toContain("000300: missing 1 bar");
   });
 
   test("builds a markdown report from portfolio backtest evidence", () => {
@@ -4868,6 +4894,30 @@ describe("terminal workbench model", () => {
         }
       ],
       correlationPairs: [{ leftSymbol: "600000", rightSymbol: "000300", correlation: 0.91 }],
+      covarianceRisk: {
+        method: "population_covariance" as const,
+        observations: 4,
+        periodVolatilityPct: 1.8,
+        annualizedVolatilityPct: 28.6,
+        contributions: [
+          {
+            symbol: "600000",
+            sourceRunId: "run-current-600000",
+            targetWeight: 0.65,
+            annualizedVolatilityPct: 31.2,
+            marginalContributionPct: 24.8,
+            contributionPct: 68.4
+          },
+          {
+            symbol: "000300",
+            sourceRunId: "run-peer-000300",
+            targetWeight: 0.25,
+            annualizedVolatilityPct: 18.5,
+            marginalContributionPct: 12.6,
+            contributionPct: 31.6
+          }
+        ]
+      },
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -4925,9 +4975,13 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| Gross exposure | 90.0% | passed |");
     expect(markdown).toContain("| Rebalance drift | 000300 -2.4pp | review |");
     expect(markdown).toContain("| Risk contribution | 600000 64.5% | review |");
+    expect(markdown).toContain("| Covariance risk | 600000 68.4% | review |");
     expect(markdown).toContain("| Correlation risk | 600000/000300 0.91 | review |");
     expect(markdown).toContain("| Data quality | incomplete | blocked |");
     expect(markdown).toContain("| 000300 | run-peer-000300 | 25.0% | -1000.00 | -4.00% |");
+    expect(markdown).toContain("## Covariance Risk");
+    expect(markdown).toContain("| Portfolio annualized volatility | 28.60% |");
+    expect(markdown).toContain("| 600000 | run-current-600000 | 65.0% | 31.20% | 24.80% | 68.40% |");
     expect(markdown).toContain("## Allocation Ledger");
     expect(markdown).toContain("| 2026-05-26T08:00:00+00:00 | allocate | 600000 | run-current-600000 | 65.0% | 65000.00 |");
     expect(markdown).toContain("| 2026-05-26T08:00:00+00:00 | cash_buffer | CASH | - | 10.0% | 10000.00 |");

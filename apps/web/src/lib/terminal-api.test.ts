@@ -364,6 +364,30 @@ describe("terminal workspace API client", () => {
                 reason: "ending weight remains inside the review band"
               }
             ],
+            covarianceRisk: {
+              method: "population_covariance",
+              observations: 1,
+              periodVolatilityPct: 1.8,
+              annualizedVolatilityPct: 28.6,
+              contributions: [
+                {
+                  symbol: "600000",
+                  sourceRunId: "run-a",
+                  targetWeight: 0.6,
+                  annualizedVolatilityPct: 31.2,
+                  marginalContributionPct: 24.8,
+                  contributionPct: 68.4
+                },
+                {
+                  symbol: "000300",
+                  sourceRunId: "run-b",
+                  targetWeight: 0.3,
+                  annualizedVolatilityPct: 18.5,
+                  marginalContributionPct: 12.6,
+                  contributionPct: 31.6
+                }
+              ]
+            },
             legs: [
               {
                 symbol: "600000",
@@ -418,6 +442,10 @@ describe("terminal workspace API client", () => {
     expect(result.portfolio?.rebalanceEvents?.map((event) => `${event.symbol}:${event.status}:${event.deltaValue}`)).toEqual([
       "600000:review:2400",
       "CASH:within_band:900"
+    ]);
+    expect(result.portfolio?.covarianceRisk?.contributions.map((item) => `${item.symbol}:${item.contributionPct}`)).toEqual([
+      "600000:68.4",
+      "000300:31.6"
     ]);
     expect(calls[0]).toMatchObject({ url: "/api/portfolio/backtest" });
     expect(calls[0].init?.method).toBe("POST");
@@ -2968,6 +2996,30 @@ describe("terminal workspace API client", () => {
         }
       ],
       correlationPairs: [{ leftSymbol: "600000", rightSymbol: "000300", correlation: 0.91 }],
+      covarianceRisk: {
+        method: "population_covariance",
+        observations: 4,
+        periodVolatilityPct: 1.8,
+        annualizedVolatilityPct: 28.6,
+        contributions: [
+          {
+            symbol: "600000",
+            sourceRunId: "run-current-600000",
+            targetWeight: 0.65,
+            annualizedVolatilityPct: 31.2,
+            marginalContributionPct: 24.8,
+            contributionPct: 68.4
+          },
+          {
+            symbol: "000300",
+            sourceRunId: "run-peer-000300",
+            targetWeight: 0.25,
+            annualizedVolatilityPct: 18.5,
+            marginalContributionPct: 12.6,
+            contributionPct: 31.6
+          }
+        ]
+      },
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -3045,7 +3097,9 @@ describe("terminal workspace API client", () => {
         cashWeight: 0.1,
         legCount: 2,
         equityRows: 2,
-        diagnosticsCount: 8,
+        covarianceRiskContributionCount: 2,
+        covarianceRiskAnnualizedVolatilityPct: 28.6,
+        diagnosticsCount: 9,
         incompleteDataQuality: true,
         negativeContributionLegs: 1,
         boundary: "historical audited portfolio evidence only; no investment advice"
@@ -3057,7 +3111,7 @@ describe("terminal workspace API client", () => {
     );
     expect(event?.detail).toContain("run-current-600000-ashare-1d-portfolio-report.md");
     expect(event?.detail).toContain("2 legs");
-    expect(event?.detail).toContain("8 diagnostics");
+    expect(event?.detail).toContain("9 diagnostics");
     expect(event?.detail).not.toContain(markdown ?? "");
   });
 

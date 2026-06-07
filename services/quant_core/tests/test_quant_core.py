@@ -338,6 +338,64 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["correlationPairs"][0]["rightSymbol"], "000300")
         self.assertGreater(payload["correlationPairs"][0]["correlation"], 0.99)
 
+    def test_portfolio_backtest_outputs_covariance_risk_summary(self):
+        from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
+        from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        timestamps = [start + timedelta(days=index) for index in range(5)]
+
+        def audited_run(symbol: str, equities: list[float]) -> BacktestRun:
+            return BacktestRun(
+                strategy_name="Audited covariance plan",
+                strategy_revision=f"rev-{symbol}",
+                symbol=symbol,
+                market="ashare",
+                timeframe="1d",
+                metrics=BacktestMetrics(
+                    total_return_pct=equities[-1] / equities[0] * 100 - 100,
+                    annual_return_pct=0.0,
+                    max_drawdown_pct=5.0,
+                    win_rate_pct=50.0,
+                    profit_factor=1.5,
+                    trade_count=2,
+                ),
+                trades=[],
+                equity_curve=[
+                    EquityPoint(timestamp=timestamp, equity=equity)
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+                data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(equities)),
+            )
+
+        result = PortfolioBacktestEngine(initial_cash=100_000).run(
+            name="A-share covariance basket",
+            legs=[
+                PortfolioLeg(target_weight=0.6, run=audited_run("600000", [100_000, 103_000, 101_000, 106_000, 104_000]), run_id="run-a"),
+                PortfolioLeg(target_weight=0.3, run=audited_run("000300", [100_000, 101_000, 102_000, 100_000, 103_000]), run_id="run-b"),
+            ],
+        )
+
+        self.assertEqual(result.covariance_risk.method, "population_covariance")
+        self.assertEqual(result.covariance_risk.observations, 4)
+        self.assertGreater(result.covariance_risk.annualized_volatility_pct, 20)
+        self.assertEqual(
+            [(item.symbol, item.source_run_id, item.target_weight) for item in result.covariance_risk.contributions],
+            [("600000", "run-a", 0.6), ("000300", "run-b", 0.3)],
+        )
+        self.assertAlmostEqual(
+            sum(item.contribution_pct for item in result.covariance_risk.contributions),
+            100.0,
+            places=2,
+        )
+        self.assertGreater(result.covariance_risk.contributions[0].contribution_pct, result.covariance_risk.contributions[1].contribution_pct)
+        payload = portfolio_backtest_run_to_payload(result)
+        self.assertEqual(payload["covarianceRisk"]["method"], "population_covariance")
+        self.assertEqual(payload["covarianceRisk"]["observations"], 4)
+        self.assertEqual(payload["covarianceRisk"]["contributions"][0]["symbol"], "600000")
+        self.assertEqual(payload["covarianceRisk"]["contributions"][0]["sourceRunId"], "run-a")
+        self.assertGreater(payload["covarianceRisk"]["contributions"][0]["contributionPct"], 50)
+
     def test_portfolio_backtest_outputs_static_allocation_events(self):
         from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
         from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
