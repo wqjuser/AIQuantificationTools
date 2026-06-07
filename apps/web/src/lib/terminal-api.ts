@@ -950,6 +950,43 @@ export interface PortfolioPaperOrderHistoryResult {
   error?: string;
 }
 
+export interface PortfolioPaperOrderApproval {
+  approvalId: string;
+  baseRunId: string;
+  batchId: string;
+  orderId: string;
+  reviewedAt: string;
+  approved: boolean;
+  reviewer: string;
+  reason: string;
+}
+
+export interface PortfolioPaperOrderApprovalRequest {
+  baseRunId: string;
+  batchId: string;
+  orderId: string;
+  approved: boolean;
+  reviewer: string;
+  reason: string;
+  reviewedAt?: string;
+}
+
+export interface PortfolioPaperOrderApprovalRecordResult {
+  approval?: PortfolioPaperOrderApproval;
+  approvals: PortfolioPaperOrderApproval[];
+  lifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface PortfolioPaperOrderApprovalHistoryResult {
+  approvals: PortfolioPaperOrderApproval[];
+  lifecycle: PortfolioPaperOrderLifecycleEvent[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -1278,6 +1315,20 @@ export function buildPortfolioPaperOrdersUrl(
   });
 }
 
+export function buildPortfolioPaperOrderApprovalsUrl(
+  baseUrl: string,
+  params: { baseRunId?: string; batchId?: string } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/portfolio/paper-order-approvals", (url) => {
+    if (params.baseRunId?.trim()) {
+      url.searchParams.set("baseRunId", params.baseRunId.trim());
+    }
+    if (params.batchId?.trim()) {
+      url.searchParams.set("batchId", params.batchId.trim());
+    }
+  });
+}
+
 export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
   return {
     market: params.market,
@@ -1473,6 +1524,78 @@ export async function loadPortfolioPaperOrderBatches(
       batches: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown portfolio paper order history error"
+    };
+  }
+}
+
+export async function recordPortfolioPaperOrderApproval(
+  baseUrl: string,
+  request: PortfolioPaperOrderApprovalRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderApprovalRecordResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderApprovalsUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          approvals: [],
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isPortfolioPaperOrderApprovalRecordPayload(payload)) {
+      throw new Error("Invalid portfolio paper order approval contract");
+    }
+    return {
+      approval: payload.approval,
+      approvals: payload.approvals,
+      lifecycle: payload.portfolioPaperOrderLifecycle,
+      auditEvent: payload.auditEvent,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      approvals: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order approval record error"
+    };
+  }
+}
+
+export async function loadPortfolioPaperOrderApprovals(
+  baseUrl: string,
+  baseRunId: string,
+  batchId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderApprovalHistoryResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderApprovalsUrl(baseUrl, { baseRunId, batchId }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPortfolioPaperOrderApprovalHistoryPayload(payload)) {
+      throw new Error("Invalid portfolio paper order approval history contract");
+    }
+    return {
+      approvals: payload.approvals,
+      lifecycle: payload.portfolioPaperOrderLifecycle,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      approvals: [],
+      lifecycle: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order approval history error"
     };
   }
 }
@@ -4633,6 +4756,66 @@ function isPortfolioPaperOrderBatchesPayload(value: unknown): value is { portfol
   }
   const payload = value as { portfolioPaperOrderBatches?: unknown };
   return Array.isArray(payload.portfolioPaperOrderBatches) && payload.portfolioPaperOrderBatches.every(isPortfolioPaperOrderBatch);
+}
+
+function isPortfolioPaperOrderApprovalRecordPayload(
+  value: unknown
+): value is {
+  approval: PortfolioPaperOrderApproval;
+  approvals: PortfolioPaperOrderApproval[];
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    approval?: unknown;
+    approvals?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+    auditEvent?: unknown;
+  };
+  return (
+    isPortfolioPaperOrderApproval(payload.approval) &&
+    Array.isArray(payload.approvals) &&
+    payload.approvals.every(isPortfolioPaperOrderApproval) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent))) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isPortfolioPaperOrderApprovalHistoryPayload(
+  value: unknown
+): value is { approvals: PortfolioPaperOrderApproval[]; portfolioPaperOrderLifecycle: PortfolioPaperOrderLifecycleEvent[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { approvals?: unknown; portfolioPaperOrderLifecycle?: unknown };
+  return (
+    Array.isArray(payload.approvals) &&
+    payload.approvals.every(isPortfolioPaperOrderApproval) &&
+    Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+    payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)
+  );
+}
+
+function isPortfolioPaperOrderApproval(value: unknown): value is PortfolioPaperOrderApproval {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const approval = value as Partial<PortfolioPaperOrderApproval>;
+  return (
+    typeof approval.approvalId === "string" &&
+    typeof approval.baseRunId === "string" &&
+    typeof approval.batchId === "string" &&
+    typeof approval.orderId === "string" &&
+    typeof approval.reviewedAt === "string" &&
+    typeof approval.approved === "boolean" &&
+    typeof approval.reviewer === "string" &&
+    typeof approval.reason === "string"
+  );
 }
 
 function isPortfolioPaperOrderBatch(value: unknown): value is PortfolioPaperOrderBatch {

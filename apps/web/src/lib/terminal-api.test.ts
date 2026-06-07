@@ -20,6 +20,7 @@ import {
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
   buildPortfolioBacktestUrl,
+  buildPortfolioPaperOrderApprovalsUrl,
   buildPortfolioPaperOrdersUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
@@ -47,8 +48,10 @@ import {
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
   loadPortfolioPaperOrderBatches,
+  loadPortfolioPaperOrderApprovals,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
+  recordPortfolioPaperOrderApproval,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -201,6 +204,17 @@ describe("terminal workspace API client", () => {
   test("builds the portfolio paper order URL with a bounded query", () => {
     expect(buildPortfolioPaperOrdersUrl("/", { baseRunId: "portfolio run/你好", limit: 200 })).toBe(
       "/api/portfolio/paper-orders?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&limit=50"
+    );
+  });
+
+  test("builds the portfolio paper order approval URL with an encoded batch query", () => {
+    expect(
+      buildPortfolioPaperOrderApprovalsUrl("/", {
+        baseRunId: "portfolio run/你好",
+        batchId: "portfolio-paper-batch/1"
+      })
+    ).toBe(
+      "/api/portfolio/paper-order-approvals?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&batchId=portfolio-paper-batch%2F1"
     );
   });
 
@@ -630,6 +644,120 @@ describe("terminal workspace API client", () => {
       source: "portfolio_backtest"
     });
     expect(calls[1].url).toBe("/api/portfolio/paper-orders?baseRunId=portfolio-run-1&limit=20");
+  });
+
+  test("records and loads portfolio paper order approvals from the Python core", async () => {
+    const approval = {
+      approvalId: "portfolio-paper-order-approval-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      reviewedAt: "2026-05-27T08:45:00+00:00",
+      approved: true,
+      reviewer: "operator-a",
+      reason: "Approved for paper simulation only."
+    };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy",
+        quantity: 2400,
+        notionalValue: 2400,
+        originalStatus: "pending_review",
+        riskStatus: "passed",
+        state: "ready_for_simulation",
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      }
+    ];
+    const auditEvent = {
+      schemaVersion: 1 as const,
+      eventId: "portfolio-paper-order-approval-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      eventType: "portfolio_paper_order_approval",
+      runId: "portfolio-run-1",
+      createdAt: "2026-05-27T08:45:00+00:00",
+      stage: "portfolio-paper-order-approval",
+      source: "operator-review",
+      summary: "operator-a approved portfolio paper order portfolio-paper-run-a-buy.",
+      detail: "Approved for paper simulation only.",
+      metadata: {
+        approvalId: "portfolio-paper-order-approval-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        approved: true,
+        reviewer: "operator-a",
+        approvalState: "ready_for_simulation",
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        json: async () =>
+          init?.method === "POST"
+            ? { approval, approvals: [approval], portfolioPaperOrderLifecycle: lifecycle, auditEvent }
+            : { approvals: [approval], portfolioPaperOrderLifecycle: lifecycle }
+      };
+    };
+
+    const recordResult = await recordPortfolioPaperOrderApproval(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        approved: true,
+        reviewer: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      },
+      fetcher
+    );
+    const historyResult = await loadPortfolioPaperOrderApprovals(
+      "/",
+      "portfolio-run-1",
+      "portfolio-paper-batch-1",
+      fetcher
+    );
+
+    expect(recordResult.source).toBe("core");
+    expect(recordResult.approval?.reviewer).toBe("operator-a");
+    expect(recordResult.lifecycle?.map((row) => `${row.orderId}:${row.state}:${row.routable}:${row.approvedBy}`)).toEqual([
+      "portfolio-paper-run-a-buy:ready_for_simulation:true:operator-a"
+    ]);
+    expect(recordResult.auditEvent?.metadata.approvalState).toBe("ready_for_simulation");
+    expect(historyResult.source).toBe("core");
+    expect(historyResult.approvals[0].approvalId).toBe(
+      "portfolio-paper-order-approval-portfolio-paper-batch-1-portfolio-paper-run-a-buy"
+    );
+    expect(historyResult.lifecycle.map((row) => row.state)).toEqual(["ready_for_simulation"]);
+    expect(calls[0]).toMatchObject({ url: "/api/portfolio/paper-order-approvals" });
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      approved: true,
+      reviewer: "operator-a",
+      reviewedAt: "2026-05-27T08:45:00+00:00",
+      reason: "Approved for paper simulation only."
+    });
+    expect(calls[1].url).toBe(
+      "/api/portfolio/paper-order-approvals?baseRunId=portfolio-run-1&batchId=portfolio-paper-batch-1"
+    );
   });
 
   test("loads golden path status from the Python core", async () => {

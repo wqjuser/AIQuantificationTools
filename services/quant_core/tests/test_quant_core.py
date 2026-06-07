@@ -3188,6 +3188,111 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(len(audit_payload["events"]), 1)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
 
+    def test_portfolio_paper_order_approval_api_records_review_and_updates_lifecycle(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_batch,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            portfolio_order_store.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id="portfolio-run-approval-api",
+                    portfolio_name="A-share approval basket",
+                    batch_id="portfolio-paper-batch-approval",
+                    created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-run-a-buy",
+                            "symbol": "600000",
+                            "sourceRunId": "run-a",
+                            "side": "buy",
+                            "notionalValue": 9200.0,
+                            "quantity": 1000.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "Requires operator review before simulated routing.",
+                        }
+                    ],
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-approval-api",
+                        "batchId": "portfolio-paper-batch-approval",
+                        "orderId": "portfolio-paper-run-a-buy",
+                        "approved": True,
+                        "reviewer": "operator-a",
+                        "reviewedAt": "2026-05-26T08:45:00+00:00",
+                        "reason": "Approved for paper simulation only.",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-approvals",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-approvals?baseRunId=portfolio-run-approval-api&batchId=portfolio-paper-batch-approval",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=portfolio_paper_order_approval&runId=portfolio-run-approval-api",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["approval"]["approvalId"], "portfolio-paper-order-approval-portfolio-paper-batch-approval-portfolio-paper-run-a-buy")
+        self.assertTrue(payload["approval"]["approved"])
+        self.assertEqual(payload["approval"]["reviewer"], "operator-a")
+        self.assertEqual(payload["portfolioPaperOrderLifecycle"][0]["state"], "ready_for_simulation")
+        self.assertTrue(payload["portfolioPaperOrderLifecycle"][0]["routable"])
+        self.assertEqual(payload["portfolioPaperOrderLifecycle"][0]["approvedBy"], "operator-a")
+        self.assertEqual(payload["auditEvent"]["eventType"], "portfolio_paper_order_approval")
+        self.assertEqual(payload["auditEvent"]["metadata"]["approvalState"], "ready_for_simulation")
+        self.assertTrue(payload["auditEvent"]["metadata"]["paperOnly"])
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(len(list_payload["approvals"]), 1)
+        self.assertEqual(list_payload["portfolioPaperOrderLifecycle"][0]["state"], "ready_for_simulation")
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
+
     def test_research_run_ai_review_api_records_review_for_run(self):
         import json
         from http.client import HTTPConnection

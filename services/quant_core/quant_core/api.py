@@ -38,13 +38,18 @@ from quant_core.execution import (
     PaperExecutionRecord,
     PaperExecutionStore,
     PortfolioPaperOrderBatch,
+    PortfolioPaperOrderApprovalStore,
     PortfolioPaperOrderStore,
     build_portfolio_paper_order_lifecycle,
     build_promotion_candidate,
     create_paper_execution_from_audit,
+    create_portfolio_paper_order_approval,
     create_portfolio_paper_order_batch,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
+    portfolio_paper_order_approval_to_audit_event_payload,
+    portfolio_paper_order_approval_to_payload,
+    portfolio_paper_order_approvals_to_map,
     portfolio_paper_order_batch_to_audit_event_payload,
     portfolio_paper_order_batch_to_payload,
     portfolio_paper_order_payload_to_batch,
@@ -154,6 +159,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     portfolio_paper_order_store = PortfolioPaperOrderStore(Path("data/portfolio_paper_orders.sqlite"))
+    portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(Path("data/portfolio_paper_order_approvals.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
@@ -283,6 +289,51 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {
                     "portfolioPaperOrderBatch": portfolio_paper_order_batch_to_payload(batch),
                     "portfolioPaperOrderLifecycle": build_portfolio_paper_order_lifecycle(batch),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/portfolio/paper-order-approvals":
+            try:
+                payload = self._read_json_body()
+                approval = create_portfolio_paper_order_approval(
+                    base_run_id=str(payload.get("baseRunId") or ""),
+                    batch_id=str(payload.get("batchId") or ""),
+                    order_id=str(payload.get("orderId") or ""),
+                    approved=bool(payload.get("approved")),
+                    reviewer=str(payload.get("reviewer") or ""),
+                    reviewed_at=payload.get("reviewedAt"),
+                    reason=str(payload.get("reason") or ""),
+                )
+                batch = _find_portfolio_paper_order_batch(
+                    self.portfolio_paper_order_store,
+                    approval.base_run_id,
+                    approval.batch_id,
+                )
+                if not any(str(order.get("orderId") or "") == approval.order_id for order in batch.orders):
+                    raise ValueError("portfolio_paper_order_approval_order_not_found")
+            except LookupError as error:
+                self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
+                return
+            except ValueError as error:
+                self._send_json({"error": "invalid_portfolio_paper_order_approval", "detail": str(error)}, status=400)
+                return
+            self.portfolio_paper_order_approval_store.record(approval)
+            approvals = self.portfolio_paper_order_approval_store.list_by_batch(approval.base_run_id, approval.batch_id)
+            lifecycle = build_portfolio_paper_order_lifecycle(
+                batch,
+                approvals=portfolio_paper_order_approvals_to_map(approvals),
+            )
+            lifecycle_row = _find_portfolio_paper_order_lifecycle_row(lifecycle, approval.order_id)
+            audit_event = self.audit_event_store.record(
+                portfolio_paper_order_approval_to_audit_event_payload(approval, batch=batch, lifecycle_row=lifecycle_row)
+            )
+            self._send_json(
+                {
+                    "approval": portfolio_paper_order_approval_to_payload(approval),
+                    "approvals": [portfolio_paper_order_approval_to_payload(item) for item in approvals],
+                    "portfolioPaperOrderLifecycle": lifecycle,
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=201,
@@ -632,6 +683,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "portfolioPaperOrderBatches": [
                         portfolio_paper_order_batch_to_payload(batch) for batch in batches
                     ]
+                }
+            )
+            return
+        if parsed.path == "/api/portfolio/paper-order-approvals":
+            query = parse_qs(parsed.query)
+            base_run_id = query.get("baseRunId", [""])[0].strip()
+            batch_id = query.get("batchId", [""])[0].strip()
+            if not base_run_id or not batch_id:
+                self._send_json({"error": "portfolio_paper_order_approval_context_required"}, status=400)
+                return
+            try:
+                batch = _find_portfolio_paper_order_batch(self.portfolio_paper_order_store, base_run_id, batch_id)
+            except LookupError as error:
+                self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
+                return
+            approvals = self.portfolio_paper_order_approval_store.list_by_batch(base_run_id, batch_id)
+            lifecycle = build_portfolio_paper_order_lifecycle(
+                batch,
+                approvals=portfolio_paper_order_approvals_to_map(approvals),
+            )
+            self._send_json(
+                {
+                    "approvals": [portfolio_paper_order_approval_to_payload(approval) for approval in approvals],
+                    "portfolioPaperOrderLifecycle": lifecycle,
                 }
             )
             return
@@ -1600,6 +1675,27 @@ def _parse_optional_datetime(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _find_portfolio_paper_order_batch(
+    store: PortfolioPaperOrderStore,
+    base_run_id: str,
+    batch_id: str,
+) -> PortfolioPaperOrderBatch:
+    for batch in store.list_all_by_base_run(base_run_id):
+        if batch.batch_id == batch_id:
+            return batch
+    raise LookupError(batch_id)
+
+
+def _find_portfolio_paper_order_lifecycle_row(
+    lifecycle: list[dict[str, object]],
+    order_id: str,
+) -> dict[str, object]:
+    for row in lifecycle:
+        if str(row.get("orderId") or "") == order_id:
+            return row
+    raise ValueError("portfolio_paper_order_approval_lifecycle_row_not_found")
 
 
 def _parse_kline_end(raw: str) -> datetime | None:

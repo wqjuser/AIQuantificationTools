@@ -35,6 +35,18 @@ class PortfolioPaperOrderBatch:
     summary: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class PortfolioPaperOrderApproval:
+    approval_id: str
+    base_run_id: str
+    batch_id: str
+    order_id: str
+    reviewed_at: datetime
+    approved: bool
+    reviewer: str
+    reason: str
+
+
 class PaperExecutionAdapter:
     def __init__(self, initial_cash: float = 100_000, max_position_value: float = 20_000) -> None:
         self.cash = initial_cash
@@ -323,6 +335,104 @@ class PortfolioPaperOrderStore:
             connection.close()
 
 
+class PortfolioPaperOrderApprovalStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path)
+
+    def _init_schema(self) -> None:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                create table if not exists portfolio_paper_order_approvals (
+                    approval_id text primary key,
+                    base_run_id text not null,
+                    batch_id text not null,
+                    order_id text not null,
+                    reviewed_at text not null,
+                    approved integer not null,
+                    reviewer text not null,
+                    reason text not null
+                )
+                """
+            )
+            connection.execute(
+                """
+                create unique index if not exists idx_portfolio_paper_order_approvals_order
+                on portfolio_paper_order_approvals(base_run_id, batch_id, order_id)
+                """
+            )
+            connection.execute(
+                """
+                create index if not exists idx_portfolio_paper_order_approvals_batch
+                on portfolio_paper_order_approvals(base_run_id, batch_id, reviewed_at desc)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def record(self, approval: PortfolioPaperOrderApproval) -> PortfolioPaperOrderApproval:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                insert into portfolio_paper_order_approvals (
+                    approval_id,
+                    base_run_id,
+                    batch_id,
+                    order_id,
+                    reviewed_at,
+                    approved,
+                    reviewer,
+                    reason
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(base_run_id, batch_id, order_id) do update set
+                    approval_id = excluded.approval_id,
+                    reviewed_at = excluded.reviewed_at,
+                    approved = excluded.approved,
+                    reviewer = excluded.reviewer,
+                    reason = excluded.reason
+                """,
+                (
+                    approval.approval_id,
+                    approval.base_run_id,
+                    approval.batch_id,
+                    approval.order_id,
+                    approval.reviewed_at.isoformat(),
+                    1 if approval.approved else 0,
+                    approval.reviewer,
+                    approval.reason,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return approval
+
+    def list_by_batch(self, base_run_id: str, batch_id: str) -> list[PortfolioPaperOrderApproval]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select approval_id, base_run_id, batch_id, order_id, reviewed_at, approved, reviewer, reason
+                from portfolio_paper_order_approvals
+                where base_run_id = ? and batch_id = ?
+                order by reviewed_at desc
+                """,
+                (base_run_id, batch_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_portfolio_paper_order_approval(row) for row in rows]
+
+
 def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None = None) -> PaperExecutionRecord:
     created = created_at or datetime.now(timezone.utc)
     price = _latest_close(audit)
@@ -430,6 +540,67 @@ def portfolio_paper_order_batch_to_payload(batch: PortfolioPaperOrderBatch) -> d
     }
 
 
+def create_portfolio_paper_order_approval(
+    *,
+    base_run_id: str,
+    batch_id: str,
+    order_id: str,
+    approved: bool,
+    reviewer: str,
+    reason: str,
+    reviewed_at: datetime | str | None = None,
+) -> PortfolioPaperOrderApproval:
+    normalized_base_run_id = str(base_run_id or "").strip()
+    normalized_batch_id = str(batch_id or "").strip()
+    normalized_order_id = str(order_id or "").strip()
+    normalized_reviewer = str(reviewer or "").strip()
+    normalized_reason = str(reason or "").strip()
+    if not normalized_base_run_id:
+        raise ValueError("portfolio_paper_order_approval_base_run_id_required")
+    if not normalized_batch_id:
+        raise ValueError("portfolio_paper_order_approval_batch_id_required")
+    if not normalized_order_id:
+        raise ValueError("portfolio_paper_order_approval_order_id_required")
+    if not normalized_reviewer:
+        raise ValueError("portfolio_paper_order_approval_reviewer_required")
+    if not normalized_reason:
+        raise ValueError("portfolio_paper_order_approval_reason_required")
+    reviewed = (
+        _parse_payload_datetime(reviewed_at, "portfolio_paper_order_approval_reviewed_at_invalid")
+        if reviewed_at is not None
+        else datetime.now(timezone.utc)
+    )
+    return PortfolioPaperOrderApproval(
+        approval_id=f"portfolio-paper-order-approval-{normalized_batch_id}-{normalized_order_id}",
+        base_run_id=normalized_base_run_id,
+        batch_id=normalized_batch_id,
+        order_id=normalized_order_id,
+        reviewed_at=reviewed,
+        approved=bool(approved),
+        reviewer=normalized_reviewer,
+        reason=normalized_reason,
+    )
+
+
+def portfolio_paper_order_approval_to_payload(approval: PortfolioPaperOrderApproval) -> dict[str, Any]:
+    return {
+        "approvalId": approval.approval_id,
+        "baseRunId": approval.base_run_id,
+        "batchId": approval.batch_id,
+        "orderId": approval.order_id,
+        "reviewedAt": approval.reviewed_at.isoformat(),
+        "approved": approval.approved,
+        "reviewer": approval.reviewer,
+        "reason": approval.reason,
+    }
+
+
+def portfolio_paper_order_approvals_to_map(
+    approvals: list[PortfolioPaperOrderApproval],
+) -> dict[str, dict[str, Any]]:
+    return {approval.order_id: portfolio_paper_order_approval_to_payload(approval) for approval in approvals}
+
+
 def portfolio_paper_order_batch_to_audit_event_payload(batch: PortfolioPaperOrderBatch) -> dict[str, Any]:
     lifecycle = build_portfolio_paper_order_lifecycle(batch)
     lifecycle_state_counts = _sorted_counts(str(row.get("state") or "") for row in lifecycle)
@@ -456,6 +627,38 @@ def portfolio_paper_order_batch_to_audit_event_payload(batch: PortfolioPaperOrde
             "lifecycleStateCounts": lifecycle_state_counts,
             "routableOrders": sum(1 for row in lifecycle if bool(row.get("routable"))),
             "orderIds": [str(order.get("orderId") or "") for order in batch.orders],
+            "paperOnly": True,
+            "liveExecutionBlocked": True,
+        },
+    }
+
+
+def portfolio_paper_order_approval_to_audit_event_payload(
+    approval: PortfolioPaperOrderApproval,
+    *,
+    batch: PortfolioPaperOrderBatch,
+    lifecycle_row: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "eventId": approval.approval_id,
+        "eventType": "portfolio_paper_order_approval",
+        "runId": approval.base_run_id,
+        "createdAt": approval.reviewed_at.isoformat(),
+        "stage": "portfolio-paper-order-approval",
+        "source": "operator-review",
+        "summary": f"{approval.reviewer} {'approved' if approval.approved else 'rejected'} {approval.order_id} for paper-only review.",
+        "detail": lifecycle_row.get("reason") or approval.reason,
+        "metadata": {
+            "approvalId": approval.approval_id,
+            "baseRunId": approval.base_run_id,
+            "batchId": approval.batch_id,
+            "portfolioName": batch.portfolio_name,
+            "orderId": approval.order_id,
+            "approved": approval.approved,
+            "reviewer": approval.reviewer,
+            "approvalState": lifecycle_row.get("state"),
+            "routable": bool(lifecycle_row.get("routable")),
             "paperOnly": True,
             "liveExecutionBlocked": True,
         },
@@ -781,6 +984,19 @@ def _row_to_portfolio_paper_order_batch(row: sqlite3.Row | tuple[Any, ...]) -> P
         source=str(row[5]),
         orders=[_normalize_portfolio_paper_order(order) for order in json.loads(row[6])],
         summary=dict(json.loads(row[7])),
+    )
+
+
+def _row_to_portfolio_paper_order_approval(row: sqlite3.Row | tuple[Any, ...]) -> PortfolioPaperOrderApproval:
+    return PortfolioPaperOrderApproval(
+        approval_id=str(row[0]),
+        base_run_id=str(row[1]),
+        batch_id=str(row[2]),
+        order_id=str(row[3]),
+        reviewed_at=datetime.fromisoformat(str(row[4])),
+        approved=bool(row[5]),
+        reviewer=str(row[6]),
+        reason=str(row[7]),
     )
 
 
