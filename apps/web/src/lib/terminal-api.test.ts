@@ -23,6 +23,7 @@ import {
   buildPortfolioPaperOrderApprovalsUrl,
   buildPortfolioPaperOrdersUrl,
   buildPortfolioPaperOrderReplayUrl,
+  buildPortfolioPaperOrderStateHistoryUrl,
   buildPortfolioPaperOrderSimulationsUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
@@ -52,6 +53,7 @@ import {
   loadPortfolioPaperOrderBatches,
   loadPortfolioPaperOrderApprovals,
   loadPortfolioPaperOrderReplay,
+  loadPortfolioPaperOrderStateHistory,
   loadPortfolioPaperOrderSimulations,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
@@ -231,6 +233,17 @@ describe("terminal workspace API client", () => {
       })
     ).toBe(
       "/api/portfolio/paper-order-simulations?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&batchId=portfolio-paper-batch%2F1"
+    );
+  });
+
+  test("builds the portfolio paper order state history URL with an encoded batch query", () => {
+    expect(
+      buildPortfolioPaperOrderStateHistoryUrl("/", {
+        baseRunId: "portfolio run/你好",
+        batchId: "portfolio-paper-batch/1"
+      })
+    ).toBe(
+      "/api/portfolio/paper-order-state-history?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&batchId=portfolio-paper-batch%2F1"
     );
   });
 
@@ -962,6 +975,130 @@ describe("terminal workspace API client", () => {
     expect(result.replay?.account.cash).toBe(40800);
     expect(result.replay?.positions[0].symbol).toBe("600000");
     expect(result.replay?.orders[0].replayState).toBe("applied");
+  });
+
+  test("loads portfolio paper order state history timelines", async () => {
+    const stateHistory = {
+      schemaVersion: 1 as const,
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      portfolioName: "A-share state basket",
+      generatedAt: "2026-05-27T09:00:00+00:00",
+      mode: "portfolio_paper_order_state_history" as const,
+      summary: {
+        orderCount: 1,
+        eventCount: 4,
+        approvedOrders: 1,
+        rejectedOrders: 0,
+        filledOrders: 1,
+        liveBlockedEvents: 1,
+        stateCounts: { live_blocked: 1 }
+      },
+      orders: [
+        {
+          batchId: "portfolio-paper-batch-1",
+          baseRunId: "portfolio-run-1",
+          portfolioName: "A-share state basket",
+          orderId: "portfolio-paper-run-a-buy",
+          symbol: "600000",
+          sourceRunId: "run-a",
+          side: "buy" as const,
+          quantity: 1000,
+          notionalValue: 9200,
+          originalStatus: "pending_review" as const,
+          riskStatus: "passed" as const,
+          currentState: "live_blocked",
+          currentStateLabel: "Live route blocked",
+          paperOnly: true,
+          liveExecutionBlocked: true,
+          events: [
+            {
+              eventId: "portfolio-paper-batch-1:portfolio-paper-run-a-buy:created:1",
+              batchId: "portfolio-paper-batch-1",
+              baseRunId: "portfolio-run-1",
+              orderId: "portfolio-paper-run-a-buy",
+              timestamp: "2026-05-27T08:30:00+00:00",
+              state: "created",
+              label: "Paper order created",
+              actor: "portfolio_backtest",
+              source: "portfolio_backtest",
+              reason: "Created.",
+              paperOnly: true,
+              liveExecutionBlocked: true
+            },
+            {
+              eventId: "portfolio-paper-batch-1:portfolio-paper-run-a-buy:operator_approved:3",
+              batchId: "portfolio-paper-batch-1",
+              baseRunId: "portfolio-run-1",
+              orderId: "portfolio-paper-run-a-buy",
+              timestamp: "2026-05-27T08:45:00+00:00",
+              state: "operator_approved",
+              label: "Operator approved",
+              actor: "operator-a",
+              source: "operator-review",
+              reason: "Approved.",
+              paperOnly: true,
+              liveExecutionBlocked: true
+            },
+            {
+              eventId: "portfolio-paper-batch-1:portfolio-paper-run-a-buy:simulation_filled:4",
+              batchId: "portfolio-paper-batch-1",
+              baseRunId: "portfolio-run-1",
+              orderId: "portfolio-paper-run-a-buy",
+              timestamp: "2026-05-27T08:46:00+00:00",
+              state: "simulation_filled",
+              label: "Paper simulation filled",
+              actor: "operator-a",
+              source: "paper-simulator",
+              reason: "Filled.",
+              paperOnly: true,
+              liveExecutionBlocked: true,
+              metadata: { simulationId: "sim-state", fillPrice: 9.2, fillStatus: "filled", orderState: "filled" }
+            },
+            {
+              eventId: "portfolio-paper-batch-1:portfolio-paper-run-a-buy:live_blocked:5",
+              batchId: "portfolio-paper-batch-1",
+              baseRunId: "portfolio-run-1",
+              orderId: "portfolio-paper-run-a-buy",
+              timestamp: "2026-05-27T08:46:00+00:00",
+              state: "live_blocked",
+              label: "Live route blocked",
+              actor: "execution-guard",
+              source: "live-route-guard",
+              reason: "Live execution blocked.",
+              paperOnly: true,
+              liveExecutionBlocked: true
+            }
+          ]
+        }
+      ],
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ stateHistory }) };
+    };
+
+    const result = await loadPortfolioPaperOrderStateHistory(
+      "/",
+      "portfolio-run-1",
+      "portfolio-paper-batch-1",
+      fetcher
+    );
+
+    expect(calls[0]).toBe(
+      "/api/portfolio/paper-order-state-history?baseRunId=portfolio-run-1&batchId=portfolio-paper-batch-1"
+    );
+    expect(result.source).toBe("core");
+    expect(result.stateHistory?.summary.eventCount).toBe(4);
+    expect(result.stateHistory?.orders[0].events.map((event) => event.state)).toEqual([
+      "created",
+      "operator_approved",
+      "simulation_filled",
+      "live_blocked"
+    ]);
   });
 
   test("loads golden path status from the Python core", async () => {

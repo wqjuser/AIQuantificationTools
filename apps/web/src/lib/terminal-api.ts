@@ -1035,6 +1035,85 @@ export interface PortfolioPaperOrderSimulationHistoryResult {
   error?: string;
 }
 
+export type PortfolioPaperOrderStateHistoryState =
+  | "created"
+  | "awaiting_operator_review"
+  | "operator_approved"
+  | "operator_rejected"
+  | "ready_for_simulation"
+  | "simulation_filled"
+  | "simulation_recorded"
+  | "live_blocked"
+  | "risk_rejected"
+  | "risk_review"
+  | "invalid_order"
+  | "skipped"
+  | string;
+
+export interface PortfolioPaperOrderStateHistoryEvent {
+  eventId: string;
+  batchId: string;
+  baseRunId: string;
+  orderId: string;
+  timestamp: string;
+  state: PortfolioPaperOrderStateHistoryState;
+  label: string;
+  actor: string;
+  source: string;
+  reason: string;
+  metadata?: Record<string, unknown>;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderStateHistoryOrder {
+  batchId: string;
+  baseRunId: string;
+  portfolioName: string;
+  orderId: string;
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell" | "hold";
+  quantity: number;
+  notionalValue: number;
+  originalStatus: "pending_review" | "rejected" | "skipped";
+  riskStatus: "passed" | "review" | "blocked";
+  currentState: PortfolioPaperOrderStateHistoryState;
+  currentStateLabel: string;
+  events: PortfolioPaperOrderStateHistoryEvent[];
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderStateHistorySummary {
+  orderCount: number;
+  eventCount: number;
+  approvedOrders: number;
+  rejectedOrders: number;
+  filledOrders: number;
+  liveBlockedEvents: number;
+  stateCounts: Record<string, number>;
+}
+
+export interface PortfolioPaperOrderStateHistory {
+  schemaVersion: 1;
+  baseRunId: string;
+  batchId: string;
+  portfolioName: string;
+  generatedAt: string;
+  mode: "portfolio_paper_order_state_history";
+  summary: PortfolioPaperOrderStateHistorySummary;
+  orders: PortfolioPaperOrderStateHistoryOrder[];
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderStateHistoryResult {
+  stateHistory?: PortfolioPaperOrderStateHistory;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface PortfolioPaperOrderReplayPosition {
   symbol: string;
   quantity: number;
@@ -1439,6 +1518,20 @@ export function buildPortfolioPaperOrderSimulationsUrl(
   params: { baseRunId?: string; batchId?: string } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/portfolio/paper-order-simulations", (url) => {
+    if (params.baseRunId?.trim()) {
+      url.searchParams.set("baseRunId", params.baseRunId.trim());
+    }
+    if (params.batchId?.trim()) {
+      url.searchParams.set("batchId", params.batchId.trim());
+    }
+  });
+}
+
+export function buildPortfolioPaperOrderStateHistoryUrl(
+  baseUrl: string,
+  params: { baseRunId?: string; batchId?: string } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/portfolio/paper-order-state-history", (url) => {
     if (params.baseRunId?.trim()) {
       url.searchParams.set("baseRunId", params.baseRunId.trim());
     }
@@ -2991,6 +3084,33 @@ export async function loadPortfolioPaperOrderSimulations(
       lifecycle: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown portfolio paper order simulation history error"
+    };
+  }
+}
+
+export async function loadPortfolioPaperOrderStateHistory(
+  baseUrl: string,
+  baseRunId: string,
+  batchId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderStateHistoryResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderStateHistoryUrl(baseUrl, { baseRunId, batchId }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPortfolioPaperOrderStateHistoryPayload(payload)) {
+      throw new Error("Invalid portfolio paper order state history contract");
+    }
+    return {
+      stateHistory: payload.stateHistory,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order state history error"
     };
   }
 }
@@ -5083,6 +5203,100 @@ function isPortfolioPaperOrderSimulationHistoryPayload(
     payload.simulations.every(isPortfolioPaperOrderSimulation) &&
     Array.isArray(payload.portfolioPaperOrderLifecycle) &&
     payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)
+  );
+}
+
+function isPortfolioPaperOrderStateHistoryPayload(
+  value: unknown
+): value is { stateHistory: PortfolioPaperOrderStateHistory } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { stateHistory?: unknown };
+  return isPortfolioPaperOrderStateHistory(payload.stateHistory);
+}
+
+function isPortfolioPaperOrderStateHistory(value: unknown): value is PortfolioPaperOrderStateHistory {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const history = value as Partial<PortfolioPaperOrderStateHistory>;
+  return (
+    history.schemaVersion === 1 &&
+    typeof history.baseRunId === "string" &&
+    typeof history.batchId === "string" &&
+    typeof history.portfolioName === "string" &&
+    typeof history.generatedAt === "string" &&
+    history.mode === "portfolio_paper_order_state_history" &&
+    isPortfolioPaperOrderStateHistorySummary(history.summary) &&
+    Array.isArray(history.orders) &&
+    history.orders.every(isPortfolioPaperOrderStateHistoryOrder) &&
+    history.paperOnly === true &&
+    history.liveExecutionBlocked === true
+  );
+}
+
+function isPortfolioPaperOrderStateHistorySummary(value: unknown): value is PortfolioPaperOrderStateHistorySummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<PortfolioPaperOrderStateHistorySummary>;
+  return (
+    typeof summary.orderCount === "number" &&
+    typeof summary.eventCount === "number" &&
+    typeof summary.approvedOrders === "number" &&
+    typeof summary.rejectedOrders === "number" &&
+    typeof summary.filledOrders === "number" &&
+    typeof summary.liveBlockedEvents === "number" &&
+    isNumberRecord(summary.stateCounts)
+  );
+}
+
+function isPortfolioPaperOrderStateHistoryOrder(value: unknown): value is PortfolioPaperOrderStateHistoryOrder {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const order = value as Partial<PortfolioPaperOrderStateHistoryOrder>;
+  return (
+    typeof order.batchId === "string" &&
+    typeof order.baseRunId === "string" &&
+    typeof order.portfolioName === "string" &&
+    typeof order.orderId === "string" &&
+    typeof order.symbol === "string" &&
+    (typeof order.sourceRunId === "string" || order.sourceRunId === null) &&
+    (order.side === "buy" || order.side === "sell" || order.side === "hold") &&
+    typeof order.quantity === "number" &&
+    typeof order.notionalValue === "number" &&
+    (order.originalStatus === "pending_review" || order.originalStatus === "rejected" || order.originalStatus === "skipped") &&
+    (order.riskStatus === "passed" || order.riskStatus === "review" || order.riskStatus === "blocked") &&
+    typeof order.currentState === "string" &&
+    typeof order.currentStateLabel === "string" &&
+    Array.isArray(order.events) &&
+    order.events.every(isPortfolioPaperOrderStateHistoryEvent) &&
+    order.paperOnly === true &&
+    order.liveExecutionBlocked === true
+  );
+}
+
+function isPortfolioPaperOrderStateHistoryEvent(value: unknown): value is PortfolioPaperOrderStateHistoryEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const event = value as Partial<PortfolioPaperOrderStateHistoryEvent>;
+  return (
+    typeof event.eventId === "string" &&
+    typeof event.batchId === "string" &&
+    typeof event.baseRunId === "string" &&
+    typeof event.orderId === "string" &&
+    typeof event.timestamp === "string" &&
+    typeof event.state === "string" &&
+    typeof event.label === "string" &&
+    typeof event.actor === "string" &&
+    typeof event.source === "string" &&
+    typeof event.reason === "string" &&
+    (event.metadata === undefined || (typeof event.metadata === "object" && event.metadata !== null)) &&
+    event.paperOnly === true &&
+    event.liveExecutionBlocked === true
   );
 }
 

@@ -45,6 +45,7 @@ from quant_core.execution import (
     PortfolioPaperOrderStore,
     build_portfolio_paper_order_lifecycle,
     build_portfolio_paper_order_replay,
+    build_portfolio_paper_order_state_history,
     build_promotion_candidate,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
@@ -781,6 +782,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 initial_cash=initial_cash,
             )
             self._send_json({"replay": replay})
+            return
+        if parsed.path == "/api/portfolio/paper-order-state-history":
+            query = parse_qs(parsed.query)
+            base_run_id = query.get("baseRunId", [""])[0].strip()
+            batch_id = query.get("batchId", [""])[0].strip()
+            if not base_run_id or not batch_id:
+                self._send_json({"error": "portfolio_paper_order_state_history_context_required"}, status=400)
+                return
+            try:
+                batch = _find_portfolio_paper_order_batch(self.portfolio_paper_order_store, base_run_id, batch_id)
+            except LookupError as error:
+                self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
+                return
+            approvals = self.portfolio_paper_order_approval_store.list_by_batch(base_run_id, batch_id)
+            simulations = self.portfolio_paper_order_simulation_store.list_by_batch(base_run_id, batch_id)
+            self._send_json(
+                {
+                    "stateHistory": build_portfolio_paper_order_state_history(
+                        batch,
+                        approvals=approvals,
+                        simulations=simulations,
+                    )
+                }
+            )
             return
         if parsed.path == "/api/portfolio/paper-order-approvals":
             query = parse_qs(parsed.query)

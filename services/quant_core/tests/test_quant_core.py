@@ -3416,6 +3416,183 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(audit_response.status, 200)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
 
+    def test_portfolio_paper_order_state_history_builds_order_timeline(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            build_portfolio_paper_order_state_history,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-state",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-state",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "State history should show creation.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-state",
+            batch_id="portfolio-paper-batch-state",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+        simulation = create_portfolio_paper_order_simulation(
+            batch=batch,
+            lifecycle_row=lifecycle[0],
+            simulated_at="2026-05-26T08:46:00+00:00",
+        )
+
+        history = build_portfolio_paper_order_state_history(
+            batch,
+            approvals=[approval],
+            simulations=[simulation],
+            generated_at=datetime(2026, 5, 26, 9, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(history["schemaVersion"], 1)
+        self.assertEqual(history["mode"], "portfolio_paper_order_state_history")
+        self.assertEqual(history["baseRunId"], "portfolio-run-state")
+        self.assertEqual(history["batchId"], "portfolio-paper-batch-state")
+        self.assertEqual(history["summary"]["orderCount"], 1)
+        self.assertEqual(history["summary"]["eventCount"], 4)
+        self.assertEqual(history["summary"]["filledOrders"], 1)
+        self.assertEqual(history["summary"]["liveBlockedEvents"], 1)
+        order = history["orders"][0]
+        self.assertEqual(order["orderId"], "portfolio-paper-run-a-buy")
+        self.assertEqual(order["currentState"], "live_blocked")
+        self.assertEqual(order["quantity"], 1000.0)
+        self.assertEqual(order["notionalValue"], 9200.0)
+        self.assertTrue(order["paperOnly"])
+        self.assertTrue(order["liveExecutionBlocked"])
+        self.assertEqual(
+            [event["state"] for event in order["events"]],
+            ["created", "operator_approved", "simulation_filled", "live_blocked"],
+        )
+        self.assertEqual(order["events"][1]["actor"], "operator-a")
+        self.assertEqual(order["events"][2]["source"], "paper-simulator")
+        self.assertTrue(order["events"][3]["liveExecutionBlocked"])
+
+    def test_portfolio_paper_order_state_history_api_returns_batch_timeline(self):
+        import json
+        import tempfile
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/portfolio_order_simulations.sqlite")
+            batch = create_portfolio_paper_order_batch(
+                base_run_id="portfolio-run-state-api",
+                portfolio_name="A-share state API basket",
+                batch_id="portfolio-paper-batch-state-api",
+                created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                orders=[
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "eventType": "portfolio_paper_order",
+                        "orderId": "portfolio-paper-run-a-buy",
+                        "symbol": "600000",
+                        "sourceRunId": "run-a",
+                        "side": "buy",
+                        "notionalValue": 9200.0,
+                        "quantity": 1000.0,
+                        "status": "pending_review",
+                        "riskStatus": "passed",
+                        "reason": "State history API should show creation.",
+                    }
+                ],
+            )
+            approval = create_portfolio_paper_order_approval(
+                base_run_id="portfolio-run-state-api",
+                batch_id="portfolio-paper-batch-state-api",
+                order_id="portfolio-paper-run-a-buy",
+                approved=True,
+                reviewer="operator-a",
+                reviewed_at="2026-05-26T08:45:00+00:00",
+                reason="Approved for paper simulation only.",
+            )
+            lifecycle = build_portfolio_paper_order_lifecycle(
+                batch,
+                approvals=portfolio_paper_order_approvals_to_map([approval]),
+            )
+            simulation = create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+            )
+            portfolio_order_store.record(batch)
+            portfolio_order_approval_store.record(approval)
+            portfolio_order_simulation_store.record(simulation)
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = portfolio_order_simulation_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-state-history?baseRunId=portfolio-run-state-api&batchId=portfolio-paper-batch-state-api",
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["stateHistory"]["batchId"], "portfolio-paper-batch-state-api")
+        self.assertEqual(payload["stateHistory"]["summary"]["eventCount"], 4)
+        self.assertEqual(
+            [event["state"] for event in payload["stateHistory"]["orders"][0]["events"]],
+            ["created", "operator_approved", "simulation_filled", "live_blocked"],
+        )
+        self.assertTrue(payload["stateHistory"]["liveExecutionBlocked"])
+
     def test_portfolio_paper_order_replay_rebuilds_cash_positions_and_orders(self):
         from quant_core.execution import (
             PortfolioPaperOrderSimulation,

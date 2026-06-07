@@ -54,6 +54,7 @@ import {
   buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
+  buildPortfolioPaperOrderStateHistoryRows,
   buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
@@ -6019,6 +6020,108 @@ describe("terminal workbench model", () => {
         tone: "neutral"
       }
     ]);
+  });
+
+  test("builds compact portfolio paper order state history rows", () => {
+    const rows = buildPortfolioPaperOrderStateHistoryRows([
+      {
+        schemaVersion: 1,
+        baseRunId: "portfolio-run-state",
+        batchId: "portfolio-paper-batch-state",
+        portfolioName: "A-share state basket",
+        generatedAt: "2026-05-27T09:00:00+00:00",
+        mode: "portfolio_paper_order_state_history",
+        summary: {
+          orderCount: 1,
+          eventCount: 4,
+          approvedOrders: 1,
+          rejectedOrders: 0,
+          filledOrders: 1,
+          liveBlockedEvents: 1,
+          stateCounts: { live_blocked: 1 }
+        },
+        orders: [
+          {
+            batchId: "portfolio-paper-batch-state",
+            baseRunId: "portfolio-run-state",
+            portfolioName: "A-share state basket",
+            orderId: "portfolio-paper-run-a-buy",
+            symbol: "600000",
+            sourceRunId: "run-a",
+            side: "buy",
+            quantity: 1000,
+            notionalValue: 9200,
+            originalStatus: "pending_review",
+            riskStatus: "passed",
+            currentState: "live_blocked",
+            currentStateLabel: "Live route blocked",
+            paperOnly: true,
+            liveExecutionBlocked: true,
+            events: [
+              {
+                eventId: "state-created",
+                batchId: "portfolio-paper-batch-state",
+                baseRunId: "portfolio-run-state",
+                orderId: "portfolio-paper-run-a-buy",
+                timestamp: "2026-05-27T08:30:00+00:00",
+                state: "created",
+                label: "Paper order created",
+                actor: "portfolio_backtest",
+                source: "portfolio_backtest",
+                reason: "Created.",
+                paperOnly: true,
+                liveExecutionBlocked: true
+              },
+              {
+                eventId: "state-filled",
+                batchId: "portfolio-paper-batch-state",
+                baseRunId: "portfolio-run-state",
+                orderId: "portfolio-paper-run-a-buy",
+                timestamp: "2026-05-27T08:46:00+00:00",
+                state: "simulation_filled",
+                label: "Paper simulation filled",
+                actor: "operator-a",
+                source: "paper-simulator",
+                reason: "Filled.",
+                paperOnly: true,
+                liveExecutionBlocked: true
+              },
+              {
+                eventId: "state-live-blocked",
+                batchId: "portfolio-paper-batch-state",
+                baseRunId: "portfolio-run-state",
+                orderId: "portfolio-paper-run-a-buy",
+                timestamp: "2026-05-27T08:46:00+00:00",
+                state: "live_blocked",
+                label: "Live route blocked",
+                actor: "execution-guard",
+                source: "live-route-guard",
+                reason: "Live execution blocked.",
+                paperOnly: true,
+                liveExecutionBlocked: true
+              }
+            ]
+          }
+        ],
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    ]);
+
+    expect(rows.map((row) => row.state)).toEqual(["live_blocked", "simulation_filled", "created"]);
+    expect(rows[0]).toMatchObject({
+      id: "state-live-blocked",
+      symbol: "600000",
+      orderId: "portfolio-paper-run-a-buy",
+      label: "Live route blocked",
+      actor: "execution-guard",
+      tone: "risk"
+    });
+    expect(rows[1]).toMatchObject({
+      state: "simulation_filled",
+      tone: "positive",
+      reason: "Filled."
+    });
   });
 
   test("blocks paper position rows until audited return is bound", () => {

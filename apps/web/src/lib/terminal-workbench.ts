@@ -727,6 +727,79 @@ export interface PortfolioPaperOrderReplayPositionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PortfolioPaperOrderStateHistoryEventSnapshot {
+  eventId: string;
+  batchId: string;
+  baseRunId: string;
+  orderId: string;
+  timestamp: string;
+  state: string;
+  label: string;
+  actor: string;
+  source: string;
+  reason: string;
+  metadata?: Record<string, unknown>;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderStateHistoryOrderSnapshot {
+  batchId: string;
+  baseRunId: string;
+  portfolioName: string;
+  orderId: string;
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell" | "hold";
+  quantity: number;
+  notionalValue: number;
+  originalStatus: "pending_review" | "rejected" | "skipped";
+  riskStatus: "passed" | "review" | "blocked";
+  currentState: string;
+  currentStateLabel: string;
+  events: PortfolioPaperOrderStateHistoryEventSnapshot[];
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderStateHistorySnapshot {
+  schemaVersion: 1;
+  baseRunId: string;
+  batchId: string;
+  portfolioName: string;
+  generatedAt: string;
+  mode: "portfolio_paper_order_state_history";
+  summary: {
+    orderCount: number;
+    eventCount: number;
+    approvedOrders: number;
+    rejectedOrders: number;
+    filledOrders: number;
+    liveBlockedEvents: number;
+    stateCounts: Record<string, number>;
+  };
+  orders: PortfolioPaperOrderStateHistoryOrderSnapshot[];
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderStateHistoryRow {
+  id: string;
+  batchId: string;
+  baseRunId: string;
+  orderId: string;
+  symbol: string;
+  timestamp: string;
+  state: string;
+  label: string;
+  actor: string;
+  source: string;
+  reason: string;
+  quantity: string;
+  notionalValue: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface PortfolioPaperOrderLifecycleRow {
   id: string;
   portfolioName: string;
@@ -6880,6 +6953,35 @@ export function buildPortfolioPaperOrderReplayPositionRows(
     }));
 }
 
+export function buildPortfolioPaperOrderStateHistoryRows(
+  histories: PortfolioPaperOrderStateHistorySnapshot[] | null | undefined,
+  limit = 12
+): PortfolioPaperOrderStateHistoryRow[] {
+  return (histories ?? [])
+    .flatMap((history) =>
+      history.orders.flatMap((order) =>
+        order.events.map((event) => ({
+          id: event.eventId,
+          batchId: order.batchId,
+          baseRunId: order.baseRunId,
+          orderId: order.orderId,
+          symbol: order.symbol,
+          timestamp: event.timestamp,
+          state: event.state,
+          label: event.label,
+          actor: event.actor,
+          source: event.source,
+          reason: event.reason,
+          quantity: formatQuantity(order.quantity),
+          notionalValue: order.notionalValue.toFixed(2),
+          tone: portfolioPaperOrderStateTone(event.state)
+        }))
+      )
+    )
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function buildPaperPositionRows(
   workspace: TerminalWorkspace,
   execution?: PaperExecutionSnapshot | null
@@ -8413,6 +8515,19 @@ function formatSignedCurrency(value: number): string {
 
 function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "");
+}
+
+function portfolioPaperOrderStateTone(state: string): "positive" | "warning" | "neutral" | "risk" {
+  if (state === "operator_approved" || state === "ready_for_simulation" || state === "simulation_filled") {
+    return "positive";
+  }
+  if (state === "awaiting_operator_review" || state === "risk_review" || state === "simulation_recorded") {
+    return "warning";
+  }
+  if (state === "operator_rejected" || state === "risk_rejected" || state === "invalid_order" || state === "live_blocked") {
+    return "risk";
+  }
+  return "neutral";
 }
 
 function formatAssumptionCurrency(value: number): string {

@@ -1032,6 +1032,184 @@ def build_portfolio_paper_order_replay(
     }
 
 
+def build_portfolio_paper_order_state_history(
+    batch: PortfolioPaperOrderBatch,
+    *,
+    approvals: list[PortfolioPaperOrderApproval] | None = None,
+    simulations: list[PortfolioPaperOrderSimulation] | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    filtered_approvals = [
+        approval
+        for approval in approvals or []
+        if approval.base_run_id == batch.base_run_id and approval.batch_id == batch.batch_id
+    ]
+    filtered_simulations = [
+        simulation
+        for simulation in simulations or []
+        if simulation.base_run_id == batch.base_run_id and simulation.batch_id == batch.batch_id
+    ]
+    approval_map = {approval.order_id: approval for approval in sorted(filtered_approvals, key=lambda item: item.reviewed_at)}
+    simulation_map = {
+        simulation.order_id: simulation
+        for simulation in sorted(filtered_simulations, key=lambda item: (item.simulated_at, item.simulation_id))
+    }
+    lifecycle_rows = build_portfolio_paper_order_lifecycle(
+        batch,
+        approvals=portfolio_paper_order_approvals_to_map(filtered_approvals),
+    )
+    lifecycle_map = {str(row.get("orderId") or ""): row for row in lifecycle_rows}
+
+    order_histories: list[dict[str, Any]] = []
+    state_counts: list[str] = []
+    approved_orders = 0
+    rejected_orders = 0
+    filled_orders = 0
+    live_blocked_events = 0
+    total_events = 0
+
+    for order in batch.orders:
+        order_id = str(order.get("orderId") or "")
+        lifecycle_row = lifecycle_map.get(order_id, {})
+        approval = approval_map.get(order_id)
+        simulation = simulation_map.get(order_id)
+        events = [
+            _portfolio_paper_order_state_event(
+                batch=batch,
+                order_id=order_id,
+                state="created",
+                timestamp=str(order.get("timestamp") or batch.created_at.isoformat()),
+                label="Paper order created",
+                actor=batch.source,
+                source=batch.source,
+                reason=str(order.get("reason") or "Portfolio paper order candidate was generated."),
+                sequence=1,
+            )
+        ]
+        lifecycle_state = str(lifecycle_row.get("state") or "unknown")
+
+        if lifecycle_state in {"risk_rejected", "risk_review", "invalid_order", "skipped"}:
+            events.append(
+                _portfolio_paper_order_state_event(
+                    batch=batch,
+                    order_id=order_id,
+                    state=lifecycle_state,
+                    timestamp=str(order.get("timestamp") or batch.created_at.isoformat()),
+                    label=_portfolio_paper_order_state_label(lifecycle_state),
+                    actor="risk" if lifecycle_state in {"risk_rejected", "risk_review"} else "portfolio-engine",
+                    source="portfolio-order-lifecycle",
+                    reason=str(lifecycle_row.get("reason") or order.get("reason") or ""),
+                    sequence=2,
+                )
+            )
+
+        if approval is not None:
+            approved_orders += 1 if approval.approved else 0
+            rejected_orders += 0 if approval.approved else 1
+            approval_state = "operator_approved" if approval.approved else "operator_rejected"
+            events.append(
+                _portfolio_paper_order_state_event(
+                    batch=batch,
+                    order_id=order_id,
+                    state=approval_state,
+                    timestamp=approval.reviewed_at.isoformat(),
+                    label=_portfolio_paper_order_state_label(approval_state),
+                    actor=approval.reviewer,
+                    source="operator-review",
+                    reason=approval.reason,
+                    sequence=3,
+                )
+            )
+
+        if simulation is not None:
+            filled_orders += 1 if simulation.fill_status == "filled" and simulation.order_state == "filled" else 0
+            events.append(
+                _portfolio_paper_order_state_event(
+                    batch=batch,
+                    order_id=order_id,
+                    state="simulation_filled" if simulation.fill_status == "filled" else "simulation_recorded",
+                    timestamp=simulation.simulated_at.isoformat(),
+                    label=_portfolio_paper_order_state_label("simulation_filled"),
+                    actor=simulation.approved_by or "paper-simulator",
+                    source="paper-simulator",
+                    reason=simulation.reason,
+                    sequence=4,
+                    metadata={
+                        "simulationId": simulation.simulation_id,
+                        "fillPrice": _round_number(simulation.fill_price),
+                        "fillStatus": simulation.fill_status,
+                        "orderState": simulation.order_state,
+                    },
+                )
+            )
+            events.append(
+                _portfolio_paper_order_state_event(
+                    batch=batch,
+                    order_id=order_id,
+                    state="live_blocked",
+                    timestamp=simulation.simulated_at.isoformat(),
+                    label=_portfolio_paper_order_state_label("live_blocked"),
+                    actor="execution-guard",
+                    source="live-route-guard",
+                    reason="Live execution remains blocked; this timeline records paper-only simulation evidence.",
+                    sequence=5,
+                )
+            )
+
+        events.sort(key=lambda event: (str(event.get("timestamp") or ""), int(event.get("sequence") or 0)))
+        for event in events:
+            event.pop("sequence", None)
+        current_state = str(events[-1].get("state") or lifecycle_state) if events else lifecycle_state
+        if current_state == "created":
+            current_state = lifecycle_state
+        if current_state in {"risk_rejected", "operator_rejected", "invalid_order"}:
+            rejected_orders += 1 if current_state != "operator_rejected" else 0
+        live_blocked_events += sum(1 for event in events if event.get("state") == "live_blocked")
+        total_events += len(events)
+        state_counts.append(current_state)
+        order_histories.append(
+            {
+                "batchId": batch.batch_id,
+                "baseRunId": batch.base_run_id,
+                "portfolioName": batch.portfolio_name,
+                "orderId": order_id,
+                "symbol": str(order.get("symbol") or ""),
+                "sourceRunId": order.get("sourceRunId"),
+                "side": str(order.get("side") or ""),
+                "quantity": _round_number(order.get("quantity")),
+                "notionalValue": _round_number(order.get("notionalValue")),
+                "originalStatus": str(order.get("status") or ""),
+                "riskStatus": str(order.get("riskStatus") or ""),
+                "currentState": current_state,
+                "currentStateLabel": _portfolio_paper_order_state_label(current_state),
+                "events": events,
+                "paperOnly": True,
+                "liveExecutionBlocked": True,
+            }
+        )
+
+    return {
+        "schemaVersion": 1,
+        "baseRunId": batch.base_run_id,
+        "batchId": batch.batch_id,
+        "portfolioName": batch.portfolio_name,
+        "generatedAt": (generated_at or datetime.now(timezone.utc)).isoformat(),
+        "mode": "portfolio_paper_order_state_history",
+        "summary": {
+            "orderCount": len(order_histories),
+            "eventCount": total_events,
+            "approvedOrders": approved_orders,
+            "rejectedOrders": rejected_orders,
+            "filledOrders": filled_orders,
+            "liveBlockedEvents": live_blocked_events,
+            "stateCounts": _sorted_counts(state_counts),
+        },
+        "orders": order_histories,
+        "paperOnly": True,
+        "liveExecutionBlocked": True,
+    }
+
+
 def portfolio_paper_order_approvals_to_map(
     approvals: list[PortfolioPaperOrderApproval],
 ) -> dict[str, dict[str, Any]]:
@@ -1618,6 +1796,57 @@ def _portfolio_paper_order_lifecycle_row(
         "reviewedAt": str(approval.get("reviewedAt") or "") if isinstance(approval, dict) and approval.get("reviewedAt") else None,
         "reason": reason,
     }
+
+
+def _portfolio_paper_order_state_event(
+    *,
+    batch: PortfolioPaperOrderBatch,
+    order_id: str,
+    state: str,
+    timestamp: str,
+    label: str,
+    actor: str,
+    source: str,
+    reason: str,
+    sequence: int,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    event = {
+        "eventId": f"{batch.batch_id}:{order_id}:{state}:{sequence}",
+        "batchId": batch.batch_id,
+        "baseRunId": batch.base_run_id,
+        "orderId": order_id,
+        "timestamp": timestamp,
+        "state": state,
+        "label": label,
+        "actor": str(actor or ""),
+        "source": str(source or ""),
+        "reason": str(reason or ""),
+        "paperOnly": True,
+        "liveExecutionBlocked": True,
+        "sequence": sequence,
+    }
+    if metadata:
+        event["metadata"] = dict(metadata)
+    return event
+
+
+def _portfolio_paper_order_state_label(state: str) -> str:
+    labels = {
+        "created": "Paper order created",
+        "awaiting_operator_review": "Awaiting operator review",
+        "operator_approved": "Operator approved",
+        "operator_rejected": "Operator rejected",
+        "ready_for_simulation": "Ready for paper simulation",
+        "simulation_filled": "Paper simulation filled",
+        "simulation_recorded": "Paper simulation recorded",
+        "live_blocked": "Live route blocked",
+        "risk_rejected": "Risk rejected",
+        "risk_review": "Risk review required",
+        "invalid_order": "Invalid paper order",
+        "skipped": "Skipped",
+    }
+    return labels.get(state, state.replace("_", " ").strip().title())
 
 
 def _portfolio_paper_order_summary(orders: list[dict[str, Any]]) -> dict[str, Any]:

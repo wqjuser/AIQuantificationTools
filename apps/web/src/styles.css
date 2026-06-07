@@ -6194,6 +6194,78 @@ em {
   opacity: 0.45;
 }
 
+.portfolio-order-state-history {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.portfolio-order-state-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.portfolio-order-state-row {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+  min-height: 94px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101925;
+  padding: 9px 10px;
+}
+
+.portfolio-order-state-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.portfolio-order-state-row.warning {
+  border-left-color: #e8be62;
+}
+
+.portfolio-order-state-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.portfolio-order-state-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.portfolio-order-state-row strong,
+.portfolio-order-state-row span,
+.portfolio-order-state-row p,
+.portfolio-order-state-row em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-order-state-row strong {
+  display: block;
+  color: #dce6ee;
+  font-size: 13px;
+}
+
+.portfolio-order-state-row span,
+.portfolio-order-state-row p,
+.portfolio-order-state-row em {
+  color: #9cadbd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.portfolio-order-state-row p {
+  margin: 0;
+}
+
+.portfolio-order-state-row em {
+  color: #71dfc5;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .portfolio-order-simulation {
   display: grid;
   gap: 8px;

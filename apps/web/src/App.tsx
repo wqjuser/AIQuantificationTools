@@ -36,6 +36,7 @@ import {
   loadPortfolioPaperOrderBatches,
   loadPortfolioPaperOrderApprovals,
   loadPortfolioPaperOrderReplay,
+  loadPortfolioPaperOrderStateHistory,
   loadPortfolioPaperOrderSimulations,
   loadResearchRunDetail,
   loadResearchRunExport,
@@ -83,6 +84,7 @@ import {
   PortfolioPaperOrderBatch,
   PortfolioPaperOrderLifecycleEvent,
   PortfolioPaperOrderReplay,
+  PortfolioPaperOrderStateHistory,
   PortfolioPaperOrderSimulation,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
@@ -147,6 +149,7 @@ import {
   buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
+  buildPortfolioPaperOrderStateHistoryRows,
   buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
@@ -219,6 +222,7 @@ import {
   PortfolioPaperOrderLifecycleRow,
   PortfolioPaperOrderReplayPositionRow,
   PortfolioPaperOrderReplaySummaryTile,
+  PortfolioPaperOrderStateHistoryRow,
   PortfolioPeerAuditPlan,
   PortfolioRiskRow,
   PromotionQueueStage,
@@ -522,6 +526,18 @@ function mergePortfolioPaperOrderSimulations(
   return [...events.filter((event) => event.batchId !== batchId), ...replacement];
 }
 
+function mergePortfolioPaperOrderStateHistories(
+  histories: PortfolioPaperOrderStateHistory[],
+  replacement: PortfolioPaperOrderStateHistory
+): PortfolioPaperOrderStateHistory[] {
+  return [
+    replacement,
+    ...histories.filter(
+      (history) => history.baseRunId !== replacement.baseRunId || history.batchId !== replacement.batchId
+    )
+  ];
+}
+
 function waitForWorkflowStep() {
   return new Promise<void>((resolve) => window.setTimeout(resolve, workflowStepDelayMs));
 }
@@ -555,6 +571,9 @@ export function App() {
   >([]);
   const [portfolioPaperOrderSimulations, setPortfolioPaperOrderSimulations] = useState<PortfolioPaperOrderSimulation[]>([]);
   const [portfolioPaperOrderReplay, setPortfolioPaperOrderReplay] = useState<PortfolioPaperOrderReplay | null>(null);
+  const [portfolioPaperOrderStateHistories, setPortfolioPaperOrderStateHistories] = useState<
+    PortfolioPaperOrderStateHistory[]
+  >([]);
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -693,6 +712,8 @@ export function App() {
   );
   const portfolioPaperOrderReplaySummaryTiles = buildPortfolioPaperOrderReplaySummaryTiles(portfolioPaperOrderReplay);
   const portfolioPaperOrderReplayPositionRows = buildPortfolioPaperOrderReplayPositionRows(portfolioPaperOrderReplay);
+  const portfolioPaperOrderStateHistoryRows =
+    buildPortfolioPaperOrderStateHistoryRows(portfolioPaperOrderStateHistories);
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -779,6 +800,7 @@ export function App() {
       setPortfolioPaperOrderLifecycleEvents([]);
       setPortfolioPaperOrderSimulations([]);
       setPortfolioPaperOrderReplay(null);
+      setPortfolioPaperOrderStateHistories([]);
       setPortfolioPaperOrderHistoryError(null);
       return;
     }
@@ -802,6 +824,7 @@ export function App() {
       if (!result.batches.length) {
         setPortfolioPaperOrderLifecycleEvents([]);
         setPortfolioPaperOrderSimulations([]);
+        setPortfolioPaperOrderStateHistories([]);
         return;
       }
       void Promise.all([
@@ -810,8 +833,11 @@ export function App() {
         ),
         Promise.all(
           result.batches.map((batch) => loadPortfolioPaperOrderSimulations(quantCoreBaseUrl, baseRunId, batch.batchId))
+        ),
+        Promise.all(
+          result.batches.map((batch) => loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, baseRunId, batch.batchId))
         )
-      ]).then(([approvalResults, simulationResults]) => {
+      ]).then(([approvalResults, simulationResults, stateHistoryResults]) => {
         if (cancelled) {
           return;
         }
@@ -821,12 +847,20 @@ export function App() {
         setPortfolioPaperOrderSimulations(
           simulationResults.flatMap((simulationResult) => simulationResult.simulations)
         );
+        setPortfolioPaperOrderStateHistories(
+          stateHistoryResults.flatMap((stateHistoryResult) =>
+            stateHistoryResult.stateHistory ? [stateHistoryResult.stateHistory] : []
+          )
+        );
         const approvalError = approvalResults.find((approvalResult) => approvalResult.error)?.error;
         const simulationError = simulationResults.find((simulationResult) => simulationResult.error)?.error;
+        const stateHistoryError = stateHistoryResults.find((stateHistoryResult) => stateHistoryResult.error)?.error;
         if (approvalError) {
           setPortfolioPaperOrderHistoryError(approvalError);
         } else if (simulationError) {
           setPortfolioPaperOrderHistoryError(simulationError);
+        } else if (stateHistoryError) {
+          setPortfolioPaperOrderHistoryError(stateHistoryError);
         }
       });
     });
@@ -1475,6 +1509,19 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, recordedBatch.batchId, result.lifecycle ?? [])
         );
       }
+      void loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, recordedBatch.baseRunId, recordedBatch.batchId).then(
+        (stateHistoryResult) => {
+          const history = stateHistoryResult.stateHistory;
+          if (history) {
+            setPortfolioPaperOrderStateHistories((current) =>
+              mergePortfolioPaperOrderStateHistories(current, history)
+            );
+          }
+          if (stateHistoryResult.error) {
+            setPortfolioPaperOrderHistoryError(stateHistoryResult.error);
+          }
+        }
+      );
       setPortfolioPaperOrderHistoryError(null);
       setWorkspaceState((current) => ({
         ...current,
@@ -1515,6 +1562,17 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, row.batchId, result.lifecycle ?? [])
         );
       }
+      void loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, row.baseRunId, row.batchId).then((stateHistoryResult) => {
+        const history = stateHistoryResult.stateHistory;
+        if (history) {
+          setPortfolioPaperOrderStateHistories((current) =>
+            mergePortfolioPaperOrderStateHistories(current, history)
+          );
+        }
+        if (stateHistoryResult.error) {
+          setPortfolioPaperOrderHistoryError(stateHistoryResult.error);
+        }
+      });
       void loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId).then((replayResult) => {
         setPortfolioPaperOrderReplay(replayResult.replay ?? null);
         if (replayResult.error) {
@@ -1571,6 +1629,23 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, row.batchId, result.lifecycle ?? [])
         );
       }
+      void loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, row.baseRunId, row.batchId).then((stateHistoryResult) => {
+        const history = stateHistoryResult.stateHistory;
+        if (history) {
+          setPortfolioPaperOrderStateHistories((current) =>
+            mergePortfolioPaperOrderStateHistories(current, history)
+          );
+        }
+        if (stateHistoryResult.error) {
+          setPortfolioPaperOrderHistoryError(stateHistoryResult.error);
+        }
+      });
+      void loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId).then((replayResult) => {
+        setPortfolioPaperOrderReplay(replayResult.replay ?? null);
+        if (replayResult.error) {
+          setPortfolioPaperOrderHistoryError(replayResult.error);
+        }
+      });
       setPortfolioPaperOrderHistoryError(null);
       setWorkspaceState((current) => ({
         ...current,
@@ -3425,6 +3500,7 @@ export function App() {
             portfolioPaperOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioPaperOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
             portfolioPaperOrderSimulations={portfolioPaperOrderSimulations}
+            portfolioPaperOrderStateHistoryRows={portfolioPaperOrderStateHistoryRows}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
@@ -3455,6 +3531,7 @@ export function App() {
             portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
             portfolioOrderSimulations={portfolioPaperOrderSimulations}
+            portfolioOrderStateHistoryRows={portfolioPaperOrderStateHistoryRows}
             rows={visiblePaperTradingRows}
             simulatingPortfolioOrderId={simulatingPortfolioPaperOrderId}
             summaryTiles={paperExecutionSummaryTiles}
@@ -8586,6 +8663,7 @@ function ExecutionPanel({
   portfolioOrderReplaySummaryTiles = [],
   portfolioOrderRows = [],
   portfolioOrderSimulations = [],
+  portfolioOrderStateHistoryRows = [],
   rows,
   simulatingPortfolioOrderId = null,
   summaryTiles,
@@ -8605,6 +8683,7 @@ function ExecutionPanel({
   portfolioOrderReplaySummaryTiles?: PortfolioPaperOrderReplaySummaryTile[];
   portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
   portfolioOrderSimulations?: PortfolioPaperOrderSimulation[];
+  portfolioOrderStateHistoryRows?: PortfolioPaperOrderStateHistoryRow[];
   rows: PaperTradingRow[];
   simulatingPortfolioOrderId?: string | null;
   summaryTiles: PaperExecutionSummaryTile[];
@@ -8716,6 +8795,30 @@ function ExecutionPanel({
                 <span>{portfolioOrderExecutionStateLabel(i18n, row)}</span>
                 <span>{row.auditEventId}</span>
               </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {portfolioOrderStateHistoryRows.length ? (
+        <div className="portfolio-order-state-history">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "委托状态时间线" : "Order state timeline"}</span>
+            <strong>{portfolioOrderStateHistoryRows.length}</strong>
+          </div>
+          <div className="portfolio-order-state-list">
+            {portfolioOrderStateHistoryRows.map((row) => (
+              <article className={`portfolio-order-state-row ${row.tone}`} key={row.id}>
+                <div>
+                  <strong>
+                    {row.symbol} · {portfolioOrderStateLabel(i18n, row)}
+                  </strong>
+                  <span>{row.orderId}</span>
+                </div>
+                <p>{portfolioOrderStateReason(i18n, row)}</p>
+                <em>
+                  {formatChartDate(row.timestamp)} · {row.actor || row.source}
+                </em>
+              </article>
             ))}
           </div>
         </div>
@@ -8933,6 +9036,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderReplayPositionRows,
   portfolioPaperOrderReplaySummaryTiles,
   portfolioPaperOrderSimulations,
+  portfolioPaperOrderStateHistoryRows,
   portfolioPeerAuditPlan,
   riskApproval,
   rows,
@@ -8968,6 +9072,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderReplayPositionRows: PortfolioPaperOrderReplayPositionRow[];
   portfolioPaperOrderReplaySummaryTiles: PortfolioPaperOrderReplaySummaryTile[];
   portfolioPaperOrderSimulations: PortfolioPaperOrderSimulation[];
+  portfolioPaperOrderStateHistoryRows: PortfolioPaperOrderStateHistoryRow[];
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
@@ -9404,6 +9509,7 @@ function PortfolioWorkspace({
         portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
         portfolioOrderRows={portfolioPaperOrderLifecycleRows}
         portfolioOrderSimulations={portfolioPaperOrderSimulations}
+        portfolioOrderStateHistoryRows={portfolioPaperOrderStateHistoryRows}
         rows={paperRows}
         simulatingPortfolioOrderId={simulatingPortfolioOrderId}
         summaryTiles={summaryTiles}
@@ -10366,6 +10472,38 @@ function portfolioOrderApprovalStateLabel(i18n: AppI18n, row: PortfolioPaperOrde
           skipped: "Skipped"
         };
   return labels[row.state];
+}
+
+function portfolioOrderStateLabel(i18n: AppI18n, row: PortfolioPaperOrderStateHistoryRow): string {
+  const labels: Record<string, string> =
+    i18n.locale === "zh-CN"
+      ? {
+          created: "已创建",
+          awaiting_operator_review: "待人工复核",
+          operator_approved: "人工批准",
+          operator_rejected: "人工拒绝",
+          ready_for_simulation: "可模拟路由",
+          simulation_filled: "模拟成交",
+          simulation_recorded: "模拟记录",
+          live_blocked: "实盘阻断",
+          risk_rejected: "风控拒绝",
+          risk_review: "待风控复核",
+          invalid_order: "无效委托",
+          skipped: "已跳过"
+        }
+      : {};
+  return labels[row.state] ?? row.label;
+}
+
+function portfolioOrderStateReason(i18n: AppI18n, row: PortfolioPaperOrderStateHistoryRow): string {
+  if (i18n.locale === "en-US") {
+    return row.reason;
+  }
+  return row.reason
+    .replace("Live execution remains blocked; this timeline records paper-only simulation evidence.", "实盘仍被阻断；此时间线只记录 paper-only 模拟证据。")
+    .replace("Paper-only simulation filled the approved portfolio order; live execution remains blocked.", "已对批准的组合委托完成 paper-only 模拟成交；实盘仍阻断。")
+    .replace("Operator approved this paper-only portfolio order for simulation.", "人工批准该 paper-only 组合委托进入模拟成交。")
+    .replace("Operator rejected this paper-only portfolio order before simulation.", "人工在模拟成交前拒绝该 paper-only 组合委托。");
 }
 
 function portfolioPaperOrderApprovalHint(i18n: AppI18n, row: PortfolioPaperOrderApprovalRow): string {

@@ -1270,6 +1270,16 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".portfolio-order-replay-row");
   });
 
+  test("renders portfolio paper order state history as a compact timeline", () => {
+    expect(appSource).toContain("loadPortfolioPaperOrderStateHistory");
+    expect(appSource).toContain("buildPortfolioPaperOrderStateHistoryRows(portfolioPaperOrderStateHistories)");
+    expect(appSource).toContain("portfolioOrderStateHistoryRows");
+    expect(appSource).toContain('className="portfolio-order-state-history"');
+    expect(appSource).toContain('className={`portfolio-order-state-row');
+    expect(styles).toContain(".portfolio-order-state-history");
+    expect(styles).toContain(".portfolio-order-state-row");
+  });
+
   test("renders paper execution account summaries from persisted execution records", () => {
     expect(appSource).toContain("buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord)");
     expect(appSource).toContain("buildPaperPositionRows(workspace, activePaperExecutionRecord)");
