@@ -42,7 +42,7 @@ The checklist already tells the user whether symbol, K-line data, cache, and not
 - [x] GREEN: Add compact action CSS.
 - [x] DOCS: Update this plan and the product plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker config/build/smoke, and git diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Progress Notes
 
@@ -50,6 +50,7 @@ The checklist already tells the user whether symbol, K-line data, cache, and not
 - Targeted GREEN checks now pass for `terminal-workbench.test.ts` and `layout-css.test.js`.
 - Full verification passed: targeted tests, `npm test`, production build, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification at `2048x1200` confirmed the Research workspace renders the readiness panel, exposes the note action, has no horizontal overflow, and logs no warning/error messages.
+- Pushed through `127.0.0.1:7890`; GitHub Actions CI for commit `bb574ff` completed successfully.
 
 ## Verification Checklist
 
