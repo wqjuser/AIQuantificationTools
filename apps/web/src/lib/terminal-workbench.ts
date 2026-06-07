@@ -1190,6 +1190,18 @@ interface PortfolioBacktestDiagnosticInput {
     status: "within_band" | "review" | "blocked";
     reason: string;
   }>;
+  tradeReviewEvents?: Array<{
+    timestamp: string;
+    eventType: "trade_review";
+    symbol: string;
+    sourceRunId: string | null;
+    side: "buy" | "sell" | "hold";
+    notionalValue: number;
+    targetWeight: number;
+    endingWeight: number;
+    status: "paper_review" | "blocked" | "no_action";
+    reason: string;
+  }>;
   covarianceRisk?: {
     method: "population_covariance";
     observations: number;
@@ -5468,6 +5480,17 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     event.status,
     event.reason
   ]);
+  const tradeReviewRows = (portfolio.tradeReviewEvents ?? []).map((event) => [
+    event.timestamp,
+    event.symbol,
+    event.sourceRunId ?? "-",
+    event.side,
+    formatReportNumber(event.notionalValue),
+    formatDiagnosticWeight(event.targetWeight),
+    formatDiagnosticWeight(event.endingWeight),
+    event.status,
+    event.reason
+  ]);
   const covarianceSummaryRows = portfolio.covarianceRisk
     ? [
         ["Method", portfolio.covarianceRisk.method],
@@ -5537,6 +5560,15 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     rebalanceRows.length
       ? markdownTable(["Timestamp", "Symbol", "Run ID", "Target weight", "Ending weight", "Delta value", "Status", "Reason"], rebalanceRows)
       : "No rebalance review ledger is attached to this portfolio run.",
+    "",
+    "## Trade Review Ledger",
+    "",
+    tradeReviewRows.length
+      ? markdownTable(
+          ["Timestamp", "Symbol", "Run ID", "Side", "Notional", "Target weight", "Ending weight", "Status", "Reason"],
+          tradeReviewRows
+        )
+      : "No trade review ledger is attached to this portfolio run.",
     "",
     "## Composite Data Quality",
     "",

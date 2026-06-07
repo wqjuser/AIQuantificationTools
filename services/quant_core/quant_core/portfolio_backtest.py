@@ -83,6 +83,20 @@ class PortfolioRebalanceEvent:
 
 
 @dataclass(frozen=True)
+class PortfolioTradeReviewEvent:
+    timestamp: datetime
+    event_type: Literal["trade_review"]
+    symbol: str
+    source_run_id: str | None
+    side: Literal["buy", "sell", "hold"]
+    notional_value: float
+    target_weight: float
+    ending_weight: float
+    status: Literal["paper_review", "blocked", "no_action"]
+    reason: str
+
+
+@dataclass(frozen=True)
 class PortfolioBacktestRun:
     name: str
     market: Market
@@ -94,6 +108,7 @@ class PortfolioBacktestRun:
     legs: list[PortfolioLegResult]
     allocation_events: list[PortfolioAllocationEvent]
     rebalance_events: list[PortfolioRebalanceEvent]
+    trade_review_events: list[PortfolioTradeReviewEvent]
     correlation_pairs: list[PortfolioCorrelationPair]
     covariance_risk: PortfolioCovarianceRiskSummary
     data_quality: DataQuality
@@ -148,6 +163,7 @@ class PortfolioBacktestEngine:
             ending_equity=equity_curve[-1].equity,
             timestamp=timestamps[-1],
         )
+        trade_review_events = self._trade_review_events(rebalance_events)
         correlation_pairs = self._correlation_pairs(legs)
         covariance_risk = self._covariance_risk(legs, timeframe)
         return PortfolioBacktestRun(
@@ -161,6 +177,7 @@ class PortfolioBacktestEngine:
             legs=leg_results,
             allocation_events=allocation_events,
             rebalance_events=rebalance_events,
+            trade_review_events=trade_review_events,
             correlation_pairs=correlation_pairs,
             covariance_risk=covariance_risk,
             data_quality=data_quality,
@@ -339,6 +356,42 @@ class PortfolioBacktestEngine:
             status=status,
             reason=reason,
         )
+
+    def _trade_review_events(self, rebalance_events: list[PortfolioRebalanceEvent]) -> list[PortfolioTradeReviewEvent]:
+        events: list[PortfolioTradeReviewEvent] = []
+        for event in rebalance_events:
+            if event.symbol == "CASH":
+                continue
+            side: Literal["buy", "sell", "hold"]
+            if event.status == "within_band" or event.delta_value == 0:
+                side = "hold"
+                notional_value = 0.0
+                status: Literal["paper_review", "blocked", "no_action"] = "no_action"
+                reason = "ending weight remains inside the review band; no trade review required"
+            else:
+                side = "buy" if event.delta_value > 0 else "sell"
+                notional_value = abs(event.delta_value)
+                status = "blocked" if event.status == "blocked" else "paper_review"
+                reason = (
+                    "rebalance drift is blocked; manual portfolio review required before any paper order"
+                    if status == "blocked"
+                    else "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
+                )
+            events.append(
+                PortfolioTradeReviewEvent(
+                    timestamp=event.timestamp,
+                    event_type="trade_review",
+                    symbol=event.symbol,
+                    source_run_id=event.source_run_id,
+                    side=side,
+                    notional_value=round(notional_value, 4),
+                    target_weight=event.target_weight,
+                    ending_weight=event.ending_weight,
+                    status=status,
+                    reason=reason,
+                )
+            )
+        return events
 
     def _correlation_pairs(self, legs: list[PortfolioLeg]) -> list[PortfolioCorrelationPair]:
         pairs: list[PortfolioCorrelationPair] = []
@@ -528,6 +581,21 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
                 "reason": event.reason,
             }
             for event in run.rebalance_events
+        ],
+        "tradeReviewEvents": [
+            {
+                "timestamp": event.timestamp.isoformat(),
+                "eventType": event.event_type,
+                "symbol": event.symbol,
+                "sourceRunId": event.source_run_id,
+                "side": event.side,
+                "notionalValue": event.notional_value,
+                "targetWeight": event.target_weight,
+                "endingWeight": event.ending_weight,
+                "status": event.status,
+                "reason": event.reason,
+            }
+            for event in run.trade_review_events
         ],
         "correlationPairs": [
             {

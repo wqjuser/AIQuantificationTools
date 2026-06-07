@@ -841,6 +841,19 @@ export interface PortfolioRebalanceEvent {
   reason: string;
 }
 
+export interface PortfolioTradeReviewEvent {
+  timestamp: string;
+  eventType: "trade_review";
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell" | "hold";
+  notionalValue: number;
+  targetWeight: number;
+  endingWeight: number;
+  status: "paper_review" | "blocked" | "no_action";
+  reason: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -887,6 +900,7 @@ export interface PortfolioBacktestRun {
   legs: PortfolioBacktestLeg[];
   allocationEvents?: PortfolioAllocationEvent[];
   rebalanceEvents?: PortfolioRebalanceEvent[];
+  tradeReviewEvents?: PortfolioTradeReviewEvent[];
   correlationPairs?: PortfolioCorrelationPair[];
   covarianceRisk?: PortfolioCovarianceRisk;
   dataQuality: MarketKlineQuality;
@@ -1583,6 +1597,7 @@ export async function buildPortfolioBacktestReportAuditEvent({
       equityRows: portfolio.equityCurve.length,
       allocationEventCount: portfolio.allocationEvents?.length ?? 0,
       rebalanceEventCount: portfolio.rebalanceEvents?.length ?? 0,
+      tradeReviewEventCount: portfolio.tradeReviewEvents?.length ?? 0,
       covarianceRiskContributionCount: portfolio.covarianceRisk?.contributions.length ?? 0,
       covarianceRiskAnnualizedVolatilityPct: portfolio.covarianceRisk?.annualizedVolatilityPct ?? null,
       diagnosticsCount: diagnostics.length,
@@ -4415,6 +4430,8 @@ function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
       (Array.isArray(run.allocationEvents) && run.allocationEvents.every(isPortfolioAllocationEvent))) &&
     (run.rebalanceEvents === undefined ||
       (Array.isArray(run.rebalanceEvents) && run.rebalanceEvents.every(isPortfolioRebalanceEvent))) &&
+    (run.tradeReviewEvents === undefined ||
+      (Array.isArray(run.tradeReviewEvents) && run.tradeReviewEvents.every(isPortfolioTradeReviewEvent))) &&
     (run.correlationPairs === undefined ||
       (Array.isArray(run.correlationPairs) && run.correlationPairs.every(isPortfolioCorrelationPair))) &&
     (run.covarianceRisk === undefined || isPortfolioCovarianceRisk(run.covarianceRisk)) &&
@@ -4478,6 +4495,25 @@ function isPortfolioRebalanceEvent(value: unknown): value is PortfolioRebalanceE
     typeof event.deltaValue === "number" &&
     typeof event.driftPct === "number" &&
     (event.status === "within_band" || event.status === "review" || event.status === "blocked") &&
+    typeof event.reason === "string"
+  );
+}
+
+function isPortfolioTradeReviewEvent(value: unknown): value is PortfolioTradeReviewEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const event = value as Partial<PortfolioTradeReviewEvent>;
+  return (
+    typeof event.timestamp === "string" &&
+    event.eventType === "trade_review" &&
+    typeof event.symbol === "string" &&
+    (event.sourceRunId === null || typeof event.sourceRunId === "string") &&
+    (event.side === "buy" || event.side === "sell" || event.side === "hold") &&
+    typeof event.notionalValue === "number" &&
+    typeof event.targetWeight === "number" &&
+    typeof event.endingWeight === "number" &&
+    (event.status === "paper_review" || event.status === "blocked" || event.status === "no_action") &&
     typeof event.reason === "string"
   );
 }

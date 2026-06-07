@@ -8690,6 +8690,36 @@ function PortfolioWorkspace({
                       </div>
                     </div>
                   ) : null}
+                  {portfolioBacktest.tradeReviewEvents?.length ? (
+                    <div className="portfolio-allocation-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.tradeReviewLedger")}</span>
+                        <strong>{portfolioBacktest.tradeReviewEvents.length}</strong>
+                      </div>
+                      <div className="portfolio-backtest-leg-table allocation">
+                        {portfolioBacktest.tradeReviewEvents.map((event, index) => (
+                          <div className={`portfolio-backtest-leg-row ${event.status}`} key={`${event.eventType}:${event.symbol}:${index}`}>
+                            <span>
+                              {event.symbol}
+                              <em>{portfolioTradeReviewSideLabel(i18n, event.side)}</em>
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.notional")}</small>
+                              {formatPlainNumber(event.notionalValue)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.endingWeight")}</small>
+                              {formatPlainPercent(event.endingWeight * 100)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("strategy.status")}</small>
+                              {portfolioTradeReviewStatusLabel(i18n, event.status)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="portfolio-backtest-empty">
@@ -9569,6 +9599,26 @@ function portfolioRebalanceStatusLabel(i18n: AppI18n, status: "within_band" | "r
     return i18n.t("portfolio.rebalanceReview");
   }
   return i18n.t("portfolio.rebalanceWithinBand");
+}
+
+function portfolioTradeReviewStatusLabel(i18n: AppI18n, status: "paper_review" | "blocked" | "no_action"): string {
+  if (status === "blocked") {
+    return i18n.t("portfolio.tradeReviewBlocked");
+  }
+  if (status === "paper_review") {
+    return i18n.t("portfolio.tradeReviewPaperReview");
+  }
+  return i18n.t("portfolio.tradeReviewNoAction");
+}
+
+function portfolioTradeReviewSideLabel(i18n: AppI18n, side: "buy" | "sell" | "hold"): string {
+  if (side === "buy") {
+    return i18n.t("portfolio.tradeSideBuy");
+  }
+  if (side === "sell") {
+    return i18n.t("portfolio.tradeSideSell");
+  }
+  return i18n.t("portfolio.tradeSideHold");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

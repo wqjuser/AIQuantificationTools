@@ -510,6 +510,69 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["rebalanceEvents"][0]["deltaValue"], -6600.0)
         self.assertEqual(payload["rebalanceEvents"][2]["symbol"], "CASH")
 
+    def test_portfolio_backtest_outputs_trade_review_events_from_rebalance_drift(self):
+        from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
+        from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        timestamps = [start + timedelta(days=index) for index in range(2)]
+
+        def audited_run(symbol: str, equities: list[float]) -> BacktestRun:
+            return BacktestRun(
+                strategy_name="Audited SMA plan",
+                strategy_revision=f"rev-{symbol}",
+                symbol=symbol,
+                market="ashare",
+                timeframe="1d",
+                metrics=BacktestMetrics(
+                    total_return_pct=equities[-1] / equities[0] * 100 - 100,
+                    annual_return_pct=0.0,
+                    max_drawdown_pct=3.0,
+                    win_rate_pct=50.0,
+                    profit_factor=1.5,
+                    trade_count=2,
+                ),
+                trades=[],
+                equity_curve=[
+                    EquityPoint(timestamp=timestamp, equity=equity)
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+                data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(equities)),
+            )
+
+        result = PortfolioBacktestEngine(initial_cash=100_000).run(
+            name="A-share trade review basket",
+            legs=[
+                PortfolioLeg(target_weight=0.6, run=audited_run("600000", [100_000, 120_000]), run_id="run-a"),
+                PortfolioLeg(target_weight=0.3, run=audited_run("000300", [100_000, 90_000]), run_id="run-b"),
+            ],
+        )
+
+        self.assertEqual(
+            [
+                (
+                    event.symbol,
+                    event.source_run_id,
+                    event.side,
+                    event.notional_value,
+                    event.target_weight,
+                    event.ending_weight,
+                    event.status,
+                )
+                for event in result.trade_review_events
+            ],
+            [
+                ("600000", "run-a", "sell", 6600.0, 0.6, 0.6606, "paper_review"),
+                ("000300", "run-b", "buy", 5700.0, 0.3, 0.2477, "paper_review"),
+            ],
+        )
+        self.assertEqual(result.trade_review_events[0].timestamp, timestamps[-1])
+        payload = portfolio_backtest_run_to_payload(result)
+        self.assertEqual(payload["tradeReviewEvents"][0]["eventType"], "trade_review")
+        self.assertEqual(payload["tradeReviewEvents"][0]["side"], "sell")
+        self.assertEqual(payload["tradeReviewEvents"][0]["notionalValue"], 6600.0)
+        self.assertNotIn("CASH", [event["symbol"] for event in payload["tradeReviewEvents"]])
+
     def test_strategy_library_store_persists_stable_strategy_versions(self):
         from quant_core.research import strategy_config_from_snapshot
         from quant_core.strategy_library import StrategyLibraryStore, strategy_library_record_to_payload

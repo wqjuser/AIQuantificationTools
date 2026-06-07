@@ -4713,6 +4713,20 @@ describe("terminal workbench model", () => {
           reason: "ending weight remains inside the review band"
         }
       ],
+      tradeReviewEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "trade_review" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          side: "sell" as const,
+          notionalValue: 2470,
+          targetWeight: 0.65,
+          endingWeight: 0.6733,
+          status: "paper_review" as const,
+          reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4869,6 +4883,20 @@ describe("terminal workbench model", () => {
           reason: "ending weight remains inside the review band"
         }
       ],
+      tradeReviewEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "trade_review" as const,
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          side: "sell" as const,
+          notionalValue: 2470,
+          targetWeight: 0.65,
+          endingWeight: 0.6733,
+          status: "paper_review" as const,
+          reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4988,6 +5016,8 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("## Rebalance Review Ledger");
     expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | 600000 | run-current-600000 | 65.0% | 67.3% | -2470.00 | review |");
     expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | CASH | - | 10.0% | 9.4% | 620.00 | within_band |");
+    expect(markdown).toContain("## Trade Review Ledger");
+    expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | 600000 | run-current-600000 | sell | 2470.00 | 65.0% | 67.3% | paper_review |");
     expect(markdown).toContain("historical audited portfolio evidence only");
     expect(markdown).toContain("No investment advice");
   });

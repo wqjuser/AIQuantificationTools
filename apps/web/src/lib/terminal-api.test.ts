@@ -364,6 +364,20 @@ describe("terminal workspace API client", () => {
                 reason: "ending weight remains inside the review band"
               }
             ],
+            tradeReviewEvents: [
+              {
+                timestamp: "2026-05-27T08:00:00+00:00",
+                eventType: "trade_review",
+                symbol: "600000",
+                sourceRunId: "run-a",
+                side: "buy",
+                notionalValue: 2400,
+                targetWeight: 0.6,
+                endingWeight: 0.578,
+                status: "paper_review",
+                reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
+              }
+            ],
             covarianceRisk: {
               method: "population_covariance",
               observations: 1,
@@ -442,6 +456,9 @@ describe("terminal workspace API client", () => {
     expect(result.portfolio?.rebalanceEvents?.map((event) => `${event.symbol}:${event.status}:${event.deltaValue}`)).toEqual([
       "600000:review:2400",
       "CASH:within_band:900"
+    ]);
+    expect(result.portfolio?.tradeReviewEvents?.map((event) => `${event.symbol}:${event.side}:${event.status}:${event.notionalValue}`)).toEqual([
+      "600000:buy:paper_review:2400"
     ]);
     expect(result.portfolio?.covarianceRisk?.contributions.map((item) => `${item.symbol}:${item.contributionPct}`)).toEqual([
       "600000:68.4",
@@ -3020,6 +3037,20 @@ describe("terminal workspace API client", () => {
           }
         ]
       },
+      tradeReviewEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "trade_review",
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          side: "sell",
+          notionalValue: 2470,
+          targetWeight: 0.65,
+          endingWeight: 0.6733,
+          status: "paper_review",
+          reason: "paper-only rebalance intent generated from audited portfolio drift; no order is routed"
+        }
+      ],
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -3097,6 +3128,7 @@ describe("terminal workspace API client", () => {
         cashWeight: 0.1,
         legCount: 2,
         equityRows: 2,
+        tradeReviewEventCount: 1,
         covarianceRiskContributionCount: 2,
         covarianceRiskAnnualizedVolatilityPct: 28.6,
         diagnosticsCount: 9,
