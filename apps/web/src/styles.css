@@ -3849,6 +3849,71 @@ em {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.adapter-ledger-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.adapter-ledger-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.adapter-ledger-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.adapter-ledger-row.warning {
+  border-left-color: #e8be62;
+}
+
+.adapter-ledger-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-ledger-row div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.adapter-ledger-row strong,
+.adapter-ledger-row span,
+.adapter-ledger-row p,
+.adapter-ledger-row em {
+  min-width: 0;
+}
+
+.adapter-ledger-row strong {
+  color: #e8f0f8;
+  font-size: 13px;
+}
+
+.adapter-ledger-row span,
+.adapter-ledger-row em {
+  color: #9fb0c3;
+  font-size: 12px;
+}
+
+.adapter-ledger-row p {
+  color: #c9d7e7;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 7px 0 0;
+}
+
+.adapter-ledger-row em {
+  display: block;
+  font-style: normal;
+  margin-top: 5px;
+}
+
 .settings-source-row,
 .settings-cache-row {
   min-width: 0;

@@ -1319,6 +1319,21 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".settings-source-row");
   });
 
+  test("renders execution adapter state ledger as a compact settings audit rail", () => {
+    expect(appSource).toContain("loadExecutionAdapterLedger(quantCoreBaseUrl)");
+    expect(appSource).toContain("buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger)");
+    expect(appSource).toContain("adapterLedgerRows={executionAdapterLedgerRows}");
+    expect(appSource).toContain('className="adapter-ledger-list"');
+    expect(appSource).toContain('className={`adapter-ledger-row');
+    expect(appSource).toContain("adapterLedgerAdapterName(i18n, row)");
+    expect(appSource).toContain("adapterLedgerGateSummary(i18n, row.gateSummary)");
+    expect(appSource).toContain('"ashare-live": "A 股券商接口"');
+    expect(appSource).toContain("合法券商适配器认证前，继续阻断 A 股实盘交易。");
+    expect(appSource).toContain('gateSummary.replace("gates", "个闸门")');
+    expect(styles).toContain(".adapter-ledger-list");
+    expect(styles).toContain(".adapter-ledger-row");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

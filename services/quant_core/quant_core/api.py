@@ -90,7 +90,7 @@ from quant_core.runs import (
     research_run_import_portfolio_paper_order_simulations,
     research_run_import_to_audit,
 )
-from quant_core.settings import build_settings_status
+from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
 from quant_core.strategy_library import (
     StrategyLibraryRecord,
     StrategyLibraryStore,
@@ -751,6 +751,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
+            return
+        if parsed.path == "/api/execution/adapter-ledger":
+            settings = self._settings_status_payload()
+            self._send_json({"adapterLedger": build_execution_adapter_state_ledger(settings)})
             return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)

@@ -34,6 +34,7 @@ import {
   buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
+  buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
@@ -55,6 +56,7 @@ import {
   loadPortfolioPaperOrderReplay,
   loadPortfolioPaperOrderStateHistory,
   loadPortfolioPaperOrderSimulations,
+  loadExecutionAdapterLedger,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   recordPortfolioPaperOrderApproval,
@@ -255,6 +257,12 @@ describe("terminal workspace API client", () => {
 
   test("builds the settings status URL", () => {
     expect(buildSettingsStatusUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/settings/status");
+  });
+
+  test("builds the execution adapter ledger URL", () => {
+    expect(buildExecutionAdapterLedgerUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-ledger"
+    );
   });
 
   test("builds the golden path status URL for the selected context", () => {
@@ -1527,6 +1535,112 @@ describe("terminal workspace API client", () => {
     });
     expect((result.settings?.cache as unknown as { freshnessSummary?: { fresh?: number } }).freshnessSummary?.fresh).toBe(1);
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
+  });
+
+  test("loads execution adapter state ledger from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadExecutionAdapterLedger("http://127.0.0.1:8765/", async (url) => {
+      calls.push(url);
+      return {
+        ok: true,
+        json: async () => ({
+          adapterLedger: {
+            schemaVersion: 1,
+            generatedAt: "2026-06-07T09:31:00+00:00",
+            mode: "execution_adapter_state_ledger",
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"],
+            summary: {
+              adapterCount: 2,
+              liveAdapterCount: 1,
+              certifiedLiveAdapters: 0,
+              paperReadyAdapters: 1,
+              blockedLiveAdapters: 1,
+              configRequiredAdapters: 0,
+              requiredGateCount: 3
+            },
+            adapters: [
+              {
+                id: "paper-local",
+                market: "multi",
+                adapter: "Paper Trading",
+                route: "paper",
+                status: "paper_ready",
+                certification: "local",
+                currentState: "paper_ready",
+                liveTradingAllowed: false,
+                note: "Paper only.",
+                nextStep: "Use paper execution before live certification.",
+                gates: [
+                  {
+                    id: "paper-order-risk",
+                    label: "Paper risk check",
+                    passed: true,
+                    reason: "Local risk checks are available."
+                  }
+                ],
+                events: [
+                  {
+                    eventId: "adapter-ledger:paper-local:paper_ready",
+                    adapterId: "paper-local",
+                    timestamp: "2026-06-07T09:31:00+00:00",
+                    state: "paper_ready",
+                    label: "Paper adapter ready",
+                    actor: "execution-safety",
+                    source: "settings-status",
+                    reason: "Paper execution is available locally.",
+                    liveTradingAllowed: false
+                  }
+                ]
+              },
+              {
+                id: "ashare-live",
+                market: "ashare",
+                adapter: "A-share broker adapter",
+                route: "live",
+                status: "blocked",
+                certification: "interface_only",
+                currentState: "blocked",
+                liveTradingAllowed: false,
+                note: "Real A-share trading stays blocked.",
+                nextStep: "Keep live trading blocked until certification passes.",
+                gates: [
+                  {
+                    id: "adapter-certified",
+                    label: "Adapter certified",
+                    passed: false,
+                    reason: "No certified A-share broker API is connected."
+                  }
+                ],
+                events: [
+                  {
+                    eventId: "adapter-ledger:ashare-live:live_blocked",
+                    adapterId: "ashare-live",
+                    timestamp: "2026-06-07T09:31:00+00:00",
+                    state: "live_blocked",
+                    label: "Live route blocked",
+                    actor: "execution-safety",
+                    source: "settings-status",
+                    reason: "Live execution remains blocked until adapter certification, risk approval, and human confirmation pass.",
+                    liveTradingAllowed: false
+                  }
+                ]
+              }
+            ]
+          }
+        })
+      };
+    });
+
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/execution/adapter-ledger"]);
+    expect(result.source).toBe("core");
+    expect(result.adapterLedger?.summary.blockedLiveAdapters).toBe(1);
+    expect(result.adapterLedger?.adapters[1].events[0]).toMatchObject({
+      adapterId: "ashare-live",
+      state: "live_blocked",
+      liveTradingAllowed: false
+    });
+    expect(JSON.stringify(result.adapterLedger)).not.toContain("secret");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

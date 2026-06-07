@@ -44,6 +44,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadPlatformSettings,
+  loadExecutionAdapterLedger,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   refreshMarketCache,
@@ -78,6 +79,7 @@ import {
   AuditSigningKeyRotationPlanResult,
   GoldenPathStatus,
   GoldenPathStatusResult,
+  ExecutionAdapterLedgerResult,
   PlatformSettingsResult,
   PlatformSettingsStatus,
   PortfolioBacktestResult,
@@ -137,6 +139,7 @@ import {
   buildBacktestRunComparisonMatrixSummary,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterLedgerRows,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
   buildPaperExecutionSummaryTiles,
@@ -211,6 +214,7 @@ import {
   BacktestRunComparisonMatrixSummary,
   BacktestTradeRow,
   BrokerAdapterRow,
+  ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
   PaperPositionRow,
@@ -306,6 +310,9 @@ const initialResearchNoteState: ResearchNoteResult = {
   source: "fallback"
 };
 const initialSettingsStatusState: PlatformSettingsResult = {
+  source: "fallback"
+};
+const initialExecutionAdapterLedgerState: ExecutionAdapterLedgerResult = {
   source: "fallback"
 };
 const initialAuditSigningKeyRegistryState: AuditSigningKeyRegistryResult = {
@@ -550,6 +557,9 @@ export function App() {
     useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
   const [settingsStatus, setSettingsStatus] = useState<PlatformSettingsResult>(initialSettingsStatusState);
+  const [executionAdapterLedger, setExecutionAdapterLedger] = useState<ExecutionAdapterLedgerResult>(
+    initialExecutionAdapterLedgerState
+  );
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
   );
@@ -702,6 +712,7 @@ export function App() {
   const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
+  const executionAdapterLedgerRows = buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger);
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -1065,7 +1076,12 @@ export function App() {
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const refreshSettingsStatus = useCallback(async () => {
-    setSettingsStatus(await loadPlatformSettings(quantCoreBaseUrl));
+    const [settingsResult, adapterLedgerResult] = await Promise.all([
+      loadPlatformSettings(quantCoreBaseUrl),
+      loadExecutionAdapterLedger(quantCoreBaseUrl)
+    ]);
+    setSettingsStatus(settingsResult);
+    setExecutionAdapterLedger(adapterLedgerResult);
   }, []);
 
   const refreshAuditSigningKeys = useCallback(async () => {
@@ -3692,6 +3708,7 @@ export function App() {
         <>
           <PlatformSettingsPanel
             adapterRows={brokerAdapterRows}
+            adapterLedgerRows={executionAdapterLedgerRows}
             className="workflow-settings-panel"
             i18n={i18n}
             onRefreshContext={refreshCacheContext}
@@ -5383,6 +5400,7 @@ function ResearchNotesPanel({
 
 function PlatformSettingsPanel({
   adapterRows,
+  adapterLedgerRows,
   className,
   i18n,
   onRefreshContext,
@@ -5392,6 +5410,7 @@ function PlatformSettingsPanel({
   workspace
 }: {
   adapterRows: BrokerAdapterRow[];
+  adapterLedgerRows: ExecutionAdapterLedgerRow[];
   className?: string;
   i18n: AppI18n;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
@@ -5522,6 +5541,26 @@ function PlatformSettingsPanel({
           </article>
         ))}
       </div>
+      {adapterLedgerRows.length ? (
+        <div className="adapter-ledger-list">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "适配器状态账本" : "Adapter state ledger"}</span>
+            <strong>{adapterLedgerRows.length}</strong>
+          </div>
+          {adapterLedgerRows.map((row) => (
+            <article className={`adapter-ledger-row ${row.tone}`} key={row.id}>
+              <div>
+                <strong>{adapterLedgerLabel(i18n, row)}</strong>
+                <span>
+                  {adapterLedgerAdapterName(i18n, row)} · {adapterLedgerGateSummary(i18n, row.gateSummary)}
+                </span>
+              </div>
+              <p>{adapterLedgerReason(i18n, row)}</p>
+              <em>{adapterLedgerNextStep(i18n, row)}</em>
+            </article>
+          ))}
+        </div>
+      ) : null}
       {cacheStatus ? (
         <div className={`settings-cache-row ${cacheRowTone}`}>
           <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>
@@ -11066,6 +11105,65 @@ function brokerNextStepLabel(i18n: AppI18n, nextStep: string): string {
       "Start with sandbox or testnet routes plus max order and emergency-stop limits.",
       "先使用 sandbox/testnet，并配置最大订单和紧急停止限制。"
     );
+}
+
+function adapterLedgerLabel(i18n: AppI18n, row: ExecutionAdapterLedgerRow): string {
+  const label =
+    i18n.locale === "zh-CN"
+      ? {
+          paper_ready: "模拟适配器可用",
+          live_ready: "实盘通道就绪",
+          live_blocked: "实盘通道阻断",
+          blocked: "通道阻断",
+          config_required: "需要配置"
+        }[row.state] ?? row.label
+      : row.label;
+  return `${row.market === "multi" ? (i18n.locale === "zh-CN" ? "多市场" : "Multi-market") : i18n.marketLabel(row.market)} · ${label}`;
+}
+
+function adapterLedgerAdapterName(i18n: AppI18n, row: ExecutionAdapterLedgerRow): string {
+  if (i18n.locale === "en-US") {
+    return row.adapter;
+  }
+  return (
+    {
+      "paper-local": "本地模拟交易",
+      "ashare-live": "A 股券商接口",
+      "us-live": "IBKR / Alpaca 适配器形态",
+      "crypto-live": "ccxt 交易所适配器形态"
+    }[row.adapterId] ?? row.adapter
+  );
+}
+
+function adapterLedgerGateSummary(i18n: AppI18n, gateSummary: string): string {
+  return i18n.locale === "zh-CN" ? gateSummary.replace("gates", "个闸门") : gateSummary;
+}
+
+function adapterLedgerReason(i18n: AppI18n, row: ExecutionAdapterLedgerRow): string {
+  if (i18n.locale === "en-US") {
+    return row.reason;
+  }
+  return row.reason
+    .replace("Paper execution is available locally after audited run and risk checks.", "审计运行和风控检查通过后，本地模拟执行可用。")
+    .replace("Paper execution is available locally.", "本地模拟执行可用。")
+    .replace("Paper execution is available locally after audited run and risk handoff checks.", "审计运行和风险交接检查通过后，本地模拟执行可用。")
+    .replace("Local paper execution is available after audited run and risk handoff checks.", "审计运行和风险交接检查通过后，本地模拟执行可用。")
+    .replace("Real A-share trading stays blocked until a legal broker adapter is certified.", "合法券商适配器认证前，A 股实盘交易保持阻断。")
+    .replace("US live adapters require sandbox credentials, order lifecycle tests, and manual confirmation.", "美股实盘适配器需要 sandbox 凭证、订单生命周期测试和人工确认。")
+    .replace("Exchange trading keys are not read by this status endpoint and live routing remains blocked.", "该状态接口不读取交易密钥；实盘路由保持阻断。")
+    .replace("Live execution remains blocked until adapter certification, risk approval, and human confirmation pass.", "适配器认证、风控审批和人工确认全部通过前，实盘执行保持阻断。");
+}
+
+function adapterLedgerNextStep(i18n: AppI18n, row: ExecutionAdapterLedgerRow): string {
+  if (i18n.locale === "en-US") {
+    return row.nextStep;
+  }
+  return row.nextStep
+    .replace("Use paper execution for audited research runs before certifying live adapters.", "认证实盘适配器前，审计研究运行统一使用模拟执行。")
+    .replace("Real A-share trading stays blocked until a legal broker adapter is certified.", "合法券商适配器认证前，继续阻断 A 股实盘交易。")
+    .replace("Configure sandbox credentials, order lifecycle tests, and emergency-stop limits before certification.", "认证前先配置 sandbox 凭证、订单生命周期测试和紧急停止限制。")
+    .replace("Keep human confirmation and risk approval gates attached to every promoted order.", "每笔晋级订单都必须绑定人工确认和风控审批闸门。")
+    .replace("Keep live trading blocked until a legal adapter certification passes.", "合法适配器认证通过前，继续阻断实盘交易。");
 }
 
 function settingsStatusLabel(i18n: AppI18n, status: PlatformSettingsStatus["dataSources"][number]["status"]): string {

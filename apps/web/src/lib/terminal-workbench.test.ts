@@ -38,6 +38,7 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterLedgerRows,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
@@ -6185,6 +6186,103 @@ describe("terminal workbench model", () => {
       tone: "risk"
     });
     expect(rows.slice(1).every((row) => row.route === "live" && row.status !== "paper_ready")).toBe(true);
+  });
+
+  test("builds execution adapter ledger rows from state events", () => {
+    const rows = buildExecutionAdapterLedgerRows({
+      schemaVersion: 1,
+      generatedAt: "2026-06-07T09:31:00+00:00",
+      mode: "execution_adapter_state_ledger",
+      liveTradingAllowed: false,
+      requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"],
+      summary: {
+        adapterCount: 2,
+        liveAdapterCount: 1,
+        certifiedLiveAdapters: 0,
+        paperReadyAdapters: 1,
+        blockedLiveAdapters: 1,
+        configRequiredAdapters: 0,
+        requiredGateCount: 3
+      },
+      adapters: [
+        {
+          id: "paper-local",
+          market: "multi",
+          adapter: "Paper Trading",
+          route: "paper",
+          status: "paper_ready",
+          certification: "local",
+          currentState: "paper_ready",
+          liveTradingAllowed: false,
+          note: "Paper only.",
+          nextStep: "Use paper execution before live certification.",
+          gates: [
+            { id: "paper-order-risk", label: "Paper risk check", passed: true, reason: "Local risk checks are available." }
+          ],
+          events: [
+            {
+              eventId: "adapter-ledger:paper-local:paper_ready",
+              adapterId: "paper-local",
+              timestamp: "2026-06-07T09:31:00+00:00",
+              state: "paper_ready",
+              label: "Paper adapter ready",
+              actor: "execution-safety",
+              source: "settings-status",
+              reason: "Paper execution is available locally.",
+              liveTradingAllowed: false
+            }
+          ]
+        },
+        {
+          id: "ashare-live",
+          market: "ashare",
+          adapter: "A-share broker adapter",
+          route: "live",
+          status: "blocked",
+          certification: "interface_only",
+          currentState: "blocked",
+          liveTradingAllowed: false,
+          note: "Real A-share trading stays blocked.",
+          nextStep: "Keep live trading blocked until certification passes.",
+          gates: [
+            { id: "adapter-certified", label: "Adapter certified", passed: false, reason: "No certified adapter." }
+          ],
+          events: [
+            {
+              eventId: "adapter-ledger:ashare-live:live_blocked",
+              adapterId: "ashare-live",
+              timestamp: "2026-06-07T09:32:00+00:00",
+              state: "live_blocked",
+              label: "Live route blocked",
+              actor: "execution-safety",
+              source: "settings-status",
+              reason: "Live execution remains blocked until gates pass.",
+              liveTradingAllowed: false
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "adapter-ledger:ashare-live:live_blocked",
+      "adapter-ledger:paper-local:paper_ready"
+    ]);
+    expect(rows[0]).toMatchObject({
+      adapterId: "ashare-live",
+      adapter: "A-share broker adapter",
+      state: "live_blocked",
+      route: "live",
+      gateSummary: "0/1 gates",
+      tone: "risk"
+    });
+    expect(rows[1]).toMatchObject({
+      adapterId: "paper-local",
+      state: "paper_ready",
+      route: "paper",
+      gateSummary: "1/1 gates",
+      tone: "positive"
+    });
   });
 
   test("blocks promotion readiness before an audited run is bound", () => {

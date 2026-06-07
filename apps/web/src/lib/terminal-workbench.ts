@@ -1640,6 +1640,77 @@ export interface BrokerAdapterRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface ExecutionAdapterLedgerGateSnapshot {
+  id: string;
+  label: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface ExecutionAdapterLedgerEventSnapshot {
+  eventId: string;
+  adapterId: string;
+  timestamp: string;
+  state: string;
+  label: string;
+  actor: string;
+  source: string;
+  reason: string;
+  liveTradingAllowed: boolean;
+}
+
+export interface ExecutionAdapterLedgerAdapterSnapshot {
+  id: string;
+  market: Market | "multi";
+  adapter: string;
+  route: "paper" | "live";
+  status: "paper_ready" | "interface_only" | "config_required" | "blocked" | string;
+  certification: string;
+  currentState: string;
+  liveTradingAllowed: boolean;
+  note: string;
+  nextStep: string;
+  gates: ExecutionAdapterLedgerGateSnapshot[];
+  events: ExecutionAdapterLedgerEventSnapshot[];
+}
+
+export interface ExecutionAdapterLedgerSnapshot {
+  schemaVersion: 1;
+  generatedAt: string;
+  mode: "execution_adapter_state_ledger";
+  liveTradingAllowed: boolean;
+  requiredGates: string[];
+  summary: {
+    adapterCount: number;
+    liveAdapterCount: number;
+    certifiedLiveAdapters: number;
+    paperReadyAdapters: number;
+    blockedLiveAdapters: number;
+    configRequiredAdapters: number;
+    requiredGateCount: number;
+    stateCounts?: Record<string, number>;
+  };
+  adapters: ExecutionAdapterLedgerAdapterSnapshot[];
+}
+
+export interface ExecutionAdapterLedgerRow {
+  id: string;
+  adapterId: string;
+  adapter: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  state: string;
+  label: string;
+  actor: string;
+  source: string;
+  reason: string;
+  nextStep: string;
+  gateSummary: string;
+  liveTradingAllowed: boolean;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type PromotionReadinessStatus = "blocked" | "paper_pending" | "certification_pending" | "live_ready";
 
 export interface PromotionQueueStage {
@@ -7103,6 +7174,36 @@ export function buildBrokerAdapterRows(workspace: TerminalWorkspace): BrokerAdap
   ];
 }
 
+export function buildExecutionAdapterLedgerRows(
+  ledger: ExecutionAdapterLedgerSnapshot | null | undefined,
+  limit = 8
+): ExecutionAdapterLedgerRow[] {
+  return (ledger?.adapters ?? [])
+    .flatMap((adapter) => {
+      const passedGates = adapter.gates.filter((gate) => gate.passed).length;
+      const gateSummary = `${passedGates}/${adapter.gates.length} gates`;
+      return adapter.events.map((event) => ({
+        id: event.eventId,
+        adapterId: adapter.id,
+        adapter: adapter.adapter,
+        market: adapter.market,
+        route: adapter.route,
+        timestamp: event.timestamp,
+        state: event.state,
+        label: event.label,
+        actor: event.actor,
+        source: event.source,
+        reason: event.reason,
+        nextStep: adapter.nextStep,
+        gateSummary,
+        liveTradingAllowed: event.liveTradingAllowed,
+        tone: executionAdapterLedgerTone(event.state)
+      }));
+    })
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -8525,6 +8626,19 @@ function portfolioPaperOrderStateTone(state: string): "positive" | "warning" | "
     return "warning";
   }
   if (state === "operator_rejected" || state === "risk_rejected" || state === "invalid_order" || state === "live_blocked") {
+    return "risk";
+  }
+  return "neutral";
+}
+
+function executionAdapterLedgerTone(state: string): "positive" | "warning" | "neutral" | "risk" {
+  if (state === "paper_ready" || state === "live_ready") {
+    return "positive";
+  }
+  if (state === "config_required") {
+    return "warning";
+  }
+  if (state === "live_blocked" || state === "blocked") {
     return "risk";
   }
   return "neutral";

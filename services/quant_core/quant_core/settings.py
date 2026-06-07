@@ -125,6 +125,48 @@ def build_settings_status(
     }
 
 
+def build_execution_adapter_state_ledger(
+    settings: dict[str, Any],
+    *,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Build a read-only execution adapter state ledger from platform settings."""
+
+    generated_timestamp = generated_at or datetime.now(timezone.utc)
+    adapters = settings.get("executionAdapters") if isinstance(settings, dict) else []
+    safety = settings.get("safety") if isinstance(settings, dict) else {}
+    required_gates = [
+        str(gate)
+        for gate in (safety.get("requiredGates") if isinstance(safety, dict) else []) or []
+        if str(gate).strip()
+    ]
+    adapter_payloads = [
+        _execution_adapter_state_payload(adapter, required_gates=required_gates, generated_at=generated_timestamp)
+        for adapter in adapters
+        if isinstance(adapter, dict)
+    ]
+    live_adapters = [adapter for adapter in adapter_payloads if adapter["route"] == "live"]
+    status_counts = _string_counts(adapter["currentState"] for adapter in adapter_payloads)
+    return {
+        "schemaVersion": 1,
+        "generatedAt": generated_timestamp.isoformat(),
+        "mode": "execution_adapter_state_ledger",
+        "liveTradingAllowed": bool(safety.get("liveTradingAllowed")) if isinstance(safety, dict) else False,
+        "requiredGates": required_gates,
+        "summary": {
+            "adapterCount": len(adapter_payloads),
+            "liveAdapterCount": len(live_adapters),
+            "certifiedLiveAdapters": sum(1 for adapter in live_adapters if adapter["liveTradingAllowed"]),
+            "paperReadyAdapters": sum(1 for adapter in adapter_payloads if adapter["currentState"] == "paper_ready"),
+            "blockedLiveAdapters": sum(1 for adapter in live_adapters if not adapter["liveTradingAllowed"]),
+            "configRequiredAdapters": sum(1 for adapter in adapter_payloads if adapter["currentState"] == "config_required"),
+            "requiredGateCount": len(required_gates),
+            "stateCounts": status_counts,
+        },
+        "adapters": adapter_payloads,
+    }
+
+
 def _normalize_cache_stats(cache_stats: dict[str, Any] | None) -> dict[str, int | str | None]:
     if not cache_stats:
         return {"row_count": 0, "context_count": 0, "latest_timestamp": None}
@@ -164,6 +206,160 @@ def _cache_freshness_summary(contexts: list[dict[str, Any]]) -> dict[str, int]:
         if freshness in summary:
             summary[freshness] += 1
     return summary
+
+
+def _execution_adapter_state_payload(
+    adapter: dict[str, Any],
+    *,
+    required_gates: list[str],
+    generated_at: datetime,
+) -> dict[str, Any]:
+    adapter_id = str(adapter.get("id") or "")
+    route = str(adapter.get("route") or "")
+    status = str(adapter.get("status") or "")
+    live_trading_allowed = bool(adapter.get("liveTradingAllowed")) and route == "live"
+    current_state = _execution_adapter_current_state(route=route, status=status, live_trading_allowed=live_trading_allowed)
+    gates = _execution_adapter_gates(
+        adapter=adapter,
+        current_state=current_state,
+        required_gates=required_gates,
+    )
+    return {
+        "id": adapter_id,
+        "market": str(adapter.get("market") or ""),
+        "adapter": str(adapter.get("adapter") or ""),
+        "route": route,
+        "status": status,
+        "certification": str(adapter.get("certification") or ""),
+        "currentState": current_state,
+        "liveTradingAllowed": live_trading_allowed,
+        "note": str(adapter.get("note") or ""),
+        "nextStep": _execution_adapter_next_step(adapter, current_state=current_state),
+        "gates": gates,
+        "events": [
+            {
+                "eventId": f"adapter-ledger:{adapter_id}:{_execution_adapter_event_state(current_state)}",
+                "adapterId": adapter_id,
+                "timestamp": generated_at.isoformat(),
+                "state": _execution_adapter_event_state(current_state),
+                "label": _execution_adapter_state_label(current_state),
+                "actor": "execution-safety",
+                "source": "settings-status",
+                "reason": _execution_adapter_event_reason(adapter, current_state=current_state),
+                "liveTradingAllowed": live_trading_allowed,
+            }
+        ],
+    }
+
+
+def _execution_adapter_current_state(*, route: str, status: str, live_trading_allowed: bool) -> str:
+    if route == "paper" and status == "paper_ready":
+        return "paper_ready"
+    if route == "live" and live_trading_allowed:
+        return "live_ready"
+    if status == "config_required":
+        return "config_required"
+    if status == "interface_only":
+        return "blocked"
+    if status == "blocked":
+        return "blocked"
+    return status or "unknown"
+
+
+def _execution_adapter_gates(
+    *,
+    adapter: dict[str, Any],
+    current_state: str,
+    required_gates: list[str],
+) -> list[dict[str, Any]]:
+    if str(adapter.get("route") or "") == "paper":
+        return [
+            {
+                "id": "paper-order-risk",
+                "label": "Paper risk check",
+                "passed": current_state == "paper_ready",
+                "reason": "Local audited run, paper order, and risk checks are available before simulated fills.",
+            }
+        ]
+    return [
+        {
+            "id": gate,
+            "label": _execution_adapter_gate_label(gate),
+            "passed": False,
+            "reason": _execution_adapter_gate_reason(gate, adapter),
+        }
+        for gate in required_gates
+    ]
+
+
+def _execution_adapter_event_state(current_state: str) -> str:
+    if current_state == "blocked":
+        return "live_blocked"
+    if current_state == "live_ready":
+        return "live_ready"
+    if current_state == "config_required":
+        return "config_required"
+    return current_state
+
+
+def _execution_adapter_state_label(current_state: str) -> str:
+    labels = {
+        "paper_ready": "Paper adapter ready",
+        "live_ready": "Live route ready",
+        "blocked": "Live route blocked",
+        "config_required": "Configuration required",
+    }
+    return labels.get(current_state, current_state.replace("_", " ").title())
+
+
+def _execution_adapter_event_reason(adapter: dict[str, Any], *, current_state: str) -> str:
+    note = str(adapter.get("note") or "").strip()
+    if current_state == "paper_ready":
+        return note or "Paper execution is available locally after audited run and risk checks."
+    if current_state == "config_required":
+        return note or "Adapter configuration is required before certification can start."
+    if current_state == "live_ready":
+        return note or "Live adapter certification is complete, but order routing still requires explicit controls."
+    return "Live execution remains blocked until adapter certification, risk approval, and human confirmation pass."
+
+
+def _execution_adapter_next_step(adapter: dict[str, Any], *, current_state: str) -> str:
+    if current_state == "paper_ready":
+        return "Use paper execution for audited research runs before certifying live adapters."
+    if current_state == "config_required":
+        return "Configure sandbox credentials, order lifecycle tests, and emergency-stop limits before certification."
+    if current_state == "live_ready":
+        return "Keep human confirmation and risk approval gates attached to every promoted order."
+    note = str(adapter.get("note") or "").strip()
+    return note or "Keep live trading blocked until a legal adapter certification passes."
+
+
+def _execution_adapter_gate_label(gate: str) -> str:
+    return {
+        "adapter-certified": "Adapter certified",
+        "risk-approved": "Risk approved",
+        "human-confirmed": "Human confirmed",
+    }.get(gate, gate.replace("-", " ").title())
+
+
+def _execution_adapter_gate_reason(gate: str, adapter: dict[str, Any]) -> str:
+    if gate == "adapter-certified":
+        return str(adapter.get("note") or "No certified live adapter is connected.")
+    if gate == "risk-approved":
+        return "Live routing requires an audited risk approval for the selected run and adapter."
+    if gate == "human-confirmed":
+        return "Live routing requires explicit human confirmation after adapter and risk checks."
+    return "Required live execution gate is not satisfied."
+
+
+def _string_counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value or "")
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _cache_context_freshness(

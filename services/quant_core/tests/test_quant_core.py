@@ -1341,6 +1341,72 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(contexts[3]["freshness"], "empty")
         self.assertIsNone(contexts[3]["ageHours"])
 
+    def test_execution_adapter_state_ledger_summarizes_live_blocked_routes(self):
+        from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                generated_at=datetime(2026, 6, 7, 9, 30, tzinfo=timezone.utc),
+            )
+            ledger = build_execution_adapter_state_ledger(
+                settings,
+                generated_at=datetime(2026, 6, 7, 9, 31, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(ledger["schemaVersion"], 1)
+        self.assertEqual(ledger["mode"], "execution_adapter_state_ledger")
+        self.assertFalse(ledger["liveTradingAllowed"])
+        self.assertEqual(ledger["summary"]["adapterCount"], 4)
+        self.assertEqual(ledger["summary"]["paperReadyAdapters"], 1)
+        self.assertEqual(ledger["summary"]["certifiedLiveAdapters"], 0)
+        self.assertEqual(ledger["summary"]["blockedLiveAdapters"], 3)
+        self.assertEqual(ledger["summary"]["requiredGateCount"], 3)
+        paper = ledger["adapters"][0]
+        self.assertEqual(paper["id"], "paper-local")
+        self.assertEqual(paper["currentState"], "paper_ready")
+        self.assertEqual(paper["events"][0]["state"], "paper_ready")
+        self.assertIn("paper execution", paper["events"][0]["reason"].lower())
+        live = next(row for row in ledger["adapters"] if row["id"] == "ashare-live")
+        self.assertEqual(live["currentState"], "blocked")
+        self.assertEqual([gate["id"] for gate in live["gates"]], ["adapter-certified", "risk-approved", "human-confirmed"])
+        self.assertFalse(all(gate["passed"] for gate in live["gates"]))
+        self.assertEqual(live["events"][0]["state"], "live_blocked")
+        self.assertEqual(live["events"][0]["actor"], "execution-safety")
+
+    def test_execution_adapter_state_ledger_api_returns_read_only_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.cache_path = Path(tmp) / "market.sqlite"
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/execution/adapter-ledger")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["adapterLedger"]["mode"], "execution_adapter_state_ledger")
+        self.assertFalse(payload["adapterLedger"]["liveTradingAllowed"])
+        self.assertEqual(payload["adapterLedger"]["summary"]["certifiedLiveAdapters"], 0)
+        self.assertEqual(payload["adapterLedger"]["adapters"][0]["id"], "paper-local")
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection
