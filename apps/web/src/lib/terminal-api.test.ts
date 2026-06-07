@@ -2860,6 +2860,79 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload(exportPackage)).toBeNull();
   });
 
+  test("rejects malformed portfolio paper order approvals and simulations in export packages", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:05:00+00:00",
+      manifest: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-preview",
+        dataHash: "hash-preview",
+        dataRows: 1,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 1,
+          trades: 0,
+          equityPoints: 0,
+          decisions: 0,
+          aiRisks: 0,
+          portfolioPaperOrderApprovals: 1,
+          portfolioPaperOrderSimulations: 1
+        }
+      },
+      researchRun: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Preview SMA trend",
+        strategyRevision: "rev-preview",
+        dataRows: 1,
+        metrics: { total_return_pct: 1.2, trade_count: 0 },
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          hash: "hash-preview",
+          bars: [
+            {
+              timestamp: "2026-05-26T08:00:00+00:00",
+              timestampMs: 1779782400000,
+              open: 9.1,
+              high: 9.3,
+              low: 9,
+              close: 9.2,
+              volume: 1200000
+            }
+          ]
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+      },
+      portfolioPaperOrderApprovals: [{ approvalId: "broken-approval" }],
+      portfolioPaperOrderSimulations: [{ simulationId: "broken-simulation" }]
+    };
+
+    expect(normalizeResearchRunExportPackagePayload(exportPackage)).toBeNull();
+  });
+
   test("strips untrusted local package verification markers from external package signatures", () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export",

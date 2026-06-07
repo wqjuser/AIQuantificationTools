@@ -5938,7 +5938,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "notionalValue": 19341.0,
                     "quantity": 2100,
                     "status": "pending_review",
-                    "riskStatus": "review",
+                    "riskStatus": "passed",
                     "reason": "Portfolio rebalance requires operator review.",
                 }
             ],
@@ -5955,7 +5955,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export_package["manifest"]["artifactCounts"]["portfolioPaperOrderBatches"], 1)
         self.assertEqual(export_package["portfolioPaperOrderBatches"][0]["batchId"], "portfolio-paper-batch-portable")
         self.assertEqual(imported_batches[0]["baseRunId"], audit.run_id)
-        self.assertEqual(imported_batches[0]["summary"]["riskStatusCounts"], {"review": 1})
+        self.assertEqual(imported_batches[0]["summary"]["riskStatusCounts"], {"passed": 1})
 
         tampered_package = dict(export_package)
         tampered_package.pop("integrity", None)
@@ -6378,6 +6378,8 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import _persist_research_run_import
         from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
             PortfolioPaperOrderStore,
             PaperExecutionStore,
             create_paper_execution_from_audit,
@@ -6433,6 +6435,12 @@ class QuantCoreContractTest(unittest.TestCase):
             strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
             paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
             portfolio_order_library = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_library = PortfolioPaperOrderApprovalStore(
+                f"{tmp}/portfolio_order_approvals.sqlite"
+            )
+            portfolio_order_simulation_library = PortfolioPaperOrderSimulationStore(
+                f"{tmp}/portfolio_order_simulations.sqlite"
+            )
 
             class FailingAiReviewStore(AiReviewRunStore):
                 def record(self, record):
@@ -6501,11 +6509,15 @@ class QuantCoreContractTest(unittest.TestCase):
                     strategy_store=strategy_library,
                     paper_execution_store=paper_library,
                     portfolio_paper_order_store=portfolio_order_library,
+                    portfolio_paper_order_approval_store=portfolio_order_approval_library,
+                    portfolio_paper_order_simulation_store=portfolio_order_simulation_library,
                     ai_review_store=review_store,
                     audit=audit,
                     imported_note=None,
                     paper_execution_records=[],
                     portfolio_paper_order_batches=[imported_batch],
+                    portfolio_paper_order_approvals=[],
+                    portfolio_paper_order_simulations=[],
                     ai_review_records=[failing_review],
                 )
 
@@ -6993,9 +7005,15 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import QuantApiHandler
         from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
             PaperExecutionStore,
             PortfolioPaperOrderStore,
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
             create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
         )
         from quant_core.research_notes import ResearchNoteStore
         from quant_core.runs import ResearchRunStore
@@ -7022,10 +7040,28 @@ class QuantCoreContractTest(unittest.TestCase):
                     "notionalValue": 19341.0,
                     "quantity": 2100,
                     "status": "pending_review",
-                    "riskStatus": "review",
+                    "riskStatus": "passed",
                     "reason": "Portfolio rebalance requires operator review.",
                 }
             ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id=audit.run_id,
+            batch_id=batch.batch_id,
+            order_id="portfolio-paper-order-api-1",
+            approved=True,
+            reviewer="operator-portable",
+            reviewed_at=datetime(2026, 5, 26, 8, 8, tzinfo=timezone.utc),
+            reason="Approved for portable paper-only simulation.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+        simulation = create_portfolio_paper_order_simulation(
+            batch=batch,
+            lifecycle_row=lifecycle[0],
+            simulated_at=datetime(2026, 5, 26, 8, 9, tzinfo=timezone.utc),
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -7033,20 +7069,36 @@ class QuantCoreContractTest(unittest.TestCase):
             source_paper_store = PaperExecutionStore(f"{tmp}/source-paper.sqlite")
             source_ai_review_store = AiReviewRunStore(f"{tmp}/source-ai-reviews.sqlite")
             source_portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/source-portfolio-orders.sqlite")
+            source_portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(
+                f"{tmp}/source-portfolio-order-approvals.sqlite"
+            )
+            source_portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(
+                f"{tmp}/source-portfolio-order-simulations.sqlite"
+            )
             target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
             target_note_store = ResearchNoteStore(f"{tmp}/target-notes.sqlite")
             target_strategy_store = StrategyLibraryStore(f"{tmp}/target-strategies.sqlite")
             target_paper_store = PaperExecutionStore(f"{tmp}/target-paper.sqlite")
             target_ai_review_store = AiReviewRunStore(f"{tmp}/target-ai-reviews.sqlite")
             target_portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/target-portfolio-orders.sqlite")
+            target_portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(
+                f"{tmp}/target-portfolio-order-approvals.sqlite"
+            )
+            target_portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(
+                f"{tmp}/target-portfolio-order-simulations.sqlite"
+            )
             source_run_store.record(audit)
             source_portfolio_order_store.record(batch)
+            source_portfolio_order_approval_store.record(approval)
+            source_portfolio_order_simulation_store.record(simulation)
 
             class SourceHandler(QuantApiHandler):
                 run_store = source_run_store
                 paper_execution_store = source_paper_store
                 ai_review_store = source_ai_review_store
                 portfolio_paper_order_store = source_portfolio_order_store
+                portfolio_paper_order_approval_store = source_portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = source_portfolio_order_simulation_store
 
             source_server = HTTPServer(("127.0.0.1", 0), SourceHandler)
             source_thread = Thread(target=source_server.serve_forever, daemon=True)
@@ -7069,6 +7121,8 @@ class QuantCoreContractTest(unittest.TestCase):
                 paper_execution_store = target_paper_store
                 ai_review_store = target_ai_review_store
                 portfolio_paper_order_store = target_portfolio_order_store
+                portfolio_paper_order_approval_store = target_portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = target_portfolio_order_simulation_store
 
             target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
             target_thread = Thread(target=target_server.serve_forever, daemon=True)
@@ -7087,6 +7141,20 @@ class QuantCoreContractTest(unittest.TestCase):
                 target_connection.request("GET", "/api/portfolio/paper-orders?baseRunId=run-portfolio-orders-portable")
                 history_response = target_connection.getresponse()
                 history_payload = json.loads(history_response.read().decode("utf-8"))
+                target_connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-approvals"
+                    "?baseRunId=run-portfolio-orders-portable&batchId=portfolio-paper-batch-api-portable",
+                )
+                approval_history_response = target_connection.getresponse()
+                approval_history_payload = json.loads(approval_history_response.read().decode("utf-8"))
+                target_connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-simulations"
+                    "?baseRunId=run-portfolio-orders-portable&batchId=portfolio-paper-batch-api-portable",
+                )
+                simulation_history_response = target_connection.getresponse()
+                simulation_history_payload = json.loads(simulation_history_response.read().decode("utf-8"))
             finally:
                 target_connection.close()
                 target_server.shutdown()
@@ -7095,9 +7163,19 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(export_response.status, 200)
         self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["portfolioPaperOrderBatches"], 1)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["portfolioPaperOrderApprovals"], 1)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["portfolioPaperOrderSimulations"], 1)
         self.assertEqual(
             export_payload["export"]["portfolioPaperOrderBatches"][0]["batchId"],
             "portfolio-paper-batch-api-portable",
+        )
+        self.assertEqual(
+            export_payload["export"]["portfolioPaperOrderApprovals"][0]["approvalId"],
+            "portfolio-paper-order-approval-portfolio-paper-batch-api-portable-portfolio-paper-order-api-1",
+        )
+        self.assertEqual(
+            export_payload["export"]["portfolioPaperOrderSimulations"][0]["simulationId"],
+            "portfolio-paper-order-simulation-portfolio-paper-batch-api-portable-portfolio-paper-order-api-1",
         )
         self.assertEqual(import_response.status, 201)
         self.assertEqual(import_payload["run"]["runId"], "run-portfolio-orders-portable")
@@ -7108,6 +7186,12 @@ class QuantCoreContractTest(unittest.TestCase):
             "portfolio-paper-batch-api-portable",
         )
         self.assertEqual(history_payload["portfolioPaperOrderBatches"][0]["summary"]["totalOrders"], 1)
+        self.assertEqual(approval_history_response.status, 200)
+        self.assertEqual(approval_history_payload["approvals"][0]["reviewer"], "operator-portable")
+        self.assertEqual(approval_history_payload["portfolioPaperOrderLifecycle"][0]["state"], "ready_for_simulation")
+        self.assertEqual(simulation_history_response.status, 200)
+        self.assertEqual(simulation_history_payload["simulations"][0]["fillStatus"], "filled")
+        self.assertEqual(simulation_history_payload["simulations"][0]["fillPrice"], 9.210000)
 
     def test_research_run_export_import_preserves_ai_review_records(self):
         import json

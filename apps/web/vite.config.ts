@@ -4,6 +4,18 @@ import { defineConfig } from "vite";
 function vendorChunkName(id: string) {
   const normalizedId = id.split("\\").join("/");
 
+  if (normalizedId.includes("/src/lib/terminal-workbench")) {
+    return "app-workbench";
+  }
+
+  if (normalizedId.includes("/src/lib/terminal-api")) {
+    return "app-terminal-api";
+  }
+
+  if (normalizedId.includes("/src/lib/backtest-report") || normalizedId.includes("/src/lib/chart-")) {
+    return "app-research-models";
+  }
+
   if (!normalizedId.includes("node_modules/")) {
     return undefined;
   }

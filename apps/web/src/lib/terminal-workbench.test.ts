@@ -2092,6 +2092,8 @@ describe("terminal workbench model", () => {
           aiRisks: 2,
           paperExecutions: 1,
           portfolioPaperOrderBatches: 1,
+          portfolioPaperOrderApprovals: 1,
+          portfolioPaperOrderSimulations: 1,
           promotionCandidates: 1,
           researchNotes: 1,
           aiReviewRuns: 2
@@ -2146,6 +2148,40 @@ describe("terminal workbench model", () => {
               reason: "Operator review required."
             }
           ]
+        }
+      ],
+      portfolioPaperOrderApprovals: [
+        {
+          approvalId: "portfolio-paper-order-approval-portfolio-paper-batch-browser-portfolio-paper-order-browser",
+          baseRunId: "run-browser",
+          batchId: "portfolio-paper-batch-browser",
+          orderId: "portfolio-paper-order-browser",
+          reviewedAt: "2026-05-26T08:26:00+00:00",
+          approved: true,
+          reviewer: "operator-browser",
+          reason: "Approved for paper simulation."
+        }
+      ],
+      portfolioPaperOrderSimulations: [
+        {
+          simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-browser-portfolio-paper-order-browser",
+          baseRunId: "run-browser",
+          batchId: "portfolio-paper-batch-browser",
+          orderId: "portfolio-paper-order-browser",
+          simulatedAt: "2026-05-26T08:27:00+00:00",
+          mode: "portfolio_paper_order_simulation",
+          symbol: "600000",
+          sourceRunId: "run-browser",
+          side: "buy",
+          quantity: 2100,
+          fillPrice: 9.21,
+          notionalValue: 19341,
+          orderState: "filled",
+          fillStatus: "filled",
+          reason: "Paper-only simulated fill.",
+          approvedBy: "operator-browser",
+          paperOnly: true,
+          liveExecutionBlocked: true
         }
       ],
       promotionCandidate: {
@@ -2320,8 +2356,11 @@ describe("terminal workbench model", () => {
         expect.objectContaining({
           id: "portfolio-paper-orders",
           status: "ready",
-          value: "1 manifest / 1 package",
-          exportPath: "portfolioPaperOrderBatches[]"
+          value: "1 batches / 1 approvals / 1 fills",
+          detail: expect.stringContaining(
+            "Portfolio paper order batch, approval, and simulated-fill counts match the package payload."
+          ),
+          exportPath: "portfolioPaperOrderBatches[] portfolioPaperOrderApprovals[] portfolioPaperOrderSimulations[]"
         }),
         expect.objectContaining({
           id: "audit-summary",
@@ -2348,6 +2387,9 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportBrowserRows(rows, "integrity.hash").map((row) => row.id)).toEqual(["integrity"]);
     expect(filterResearchRunExportBrowserRows(rows, "aiReviewRuns").map((row) => row.id)).toEqual(["ai-reviews"]);
     expect(filterResearchRunExportBrowserRows(rows, "portfolioPaperOrderBatches").map((row) => row.id)).toEqual([
+      "portfolio-paper-orders"
+    ]);
+    expect(filterResearchRunExportBrowserRows(rows, "portfolioPaperOrderSimulations").map((row) => row.id)).toEqual([
       "portfolio-paper-orders"
     ]);
     expect(filterResearchRunExportBrowserRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
@@ -2392,6 +2434,8 @@ describe("terminal workbench model", () => {
           aiRisks: 1,
           paperExecutions: 1,
           portfolioPaperOrderBatches: 1,
+          portfolioPaperOrderApprovals: 1,
+          portfolioPaperOrderSimulations: 1,
           promotionCandidates: 1,
           researchNotes: 1,
           aiReviewRuns: 1
@@ -2446,6 +2490,40 @@ describe("terminal workbench model", () => {
               reason: "Operator review required."
             }
           ]
+        }
+      ],
+      portfolioPaperOrderApprovals: [
+        {
+          approvalId: "portfolio-paper-order-approval-portfolio-paper-batch-index-a-portfolio-paper-order-index-a",
+          baseRunId: "run-index-a",
+          batchId: "portfolio-paper-batch-index-a",
+          orderId: "portfolio-paper-order-index-a",
+          reviewedAt: "2026-05-26T08:26:00+00:00",
+          approved: true,
+          reviewer: "operator-index",
+          reason: "Approved for paper simulation."
+        }
+      ],
+      portfolioPaperOrderSimulations: [
+        {
+          simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-index-a-portfolio-paper-order-index-a",
+          baseRunId: "run-index-a",
+          batchId: "portfolio-paper-batch-index-a",
+          orderId: "portfolio-paper-order-index-a",
+          simulatedAt: "2026-05-26T08:27:00+00:00",
+          mode: "portfolio_paper_order_simulation" as const,
+          symbol: "600000",
+          sourceRunId: "run-index-a",
+          side: "buy" as const,
+          quantity: 2100,
+          fillPrice: 9.21,
+          notionalValue: 19341,
+          orderState: "filled" as const,
+          fillStatus: "filled" as const,
+          reason: "Paper-only simulated fill.",
+          approvedBy: "operator-index",
+          paperOnly: true,
+          liveExecutionBlocked: true
         }
       ],
       promotionCandidate: {
@@ -2579,6 +2657,8 @@ describe("terminal workbench model", () => {
             ...basePackage.manifest.artifactCounts,
             bars: 499,
             paperExecutions: 2,
+            portfolioPaperOrderApprovals: 2,
+            portfolioPaperOrderSimulations: 3,
             aiReviewRuns: 3
           }
         },
@@ -2596,7 +2676,7 @@ describe("terminal workbench model", () => {
           context: "AAPL · 1d",
           integrity: "No hash",
           detail:
-            "Integrity missing; Data snapshot mismatch; Paper execution count mismatch; AI review count mismatch; Audit report mismatch; Backtest report mismatch"
+            "Integrity missing; Data snapshot mismatch; Paper execution count mismatch; Portfolio paper order count mismatch; AI review count mismatch; Audit report mismatch; Backtest report mismatch"
         }),
         expect.objectContaining({
           id: "run-index-a",
@@ -2605,7 +2685,7 @@ describe("terminal workbench model", () => {
           context: "600000 · 1d",
           integrity: "sha256 · cccccccc",
           artifacts:
-            "500 bars / 18 trades / 1 portfolio orders / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
+            "500 bars / 18 trades / 1 portfolio batches / 1 approvals / 1 fills / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
           execution: "1/2 gates · paper_only"
         })
       ])
@@ -3375,6 +3455,8 @@ describe("terminal workbench model", () => {
           aiRisks: 1,
           paperExecutions: 2,
           portfolioPaperOrderBatches: 2,
+          portfolioPaperOrderApprovals: 2,
+          portfolioPaperOrderSimulations: 2,
           promotionCandidates: 1,
           researchNotes: 1,
           aiReviewRuns: 3
@@ -3439,6 +3521,8 @@ describe("terminal workbench model", () => {
     );
     expect(artifactRow?.detail).toContain("paperExecutions 2/0");
     expect(artifactRow?.detail).toContain("portfolioPaperOrderBatches 2/0");
+    expect(artifactRow?.detail).toContain("portfolioPaperOrderApprovals 2/0");
+    expect(artifactRow?.detail).toContain("portfolioPaperOrderSimulations 2/0");
     expect(artifactRow?.detail).toContain("promotionCandidates 1/0");
     expect(artifactRow?.detail).toContain("aiReviewRuns 3/0");
     expect(filterResearchRunImportDiffRows(rows, "invalid").map((row) => row.id)).toEqual(["package-integrity"]);

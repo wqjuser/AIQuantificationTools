@@ -394,6 +394,8 @@ def research_run_export_to_payload(
     exported_at: datetime | None = None,
     paper_executions: list[dict[str, Any]] | None = None,
     portfolio_paper_orders: list[dict[str, Any]] | None = None,
+    portfolio_paper_order_approvals: list[dict[str, Any]] | None = None,
+    portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -407,6 +409,14 @@ def research_run_export_to_payload(
         portfolio_paper_orders,
         base_run_id=audit.run_id,
     )
+    portfolio_paper_order_approval_payloads = _normalize_portfolio_paper_order_approval_payloads(
+        portfolio_paper_order_approvals,
+        base_run_id=audit.run_id,
+    )
+    portfolio_paper_order_simulation_payloads = _normalize_portfolio_paper_order_simulation_payloads(
+        portfolio_paper_order_simulations,
+        base_run_id=audit.run_id,
+    )
     normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
     ai_review_run_payloads = _normalize_ai_review_run_payloads(ai_review_runs, run_id=audit.run_id)
     artifact_counts = {
@@ -417,6 +427,8 @@ def research_run_export_to_payload(
         "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
         "paperExecutions": len(paper_execution_payloads),
         "portfolioPaperOrderBatches": len(portfolio_paper_order_payloads),
+        "portfolioPaperOrderApprovals": len(portfolio_paper_order_approval_payloads),
+        "portfolioPaperOrderSimulations": len(portfolio_paper_order_simulation_payloads),
         "promotionCandidates": 1 if normalized_promotion_candidate else 0,
         "researchNotes": 1 if _research_note_has_body(research_note) else 0,
         "aiReviewRuns": len(ai_review_run_payloads),
@@ -442,6 +454,8 @@ def research_run_export_to_payload(
         "researchRun": run_payload,
         "paperExecutions": paper_execution_payloads,
         "portfolioPaperOrderBatches": portfolio_paper_order_payloads,
+        "portfolioPaperOrderApprovals": portfolio_paper_order_approval_payloads,
+        "portfolioPaperOrderSimulations": portfolio_paper_order_simulation_payloads,
         "promotionCandidate": normalized_promotion_candidate,
         "aiReviewRuns": ai_review_run_payloads,
         "executionHandoff": {
@@ -510,6 +524,38 @@ def research_run_import_portfolio_paper_orders(
     return _normalize_portfolio_paper_order_payloads(raw_batches, base_run_id=base_run_id, strict=True)
 
 
+def research_run_import_portfolio_paper_order_approvals(
+    payload: dict[str, Any],
+    *,
+    base_run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_approvals = export_package.get("portfolioPaperOrderApprovals", [])
+    if raw_approvals is None:
+        return []
+    if not isinstance(raw_approvals, list):
+        raise ValueError("portfolio_paper_order_approvals_must_be_array")
+    return _normalize_portfolio_paper_order_approval_payloads(raw_approvals, base_run_id=base_run_id, strict=True)
+
+
+def research_run_import_portfolio_paper_order_simulations(
+    payload: dict[str, Any],
+    *,
+    base_run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_simulations = export_package.get("portfolioPaperOrderSimulations", [])
+    if raw_simulations is None:
+        return []
+    if not isinstance(raw_simulations, list):
+        raise ValueError("portfolio_paper_order_simulations_must_be_array")
+    return _normalize_portfolio_paper_order_simulation_payloads(raw_simulations, base_run_id=base_run_id, strict=True)
+
+
 def research_run_import_ai_review_runs(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
@@ -547,6 +593,14 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     run_id = _required_text(research_run, "runId")
     paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
     portfolio_paper_orders = research_run_import_portfolio_paper_orders(export_package, base_run_id=run_id)
+    portfolio_paper_order_approvals = research_run_import_portfolio_paper_order_approvals(
+        export_package,
+        base_run_id=run_id,
+    )
+    portfolio_paper_order_simulations = research_run_import_portfolio_paper_order_simulations(
+        export_package,
+        base_run_id=run_id,
+    )
     ai_review_runs = research_run_import_ai_review_runs(export_package, run_id=run_id)
     promotion_candidate = _normalize_promotion_candidate(export_package.get("promotionCandidate"), run_id=run_id)
     data_snapshot = research_run.get("dataSnapshot")
@@ -559,6 +613,8 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         handoff,
         paper_executions=paper_executions,
         portfolio_paper_orders=portfolio_paper_orders,
+        portfolio_paper_order_approvals=portfolio_paper_order_approvals,
+        portfolio_paper_order_simulations=portfolio_paper_order_simulations,
         ai_review_runs=ai_review_runs,
         promotion_candidate=promotion_candidate,
     )
@@ -690,6 +746,8 @@ def _validate_manifest_consistency(
     *,
     paper_executions: list[dict[str, Any]] | None = None,
     portfolio_paper_orders: list[dict[str, Any]] | None = None,
+    portfolio_paper_order_approvals: list[dict[str, Any]] | None = None,
+    portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
 ) -> None:
@@ -736,6 +794,10 @@ def _validate_manifest_consistency(
         expected_counts["paperExecutions"] = len(paper_executions or [])
     if "portfolioPaperOrderBatches" in counts or portfolio_paper_orders:
         expected_counts["portfolioPaperOrderBatches"] = len(portfolio_paper_orders or [])
+    if "portfolioPaperOrderApprovals" in counts or portfolio_paper_order_approvals:
+        expected_counts["portfolioPaperOrderApprovals"] = len(portfolio_paper_order_approvals or [])
+    if "portfolioPaperOrderSimulations" in counts or portfolio_paper_order_simulations:
+        expected_counts["portfolioPaperOrderSimulations"] = len(portfolio_paper_order_simulations or [])
     if "promotionCandidates" in counts or promotion_candidate:
         expected_counts["promotionCandidates"] = 1 if promotion_candidate else 0
     if "aiReviewRuns" in counts or ai_review_runs:
@@ -861,6 +923,129 @@ def _normalize_portfolio_paper_order_payloads(
                 "source": str(item.get("source") or "portfolio_backtest"),
                 "summary": _dict_or_empty(item.get("summary")),
                 "orders": _list_of_dicts(orders),
+            }
+        )
+    return normalized
+
+
+def _normalize_portfolio_paper_order_approval_payloads(
+    value: list[dict[str, Any]] | None,
+    *,
+    base_run_id: str | None = None,
+    strict: bool = False,
+) -> list[dict[str, Any]]:
+    normalized = []
+    expected_base_run_id = str(base_run_id or "").strip()
+    for item in value or []:
+        if not isinstance(item, dict):
+            if strict:
+                raise ValueError("portfolio_paper_order_approval_must_be_object")
+            continue
+        approval_base_run_id = str(item.get("baseRunId") or expected_base_run_id).strip()
+        if expected_base_run_id and approval_base_run_id != expected_base_run_id:
+            if strict:
+                raise ValueError("portfolio_paper_order_approval_base_run_id_mismatch")
+            continue
+        approval_id = str(item.get("approvalId") or "").strip()
+        batch_id = str(item.get("batchId") or "").strip()
+        order_id = str(item.get("orderId") or "").strip()
+        reviewed_at = str(item.get("reviewedAt") or "").strip()
+        if strict:
+            if not approval_id:
+                raise ValueError("portfolio_paper_order_approval_id_required")
+            if not batch_id:
+                raise ValueError("portfolio_paper_order_approval_batch_id_required")
+            if not order_id:
+                raise ValueError("portfolio_paper_order_approval_order_id_required")
+            if not reviewed_at:
+                raise ValueError("portfolio_paper_order_approval_reviewed_at_required")
+            if not isinstance(item.get("approved"), bool):
+                raise ValueError("portfolio_paper_order_approval_approved_must_be_boolean")
+            if not str(item.get("reviewer") or "").strip():
+                raise ValueError("portfolio_paper_order_approval_reviewer_required")
+            if not str(item.get("reason") or "").strip():
+                raise ValueError("portfolio_paper_order_approval_reason_required")
+        normalized.append(
+            {
+                "approvalId": approval_id,
+                "baseRunId": approval_base_run_id,
+                "batchId": batch_id,
+                "orderId": order_id,
+                "reviewedAt": reviewed_at,
+                "approved": bool(item.get("approved")),
+                "reviewer": str(item.get("reviewer") or ""),
+                "reason": str(item.get("reason") or ""),
+            }
+        )
+    return normalized
+
+
+def _normalize_portfolio_paper_order_simulation_payloads(
+    value: list[dict[str, Any]] | None,
+    *,
+    base_run_id: str | None = None,
+    strict: bool = False,
+) -> list[dict[str, Any]]:
+    normalized = []
+    expected_base_run_id = str(base_run_id or "").strip()
+    for item in value or []:
+        if not isinstance(item, dict):
+            if strict:
+                raise ValueError("portfolio_paper_order_simulation_must_be_object")
+            continue
+        simulation_base_run_id = str(item.get("baseRunId") or expected_base_run_id).strip()
+        if expected_base_run_id and simulation_base_run_id != expected_base_run_id:
+            if strict:
+                raise ValueError("portfolio_paper_order_simulation_base_run_id_mismatch")
+            continue
+        simulation_id = str(item.get("simulationId") or "").strip()
+        batch_id = str(item.get("batchId") or "").strip()
+        order_id = str(item.get("orderId") or "").strip()
+        simulated_at = str(item.get("simulatedAt") or "").strip()
+        mode = str(item.get("mode") or "portfolio_paper_order_simulation").strip()
+        side = str(item.get("side") or "").strip()
+        quantity = _number_or_default(item.get("quantity"), 0)
+        fill_price = _number_or_default(item.get("fillPrice"), 0)
+        notional_value = _number_or_default(item.get("notionalValue"), 0)
+        if strict:
+            if not simulation_id:
+                raise ValueError("portfolio_paper_order_simulation_id_required")
+            if not batch_id:
+                raise ValueError("portfolio_paper_order_simulation_batch_id_required")
+            if not order_id:
+                raise ValueError("portfolio_paper_order_simulation_order_id_required")
+            if not simulated_at:
+                raise ValueError("portfolio_paper_order_simulation_simulated_at_required")
+            if mode != "portfolio_paper_order_simulation":
+                raise ValueError("portfolio_paper_order_simulation_mode_invalid")
+            if side not in {"buy", "sell"}:
+                raise ValueError("portfolio_paper_order_simulation_side_invalid")
+            if quantity <= 0 or fill_price <= 0 or notional_value <= 0:
+                raise ValueError("portfolio_paper_order_simulation_fill_values_required")
+            if str(item.get("orderState") or "") != "filled":
+                raise ValueError("portfolio_paper_order_simulation_order_state_invalid")
+            if str(item.get("fillStatus") or "") != "filled":
+                raise ValueError("portfolio_paper_order_simulation_fill_status_invalid")
+        normalized.append(
+            {
+                "simulationId": simulation_id,
+                "baseRunId": simulation_base_run_id,
+                "batchId": batch_id,
+                "orderId": order_id,
+                "simulatedAt": simulated_at,
+                "mode": mode,
+                "symbol": str(item.get("symbol") or ""),
+                "sourceRunId": str(item.get("sourceRunId") or "").strip() or None,
+                "side": side,
+                "quantity": quantity,
+                "fillPrice": fill_price,
+                "notionalValue": notional_value,
+                "orderState": str(item.get("orderState") or ""),
+                "fillStatus": str(item.get("fillStatus") or ""),
+                "reason": str(item.get("reason") or ""),
+                "approvedBy": str(item.get("approvedBy") or "").strip() or None,
+                "paperOnly": True,
+                "liveExecutionBlocked": True,
             }
         )
     return normalized

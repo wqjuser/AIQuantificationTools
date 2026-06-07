@@ -78,6 +78,8 @@ export interface ResearchRunExportManifest {
     aiRisks: number;
     paperExecutions?: number;
     portfolioPaperOrderBatches?: number;
+    portfolioPaperOrderApprovals?: number;
+    portfolioPaperOrderSimulations?: number;
     promotionCandidates?: number;
     researchNotes?: number;
     aiReviewRuns?: number;
@@ -204,6 +206,8 @@ export interface ResearchRunExportPackage {
   executionHandoff: ResearchRunExecutionHandoff;
   paperExecutions?: PaperExecutionRecord[];
   portfolioPaperOrderBatches?: PortfolioPaperOrderBatch[];
+  portfolioPaperOrderApprovals?: PortfolioPaperOrderApproval[];
+  portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulation[];
   promotionCandidate?: PromotionCandidateRecord | null;
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
   auditEvidenceSummary?: ResearchRunExportAuditEvidenceSummary;
@@ -4478,6 +4482,12 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
     (exportPackage.portfolioPaperOrderBatches === undefined ||
       (Array.isArray(exportPackage.portfolioPaperOrderBatches) &&
         exportPackage.portfolioPaperOrderBatches.every(isPortfolioPaperOrderBatch))) &&
+    (exportPackage.portfolioPaperOrderApprovals === undefined ||
+      (Array.isArray(exportPackage.portfolioPaperOrderApprovals) &&
+        exportPackage.portfolioPaperOrderApprovals.every(isPortfolioPaperOrderApproval))) &&
+    (exportPackage.portfolioPaperOrderSimulations === undefined ||
+      (Array.isArray(exportPackage.portfolioPaperOrderSimulations) &&
+        exportPackage.portfolioPaperOrderSimulations.every(isPortfolioPaperOrderSimulation))) &&
     (exportPackage.promotionCandidate === undefined ||
       exportPackage.promotionCandidate === null ||
       isPromotionCandidateRecord(exportPackage.promotionCandidate)) &&
@@ -4770,6 +4780,10 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     (counts?.paperExecutions === undefined || typeof counts.paperExecutions === "number") &&
     (counts?.portfolioPaperOrderBatches === undefined ||
       typeof counts.portfolioPaperOrderBatches === "number") &&
+    (counts?.portfolioPaperOrderApprovals === undefined ||
+      typeof counts.portfolioPaperOrderApprovals === "number") &&
+    (counts?.portfolioPaperOrderSimulations === undefined ||
+      typeof counts.portfolioPaperOrderSimulations === "number") &&
     (counts?.promotionCandidates === undefined || typeof counts.promotionCandidates === "number") &&
     (counts?.researchNotes === undefined || typeof counts.researchNotes === "number") &&
     (counts?.aiReviewRuns === undefined || typeof counts.aiReviewRuns === "number")

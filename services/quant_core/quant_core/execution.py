@@ -452,6 +452,30 @@ class PortfolioPaperOrderApprovalStore:
             connection.close()
         return [_row_to_portfolio_paper_order_approval(row) for row in rows]
 
+    def list_all_by_base_run(self, base_run_id: str) -> list[PortfolioPaperOrderApproval]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select approval_id, base_run_id, batch_id, order_id, reviewed_at, approved, reviewer, reason
+                from portfolio_paper_order_approvals
+                where base_run_id = ?
+                order by reviewed_at desc
+                """,
+                (base_run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_portfolio_paper_order_approval(row) for row in rows]
+
+    def delete_by_base_run(self, base_run_id: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("delete from portfolio_paper_order_approvals where base_run_id = ?", (base_run_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
 
 class PortfolioPaperOrderSimulationStore:
     def __init__(self, path: str | Path) -> None:
@@ -582,6 +606,31 @@ class PortfolioPaperOrderSimulationStore:
         finally:
             connection.close()
         return [_row_to_portfolio_paper_order_simulation(row) for row in rows]
+
+    def list_all_by_base_run(self, base_run_id: str) -> list[PortfolioPaperOrderSimulation]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select simulation_id, base_run_id, batch_id, order_id, simulated_at, mode, symbol, source_run_id,
+                       side, quantity, fill_price, notional_value, order_state, fill_status, reason, approved_by
+                from portfolio_paper_order_simulations
+                where base_run_id = ?
+                order by simulated_at desc
+                """,
+                (base_run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_portfolio_paper_order_simulation(row) for row in rows]
+
+    def delete_by_base_run(self, base_run_id: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("delete from portfolio_paper_order_simulations where base_run_id = ?", (base_run_id,))
+            connection.commit()
+        finally:
+            connection.close()
 
 
 def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None = None) -> PaperExecutionRecord:
@@ -746,6 +795,19 @@ def portfolio_paper_order_approval_to_payload(approval: PortfolioPaperOrderAppro
     }
 
 
+def portfolio_paper_order_payload_to_approval(payload: dict[str, Any]) -> PortfolioPaperOrderApproval:
+    return PortfolioPaperOrderApproval(
+        approval_id=str(payload.get("approvalId") or ""),
+        base_run_id=str(payload.get("baseRunId") or ""),
+        batch_id=str(payload.get("batchId") or ""),
+        order_id=str(payload.get("orderId") or ""),
+        reviewed_at=_parse_payload_datetime(payload.get("reviewedAt"), "portfolio_paper_order_approval_reviewed_at_invalid"),
+        approved=bool(payload.get("approved")),
+        reviewer=str(payload.get("reviewer") or ""),
+        reason=str(payload.get("reason") or ""),
+    )
+
+
 def create_portfolio_paper_order_simulation(
     *,
     batch: PortfolioPaperOrderBatch,
@@ -813,6 +875,30 @@ def portfolio_paper_order_simulation_to_payload(simulation: PortfolioPaperOrderS
         "paperOnly": True,
         "liveExecutionBlocked": True,
     }
+
+
+def portfolio_paper_order_payload_to_simulation(payload: dict[str, Any]) -> PortfolioPaperOrderSimulation:
+    return PortfolioPaperOrderSimulation(
+        simulation_id=str(payload.get("simulationId") or ""),
+        base_run_id=str(payload.get("baseRunId") or ""),
+        batch_id=str(payload.get("batchId") or ""),
+        order_id=str(payload.get("orderId") or ""),
+        simulated_at=_parse_payload_datetime(
+            payload.get("simulatedAt"),
+            "portfolio_paper_order_simulation_simulated_at_invalid",
+        ),
+        mode=str(payload.get("mode") or "portfolio_paper_order_simulation"),
+        symbol=str(payload.get("symbol") or ""),
+        source_run_id=str(payload.get("sourceRunId") or "").strip() or None,
+        side=str(payload.get("side") or ""),
+        quantity=_positive_number(payload.get("quantity"), 0),
+        fill_price=_positive_number(payload.get("fillPrice"), 0),
+        notional_value=_positive_number(payload.get("notionalValue"), 0),
+        order_state=str(payload.get("orderState") or ""),
+        fill_status=str(payload.get("fillStatus") or ""),
+        reason=str(payload.get("reason") or ""),
+        approved_by=str(payload.get("approvedBy") or "").strip() or None,
+    )
 
 
 def portfolio_paper_order_approvals_to_map(

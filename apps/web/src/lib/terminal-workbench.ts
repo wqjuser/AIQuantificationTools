@@ -585,6 +585,8 @@ export interface ResearchRunExportBrowserManifest {
     aiRisks: number;
     paperExecutions?: number;
     portfolioPaperOrderBatches?: number;
+    portfolioPaperOrderApprovals?: number;
+    portfolioPaperOrderSimulations?: number;
     promotionCandidates?: number;
     researchNotes?: number;
     aiReviewRuns?: number;
@@ -619,6 +621,38 @@ export interface PortfolioPaperOrderBatchSnapshot {
     riskStatus: "passed" | "review" | "blocked";
     reason: string;
   }>;
+}
+
+export interface PortfolioPaperOrderApprovalSnapshot {
+  approvalId: string;
+  baseRunId: string;
+  batchId: string;
+  orderId: string;
+  reviewedAt: string;
+  approved: boolean;
+  reviewer: string;
+  reason: string;
+}
+
+export interface PortfolioPaperOrderSimulationSnapshot {
+  simulationId: string;
+  baseRunId: string;
+  batchId: string;
+  orderId: string;
+  simulatedAt: string;
+  mode: "portfolio_paper_order_simulation";
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell";
+  quantity: number;
+  fillPrice: number;
+  notionalValue: number;
+  orderState: "filled";
+  fillStatus: "filled";
+  reason: string;
+  approvedBy: string | null;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
 }
 
 export interface PortfolioPaperOrderLifecycleRow {
@@ -709,6 +743,8 @@ export interface ResearchRunExportBrowserPackage {
   researchRun?: ResearchRunAudit;
   paperExecutions?: PaperExecutionSnapshot[];
   portfolioPaperOrderBatches?: PortfolioPaperOrderBatchSnapshot[];
+  portfolioPaperOrderApprovals?: PortfolioPaperOrderApprovalSnapshot[];
+  portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulationSnapshot[];
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
   auditEvidenceSummary?: {
@@ -3066,6 +3102,8 @@ export function buildResearchRunExportBrowserRows(
   const { artifactCounts } = exportPackage.manifest;
   const paperPackageCount = exportPackage.paperExecutions?.length ?? 0;
   const portfolioPaperOrderPackageCount = exportPackage.portfolioPaperOrderBatches?.length ?? 0;
+  const portfolioPaperOrderApprovalPackageCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
+  const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
   const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
   const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
@@ -3107,7 +3145,23 @@ export function buildResearchRunExportBrowserRows(
   const backtestIsReady = artifactCounts.trades > 0 && artifactCounts.equityPoints > 0;
   const paperCountMatches = (artifactCounts.paperExecutions ?? 0) === paperPackageCount;
   const portfolioPaperOrderCountMatches =
-    (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount;
+    (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount &&
+    (artifactCounts.portfolioPaperOrderApprovals ?? 0) === portfolioPaperOrderApprovalPackageCount &&
+    (artifactCounts.portfolioPaperOrderSimulations ?? 0) === portfolioPaperOrderSimulationPackageCount;
+  const portfolioPaperOrderPackageHasLedger =
+    portfolioPaperOrderPackageCount + portfolioPaperOrderApprovalPackageCount + portfolioPaperOrderSimulationPackageCount >
+    0;
+  const portfolioPaperOrderMismatchDetail = [
+    (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount
+      ? ""
+      : `portfolioPaperOrderBatches ${artifactCounts.portfolioPaperOrderBatches ?? 0}/${portfolioPaperOrderPackageCount}`,
+    (artifactCounts.portfolioPaperOrderApprovals ?? 0) === portfolioPaperOrderApprovalPackageCount
+      ? ""
+      : `portfolioPaperOrderApprovals ${artifactCounts.portfolioPaperOrderApprovals ?? 0}/${portfolioPaperOrderApprovalPackageCount}`,
+    (artifactCounts.portfolioPaperOrderSimulations ?? 0) === portfolioPaperOrderSimulationPackageCount
+      ? ""
+      : `portfolioPaperOrderSimulations ${artifactCounts.portfolioPaperOrderSimulations ?? 0}/${portfolioPaperOrderSimulationPackageCount}`
+  ].filter(Boolean);
   const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
   const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
 
@@ -3199,18 +3253,18 @@ export function buildResearchRunExportBrowserRows(
       id: "portfolio-paper-orders",
       label: "Portfolio paper orders",
       status:
-        portfolioPaperOrderCountMatches && portfolioPaperOrderPackageCount > 0
+        portfolioPaperOrderCountMatches && portfolioPaperOrderPackageHasLedger
           ? "ready"
           : portfolioPaperOrderCountMatches
             ? "missing"
             : "blocked",
-      value: `${artifactCounts.portfolioPaperOrderBatches ?? 0} manifest / ${portfolioPaperOrderPackageCount} package`,
+      value: `${artifactCounts.portfolioPaperOrderBatches ?? 0} batches / ${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals / ${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
       detail: portfolioPaperOrderCountMatches
-        ? "Portfolio paper order batch count matches the export package payload."
-        : "Portfolio paper order manifest count does not match the package payload.",
-      exportPath: "portfolioPaperOrderBatches[]",
+        ? "Portfolio paper order batch, approval, and simulated-fill counts match the package payload. portfolioPaperOrderBatches / portfolioPaperOrderApprovals / portfolioPaperOrderSimulations"
+        : `Portfolio paper order manifest count does not match the package payload: ${portfolioPaperOrderMismatchDetail.join(", ")}.`,
+      exportPath: "portfolioPaperOrderBatches[] portfolioPaperOrderApprovals[] portfolioPaperOrderSimulations[]",
       tone:
-        portfolioPaperOrderCountMatches && portfolioPaperOrderPackageCount > 0
+        portfolioPaperOrderCountMatches && portfolioPaperOrderPackageHasLedger
           ? "warning"
           : portfolioPaperOrderCountMatches
             ? "neutral"
@@ -3383,6 +3437,8 @@ export function buildResearchRunExportIndexRows(
       const { artifactCounts } = exportPackage.manifest;
       const paperPackageCount = exportPackage.paperExecutions?.length ?? 0;
       const portfolioPaperOrderPackageCount = exportPackage.portfolioPaperOrderBatches?.length ?? 0;
+      const portfolioPaperOrderApprovalPackageCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
+      const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
       const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
       const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
       const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
@@ -3448,7 +3504,9 @@ export function buildResearchRunExportIndexRows(
         exportPackage.manifest.dataHash.trim() !== "";
       const paperCountMatches = (artifactCounts.paperExecutions ?? 0) === paperPackageCount;
       const portfolioPaperOrderCountMatches =
-        (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount;
+        (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount &&
+        (artifactCounts.portfolioPaperOrderApprovals ?? 0) === portfolioPaperOrderApprovalPackageCount &&
+        (artifactCounts.portfolioPaperOrderSimulations ?? 0) === portfolioPaperOrderSimulationPackageCount;
       const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
       const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
       const mismatchReasons = [
@@ -3481,7 +3539,9 @@ export function buildResearchRunExportIndexRows(
         artifacts: [
           `${artifactCounts.bars} bars`,
           `${artifactCounts.trades} trades`,
-          `${artifactCounts.portfolioPaperOrderBatches ?? 0} portfolio orders`,
+          `${artifactCounts.portfolioPaperOrderBatches ?? 0} portfolio batches`,
+          `${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals`,
+          `${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
           `${artifactCounts.aiReviewRuns ?? 0} AI`,
           reportArtifactLabels.length ? `${reportArtifactLabels.length} reports` : null,
           ...reportArtifactLabels
@@ -3535,7 +3595,9 @@ function researchRunImportArtifactCountMismatches(
   actualCounts: {
     aiReviewRuns: number;
     paperExecutions: number;
+    portfolioPaperOrderApprovals: number;
     portfolioPaperOrderBatches: number;
+    portfolioPaperOrderSimulations: number;
     promotionCandidates: number;
     researchNotes: number;
   }
@@ -3549,6 +3611,16 @@ function researchRunImportArtifactCountMismatches(
       "portfolioPaperOrderBatches",
       artifactCounts.portfolioPaperOrderBatches ?? 0,
       actualCounts.portfolioPaperOrderBatches
+    ],
+    [
+      "portfolioPaperOrderApprovals",
+      artifactCounts.portfolioPaperOrderApprovals ?? 0,
+      actualCounts.portfolioPaperOrderApprovals
+    ],
+    [
+      "portfolioPaperOrderSimulations",
+      artifactCounts.portfolioPaperOrderSimulations ?? 0,
+      actualCounts.portfolioPaperOrderSimulations
     ],
     ["promotionCandidates", artifactCounts.promotionCandidates ?? 0, actualCounts.promotionCandidates],
     ["aiReviewRuns", artifactCounts.aiReviewRuns ?? 0, actualCounts.aiReviewRuns]
@@ -3599,6 +3671,8 @@ export function buildResearchRunImportDiffRows({
     : 0;
   const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
   const packagePortfolioPaperOrderCount = exportPackage.portfolioPaperOrderBatches?.length ?? 0;
+  const packagePortfolioPaperOrderApprovalCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
+  const packagePortfolioPaperOrderSimulationCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
   const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
   const auditSummary = exportPackage.auditEvidenceSummary;
   const auditSummaryMatchesPackage = auditSummary?.runId === exportPackage.manifest.runId;
@@ -3652,7 +3726,9 @@ export function buildResearchRunImportDiffRows({
   const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
     aiReviewRuns: packageAiReviewCount,
     paperExecutions: packagePaperCount,
+    portfolioPaperOrderApprovals: packagePortfolioPaperOrderApprovalCount,
     portfolioPaperOrderBatches: packagePortfolioPaperOrderCount,
+    portfolioPaperOrderSimulations: packagePortfolioPaperOrderSimulationCount,
     promotionCandidates: exportPackage.promotionCandidate ? 1 : 0,
     researchNotes: incomingNote ? 1 : 0
   });

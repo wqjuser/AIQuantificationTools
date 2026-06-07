@@ -37,8 +37,10 @@ from quant_core.domain import (
 from quant_core.execution import (
     PaperExecutionRecord,
     PaperExecutionStore,
+    PortfolioPaperOrderApproval,
     PortfolioPaperOrderBatch,
     PortfolioPaperOrderApprovalStore,
+    PortfolioPaperOrderSimulation,
     PortfolioPaperOrderSimulationStore,
     PortfolioPaperOrderStore,
     build_portfolio_paper_order_lifecycle,
@@ -54,7 +56,9 @@ from quant_core.execution import (
     portfolio_paper_order_approvals_to_map,
     portfolio_paper_order_batch_to_audit_event_payload,
     portfolio_paper_order_batch_to_payload,
+    portfolio_paper_order_payload_to_approval,
     portfolio_paper_order_payload_to_batch,
+    portfolio_paper_order_payload_to_simulation,
     portfolio_paper_order_simulation_to_audit_event_payload,
     portfolio_paper_order_simulation_to_payload,
     validate_paper_execution_handoff,
@@ -79,7 +83,9 @@ from quant_core.runs import (
     research_run_export_to_payload,
     research_run_import_ai_review_runs,
     research_run_import_paper_executions,
+    research_run_import_portfolio_paper_order_approvals,
     research_run_import_portfolio_paper_orders,
+    research_run_import_portfolio_paper_order_simulations,
     research_run_import_to_audit,
 )
 from quant_core.settings import build_settings_status
@@ -581,6 +587,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     strategy_store=self.strategy_store,
                     paper_execution_store=self.paper_execution_store,
                     portfolio_paper_order_store=self.portfolio_paper_order_store,
+                    portfolio_paper_order_approval_store=self.portfolio_paper_order_approval_store,
+                    portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                     ai_review_store=self.ai_review_store,
                     undo_record=undo_record,
                 )
@@ -604,12 +612,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 audit = research_run_import_to_audit(payload)
                 paper_executions = research_run_import_paper_executions(payload, run_id=audit.run_id)
                 portfolio_paper_orders = research_run_import_portfolio_paper_orders(payload, base_run_id=audit.run_id)
+                portfolio_paper_order_approvals = research_run_import_portfolio_paper_order_approvals(
+                    payload,
+                    base_run_id=audit.run_id,
+                )
+                portfolio_paper_order_simulations = research_run_import_portfolio_paper_order_simulations(
+                    payload,
+                    base_run_id=audit.run_id,
+                )
                 ai_review_runs = research_run_import_ai_review_runs(payload, run_id=audit.run_id)
                 paper_execution_records = [
                     paper_execution_payload_to_record(execution_payload) for execution_payload in paper_executions
                 ]
                 portfolio_paper_order_batches = [
                     portfolio_paper_order_payload_to_batch(batch_payload) for batch_payload in portfolio_paper_orders
+                ]
+                portfolio_paper_order_approval_records = [
+                    portfolio_paper_order_payload_to_approval(approval_payload)
+                    for approval_payload in portfolio_paper_order_approvals
+                ]
+                portfolio_paper_order_simulation_records = [
+                    portfolio_paper_order_payload_to_simulation(simulation_payload)
+                    for simulation_payload in portfolio_paper_order_simulations
                 ]
                 ai_review_records = [dict(review_payload["record"]) for review_payload in ai_review_runs]
                 imported_note = _importable_research_note_payload(
@@ -629,11 +653,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     strategy_store=self.strategy_store,
                     paper_execution_store=self.paper_execution_store,
                     portfolio_paper_order_store=self.portfolio_paper_order_store,
+                    portfolio_paper_order_approval_store=self.portfolio_paper_order_approval_store,
+                    portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                     ai_review_store=self.ai_review_store,
                     audit=audit,
                     imported_note=imported_note,
                     paper_execution_records=paper_execution_records,
                     portfolio_paper_order_batches=portfolio_paper_order_batches,
+                    portfolio_paper_order_approvals=portfolio_paper_order_approval_records,
+                    portfolio_paper_order_simulations=portfolio_paper_order_simulation_records,
                     ai_review_records=ai_review_records,
                 )
                 undo_record = self.import_undo_store.record(run_id=audit.run_id, snapshot=undo_snapshot)
@@ -645,6 +673,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         strategy_store=self.strategy_store,
                         paper_execution_store=self.paper_execution_store,
                         portfolio_paper_order_store=self.portfolio_paper_order_store,
+                        portfolio_paper_order_approval_store=self.portfolio_paper_order_approval_store,
+                        portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                         ai_review_store=self.ai_review_store,
                         snapshot=undo_snapshot,
                     )
@@ -1026,6 +1056,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 portfolio_paper_order_batch_to_payload(batch)
                 for batch in self.portfolio_paper_order_store.list_by_base_run(run_id, limit=20)
             ]
+            portfolio_paper_order_approvals = [
+                portfolio_paper_order_approval_to_payload(approval)
+                for approval in self.portfolio_paper_order_approval_store.list_all_by_base_run(run_id)
+            ]
+            portfolio_paper_order_simulations = [
+                portfolio_paper_order_simulation_to_payload(simulation)
+                for simulation in self.portfolio_paper_order_simulation_store.list_all_by_base_run(run_id)
+            ]
             ai_reviews = [
                 ai_review_run_record_to_payload(review) for review in self.ai_review_store.list_by_run(run_id, limit=20)
             ]
@@ -1036,6 +1074,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         audit,
                         paper_executions=executions,
                         portfolio_paper_orders=portfolio_paper_orders,
+                        portfolio_paper_order_approvals=portfolio_paper_order_approvals,
+                        portfolio_paper_order_simulations=portfolio_paper_order_simulations,
                         promotion_candidate=promotion_candidate,
                         ai_review_runs=ai_reviews,
                     )
@@ -1342,11 +1382,15 @@ def _persist_research_run_import(
     strategy_store: StrategyLibraryStore,
     paper_execution_store: PaperExecutionStore,
     portfolio_paper_order_store: PortfolioPaperOrderStore,
+    portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
+    portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     audit: ResearchRunAudit,
     imported_note: dict[str, object] | None,
     paper_execution_records: list[PaperExecutionRecord],
     portfolio_paper_order_batches: list[PortfolioPaperOrderBatch],
+    portfolio_paper_order_approvals: list[PortfolioPaperOrderApproval],
+    portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     ai_review_records: list[dict[str, object]],
 ) -> dict[str, object]:
     previous_run = run_store.get(audit.run_id)
@@ -1367,6 +1411,10 @@ def _persist_research_run_import(
     previous_strategy = strategy_store.get(strategy_revision) if strategy_revision else None
     previous_paper_executions = paper_execution_store.list_all_by_run(audit.run_id)
     previous_portfolio_paper_orders = portfolio_paper_order_store.list_all_by_base_run(audit.run_id)
+    previous_portfolio_paper_order_approvals = portfolio_paper_order_approval_store.list_all_by_base_run(audit.run_id)
+    previous_portfolio_paper_order_simulations = (
+        portfolio_paper_order_simulation_store.list_all_by_base_run(audit.run_id)
+    )
     previous_ai_reviews = ai_review_store.list_all_by_run(audit.run_id)
 
     try:
@@ -1387,8 +1435,14 @@ def _persist_research_run_import(
             )
         for execution_record in paper_execution_records:
             paper_execution_store.record(execution_record)
+        portfolio_paper_order_approval_store.delete_by_base_run(audit.run_id)
+        portfolio_paper_order_simulation_store.delete_by_base_run(audit.run_id)
         for batch in portfolio_paper_order_batches:
             portfolio_paper_order_store.record(batch)
+        for approval in portfolio_paper_order_approvals:
+            portfolio_paper_order_approval_store.record(approval)
+        for simulation in portfolio_paper_order_simulations:
+            portfolio_paper_order_simulation_store.record(simulation)
         for review_record in ai_review_records:
             ai_review_store.record(review_record)
     except Exception:
@@ -1406,7 +1460,11 @@ def _persist_research_run_import(
             previous_strategy=previous_strategy,
             previous_paper_executions=previous_paper_executions,
             portfolio_paper_order_store=portfolio_paper_order_store,
+            portfolio_paper_order_approval_store=portfolio_paper_order_approval_store,
+            portfolio_paper_order_simulation_store=portfolio_paper_order_simulation_store,
             previous_portfolio_paper_orders=previous_portfolio_paper_orders,
+            previous_portfolio_paper_order_approvals=previous_portfolio_paper_order_approvals,
+            previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
             previous_ai_reviews=previous_ai_reviews,
         )
         raise
@@ -1419,6 +1477,8 @@ def _persist_research_run_import(
         previous_strategy=previous_strategy,
         previous_paper_executions=previous_paper_executions,
         previous_portfolio_paper_orders=previous_portfolio_paper_orders,
+        previous_portfolio_paper_order_approvals=previous_portfolio_paper_order_approvals,
+        previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
         previous_ai_reviews=previous_ai_reviews,
     )
 
@@ -1433,6 +1493,8 @@ def _research_run_import_undo_snapshot(
     previous_strategy: StrategyLibraryRecord | None,
     previous_paper_executions: list[PaperExecutionRecord],
     previous_portfolio_paper_orders: list[PortfolioPaperOrderBatch],
+    previous_portfolio_paper_order_approvals: list[PortfolioPaperOrderApproval],
+    previous_portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     previous_ai_reviews: list[AiReviewRunRecord],
 ) -> dict[str, object]:
     return {
@@ -1450,6 +1512,14 @@ def _research_run_import_undo_snapshot(
             ],
             "portfolioPaperOrderBatches": [
                 portfolio_paper_order_batch_to_payload(batch) for batch in previous_portfolio_paper_orders
+            ],
+            "portfolioPaperOrderApprovals": [
+                portfolio_paper_order_approval_to_payload(approval)
+                for approval in previous_portfolio_paper_order_approvals
+            ],
+            "portfolioPaperOrderSimulations": [
+                portfolio_paper_order_simulation_to_payload(simulation)
+                for simulation in previous_portfolio_paper_order_simulations
             ],
             "aiReviewRuns": [ai_review_run_record_to_payload(review) for review in previous_ai_reviews],
         },
@@ -1476,6 +1546,8 @@ def _undo_research_run_import_from_record(
     strategy_store: StrategyLibraryStore,
     paper_execution_store: PaperExecutionStore,
     portfolio_paper_order_store: PortfolioPaperOrderStore,
+    portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
+    portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     undo_record: ResearchRunImportUndoRecord,
 ) -> ResearchRunAudit | None:
@@ -1485,6 +1557,8 @@ def _undo_research_run_import_from_record(
         strategy_store=strategy_store,
         paper_execution_store=paper_execution_store,
         portfolio_paper_order_store=portfolio_paper_order_store,
+        portfolio_paper_order_approval_store=portfolio_paper_order_approval_store,
+        portfolio_paper_order_simulation_store=portfolio_paper_order_simulation_store,
         ai_review_store=ai_review_store,
         snapshot=undo_record.snapshot,
     )
@@ -1497,6 +1571,8 @@ def _undo_research_run_import_from_snapshot(
     strategy_store: StrategyLibraryStore,
     paper_execution_store: PaperExecutionStore,
     portfolio_paper_order_store: PortfolioPaperOrderStore,
+    portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
+    portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     snapshot: dict[str, object],
 ) -> ResearchRunAudit | None:
@@ -1515,18 +1591,28 @@ def _undo_research_run_import_from_snapshot(
     previous_strategy_payload = previous.get("strategy")
     previous_paper_payloads = previous.get("paperExecutions", [])
     previous_portfolio_paper_payloads = previous.get("portfolioPaperOrderBatches", [])
+    previous_portfolio_paper_approval_payloads = previous.get("portfolioPaperOrderApprovals", [])
+    previous_portfolio_paper_simulation_payloads = previous.get("portfolioPaperOrderSimulations", [])
     previous_ai_review_payloads = previous.get("aiReviewRuns", [])
 
     if previous_paper_payloads is None:
         previous_paper_payloads = []
     if previous_portfolio_paper_payloads is None:
         previous_portfolio_paper_payloads = []
+    if previous_portfolio_paper_approval_payloads is None:
+        previous_portfolio_paper_approval_payloads = []
+    if previous_portfolio_paper_simulation_payloads is None:
+        previous_portfolio_paper_simulation_payloads = []
     if previous_ai_review_payloads is None:
         previous_ai_review_payloads = []
     if not isinstance(previous_paper_payloads, list):
         raise ValueError("import_undo_paper_executions_must_be_array")
     if not isinstance(previous_portfolio_paper_payloads, list):
         raise ValueError("import_undo_portfolio_paper_order_batches_must_be_array")
+    if not isinstance(previous_portfolio_paper_approval_payloads, list):
+        raise ValueError("import_undo_portfolio_paper_order_approvals_must_be_array")
+    if not isinstance(previous_portfolio_paper_simulation_payloads, list):
+        raise ValueError("import_undo_portfolio_paper_order_simulations_must_be_array")
     if not isinstance(previous_ai_review_payloads, list):
         raise ValueError("import_undo_ai_reviews_must_be_array")
 
@@ -1545,6 +1631,16 @@ def _undo_research_run_import_from_snapshot(
     previous_portfolio_paper_orders = [
         portfolio_paper_order_payload_to_batch(item)
         for item in previous_portfolio_paper_payloads
+        if isinstance(item, dict)
+    ]
+    previous_portfolio_paper_approvals = [
+        portfolio_paper_order_payload_to_approval(item)
+        for item in previous_portfolio_paper_approval_payloads
+        if isinstance(item, dict)
+    ]
+    previous_portfolio_paper_simulations = [
+        portfolio_paper_order_payload_to_simulation(item)
+        for item in previous_portfolio_paper_simulation_payloads
         if isinstance(item, dict)
     ]
     previous_ai_reviews = [
@@ -1566,6 +1662,10 @@ def _undo_research_run_import_from_snapshot(
         previous_strategy=previous_strategy,
         previous_paper_executions=previous_paper_executions,
         previous_portfolio_paper_orders=previous_portfolio_paper_orders,
+        portfolio_paper_order_approval_store=portfolio_paper_order_approval_store,
+        portfolio_paper_order_simulation_store=portfolio_paper_order_simulation_store,
+        previous_portfolio_paper_order_approvals=previous_portfolio_paper_approvals,
+        previous_portfolio_paper_order_simulations=previous_portfolio_paper_simulations,
         previous_ai_reviews=previous_ai_reviews,
     )
     return previous_run
@@ -1664,6 +1764,8 @@ def _rollback_research_run_import(
     strategy_store: StrategyLibraryStore,
     paper_execution_store: PaperExecutionStore,
     portfolio_paper_order_store: PortfolioPaperOrderStore,
+    portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
+    portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     run_id: str,
     imported_note: dict[str, object] | None,
@@ -1673,6 +1775,8 @@ def _rollback_research_run_import(
     previous_strategy: StrategyLibraryRecord | None,
     previous_paper_executions: list[PaperExecutionRecord],
     previous_portfolio_paper_orders: list[PortfolioPaperOrderBatch],
+    previous_portfolio_paper_order_approvals: list[PortfolioPaperOrderApproval],
+    previous_portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     previous_ai_reviews: list[AiReviewRunRecord],
 ) -> None:
     ai_review_store.delete_by_run(run_id)
@@ -1686,6 +1790,14 @@ def _rollback_research_run_import(
     portfolio_paper_order_store.delete_by_base_run(run_id)
     for batch in previous_portfolio_paper_orders:
         portfolio_paper_order_store.record(batch)
+
+    portfolio_paper_order_approval_store.delete_by_base_run(run_id)
+    for approval in previous_portfolio_paper_order_approvals:
+        portfolio_paper_order_approval_store.record(approval)
+
+    portfolio_paper_order_simulation_store.delete_by_base_run(run_id)
+    for simulation in previous_portfolio_paper_order_simulations:
+        portfolio_paper_order_simulation_store.record(simulation)
 
     if strategy_revision:
         if previous_strategy:
