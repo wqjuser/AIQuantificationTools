@@ -135,6 +135,7 @@ import {
   buildPortfolioBacktestDraft,
   buildPortfolioBacktestDiagnosticRows,
   buildPortfolioBacktestReportMarkdown,
+  buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
@@ -203,6 +204,7 @@ import {
   PaperTradingRow,
   PortfolioBacktestDraft,
   PortfolioBacktestDiagnosticRow,
+  PortfolioPaperOrderLifecycleRow,
   PortfolioPeerAuditPlan,
   PortfolioRiskRow,
   PromotionQueueStage,
@@ -644,6 +646,7 @@ export function App() {
   const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
+  const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(portfolioPaperOrderBatches);
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -1382,7 +1385,9 @@ export function App() {
       setPortfolioPaperOrderHistoryError(null);
       setWorkspaceState((current) => ({
         ...current,
-        statusLabel: "Portfolio paper orders recorded",
+        statusLabel: result.auditEvent
+          ? `Portfolio paper orders recorded · ${result.auditEvent.eventId}`
+          : "Portfolio paper orders recorded",
         error: undefined
       }));
       return;
@@ -3224,6 +3229,7 @@ export function App() {
             portfolioBacktestResult={portfolioBacktestState}
             portfolioPaperOrderBatches={portfolioPaperOrderBatches}
             portfolioPaperOrderHistoryError={portfolioPaperOrderHistoryError}
+            portfolioPaperOrderLifecycleRows={portfolioPaperOrderLifecycleRows}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
@@ -3244,6 +3250,7 @@ export function App() {
             isSubmitting={isSubmittingPaperExecution}
             onSubmit={submitPaperExecution}
             approval={riskApprovalSummary}
+            portfolioOrderRows={portfolioPaperOrderLifecycleRows}
             rows={visiblePaperTradingRows}
             summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
@@ -8365,6 +8372,7 @@ function ExecutionPanel({
   i18n,
   isSubmitting = false,
   onSubmit,
+  portfolioOrderRows = [],
   rows,
   summaryTiles,
   workspace
@@ -8374,6 +8382,7 @@ function ExecutionPanel({
   i18n: AppI18n;
   isSubmitting?: boolean;
   onSubmit?: () => void;
+  portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
   rows: PaperTradingRow[];
   summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
@@ -8446,6 +8455,32 @@ function ExecutionPanel({
           ))}
         </div>
       </div>
+      {portfolioOrderRows.length ? (
+        <div className="paper-blotter portfolio-order-lifecycle">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "组合委托批次" : "Portfolio order batches"}</span>
+            <strong>{portfolioOrderRows.length}</strong>
+          </div>
+          <div className="paper-blotter-table">
+            <div className="paper-blotter-row paper-blotter-head portfolio-order-row">
+              <span>{i18n.locale === "zh-CN" ? "组合" : "Portfolio"}</span>
+              <span>{i18n.locale === "zh-CN" ? "批次" : "Batch"}</span>
+              <span>{i18n.t("execution.notional")}</span>
+              <span>{i18n.t("execution.status")}</span>
+              <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
+            </div>
+            {portfolioOrderRows.map((row) => (
+              <div className={`paper-blotter-row portfolio-order-row ${row.tone}`} key={row.id}>
+                <span>{row.portfolioName}</span>
+                <span>{row.batchId}</span>
+                <span>{formatPlainNumber(row.notionalValue)}</span>
+                <span>{portfolioOrderLifecycleStatusLabel(i18n, row)}</span>
+                <span>{row.auditEventId}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -8518,6 +8553,7 @@ function PortfolioWorkspace({
   portfolioBacktestResult,
   portfolioPaperOrderBatches,
   portfolioPaperOrderHistoryError,
+  portfolioPaperOrderLifecycleRows,
   portfolioPeerAuditPlan,
   riskApproval,
   rows,
@@ -8543,6 +8579,7 @@ function PortfolioWorkspace({
   portfolioBacktestResult: PortfolioBacktestResult;
   portfolioPaperOrderBatches: PortfolioPaperOrderBatch[];
   portfolioPaperOrderHistoryError: string | null;
+  portfolioPaperOrderLifecycleRows: PortfolioPaperOrderLifecycleRow[];
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
@@ -8969,6 +9006,7 @@ function PortfolioWorkspace({
         i18n={i18n}
         isSubmitting={isSubmittingPaperExecution}
         onSubmit={onSubmitPaperExecution}
+        portfolioOrderRows={portfolioPaperOrderLifecycleRows}
         rows={paperRows}
         summaryTiles={summaryTiles}
         workspace={workspace}
@@ -9874,6 +9912,20 @@ function portfolioPaperOrderBatchStatusLabel(i18n: AppI18n, batch: PortfolioPape
       return `${label} ${count}`;
     })
     .join(" · ");
+}
+
+function portfolioOrderLifecycleStatusLabel(i18n: AppI18n, row: PortfolioPaperOrderLifecycleRow): string {
+  if (!row.statusLabel) {
+    return row.status === "ready"
+      ? i18n.t("portfolio.paperOrderRecorded")
+      : row.status === "blocked"
+        ? i18n.t("portfolio.paperOrderRejected")
+        : i18n.t("portfolio.paperOrderPendingReview");
+  }
+  return row.statusLabel
+    .replace("review", i18n.t("portfolio.paperOrderPendingReview"))
+    .replace("rejected", i18n.t("portfolio.paperOrderRejected"))
+    .replace("skipped", i18n.t("portfolio.paperOrderSkipped"));
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

@@ -44,6 +44,7 @@ from quant_core.execution import (
     create_portfolio_paper_order_batch,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
+    portfolio_paper_order_batch_to_audit_event_payload,
     portfolio_paper_order_batch_to_payload,
     portfolio_paper_order_payload_to_batch,
     validate_paper_execution_handoff,
@@ -276,7 +277,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_portfolio_paper_orders", "detail": str(error)}, status=400)
                 return
             self.portfolio_paper_order_store.record(batch)
-            self._send_json({"portfolioPaperOrderBatch": portfolio_paper_order_batch_to_payload(batch)}, status=201)
+            audit_event = self.audit_event_store.record(portfolio_paper_order_batch_to_audit_event_payload(batch))
+            self._send_json(
+                {
+                    "portfolioPaperOrderBatch": portfolio_paper_order_batch_to_payload(batch),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=201,
+            )
             return
         if parsed.path == "/api/research/notes":
             try:

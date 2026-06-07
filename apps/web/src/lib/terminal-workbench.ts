@@ -619,6 +619,21 @@ export interface PortfolioPaperOrderBatchSnapshot {
   }>;
 }
 
+export interface PortfolioPaperOrderLifecycleRow {
+  id: string;
+  portfolioName: string;
+  batchId: string;
+  baseRunId: string;
+  createdAt: string;
+  orderCount: number;
+  notionalValue: number;
+  status: "ready" | "review" | "blocked";
+  statusLabel: string;
+  auditEventId: string;
+  detail: string;
+  tone: "positive" | "warning" | "risk" | "neutral";
+}
+
 export interface ResearchRunExportBrowserPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -5532,6 +5547,43 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
       tone: diagnosticTone(dataQualityStatus)
     }
   ];
+}
+
+export function buildPortfolioPaperOrderLifecycleRows(
+  batches: PortfolioPaperOrderBatchSnapshot[] | null | undefined
+): PortfolioPaperOrderLifecycleRow[] {
+  return [...(batches ?? [])]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .map((batch) => {
+      const pending = batch.summary.statusCounts.pending_review ?? 0;
+      const rejected = batch.summary.statusCounts.rejected ?? 0;
+      const skipped = batch.summary.statusCounts.skipped ?? 0;
+      const blockedRisk = batch.summary.riskStatusCounts.blocked ?? 0;
+      const reviewRisk = batch.summary.riskStatusCounts.review ?? 0;
+      const status: PortfolioPaperOrderLifecycleRow["status"] =
+        pending > 0 || reviewRisk > 0 ? "review" : rejected > 0 || blockedRisk > 0 ? "blocked" : "ready";
+
+      return {
+        id: batch.batchId,
+        portfolioName: batch.portfolioName,
+        batchId: batch.batchId,
+        baseRunId: batch.baseRunId,
+        createdAt: batch.createdAt,
+        orderCount: batch.summary.totalOrders,
+        notionalValue: batch.summary.totalNotionalValue,
+        status,
+        statusLabel: [
+          pending > 0 ? `${pending} review` : null,
+          rejected > 0 ? `${rejected} rejected` : null,
+          skipped > 0 ? `${skipped} skipped` : null
+        ]
+          .filter((item): item is string => Boolean(item))
+          .join(" / "),
+        auditEventId: `portfolio-paper-order-batch-${batch.batchId}`,
+        detail: `${batch.summary.totalOrders} paper-only candidates · ${batch.summary.totalNotionalValue} notional · source ${batch.source}`,
+        tone: status === "ready" ? "positive" : status === "blocked" ? "risk" : "warning"
+      };
+    });
 }
 
 export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktestReportInput>(

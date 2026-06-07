@@ -430,6 +430,34 @@ def portfolio_paper_order_batch_to_payload(batch: PortfolioPaperOrderBatch) -> d
     }
 
 
+def portfolio_paper_order_batch_to_audit_event_payload(batch: PortfolioPaperOrderBatch) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "eventId": f"portfolio-paper-order-batch-{batch.batch_id}",
+        "eventType": "portfolio_paper_order_batch",
+        "runId": batch.base_run_id,
+        "createdAt": batch.created_at.isoformat(),
+        "stage": "portfolio-paper-order-review",
+        "source": batch.source,
+        "summary": f"{batch.portfolio_name} recorded {batch.summary['totalOrders']} portfolio paper order candidates.",
+        "detail": "Portfolio paper order batch is paper-only and requires operator review before any simulated routing.",
+        "metadata": {
+            "batchId": batch.batch_id,
+            "baseRunId": batch.base_run_id,
+            "portfolioName": batch.portfolio_name,
+            "mode": batch.mode,
+            "source": batch.source,
+            "totalOrders": batch.summary["totalOrders"],
+            "totalNotionalValue": batch.summary["totalNotionalValue"],
+            "statusCounts": dict(batch.summary["statusCounts"]),
+            "riskStatusCounts": dict(batch.summary["riskStatusCounts"]),
+            "orderIds": [str(order.get("orderId") or "") for order in batch.orders],
+            "paperOnly": True,
+            "liveExecutionBlocked": True,
+        },
+    }
+
+
 def portfolio_paper_order_payload_to_batch(payload: dict[str, Any]) -> PortfolioPaperOrderBatch:
     if not isinstance(payload, dict):
         raise ValueError("portfolio_paper_order_batch_must_be_object")

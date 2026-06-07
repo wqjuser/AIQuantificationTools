@@ -3028,14 +3028,17 @@ class QuantCoreContractTest(unittest.TestCase):
         from http.server import HTTPServer
         from threading import Thread
 
+        from quant_core.audit_events import AuditEventStore
         from quant_core.api import QuantApiHandler
         from quant_core.execution import PortfolioPaperOrderStore
 
         with tempfile.TemporaryDirectory() as tmp:
             portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
 
             class TestHandler(QuantApiHandler):
                 portfolio_paper_order_store = portfolio_order_store
+                audit_event_store = portfolio_order_audit_store
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -3074,6 +3077,12 @@ class QuantCoreContractTest(unittest.TestCase):
                 connection.request("GET", "/api/portfolio/paper-orders?baseRunId=portfolio-run-api")
                 list_response = connection.getresponse()
                 list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=portfolio_paper_order_batch&runId=portfolio-run-api",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
             finally:
                 connection.close()
                 server.shutdown()
@@ -3089,6 +3098,15 @@ class QuantCoreContractTest(unittest.TestCase):
             list_payload["portfolioPaperOrderBatches"][0]["batchId"],
             payload["portfolioPaperOrderBatch"]["batchId"],
         )
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(payload["auditEvent"]["eventType"], "portfolio_paper_order_batch")
+        self.assertEqual(payload["auditEvent"]["runId"], "portfolio-run-api")
+        self.assertEqual(payload["auditEvent"]["metadata"]["batchId"], payload["portfolioPaperOrderBatch"]["batchId"])
+        self.assertEqual(payload["auditEvent"]["metadata"]["totalOrders"], 1)
+        self.assertEqual(payload["auditEvent"]["metadata"]["statusCounts"], {"pending_review": 1})
+        self.assertTrue(payload["auditEvent"]["metadata"]["paperOnly"])
+        self.assertEqual(len(audit_payload["events"]), 1)
+        self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
 
     def test_research_run_ai_review_api_records_review_for_run(self):
         import json

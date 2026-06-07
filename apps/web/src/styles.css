@@ -6042,6 +6042,10 @@ em {
   font-size: 12px;
 }
 
+.paper-blotter-row.portfolio-order-row {
+  grid-template-columns: minmax(130px, 1.1fr) minmax(150px, 1fr) minmax(86px, 0.55fr) minmax(128px, 0.75fr) minmax(180px, 1.2fr);
+}
+
 .paper-blotter-head {
   min-height: 32px;
   background: #0f1723;

@@ -910,6 +910,7 @@ export interface PortfolioPaperOrderBatchRequest {
 
 export interface PortfolioPaperOrderRecordResult {
   batch?: PortfolioPaperOrderBatch;
+  auditEvent?: AuditEventRecord;
   source: WorkspaceSource;
   error?: string;
 }
@@ -1407,6 +1408,7 @@ export async function recordPortfolioPaperOrderBatch(
     }
     return {
       batch: payload.portfolioPaperOrderBatch,
+      auditEvent: payload.auditEvent,
       source: "core"
     };
   } catch (error) {
@@ -4571,12 +4573,17 @@ function isPortfolioBacktestPayload(value: unknown): value is { portfolio: Portf
   return isPortfolioBacktestRun(payload.portfolio);
 }
 
-function isPortfolioPaperOrderBatchPayload(value: unknown): value is { portfolioPaperOrderBatch: PortfolioPaperOrderBatch } {
+function isPortfolioPaperOrderBatchPayload(
+  value: unknown
+): value is { portfolioPaperOrderBatch: PortfolioPaperOrderBatch; auditEvent?: AuditEventRecord } {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { portfolioPaperOrderBatch?: unknown };
-  return isPortfolioPaperOrderBatch(payload.portfolioPaperOrderBatch);
+  const payload = value as { portfolioPaperOrderBatch?: unknown; auditEvent?: unknown };
+  return (
+    isPortfolioPaperOrderBatch(payload.portfolioPaperOrderBatch) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
 }
 
 function isPortfolioPaperOrderBatchesPayload(value: unknown): value is { portfolioPaperOrderBatches: PortfolioPaperOrderBatch[] } {

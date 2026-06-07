@@ -50,6 +50,7 @@ import {
   buildPortfolioBacktestDraft,
   buildPortfolioBacktestDiagnosticRows,
   buildPortfolioBacktestReportMarkdown,
+  buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
@@ -4961,6 +4962,83 @@ describe("terminal workbench model", () => {
     expect(diagnostics[6].detail).toContain("pairwise correlation");
     expect(diagnostics[7].detail).toContain("negative contribution");
     expect(diagnostics[8].detail).toContain("000300: missing 1 bar");
+  });
+
+  test("builds portfolio paper order lifecycle rows for the execution center", () => {
+    const rows = buildPortfolioPaperOrderLifecycleRows([
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "run-current-600000",
+        portfolioName: "ashare audited basket",
+        createdAt: "2026-05-27T08:05:00+00:00",
+        mode: "portfolio_paper_order_review",
+        source: "portfolio_backtest",
+        summary: {
+          totalOrders: 3,
+          totalNotionalValue: 12850,
+          statusCounts: { pending_review: 1, rejected: 1, skipped: 1 },
+          riskStatusCounts: { review: 1, blocked: 1, passed: 1 }
+        },
+        orders: [
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            eventType: "portfolio_paper_order",
+            orderId: "order-review",
+            symbol: "600000",
+            sourceRunId: "run-current-600000",
+            side: "buy",
+            notionalValue: 8000,
+            quantity: 800,
+            status: "pending_review",
+            riskStatus: "review",
+            reason: "operator review required"
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            eventType: "portfolio_paper_order",
+            orderId: "order-rejected",
+            symbol: "000300",
+            sourceRunId: "run-peer-000300",
+            side: "sell",
+            notionalValue: 4850,
+            quantity: 2,
+            status: "rejected",
+            riskStatus: "blocked",
+            reason: "pre-trade risk blocked"
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            eventType: "portfolio_paper_order",
+            orderId: "order-skipped",
+            symbol: "CASH",
+            sourceRunId: null,
+            side: "hold",
+            notionalValue: 0,
+            quantity: 0,
+            status: "skipped",
+            riskStatus: "passed",
+            reason: "cash buffer"
+          }
+        ]
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "portfolio-paper-batch-1",
+        portfolioName: "ashare audited basket",
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "run-current-600000",
+        createdAt: "2026-05-27T08:05:00+00:00",
+        orderCount: 3,
+        notionalValue: 12850,
+        status: "review",
+        statusLabel: "1 review / 1 rejected / 1 skipped",
+        auditEventId: "portfolio-paper-order-batch-portfolio-paper-batch-1",
+        detail: "3 paper-only candidates · 12850 notional · source portfolio_backtest",
+        tone: "warning"
+      }
+    ]);
   });
 
   test("builds a markdown report from portfolio backtest evidence", () => {
