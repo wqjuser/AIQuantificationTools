@@ -638,6 +638,54 @@ export interface PortfolioPaperOrderLifecycleRow {
   tone: "positive" | "warning" | "risk" | "neutral";
 }
 
+export interface PortfolioPaperOrderLifecycleSnapshot {
+  batchId: string;
+  baseRunId: string;
+  portfolioName: string;
+  orderId: string;
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell" | "hold";
+  quantity: number;
+  notionalValue: number;
+  originalStatus: "pending_review" | "rejected" | "skipped";
+  riskStatus: "passed" | "review" | "blocked";
+  state:
+    | "awaiting_operator_review"
+    | "ready_for_simulation"
+    | "risk_rejected"
+    | "operator_rejected"
+    | "risk_review"
+    | "invalid_order"
+    | "skipped";
+  routable: boolean;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+  approvedBy: string | null;
+  reviewedAt: string | null;
+  reason: string;
+}
+
+export interface PortfolioPaperOrderApprovalRow {
+  id: string;
+  portfolioName: string;
+  batchId: string;
+  baseRunId: string;
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell" | "hold";
+  quantity: number;
+  notionalValue: number;
+  riskStatus: "passed" | "review" | "blocked";
+  state: PortfolioPaperOrderLifecycleSnapshot["state"];
+  canApprove: boolean;
+  canReject: boolean;
+  approvedBy: string | null;
+  reviewedAt: string | null;
+  actionHint: string;
+  tone: "positive" | "warning" | "risk" | "neutral";
+}
+
 export interface ResearchRunExportBrowserPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -5554,8 +5602,10 @@ export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktest
 }
 
 export function buildPortfolioPaperOrderLifecycleRows(
-  batches: PortfolioPaperOrderBatchSnapshot[] | null | undefined
+  batches: PortfolioPaperOrderBatchSnapshot[] | null | undefined,
+  lifecycleRows: PortfolioPaperOrderLifecycleSnapshot[] = []
 ): PortfolioPaperOrderLifecycleRow[] {
+  const lifecycleByBatch = portfolioPaperOrderLifecycleRowsByBatch(lifecycleRows);
   return [...(batches ?? [])]
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .map((batch) => {
@@ -5564,10 +5614,17 @@ export function buildPortfolioPaperOrderLifecycleRows(
       const skipped = batch.summary.statusCounts.skipped ?? 0;
       const blockedRisk = batch.summary.riskStatusCounts.blocked ?? 0;
       const reviewRisk = batch.summary.riskStatusCounts.review ?? 0;
-      const lifecycleStateCounts = batch.summary.lifecycleStateCounts ?? portfolioPaperOrderLifecycleStateCounts(batch);
+      const lifecycleStateCounts =
+        portfolioPaperOrderLifecycleStateCountsFromRows(lifecycleByBatch.get(batch.batchId)) ??
+        batch.summary.lifecycleStateCounts ??
+        portfolioPaperOrderLifecycleStateCounts(batch);
       const routableOrders = batch.summary.routableOrders ?? lifecycleStateCounts.ready_for_simulation ?? 0;
       const status: PortfolioPaperOrderLifecycleRow["status"] =
-        pending > 0 || reviewRisk > 0 ? "review" : rejected > 0 || blockedRisk > 0 ? "blocked" : "ready";
+        (lifecycleStateCounts.awaiting_operator_review ?? 0) > 0 || (lifecycleStateCounts.risk_review ?? 0) > 0 || reviewRisk > 0
+          ? "review"
+          : rejected > 0 || blockedRisk > 0 || (lifecycleStateCounts.risk_rejected ?? 0) > 0 || (lifecycleStateCounts.operator_rejected ?? 0) > 0
+            ? "blocked"
+            : "ready";
 
       return {
         id: batch.batchId,
@@ -5594,6 +5651,39 @@ export function buildPortfolioPaperOrderLifecycleRows(
     });
 }
 
+export function buildPortfolioPaperOrderApprovalRows(
+  batches: PortfolioPaperOrderBatchSnapshot[] | null | undefined,
+  lifecycleRows: PortfolioPaperOrderLifecycleSnapshot[] = []
+): PortfolioPaperOrderApprovalRow[] {
+  const lifecycleByOrder = portfolioPaperOrderLifecycleRowsByOrder(lifecycleRows);
+  return [...(batches ?? [])]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .flatMap((batch) =>
+      batch.orders.map((order) => {
+        const lifecycle = lifecycleByOrder.get(`${batch.batchId}:${order.orderId}`) ?? inferPortfolioPaperOrderLifecycle(batch, order);
+        return {
+          id: `${batch.batchId}:${order.orderId}`,
+          portfolioName: batch.portfolioName,
+          batchId: batch.batchId,
+          baseRunId: batch.baseRunId,
+          orderId: order.orderId,
+          symbol: order.symbol,
+          side: order.side,
+          quantity: lifecycle.quantity,
+          notionalValue: lifecycle.notionalValue,
+          riskStatus: lifecycle.riskStatus,
+          state: lifecycle.state,
+          canApprove: lifecycle.state === "awaiting_operator_review",
+          canReject: lifecycle.state === "awaiting_operator_review" || lifecycle.state === "risk_review",
+          approvedBy: lifecycle.approvedBy,
+          reviewedAt: lifecycle.reviewedAt,
+          actionHint: portfolioPaperOrderApprovalActionHint(lifecycle),
+          tone: portfolioPaperOrderApprovalTone(lifecycle.state)
+        };
+      })
+    );
+}
+
 function portfolioPaperOrderLifecycleStateCounts(batch: PortfolioPaperOrderBatchSnapshot): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const order of batch.orders) {
@@ -5606,6 +5696,102 @@ function portfolioPaperOrderLifecycleStateCounts(batch: PortfolioPaperOrderBatch
     counts[state] = (counts[state] ?? 0) + 1;
   }
   return counts;
+}
+
+function portfolioPaperOrderLifecycleRowsByBatch(
+  rows: PortfolioPaperOrderLifecycleSnapshot[]
+): Map<string, PortfolioPaperOrderLifecycleSnapshot[]> {
+  const byBatch = new Map<string, PortfolioPaperOrderLifecycleSnapshot[]>();
+  for (const row of rows) {
+    byBatch.set(row.batchId, [...(byBatch.get(row.batchId) ?? []), row]);
+  }
+  return byBatch;
+}
+
+function portfolioPaperOrderLifecycleRowsByOrder(
+  rows: PortfolioPaperOrderLifecycleSnapshot[]
+): Map<string, PortfolioPaperOrderLifecycleSnapshot> {
+  return new Map(rows.map((row) => [`${row.batchId}:${row.orderId}`, row]));
+}
+
+function portfolioPaperOrderLifecycleStateCountsFromRows(
+  rows: PortfolioPaperOrderLifecycleSnapshot[] | undefined
+): Record<string, number> | null {
+  if (!rows?.length) {
+    return null;
+  }
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    counts[row.state] = (counts[row.state] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function inferPortfolioPaperOrderLifecycle(
+  batch: PortfolioPaperOrderBatchSnapshot,
+  order: PortfolioPaperOrderBatchSnapshot["orders"][number]
+): PortfolioPaperOrderLifecycleSnapshot {
+  const state =
+    order.status === "skipped" || order.side === "hold"
+      ? "skipped"
+      : order.status === "rejected" || order.riskStatus === "blocked"
+        ? "risk_rejected"
+        : "awaiting_operator_review";
+  return {
+    batchId: batch.batchId,
+    baseRunId: batch.baseRunId,
+    portfolioName: batch.portfolioName,
+    orderId: order.orderId,
+    symbol: order.symbol,
+    sourceRunId: order.sourceRunId,
+    side: order.side,
+    quantity: order.quantity,
+    notionalValue: order.notionalValue,
+    originalStatus: order.status,
+    riskStatus: order.riskStatus,
+    state,
+    routable: false,
+    paperOnly: true,
+    liveExecutionBlocked: true,
+    approvedBy: null,
+    reviewedAt: null,
+    reason: order.reason
+  };
+}
+
+function portfolioPaperOrderApprovalActionHint(row: PortfolioPaperOrderLifecycleSnapshot): string {
+  if (row.state === "ready_for_simulation") {
+    return `Approved by ${row.approvedBy ?? "operator"}; ready for paper simulation.`;
+  }
+  if (row.state === "operator_rejected") {
+    return `Operator rejected this paper-only order: ${row.reason}`;
+  }
+  if (row.state === "risk_rejected") {
+    return `Risk rejected this paper-only order: ${row.reason}`;
+  }
+  if (row.state === "skipped") {
+    return "No paper order action is required for this row.";
+  }
+  if (row.state === "invalid_order") {
+    return `Invalid paper order: ${row.reason}`;
+  }
+  if (row.state === "risk_review") {
+    return "Risk review is still required before this approved order can be simulated.";
+  }
+  return "Operator approval or rejection is required before this paper-only order can move on.";
+}
+
+function portfolioPaperOrderApprovalTone(state: PortfolioPaperOrderLifecycleSnapshot["state"]): PortfolioPaperOrderApprovalRow["tone"] {
+  if (state === "ready_for_simulation") {
+    return "positive";
+  }
+  if (state === "risk_rejected" || state === "operator_rejected" || state === "invalid_order") {
+    return "risk";
+  }
+  if (state === "awaiting_operator_review" || state === "risk_review") {
+    return "warning";
+  }
+  return "neutral";
 }
 
 function portfolioPaperOrderExecutionStateLabel(counts: Record<string, number>): string {

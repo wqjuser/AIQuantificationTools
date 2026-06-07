@@ -1231,6 +1231,19 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".risk-approval-gate");
   });
 
+  test("renders portfolio paper order approvals as operator actions", () => {
+    expect(appSource).toContain("loadPortfolioPaperOrderApprovals");
+    expect(appSource).toContain("recordPortfolioPaperOrderApproval");
+    expect(appSource).toContain("buildPortfolioPaperOrderApprovalRows");
+    expect(appSource).toContain("portfolioPaperOrderApprovalRows");
+    expect(appSource).toContain("onApprovePortfolioOrder");
+    expect(appSource).toContain("onRejectPortfolioOrder");
+    expect(appSource).toContain('className="portfolio-order-approval"');
+    expect(appSource).toContain('className={`portfolio-order-approval-row');
+    expect(styles).toContain(".portfolio-order-approval");
+    expect(styles).toContain(".portfolio-order-approval-actions");
+  });
+
   test("renders paper execution account summaries from persisted execution records", () => {
     expect(appSource).toContain("buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord)");
     expect(appSource).toContain("buildPaperPositionRows(workspace, activePaperExecutionRecord)");

@@ -6075,6 +6075,113 @@ em {
   overflow-wrap: anywhere;
 }
 
+.portfolio-order-approval {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.portfolio-order-approval-list {
+  display: grid;
+  gap: 8px;
+}
+
+.portfolio-order-approval-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(260px, 1.2fr) minmax(150px, auto);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 9px 10px;
+  color: #dce6ee;
+}
+
+.portfolio-order-approval-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.portfolio-order-approval-row.warning {
+  border-left-color: #e8be62;
+}
+
+.portfolio-order-approval-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.portfolio-order-approval-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.portfolio-order-approval-row strong,
+.portfolio-order-approval-row span,
+.portfolio-order-approval-row p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-order-approval-row strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.portfolio-order-approval-row span,
+.portfolio-order-approval-row small,
+.portfolio-order-approval-row p {
+  color: #8fa0b2;
+  font-size: 11px;
+}
+
+.portfolio-order-approval-row p {
+  margin: 4px 0 0;
+  line-height: 1.35;
+}
+
+.portfolio-order-approval-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(70px, 1fr));
+  gap: 8px;
+}
+
+.portfolio-order-approval-meta span {
+  display: grid;
+  gap: 2px;
+  color: #dce6ee;
+  font-weight: 800;
+}
+
+.portfolio-order-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.portfolio-order-approval-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #12312b;
+  color: #71dfc5;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.portfolio-order-approval-actions button:last-child {
+  border-color: #7a3a32;
+  background: #2b1d22;
+  color: #ff9c8e;
+}
+
+.portfolio-order-approval-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .promotion-queue {
   display: grid;
   gap: 10px;

@@ -50,6 +50,7 @@ import {
   buildPortfolioBacktestDraft,
   buildPortfolioBacktestDiagnosticRows,
   buildPortfolioBacktestReportMarkdown,
+  buildPortfolioPaperOrderApprovalRows,
   buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPeerAuditPlan,
   buildProductWorkAreas,
@@ -5041,6 +5042,106 @@ describe("terminal workbench model", () => {
         tone: "warning"
       }
     ]);
+  });
+
+  test("builds portfolio paper order approval rows for operator review", () => {
+    const batches = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "run-current-600000",
+        portfolioName: "ashare audited basket",
+        createdAt: "2026-05-27T08:05:00+00:00",
+        mode: "portfolio_paper_order_review" as const,
+        source: "portfolio_backtest",
+        summary: {
+          totalOrders: 3,
+          totalNotionalValue: 12850,
+          statusCounts: { pending_review: 2, rejected: 1 },
+          riskStatusCounts: { passed: 1, review: 1, blocked: 1 }
+        },
+        orders: [
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            eventType: "portfolio_paper_order" as const,
+            orderId: "order-ready",
+            symbol: "600000",
+            sourceRunId: "run-current-600000",
+            side: "buy" as const,
+            notionalValue: 8000,
+            quantity: 800,
+            status: "pending_review" as const,
+            riskStatus: "passed" as const,
+            reason: "operator review required"
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            eventType: "portfolio_paper_order" as const,
+            orderId: "order-risk-review",
+            symbol: "600519",
+            sourceRunId: "run-peer-600519",
+            side: "buy" as const,
+            notionalValue: 4000,
+            quantity: 40,
+            status: "pending_review" as const,
+            riskStatus: "review" as const,
+            reason: "risk review required"
+          },
+          {
+            timestamp: "2026-05-27T08:00:00+00:00",
+            eventType: "portfolio_paper_order" as const,
+            orderId: "order-blocked",
+            symbol: "000300",
+            sourceRunId: "run-peer-000300",
+            side: "sell" as const,
+            notionalValue: 850,
+            quantity: 2,
+            status: "rejected" as const,
+            riskStatus: "blocked" as const,
+            reason: "pre-trade risk blocked"
+          }
+        ]
+      }
+    ];
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "run-current-600000",
+        portfolioName: "ashare audited basket",
+        orderId: "order-ready",
+        symbol: "600000",
+        sourceRunId: "run-current-600000",
+        side: "buy" as const,
+        quantity: 800,
+        notionalValue: 8000,
+        originalStatus: "pending_review" as const,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      }
+    ];
+
+    const rows = buildPortfolioPaperOrderApprovalRows(batches, lifecycle);
+
+    expect(rows.map((row) => `${row.orderId}:${row.state}:${row.canApprove}:${row.canReject}:${row.tone}`)).toEqual([
+      "order-ready:ready_for_simulation:false:false:positive",
+      "order-risk-review:awaiting_operator_review:true:true:warning",
+      "order-blocked:risk_rejected:false:false:risk"
+    ]);
+    expect(rows[0]).toMatchObject({
+      approvedBy: "operator-a",
+      actionHint: "Approved by operator-a; ready for paper simulation."
+    });
+    expect(rows[1]).toMatchObject({
+      batchId: "portfolio-paper-batch-1",
+      baseRunId: "run-current-600000",
+      actionHint: "Operator approval or rejection is required before this paper-only order can move on."
+    });
+    expect(rows[2].actionHint).toContain("Risk rejected");
   });
 
   test("builds a markdown report from portfolio backtest evidence", () => {
