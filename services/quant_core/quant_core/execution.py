@@ -23,6 +23,18 @@ class PaperExecutionRecord:
     gates: list[dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class PortfolioPaperOrderBatch:
+    batch_id: str
+    base_run_id: str
+    portfolio_name: str
+    created_at: datetime
+    mode: str
+    source: str
+    orders: list[dict[str, Any]]
+    summary: dict[str, Any]
+
+
 class PaperExecutionAdapter:
     def __init__(self, initial_cash: float = 100_000, max_position_value: float = 20_000) -> None:
         self.cash = initial_cash
@@ -192,6 +204,101 @@ class PaperExecutionStore:
             connection.close()
 
 
+class PortfolioPaperOrderStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path)
+
+    def _init_schema(self) -> None:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                create table if not exists portfolio_paper_order_batches (
+                    batch_id text primary key,
+                    base_run_id text not null,
+                    created_at text not null,
+                    portfolio_name text not null,
+                    mode text not null,
+                    source text not null,
+                    orders_json text not null,
+                    summary_json text not null
+                )
+                """
+            )
+            connection.execute(
+                """
+                create index if not exists idx_portfolio_paper_order_batches_base_run_created
+                on portfolio_paper_order_batches(base_run_id, created_at desc)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def record(self, batch: PortfolioPaperOrderBatch) -> PortfolioPaperOrderBatch:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                insert into portfolio_paper_order_batches (
+                    batch_id,
+                    base_run_id,
+                    created_at,
+                    portfolio_name,
+                    mode,
+                    source,
+                    orders_json,
+                    summary_json
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(batch_id) do update set
+                    base_run_id = excluded.base_run_id,
+                    created_at = excluded.created_at,
+                    portfolio_name = excluded.portfolio_name,
+                    mode = excluded.mode,
+                    source = excluded.source,
+                    orders_json = excluded.orders_json,
+                    summary_json = excluded.summary_json
+                """,
+                (
+                    batch.batch_id,
+                    batch.base_run_id,
+                    batch.created_at.isoformat(),
+                    batch.portfolio_name,
+                    batch.mode,
+                    batch.source,
+                    json.dumps(batch.orders, ensure_ascii=False, sort_keys=True),
+                    json.dumps(batch.summary, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return batch
+
+    def list_by_base_run(self, base_run_id: str, limit: int = 20) -> list[PortfolioPaperOrderBatch]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select batch_id, base_run_id, created_at, portfolio_name, mode, source, orders_json, summary_json
+                from portfolio_paper_order_batches
+                where base_run_id = ?
+                order by created_at desc
+                limit ?
+                """,
+                (base_run_id, max(1, min(limit, 50))),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_portfolio_paper_order_batch(row) for row in rows]
+
+
 def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None = None) -> PaperExecutionRecord:
     created = created_at or datetime.now(timezone.utc)
     price = _latest_close(audit)
@@ -252,6 +359,50 @@ def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[s
         "account": _account_to_payload(execution.account),
         "orders": [_order_to_payload(order) for order in execution.orders],
         "gates": _normalize_gates(execution.gates),
+    }
+
+
+def create_portfolio_paper_order_batch(
+    *,
+    base_run_id: str,
+    portfolio_name: str,
+    orders: list[dict[str, Any]],
+    source: str = "portfolio_backtest",
+    created_at: datetime | None = None,
+    batch_id: str | None = None,
+) -> PortfolioPaperOrderBatch:
+    normalized_base_run_id = str(base_run_id or "").strip()
+    normalized_portfolio_name = str(portfolio_name or "").strip()
+    normalized_source = str(source or "portfolio_backtest").strip() or "portfolio_backtest"
+    if not normalized_base_run_id:
+        raise ValueError("portfolio_paper_order_base_run_id_required")
+    if not normalized_portfolio_name:
+        raise ValueError("portfolio_paper_order_portfolio_name_required")
+    if not isinstance(orders, list) or not orders:
+        raise ValueError("portfolio_paper_order_orders_required")
+    normalized_orders = [_normalize_portfolio_paper_order(order) for order in orders]
+    return PortfolioPaperOrderBatch(
+        batch_id=str(batch_id or f"portfolio-paper-batch-{uuid4().hex[:12]}"),
+        base_run_id=normalized_base_run_id,
+        portfolio_name=normalized_portfolio_name,
+        created_at=created_at or datetime.now(timezone.utc),
+        mode="portfolio_paper_order_review",
+        source=normalized_source,
+        orders=normalized_orders,
+        summary=_portfolio_paper_order_summary(normalized_orders),
+    )
+
+
+def portfolio_paper_order_batch_to_payload(batch: PortfolioPaperOrderBatch) -> dict[str, Any]:
+    return {
+        "batchId": batch.batch_id,
+        "baseRunId": batch.base_run_id,
+        "portfolioName": batch.portfolio_name,
+        "createdAt": batch.created_at.isoformat(),
+        "mode": batch.mode,
+        "source": batch.source,
+        "summary": dict(batch.summary),
+        "orders": [dict(order) for order in batch.orders],
     }
 
 
@@ -533,6 +684,19 @@ def _row_to_paper_execution(row: sqlite3.Row | tuple[Any, ...]) -> PaperExecutio
     )
 
 
+def _row_to_portfolio_paper_order_batch(row: sqlite3.Row | tuple[Any, ...]) -> PortfolioPaperOrderBatch:
+    return PortfolioPaperOrderBatch(
+        batch_id=str(row[0]),
+        base_run_id=str(row[1]),
+        created_at=datetime.fromisoformat(str(row[2])),
+        portfolio_name=str(row[3]),
+        mode=str(row[4]),
+        source=str(row[5]),
+        orders=[_normalize_portfolio_paper_order(order) for order in json.loads(row[6])],
+        summary=dict(json.loads(row[7])),
+    )
+
+
 def _payload_to_order(payload: dict[str, Any]) -> OrderResult:
     return OrderResult(
         order_id=str(payload.get("orderId", "")),
@@ -544,3 +708,86 @@ def _payload_to_order(payload: dict[str, Any]) -> OrderResult:
         reason=str(payload.get("reason", "")),
         timestamp=datetime.fromisoformat(str(payload.get("timestamp"))),
     )
+
+
+def _normalize_portfolio_paper_order(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("portfolio_paper_order_must_be_object")
+    event_type = str(payload.get("eventType") or "").strip()
+    if event_type != "portfolio_paper_order":
+        raise ValueError("portfolio_paper_order_event_type_invalid")
+    order_id = str(payload.get("orderId") or "").strip()
+    symbol = str(payload.get("symbol") or "").strip()
+    if not order_id:
+        raise ValueError("portfolio_paper_order_id_required")
+    if not symbol:
+        raise ValueError("portfolio_paper_order_symbol_required")
+    side = _enum_value(payload.get("side"), {"buy", "sell", "hold"}, "portfolio_paper_order_side_invalid")
+    status = _enum_value(
+        payload.get("status"),
+        {"pending_review", "rejected", "skipped"},
+        "portfolio_paper_order_status_invalid",
+    )
+    risk_status = _enum_value(
+        payload.get("riskStatus"),
+        {"passed", "review", "blocked"},
+        "portfolio_paper_order_risk_status_invalid",
+    )
+    timestamp = _parse_payload_datetime(payload.get("timestamp"), "portfolio_paper_order_timestamp_invalid")
+    notional_value = _non_negative_number(payload.get("notionalValue"), "portfolio_paper_order_notional_invalid")
+    quantity = _non_negative_number(payload.get("quantity"), "portfolio_paper_order_quantity_invalid")
+    raw_source_run_id = payload.get("sourceRunId")
+    source_run_id = str(raw_source_run_id).strip() if raw_source_run_id is not None else None
+    return {
+        "timestamp": timestamp.isoformat(),
+        "eventType": event_type,
+        "orderId": order_id,
+        "symbol": symbol,
+        "sourceRunId": source_run_id or None,
+        "side": side,
+        "notionalValue": notional_value,
+        "quantity": quantity,
+        "status": status,
+        "riskStatus": risk_status,
+        "reason": str(payload.get("reason") or "").strip(),
+    }
+
+
+def _portfolio_paper_order_summary(orders: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "totalOrders": len(orders),
+        "totalNotionalValue": round(sum(float(order.get("notionalValue", 0)) for order in orders), 4),
+        "statusCounts": _sorted_counts(str(order.get("status")) for order in orders),
+        "riskStatusCounts": _sorted_counts(str(order.get("riskStatus")) for order in orders),
+    }
+
+
+def _sorted_counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return {key: counts[key] for key in sorted(counts)}
+
+
+def _enum_value(value: Any, allowed: set[str], error_code: str) -> str:
+    normalized = str(value or "").strip()
+    if normalized not in allowed:
+        raise ValueError(error_code)
+    return normalized
+
+
+def _parse_payload_datetime(value: Any, error_code: str) -> datetime:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(error_code) from error
+
+
+def _non_negative_number(value: Any, error_code: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(error_code) from error
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(error_code)
+    return number

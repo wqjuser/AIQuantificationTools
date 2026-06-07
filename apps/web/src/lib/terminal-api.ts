@@ -881,6 +881,43 @@ export interface PortfolioPaperOrderEvent {
   reason: string;
 }
 
+export interface PortfolioPaperOrderSummary {
+  totalOrders: number;
+  totalNotionalValue: number;
+  statusCounts: Record<string, number>;
+  riskStatusCounts: Record<string, number>;
+}
+
+export interface PortfolioPaperOrderBatch {
+  batchId: string;
+  baseRunId: string;
+  portfolioName: string;
+  createdAt: string;
+  mode: "portfolio_paper_order_review";
+  source: string;
+  summary: PortfolioPaperOrderSummary;
+  orders: PortfolioPaperOrderEvent[];
+}
+
+export interface PortfolioPaperOrderBatchRequest {
+  baseRunId: string;
+  portfolioName: string;
+  orders: PortfolioPaperOrderEvent[];
+  source?: string;
+}
+
+export interface PortfolioPaperOrderRecordResult {
+  batch?: PortfolioPaperOrderBatch;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface PortfolioPaperOrderHistoryResult {
+  batches: PortfolioPaperOrderBatch[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -1195,6 +1232,20 @@ export function buildPortfolioBacktestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/portfolio/backtest");
 }
 
+export function buildPortfolioPaperOrdersUrl(
+  baseUrl: string,
+  params: { baseRunId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/portfolio/paper-orders", (url) => {
+    if (params.baseRunId?.trim()) {
+      url.searchParams.set("baseRunId", params.baseRunId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
 export function buildLoadingMarketKlinesResult(params: TerminalResearchParams): MarketKlinesResult {
   return {
     market: params.market,
@@ -1318,6 +1369,76 @@ export async function runPortfolioBacktest(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown portfolio backtest error"
+    };
+  }
+}
+
+export async function recordPortfolioPaperOrderBatch(
+  baseUrl: string,
+  request: PortfolioPaperOrderBatchRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderRecordResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrdersUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseRunId: request.baseRunId,
+        portfolioName: request.portfolioName,
+        orders: request.orders,
+        source: request.source ?? "portfolio_backtest"
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isPortfolioPaperOrderBatchPayload(payload)) {
+      throw new Error("Invalid portfolio paper order batch contract");
+    }
+    return {
+      batch: payload.portfolioPaperOrderBatch,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order record error"
+    };
+  }
+}
+
+export async function loadPortfolioPaperOrderBatches(
+  baseUrl: string,
+  baseRunId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<PortfolioPaperOrderHistoryResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrdersUrl(baseUrl, { baseRunId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPortfolioPaperOrderBatchesPayload(payload)) {
+      throw new Error("Invalid portfolio paper order history contract");
+    }
+    return {
+      batches: payload.portfolioPaperOrderBatches,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      batches: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order history error"
     };
   }
 }
@@ -4439,6 +4560,60 @@ function isPortfolioBacktestPayload(value: unknown): value is { portfolio: Portf
   }
   const payload = value as { portfolio?: unknown };
   return isPortfolioBacktestRun(payload.portfolio);
+}
+
+function isPortfolioPaperOrderBatchPayload(value: unknown): value is { portfolioPaperOrderBatch: PortfolioPaperOrderBatch } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { portfolioPaperOrderBatch?: unknown };
+  return isPortfolioPaperOrderBatch(payload.portfolioPaperOrderBatch);
+}
+
+function isPortfolioPaperOrderBatchesPayload(value: unknown): value is { portfolioPaperOrderBatches: PortfolioPaperOrderBatch[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { portfolioPaperOrderBatches?: unknown };
+  return Array.isArray(payload.portfolioPaperOrderBatches) && payload.portfolioPaperOrderBatches.every(isPortfolioPaperOrderBatch);
+}
+
+function isPortfolioPaperOrderBatch(value: unknown): value is PortfolioPaperOrderBatch {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const batch = value as Partial<PortfolioPaperOrderBatch>;
+  return (
+    typeof batch.batchId === "string" &&
+    typeof batch.baseRunId === "string" &&
+    typeof batch.portfolioName === "string" &&
+    typeof batch.createdAt === "string" &&
+    batch.mode === "portfolio_paper_order_review" &&
+    typeof batch.source === "string" &&
+    isPortfolioPaperOrderSummary(batch.summary) &&
+    Array.isArray(batch.orders) &&
+    batch.orders.every(isPortfolioPaperOrderEvent)
+  );
+}
+
+function isPortfolioPaperOrderSummary(value: unknown): value is PortfolioPaperOrderSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<PortfolioPaperOrderSummary>;
+  return (
+    typeof summary.totalOrders === "number" &&
+    typeof summary.totalNotionalValue === "number" &&
+    isNumberRecord(summary.statusCounts) &&
+    isNumberRecord(summary.riskStatusCounts)
+  );
+}
+
+function isNumberRecord(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((item) => typeof item === "number");
 }
 
 function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {

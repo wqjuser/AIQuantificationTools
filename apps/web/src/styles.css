@@ -4238,6 +4238,10 @@ em {
   grid-template-columns: minmax(82px, 1fr) repeat(4, minmax(62px, 0.72fr));
 }
 
+.portfolio-backtest-leg-row.paper-order-batch {
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) repeat(3, minmax(62px, 0.72fr));
+}
+
 .portfolio-backtest-leg-row.review,
 .portfolio-backtest-leg-row.paper_review,
 .portfolio-backtest-leg-row.pending_review {

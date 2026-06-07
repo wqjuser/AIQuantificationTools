@@ -33,6 +33,7 @@ import {
   loadMarketKlines,
   loadMarketSearch,
   loadLatestResearchRunPaperExecution,
+  loadPortfolioPaperOrderBatches,
   loadResearchRunDetail,
   loadResearchRunExport,
   loadResearchRunHistory,
@@ -40,6 +41,7 @@ import {
   loadResearchNote,
   loadPlatformSettings,
   runPortfolioBacktest,
+  recordPortfolioPaperOrderBatch,
   refreshMarketCache,
   refreshMarketCacheBatch,
   loadStrategyLibrary,
@@ -75,6 +77,7 @@ import {
   PlatformSettingsResult,
   PlatformSettingsStatus,
   PortfolioBacktestResult,
+  PortfolioPaperOrderBatch,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunExportAuditReport,
@@ -514,6 +517,8 @@ export function App() {
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
   const [portfolioBacktestState, setPortfolioBacktestState] =
     useState<PortfolioBacktestResult>(initialPortfolioBacktestState);
+  const [portfolioPaperOrderBatches, setPortfolioPaperOrderBatches] = useState<PortfolioPaperOrderBatch[]>([]);
+  const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [locale, setLocale] = useState<Locale>(() =>
@@ -539,6 +544,7 @@ export function App() {
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
+  const [isRecordingPortfolioPaperOrders, setIsRecordingPortfolioPaperOrders] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
@@ -716,6 +722,27 @@ export function App() {
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
   }, [portfolioBacktestDraftKey]);
+
+  useEffect(() => {
+    const baseRunId = workspace.researchRun?.runId;
+    if (!baseRunId) {
+      setPortfolioPaperOrderBatches([]);
+      setPortfolioPaperOrderHistoryError(null);
+      return;
+    }
+    let cancelled = false;
+    setPortfolioPaperOrderHistoryError(null);
+    void loadPortfolioPaperOrderBatches(quantCoreBaseUrl, baseRunId).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setPortfolioPaperOrderBatches(result.batches);
+      setPortfolioPaperOrderHistoryError(result.error ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace.researchRun?.runId]);
 
   useEffect(() => {
     const requestId = strategyValidationRequestIdRef.current + 1;
@@ -1324,6 +1351,50 @@ export function App() {
     setPortfolioBacktestState(result);
     setIsRunningPortfolioBacktest(false);
   }, [portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
+
+  const recordPortfolioPaperOrders = useCallback(async () => {
+    const portfolio = portfolioBacktestState.portfolio;
+    const baseRunId = workspace.researchRun?.runId;
+    const orders = portfolio?.paperOrderEvents ?? [];
+    if (!portfolio || !baseRunId || !orders.length) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Portfolio paper order record failed",
+        error: "Run a portfolio backtest with paper order events before recording orders"
+      }));
+      return;
+    }
+
+    setIsRecordingPortfolioPaperOrders(true);
+    const result = await recordPortfolioPaperOrderBatch(quantCoreBaseUrl, {
+      baseRunId,
+      portfolioName: portfolio.name,
+      orders
+    });
+    setIsRecordingPortfolioPaperOrders(false);
+
+    const recordedBatch = result.batch;
+    if (recordedBatch) {
+      setPortfolioPaperOrderBatches((current) => [
+        recordedBatch,
+        ...current.filter((batch) => batch.batchId !== recordedBatch.batchId)
+      ]);
+      setPortfolioPaperOrderHistoryError(null);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Portfolio paper orders recorded",
+        error: undefined
+      }));
+      return;
+    }
+
+    setPortfolioPaperOrderHistoryError(result.error ?? "Portfolio paper order record failed");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Portfolio paper order record failed",
+      error: result.error ?? "Portfolio paper order record failed"
+    }));
+  }, [portfolioBacktestState.portfolio, workspace.researchRun?.runId]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -3138,10 +3209,12 @@ export function App() {
             executionClassName="workflow-execution-panel"
             i18n={i18n}
             isPreparingPortfolioPeers={isPreparingPortfolioPeers}
+            isRecordingPortfolioPaperOrders={isRecordingPortfolioPaperOrders}
             isRunningPortfolioBacktest={isRunningPortfolioBacktest}
             isSubmittingPaperExecution={isSubmittingPaperExecution}
             onExportPortfolioMarkdown={exportPortfolioBacktestMarkdown}
             onPreparePortfolioPeers={preparePortfolioPeerAudits}
+            onRecordPortfolioPaperOrders={recordPortfolioPaperOrders}
             onRunPortfolioBacktest={runPortfolioBacktestDraft}
             onSubmitPaperExecution={submitPaperExecution}
             paperRows={visiblePaperTradingRows}
@@ -3149,6 +3222,8 @@ export function App() {
             portfolioBacktestDraft={portfolioBacktestDraft}
             portfolioBacktestDiagnosticRows={portfolioBacktestDiagnosticRows}
             portfolioBacktestResult={portfolioBacktestState}
+            portfolioPaperOrderBatches={portfolioPaperOrderBatches}
+            portfolioPaperOrderHistoryError={portfolioPaperOrderHistoryError}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
@@ -8424,10 +8499,12 @@ function PortfolioWorkspace({
   executionClassName,
   i18n,
   isPreparingPortfolioPeers = false,
+  isRecordingPortfolioPaperOrders = false,
   isRunningPortfolioBacktest = false,
   isSubmittingPaperExecution = false,
   onExportPortfolioMarkdown,
   onPreparePortfolioPeers,
+  onRecordPortfolioPaperOrders,
   onRunPortfolioBacktest,
   onSubmitPaperExecution,
   paperRows,
@@ -8435,6 +8512,8 @@ function PortfolioWorkspace({
   portfolioBacktestDraft,
   portfolioBacktestDiagnosticRows,
   portfolioBacktestResult,
+  portfolioPaperOrderBatches,
+  portfolioPaperOrderHistoryError,
   portfolioPeerAuditPlan,
   riskApproval,
   rows,
@@ -8445,10 +8524,12 @@ function PortfolioWorkspace({
   executionClassName?: string;
   i18n: AppI18n;
   isPreparingPortfolioPeers?: boolean;
+  isRecordingPortfolioPaperOrders?: boolean;
   isRunningPortfolioBacktest?: boolean;
   isSubmittingPaperExecution?: boolean;
   onExportPortfolioMarkdown?: () => void;
   onPreparePortfolioPeers?: () => void;
+  onRecordPortfolioPaperOrders?: () => void;
   onRunPortfolioBacktest?: () => void;
   onSubmitPaperExecution?: () => void;
   paperRows: PaperTradingRow[];
@@ -8456,6 +8537,8 @@ function PortfolioWorkspace({
   portfolioBacktestDraft: PortfolioBacktestDraft;
   portfolioBacktestDiagnosticRows: PortfolioBacktestDiagnosticRow[];
   portfolioBacktestResult: PortfolioBacktestResult;
+  portfolioPaperOrderBatches: PortfolioPaperOrderBatch[];
+  portfolioPaperOrderHistoryError: string | null;
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
@@ -8465,6 +8548,9 @@ function PortfolioWorkspace({
   const portfolioBacktest = portfolioBacktestResult.portfolio;
   const canExportPortfolioMarkdown = Boolean(portfolioBacktest && onExportPortfolioMarkdown);
   const canRunPortfolioBacktest = portfolioBacktestDraft.status === "ready" && Boolean(onRunPortfolioBacktest);
+  const canRecordPortfolioPaperOrders = Boolean(
+    portfolioBacktest?.paperOrderEvents?.length && onRecordPortfolioPaperOrders
+  );
   const canPreparePortfolioPeers =
     portfolioPeerAuditPlan.status === "ready" && portfolioPeerAuditPlan.missingCount > 0 && Boolean(onPreparePortfolioPeers);
 
@@ -8515,6 +8601,18 @@ function PortfolioWorkspace({
               >
                 <Download size={14} />
                 {i18n.t("portfolio.exportMarkdown")}
+              </button>
+              <button
+                className="run-button compact portfolio-record-action"
+                disabled={!canRecordPortfolioPaperOrders || isRecordingPortfolioPaperOrders}
+                onClick={onRecordPortfolioPaperOrders}
+                title={i18n.t("portfolio.recordPaperOrders")}
+                type="button"
+              >
+                <Check size={14} />
+                {isRecordingPortfolioPaperOrders
+                  ? i18n.t("portfolio.recordPaperOrdersRunning")
+                  : i18n.t("portfolio.recordPaperOrders")}
               </button>
             </div>
           </div>
@@ -8778,6 +8876,43 @@ function PortfolioWorkspace({
                             <span>
                               <small>{i18n.t("portfolio.riskStatus")}</small>
                               {portfolioPreTradeRiskStatusLabel(i18n, event.riskStatus)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {portfolioPaperOrderBatches.length || portfolioPaperOrderHistoryError ? (
+                    <div className="portfolio-allocation-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.paperOrderHistory")}</span>
+                        <strong>{portfolioPaperOrderBatches.length}</strong>
+                      </div>
+                      {portfolioPaperOrderHistoryError ? (
+                        <p className="portfolio-backtest-empty">{portfolioPaperOrderHistoryError}</p>
+                      ) : null}
+                      <div className="portfolio-backtest-leg-table allocation">
+                        {portfolioPaperOrderBatches.map((batch) => (
+                          <div className="portfolio-backtest-leg-row paper-order-batch" key={batch.batchId}>
+                            <span>
+                              {batch.portfolioName}
+                              <em>{formatChartDate(batch.createdAt)}</em>
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.paperOrderBatch")}</small>
+                              {batch.batchId}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.paperOrderCount")}</small>
+                              {batch.summary.totalOrders}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.notional")}</small>
+                              {formatPlainNumber(batch.summary.totalNotionalValue)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("strategy.status")}</small>
+                              {portfolioPaperOrderBatchStatusLabel(i18n, batch)}
                             </span>
                           </div>
                         ))}
@@ -9719,6 +9854,22 @@ function portfolioPaperOrderStatusLabel(
     return i18n.t("portfolio.paperOrderRejected");
   }
   return i18n.t("portfolio.paperOrderSkipped");
+}
+
+function portfolioPaperOrderBatchStatusLabel(i18n: AppI18n, batch: PortfolioPaperOrderBatch): string {
+  const statusEntries = Object.entries(batch.summary.statusCounts).filter(([, count]) => count > 0);
+  if (!statusEntries.length) {
+    return i18n.t("portfolio.paperOrderRecorded");
+  }
+  return statusEntries
+    .map(([status, count]) => {
+      const label =
+        status === "pending_review" || status === "rejected" || status === "skipped"
+          ? portfolioPaperOrderStatusLabel(i18n, status)
+          : status;
+      return `${label} ${count}`;
+    })
+    .join(" · ");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

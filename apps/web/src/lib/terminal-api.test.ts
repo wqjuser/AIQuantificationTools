@@ -20,6 +20,7 @@ import {
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
   buildPortfolioBacktestUrl,
+  buildPortfolioPaperOrdersUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
   buildAuditReportVerifyUrl,
@@ -45,7 +46,9 @@ import {
   loadResearchRunExport,
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
+  loadPortfolioPaperOrderBatches,
   runPortfolioBacktest,
+  recordPortfolioPaperOrderBatch,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -193,6 +196,12 @@ describe("terminal workspace API client", () => {
 
   test("builds the portfolio backtest URL", () => {
     expect(buildPortfolioBacktestUrl("/")).toBe("/api/portfolio/backtest");
+  });
+
+  test("builds the portfolio paper order URL with a bounded query", () => {
+    expect(buildPortfolioPaperOrdersUrl("/", { baseRunId: "portfolio run/你好", limit: 200 })).toBe(
+      "/api/portfolio/paper-orders?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&limit=50"
+    );
   });
 
   test("builds the settings status URL", () => {
@@ -509,6 +518,73 @@ describe("terminal workspace API client", () => {
         { runId: "run-b", targetWeight: 0.3 }
       ]
     });
+  });
+
+  test("records and loads portfolio paper order batches from the Python core", async () => {
+    const order = {
+      timestamp: "2026-05-27T08:00:00+00:00",
+      eventType: "portfolio_paper_order" as const,
+      orderId: "portfolio-paper-run-a-buy",
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy" as const,
+      notionalValue: 2400,
+      quantity: 2400,
+      status: "pending_review" as const,
+      riskStatus: "review" as const,
+      reason: "portfolio paper order candidate requires operator review before staging"
+    };
+    const batch = {
+      batchId: "portfolio-paper-batch-1",
+      baseRunId: "portfolio-run-1",
+      portfolioName: "A-share core basket",
+      createdAt: "2026-05-27T08:05:00+00:00",
+      mode: "portfolio_paper_order_review" as const,
+      source: "portfolio_backtest",
+      summary: {
+        totalOrders: 1,
+        totalNotionalValue: 2400,
+        statusCounts: { pending_review: 1 },
+        riskStatusCounts: { review: 1 }
+      },
+      orders: [order]
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        json: async () =>
+          init?.method === "POST"
+            ? { portfolioPaperOrderBatch: batch }
+            : { portfolioPaperOrderBatches: [batch] }
+      };
+    };
+
+    const recordResult = await recordPortfolioPaperOrderBatch(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orders: [order]
+      },
+      fetcher
+    );
+    const historyResult = await loadPortfolioPaperOrderBatches("/", "portfolio-run-1", fetcher);
+
+    expect(recordResult.source).toBe("core");
+    expect(recordResult.batch?.summary.statusCounts.pending_review).toBe(1);
+    expect(historyResult.source).toBe("core");
+    expect(historyResult.batches[0].orders[0].orderId).toBe("portfolio-paper-run-a-buy");
+    expect(calls[0]).toMatchObject({ url: "/api/portfolio/paper-orders" });
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      baseRunId: "portfolio-run-1",
+      portfolioName: "A-share core basket",
+      orders: [order],
+      source: "portfolio_backtest"
+    });
+    expect(calls[1].url).toBe("/api/portfolio/paper-orders?baseRunId=portfolio-run-1&limit=20");
   });
 
   test("loads golden path status from the Python core", async () => {

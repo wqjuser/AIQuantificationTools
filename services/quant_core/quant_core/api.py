@@ -37,10 +37,13 @@ from quant_core.domain import (
 from quant_core.execution import (
     PaperExecutionRecord,
     PaperExecutionStore,
+    PortfolioPaperOrderStore,
     build_promotion_candidate,
     create_paper_execution_from_audit,
+    create_portfolio_paper_order_batch,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
+    portfolio_paper_order_batch_to_payload,
     validate_paper_execution_handoff,
 )
 from quant_core.golden_path import build_golden_path_status
@@ -145,6 +148,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     engine = BacktestEngine()
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
+    portfolio_paper_order_store = PortfolioPaperOrderStore(Path("data/portfolio_paper_orders.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
@@ -255,6 +259,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_portfolio_backtest", "detail": str(error)}, status=400)
                 return
             self._send_json({"portfolio": portfolio_backtest_run_to_payload(portfolio)})
+            return
+        if parsed.path == "/api/portfolio/paper-orders":
+            try:
+                payload = self._read_json_body()
+                batch = create_portfolio_paper_order_batch(
+                    base_run_id=str(payload.get("baseRunId") or ""),
+                    portfolio_name=str(payload.get("portfolioName") or ""),
+                    orders=payload.get("orders") if isinstance(payload.get("orders"), list) else [],
+                    source=str(payload.get("source") or "portfolio_backtest"),
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_portfolio_paper_orders", "detail": str(error)}, status=400)
+                return
+            self.portfolio_paper_order_store.record(batch)
+            self._send_json({"portfolioPaperOrderBatch": portfolio_paper_order_batch_to_payload(batch)}, status=201)
             return
         if parsed.path == "/api/research/notes":
             try:
@@ -578,6 +597,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
+            return
+        if parsed.path == "/api/portfolio/paper-orders":
+            query = parse_qs(parsed.query)
+            base_run_id = query.get("baseRunId", [""])[0].strip()
+            if not base_run_id:
+                self._send_json({"error": "portfolio_paper_order_base_run_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            batches = self.portfolio_paper_order_store.list_by_base_run(base_run_id, limit=limit)
+            self._send_json(
+                {
+                    "portfolioPaperOrderBatches": [
+                        portfolio_paper_order_batch_to_payload(batch) for batch in batches
+                    ]
+                }
+            )
             return
         if parsed.path == "/api/audit/signing-keys":
             try:

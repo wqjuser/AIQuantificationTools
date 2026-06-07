@@ -1541,6 +1541,63 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["gates"][0]["passed"])
         self.assertFalse(payload["gates"][2]["passed"])
 
+    def test_portfolio_paper_order_store_persists_batches_bound_to_base_run(self):
+        from quant_core.execution import (
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_batch,
+            portfolio_paper_order_batch_to_payload,
+        )
+
+        orders = [
+            {
+                "timestamp": "2026-05-26T08:00:00+00:00",
+                "eventType": "portfolio_paper_order",
+                "orderId": "portfolio-paper-run-a-sell",
+                "symbol": "600000",
+                "sourceRunId": "run-a",
+                "side": "sell",
+                "notionalValue": 6600.0,
+                "quantity": 6600.0,
+                "status": "pending_review",
+                "riskStatus": "review",
+                "reason": "Portfolio drift requires operator review.",
+            },
+            {
+                "timestamp": "2026-05-26T08:00:00+00:00",
+                "eventType": "portfolio_paper_order",
+                "orderId": "portfolio-paper-run-c-hold",
+                "symbol": "002415",
+                "sourceRunId": "run-c",
+                "side": "hold",
+                "notionalValue": 0.0,
+                "quantity": 0.0,
+                "status": "skipped",
+                "riskStatus": "passed",
+                "reason": "Within rebalance band.",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            batch = create_portfolio_paper_order_batch(
+                base_run_id="portfolio-run-001",
+                portfolio_name="A-share paper order basket",
+                orders=orders,
+                created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            )
+            store.record(batch)
+            fetched = store.list_by_base_run("portfolio-run-001")
+
+        payload = portfolio_paper_order_batch_to_payload(fetched[0])
+        self.assertEqual(payload["baseRunId"], "portfolio-run-001")
+        self.assertEqual(payload["portfolioName"], "A-share paper order basket")
+        self.assertEqual(payload["mode"], "portfolio_paper_order_review")
+        self.assertEqual(payload["summary"]["totalOrders"], 2)
+        self.assertEqual(payload["summary"]["statusCounts"], {"pending_review": 1, "skipped": 1})
+        self.assertEqual(payload["summary"]["riskStatusCounts"], {"passed": 1, "review": 1})
+        self.assertEqual(payload["orders"][0]["orderId"], "portfolio-paper-run-a-sell")
+        self.assertEqual(payload["orders"][1]["status"], "skipped")
+
     def test_ai_review_run_store_persists_records_bound_to_research_run(self):
         from quant_core.ai_review_runs import AiReviewRunStore, ai_review_run_record_to_payload
 
@@ -2890,6 +2947,74 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             [(leg["symbol"], leg["targetWeight"], leg["contributionValue"]) for leg in payload["portfolio"]["legs"]],
             [("600000", 0.6, 3000.0), ("000300", 0.3, 6000.0)],
+        )
+
+    def test_portfolio_paper_order_api_records_and_lists_batches(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PortfolioPaperOrderStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-api",
+                        "portfolioName": "A-share core basket",
+                        "orders": [
+                            {
+                                "timestamp": "2026-05-26T08:00:00+00:00",
+                                "eventType": "portfolio_paper_order",
+                                "orderId": "portfolio-paper-run-a-buy",
+                                "symbol": "600000",
+                                "sourceRunId": "run-a",
+                                "side": "buy",
+                                "notionalValue": 60000.0,
+                                "quantity": 6500.0,
+                                "status": "pending_review",
+                                "riskStatus": "review",
+                                "reason": "Requires operator review before simulated routing.",
+                            }
+                        ],
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-orders",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", "/api/portfolio/paper-orders?baseRunId=portfolio-run-api")
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["portfolioPaperOrderBatch"]["baseRunId"], "portfolio-run-api")
+        self.assertEqual(payload["portfolioPaperOrderBatch"]["summary"]["statusCounts"], {"pending_review": 1})
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(len(list_payload["portfolioPaperOrderBatches"]), 1)
+        self.assertEqual(
+            list_payload["portfolioPaperOrderBatches"][0]["batchId"],
+            payload["portfolioPaperOrderBatch"]["batchId"],
         )
 
     def test_research_run_ai_review_api_records_review_for_run(self):
