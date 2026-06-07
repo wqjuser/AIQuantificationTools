@@ -43,7 +43,7 @@
 - [x] GREEN: Localize readiness values for the new note states.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Progress Notes
 
@@ -51,6 +51,7 @@
 - Targeted GREEN check now passes for `terminal-workbench.test.ts`.
 - Full verification passed: `npm test`, `npm run build`, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification confirmed editing the note box changes the readiness row to `草稿未保存`, keeps the `保存笔记` action visible, and logs no warning/error messages.
+- Pushed through `127.0.0.1:7890`; GitHub Actions CI for commit `322b151` completed successfully.
 
 ## Verification Checklist
 
