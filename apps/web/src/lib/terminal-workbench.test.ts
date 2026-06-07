@@ -4753,6 +4753,21 @@ describe("terminal workbench model", () => {
           reason: "trade notional remains inside the hard pre-trade limit"
         }
       ],
+      paperOrderEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "portfolio_paper_order" as const,
+          orderId: "portfolio-paper-run-current-600000-sell",
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          side: "sell" as const,
+          notionalValue: 2470,
+          quantity: 2470,
+          status: "rejected" as const,
+          riskStatus: "blocked" as const,
+          reason: "pre-trade risk checks blocked this portfolio paper order candidate"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -4949,6 +4964,21 @@ describe("terminal workbench model", () => {
           reason: "trade notional remains inside the hard pre-trade limit"
         }
       ],
+      paperOrderEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "portfolio_paper_order" as const,
+          orderId: "portfolio-paper-run-current-600000-sell",
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          side: "sell" as const,
+          notionalValue: 2470,
+          quantity: 2470,
+          status: "rejected" as const,
+          riskStatus: "blocked" as const,
+          reason: "pre-trade risk checks blocked this portfolio paper order candidate"
+        }
+      ],
       legs: [
         {
           symbol: "600000",
@@ -5073,6 +5103,8 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("## Pre-Trade Risk Checks");
     expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | portfolio | - | - | portfolio_data_quality | blocked | 0.00 | 1.00 |");
     expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | trade | 600000 | run-current-600000 | trade_notional_limit | passed | 0.02 | 0.20 |");
+    expect(markdown).toContain("## Portfolio Paper Orders");
+    expect(markdown).toContain("| 2026-05-27T08:00:00+00:00 | portfolio-paper-run-current-600000-sell | 600000 | run-current-600000 | sell | 2470.00 | 2470.00 | rejected | blocked |");
     expect(markdown).toContain("historical audited portfolio evidence only");
     expect(markdown).toContain("No investment advice");
   });

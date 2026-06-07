@@ -392,6 +392,21 @@ describe("terminal workspace API client", () => {
                 reason: "trade notional remains inside the hard pre-trade limit"
               }
             ],
+            paperOrderEvents: [
+              {
+                timestamp: "2026-05-27T08:00:00+00:00",
+                eventType: "portfolio_paper_order",
+                orderId: "portfolio-paper-run-a-buy",
+                symbol: "600000",
+                sourceRunId: "run-a",
+                side: "buy",
+                notionalValue: 2400,
+                quantity: 2400,
+                status: "pending_review",
+                riskStatus: "review",
+                reason: "portfolio paper order candidate requires operator review before staging"
+              }
+            ],
             covarianceRisk: {
               method: "population_covariance",
               observations: 1,
@@ -476,6 +491,9 @@ describe("terminal workspace API client", () => {
     ]);
     expect(result.portfolio?.preTradeRiskChecks?.map((check) => `${check.symbol}:${check.checkId}:${check.status}:${check.limit}`)).toEqual([
       "600000:trade_notional_limit:passed:0.2"
+    ]);
+    expect(result.portfolio?.paperOrderEvents?.map((event) => `${event.symbol}:${event.side}:${event.status}:${event.riskStatus}:${event.quantity}`)).toEqual([
+      "600000:buy:pending_review:review:2400"
     ]);
     expect(result.portfolio?.covarianceRisk?.contributions.map((item) => `${item.symbol}:${item.contributionPct}`)).toEqual([
       "600000:68.4",
@@ -3082,6 +3100,21 @@ describe("terminal workspace API client", () => {
           reason: "portfolio composite data quality is incomplete; no paper order should be staged"
         }
       ],
+      paperOrderEvents: [
+        {
+          timestamp: "2026-05-27T08:00:00+00:00",
+          eventType: "portfolio_paper_order",
+          orderId: "portfolio-paper-run-current-600000-sell",
+          symbol: "600000",
+          sourceRunId: "run-current-600000",
+          side: "sell",
+          notionalValue: 2470,
+          quantity: 2470,
+          status: "rejected",
+          riskStatus: "blocked",
+          reason: "pre-trade risk checks blocked this portfolio paper order candidate"
+        }
+      ],
       dataQuality: {
         source: "portfolio-composite(600000:local-cache,000300:local-cache)",
         isComplete: false,
@@ -3161,6 +3194,7 @@ describe("terminal workspace API client", () => {
         equityRows: 2,
         tradeReviewEventCount: 1,
         preTradeRiskCheckCount: 1,
+        paperOrderEventCount: 1,
         covarianceRiskContributionCount: 2,
         covarianceRiskAnnualizedVolatilityPct: 28.6,
         diagnosticsCount: 9,

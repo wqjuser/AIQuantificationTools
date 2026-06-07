@@ -111,6 +111,21 @@ class PortfolioPreTradeRiskCheck:
 
 
 @dataclass(frozen=True)
+class PortfolioPaperOrderEvent:
+    timestamp: datetime
+    event_type: Literal["portfolio_paper_order"]
+    order_id: str
+    symbol: str
+    source_run_id: str | None
+    side: Literal["buy", "sell", "hold"]
+    notional_value: float
+    quantity: float
+    status: Literal["pending_review", "rejected", "skipped"]
+    risk_status: Literal["passed", "review", "blocked"]
+    reason: str
+
+
+@dataclass(frozen=True)
 class PortfolioBacktestRun:
     name: str
     market: Market
@@ -124,6 +139,7 @@ class PortfolioBacktestRun:
     rebalance_events: list[PortfolioRebalanceEvent]
     trade_review_events: list[PortfolioTradeReviewEvent]
     pre_trade_risk_checks: list[PortfolioPreTradeRiskCheck]
+    paper_order_events: list[PortfolioPaperOrderEvent]
     correlation_pairs: list[PortfolioCorrelationPair]
     covariance_risk: PortfolioCovarianceRiskSummary
     data_quality: DataQuality
@@ -185,6 +201,7 @@ class PortfolioBacktestEngine:
             portfolio_value=equity_curve[-1].equity,
             timestamp=timestamps[-1],
         )
+        paper_order_events = self._paper_order_events(trade_review_events, pre_trade_risk_checks)
         correlation_pairs = self._correlation_pairs(legs)
         covariance_risk = self._covariance_risk(legs, timeframe)
         return PortfolioBacktestRun(
@@ -200,6 +217,7 @@ class PortfolioBacktestEngine:
             rebalance_events=rebalance_events,
             trade_review_events=trade_review_events,
             pre_trade_risk_checks=pre_trade_risk_checks,
+            paper_order_events=paper_order_events,
             correlation_pairs=correlation_pairs,
             covariance_risk=covariance_risk,
             data_quality=data_quality,
@@ -494,6 +512,57 @@ class PortfolioBacktestEngine:
             )
         return checks
 
+    def _paper_order_events(
+        self,
+        trade_review_events: list[PortfolioTradeReviewEvent],
+        pre_trade_risk_checks: list[PortfolioPreTradeRiskCheck],
+    ) -> list[PortfolioPaperOrderEvent]:
+        portfolio_checks = [check for check in pre_trade_risk_checks if check.scope == "portfolio"]
+        events: list[PortfolioPaperOrderEvent] = []
+        for event in trade_review_events:
+            risk_status = self._paper_order_risk_status(
+                portfolio_checks + [check for check in pre_trade_risk_checks if check.symbol == event.symbol]
+            )
+            if event.side == "hold" or event.notional_value <= 0:
+                status: Literal["pending_review", "rejected", "skipped"] = "skipped"
+                reason = "no paper order generated because no rebalance trade is required"
+            elif risk_status == "blocked":
+                status = "rejected"
+                reason = "pre-trade risk checks blocked this portfolio paper order candidate"
+            else:
+                status = "pending_review"
+                reason = "portfolio paper order candidate requires operator review before staging"
+            events.append(
+                PortfolioPaperOrderEvent(
+                    timestamp=event.timestamp,
+                    event_type="portfolio_paper_order",
+                    order_id=self._portfolio_paper_order_id(event),
+                    symbol=event.symbol,
+                    source_run_id=event.source_run_id,
+                    side=event.side,
+                    notional_value=event.notional_value,
+                    quantity=event.notional_value,
+                    status=status,
+                    risk_status=risk_status,
+                    reason=reason,
+                )
+            )
+        return events
+
+    def _paper_order_risk_status(
+        self, checks: list[PortfolioPreTradeRiskCheck]
+    ) -> Literal["passed", "review", "blocked"]:
+        if any(check.status == "blocked" for check in checks):
+            return "blocked"
+        if any(check.status == "review" for check in checks):
+            return "review"
+        return "passed"
+
+    def _portfolio_paper_order_id(self, event: PortfolioTradeReviewEvent) -> str:
+        source = event.source_run_id or event.symbol
+        safe_source = "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in source)
+        return f"portfolio-paper-{safe_source}-{event.side}"
+
     def _correlation_pairs(self, legs: list[PortfolioLeg]) -> list[PortfolioCorrelationPair]:
         pairs: list[PortfolioCorrelationPair] = []
         leg_returns = {leg.run.symbol: self._period_returns(leg.run.equity_curve) for leg in legs}
@@ -712,6 +781,22 @@ def portfolio_backtest_run_to_payload(run: PortfolioBacktestRun) -> dict[str, An
                 "reason": check.reason,
             }
             for check in run.pre_trade_risk_checks
+        ],
+        "paperOrderEvents": [
+            {
+                "timestamp": event.timestamp.isoformat(),
+                "eventType": event.event_type,
+                "orderId": event.order_id,
+                "symbol": event.symbol,
+                "sourceRunId": event.source_run_id,
+                "side": event.side,
+                "notionalValue": event.notional_value,
+                "quantity": event.quantity,
+                "status": event.status,
+                "riskStatus": event.risk_status,
+                "reason": event.reason,
+            }
+            for event in run.paper_order_events
         ],
         "correlationPairs": [
             {

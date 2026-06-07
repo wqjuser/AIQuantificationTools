@@ -8750,6 +8750,40 @@ function PortfolioWorkspace({
                       </div>
                     </div>
                   ) : null}
+                  {portfolioBacktest.paperOrderEvents?.length ? (
+                    <div className="portfolio-allocation-ledger">
+                      <div className="portfolio-backtest-title">
+                        <span>{i18n.t("portfolio.paperOrderEvents")}</span>
+                        <strong>{portfolioBacktest.paperOrderEvents.length}</strong>
+                      </div>
+                      <div className="portfolio-backtest-leg-table allocation">
+                        {portfolioBacktest.paperOrderEvents.map((event) => (
+                          <div className={`portfolio-backtest-leg-row paper-order ${event.status}`} key={event.orderId}>
+                            <span>
+                              {event.symbol}
+                              <em>{portfolioTradeReviewSideLabel(i18n, event.side)}</em>
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.notional")}</small>
+                              {formatPlainNumber(event.notionalValue)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("execution.quantity")}</small>
+                              {formatPlainNumber(event.quantity)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("strategy.status")}</small>
+                              {portfolioPaperOrderStatusLabel(i18n, event.status)}
+                            </span>
+                            <span>
+                              <small>{i18n.t("portfolio.riskStatus")}</small>
+                              {portfolioPreTradeRiskStatusLabel(i18n, event.riskStatus)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="portfolio-backtest-empty">
@@ -9672,6 +9706,19 @@ function portfolioPreTradeRiskCheckLabel(
     return i18n.t("portfolio.preTradeRiskTradeStatus");
   }
   return i18n.t("portfolio.preTradeRiskNotional");
+}
+
+function portfolioPaperOrderStatusLabel(
+  i18n: AppI18n,
+  status: "pending_review" | "rejected" | "skipped"
+): string {
+  if (status === "pending_review") {
+    return i18n.t("portfolio.paperOrderPendingReview");
+  }
+  if (status === "rejected") {
+    return i18n.t("portfolio.paperOrderRejected");
+  }
+  return i18n.t("portfolio.paperOrderSkipped");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

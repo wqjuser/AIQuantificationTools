@@ -1214,6 +1214,19 @@ interface PortfolioBacktestDiagnosticInput {
     limit: number;
     reason: string;
   }>;
+  paperOrderEvents?: Array<{
+    timestamp: string;
+    eventType: "portfolio_paper_order";
+    orderId: string;
+    symbol: string;
+    sourceRunId: string | null;
+    side: "buy" | "sell" | "hold";
+    notionalValue: number;
+    quantity: number;
+    status: "pending_review" | "rejected" | "skipped";
+    riskStatus: "passed" | "review" | "blocked";
+    reason: string;
+  }>;
   covarianceRisk?: {
     method: "population_covariance";
     observations: number;
@@ -5514,6 +5527,18 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
     formatReportNumber(check.limit),
     check.reason
   ]);
+  const paperOrderRows = (portfolio.paperOrderEvents ?? []).map((event) => [
+    event.timestamp,
+    event.orderId,
+    event.symbol,
+    event.sourceRunId ?? "-",
+    event.side,
+    formatReportNumber(event.notionalValue),
+    formatReportNumber(event.quantity),
+    event.status,
+    event.riskStatus,
+    event.reason
+  ]);
   const covarianceSummaryRows = portfolio.covarianceRisk
     ? [
         ["Method", portfolio.covarianceRisk.method],
@@ -5601,6 +5626,15 @@ export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktest
           preTradeRiskRows
         )
       : "No pre-trade risk checks are attached to this portfolio run.",
+    "",
+    "## Portfolio Paper Orders",
+    "",
+    paperOrderRows.length
+      ? markdownTable(
+          ["Timestamp", "Order ID", "Symbol", "Run ID", "Side", "Notional", "Quantity", "Status", "Risk", "Reason"],
+          paperOrderRows
+        )
+      : "No portfolio paper order events are attached to this portfolio run.",
     "",
     "## Composite Data Quality",
     "",

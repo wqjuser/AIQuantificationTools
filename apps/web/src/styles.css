@@ -4234,6 +4234,28 @@ em {
   border-left-color: #4cc9ad;
 }
 
+.portfolio-backtest-leg-row.paper-order {
+  grid-template-columns: minmax(82px, 1fr) repeat(4, minmax(62px, 0.72fr));
+}
+
+.portfolio-backtest-leg-row.review,
+.portfolio-backtest-leg-row.paper_review,
+.portfolio-backtest-leg-row.pending_review {
+  border-left-color: #f0c85a;
+}
+
+.portfolio-backtest-leg-row.blocked,
+.portfolio-backtest-leg-row.rejected {
+  border-left-color: #ff6b5a;
+}
+
+.portfolio-backtest-leg-row.passed,
+.portfolio-backtest-leg-row.within_band,
+.portfolio-backtest-leg-row.no_action,
+.portfolio-backtest-leg-row.skipped {
+  border-left-color: #4cc9ad;
+}
+
 .portfolio-backtest-leg-row span {
   min-width: 0;
   overflow-wrap: anywhere;
