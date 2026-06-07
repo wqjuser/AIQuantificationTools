@@ -7334,6 +7334,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "backtest-report": "回测报告",
       "research-note": "研究笔记",
       "paper-executions": "模拟执行",
+      "portfolio-paper-orders": "组合模拟委托",
       "promotion-candidate": "晋级候选",
       "ai-reviews": "AI 评审",
       "audit-summary": "审计摘要",
@@ -7416,6 +7417,8 @@ function researchExportBrowserDetail(i18n: AppI18n, detail: string): string {
     .replace("Manifest and package paper execution counts match.", "Manifest 与包内模拟执行数量一致。")
     .replace("Manifest paper execution count does not match the package payload.", "Manifest 模拟执行数量与包内载荷不一致。")
     .replace("No paper execution payload is attached.", "没有附加模拟执行载荷。")
+    .replace("Portfolio paper order batch count matches the export package payload.", "Portfolio 组合模拟委托批次数量与导出包载荷一致。")
+    .replace("Portfolio paper order manifest count does not match the package payload.", "Portfolio 组合模拟委托批次数量与包内载荷不一致。")
     .replace("Promotion candidate is attached to the package.", "晋级候选证据已附加到导出包。")
     .replace("No promotion candidate payload is attached.", "没有附加晋级候选载荷。")
     .replace("Manifest and package AI review counts match.", "Manifest 与包内 AI 评审数量一致。")
@@ -7440,6 +7443,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "strategy-revision": "策略版本",
       "research-note": "研究笔记",
       "paper-executions": "模拟执行",
+      "portfolio-paper-orders": "组合模拟委托",
       "ai-review-runs": "AI 评审记录",
       "audit-summary": "导入审计摘要",
       "audit-report": "导入审计报告",

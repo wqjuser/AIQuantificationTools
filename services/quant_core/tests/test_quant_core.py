@@ -16,6 +16,74 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _sample_research_run_audit(self, *, run_id: str, strategy_revision: str):
+        from quant_core.runs import ResearchRunAudit
+
+        return ResearchRunAudit(
+            run_id=run_id,
+            created_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Portable SMA trend",
+            strategy_revision=strategy_revision,
+            data_rows=2,
+            metrics={"total_return_pct": 4.2, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Portable evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={
+                "summary": "Portable package summary",
+                "risks": ["Portable paper-only risk"],
+                "improvements": ["Review imported execution evidence"],
+                "disclaimer": "No investment advice",
+            },
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 2},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 2,
+                "start": "2026-05-26T08:00:00+00:00",
+                "end": "2026-05-27T08:00:00+00:00",
+                "hash": f"snapshot-{run_id}",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-26T08:00:00+00:00",
+                        "timestampMs": 1779782400000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    },
+                    {
+                        "timestamp": "2026-05-27T08:00:00+00:00",
+                        "timestampMs": 1779868800000,
+                        "open": 9.2,
+                        "high": 9.4,
+                        "low": 9.1,
+                        "close": 9.3,
+                        "volume": 1300000,
+                    },
+                ],
+            },
+            strategy_config={
+                "name": "Portable SMA trend",
+                "revision": strategy_revision,
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.2},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            backtest_trades=[{"id": f"trade-{run_id}", "side": "BUY", "price": "9.20"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000.0}],
+            backtest_diagnostics=[{"id": "return-profile", "label": "Return profile", "value": "+4.20%"}],
+        )
+
     def test_docker_smoke_validates_workspace_payload(self):
         docker_smoke = self._load_docker_smoke_module()
 
@@ -1485,7 +1553,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(paper.account().positions["600000"], 100)
 
     def test_paper_execution_store_persists_orders_bound_to_research_run(self):
-        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit, paper_execution_record_to_payload
+        from quant_core.execution import (
+            PortfolioPaperOrderStore,
+            PaperExecutionStore,
+            create_paper_execution_from_audit,
+            paper_execution_record_to_payload,
+        )
         from quant_core.runs import ResearchRunAudit
 
         audit = ResearchRunAudit(
@@ -5510,6 +5583,62 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact_count_promotion_candidates_mismatch"):
             research_run_import_to_audit(export_package)
 
+    def test_research_run_export_import_preserves_portfolio_paper_order_batches(self):
+        from quant_core.execution import create_portfolio_paper_order_batch, portfolio_paper_order_batch_to_payload
+        from quant_core.runs import (
+            research_run_export_to_payload,
+            research_run_import_portfolio_paper_orders,
+            research_run_import_to_audit,
+        )
+
+        audit = self._sample_research_run_audit(
+            run_id="run-portfolio-orders-export",
+            strategy_revision="rev-portfolio-orders-export",
+        )
+        batch = create_portfolio_paper_order_batch(
+            base_run_id=audit.run_id,
+            portfolio_name="Portable basket",
+            source="portfolio_backtest",
+            created_at=datetime(2026, 5, 26, 8, 7, tzinfo=timezone.utc),
+            batch_id="portfolio-paper-batch-portable",
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:07:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-order-1",
+                    "symbol": "600000",
+                    "sourceRunId": audit.run_id,
+                    "side": "buy",
+                    "notionalValue": 19341.0,
+                    "quantity": 2100,
+                    "status": "pending_review",
+                    "riskStatus": "review",
+                    "reason": "Portfolio rebalance requires operator review.",
+                }
+            ],
+        )
+
+        export_package = research_run_export_to_payload(
+            audit,
+            portfolio_paper_orders=[portfolio_paper_order_batch_to_payload(batch)],
+        )
+        imported = research_run_import_to_audit(export_package)
+        imported_batches = research_run_import_portfolio_paper_orders(export_package, base_run_id=audit.run_id)
+
+        self.assertEqual(imported.run_id, audit.run_id)
+        self.assertEqual(export_package["manifest"]["artifactCounts"]["portfolioPaperOrderBatches"], 1)
+        self.assertEqual(export_package["portfolioPaperOrderBatches"][0]["batchId"], "portfolio-paper-batch-portable")
+        self.assertEqual(imported_batches[0]["baseRunId"], audit.run_id)
+        self.assertEqual(imported_batches[0]["summary"]["riskStatusCounts"], {"review": 1})
+
+        tampered_package = dict(export_package)
+        tampered_package.pop("integrity", None)
+        tampered_package["manifest"] = dict(export_package["manifest"])
+        tampered_package["manifest"]["artifactCounts"] = dict(export_package["manifest"]["artifactCounts"])
+        tampered_package["manifest"]["artifactCounts"]["portfolioPaperOrderBatches"] = 0
+        with self.assertRaisesRegex(ValueError, "artifact_count_portfolio_paper_order_batches_mismatch"):
+            research_run_import_to_audit(tampered_package)
+
     def test_research_run_import_rejects_ai_review_run_id_mismatch(self):
         from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
 
@@ -5758,7 +5887,12 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import QuantApiHandler
-        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit, paper_execution_record_to_payload
+        from quant_core.execution import (
+            PortfolioPaperOrderStore,
+            PaperExecutionStore,
+            create_paper_execution_from_audit,
+            paper_execution_record_to_payload,
+        )
         from quant_core.research_notes import ResearchNoteStore
         from quant_core.runs import ResearchRunAudit, ResearchRunStore, research_run_export_to_payload
         from quant_core.strategy_library import StrategyLibraryStore
@@ -5854,6 +5988,7 @@ class QuantCoreContractTest(unittest.TestCase):
             note_library = ResearchNoteStore(f"{tmp}/notes.sqlite")
             strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
             paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            portfolio_order_library = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
 
             class FailingAiReviewStore(AiReviewRunStore):
                 def record(self, record):
@@ -5873,6 +6008,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 note_store = note_library
                 strategy_store = strategy_library
                 paper_execution_store = paper_library
+                portfolio_paper_order_store = portfolio_order_library
                 ai_review_store = review_store
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
@@ -5915,7 +6051,12 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import _persist_research_run_import
-        from quant_core.execution import PaperExecutionStore, create_paper_execution_from_audit
+        from quant_core.execution import (
+            PortfolioPaperOrderStore,
+            PaperExecutionStore,
+            create_paper_execution_from_audit,
+            create_portfolio_paper_order_batch,
+        )
         from quant_core.research_notes import ResearchNoteStore
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
         from quant_core.strategy_library import StrategyLibraryStore
@@ -5965,6 +6106,7 @@ class QuantCoreContractTest(unittest.TestCase):
             note_library = ResearchNoteStore(f"{tmp}/notes.sqlite")
             strategy_library = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
             paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            portfolio_order_library = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
 
             class FailingAiReviewStore(AiReviewRunStore):
                 def record(self, record):
@@ -5979,6 +6121,52 @@ class QuantCoreContractTest(unittest.TestCase):
                         created_at=audit.created_at + timedelta(minutes=index),
                     )
                 )
+            portfolio_order_library.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id=audit.run_id,
+                    portfolio_name="Previous basket",
+                    source="portfolio_backtest",
+                    created_at=audit.created_at + timedelta(minutes=2),
+                    batch_id="portfolio-paper-batch-previous",
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:02:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-order-previous",
+                            "symbol": "600000",
+                            "sourceRunId": audit.run_id,
+                            "side": "buy",
+                            "notionalValue": 9000,
+                            "quantity": 1000,
+                            "status": "pending_review",
+                            "riskStatus": "review",
+                            "reason": "Existing batch must survive rollback.",
+                        }
+                    ],
+                )
+            )
+            imported_batch = create_portfolio_paper_order_batch(
+                base_run_id=audit.run_id,
+                portfolio_name="Imported basket",
+                source="portfolio_backtest",
+                created_at=audit.created_at + timedelta(minutes=3),
+                batch_id="portfolio-paper-batch-imported",
+                orders=[
+                    {
+                        "timestamp": "2026-05-26T08:03:00+00:00",
+                        "eventType": "portfolio_paper_order",
+                        "orderId": "portfolio-paper-order-imported",
+                        "symbol": "600000",
+                        "sourceRunId": audit.run_id,
+                        "side": "buy",
+                        "notionalValue": 18000,
+                        "quantity": 2000,
+                        "status": "pending_review",
+                        "riskStatus": "review",
+                        "reason": "Imported batch should be removed on rollback.",
+                    }
+                ],
+            )
 
             with self.assertRaises(RuntimeError):
                 _persist_research_run_import(
@@ -5986,10 +6174,12 @@ class QuantCoreContractTest(unittest.TestCase):
                     note_store=note_library,
                     strategy_store=strategy_library,
                     paper_execution_store=paper_library,
+                    portfolio_paper_order_store=portfolio_order_library,
                     ai_review_store=review_store,
                     audit=audit,
                     imported_note=None,
                     paper_execution_records=[],
+                    portfolio_paper_order_batches=[imported_batch],
                     ai_review_records=[failing_review],
                 )
 
@@ -6001,8 +6191,12 @@ class QuantCoreContractTest(unittest.TestCase):
                 ).fetchone()[0]
             finally:
                 connection.close()
+            portfolio_batch_ids = [
+                batch.batch_id for batch in portfolio_order_library.list_all_by_base_run("run-import-rollback-many-paper")
+            ]
 
         self.assertEqual(paper_count, 51)
+        self.assertEqual(portfolio_batch_ids, ["portfolio-paper-batch-previous"])
 
     def test_research_run_import_api_can_undo_successful_import(self):
         import json
@@ -6463,6 +6657,131 @@ class QuantCoreContractTest(unittest.TestCase):
             history_payload["executions"][0]["executionId"],
             export_payload["export"]["paperExecutions"][0]["executionId"],
         )
+
+    def test_research_run_export_import_preserves_portfolio_paper_order_history(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PaperExecutionStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_batch,
+        )
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        audit = self._sample_research_run_audit(
+            run_id="run-portfolio-orders-portable",
+            strategy_revision="rev-portfolio-orders-portable",
+        )
+        batch = create_portfolio_paper_order_batch(
+            base_run_id=audit.run_id,
+            portfolio_name="Portable basket",
+            source="portfolio_backtest",
+            created_at=datetime(2026, 5, 26, 8, 7, tzinfo=timezone.utc),
+            batch_id="portfolio-paper-batch-api-portable",
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:07:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-order-api-1",
+                    "symbol": "600000",
+                    "sourceRunId": audit.run_id,
+                    "side": "buy",
+                    "notionalValue": 19341.0,
+                    "quantity": 2100,
+                    "status": "pending_review",
+                    "riskStatus": "review",
+                    "reason": "Portfolio rebalance requires operator review.",
+                }
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source_run_store = ResearchRunStore(f"{tmp}/source-runs.sqlite")
+            source_paper_store = PaperExecutionStore(f"{tmp}/source-paper.sqlite")
+            source_ai_review_store = AiReviewRunStore(f"{tmp}/source-ai-reviews.sqlite")
+            source_portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/source-portfolio-orders.sqlite")
+            target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
+            target_note_store = ResearchNoteStore(f"{tmp}/target-notes.sqlite")
+            target_strategy_store = StrategyLibraryStore(f"{tmp}/target-strategies.sqlite")
+            target_paper_store = PaperExecutionStore(f"{tmp}/target-paper.sqlite")
+            target_ai_review_store = AiReviewRunStore(f"{tmp}/target-ai-reviews.sqlite")
+            target_portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/target-portfolio-orders.sqlite")
+            source_run_store.record(audit)
+            source_portfolio_order_store.record(batch)
+
+            class SourceHandler(QuantApiHandler):
+                run_store = source_run_store
+                paper_execution_store = source_paper_store
+                ai_review_store = source_ai_review_store
+                portfolio_paper_order_store = source_portfolio_order_store
+
+            source_server = HTTPServer(("127.0.0.1", 0), SourceHandler)
+            source_thread = Thread(target=source_server.serve_forever, daemon=True)
+            source_thread.start()
+            source_connection = HTTPConnection(source_server.server_address[0], source_server.server_address[1], timeout=5)
+            try:
+                source_connection.request("GET", "/api/research/runs/run-portfolio-orders-portable/export")
+                export_response = source_connection.getresponse()
+                export_payload = json.loads(export_response.read().decode("utf-8"))
+            finally:
+                source_connection.close()
+                source_server.shutdown()
+                source_thread.join(timeout=5)
+                source_server.server_close()
+
+            class TargetHandler(QuantApiHandler):
+                run_store = target_run_store
+                note_store = target_note_store
+                strategy_store = target_strategy_store
+                paper_execution_store = target_paper_store
+                ai_review_store = target_ai_review_store
+                portfolio_paper_order_store = target_portfolio_order_store
+
+            target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
+            target_thread = Thread(target=target_server.serve_forever, daemon=True)
+            target_thread.start()
+            target_connection = HTTPConnection(target_server.server_address[0], target_server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(export_payload["export"]).encode("utf-8")
+                target_connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                import_response = target_connection.getresponse()
+                import_payload = json.loads(import_response.read().decode("utf-8"))
+                target_connection.request("GET", "/api/portfolio/paper-orders?baseRunId=run-portfolio-orders-portable")
+                history_response = target_connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                target_connection.close()
+                target_server.shutdown()
+                target_thread.join(timeout=5)
+                target_server.server_close()
+
+        self.assertEqual(export_response.status, 200)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["portfolioPaperOrderBatches"], 1)
+        self.assertEqual(
+            export_payload["export"]["portfolioPaperOrderBatches"][0]["batchId"],
+            "portfolio-paper-batch-api-portable",
+        )
+        self.assertEqual(import_response.status, 201)
+        self.assertEqual(import_payload["run"]["runId"], "run-portfolio-orders-portable")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["portfolioPaperOrderBatches"]), 1)
+        self.assertEqual(
+            history_payload["portfolioPaperOrderBatches"][0]["batchId"],
+            "portfolio-paper-batch-api-portable",
+        )
+        self.assertEqual(history_payload["portfolioPaperOrderBatches"][0]["summary"]["totalOrders"], 1)
 
     def test_research_run_export_import_preserves_ai_review_records(self):
         import json

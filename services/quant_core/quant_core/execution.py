@@ -298,6 +298,30 @@ class PortfolioPaperOrderStore:
             connection.close()
         return [_row_to_portfolio_paper_order_batch(row) for row in rows]
 
+    def list_all_by_base_run(self, base_run_id: str) -> list[PortfolioPaperOrderBatch]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select batch_id, base_run_id, created_at, portfolio_name, mode, source, orders_json, summary_json
+                from portfolio_paper_order_batches
+                where base_run_id = ?
+                order by created_at desc
+                """,
+                (base_run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_portfolio_paper_order_batch(row) for row in rows]
+
+    def delete_by_base_run(self, base_run_id: str) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("delete from portfolio_paper_order_batches where base_run_id = ?", (base_run_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
 
 def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None = None) -> PaperExecutionRecord:
     created = created_at or datetime.now(timezone.utc)
@@ -404,6 +428,28 @@ def portfolio_paper_order_batch_to_payload(batch: PortfolioPaperOrderBatch) -> d
         "summary": dict(batch.summary),
         "orders": [dict(order) for order in batch.orders],
     }
+
+
+def portfolio_paper_order_payload_to_batch(payload: dict[str, Any]) -> PortfolioPaperOrderBatch:
+    if not isinstance(payload, dict):
+        raise ValueError("portfolio_paper_order_batch_must_be_object")
+    batch_id = str(payload.get("batchId") or "").strip()
+    if not batch_id:
+        raise ValueError("portfolio_paper_order_batch_id_required")
+    if str(payload.get("mode") or "").strip() != "portfolio_paper_order_review":
+        raise ValueError("portfolio_paper_order_batch_mode_invalid")
+    raw_orders = payload.get("orders")
+    if not isinstance(raw_orders, list):
+        raise ValueError("portfolio_paper_order_orders_required")
+    created_at = _parse_payload_datetime(payload.get("createdAt"), "portfolio_paper_order_batch_created_at_invalid")
+    return create_portfolio_paper_order_batch(
+        base_run_id=str(payload.get("baseRunId") or ""),
+        portfolio_name=str(payload.get("portfolioName") or ""),
+        source=str(payload.get("source") or "portfolio_backtest"),
+        created_at=created_at,
+        batch_id=batch_id,
+        orders=raw_orders,
+    )
 
 
 def _paper_execution_data_quality_is_complete(data_quality: Any) -> bool:

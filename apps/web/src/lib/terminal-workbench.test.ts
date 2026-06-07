@@ -2089,6 +2089,7 @@ describe("terminal workbench model", () => {
           decisions: 4,
           aiRisks: 2,
           paperExecutions: 1,
+          portfolioPaperOrderBatches: 1,
           promotionCandidates: 1,
           researchNotes: 1,
           aiReviewRuns: 2
@@ -2112,6 +2113,37 @@ describe("terminal workbench model", () => {
           account: { cash: 80_659, equity: 100_000, positions: { "600000": 2100 } },
           orders: [],
           gates: []
+        }
+      ],
+      portfolioPaperOrderBatches: [
+        {
+          batchId: "portfolio-paper-batch-browser",
+          baseRunId: "run-browser",
+          portfolioName: "Browser basket",
+          createdAt: "2026-05-26T08:25:00+00:00",
+          mode: "portfolio_paper_order_review",
+          source: "portfolio_backtest",
+          summary: {
+            totalOrders: 1,
+            totalNotionalValue: 19341,
+            statusCounts: { pending_review: 1 },
+            riskStatusCounts: { review: 1 }
+          },
+          orders: [
+            {
+              timestamp: "2026-05-26T08:25:00+00:00",
+              eventType: "portfolio_paper_order",
+              orderId: "portfolio-paper-order-browser",
+              symbol: "600000",
+              sourceRunId: "run-browser",
+              side: "buy",
+              notionalValue: 19341,
+              quantity: 2100,
+              status: "pending_review",
+              riskStatus: "review",
+              reason: "Operator review required."
+            }
+          ]
         }
       ],
       promotionCandidate: {
@@ -2284,6 +2316,12 @@ describe("terminal workbench model", () => {
           exportPath: "aiReviewRuns[]"
         }),
         expect.objectContaining({
+          id: "portfolio-paper-orders",
+          status: "ready",
+          value: "1 manifest / 1 package",
+          exportPath: "portfolioPaperOrderBatches[]"
+        }),
+        expect.objectContaining({
           id: "audit-summary",
           status: "ready",
           value: "1/9 package · 0 diff blocked",
@@ -2307,6 +2345,9 @@ describe("terminal workbench model", () => {
     );
     expect(filterResearchRunExportBrowserRows(rows, "integrity.hash").map((row) => row.id)).toEqual(["integrity"]);
     expect(filterResearchRunExportBrowserRows(rows, "aiReviewRuns").map((row) => row.id)).toEqual(["ai-reviews"]);
+    expect(filterResearchRunExportBrowserRows(rows, "portfolioPaperOrderBatches").map((row) => row.id)).toEqual([
+      "portfolio-paper-orders"
+    ]);
     expect(filterResearchRunExportBrowserRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
       "audit-summary"
     ]);
@@ -2348,6 +2389,7 @@ describe("terminal workbench model", () => {
           decisions: 4,
           aiRisks: 1,
           paperExecutions: 1,
+          portfolioPaperOrderBatches: 1,
           promotionCandidates: 1,
           researchNotes: 1,
           aiReviewRuns: 1
@@ -2371,6 +2413,37 @@ describe("terminal workbench model", () => {
           account: { cash: 80_659, equity: 100_000, positions: { "600000": 2100 } },
           orders: [],
           gates: []
+        }
+      ],
+      portfolioPaperOrderBatches: [
+        {
+          batchId: "portfolio-paper-batch-index-a",
+          baseRunId: "run-index-a",
+          portfolioName: "Index basket",
+          createdAt: "2026-05-26T08:25:00+00:00",
+          mode: "portfolio_paper_order_review" as const,
+          source: "portfolio_backtest",
+          summary: {
+            totalOrders: 1,
+            totalNotionalValue: 19341,
+            statusCounts: { pending_review: 1 },
+            riskStatusCounts: { review: 1 }
+          },
+          orders: [
+            {
+              timestamp: "2026-05-26T08:25:00+00:00",
+              eventType: "portfolio_paper_order" as const,
+              orderId: "portfolio-paper-order-index-a",
+              symbol: "600000",
+              sourceRunId: "run-index-a",
+              side: "buy" as const,
+              notionalValue: 19341,
+              quantity: 2100,
+              status: "pending_review" as const,
+              riskStatus: "review" as const,
+              reason: "Operator review required."
+            }
+          ]
         }
       ],
       promotionCandidate: {
@@ -2530,7 +2603,7 @@ describe("terminal workbench model", () => {
           context: "600000 · 1d",
           integrity: "sha256 · cccccccc",
           artifacts:
-            "500 bars / 18 trades / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
+            "500 bars / 18 trades / 1 portfolio orders / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
           execution: "1/2 gates · paper_only"
         })
       ])
@@ -2627,6 +2700,7 @@ describe("terminal workbench model", () => {
           decisions: 4,
           aiRisks: 1,
           paperExecutions: 1,
+          portfolioPaperOrderBatches: 1,
           promotionCandidates: 0,
           researchNotes: 1,
           aiReviewRuns: 2
@@ -2691,6 +2765,37 @@ describe("terminal workbench model", () => {
           account: { cash: 80_000, equity: 100_000, positions: { "600000": 1600 } },
           orders: [],
           gates: []
+        }
+      ],
+      portfolioPaperOrderBatches: [
+        {
+          batchId: "portfolio-paper-batch-imported",
+          baseRunId: "run-imported",
+          portfolioName: "Imported basket",
+          createdAt: "2026-05-26T08:46:00+00:00",
+          mode: "portfolio_paper_order_review" as const,
+          source: "portfolio_backtest",
+          summary: {
+            totalOrders: 1,
+            totalNotionalValue: 14736,
+            statusCounts: { pending_review: 1 },
+            riskStatusCounts: { review: 1 }
+          },
+          orders: [
+            {
+              timestamp: "2026-05-26T08:46:00+00:00",
+              eventType: "portfolio_paper_order" as const,
+              orderId: "portfolio-paper-order-imported",
+              symbol: "600000",
+              sourceRunId: "run-imported",
+              side: "buy" as const,
+              notionalValue: 14736,
+              quantity: 1600,
+              status: "pending_review" as const,
+              riskStatus: "review" as const,
+              reason: "Import should restore this batch."
+            }
+          ]
         }
       ],
       aiReviewRuns: [
@@ -2855,6 +2960,12 @@ describe("terminal workbench model", () => {
           incoming: "1 saved / 2 manifest"
         }),
         expect.objectContaining({
+          id: "portfolio-paper-orders",
+          status: "add",
+          incoming: "1 batches / 1 manifest",
+          exportPath: "portfolioPaperOrderBatches[]"
+        }),
+        expect.objectContaining({
           id: "audit-summary",
           status: "add",
           current: "No local package summary",
@@ -2884,6 +2995,9 @@ describe("terminal workbench model", () => {
     );
     expect(filterResearchRunImportDiffRows(rows, "hash-imported").map((row) => row.id)).toEqual(["data-snapshot"]);
     expect(filterResearchRunImportDiffRows(rows, "researchNote").map((row) => row.id)).toEqual(["research-note"]);
+    expect(filterResearchRunImportDiffRows(rows, "portfolioPaperOrderBatches").map((row) => row.id)).toEqual([
+      "portfolio-paper-orders"
+    ]);
     expect(filterResearchRunImportDiffRows(rows, "auditEvidenceSummary").map((row) => row.id)).toEqual([
       "audit-summary"
     ]);
@@ -3258,6 +3372,7 @@ describe("terminal workbench model", () => {
           decisions: 4,
           aiRisks: 1,
           paperExecutions: 2,
+          portfolioPaperOrderBatches: 2,
           promotionCandidates: 1,
           researchNotes: 1,
           aiReviewRuns: 3
@@ -3295,6 +3410,7 @@ describe("terminal workbench model", () => {
         requiredGates: []
       },
       paperExecutions: [],
+      portfolioPaperOrderBatches: [],
       promotionCandidate: null,
       aiReviewRuns: []
     };
@@ -3320,6 +3436,7 @@ describe("terminal workbench model", () => {
       })
     );
     expect(artifactRow?.detail).toContain("paperExecutions 2/0");
+    expect(artifactRow?.detail).toContain("portfolioPaperOrderBatches 2/0");
     expect(artifactRow?.detail).toContain("promotionCandidates 1/0");
     expect(artifactRow?.detail).toContain("aiReviewRuns 3/0");
     expect(filterResearchRunImportDiffRows(rows, "invalid").map((row) => row.id)).toEqual(["package-integrity"]);

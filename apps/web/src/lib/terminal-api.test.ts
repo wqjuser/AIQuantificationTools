@@ -2147,6 +2147,7 @@ describe("terminal workspace API client", () => {
                 decisions: 0,
                 aiRisks: 1,
                 paperExecutions: 1,
+                portfolioPaperOrderBatches: 1,
                 promotionCandidates: 1,
                 researchNotes: 1,
                 aiReviewRuns: 1
@@ -2239,6 +2240,37 @@ describe("terminal workspace API client", () => {
                     label: "Paper risk check",
                     passed: true,
                     reason: "filled_immediately"
+                  }
+                ]
+              }
+            ],
+            portfolioPaperOrderBatches: [
+              {
+                batchId: "portfolio-paper-batch-exported",
+                baseRunId: "run-new",
+                portfolioName: "Portable basket",
+                createdAt: "2026-05-26T08:25:00+00:00",
+                mode: "portfolio_paper_order_review",
+                source: "portfolio_backtest",
+                summary: {
+                  totalOrders: 1,
+                  totalNotionalValue: 19341,
+                  statusCounts: { pending_review: 1 },
+                  riskStatusCounts: { review: 1 }
+                },
+                orders: [
+                  {
+                    timestamp: "2026-05-26T08:25:00+00:00",
+                    eventType: "portfolio_paper_order",
+                    orderId: "portfolio-paper-order-exported",
+                    symbol: "600000",
+                    sourceRunId: "run-new",
+                    side: "buy",
+                    notionalValue: 19341,
+                    quantity: 2100,
+                    status: "pending_review",
+                    riskStatus: "review",
+                    reason: "Portfolio order requires operator review."
                   }
                 ]
               }
@@ -2354,6 +2386,7 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.manifest.dataHash).toBe("snapshot-detail");
     expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
     expect(result.exportPackage?.manifest.artifactCounts.paperExecutions).toBe(1);
+    expect(result.exportPackage?.manifest.artifactCounts.portfolioPaperOrderBatches).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.promotionCandidates).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.researchNotes).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.aiReviewRuns).toBe(1);
@@ -2361,6 +2394,7 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
+    expect(result.exportPackage?.portfolioPaperOrderBatches?.[0]?.batchId).toBe("portfolio-paper-batch-exported");
     expect(result.exportPackage?.promotionCandidate?.status).toBe("certification_pending");
     expect(result.exportPackage?.aiReviewRuns?.[0]?.aiReviewId).toBe("ai-review:run-new:rev123");
     expect(result.exportPackage?.aiReviewRuns?.[0]?.record.evidenceAnchors?.map((anchor) => anchor.id)).toEqual([
@@ -2451,6 +2485,77 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload(exportPackage)?.manifest.runId).toBe("run-preview");
     expect(normalizeResearchRunExportPackagePayload({ export: exportPackage })?.manifest.runId).toBe("run-preview");
     expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
+  });
+
+  test("rejects malformed portfolio paper order batches in export packages", () => {
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:05:00+00:00",
+      manifest: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-preview",
+        dataHash: "hash-preview",
+        dataRows: 1,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 1,
+          trades: 0,
+          equityPoints: 0,
+          decisions: 0,
+          aiRisks: 0,
+          portfolioPaperOrderBatches: 1
+        }
+      },
+      researchRun: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Preview SMA trend",
+        strategyRevision: "rev-preview",
+        dataRows: 1,
+        metrics: { total_return_pct: 1.2, trade_count: 0 },
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          hash: "hash-preview",
+          bars: [
+            {
+              timestamp: "2026-05-26T08:00:00+00:00",
+              timestampMs: 1779782400000,
+              open: 9.1,
+              high: 9.3,
+              low: 9,
+              close: 9.2,
+              volume: 1200000
+            }
+          ]
+        }
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+      },
+      portfolioPaperOrderBatches: [{ batchId: "broken-batch" }]
+    };
+
+    expect(normalizeResearchRunExportPackagePayload(exportPackage)).toBeNull();
   });
 
   test("strips untrusted local package verification markers from external package signatures", () => {
