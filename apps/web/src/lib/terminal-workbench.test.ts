@@ -226,7 +226,7 @@ describe("terminal workbench model", () => {
     });
     expect(rows.find((row) => row.id === "note")).toMatchObject({
       value: "saved",
-      detail: "观察假设：银行板块修复中，等待成交量确认。"
+      detail: "Saved 2026-05-26T08:30:00+08:00 · 观察假设：银行板块修复中，等待成交量确认。"
     });
   });
 
@@ -294,7 +294,7 @@ describe("terminal workbench model", () => {
 
     expect(rows.find((row) => row.id === "note")).toMatchObject({
       value: "draft not saved",
-      detail: "新增观察：等待量能确认后再进入策略工坊。",
+      detail: "Draft not saved · 新增观察：等待量能确认后再进入策略工坊。",
       status: "review",
       tone: "warning",
       action: "save-note"
@@ -322,7 +322,7 @@ describe("terminal workbench model", () => {
 
     expect(rows.find((row) => row.id === "note")).toMatchObject({
       value: "unsaved changes",
-      detail: "观察假设：银行板块修复中，等待成交量二次确认。",
+      detail: "Unsaved changes since 2026-05-26T08:30:00+08:00 · 观察假设：银行板块修复中，等待成交量二次确认。",
       status: "review",
       tone: "warning",
       action: "save-note"

@@ -5706,6 +5706,28 @@ function compactResearchNoteDetail(body: string): string {
   return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
 }
 
+function researchNoteReadinessDetail(
+  noteValue: "draft not saved" | "not saved" | "saved" | "unsaved changes",
+  noteBody: string,
+  updatedAt: string | null | undefined,
+  error?: string | null
+): string {
+  if (!noteBody) {
+    return error?.trim() || "Save a note to bind the research hypothesis to this symbol and timeframe.";
+  }
+  const compactBody = compactResearchNoteDetail(noteBody);
+  if (noteValue === "saved" && updatedAt) {
+    return `Saved ${updatedAt} · ${compactBody}`;
+  }
+  if (noteValue === "unsaved changes" && updatedAt) {
+    return `Unsaved changes since ${updatedAt} · ${compactBody}`;
+  }
+  if (noteValue === "draft not saved") {
+    return `Draft not saved · ${compactBody}`;
+  }
+  return compactBody;
+}
+
 export function buildResearchContextReadinessRows(
   input: ResearchContextReadinessInput
 ): ResearchContextReadinessRow[] {
@@ -5775,9 +5797,7 @@ export function buildResearchContextReadinessRows(
       id: "note",
       label: "Research note",
       value: noteValue,
-      detail: noteBody
-        ? compactResearchNoteDetail(noteBody)
-        : input.note?.error?.trim() || "Save a note to bind the research hypothesis to this symbol and timeframe.",
+      detail: researchNoteReadinessDetail(noteValue, noteBody, input.note?.updatedAt, input.note?.error),
       status: noteStatus,
       tone: readinessTone(noteStatus),
       action: noteStatus === "ready" ? undefined : "save-note"

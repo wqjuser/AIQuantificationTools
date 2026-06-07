@@ -5541,6 +5541,9 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
     return "保存笔记，把研究假设绑定到当前标的和周期。";
   }
   return row.detail
+    .replace("Draft not saved", "草稿未保存")
+    .replace("Unsaved changes since", "自上次保存后有未保存更改")
+    .replace("Saved", "已保存")
     .replace("complete", "完整")
     .replace("review", "需复核")
     .replace("watched", "个自选")
