@@ -603,6 +603,8 @@ export interface PortfolioPaperOrderBatchSnapshot {
     totalNotionalValue: number;
     statusCounts: Record<string, number>;
     riskStatusCounts: Record<string, number>;
+    lifecycleStateCounts?: Record<string, number>;
+    routableOrders?: number;
   };
   orders: Array<{
     timestamp: string;
@@ -629,6 +631,8 @@ export interface PortfolioPaperOrderLifecycleRow {
   notionalValue: number;
   status: "ready" | "review" | "blocked";
   statusLabel: string;
+  executionStateLabel: string;
+  routableOrders: number;
   auditEventId: string;
   detail: string;
   tone: "positive" | "warning" | "risk" | "neutral";
@@ -5560,6 +5564,8 @@ export function buildPortfolioPaperOrderLifecycleRows(
       const skipped = batch.summary.statusCounts.skipped ?? 0;
       const blockedRisk = batch.summary.riskStatusCounts.blocked ?? 0;
       const reviewRisk = batch.summary.riskStatusCounts.review ?? 0;
+      const lifecycleStateCounts = batch.summary.lifecycleStateCounts ?? portfolioPaperOrderLifecycleStateCounts(batch);
+      const routableOrders = batch.summary.routableOrders ?? lifecycleStateCounts.ready_for_simulation ?? 0;
       const status: PortfolioPaperOrderLifecycleRow["status"] =
         pending > 0 || reviewRisk > 0 ? "review" : rejected > 0 || blockedRisk > 0 ? "blocked" : "ready";
 
@@ -5579,11 +5585,45 @@ export function buildPortfolioPaperOrderLifecycleRows(
         ]
           .filter((item): item is string => Boolean(item))
           .join(" / "),
+        executionStateLabel: portfolioPaperOrderExecutionStateLabel(lifecycleStateCounts),
+        routableOrders,
         auditEventId: `portfolio-paper-order-batch-${batch.batchId}`,
         detail: `${batch.summary.totalOrders} paper-only candidates · ${batch.summary.totalNotionalValue} notional · source ${batch.source}`,
         tone: status === "ready" ? "positive" : status === "blocked" ? "risk" : "warning"
       };
     });
+}
+
+function portfolioPaperOrderLifecycleStateCounts(batch: PortfolioPaperOrderBatchSnapshot): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const order of batch.orders) {
+    const state =
+      order.status === "skipped" || order.side === "hold"
+        ? "skipped"
+        : order.status === "rejected" || order.riskStatus === "blocked"
+          ? "risk_rejected"
+          : "awaiting_operator_review";
+    counts[state] = (counts[state] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function portfolioPaperOrderExecutionStateLabel(counts: Record<string, number>): string {
+  return [
+    ["ready_for_simulation", "ready for simulation"],
+    ["awaiting_operator_review", "awaiting review"],
+    ["risk_review", "risk review"],
+    ["risk_rejected", "risk rejected"],
+    ["operator_rejected", "operator rejected"],
+    ["invalid_order", "invalid"],
+    ["skipped", "skipped"]
+  ]
+    .map(([state, label]) => {
+      const count = counts[state] ?? 0;
+      return count > 0 ? `${count} ${label}` : null;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join(" / ");
 }
 
 export function buildPortfolioBacktestReportMarkdown<T extends PortfolioBacktestReportInput>(

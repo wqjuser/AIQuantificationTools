@@ -567,6 +567,28 @@ describe("terminal workspace API client", () => {
         liveExecutionBlocked: true
       }
     };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy",
+        quantity: 2400,
+        notionalValue: 2400,
+        originalStatus: "pending_review",
+        riskStatus: "review",
+        state: "awaiting_operator_review",
+        routable: false,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: null,
+        reviewedAt: null,
+        reason: "portfolio paper order candidate requires operator review before staging"
+      }
+    ];
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetcher = async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
@@ -574,7 +596,7 @@ describe("terminal workspace API client", () => {
         ok: true,
         json: async () =>
           init?.method === "POST"
-            ? { portfolioPaperOrderBatch: batch, auditEvent }
+            ? { portfolioPaperOrderBatch: batch, portfolioPaperOrderLifecycle: lifecycle, auditEvent }
             : { portfolioPaperOrderBatches: [batch] }
       };
     };
@@ -592,6 +614,9 @@ describe("terminal workspace API client", () => {
 
     expect(recordResult.source).toBe("core");
     expect(recordResult.batch?.summary.statusCounts.pending_review).toBe(1);
+    expect(recordResult.lifecycle?.map((row) => `${row.orderId}:${row.state}:${row.routable}`)).toEqual([
+      "portfolio-paper-run-a-buy:awaiting_operator_review:false"
+    ]);
     expect(recordResult.auditEvent?.eventId).toBe("portfolio-paper-order-batch-portfolio-paper-batch-1");
     expect(recordResult.auditEvent?.metadata.paperOnly).toBe(true);
     expect(historyResult.source).toBe("core");

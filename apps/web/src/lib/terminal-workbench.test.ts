@@ -5034,6 +5034,8 @@ describe("terminal workbench model", () => {
         notionalValue: 12850,
         status: "review",
         statusLabel: "1 review / 1 rejected / 1 skipped",
+        executionStateLabel: "1 awaiting review / 1 risk rejected / 1 skipped",
+        routableOrders: 0,
         auditEventId: "portfolio-paper-order-batch-portfolio-paper-batch-1",
         detail: "3 paper-only candidates · 12850 notional · source portfolio_backtest",
         tone: "warning"

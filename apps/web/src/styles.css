@@ -6043,7 +6043,7 @@ em {
 }
 
 .paper-blotter-row.portfolio-order-row {
-  grid-template-columns: minmax(130px, 1.1fr) minmax(150px, 1fr) minmax(86px, 0.55fr) minmax(128px, 0.75fr) minmax(180px, 1.2fr);
+  grid-template-columns: minmax(130px, 1.1fr) minmax(150px, 1fr) minmax(86px, 0.55fr) minmax(128px, 0.75fr) minmax(150px, 1fr) minmax(180px, 1.2fr);
 }
 
 .paper-blotter-head {

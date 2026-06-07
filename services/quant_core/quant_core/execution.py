@@ -431,6 +431,8 @@ def portfolio_paper_order_batch_to_payload(batch: PortfolioPaperOrderBatch) -> d
 
 
 def portfolio_paper_order_batch_to_audit_event_payload(batch: PortfolioPaperOrderBatch) -> dict[str, Any]:
+    lifecycle = build_portfolio_paper_order_lifecycle(batch)
+    lifecycle_state_counts = _sorted_counts(str(row.get("state") or "") for row in lifecycle)
     return {
         "schemaVersion": 1,
         "eventId": f"portfolio-paper-order-batch-{batch.batch_id}",
@@ -451,11 +453,22 @@ def portfolio_paper_order_batch_to_audit_event_payload(batch: PortfolioPaperOrde
             "totalNotionalValue": batch.summary["totalNotionalValue"],
             "statusCounts": dict(batch.summary["statusCounts"]),
             "riskStatusCounts": dict(batch.summary["riskStatusCounts"]),
+            "lifecycleStateCounts": lifecycle_state_counts,
+            "routableOrders": sum(1 for row in lifecycle if bool(row.get("routable"))),
             "orderIds": [str(order.get("orderId") or "") for order in batch.orders],
             "paperOnly": True,
             "liveExecutionBlocked": True,
         },
     }
+
+
+def build_portfolio_paper_order_lifecycle(
+    batch: PortfolioPaperOrderBatch,
+    *,
+    approvals: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    approval_map = approvals or {}
+    return [_portfolio_paper_order_lifecycle_row(batch, order, approval_map.get(str(order.get("orderId") or ""))) for order in batch.orders]
 
 
 def portfolio_paper_order_payload_to_batch(payload: dict[str, Any]) -> PortfolioPaperOrderBatch:
@@ -824,6 +837,64 @@ def _normalize_portfolio_paper_order(payload: dict[str, Any]) -> dict[str, Any]:
         "status": status,
         "riskStatus": risk_status,
         "reason": str(payload.get("reason") or "").strip(),
+    }
+
+
+def _portfolio_paper_order_lifecycle_row(
+    batch: PortfolioPaperOrderBatch,
+    order: dict[str, Any],
+    approval: dict[str, Any] | None,
+) -> dict[str, Any]:
+    order_id = str(order.get("orderId") or "")
+    status = str(order.get("status") or "")
+    risk_status = str(order.get("riskStatus") or "")
+    side = str(order.get("side") or "")
+    quantity = _positive_number(order.get("quantity"), 0)
+    notional_value = _positive_number(order.get("notionalValue"), 0)
+    approved = bool(approval.get("approved")) if isinstance(approval, dict) else False
+    approval_was_rejected = isinstance(approval, dict) and approval.get("approved") is False
+
+    if status == "skipped" or side == "hold":
+        state = "skipped"
+        reason = str(order.get("reason") or "No paper order action is required.")
+    elif status == "rejected" or risk_status == "blocked":
+        state = "risk_rejected"
+        reason = str(order.get("reason") or "Pre-trade risk rejected this paper order.")
+    elif approval_was_rejected:
+        state = "operator_rejected"
+        reason = str(approval.get("reason") or "Operator rejected this paper order candidate.")
+    elif not approved:
+        state = "awaiting_operator_review"
+        reason = str(order.get("reason") or "Operator approval is required before paper simulation.")
+    elif risk_status != "passed":
+        state = "risk_review"
+        reason = "Risk review must pass before the approved order can be staged for simulation."
+    elif side not in {"buy", "sell"} or quantity <= 0 or notional_value <= 0:
+        state = "invalid_order"
+        reason = "Only positive buy or sell paper orders can be staged for simulation."
+    else:
+        state = "ready_for_simulation"
+        reason = str(approval.get("reason") or "Operator approved this order for paper simulation only.")
+
+    return {
+        "batchId": batch.batch_id,
+        "baseRunId": batch.base_run_id,
+        "portfolioName": batch.portfolio_name,
+        "orderId": order_id,
+        "symbol": str(order.get("symbol") or ""),
+        "sourceRunId": order.get("sourceRunId"),
+        "side": side,
+        "quantity": quantity,
+        "notionalValue": notional_value,
+        "originalStatus": status,
+        "riskStatus": risk_status,
+        "state": state,
+        "routable": state == "ready_for_simulation",
+        "paperOnly": True,
+        "liveExecutionBlocked": True,
+        "approvedBy": str(approval.get("reviewer") or "") if isinstance(approval, dict) and approved else None,
+        "reviewedAt": str(approval.get("reviewedAt") or "") if isinstance(approval, dict) and approval.get("reviewedAt") else None,
+        "reason": reason,
     }
 
 

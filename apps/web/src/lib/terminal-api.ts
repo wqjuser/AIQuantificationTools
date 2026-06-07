@@ -901,6 +901,34 @@ export interface PortfolioPaperOrderBatch {
   orders: PortfolioPaperOrderEvent[];
 }
 
+export interface PortfolioPaperOrderLifecycleEvent {
+  batchId: string;
+  baseRunId: string;
+  portfolioName: string;
+  orderId: string;
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell" | "hold";
+  quantity: number;
+  notionalValue: number;
+  originalStatus: "pending_review" | "rejected" | "skipped";
+  riskStatus: "passed" | "review" | "blocked";
+  state:
+    | "awaiting_operator_review"
+    | "ready_for_simulation"
+    | "risk_rejected"
+    | "operator_rejected"
+    | "risk_review"
+    | "invalid_order"
+    | "skipped";
+  routable: boolean;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+  approvedBy: string | null;
+  reviewedAt: string | null;
+  reason: string;
+}
+
 export interface PortfolioPaperOrderBatchRequest {
   baseRunId: string;
   portfolioName: string;
@@ -910,6 +938,7 @@ export interface PortfolioPaperOrderBatchRequest {
 
 export interface PortfolioPaperOrderRecordResult {
   batch?: PortfolioPaperOrderBatch;
+  lifecycle?: PortfolioPaperOrderLifecycleEvent[];
   auditEvent?: AuditEventRecord;
   source: WorkspaceSource;
   error?: string;
@@ -1408,6 +1437,7 @@ export async function recordPortfolioPaperOrderBatch(
     }
     return {
       batch: payload.portfolioPaperOrderBatch,
+      lifecycle: payload.portfolioPaperOrderLifecycle,
       auditEvent: payload.auditEvent,
       source: "core"
     };
@@ -4575,13 +4605,24 @@ function isPortfolioBacktestPayload(value: unknown): value is { portfolio: Portf
 
 function isPortfolioPaperOrderBatchPayload(
   value: unknown
-): value is { portfolioPaperOrderBatch: PortfolioPaperOrderBatch; auditEvent?: AuditEventRecord } {
+): value is {
+  portfolioPaperOrderBatch: PortfolioPaperOrderBatch;
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvent?: AuditEventRecord;
+} {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { portfolioPaperOrderBatch?: unknown; auditEvent?: unknown };
+  const payload = value as {
+    portfolioPaperOrderBatch?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+    auditEvent?: unknown;
+  };
   return (
     isPortfolioPaperOrderBatch(payload.portfolioPaperOrderBatch) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent))) &&
     (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
   );
 }
@@ -4622,6 +4663,45 @@ function isPortfolioPaperOrderSummary(value: unknown): value is PortfolioPaperOr
     typeof summary.totalNotionalValue === "number" &&
     isNumberRecord(summary.statusCounts) &&
     isNumberRecord(summary.riskStatusCounts)
+  );
+}
+
+function isPortfolioPaperOrderLifecycleEvent(value: unknown): value is PortfolioPaperOrderLifecycleEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const row = value as Partial<PortfolioPaperOrderLifecycleEvent>;
+  return (
+    typeof row.batchId === "string" &&
+    typeof row.baseRunId === "string" &&
+    typeof row.portfolioName === "string" &&
+    typeof row.orderId === "string" &&
+    typeof row.symbol === "string" &&
+    (typeof row.sourceRunId === "string" || row.sourceRunId === null) &&
+    (row.side === "buy" || row.side === "sell" || row.side === "hold") &&
+    typeof row.quantity === "number" &&
+    typeof row.notionalValue === "number" &&
+    (row.originalStatus === "pending_review" || row.originalStatus === "rejected" || row.originalStatus === "skipped") &&
+    (row.riskStatus === "passed" || row.riskStatus === "review" || row.riskStatus === "blocked") &&
+    isPortfolioPaperOrderLifecycleState(row.state) &&
+    typeof row.routable === "boolean" &&
+    typeof row.paperOnly === "boolean" &&
+    typeof row.liveExecutionBlocked === "boolean" &&
+    (typeof row.approvedBy === "string" || row.approvedBy === null) &&
+    (typeof row.reviewedAt === "string" || row.reviewedAt === null) &&
+    typeof row.reason === "string"
+  );
+}
+
+function isPortfolioPaperOrderLifecycleState(value: unknown): value is PortfolioPaperOrderLifecycleEvent["state"] {
+  return (
+    value === "awaiting_operator_review" ||
+    value === "ready_for_simulation" ||
+    value === "risk_rejected" ||
+    value === "operator_rejected" ||
+    value === "risk_review" ||
+    value === "invalid_order" ||
+    value === "skipped"
   );
 }
 

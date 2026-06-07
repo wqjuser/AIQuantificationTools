@@ -8467,6 +8467,7 @@ function ExecutionPanel({
               <span>{i18n.locale === "zh-CN" ? "批次" : "Batch"}</span>
               <span>{i18n.t("execution.notional")}</span>
               <span>{i18n.t("execution.status")}</span>
+              <span>{i18n.locale === "zh-CN" ? "状态机" : "State machine"}</span>
               <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
             </div>
             {portfolioOrderRows.map((row) => (
@@ -8475,6 +8476,7 @@ function ExecutionPanel({
                 <span>{row.batchId}</span>
                 <span>{formatPlainNumber(row.notionalValue)}</span>
                 <span>{portfolioOrderLifecycleStatusLabel(i18n, row)}</span>
+                <span>{portfolioOrderExecutionStateLabel(i18n, row)}</span>
                 <span>{row.auditEventId}</span>
               </div>
             ))}
@@ -9926,6 +9928,24 @@ function portfolioOrderLifecycleStatusLabel(i18n: AppI18n, row: PortfolioPaperOr
     .replace("review", i18n.t("portfolio.paperOrderPendingReview"))
     .replace("rejected", i18n.t("portfolio.paperOrderRejected"))
     .replace("skipped", i18n.t("portfolio.paperOrderSkipped"));
+}
+
+function portfolioOrderExecutionStateLabel(i18n: AppI18n, row: PortfolioPaperOrderLifecycleRow): string {
+  const label = row.executionStateLabel || (row.routableOrders > 0 ? `${row.routableOrders} ready for simulation` : "");
+  if (!label) {
+    return i18n.locale === "zh-CN" ? "无可路由委托" : "No routable orders";
+  }
+  if (i18n.locale !== "zh-CN") {
+    return label;
+  }
+  return label
+    .replace("ready for simulation", "可模拟路由")
+    .replace("awaiting review", "待人工复核")
+    .replace("risk review", "待风控复核")
+    .replace("risk rejected", "风控拒绝")
+    .replace("operator rejected", "人工拒绝")
+    .replace("invalid", "无效委托")
+    .replace("skipped", "已跳过");
 }
 
 function riskApprovalHeadline(i18n: AppI18n, approval: RiskApprovalSummary): string {

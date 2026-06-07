@@ -39,6 +39,7 @@ from quant_core.execution import (
     PaperExecutionStore,
     PortfolioPaperOrderBatch,
     PortfolioPaperOrderStore,
+    build_portfolio_paper_order_lifecycle,
     build_promotion_candidate,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_batch,
@@ -281,6 +282,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {
                     "portfolioPaperOrderBatch": portfolio_paper_order_batch_to_payload(batch),
+                    "portfolioPaperOrderLifecycle": build_portfolio_paper_order_lifecycle(batch),
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=201,

@@ -1671,6 +1671,82 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["orders"][0]["orderId"], "portfolio-paper-run-a-sell")
         self.assertEqual(payload["orders"][1]["status"], "skipped")
 
+    def test_portfolio_paper_order_lifecycle_requires_operator_approval_before_simulation(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_batch,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-lifecycle",
+            portfolio_name="A-share lifecycle basket",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "order-ready-after-approval",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Operator approval required before staging.",
+                },
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "order-risk-blocked",
+                    "symbol": "000300",
+                    "sourceRunId": "run-b",
+                    "side": "sell",
+                    "notionalValue": 4600.0,
+                    "quantity": 2.0,
+                    "status": "rejected",
+                    "riskStatus": "blocked",
+                    "reason": "Pre-trade risk blocked.",
+                },
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "order-skipped",
+                    "symbol": "CASH",
+                    "sourceRunId": None,
+                    "side": "hold",
+                    "notionalValue": 0.0,
+                    "quantity": 0.0,
+                    "status": "skipped",
+                    "riskStatus": "passed",
+                    "reason": "No action inside rebalance band.",
+                },
+            ],
+        )
+
+        pending_rows = build_portfolio_paper_order_lifecycle(batch)
+        approved_rows = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals={
+                "order-ready-after-approval": {
+                    "approved": True,
+                    "reviewer": "operator-a",
+                    "reviewedAt": "2026-05-26T08:45:00+00:00",
+                    "reason": "Approved for paper simulation only.",
+                }
+            },
+        )
+
+        self.assertEqual([row["state"] for row in pending_rows], ["awaiting_operator_review", "risk_rejected", "skipped"])
+        self.assertFalse(any(row["routable"] for row in pending_rows))
+        self.assertEqual(approved_rows[0]["state"], "ready_for_simulation")
+        self.assertTrue(approved_rows[0]["routable"])
+        self.assertEqual(approved_rows[0]["approvedBy"], "operator-a")
+        self.assertTrue(approved_rows[0]["paperOnly"])
+        self.assertTrue(approved_rows[0]["liveExecutionBlocked"])
+        self.assertEqual(approved_rows[1]["state"], "risk_rejected")
+        self.assertEqual(approved_rows[2]["state"], "skipped")
+
     def test_ai_review_run_store_persists_records_bound_to_research_run(self):
         from quant_core.ai_review_runs import AiReviewRunStore, ai_review_run_record_to_payload
 
@@ -3104,6 +3180,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["auditEvent"]["metadata"]["batchId"], payload["portfolioPaperOrderBatch"]["batchId"])
         self.assertEqual(payload["auditEvent"]["metadata"]["totalOrders"], 1)
         self.assertEqual(payload["auditEvent"]["metadata"]["statusCounts"], {"pending_review": 1})
+        self.assertEqual(payload["portfolioPaperOrderLifecycle"][0]["state"], "awaiting_operator_review")
+        self.assertFalse(payload["portfolioPaperOrderLifecycle"][0]["routable"])
+        self.assertEqual(payload["auditEvent"]["metadata"]["lifecycleStateCounts"], {"awaiting_operator_review": 1})
+        self.assertEqual(payload["auditEvent"]["metadata"]["routableOrders"], 0)
         self.assertTrue(payload["auditEvent"]["metadata"]["paperOnly"])
         self.assertEqual(len(audit_payload["events"]), 1)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
