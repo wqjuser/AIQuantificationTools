@@ -1181,7 +1181,8 @@ em {
 .research-layout {
   grid-template-areas:
     "chart scanner"
-    "chart note"
+    "chart readiness"
+    "note workflow"
     "decision workflow";
 }
 
@@ -1278,6 +1279,11 @@ em {
   grid-area: note;
 }
 
+.workflow-readiness-panel {
+  align-self: start;
+  grid-area: readiness;
+}
+
 .workflow-data-panel {
   align-self: start;
   grid-area: data;
@@ -1353,6 +1359,87 @@ em {
 .research-note-meta button:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+.research-context-checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.research-context-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left-width: 3px;
+  border-radius: 7px;
+  background: #111a28;
+  padding: 9px 10px;
+}
+
+.research-context-row.positive {
+  border-left-color: #3ac7aa;
+}
+
+.research-context-row.warning {
+  border-left-color: #e8be62;
+}
+
+.research-context-row.risk {
+  border-left-color: #ff6b5f;
+}
+
+.research-context-index {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #182436;
+  color: #91a6bb;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.research-context-row strong,
+.research-context-row p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-context-row strong {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: #e1edf6;
+  font-size: 12px;
+}
+
+.research-context-row strong span {
+  color: #8fa0b2;
+  font-size: 11px;
+}
+
+.research-context-row p {
+  margin-top: 3px;
+  color: #9dafc1;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.research-context-row em {
+  border-radius: 999px;
+  background: #172338;
+  color: #9fd3c8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 4px 7px;
+  white-space: nowrap;
 }
 
 .workflow-strategy-panel {

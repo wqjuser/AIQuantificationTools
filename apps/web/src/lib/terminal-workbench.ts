@@ -1797,6 +1797,39 @@ export interface ResearchRunDataQuality {
   rows: number;
 }
 
+export type ResearchContextReadinessStatus = "ready" | "review" | "blocked";
+
+export interface ResearchContextReadinessCacheContext {
+  rowCount: number;
+  freshness: string;
+  ageHours?: number | null;
+  latestTimestamp?: string | null;
+}
+
+export interface ResearchContextReadinessNoteInput {
+  source: string;
+  body: string;
+  updatedAt: string | null;
+  error?: string | null;
+}
+
+export interface ResearchContextReadinessInput {
+  workspace: TerminalWorkspace;
+  barCount: number;
+  dataQuality: ResearchRunDataQuality;
+  cacheContext?: ResearchContextReadinessCacheContext | null;
+  note?: ResearchContextReadinessNoteInput | null;
+}
+
+export interface ResearchContextReadinessRow {
+  id: "instrument" | "klines" | "cache" | "note";
+  label: string;
+  value: string;
+  detail: string;
+  status: ResearchContextReadinessStatus;
+  tone: "positive" | "warning" | "risk" | "neutral";
+}
+
 export interface ResearchRunDataSnapshotBar {
   timestamp: string;
   timestampMs: number;
@@ -5667,6 +5700,88 @@ function normalizedResearchNote(note: ResearchRunNote | null | undefined): Resea
 function compactResearchNoteDetail(body: string): string {
   const trimmed = body.trim();
   return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+}
+
+export function buildResearchContextReadinessRows(
+  input: ResearchContextReadinessInput
+): ResearchContextReadinessRow[] {
+  const instrument = input.workspace.selectedInstrument;
+  const timeframe = input.workspace.selectedTimeframe;
+  const symbolReady = Boolean(instrument.symbol.trim());
+  const warnings = input.dataQuality.warnings.filter((warning) => warning.trim());
+  const barCount = Math.max(0, Math.floor(input.barCount || input.dataQuality.rows || 0));
+  const klineStatus: ResearchContextReadinessStatus =
+    barCount <= 0 ? "blocked" : input.dataQuality.isComplete ? "ready" : "review";
+  const klineDetail = `${input.dataQuality.source || "unknown"} ${input.dataQuality.isComplete ? "complete" : "review"} · ${
+    warnings[0] ?? formatWarningCount(0)
+  }`;
+  const cache = input.cacheContext ?? null;
+  const cacheRows = cache ? Math.max(0, Math.floor(cache.rowCount || 0)) : 0;
+  const cacheStatus: ResearchContextReadinessStatus =
+    !cache || cacheRows <= 0 || cache.freshness === "empty"
+      ? "blocked"
+      : cache.freshness === "fresh"
+        ? "ready"
+        : "review";
+  const noteBody = input.note?.body.trim() ?? "";
+  const noteStatus: ResearchContextReadinessStatus = noteBody ? "ready" : "review";
+
+  return [
+    {
+      id: "instrument",
+      label: "Selected symbol",
+      value: `${instrument.symbol || "N/A"} · ${timeframe}`,
+      detail: `${instrument.name || instrument.symbol || "Unknown"} · ${instrument.market} · ${input.workspace.watchlist.length} watched`,
+      status: symbolReady ? "ready" : "blocked",
+      tone: symbolReady ? "positive" : "risk"
+    },
+    {
+      id: "klines",
+      label: "K-line data",
+      value: `${barCount} bars`,
+      detail: klineDetail,
+      status: klineStatus,
+      tone: readinessTone(klineStatus)
+    },
+    {
+      id: "cache",
+      label: "Local cache",
+      value: cache ? `${cache.freshness} · ${cacheRows} rows` : "missing",
+      detail: cacheReadinessDetail(cache, cacheRows),
+      status: cacheStatus,
+      tone: readinessTone(cacheStatus)
+    },
+    {
+      id: "note",
+      label: "Research note",
+      value: noteBody ? "saved" : "not saved",
+      detail: noteBody
+        ? compactResearchNoteDetail(noteBody)
+        : input.note?.error?.trim() || "Save a note to bind the research hypothesis to this symbol and timeframe.",
+      status: noteStatus,
+      tone: readinessTone(noteStatus)
+    }
+  ];
+}
+
+function readinessTone(status: ResearchContextReadinessStatus): "positive" | "warning" | "risk" {
+  if (status === "ready") {
+    return "positive";
+  }
+  return status === "review" ? "warning" : "risk";
+}
+
+function cacheReadinessDetail(cache: ResearchContextReadinessCacheContext | null, rowCount: number): string {
+  if (!cache || rowCount <= 0 || cache.freshness === "empty") {
+    return "Refresh the current cache before trusting this research context.";
+  }
+  const age = typeof cache.ageHours === "number" && Number.isFinite(cache.ageHours) ? Math.max(0, cache.ageHours) : null;
+  const ageLabel = age === null ? "age unknown" : `${Number.isInteger(age) ? age : age.toFixed(1)}h old`;
+  const latest = cache.latestTimestamp || "latest timestamp unknown";
+  if (cache.freshness === "fresh") {
+    return `Latest cache ${latest} · ${ageLabel}`;
+  }
+  return `Cache is ${cache.freshness}; latest ${latest} · ${ageLabel}`;
 }
 
 export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCandidate[] {

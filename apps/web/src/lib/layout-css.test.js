@@ -174,6 +174,16 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workspace-gate-action")).toContain("cursor: pointer;");
   });
 
+  test("renders a compact Stage 1 research context readiness checklist", () => {
+    expect(appSource).toContain("buildResearchContextReadinessRows");
+    expect(appSource).toContain("function ResearchContextReadinessPanel");
+    expect(appSource).toContain("<ResearchContextReadinessPanel");
+    expect(appSource).toContain('className="research-context-checklist"');
+    expect(appSource).toContain('className={`research-context-row ${row.tone}`}');
+    expect(cssBlock(".research-context-checklist")).toContain("display: grid;");
+    expect(cssBlock(".research-context-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+  });
+
   test("renders a full golden path runbook board in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
 
@@ -937,7 +947,14 @@ describe("terminal layout css", () => {
         '"decision strategy"'
       ])
     ).toBe(true);
-    expect(hasCssBlockWith(".research-layout", ['"chart scanner"', '"chart note"', '"decision workflow"'])).toBe(true);
+    expect(
+      hasCssBlockWith(".research-layout", [
+        '"chart scanner"',
+        '"chart readiness"',
+        '"note workflow"',
+        '"decision workflow"'
+      ])
+    ).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith(".agent-review-layout", ['"ai workflow"', '"decision history"'])).toBe(true);
     expect(cssBlock(".paper-layout")).toContain(

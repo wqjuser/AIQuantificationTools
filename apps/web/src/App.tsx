@@ -157,6 +157,7 @@ import {
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   buildPromotionReadiness,
+  buildResearchContextReadinessRows,
   buildResearchRunComparisonRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
@@ -233,6 +234,7 @@ import {
   PromotionReadiness,
   ProductWorkArea,
   ProductWorkAreaId,
+  ResearchContextReadinessRow,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
@@ -792,6 +794,30 @@ export function App() {
     timeframe: workspace.selectedTimeframe
   });
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
+  const researchContextReadinessRows = buildResearchContextReadinessRows({
+    workspace,
+    barCount: klinesState.bars.length,
+    dataQuality: {
+      source: klinesState.quality.source,
+      isComplete: klinesState.quality.isComplete,
+      warnings: klinesState.quality.warnings,
+      rows: klinesState.quality.rows || klinesState.bars.length
+    },
+    cacheContext: activeCacheContext
+      ? {
+          rowCount: activeCacheContext.rowCount,
+          freshness: activeCacheContext.freshness,
+          ageHours: activeCacheContext.ageHours,
+          latestTimestamp: activeCacheContext.endTimestamp
+        }
+      : null,
+    note: {
+      source: researchNoteState.source,
+      body: researchNoteDraft,
+      updatedAt: researchNoteState.note?.updatedAt ?? null,
+      error: researchNoteState.error ?? null
+    }
+  });
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
   const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
   const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
@@ -3741,6 +3767,11 @@ export function App() {
           onSave={saveCurrentResearchNote}
           workspace={workspace}
         />
+        <ResearchContextReadinessPanel
+          className="workflow-readiness-panel"
+          i18n={i18n}
+          rows={researchContextReadinessRows}
+        />
         {renderWorkflowNodesPanel("workflow-nodes-panel")}
         <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
       </>
@@ -5345,6 +5376,106 @@ function MarketDataHealthPanel({
       </div>
     </Panel>
   );
+}
+
+function ResearchContextReadinessPanel({
+  className,
+  i18n,
+  rows
+}: {
+  className?: string;
+  i18n: AppI18n;
+  rows: ResearchContextReadinessRow[];
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "研究上下文就绪" : "Research Context Readiness"}
+      subtitle={i18n.locale === "zh-CN" ? "阶段 1 · 标的、K线、缓存、笔记" : "Stage 1 · symbol, K-lines, cache, notes"}
+      className={className}
+    >
+      <div className="research-context-checklist">
+        {rows.map((row, index) => (
+          <article className={`research-context-row ${row.tone}`} key={row.id}>
+            <span className="research-context-index">{index + 1}</span>
+            <div>
+              <strong>
+                {researchContextReadinessLabel(i18n, row)}
+                <span>{researchContextReadinessValue(i18n, row)}</span>
+              </strong>
+              <p>{researchContextReadinessDetail(i18n, row)}</p>
+            </div>
+            <em>{researchContextReadinessStatusLabel(i18n, row.status)}</em>
+          </article>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadinessRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.label;
+  }
+  const labels: Record<ResearchContextReadinessRow["id"], string> = {
+    instrument: "标的",
+    klines: "K线数据",
+    cache: "本地缓存",
+    note: "研究笔记"
+  };
+  return labels[row.id];
+}
+
+function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadinessRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.value;
+  }
+  if (row.id === "klines") {
+    return row.value.replace(" bars", " 根K线");
+  }
+  if (row.id === "cache") {
+    return row.value
+      .replace("fresh", "新鲜")
+      .replace("stale", "过期")
+      .replace("empty", "空")
+      .replace("missing", "缺失")
+      .replace(" rows", " 行");
+  }
+  if (row.id === "note") {
+    return row.value === "saved" ? "已保存" : "未保存";
+  }
+  return row.value;
+}
+
+function researchContextReadinessStatusLabel(
+  i18n: AppI18n,
+  status: ResearchContextReadinessRow["status"]
+): string {
+  if (i18n.locale !== "zh-CN") {
+    return status === "ready" ? "Ready" : status === "review" ? "Review" : "Blocked";
+  }
+  return status === "ready" ? "就绪" : status === "review" ? "复核" : "阻断";
+}
+
+function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadinessRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.detail;
+  }
+  if (row.detail === "Refresh the current cache before trusting this research context.") {
+    return "刷新当前缓存后再信任这个研究上下文。";
+  }
+  if (row.detail === "Save a note to bind the research hypothesis to this symbol and timeframe.") {
+    return "保存笔记，把研究假设绑定到当前标的和周期。";
+  }
+  return row.detail
+    .replace("complete", "完整")
+    .replace("review", "需复核")
+    .replace("watched", "个自选")
+    .replace("Latest cache", "最新缓存")
+    .replace("latest timestamp unknown", "最新时间未知")
+    .replace("age unknown", "缓存年龄未知")
+    .replace("h old", " 小时前")
+    .replace("Cache is stale", "缓存已过期")
+    .replace("latest", "最新");
 }
 
 function ResearchNotesPanel({

@@ -63,6 +63,7 @@ import {
   resolveQuantLoopSelection,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
+  buildResearchContextReadinessRows,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -192,6 +193,80 @@ describe("terminal workbench model", () => {
     expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
       "market-research"
     ]);
+  });
+
+  test("builds ready Stage 1 research context readiness rows", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["instrument", "klines", "cache", "note"]);
+    expect(rows.map((row) => row.status)).toEqual(["ready", "ready", "ready", "ready"]);
+    expect(rows.find((row) => row.id === "instrument")).toMatchObject({
+      value: "600000 · 1d",
+      tone: "positive"
+    });
+    expect(rows.find((row) => row.id === "cache")).toMatchObject({
+      value: "fresh · 240 rows",
+      detail: "Latest cache 2026-05-26T08:00:00+08:00 · 1h old"
+    });
+    expect(rows.find((row) => row.id === "note")).toMatchObject({
+      value: "saved",
+      detail: "观察假设：银行板块修复中，等待成交量确认。"
+    });
+  });
+
+  test("flags blocked or review Stage 1 research context gaps", () => {
+    const workspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
+      symbol: "MSFT",
+      name: "Microsoft",
+      market: "us",
+      changePct: 0
+    });
+
+    const rows = buildResearchContextReadinessRows({
+      workspace,
+      barCount: 0,
+      dataQuality: { source: "demo-fallback", isComplete: false, warnings: ["upstream timeout"], rows: 0 },
+      note: {
+        source: "fallback",
+        body: "",
+        updatedAt: null,
+        error: "core unavailable"
+      }
+    });
+
+    expect(rows.map((row) => [row.id, row.status])).toEqual([
+      ["instrument", "ready"],
+      ["klines", "blocked"],
+      ["cache", "blocked"],
+      ["note", "review"]
+    ]);
+    expect(rows.find((row) => row.id === "klines")).toMatchObject({
+      value: "0 bars",
+      detail: "demo-fallback review · upstream timeout"
+    });
+    expect(rows.find((row) => row.id === "cache")).toMatchObject({
+      value: "missing",
+      detail: "Refresh the current cache before trusting this research context."
+    });
+    expect(rows.find((row) => row.id === "note")).toMatchObject({
+      value: "not saved",
+      detail: "core unavailable"
+    });
   });
 
   test("builds the P0 product work areas in platform order", () => {
