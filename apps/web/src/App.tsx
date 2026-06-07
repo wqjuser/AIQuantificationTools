@@ -3770,6 +3770,10 @@ export function App() {
         <ResearchContextReadinessPanel
           className="workflow-readiness-panel"
           i18n={i18n}
+          isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
+          isSavingNote={isSavingResearchNote}
+          onRefreshCache={refreshSelectedMarketCache}
+          onSaveNote={saveCurrentResearchNote}
           rows={researchContextReadinessRows}
         />
         {renderWorkflowNodesPanel("workflow-nodes-panel")}
@@ -5381,10 +5385,18 @@ function MarketDataHealthPanel({
 function ResearchContextReadinessPanel({
   className,
   i18n,
+  isRefreshingCache = false,
+  isSavingNote = false,
+  onRefreshCache,
+  onSaveNote,
   rows
 }: {
   className?: string;
   i18n: AppI18n;
+  isRefreshingCache?: boolean;
+  isSavingNote?: boolean;
+  onRefreshCache?: () => void;
+  onSaveNote?: () => void;
   rows: ResearchContextReadinessRow[];
 }) {
   return (
@@ -5394,22 +5406,74 @@ function ResearchContextReadinessPanel({
       className={className}
     >
       <div className="research-context-checklist">
-        {rows.map((row, index) => (
-          <article className={`research-context-row ${row.tone}`} key={row.id}>
-            <span className="research-context-index">{index + 1}</span>
-            <div>
-              <strong>
-                {researchContextReadinessLabel(i18n, row)}
-                <span>{researchContextReadinessValue(i18n, row)}</span>
-              </strong>
-              <p>{researchContextReadinessDetail(i18n, row)}</p>
-            </div>
-            <em>{researchContextReadinessStatusLabel(i18n, row.status)}</em>
-          </article>
-        ))}
+        {rows.map((row, index) => {
+          const action = row.action;
+          return (
+            <article className={`research-context-row ${row.tone}`} key={row.id}>
+              <span className="research-context-index">{index + 1}</span>
+              <div>
+                <strong>
+                  {researchContextReadinessLabel(i18n, row)}
+                  <span>{researchContextReadinessValue(i18n, row)}</span>
+                </strong>
+                <p>{researchContextReadinessDetail(i18n, row)}</p>
+              </div>
+              <div className="research-context-actions">
+                <em>{researchContextReadinessStatusLabel(i18n, row.status)}</em>
+                {action ? (
+                  <button
+                    disabled={isResearchContextActionDisabled(action, isRefreshingCache, isSavingNote)}
+                    onClick={() => runResearchContextReadinessAction(action, onRefreshCache, onSaveNote)}
+                    type="button"
+                  >
+                    {researchContextReadinessActionLabel(i18n, action, isRefreshingCache, isSavingNote)}
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </Panel>
   );
+}
+
+function researchContextReadinessActionLabel(
+  i18n: AppI18n,
+  action: NonNullable<ResearchContextReadinessRow["action"]>,
+  isRefreshingCache: boolean,
+  isSavingNote: boolean
+): string {
+  if (action === "refresh-cache") {
+    if (isRefreshingCache) {
+      return i18n.locale === "zh-CN" ? "刷新中" : "Refreshing";
+    }
+    return i18n.locale === "zh-CN" ? "刷新缓存" : "Refresh cache";
+  }
+  if (isSavingNote) {
+    return i18n.locale === "zh-CN" ? "保存中" : "Saving";
+  }
+  return i18n.locale === "zh-CN" ? "保存笔记" : "Save note";
+}
+
+function isResearchContextActionDisabled(
+  action: NonNullable<ResearchContextReadinessRow["action"]>,
+  isRefreshingCache: boolean,
+  isSavingNote: boolean
+): boolean {
+  return action === "refresh-cache" ? isRefreshingCache : isSavingNote;
+}
+
+function runResearchContextReadinessAction(
+  action: NonNullable<ResearchContextReadinessRow["action"]>,
+  onRefreshCache?: () => void,
+  onSaveNote?: () => void
+): void {
+  if (action === "refresh-cache") {
+    onRefreshCache?.();
+    return;
+  }
+  onSaveNote?.();
 }
 
 function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadinessRow): string {

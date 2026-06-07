@@ -1821,6 +1821,8 @@ export interface ResearchContextReadinessInput {
   note?: ResearchContextReadinessNoteInput | null;
 }
 
+export type ResearchContextReadinessAction = "refresh-cache" | "save-note";
+
 export interface ResearchContextReadinessRow {
   id: "instrument" | "klines" | "cache" | "note";
   label: string;
@@ -1828,6 +1830,7 @@ export interface ResearchContextReadinessRow {
   detail: string;
   status: ResearchContextReadinessStatus;
   tone: "positive" | "warning" | "risk" | "neutral";
+  action?: ResearchContextReadinessAction;
 }
 
 export interface ResearchRunDataSnapshotBar {
@@ -5741,7 +5744,8 @@ export function buildResearchContextReadinessRows(
       value: `${barCount} bars`,
       detail: klineDetail,
       status: klineStatus,
-      tone: readinessTone(klineStatus)
+      tone: readinessTone(klineStatus),
+      action: klineStatus === "ready" ? undefined : "refresh-cache"
     },
     {
       id: "cache",
@@ -5749,7 +5753,8 @@ export function buildResearchContextReadinessRows(
       value: cache ? `${cache.freshness} · ${cacheRows} rows` : "missing",
       detail: cacheReadinessDetail(cache, cacheRows),
       status: cacheStatus,
-      tone: readinessTone(cacheStatus)
+      tone: readinessTone(cacheStatus),
+      action: cacheStatus === "ready" ? undefined : "refresh-cache"
     },
     {
       id: "note",
@@ -5759,7 +5764,8 @@ export function buildResearchContextReadinessRows(
         ? compactResearchNoteDetail(noteBody)
         : input.note?.error?.trim() || "Save a note to bind the research hypothesis to this symbol and timeframe.",
       status: noteStatus,
-      tone: readinessTone(noteStatus)
+      tone: readinessTone(noteStatus),
+      action: noteStatus === "ready" ? undefined : "save-note"
     }
   ];
 }

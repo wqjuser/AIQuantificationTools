@@ -215,6 +215,7 @@ describe("terminal workbench model", () => {
 
     expect(rows.map((row) => row.id)).toEqual(["instrument", "klines", "cache", "note"]);
     expect(rows.map((row) => row.status)).toEqual(["ready", "ready", "ready", "ready"]);
+    expect(rows.map((row) => row.action ?? null)).toEqual([null, null, null, null]);
     expect(rows.find((row) => row.id === "instrument")).toMatchObject({
       value: "600000 · 1d",
       tone: "positive"
@@ -257,15 +258,18 @@ describe("terminal workbench model", () => {
     ]);
     expect(rows.find((row) => row.id === "klines")).toMatchObject({
       value: "0 bars",
-      detail: "demo-fallback review · upstream timeout"
+      detail: "demo-fallback review · upstream timeout",
+      action: "refresh-cache"
     });
     expect(rows.find((row) => row.id === "cache")).toMatchObject({
       value: "missing",
-      detail: "Refresh the current cache before trusting this research context."
+      detail: "Refresh the current cache before trusting this research context.",
+      action: "refresh-cache"
     });
     expect(rows.find((row) => row.id === "note")).toMatchObject({
       value: "not saved",
-      detail: "core unavailable"
+      detail: "core unavailable",
+      action: "save-note"
     });
   });
 

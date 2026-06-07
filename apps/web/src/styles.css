@@ -1442,6 +1442,31 @@ em {
   white-space: nowrap;
 }
 
+.research-context-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.research-context-actions button {
+  border: 1px solid #1d7d69;
+  border-radius: 999px;
+  background: #0e3b35;
+  color: #86f7df;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.research-context-actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .workflow-strategy-panel {
   grid-area: strategy;
 }

@@ -180,8 +180,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("<ResearchContextReadinessPanel");
     expect(appSource).toContain('className="research-context-checklist"');
     expect(appSource).toContain('className={`research-context-row ${row.tone}`}');
+    expect(appSource).toContain("onRefreshCache={refreshSelectedMarketCache}");
+    expect(appSource).toContain("onSaveNote={saveCurrentResearchNote}");
+    expect(appSource).toContain('className="research-context-actions"');
+    expect(appSource).toContain("researchContextReadinessActionLabel");
     expect(cssBlock(".research-context-checklist")).toContain("display: grid;");
     expect(cssBlock(".research-context-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+    expect(cssBlock(".research-context-actions")).toContain("display: flex;");
   });
 
   test("renders a full golden path runbook board in the audit work area", () => {
