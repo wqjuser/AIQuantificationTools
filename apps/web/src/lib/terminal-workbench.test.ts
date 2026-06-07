@@ -273,6 +273,62 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("marks a new research note draft as unsaved until it is stored", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "fallback",
+        body: "新增观察：等待量能确认后再进入策略工坊。",
+        savedBody: null,
+        updatedAt: null
+      }
+    });
+
+    expect(rows.find((row) => row.id === "note")).toMatchObject({
+      value: "draft not saved",
+      detail: "新增观察：等待量能确认后再进入策略工坊。",
+      status: "review",
+      tone: "warning",
+      action: "save-note"
+    });
+  });
+
+  test("marks edited research note drafts as unsaved changes", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量二次确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.find((row) => row.id === "note")).toMatchObject({
+      value: "unsaved changes",
+      detail: "观察假设：银行板块修复中，等待成交量二次确认。",
+      status: "review",
+      tone: "warning",
+      action: "save-note"
+    });
+  });
+
   test("builds the P0 product work areas in platform order", () => {
     const areas = buildProductWorkAreas(buildTerminalWorkspace());
 

@@ -814,6 +814,7 @@ export function App() {
     note: {
       source: researchNoteState.source,
       body: researchNoteDraft,
+      savedBody: researchNoteState.note?.body ?? null,
       updatedAt: researchNoteState.note?.updatedAt ?? null,
       error: researchNoteState.error ?? null
     }
@@ -5505,7 +5506,16 @@ function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadin
       .replace(" rows", " 行");
   }
   if (row.id === "note") {
-    return row.value === "saved" ? "已保存" : "未保存";
+    if (row.value === "saved") {
+      return "已保存";
+    }
+    if (row.value === "unsaved changes") {
+      return "未保存更改";
+    }
+    if (row.value === "draft not saved") {
+      return "草稿未保存";
+    }
+    return "未保存";
   }
   return row.value;
 }

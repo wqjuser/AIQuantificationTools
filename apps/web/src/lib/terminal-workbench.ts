@@ -1809,6 +1809,7 @@ export interface ResearchContextReadinessCacheContext {
 export interface ResearchContextReadinessNoteInput {
   source: string;
   body: string;
+  savedBody?: string | null;
   updatedAt: string | null;
   error?: string | null;
 }
@@ -5727,7 +5728,21 @@ export function buildResearchContextReadinessRows(
         ? "ready"
         : "review";
   const noteBody = input.note?.body.trim() ?? "";
-  const noteStatus: ResearchContextReadinessStatus = noteBody ? "ready" : "review";
+  const noteHasExplicitSavedBody = input.note ? Object.prototype.hasOwnProperty.call(input.note, "savedBody") : false;
+  const savedNoteBody = noteHasExplicitSavedBody
+    ? input.note?.savedBody?.trim() ?? ""
+    : input.note?.updatedAt
+      ? noteBody
+      : "";
+  const hasSavedNote = Boolean(savedNoteBody);
+  const noteValue = noteBody
+    ? hasSavedNote
+      ? noteBody === savedNoteBody
+        ? "saved"
+        : "unsaved changes"
+      : "draft not saved"
+    : "not saved";
+  const noteStatus: ResearchContextReadinessStatus = noteValue === "saved" ? "ready" : "review";
 
   return [
     {
@@ -5759,7 +5774,7 @@ export function buildResearchContextReadinessRows(
     {
       id: "note",
       label: "Research note",
-      value: noteBody ? "saved" : "not saved",
+      value: noteValue,
       detail: noteBody
         ? compactResearchNoteDetail(noteBody)
         : input.note?.error?.trim() || "Save a note to bind the research hypothesis to this symbol and timeframe.",
