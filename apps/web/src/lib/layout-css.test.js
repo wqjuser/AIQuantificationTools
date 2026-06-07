@@ -70,6 +70,8 @@ describe("terminal layout css", () => {
     expect(leftRailSource).toContain('className={`work-area-button');
     expect(leftRailSource).toContain("i18n.productWorkAreaLabel");
     expect(leftRailSource).toContain("i18n.productWorkAreaDescription");
+    expect(leftRailSource).toContain("i18n.productWorkAreaDeliveryStage");
+    expect(leftRailSource).toContain("i18n.productDevelopmentStageStatus");
     expect(leftRailSource).not.toContain("workspace.quantLoop.map");
   });
 
@@ -82,6 +84,7 @@ describe("terminal layout css", () => {
     expect(leftRailSource).toContain('className="work-area-index"');
     expect(leftRailSource).toContain('className="work-area-copy"');
     expect(leftRailSource).toContain('className="work-area-status"');
+    expect(leftRailSource).toContain('className="work-area-stage"');
     expect(leftRailSource).toContain('activeWorkAreaId === area.id ? "selected active" : ""');
     expect(leftRailSource).not.toContain('i18n.t("section.terminalModules")');
     expect(leftRailSource).not.toContain('className="module-list"');
@@ -103,6 +106,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".brand > div")).toContain("display: block;");
     expect(cssBlock(".work-area-button")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
     expect(cssBlock(".work-area-copy")).toContain("display: block;");
+    expect(cssBlock(".work-area-stage")).toContain("display: flex;");
     expect(hasCssDeclaration(".work-area-copy small", "display: none;")).toBe(true);
   });
 
@@ -1177,7 +1181,7 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .loop-step", ["min-height: 50px;", "padding: 7px 5px;"])).toBe(true);
     expect(
       hasCssBlockWith(
-        "  .loop-step-copy,\n  .work-area-copy,\n  .work-area-status,\n  .workflow-next-action,\n  .left-rail .workspace-card",
+        "  .loop-step-copy,\n  .work-area-copy,\n  .work-area-stage,\n  .work-area-status,\n  .workflow-next-action,\n  .left-rail .workspace-card",
         ["display: none;"]
       )
     ).toBe(true);

@@ -286,6 +286,37 @@ button {
   line-height: 1.35;
 }
 
+.work-area-stage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 4px;
+  color: #7890a5;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.work-area-stage > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-area-stage em {
+  flex: 0 0 auto;
+  border: 1px solid #2a3b51;
+  border-radius: 999px;
+  color: #71dfc5;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+
 .work-area-status {
   justify-self: end;
   border: 1px solid #2a3b51;
@@ -7791,6 +7822,7 @@ button.ai-review-record {
 
   .loop-step-copy,
   .work-area-copy,
+  .work-area-stage,
   .work-area-status,
   .workflow-next-action,
   .left-rail .workspace-card {

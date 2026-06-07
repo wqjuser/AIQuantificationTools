@@ -57,6 +57,7 @@ import {
   buildPortfolioPaperOrderReplaySummaryTiles,
   buildPortfolioPaperOrderStateHistoryRows,
   buildPortfolioPeerAuditPlan,
+  buildProductDevelopmentStages,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
   resolveQuantLoopSelection,
@@ -172,6 +173,27 @@ function auditedRunFixture(
 }
 
 describe("terminal workbench model", () => {
+  test("defines stage-gated product delivery in platform order", () => {
+    const stages = buildProductDevelopmentStages();
+
+    expect(stages.map((stage) => stage.id)).toEqual([
+      "foundation",
+      "market-research",
+      "strategy-backtest",
+      "ai-review",
+      "portfolio-paper",
+      "live-readiness"
+    ]);
+    expect(stages.find((stage) => stage.id === "market-research")).toMatchObject({
+      label: "Stage 1 · Market and Research",
+      status: "current",
+      focus: "Finish the reliable search, quote, K-line, cache, data-quality, and notes loop before expanding later work."
+    });
+    expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
+      "market-research"
+    ]);
+  });
+
   test("builds the P0 product work areas in platform order", () => {
     const areas = buildProductWorkAreas(buildTerminalWorkspace());
 
@@ -189,7 +211,17 @@ describe("terminal workbench model", () => {
     expect(areas.find((area) => area.id === "execution")).toMatchObject({
       quantLoopStepId: "paper",
       workflowStageId: "execution",
-      status: "blocked"
+      status: "blocked",
+      deliveryStageId: "portfolio-paper",
+      deliveryStageStatus: "planned"
+    });
+    expect(areas.find((area) => area.id === "market")).toMatchObject({
+      deliveryStageId: "market-research",
+      deliveryStageStatus: "current"
+    });
+    expect(areas.find((area) => area.id === "audit")).toMatchObject({
+      deliveryStageId: "foundation",
+      deliveryStageStatus: "maintenance"
     });
   });
 

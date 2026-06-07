@@ -1,6 +1,8 @@
 import type {
   ExecutionState,
   Market,
+  ProductDevelopmentStageId,
+  ProductDevelopmentStageStatus,
   ProductWorkArea,
   ProductWorkAreaStatus,
   ResearchRunAudit,
@@ -15,6 +17,8 @@ type LocalizedLabelMap = {
   productWorkAreas: Record<string, string>;
   productWorkAreaDescriptions: Record<string, string>;
   productWorkAreaStatuses: Record<ProductWorkAreaStatus, string>;
+  productDevelopmentStages: Record<ProductDevelopmentStageId, string>;
+  productDevelopmentStageStatuses: Record<ProductDevelopmentStageStatus, string>;
   quantLoop: Record<string, string>;
   modules: Record<string, string>;
   agents: Record<string, string>;
@@ -568,6 +572,19 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       needs_run: "Run",
       blocked: "Blocked"
     },
+    productDevelopmentStages: {
+      foundation: "Stage 0 · Foundation",
+      "market-research": "Stage 1 · Market and Research",
+      "strategy-backtest": "Stage 2 · Strategy and Backtest",
+      "ai-review": "Stage 3 · AI Review",
+      "portfolio-paper": "Stage 4 · Portfolio and Paper",
+      "live-readiness": "Stage 5 · Live Readiness"
+    },
+    productDevelopmentStageStatuses: {
+      maintenance: "Maintenance",
+      current: "Current",
+      planned: "Planned"
+    },
     quantLoop: {
       research: "Market Research",
       idea: "Idea Lab",
@@ -707,6 +724,19 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       ready: "就绪",
       needs_run: "待运行",
       blocked: "阻断"
+    },
+    productDevelopmentStages: {
+      foundation: "阶段 0 · 平台基础",
+      "market-research": "阶段 1 · 行情与研究",
+      "strategy-backtest": "阶段 2 · 策略与回测",
+      "ai-review": "阶段 3 · AI 评审",
+      "portfolio-paper": "阶段 4 · 组合与模拟",
+      "live-readiness": "阶段 5 · 实盘准备"
+    },
+    productDevelopmentStageStatuses: {
+      maintenance: "基础维护",
+      current: "当前阶段",
+      planned: "后续规划"
     },
     quantLoop: {
       research: "行情研究",
@@ -897,6 +927,12 @@ export function createI18n(locale: Locale) {
     },
     productWorkAreaStatus(status: ProductWorkAreaStatus) {
       return valueOf(labels.productWorkAreaStatuses, status, status);
+    },
+    productWorkAreaDeliveryStage(area: ProductWorkArea) {
+      return valueOf(labels.productDevelopmentStages, area.deliveryStageId, area.deliveryStageLabel);
+    },
+    productDevelopmentStageStatus(status: ProductDevelopmentStageStatus) {
+      return valueOf(labels.productDevelopmentStageStatuses, status, status);
     },
     quantLoopLabel(id: string, fallback: string) {
       return valueOf(labels.quantLoop, id, fallback);

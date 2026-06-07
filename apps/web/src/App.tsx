@@ -3770,7 +3770,7 @@ export function App() {
                   }`}
                   key={area.id}
                   onClick={() => selectProductWorkArea(area.id)}
-                  title={`${i18n.productWorkAreaLabel(area)} · ${i18n.productWorkAreaDescription(area)}`}
+                  title={`${i18n.productWorkAreaLabel(area)} · ${i18n.productWorkAreaDescription(area)} · ${i18n.productWorkAreaDeliveryStage(area)}`}
                   type="button"
                 >
                   <span className="work-area-index">{index + 1}</span>
@@ -3778,6 +3778,10 @@ export function App() {
                   <span className="work-area-copy">
                     <strong>{i18n.productWorkAreaLabel(area)}</strong>
                     <small>{i18n.productWorkAreaDescription(area)}</small>
+                    <span className="work-area-stage">
+                      <span>{i18n.productWorkAreaDeliveryStage(area)}</span>
+                      <em>{i18n.productDevelopmentStageStatus(area.deliveryStageStatus)}</em>
+                    </span>
                   </span>
                   <em className="work-area-status">{i18n.productWorkAreaStatus(area.status)}</em>
                 </button>

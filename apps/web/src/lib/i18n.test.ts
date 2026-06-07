@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createI18n, resolveInitialLocale, supportedLocales } from "./i18n";
+import { buildProductWorkAreas, buildTerminalWorkspace } from "./terminal-workbench";
 
 describe("i18n", () => {
   test("defaults to Simplified Chinese unless a supported locale is stored", () => {
@@ -10,6 +11,9 @@ describe("i18n", () => {
 
   test("translates terminal chrome and known workspace labels", () => {
     const zh = createI18n("zh-CN");
+    const workAreas = buildProductWorkAreas(buildTerminalWorkspace());
+    const marketArea = workAreas.find((area) => area.id === "market");
+    const auditArea = workAreas.find((area) => area.id === "audit");
 
     expect(zh.t("topbar.eyebrow")).toBe("专业量化工作台");
     expect(zh.quantLoopLabel("research", "Market Research")).toBe("行情研究");
@@ -25,6 +29,9 @@ describe("i18n", () => {
     expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
     expect(zh.statusLabel("AI review export ready")).toBe("AI 评审报告导出完成");
     expect(zh.statusLabel("AI review record saved")).toBe("AI 评审运行记录已保存");
+    expect(marketArea ? zh.productWorkAreaDeliveryStage(marketArea) : "").toBe("阶段 1 · 行情与研究");
+    expect(marketArea ? zh.productDevelopmentStageStatus(marketArea.deliveryStageStatus) : "").toBe("当前阶段");
+    expect(auditArea ? zh.productDevelopmentStageStatus(auditArea.deliveryStageStatus) : "").toBe("基础维护");
   });
 
   test("provides dropdown labels for every supported locale", () => {

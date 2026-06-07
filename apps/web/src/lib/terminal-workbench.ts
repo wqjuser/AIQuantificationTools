@@ -34,6 +34,23 @@ export type ProductWorkAreaId =
   | "settings";
 
 export type ProductWorkAreaStatus = "ready" | "needs_run" | "blocked";
+export type ProductDevelopmentStageId =
+  | "foundation"
+  | "market-research"
+  | "strategy-backtest"
+  | "ai-review"
+  | "portfolio-paper"
+  | "live-readiness";
+export type ProductDevelopmentStageStatus = "maintenance" | "current" | "planned";
+
+export interface ProductDevelopmentStage {
+  id: ProductDevelopmentStageId;
+  label: string;
+  status: ProductDevelopmentStageStatus;
+  workAreaIds: readonly ProductWorkAreaId[];
+  focus: string;
+  exitCriteria: readonly string[];
+}
 
 export interface ProductWorkArea {
   id: ProductWorkAreaId;
@@ -42,6 +59,10 @@ export interface ProductWorkArea {
   accent: TerminalModule["accent"];
   quantLoopStepId: string;
   workflowStageId: string;
+  deliveryStageId: ProductDevelopmentStageId;
+  deliveryStageLabel: string;
+  deliveryStageStatus: ProductDevelopmentStageStatus;
+  deliveryStageFocus: string;
   status: ProductWorkAreaStatus;
 }
 
@@ -2032,6 +2053,81 @@ const primaryQuantLoopStepDefinitions = [
   { id: "paper", label: "Paper Trading" }
 ] as const;
 
+const productDevelopmentStageDefinitions = [
+  {
+    id: "foundation",
+    label: "Stage 0 · Platform Foundation",
+    status: "maintenance",
+    workAreaIds: ["settings", "audit"],
+    focus: "Keep deployment, settings, audit import/export, signing, and safety boundaries stable while feature work happens in gated stages.",
+    exitCriteria: [
+      "Docker deployment and smoke checks stay green.",
+      "Audit export, import, replay, and settings status stay usable.",
+      "No secret or live-trading path leaks into the frontend."
+    ]
+  },
+  {
+    id: "market-research",
+    label: "Stage 1 · Market and Research",
+    status: "current",
+    workAreaIds: ["market", "research"],
+    focus: "Finish the reliable search, quote, K-line, cache, data-quality, and notes loop before expanding later work.",
+    exitCriteria: [
+      "A-share, US, and crypto symbols can be searched and selected from the UI.",
+      "The selected symbol and timeframe drive quotes, K-lines, cache status, chart, and research notes.",
+      "Every fallback, stale cache, incomplete source, and refresh failure is visible to the user."
+    ]
+  },
+  {
+    id: "strategy-backtest",
+    label: "Stage 2 · Strategy and Backtest",
+    status: "planned",
+    workAreaIds: ["strategy", "backtest"],
+    focus: "Resume only after Stage 1 exits; build a maintainable strategy lab and reproducible backtest evidence loop.",
+    exitCriteria: [
+      "Strategy drafts are fully structured and versioned.",
+      "Backtests are reproducible from strategy, data snapshot, and assumptions.",
+      "Reports compare runs without creating optimization or trading advice."
+    ]
+  },
+  {
+    id: "ai-review",
+    label: "Stage 3 · AI Review",
+    status: "planned",
+    workAreaIds: ["ai-review"],
+    focus: "Run TradingAgents-style review only from audited evidence after strategy and backtest contracts are stable.",
+    exitCriteria: [
+      "AI records cite run id, strategy revision, metrics, data quality, and report artifacts.",
+      "No AI action can bypass evidence or output direct buy or sell advice.",
+      "Saved AI reviews replay correctly from the audit record."
+    ]
+  },
+  {
+    id: "portfolio-paper",
+    label: "Stage 4 · Portfolio and Paper Trading",
+    status: "planned",
+    workAreaIds: ["portfolio", "execution"],
+    focus: "Move into portfolio risk, paper orders, and lifecycle replay after single-strategy evidence is dependable.",
+    exitCriteria: [
+      "Portfolio backtest, risk checks, paper orders, approvals, and simulations share one auditable lifecycle.",
+      "Paper accounts and positions replay deterministically.",
+      "Live routes remain blocked by adapter, risk, and human gates."
+    ]
+  },
+  {
+    id: "live-readiness",
+    label: "Stage 5 · Live Readiness",
+    status: "planned",
+    workAreaIds: [],
+    focus: "Prepare certified broker and exchange adapters only after paper trading and audit gates are mature.",
+    exitCriteria: [
+      "Adapter authentication, account sync, order lifecycle, and reconciliation are testable without real funds.",
+      "Every live candidate cites strategy, backtest, AI review, risk approval, adapter state, and human confirmation.",
+      "No live route is enabled by default."
+    ]
+  }
+] as const satisfies readonly ProductDevelopmentStage[];
+
 const productWorkAreaDefinitions = [
   {
     id: "market",
@@ -2039,7 +2135,8 @@ const productWorkAreaDefinitions = [
     description: "Search, quotes, K-lines, source health",
     accent: "market",
     quantLoopStepId: "research",
-    workflowStageId: "data"
+    workflowStageId: "data",
+    deliveryStageId: "market-research"
   },
   {
     id: "research",
@@ -2047,7 +2144,8 @@ const productWorkAreaDefinitions = [
     description: "Chart, factors, notes, context",
     accent: "market",
     quantLoopStepId: "research",
-    workflowStageId: "data"
+    workflowStageId: "data",
+    deliveryStageId: "market-research"
   },
   {
     id: "strategy",
@@ -2055,7 +2153,8 @@ const productWorkAreaDefinitions = [
     description: "Rules, versions, risk configuration",
     accent: "strategy",
     quantLoopStepId: "strategy",
-    workflowStageId: "factor"
+    workflowStageId: "factor",
+    deliveryStageId: "strategy-backtest"
   },
   {
     id: "backtest",
@@ -2063,7 +2162,8 @@ const productWorkAreaDefinitions = [
     description: "Assumptions, trades, reproducible run",
     accent: "ai",
     quantLoopStepId: "backtest",
-    workflowStageId: "backtest"
+    workflowStageId: "backtest",
+    deliveryStageId: "strategy-backtest"
   },
   {
     id: "ai-review",
@@ -2071,7 +2171,8 @@ const productWorkAreaDefinitions = [
     description: "Evidence-locked agent committee",
     accent: "ai",
     quantLoopStepId: "agent-review",
-    workflowStageId: "agent"
+    workflowStageId: "agent",
+    deliveryStageId: "ai-review"
   },
   {
     id: "portfolio",
@@ -2079,7 +2180,8 @@ const productWorkAreaDefinitions = [
     description: "Exposure, positions, live gates",
     accent: "execution",
     quantLoopStepId: "paper",
-    workflowStageId: "execution"
+    workflowStageId: "execution",
+    deliveryStageId: "portfolio-paper"
   },
   {
     id: "execution",
@@ -2087,7 +2189,8 @@ const productWorkAreaDefinitions = [
     description: "Paper orders and adapter readiness",
     accent: "execution",
     quantLoopStepId: "paper",
-    workflowStageId: "execution"
+    workflowStageId: "execution",
+    deliveryStageId: "portfolio-paper"
   },
   {
     id: "audit",
@@ -2095,7 +2198,8 @@ const productWorkAreaDefinitions = [
     description: "Run history, import, export, replay",
     accent: "ai",
     quantLoopStepId: "backtest",
-    workflowStageId: "backtest"
+    workflowStageId: "backtest",
+    deliveryStageId: "foundation"
   },
   {
     id: "settings",
@@ -2103,9 +2207,13 @@ const productWorkAreaDefinitions = [
     description: "Data sources, API keys, safety gates",
     accent: "execution",
     quantLoopStepId: "research",
-    workflowStageId: "data"
+    workflowStageId: "data",
+    deliveryStageId: "foundation"
   }
-] as const satisfies readonly Omit<ProductWorkArea, "status">[];
+] as const satisfies readonly Omit<
+  ProductWorkArea,
+  "status" | "deliveryStageLabel" | "deliveryStageStatus" | "deliveryStageFocus"
+>[];
 
 function buildPrimaryQuantLoopSteps(activeStepId = "research", hasAuditedRun = false): QuantLoopStep[] {
   return primaryQuantLoopStepDefinitions.map((step) => ({
@@ -2252,13 +2360,29 @@ export function buildQuantLoopNavigationTarget(stepId: string): QuantLoopNavigat
   return targets[stepId] ?? targets.research;
 }
 
+export function buildProductDevelopmentStages(): ProductDevelopmentStage[] {
+  return productDevelopmentStageDefinitions.map((stage) => ({
+    ...stage,
+    workAreaIds: [...stage.workAreaIds],
+    exitCriteria: [...stage.exitCriteria]
+  }));
+}
+
 export function buildProductWorkAreas(workspace: TerminalWorkspace): ProductWorkArea[] {
   const hasAuditedRun = Boolean(workspace.researchRun?.runId);
+  const deliveryStages = buildProductDevelopmentStages();
 
-  return productWorkAreaDefinitions.map((area) => ({
-    ...area,
-    status: productWorkAreaStatus(area.id, hasAuditedRun, workspace)
-  }));
+  return productWorkAreaDefinitions.map((area) => {
+    const stage =
+      deliveryStages.find((candidate) => candidate.id === area.deliveryStageId) ?? deliveryStages[0];
+    return {
+      ...area,
+      deliveryStageLabel: stage.label,
+      deliveryStageStatus: stage.status,
+      deliveryStageFocus: stage.focus,
+      status: productWorkAreaStatus(area.id, hasAuditedRun, workspace)
+    };
+  });
 }
 
 export function buildGoldenPathRunbookPreview(
