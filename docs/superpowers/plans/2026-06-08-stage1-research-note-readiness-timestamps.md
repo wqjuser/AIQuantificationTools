@@ -42,7 +42,7 @@
 - [x] GREEN: Add Chinese detail translations for the new note evidence phrases.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Progress Notes
 
@@ -52,6 +52,7 @@
 - Browser verification confirmed saved-note readiness details render an `已保存 <timestamp>` evidence prefix without horizontal overflow or app console warnings/errors.
 - The temporary browser-verification note written to Docker local storage was deleted after verification.
 - GitHub Actions run `27100296200` failed in the `Build Docker images` step after tests, web build, and Compose config had passed. GitHub log download was not available to this session, and a local `docker compose build --no-cache` passed, so the next push is used to re-check whether the CI Docker build failure repeats.
+- Pushed through `127.0.0.1:7890`; follow-up GitHub Actions CI for commit `1da7ca9` completed successfully.
 
 ## Verification Checklist
 
