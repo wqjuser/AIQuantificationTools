@@ -6163,6 +6163,8 @@ em {
   align-items: center;
   gap: 6px;
   min-height: 30px;
+  min-width: 78px;
+  justify-content: center;
   border: 1px solid #2b6f62;
   border-radius: 7px;
   background: #12312b;
@@ -6171,15 +6173,63 @@ em {
   cursor: pointer;
 }
 
-.portfolio-order-approval-actions button:last-child {
+.portfolio-order-approval-actions button.reject {
   border-color: #7a3a32;
   background: #2b1d22;
   color: #ff9c8e;
 }
 
+.portfolio-order-approval-actions button.simulate {
+  border-color: #2d5f8d;
+  background: #10263d;
+  color: #9ad1ff;
+}
+
 .portfolio-order-approval-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.portfolio-order-simulation {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.portfolio-order-simulation-list {
+  display: grid;
+  gap: 7px;
+}
+
+.portfolio-order-simulation-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.1fr) minmax(180px, 1.2fr) repeat(3, minmax(76px, 0.6fr)) minmax(120px, 0.8fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #101925;
+  padding: 8px 10px;
+}
+
+.portfolio-order-simulation-row strong,
+.portfolio-order-simulation-row span,
+.portfolio-order-simulation-row em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-order-simulation-row span,
+.portfolio-order-simulation-row em {
+  color: #9cadbd;
+  font-size: 11px;
+}
+
+.portfolio-order-simulation-row em {
+  color: #71dfc5;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .promotion-queue {

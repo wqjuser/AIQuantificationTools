@@ -987,6 +987,50 @@ export interface PortfolioPaperOrderApprovalHistoryResult {
   error?: string;
 }
 
+export interface PortfolioPaperOrderSimulation {
+  simulationId: string;
+  baseRunId: string;
+  batchId: string;
+  orderId: string;
+  simulatedAt: string;
+  mode: "portfolio_paper_order_simulation";
+  symbol: string;
+  sourceRunId: string | null;
+  side: "buy" | "sell";
+  quantity: number;
+  fillPrice: number;
+  notionalValue: number;
+  orderState: "filled";
+  fillStatus: "filled";
+  reason: string;
+  approvedBy: string | null;
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderSimulationRequest {
+  baseRunId: string;
+  batchId: string;
+  orderId: string;
+  simulatedAt?: string;
+}
+
+export interface PortfolioPaperOrderSimulationRecordResult {
+  simulation?: PortfolioPaperOrderSimulation;
+  simulations: PortfolioPaperOrderSimulation[];
+  lifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface PortfolioPaperOrderSimulationHistoryResult {
+  simulations: PortfolioPaperOrderSimulation[];
+  lifecycle: PortfolioPaperOrderLifecycleEvent[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface PortfolioBacktestLeg {
   symbol: string;
   targetWeight: number;
@@ -1320,6 +1364,20 @@ export function buildPortfolioPaperOrderApprovalsUrl(
   params: { baseRunId?: string; batchId?: string } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/portfolio/paper-order-approvals", (url) => {
+    if (params.baseRunId?.trim()) {
+      url.searchParams.set("baseRunId", params.baseRunId.trim());
+    }
+    if (params.batchId?.trim()) {
+      url.searchParams.set("batchId", params.batchId.trim());
+    }
+  });
+}
+
+export function buildPortfolioPaperOrderSimulationsUrl(
+  baseUrl: string,
+  params: { baseRunId?: string; batchId?: string } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/portfolio/paper-order-simulations", (url) => {
     if (params.baseRunId?.trim()) {
       url.searchParams.set("baseRunId", params.baseRunId.trim());
     }
@@ -2786,6 +2844,78 @@ export async function loadPlatformSettings(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown settings status error"
+    };
+  }
+}
+
+export async function recordPortfolioPaperOrderSimulation(
+  baseUrl: string,
+  request: PortfolioPaperOrderSimulationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderSimulationRecordResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderSimulationsUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          simulations: [],
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isPortfolioPaperOrderSimulationRecordPayload(payload)) {
+      throw new Error("Invalid portfolio paper order simulation contract");
+    }
+    return {
+      simulation: payload.simulation,
+      simulations: payload.simulations,
+      lifecycle: payload.portfolioPaperOrderLifecycle,
+      auditEvent: payload.auditEvent,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      simulations: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order simulation record error"
+    };
+  }
+}
+
+export async function loadPortfolioPaperOrderSimulations(
+  baseUrl: string,
+  baseRunId: string,
+  batchId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderSimulationHistoryResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderSimulationsUrl(baseUrl, { baseRunId, batchId }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPortfolioPaperOrderSimulationHistoryPayload(payload)) {
+      throw new Error("Invalid portfolio paper order simulation history contract");
+    }
+    return {
+      simulations: payload.simulations,
+      lifecycle: payload.portfolioPaperOrderLifecycle,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      simulations: [],
+      lifecycle: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order simulation history error"
     };
   }
 }
@@ -4801,6 +4931,49 @@ function isPortfolioPaperOrderApprovalHistoryPayload(
   );
 }
 
+function isPortfolioPaperOrderSimulationRecordPayload(
+  value: unknown
+): value is {
+  simulation: PortfolioPaperOrderSimulation;
+  simulations: PortfolioPaperOrderSimulation[];
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    simulation?: unknown;
+    simulations?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+    auditEvent?: unknown;
+  };
+  return (
+    isPortfolioPaperOrderSimulation(payload.simulation) &&
+    Array.isArray(payload.simulations) &&
+    payload.simulations.every(isPortfolioPaperOrderSimulation) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent))) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isPortfolioPaperOrderSimulationHistoryPayload(
+  value: unknown
+): value is { simulations: PortfolioPaperOrderSimulation[]; portfolioPaperOrderLifecycle: PortfolioPaperOrderLifecycleEvent[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { simulations?: unknown; portfolioPaperOrderLifecycle?: unknown };
+  return (
+    Array.isArray(payload.simulations) &&
+    payload.simulations.every(isPortfolioPaperOrderSimulation) &&
+    Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+    payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)
+  );
+}
+
 function isPortfolioPaperOrderApproval(value: unknown): value is PortfolioPaperOrderApproval {
   if (!value || typeof value !== "object") {
     return false;
@@ -4815,6 +4988,33 @@ function isPortfolioPaperOrderApproval(value: unknown): value is PortfolioPaperO
     typeof approval.approved === "boolean" &&
     typeof approval.reviewer === "string" &&
     typeof approval.reason === "string"
+  );
+}
+
+function isPortfolioPaperOrderSimulation(value: unknown): value is PortfolioPaperOrderSimulation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const simulation = value as Partial<PortfolioPaperOrderSimulation>;
+  return (
+    typeof simulation.simulationId === "string" &&
+    typeof simulation.baseRunId === "string" &&
+    typeof simulation.batchId === "string" &&
+    typeof simulation.orderId === "string" &&
+    typeof simulation.simulatedAt === "string" &&
+    simulation.mode === "portfolio_paper_order_simulation" &&
+    typeof simulation.symbol === "string" &&
+    (typeof simulation.sourceRunId === "string" || simulation.sourceRunId === null) &&
+    (simulation.side === "buy" || simulation.side === "sell") &&
+    typeof simulation.quantity === "number" &&
+    typeof simulation.fillPrice === "number" &&
+    typeof simulation.notionalValue === "number" &&
+    simulation.orderState === "filled" &&
+    simulation.fillStatus === "filled" &&
+    typeof simulation.reason === "string" &&
+    (typeof simulation.approvedBy === "string" || simulation.approvedBy === null) &&
+    typeof simulation.paperOnly === "boolean" &&
+    typeof simulation.liveExecutionBlocked === "boolean"
   );
 }
 

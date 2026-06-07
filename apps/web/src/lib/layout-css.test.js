@@ -1244,6 +1244,18 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".portfolio-order-approval-actions");
   });
 
+  test("renders portfolio paper order simulations as paper-only fills", () => {
+    expect(appSource).toContain("loadPortfolioPaperOrderSimulations");
+    expect(appSource).toContain("recordPortfolioPaperOrderSimulation");
+    expect(appSource).toContain("portfolioPaperOrderSimulations");
+    expect(appSource).toContain("onSimulatePortfolioOrder");
+    expect(appSource).toContain("simulatingPortfolioOrderId");
+    expect(appSource).toContain('className="portfolio-order-simulation"');
+    expect(appSource).toContain('className="portfolio-order-simulation-list"');
+    expect(styles).toContain(".portfolio-order-simulation");
+    expect(styles).toContain(".portfolio-order-simulation-list");
+  });
+
   test("renders paper execution account summaries from persisted execution records", () => {
     expect(appSource).toContain("buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord)");
     expect(appSource).toContain("buildPaperPositionRows(workspace, activePaperExecutionRecord)");

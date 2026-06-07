@@ -22,6 +22,7 @@ import {
   buildPortfolioBacktestUrl,
   buildPortfolioPaperOrderApprovalsUrl,
   buildPortfolioPaperOrdersUrl,
+  buildPortfolioPaperOrderSimulationsUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
   buildAuditReportVerifyUrl,
@@ -49,9 +50,11 @@ import {
   loadResearchRunPromotion,
   loadPortfolioPaperOrderBatches,
   loadPortfolioPaperOrderApprovals,
+  loadPortfolioPaperOrderSimulations,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   recordPortfolioPaperOrderApproval,
+  recordPortfolioPaperOrderSimulation,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -215,6 +218,17 @@ describe("terminal workspace API client", () => {
       })
     ).toBe(
       "/api/portfolio/paper-order-approvals?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&batchId=portfolio-paper-batch%2F1"
+    );
+  });
+
+  test("builds the portfolio paper order simulation URL with an encoded batch query", () => {
+    expect(
+      buildPortfolioPaperOrderSimulationsUrl("/", {
+        baseRunId: "portfolio run/你好",
+        batchId: "portfolio-paper-batch/1"
+      })
+    ).toBe(
+      "/api/portfolio/paper-order-simulations?baseRunId=portfolio+run%2F%E4%BD%A0%E5%A5%BD&batchId=portfolio-paper-batch%2F1"
     );
   });
 
@@ -757,6 +771,121 @@ describe("terminal workspace API client", () => {
     });
     expect(calls[1].url).toBe(
       "/api/portfolio/paper-order-approvals?baseRunId=portfolio-run-1&batchId=portfolio-paper-batch-1"
+    );
+  });
+
+  test("records and loads portfolio paper order simulations from the Python core", async () => {
+    const simulation = {
+      simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      mode: "portfolio_paper_order_simulation",
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy",
+      quantity: 2400,
+      fillPrice: 9.2,
+      notionalValue: 22080,
+      orderState: "filled",
+      fillStatus: "filled",
+      reason: "Paper-only simulation filled the approved portfolio order.",
+      approvedBy: "operator-a",
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy",
+        quantity: 2400,
+        notionalValue: 22080,
+        originalStatus: "pending_review",
+        riskStatus: "passed",
+        state: "ready_for_simulation",
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      }
+    ];
+    const auditEvent = {
+      schemaVersion: 1 as const,
+      eventId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      eventType: "portfolio_paper_order_simulation",
+      runId: "portfolio-run-1",
+      createdAt: "2026-05-27T08:46:00+00:00",
+      stage: "portfolio-paper-order-simulation",
+      source: "paper-simulator",
+      summary: "Paper simulation filled portfolio-paper-run-a-buy.",
+      detail: "Paper-only simulation filled the approved portfolio order.",
+      metadata: {
+        simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        orderState: "filled",
+        fillStatus: "filled",
+        approvalState: "ready_for_simulation",
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        json: async () =>
+          init?.method === "POST"
+            ? { simulation, simulations: [simulation], portfolioPaperOrderLifecycle: lifecycle, auditEvent }
+            : { simulations: [simulation], portfolioPaperOrderLifecycle: lifecycle }
+      };
+    };
+
+    const recordResult = await recordPortfolioPaperOrderSimulation(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        simulatedAt: "2026-05-27T08:46:00+00:00"
+      },
+      fetcher
+    );
+    const historyResult = await loadPortfolioPaperOrderSimulations(
+      "/",
+      "portfolio-run-1",
+      "portfolio-paper-batch-1",
+      fetcher
+    );
+
+    expect(recordResult.source).toBe("core");
+    expect(recordResult.simulation?.orderState).toBe("filled");
+    expect(recordResult.simulation?.fillPrice).toBe(9.2);
+    expect(recordResult.lifecycle?.map((row) => row.state)).toEqual(["ready_for_simulation"]);
+    expect(recordResult.auditEvent?.metadata.approvalState).toBe("ready_for_simulation");
+    expect(historyResult.source).toBe("core");
+    expect(historyResult.simulations[0].simulationId).toBe(
+      "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy"
+    );
+    expect(calls[0]).toMatchObject({ url: "/api/portfolio/paper-order-simulations" });
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      simulatedAt: "2026-05-27T08:46:00+00:00"
+    });
+    expect(calls[1].url).toBe(
+      "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-1&batchId=portfolio-paper-batch-1"
     );
   });
 

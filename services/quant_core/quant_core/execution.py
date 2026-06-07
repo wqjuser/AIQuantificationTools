@@ -47,6 +47,26 @@ class PortfolioPaperOrderApproval:
     reason: str
 
 
+@dataclass(frozen=True)
+class PortfolioPaperOrderSimulation:
+    simulation_id: str
+    base_run_id: str
+    batch_id: str
+    order_id: str
+    simulated_at: datetime
+    mode: str
+    symbol: str
+    source_run_id: str | None
+    side: str
+    quantity: float
+    fill_price: float
+    notional_value: float
+    order_state: str
+    fill_status: str
+    reason: str
+    approved_by: str | None
+
+
 class PaperExecutionAdapter:
     def __init__(self, initial_cash: float = 100_000, max_position_value: float = 20_000) -> None:
         self.cash = initial_cash
@@ -433,6 +453,137 @@ class PortfolioPaperOrderApprovalStore:
         return [_row_to_portfolio_paper_order_approval(row) for row in rows]
 
 
+class PortfolioPaperOrderSimulationStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path)
+
+    def _init_schema(self) -> None:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                create table if not exists portfolio_paper_order_simulations (
+                    simulation_id text primary key,
+                    base_run_id text not null,
+                    batch_id text not null,
+                    order_id text not null,
+                    simulated_at text not null,
+                    mode text not null,
+                    symbol text not null,
+                    source_run_id text,
+                    side text not null,
+                    quantity real not null,
+                    fill_price real not null,
+                    notional_value real not null,
+                    order_state text not null,
+                    fill_status text not null,
+                    reason text not null,
+                    approved_by text
+                )
+                """
+            )
+            connection.execute(
+                """
+                create unique index if not exists idx_portfolio_paper_order_simulations_order
+                on portfolio_paper_order_simulations(base_run_id, batch_id, order_id)
+                """
+            )
+            connection.execute(
+                """
+                create index if not exists idx_portfolio_paper_order_simulations_batch
+                on portfolio_paper_order_simulations(base_run_id, batch_id, simulated_at desc)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def record(self, simulation: PortfolioPaperOrderSimulation) -> PortfolioPaperOrderSimulation:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                insert into portfolio_paper_order_simulations (
+                    simulation_id,
+                    base_run_id,
+                    batch_id,
+                    order_id,
+                    simulated_at,
+                    mode,
+                    symbol,
+                    source_run_id,
+                    side,
+                    quantity,
+                    fill_price,
+                    notional_value,
+                    order_state,
+                    fill_status,
+                    reason,
+                    approved_by
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(base_run_id, batch_id, order_id) do update set
+                    simulation_id = excluded.simulation_id,
+                    simulated_at = excluded.simulated_at,
+                    mode = excluded.mode,
+                    symbol = excluded.symbol,
+                    source_run_id = excluded.source_run_id,
+                    side = excluded.side,
+                    quantity = excluded.quantity,
+                    fill_price = excluded.fill_price,
+                    notional_value = excluded.notional_value,
+                    order_state = excluded.order_state,
+                    fill_status = excluded.fill_status,
+                    reason = excluded.reason,
+                    approved_by = excluded.approved_by
+                """,
+                (
+                    simulation.simulation_id,
+                    simulation.base_run_id,
+                    simulation.batch_id,
+                    simulation.order_id,
+                    simulation.simulated_at.isoformat(),
+                    simulation.mode,
+                    simulation.symbol,
+                    simulation.source_run_id,
+                    simulation.side,
+                    simulation.quantity,
+                    simulation.fill_price,
+                    simulation.notional_value,
+                    simulation.order_state,
+                    simulation.fill_status,
+                    simulation.reason,
+                    simulation.approved_by,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return simulation
+
+    def list_by_batch(self, base_run_id: str, batch_id: str) -> list[PortfolioPaperOrderSimulation]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select simulation_id, base_run_id, batch_id, order_id, simulated_at, mode, symbol, source_run_id,
+                       side, quantity, fill_price, notional_value, order_state, fill_status, reason, approved_by
+                from portfolio_paper_order_simulations
+                where base_run_id = ? and batch_id = ?
+                order by simulated_at desc
+                """,
+                (base_run_id, batch_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_portfolio_paper_order_simulation(row) for row in rows]
+
+
 def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None = None) -> PaperExecutionRecord:
     created = created_at or datetime.now(timezone.utc)
     price = _latest_close(audit)
@@ -595,6 +746,75 @@ def portfolio_paper_order_approval_to_payload(approval: PortfolioPaperOrderAppro
     }
 
 
+def create_portfolio_paper_order_simulation(
+    *,
+    batch: PortfolioPaperOrderBatch,
+    lifecycle_row: dict[str, Any],
+    simulated_at: datetime | str | None = None,
+) -> PortfolioPaperOrderSimulation:
+    order_id = str(lifecycle_row.get("orderId") or "").strip()
+    if not order_id:
+        raise ValueError("portfolio_paper_order_simulation_order_id_required")
+    if str(lifecycle_row.get("batchId") or "") != batch.batch_id or str(lifecycle_row.get("baseRunId") or "") != batch.base_run_id:
+        raise ValueError("portfolio_paper_order_simulation_lifecycle_context_mismatch")
+    if str(lifecycle_row.get("state") or "") != "ready_for_simulation" or not bool(lifecycle_row.get("routable")):
+        raise ValueError("portfolio_paper_order_simulation_requires_ready_order")
+    side = str(lifecycle_row.get("side") or "")
+    if side not in {"buy", "sell"}:
+        raise ValueError("portfolio_paper_order_simulation_side_invalid")
+    quantity = _strict_positive_number(lifecycle_row.get("quantity"))
+    notional_value = _strict_positive_number(lifecycle_row.get("notionalValue"))
+    if quantity is None or notional_value is None:
+        raise ValueError("portfolio_paper_order_simulation_quantity_notional_required")
+    simulated = (
+        _parse_payload_datetime(simulated_at, "portfolio_paper_order_simulation_simulated_at_invalid")
+        if simulated_at is not None
+        else datetime.now(timezone.utc)
+    )
+    fill_price = round(notional_value / quantity, 6)
+    return PortfolioPaperOrderSimulation(
+        simulation_id=f"portfolio-paper-order-simulation-{batch.batch_id}-{order_id}",
+        base_run_id=batch.base_run_id,
+        batch_id=batch.batch_id,
+        order_id=order_id,
+        simulated_at=simulated,
+        mode="portfolio_paper_order_simulation",
+        symbol=str(lifecycle_row.get("symbol") or ""),
+        source_run_id=str(lifecycle_row.get("sourceRunId") or "").strip() or None,
+        side=side,
+        quantity=quantity,
+        fill_price=fill_price,
+        notional_value=notional_value,
+        order_state="filled",
+        fill_status="filled",
+        reason="Paper-only simulation filled the approved portfolio order; live execution remains blocked.",
+        approved_by=str(lifecycle_row.get("approvedBy") or "").strip() or None,
+    )
+
+
+def portfolio_paper_order_simulation_to_payload(simulation: PortfolioPaperOrderSimulation) -> dict[str, Any]:
+    return {
+        "simulationId": simulation.simulation_id,
+        "baseRunId": simulation.base_run_id,
+        "batchId": simulation.batch_id,
+        "orderId": simulation.order_id,
+        "simulatedAt": simulation.simulated_at.isoformat(),
+        "mode": simulation.mode,
+        "symbol": simulation.symbol,
+        "sourceRunId": simulation.source_run_id,
+        "side": simulation.side,
+        "quantity": simulation.quantity,
+        "fillPrice": simulation.fill_price,
+        "notionalValue": simulation.notional_value,
+        "orderState": simulation.order_state,
+        "fillStatus": simulation.fill_status,
+        "reason": simulation.reason,
+        "approvedBy": simulation.approved_by,
+        "paperOnly": True,
+        "liveExecutionBlocked": True,
+    }
+
+
 def portfolio_paper_order_approvals_to_map(
     approvals: list[PortfolioPaperOrderApproval],
 ) -> dict[str, dict[str, Any]]:
@@ -659,6 +879,43 @@ def portfolio_paper_order_approval_to_audit_event_payload(
             "reviewer": approval.reviewer,
             "approvalState": lifecycle_row.get("state"),
             "routable": bool(lifecycle_row.get("routable")),
+            "paperOnly": True,
+            "liveExecutionBlocked": True,
+        },
+    }
+
+
+def portfolio_paper_order_simulation_to_audit_event_payload(
+    simulation: PortfolioPaperOrderSimulation,
+    *,
+    batch: PortfolioPaperOrderBatch,
+    lifecycle_row: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "eventId": simulation.simulation_id,
+        "eventType": "portfolio_paper_order_simulation",
+        "runId": simulation.base_run_id,
+        "createdAt": simulation.simulated_at.isoformat(),
+        "stage": "portfolio-paper-order-simulation",
+        "source": "paper-simulator",
+        "summary": f"Paper simulation filled {simulation.order_id} for {batch.portfolio_name}.",
+        "detail": simulation.reason,
+        "metadata": {
+            "simulationId": simulation.simulation_id,
+            "baseRunId": simulation.base_run_id,
+            "batchId": simulation.batch_id,
+            "portfolioName": batch.portfolio_name,
+            "orderId": simulation.order_id,
+            "symbol": simulation.symbol,
+            "side": simulation.side,
+            "quantity": simulation.quantity,
+            "fillPrice": simulation.fill_price,
+            "notionalValue": simulation.notional_value,
+            "orderState": simulation.order_state,
+            "fillStatus": simulation.fill_status,
+            "approvalState": lifecycle_row.get("state"),
+            "approvedBy": simulation.approved_by,
             "paperOnly": True,
             "liveExecutionBlocked": True,
         },
@@ -997,6 +1254,27 @@ def _row_to_portfolio_paper_order_approval(row: sqlite3.Row | tuple[Any, ...]) -
         approved=bool(row[5]),
         reviewer=str(row[6]),
         reason=str(row[7]),
+    )
+
+
+def _row_to_portfolio_paper_order_simulation(row: sqlite3.Row | tuple[Any, ...]) -> PortfolioPaperOrderSimulation:
+    return PortfolioPaperOrderSimulation(
+        simulation_id=str(row[0]),
+        base_run_id=str(row[1]),
+        batch_id=str(row[2]),
+        order_id=str(row[3]),
+        simulated_at=datetime.fromisoformat(str(row[4])),
+        mode=str(row[5]),
+        symbol=str(row[6]),
+        source_run_id=str(row[7]).strip() if row[7] is not None else None,
+        side=str(row[8]),
+        quantity=float(row[9]),
+        fill_price=float(row[10]),
+        notional_value=float(row[11]),
+        order_state=str(row[12]),
+        fill_status=str(row[13]),
+        reason=str(row[14]),
+        approved_by=str(row[15]).strip() if row[15] is not None else None,
     )
 
 

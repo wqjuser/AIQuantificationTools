@@ -39,12 +39,14 @@ from quant_core.execution import (
     PaperExecutionStore,
     PortfolioPaperOrderBatch,
     PortfolioPaperOrderApprovalStore,
+    PortfolioPaperOrderSimulationStore,
     PortfolioPaperOrderStore,
     build_portfolio_paper_order_lifecycle,
     build_promotion_candidate,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
     create_portfolio_paper_order_batch,
+    create_portfolio_paper_order_simulation,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
     portfolio_paper_order_approval_to_audit_event_payload,
@@ -53,6 +55,8 @@ from quant_core.execution import (
     portfolio_paper_order_batch_to_audit_event_payload,
     portfolio_paper_order_batch_to_payload,
     portfolio_paper_order_payload_to_batch,
+    portfolio_paper_order_simulation_to_audit_event_payload,
+    portfolio_paper_order_simulation_to_payload,
     validate_paper_execution_handoff,
 )
 from quant_core.golden_path import build_golden_path_status
@@ -160,6 +164,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     portfolio_paper_order_store = PortfolioPaperOrderStore(Path("data/portfolio_paper_orders.sqlite"))
     portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(Path("data/portfolio_paper_order_approvals.sqlite"))
+    portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(Path("data/portfolio_paper_order_simulations.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
@@ -333,6 +338,51 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {
                     "approval": portfolio_paper_order_approval_to_payload(approval),
                     "approvals": [portfolio_paper_order_approval_to_payload(item) for item in approvals],
+                    "portfolioPaperOrderLifecycle": lifecycle,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/portfolio/paper-order-simulations":
+            try:
+                payload = self._read_json_body()
+                base_run_id = str(payload.get("baseRunId") or "").strip()
+                batch_id = str(payload.get("batchId") or "").strip()
+                order_id = str(payload.get("orderId") or "").strip()
+                if not base_run_id or not batch_id or not order_id:
+                    raise ValueError("portfolio_paper_order_simulation_context_required")
+                batch = _find_portfolio_paper_order_batch(self.portfolio_paper_order_store, base_run_id, batch_id)
+                approvals = self.portfolio_paper_order_approval_store.list_by_batch(base_run_id, batch_id)
+                lifecycle = build_portfolio_paper_order_lifecycle(
+                    batch,
+                    approvals=portfolio_paper_order_approvals_to_map(approvals),
+                )
+                lifecycle_row = _find_portfolio_paper_order_lifecycle_row(lifecycle, order_id)
+                simulation = create_portfolio_paper_order_simulation(
+                    batch=batch,
+                    lifecycle_row=lifecycle_row,
+                    simulated_at=payload.get("simulatedAt"),
+                )
+            except LookupError as error:
+                self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
+                return
+            except ValueError as error:
+                self._send_json({"error": "invalid_portfolio_paper_order_simulation", "detail": str(error)}, status=400)
+                return
+            self.portfolio_paper_order_simulation_store.record(simulation)
+            simulations = self.portfolio_paper_order_simulation_store.list_by_batch(simulation.base_run_id, simulation.batch_id)
+            audit_event = self.audit_event_store.record(
+                portfolio_paper_order_simulation_to_audit_event_payload(
+                    simulation,
+                    batch=batch,
+                    lifecycle_row=lifecycle_row,
+                )
+            )
+            self._send_json(
+                {
+                    "simulation": portfolio_paper_order_simulation_to_payload(simulation),
+                    "simulations": [portfolio_paper_order_simulation_to_payload(item) for item in simulations],
                     "portfolioPaperOrderLifecycle": lifecycle,
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
@@ -706,6 +756,31 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {
                     "approvals": [portfolio_paper_order_approval_to_payload(approval) for approval in approvals],
+                    "portfolioPaperOrderLifecycle": lifecycle,
+                }
+            )
+            return
+        if parsed.path == "/api/portfolio/paper-order-simulations":
+            query = parse_qs(parsed.query)
+            base_run_id = query.get("baseRunId", [""])[0].strip()
+            batch_id = query.get("batchId", [""])[0].strip()
+            if not base_run_id or not batch_id:
+                self._send_json({"error": "portfolio_paper_order_simulation_context_required"}, status=400)
+                return
+            try:
+                batch = _find_portfolio_paper_order_batch(self.portfolio_paper_order_store, base_run_id, batch_id)
+            except LookupError as error:
+                self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
+                return
+            approvals = self.portfolio_paper_order_approval_store.list_by_batch(base_run_id, batch_id)
+            lifecycle = build_portfolio_paper_order_lifecycle(
+                batch,
+                approvals=portfolio_paper_order_approvals_to_map(approvals),
+            )
+            simulations = self.portfolio_paper_order_simulation_store.list_by_batch(base_run_id, batch_id)
+            self._send_json(
+                {
+                    "simulations": [portfolio_paper_order_simulation_to_payload(simulation) for simulation in simulations],
                     "portfolioPaperOrderLifecycle": lifecycle,
                 }
             )

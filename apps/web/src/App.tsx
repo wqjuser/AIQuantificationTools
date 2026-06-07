@@ -35,6 +35,7 @@ import {
   loadLatestResearchRunPaperExecution,
   loadPortfolioPaperOrderBatches,
   loadPortfolioPaperOrderApprovals,
+  loadPortfolioPaperOrderSimulations,
   loadResearchRunDetail,
   loadResearchRunExport,
   loadResearchRunHistory,
@@ -80,6 +81,7 @@ import {
   PortfolioBacktestResult,
   PortfolioPaperOrderBatch,
   PortfolioPaperOrderLifecycleEvent,
+  PortfolioPaperOrderSimulation,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   ResearchRunExportAuditReport,
@@ -91,6 +93,7 @@ import {
   signAuditReportEvent,
   revokeAuditReportEvent,
   recordPortfolioPaperOrderApproval,
+  recordPortfolioPaperOrderSimulation,
   saveAiReviewRunRecord,
   saveStrategySnapshot,
   StrategyLibraryItem,
@@ -505,6 +508,14 @@ function mergePortfolioPaperOrderLifecycleEvents(
   return [...events.filter((event) => event.batchId !== batchId), ...replacement];
 }
 
+function mergePortfolioPaperOrderSimulations(
+  events: PortfolioPaperOrderSimulation[],
+  batchId: string,
+  replacement: PortfolioPaperOrderSimulation[]
+): PortfolioPaperOrderSimulation[] {
+  return [...events.filter((event) => event.batchId !== batchId), ...replacement];
+}
+
 function waitForWorkflowStep() {
   return new Promise<void>((resolve) => window.setTimeout(resolve, workflowStepDelayMs));
 }
@@ -536,6 +547,7 @@ export function App() {
   const [portfolioPaperOrderLifecycleEvents, setPortfolioPaperOrderLifecycleEvents] = useState<
     PortfolioPaperOrderLifecycleEvent[]
   >([]);
+  const [portfolioPaperOrderSimulations, setPortfolioPaperOrderSimulations] = useState<PortfolioPaperOrderSimulation[]>([]);
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -564,6 +576,7 @@ export function App() {
   const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
   const [isRecordingPortfolioPaperOrders, setIsRecordingPortfolioPaperOrders] = useState(false);
   const [approvingPortfolioPaperOrderId, setApprovingPortfolioPaperOrderId] = useState<string | null>(null);
+  const [simulatingPortfolioPaperOrderId, setSimulatingPortfolioPaperOrderId] = useState<string | null>(null);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
@@ -755,6 +768,7 @@ export function App() {
     if (!baseRunId) {
       setPortfolioPaperOrderBatches([]);
       setPortfolioPaperOrderLifecycleEvents([]);
+      setPortfolioPaperOrderSimulations([]);
       setPortfolioPaperOrderHistoryError(null);
       return;
     }
@@ -768,20 +782,32 @@ export function App() {
       setPortfolioPaperOrderHistoryError(result.error ?? null);
       if (!result.batches.length) {
         setPortfolioPaperOrderLifecycleEvents([]);
+        setPortfolioPaperOrderSimulations([]);
         return;
       }
-      void Promise.all(
-        result.batches.map((batch) => loadPortfolioPaperOrderApprovals(quantCoreBaseUrl, baseRunId, batch.batchId))
-      ).then((approvalResults) => {
+      void Promise.all([
+        Promise.all(
+          result.batches.map((batch) => loadPortfolioPaperOrderApprovals(quantCoreBaseUrl, baseRunId, batch.batchId))
+        ),
+        Promise.all(
+          result.batches.map((batch) => loadPortfolioPaperOrderSimulations(quantCoreBaseUrl, baseRunId, batch.batchId))
+        )
+      ]).then(([approvalResults, simulationResults]) => {
         if (cancelled) {
           return;
         }
         setPortfolioPaperOrderLifecycleEvents(
           approvalResults.flatMap((approvalResult) => approvalResult.lifecycle)
         );
+        setPortfolioPaperOrderSimulations(
+          simulationResults.flatMap((simulationResult) => simulationResult.simulations)
+        );
         const approvalError = approvalResults.find((approvalResult) => approvalResult.error)?.error;
+        const simulationError = simulationResults.find((simulationResult) => simulationResult.error)?.error;
         if (approvalError) {
           setPortfolioPaperOrderHistoryError(approvalError);
+        } else if (simulationError) {
+          setPortfolioPaperOrderHistoryError(simulationError);
         }
       });
     });
@@ -1498,6 +1524,44 @@ export function App() {
     (row: PortfolioPaperOrderApprovalRow) => reviewPortfolioPaperOrder(row, false),
     [reviewPortfolioPaperOrder]
   );
+
+  const simulatePortfolioPaperOrder = useCallback(async (row: PortfolioPaperOrderApprovalRow) => {
+    setSimulatingPortfolioPaperOrderId(row.id);
+    const result = await recordPortfolioPaperOrderSimulation(quantCoreBaseUrl, {
+      baseRunId: row.baseRunId,
+      batchId: row.batchId,
+      orderId: row.orderId,
+      simulatedAt: new Date().toISOString()
+    });
+    setSimulatingPortfolioPaperOrderId(null);
+
+    if (result.simulation) {
+      if (result.simulations?.length) {
+        setPortfolioPaperOrderSimulations((current) =>
+          mergePortfolioPaperOrderSimulations(current, row.batchId, result.simulations)
+        );
+      }
+      if (result.lifecycle?.length) {
+        setPortfolioPaperOrderLifecycleEvents((current) =>
+          mergePortfolioPaperOrderLifecycleEvents(current, row.batchId, result.lifecycle ?? [])
+        );
+      }
+      setPortfolioPaperOrderHistoryError(null);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Portfolio paper order simulated · ${row.orderId}`,
+        error: undefined
+      }));
+      return;
+    }
+
+    setPortfolioPaperOrderHistoryError(result.error ?? "Portfolio paper order simulation failed");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Portfolio paper order simulation failed",
+      error: result.error ?? "Portfolio paper order simulation failed"
+    }));
+  }, []);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -3322,6 +3386,7 @@ export function App() {
             onRecordPortfolioPaperOrders={recordPortfolioPaperOrders}
             onRejectPortfolioOrder={rejectPortfolioPaperOrder}
             onRunPortfolioBacktest={runPortfolioBacktestDraft}
+            onSimulatePortfolioOrder={simulatePortfolioPaperOrder}
             onSubmitPaperExecution={submitPaperExecution}
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
@@ -3332,9 +3397,11 @@ export function App() {
             portfolioPaperOrderApprovalRows={portfolioPaperOrderApprovalRows}
             portfolioPaperOrderHistoryError={portfolioPaperOrderHistoryError}
             portfolioPaperOrderLifecycleRows={portfolioPaperOrderLifecycleRows}
+            portfolioPaperOrderSimulations={portfolioPaperOrderSimulations}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
             riskApproval={riskApprovalSummary}
             rows={portfolioRiskRows}
+            simulatingPortfolioOrderId={simulatingPortfolioPaperOrderId}
             summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
           />
@@ -3355,9 +3422,12 @@ export function App() {
             approvingPortfolioOrderId={approvingPortfolioPaperOrderId}
             onApprovePortfolioOrder={approvePortfolioPaperOrder}
             onRejectPortfolioOrder={rejectPortfolioPaperOrder}
+            onSimulatePortfolioOrder={simulatePortfolioPaperOrder}
             portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
             portfolioOrderRows={portfolioPaperOrderLifecycleRows}
+            portfolioOrderSimulations={portfolioPaperOrderSimulations}
             rows={visiblePaperTradingRows}
+            simulatingPortfolioOrderId={simulatingPortfolioPaperOrderId}
             summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
           />
@@ -8480,10 +8550,13 @@ function ExecutionPanel({
   isSubmitting = false,
   onApprovePortfolioOrder,
   onRejectPortfolioOrder,
+  onSimulatePortfolioOrder,
   onSubmit,
   portfolioOrderApprovalRows = [],
   portfolioOrderRows = [],
+  portfolioOrderSimulations = [],
   rows,
+  simulatingPortfolioOrderId = null,
   summaryTiles,
   workspace
 }: {
@@ -8494,10 +8567,13 @@ function ExecutionPanel({
   isSubmitting?: boolean;
   onApprovePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onRejectPortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
+  onSimulatePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSubmit?: () => void;
   portfolioOrderApprovalRows?: PortfolioPaperOrderApprovalRow[];
   portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
+  portfolioOrderSimulations?: PortfolioPaperOrderSimulation[];
   rows: PaperTradingRow[];
+  simulatingPortfolioOrderId?: string | null;
   summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
@@ -8606,6 +8682,10 @@ function ExecutionPanel({
           <div className="portfolio-order-approval-list">
             {portfolioOrderApprovalRows.map((row) => {
               const isApproving = approvingPortfolioOrderId === row.id;
+              const isSimulating = simulatingPortfolioOrderId === row.id;
+              const alreadySimulated = portfolioOrderSimulations.some(
+                (simulation) => simulation.batchId === row.batchId && simulation.orderId === row.orderId
+              );
               return (
                 <article className={`portfolio-order-approval-row ${row.tone}`} key={row.id}>
                   <div>
@@ -8631,6 +8711,7 @@ function ExecutionPanel({
                   </div>
                   <div className="portfolio-order-approval-actions">
                     <button
+                      className="approve"
                       disabled={!row.canApprove || isApproving || !onApprovePortfolioOrder}
                       onClick={() => onApprovePortfolioOrder?.(row)}
                       type="button"
@@ -8639,6 +8720,7 @@ function ExecutionPanel({
                       {i18n.locale === "zh-CN" ? "批准" : "Approve"}
                     </button>
                     <button
+                      className="reject"
                       disabled={!row.canReject || isApproving || !onRejectPortfolioOrder}
                       onClick={() => onRejectPortfolioOrder?.(row)}
                       type="button"
@@ -8646,10 +8728,52 @@ function ExecutionPanel({
                       <X size={13} />
                       {i18n.locale === "zh-CN" ? "拒绝" : "Reject"}
                     </button>
+                    <button
+                      className="simulate"
+                      disabled={
+                        row.state !== "ready_for_simulation" ||
+                        alreadySimulated ||
+                        isSimulating ||
+                        !onSimulatePortfolioOrder
+                      }
+                      onClick={() => onSimulatePortfolioOrder?.(row)}
+                      type="button"
+                    >
+                      {isSimulating ? <RefreshCw className="spin" size={13} /> : <Play size={13} />}
+                      {alreadySimulated
+                        ? i18n.locale === "zh-CN"
+                          ? "已成交"
+                          : "Filled"
+                        : i18n.locale === "zh-CN"
+                          ? "模拟成交"
+                          : "Simulate"}
+                    </button>
                   </div>
                 </article>
               );
             })}
+          </div>
+        </div>
+      ) : null}
+      {portfolioOrderSimulations.length ? (
+        <div className="portfolio-order-simulation">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "组合模拟成交" : "Portfolio simulated fills"}</span>
+            <strong>{portfolioOrderSimulations.length}</strong>
+          </div>
+          <div className="portfolio-order-simulation-list">
+            {portfolioOrderSimulations.map((simulation) => (
+              <article className="portfolio-order-simulation-row" key={simulation.simulationId}>
+                <strong>
+                  {simulation.symbol} · {portfolioTradeReviewSideLabel(i18n, simulation.side)}
+                </strong>
+                <span>{simulation.orderId}</span>
+                <span>{formatPlainNumber(simulation.quantity)}</span>
+                <span>{formatPlainNumber(simulation.fillPrice)}</span>
+                <span>{formatPlainNumber(simulation.notionalValue)}</span>
+                <em>{i18n.locale === "zh-CN" ? "paper-only 已成交" : "paper-only filled"}</em>
+              </article>
+            ))}
           </div>
         </div>
       ) : null}
@@ -8720,6 +8844,7 @@ function PortfolioWorkspace({
   onRecordPortfolioPaperOrders,
   onRejectPortfolioOrder,
   onRunPortfolioBacktest,
+  onSimulatePortfolioOrder,
   onSubmitPaperExecution,
   paperRows,
   positionRows,
@@ -8730,9 +8855,11 @@ function PortfolioWorkspace({
   portfolioPaperOrderApprovalRows,
   portfolioPaperOrderHistoryError,
   portfolioPaperOrderLifecycleRows,
+  portfolioPaperOrderSimulations,
   portfolioPeerAuditPlan,
   riskApproval,
   rows,
+  simulatingPortfolioOrderId = null,
   summaryTiles,
   workspace
 }: {
@@ -8750,6 +8877,7 @@ function PortfolioWorkspace({
   onRecordPortfolioPaperOrders?: () => void;
   onRejectPortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onRunPortfolioBacktest?: () => void;
+  onSimulatePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSubmitPaperExecution?: () => void;
   paperRows: PaperTradingRow[];
   positionRows: PaperPositionRow[];
@@ -8760,9 +8888,11 @@ function PortfolioWorkspace({
   portfolioPaperOrderApprovalRows: PortfolioPaperOrderApprovalRow[];
   portfolioPaperOrderHistoryError: string | null;
   portfolioPaperOrderLifecycleRows: PortfolioPaperOrderLifecycleRow[];
+  portfolioPaperOrderSimulations: PortfolioPaperOrderSimulation[];
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
   riskApproval: RiskApprovalSummary;
   rows: PortfolioRiskRow[];
+  simulatingPortfolioOrderId?: string | null;
   summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
@@ -9188,10 +9318,13 @@ function PortfolioWorkspace({
         isSubmitting={isSubmittingPaperExecution}
         onApprovePortfolioOrder={onApprovePortfolioOrder}
         onRejectPortfolioOrder={onRejectPortfolioOrder}
+        onSimulatePortfolioOrder={onSimulatePortfolioOrder}
         onSubmit={onSubmitPaperExecution}
         portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
         portfolioOrderRows={portfolioPaperOrderLifecycleRows}
+        portfolioOrderSimulations={portfolioPaperOrderSimulations}
         rows={paperRows}
+        simulatingPortfolioOrderId={simulatingPortfolioOrderId}
         summaryTiles={summaryTiles}
         workspace={workspace}
       />
