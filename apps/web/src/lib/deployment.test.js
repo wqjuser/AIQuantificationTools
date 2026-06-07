@@ -17,11 +17,12 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("name: CI");
     expect(workflow).toContain("push:");
     expect(workflow).toContain("pull_request:");
-    expect(workflow).toContain("actions/checkout@v4");
-    expect(workflow).toContain("actions/setup-node@v4");
+    expect(workflow).toContain('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"');
+    expect(workflow).toContain("actions/checkout@v6");
+    expect(workflow).toContain("actions/setup-node@v6");
     expect(workflow).toContain("node-version: 22");
     expect(workflow).toContain("cache: npm");
-    expect(workflow).toContain("actions/setup-python@v5");
+    expect(workflow).toContain("actions/setup-python@v6");
     expect(workflow).toContain('python-version: "3.12"');
     expect(workflow).toContain("npm ci");
     expect(workflow).toContain("npm test");

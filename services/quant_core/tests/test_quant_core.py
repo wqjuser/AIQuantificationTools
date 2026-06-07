@@ -7982,16 +7982,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIsNone(_parse_kline_end("not-a-date"))
 
     def test_quantdinger_style_kline_adapter_maps_akshare_minute_rows(self):
-        import pandas as pd
-
         from quant_core.market_klines import akshare_minute_frame_to_bars
 
-        frame = pd.DataFrame(
-            [
-                {"时间": "2026-05-26 09:30:00", "开盘": 9.10, "收盘": 9.16, "最高": 9.18, "最低": 9.09, "成交量": 3200},
-                {"时间": "2026-05-26 09:31:00", "开盘": 9.16, "收盘": 9.20, "最高": 9.21, "最低": 9.15, "成交量": 4100},
-            ]
-        )
+        class AkshareMinuteFrame:
+            empty = False
+            columns = ["时间", "开盘", "收盘", "最高", "最低", "成交量"]
+
+            def iterrows(self):
+                rows = [
+                    {"时间": "2026-05-26 09:30:00", "开盘": 9.10, "收盘": 9.16, "最高": 9.18, "最低": 9.09, "成交量": 3200},
+                    {"时间": "2026-05-26 09:31:00", "开盘": 9.16, "收盘": 9.20, "最高": 9.21, "最低": 9.15, "成交量": 4100},
+                ]
+                return enumerate(rows)
+
+        frame = AkshareMinuteFrame()
 
         bars = akshare_minute_frame_to_bars(frame, market="ashare", symbol="600000", timeframe="1m")
 
