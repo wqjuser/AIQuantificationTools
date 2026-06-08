@@ -42,7 +42,7 @@
 - [x] GREEN: Localize the source-risk detail phrase.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Progress Notes
 
@@ -50,6 +50,7 @@
 - Targeted GREEN check now passes for `terminal-workbench.test.ts`.
 - Verification passed on 2026-06-08: `npm --prefix apps/web test -- --run src/lib/terminal-workbench.test.ts` (157 tests), `npm test` (128 Python tests and 335 web tests), `npm run build`, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification passed on `http://127.0.0.1:5173/?workspace=research`: research page rendered selected symbol `600000`, key research/chart sections were present, and browser console error count was 0.
+- Shipped in commit `1a918a0` and pushed through proxy to `origin/codex/p0-product-workspaces`; GitHub Actions CI run `27119110644` completed with `success`.
 
 ## Verification Checklist
 
