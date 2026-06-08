@@ -6161,6 +6161,65 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("blocks execution approval and paper previews when audited evidence belongs to another context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-execution-stale",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-execution-stale",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240
+      }
+    });
+    const mismatchedWorkspace: TerminalWorkspace = {
+      ...auditedWorkspace,
+      selectedTimeframe: "5m"
+    };
+
+    const approval = buildRiskApprovalSummary(mismatchedWorkspace);
+    const paperRows = buildPaperTradingRows(mismatchedWorkspace);
+    const positionRows = buildPaperPositionRows(mismatchedWorkspace);
+    const readiness = buildPromotionReadiness(mismatchedWorkspace, null, buildBrokerAdapterRows(mismatchedWorkspace));
+
+    expect(approval.status).toBe("blocked");
+    expect(approval.gates.find((gate) => gate.id === "audited-run")).toMatchObject({
+      value: "run-execution-stale",
+      detail:
+        "Audited run run-execution-stale belongs to ASHARE · 600000 · 1d, not ASHARE · 600000 · 5m.",
+      status: "blocked",
+      tone: "risk"
+    });
+    expect(paperRows[0]).toMatchObject({
+      quantity: "-",
+      price: "-",
+      notional: "-",
+      status: "blocked",
+      reason:
+        "Audited run run-execution-stale belongs to ASHARE · 600000 · 1d, not ASHARE · 600000 · 5m."
+    });
+    expect(positionRows[0]).toMatchObject({
+      quantity: "0",
+      marketValue: "0.00",
+      status: "blocked"
+    });
+    expect(readiness.stages.find((stage) => stage.id === "audited-run")).toMatchObject({
+      value: "run-execution-stale",
+      status: "blocked",
+      tone: "risk"
+    });
+    expect(readiness.status).toBe("blocked");
+  });
+
   test("approves paper execution while live gates remain closed after audited evidence", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-risk-ready",

@@ -1317,6 +1317,14 @@ describe("terminal layout css", () => {
     expect(cssBlock(".execution-tile.warning")).toContain("border-left-color: #e8be62;");
   });
 
+  test("gates paper execution actions by current audit context binding", () => {
+    expect(appSource).toContain("buildResearchRunContextBinding");
+    expect(appSource).toContain("const researchRunContextBinding = buildResearchRunContextBinding(workspace)");
+    expect(appSource).toContain("const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null");
+    expect(appSource).toContain("return isSubmittingPaperExecution || !researchRunContextBinding.canUseRun");
+    expect(appSource).not.toContain("return isSubmittingPaperExecution || !workspace.researchRun?.runId");
+  });
+
   test("renders execution promotion readiness as a separate queue after paper execution", () => {
     expect(appSource).toContain("buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows)");
     expect(appSource).toContain("loadResearchRunPromotion(quantCoreBaseUrl");

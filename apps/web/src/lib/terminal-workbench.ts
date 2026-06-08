@@ -6965,9 +6965,10 @@ function formatMetricPercent(metrics: Record<string, number>, snakeKey: string, 
 
 export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskApprovalSummary {
   const aiDossier = buildAiReviewDossier(workspace);
+  const auditBinding = buildResearchRunContextBinding(workspace);
   const strategyDraft = buildStrategyRuleDraft(workspace);
   const approvalRisk = buildRiskApprovalRisk(workspace, strategyDraft);
-  const researchRun = workspace.researchRun;
+  const researchRun = auditBinding.canUseRun ? workspace.researchRun : null;
   const dataQualityGate = researchRun ? buildRiskApprovalDataQualityGate(researchRun) : null;
   const dataQualityIsReady = dataQualityGate?.status === "passed";
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
@@ -6989,6 +6990,11 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
   const liveCanRoute = paperCanStage && workspace.execution.liveEnabled && blockedGateCount === 0;
 
   if (!researchRun) {
+    const auditedRunValue = auditBinding.status === "mismatched" ? (auditBinding.runId ?? "Stale audited run") : "No audited run";
+    const auditedRunDetail =
+      auditBinding.status === "mismatched"
+        ? auditBinding.detail
+        : "Run Pipeline must produce a reproducible research run before execution.";
     return {
       status: "blocked",
       headline: "Risk approval blocked",
@@ -6997,8 +7003,8 @@ export function buildRiskApprovalSummary(workspace: TerminalWorkspace): RiskAppr
         {
           id: "audited-run",
           label: "Audited run",
-          value: "No audited run",
-          detail: "Run Pipeline must produce a reproducible research run before execution.",
+          value: auditedRunValue,
+          detail: auditedRunDetail,
           status: "blocked",
           tone: "risk"
         },
@@ -7197,7 +7203,14 @@ function buildRiskApprovalDataQualityGate(run: ResearchRunSummary): RiskApproval
 }
 
 export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradingRow[] {
-  if (!workspace.researchRun) {
+  const auditBinding = buildResearchRunContextBinding(workspace);
+  if (!auditBinding.canUseRun || !workspace.researchRun) {
+    const orderReason =
+      auditBinding.status === "mismatched" ? auditBinding.detail : "Run Pipeline before staging a paper order.";
+    const riskReason =
+      auditBinding.status === "mismatched"
+        ? "Current research context is not bound to a matching audited run; paper route remains blocked."
+        : "No audited research run is bound; paper route remains blocked.";
     return [
       {
         id: "paper-order",
@@ -7207,7 +7220,7 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
         price: "-",
         notional: "-",
         status: "blocked",
-        reason: "Run Pipeline before staging a paper order.",
+        reason: orderReason,
         tone: "warning"
       },
       {
@@ -7218,7 +7231,7 @@ export function buildPaperTradingRows(workspace: TerminalWorkspace): PaperTradin
         price: "-",
         notional: "-",
         status: "blocked",
-        reason: "No audited research run is bound; paper route remains blocked.",
+        reason: riskReason,
         tone: "warning"
       },
       {
@@ -7520,7 +7533,7 @@ export function buildPaperPositionRows(
   }
 
   const price = resolvePaperOrderPrice(workspace);
-  if (!workspace.researchRun) {
+  if (!buildResearchRunContextBinding(workspace).canUseRun) {
     return [
       {
         id: "selected-paper-position",
@@ -7644,7 +7657,9 @@ export function buildPromotionReadiness(
   brokerRows: BrokerAdapterRow[]
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
-  const activeExecution = workspace.researchRun && execution?.runId === workspace.researchRun.runId ? execution : null;
+  const auditBinding = buildResearchRunContextBinding(workspace);
+  const run = auditBinding.canUseRun ? workspace.researchRun : null;
+  const activeExecution = run && execution?.runId === run.runId ? execution : null;
   const filledOrders = activeExecution?.orders.filter((order) => order.status === "filled") ?? [];
   const paperRiskGate = activeExecution?.gates.find((gate) => gate.id === "paper-risk-check");
   const paperExecutionPassed = filledOrders.length > 0 && paperRiskGate?.passed === true;
@@ -7653,20 +7668,23 @@ export function buildPromotionReadiness(
   const certifiedLiveAdapters = brokerRows.filter((row) => row.route === "live" && row.status === "paper_ready").length;
   const liveAdapterCertified = adapterGatePassed && certifiedLiveAdapters > 0;
 
-  const auditedStage: PromotionQueueStage = workspace.researchRun
+  const auditedStage: PromotionQueueStage = run
     ? {
         id: "audited-run",
         label: "Audited run",
-        value: workspace.researchRun.runId,
-        detail: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars are bound to the promotion queue.`,
+        value: run.runId,
+        detail: `${run.dataRows} ${run.timeframe} bars are bound to the promotion queue.`,
         status: "passed",
         tone: "positive"
       }
     : {
         id: "audited-run",
         label: "Audited run",
-        value: "No audited run",
-        detail: "Run Pipeline before a strategy can enter the promotion queue.",
+        value: auditBinding.status === "mismatched" ? (auditBinding.runId ?? "Stale audited run") : "No audited run",
+        detail:
+          auditBinding.status === "mismatched"
+            ? auditBinding.detail
+            : "Run Pipeline before a strategy can enter the promotion queue.",
         status: "blocked",
         tone: "risk"
       };
@@ -7725,7 +7743,7 @@ export function buildPromotionReadiness(
   };
 
   const stages = [auditedStage, riskStage, paperStage, adapterStage, humanStage];
-  if (!workspace.researchRun || approval.status === "blocked") {
+  if (!run || approval.status === "blocked") {
     return {
       status: "blocked",
       headline: "Promotion queue blocked",

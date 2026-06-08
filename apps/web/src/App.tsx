@@ -160,6 +160,7 @@ import {
   buildResearchContextEvidenceRows,
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
+  buildResearchRunContextBinding,
   buildResearchRunComparisonRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
@@ -698,23 +699,23 @@ export function App() {
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
   const aiReviewDossier = buildAiReviewDossier(workspace);
   const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
+  const researchRunContextBinding = buildResearchRunContextBinding(workspace);
+  const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
   const scannerCandidates = buildScannerCandidates(workspace);
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const portfolioBacktestDiagnosticRows = buildPortfolioBacktestDiagnosticRows(portfolioBacktestState.portfolio);
-  const portfolioBacktestDraft = buildPortfolioBacktestDraft(runHistory, workspace.researchRun?.runId ?? null);
+  const portfolioBacktestDraft = buildPortfolioBacktestDraft(runHistory, currentResearchRunId);
   const portfolioBacktestDraftKey =
     portfolioBacktestDraft.request?.legs.map((leg) => `${leg.runId}:${leg.targetWeight}`).join("|") ??
     portfolioBacktestDraft.status;
   const portfolioPeerAuditPlan = buildPortfolioPeerAuditPlan(workspace, runHistory);
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
   const activePaperExecutionRecord =
-    paperExecutionRecord?.runId && paperExecutionRecord.runId === workspace.researchRun?.runId ? paperExecutionRecord : null;
+    paperExecutionRecord?.runId && paperExecutionRecord.runId === currentResearchRunId ? paperExecutionRecord : null;
   const activePromotionCandidateRecord =
-    promotionCandidateRecord?.runId && promotionCandidateRecord.runId === workspace.researchRun?.runId
-      ? promotionCandidateRecord
-      : null;
-  const activeAiReviewRunRecords = workspace.researchRun?.runId
-    ? aiReviewRunRecords.filter((record) => record.runId === workspace.researchRun?.runId)
+    promotionCandidateRecord?.runId && promotionCandidateRecord.runId === currentResearchRunId ? promotionCandidateRecord : null;
+  const activeAiReviewRunRecords = currentResearchRunId
+    ? aiReviewRunRecords.filter((record) => record.runId === currentResearchRunId)
     : [];
   const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
@@ -782,7 +783,7 @@ export function App() {
   const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
   const backtestParameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const backtestReport = buildBacktestReport(workspace);
-  const backtestRunComparisonMatrixRows = buildBacktestRunComparisonMatrixRows(runHistory, workspace.researchRun?.runId ?? null);
+  const backtestRunComparisonMatrixRows = buildBacktestRunComparisonMatrixRows(runHistory, currentResearchRunId);
   const backtestRunComparisonMatrixSummary = buildBacktestRunComparisonMatrixSummary(backtestRunComparisonMatrixRows);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
@@ -3043,12 +3044,12 @@ export function App() {
   }, []);
 
   const submitPaperExecution = useCallback(async () => {
-    const runId = workspace.researchRun?.runId;
+    const runId = currentResearchRunId;
     if (!runId) {
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Paper execution failed",
-        error: "Run the pipeline before submitting a paper execution."
+        error: researchRunContextBinding.status === "mismatched" ? researchRunContextBinding.detail : "Run the pipeline before submitting a paper execution."
       }));
       return;
     }
@@ -3076,7 +3077,7 @@ export function App() {
     setActiveLoopStepId("paper");
     setActiveWorkflowStageId("execution");
     setIsSubmittingPaperExecution(false);
-  }, [workspace.researchRun?.runId]);
+  }, [currentResearchRunId, researchRunContextBinding.detail, researchRunContextBinding.status]);
 
   const selectProductWorkArea = useCallback(
     (areaId: ProductWorkAreaId) => {
@@ -3313,11 +3314,18 @@ export function App() {
         return !researchPipelinePreflight.canRun;
       }
       if (actionId === "submit-paper-order") {
-        return isSubmittingPaperExecution || !workspace.researchRun?.runId;
+        return isSubmittingPaperExecution || !researchRunContextBinding.canUseRun;
       }
       return false;
     },
-    [isRefreshing, isRunning, isSubmittingPaperExecution, refreshingCacheKey, researchPipelinePreflight.canRun, workspace.researchRun?.runId]
+    [
+      isRefreshing,
+      isRunning,
+      isSubmittingPaperExecution,
+      refreshingCacheKey,
+      researchPipelinePreflight.canRun,
+      researchRunContextBinding.canUseRun
+    ]
   );
 
   const goldenPathActionId = goldenPath?.nextAction?.id;
