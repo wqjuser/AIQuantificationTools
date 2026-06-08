@@ -46,6 +46,7 @@ import {
   loadPlatformSettings,
   loadExecutionAdapterLedger,
   loadExecutionAdapterCertificationApplies,
+  loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterCertifications,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
@@ -85,6 +86,7 @@ import {
   GoldenPathStatusResult,
   ExecutionAdapterCertificationCheck,
   ExecutionAdapterCertificationApplyResult,
+  ExecutionAdapterControlledRestartEvidenceResult,
   ExecutionAdapterLedgerResult,
   ExecutionAdapterCertificationRun,
   PlatformSettingsResult,
@@ -148,6 +150,7 @@ import {
   buildBrokerAdapterRows,
   buildExecutionAdapterCertificationApplyConfirmationRows,
   buildExecutionAdapterCertificationApplyRows,
+  buildExecutionAdapterControlledRestartEvidenceRows,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
@@ -234,6 +237,7 @@ import {
   ExecutionAdapterCertificationApplyConfirmationRow,
   ExecutionAdapterCertificationApplyConfirmations,
   ExecutionAdapterCertificationApplyRow,
+  ExecutionAdapterControlledRestartEvidenceRow,
   ExecutionAdapterCertificationRow,
   ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
@@ -628,6 +632,9 @@ export function App() {
   const [executionAdapterCertificationApplies, setExecutionAdapterCertificationApplies] = useState<
     ExecutionAdapterCertificationApplyResult[]
   >([]);
+  const [executionAdapterControlledRestartEvidence, setExecutionAdapterControlledRestartEvidence] = useState<
+    ExecutionAdapterControlledRestartEvidenceResult[]
+  >([]);
   const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
     Record<string, ExecutionAdapterCertificationApplyConfirmations>
   >({});
@@ -788,6 +795,7 @@ export function App() {
   const executionAdapterLedgerRows = buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger);
   const executionAdapterCertificationRows = buildExecutionAdapterCertificationRows(executionAdapterCertifications);
   const executionAdapterCertificationApplyRows = buildExecutionAdapterCertificationApplyRows(executionAdapterCertificationApplies);
+  const executionAdapterControlledRestartEvidenceRows = buildExecutionAdapterControlledRestartEvidenceRows(executionAdapterControlledRestartEvidence);
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -857,7 +865,7 @@ export function App() {
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
     activePromotionCandidateRecord ??
-    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows);
+    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
   const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
     (context) =>
@@ -1187,14 +1195,16 @@ export function App() {
       loadExecutionAdapterLedger(quantCoreBaseUrl)
     ]);
     const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
-    const [certificationResults, applyResults] = await Promise.all([
+    const [certificationResults, applyResults, restartEvidenceResults] = await Promise.all([
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))),
-      Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5)))
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5))),
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterControlledRestartEvidence(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
     setExecutionAdapterLedger(adapterLedgerResult);
     setExecutionAdapterCertifications(certificationResults.flatMap((result) => result.adapterCertifications));
     setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies));
+    setExecutionAdapterControlledRestartEvidence(restartEvidenceResults.flatMap((result) => result.controlledRestartEvidence));
   }, []);
 
   const recordAdapterCertificationEvidence = useCallback(
@@ -3799,6 +3809,7 @@ export function App() {
           />
           <PromotionQueuePanel
             adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
+            adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}
             adapterCertificationRows={executionAdapterCertificationRows}
             className="workflow-promotion-panel"
             i18n={i18n}
@@ -10268,12 +10279,14 @@ function BrokerWorkspace({
 
 function PromotionQueuePanel({
   adapterCertificationApplyRows,
+  adapterControlledRestartEvidenceRows,
   adapterCertificationRows,
   className,
   i18n,
   readiness
 }: {
   adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
+  adapterControlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[];
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
   className?: string;
   i18n: AppI18n;
@@ -10281,6 +10294,7 @@ function PromotionQueuePanel({
 }) {
   const recentCertificationRows = adapterCertificationRows.slice(0, 3);
   const recentApplyRows = adapterCertificationApplyRows.slice(0, 3);
+  const recentRestartEvidenceRows = adapterControlledRestartEvidenceRows.slice(0, 3);
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "晋级队列" : "Promotion Queue"}
@@ -10335,6 +10349,24 @@ function PromotionQueuePanel({
                 <em>
                   {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
                   {adapterCertificationApplyModeLabel(i18n, row.applyMode)} · {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentRestartEvidenceRows.length ? (
+          <div className="promotion-controlled-restart-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近受控重启证据" : "Recent controlled restart evidence"}</span>
+            {recentRestartEvidenceRows.map((row) => (
+              <article className={`promotion-controlled-restart-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterControlledRestartEvidenceStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterControlledRestartEvidenceConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.evidenceMode)} · {row.auditEventId}
                 </em>
               </article>
             ))}
@@ -11929,6 +11961,18 @@ function adapterCertificationApplyStatusLabel(i18n: AppI18n, statusLabel: string
   );
 }
 
+function adapterControlledRestartEvidenceStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Blocked: "阻断",
+      "Evidence recorded": "证据已记录"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
 function adapterCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
   if (i18n.locale === "en-US") {
     return boundary;
@@ -11958,6 +12002,10 @@ function adapterCertificationApplyConfirmationSummary(i18n: AppI18n, summary: st
   return summary.replace("confirmed", "已确认").replace("missing", "缺失");
 }
 
+function adapterControlledRestartEvidenceConfirmationSummary(i18n: AppI18n, summary: string): string {
+  return adapterCertificationApplyConfirmationSummary(i18n, summary);
+}
+
 function adapterCertificationApplyBlockerSummary(i18n: AppI18n, summary: string): string {
   if (i18n.locale === "en-US") {
     return summary;
@@ -11975,7 +12023,8 @@ function adapterCertificationApplyModeLabel(i18n: AppI18n, mode: string): string
   return (
     {
       manual_preflight: "人工预检",
-      manual_secret_store: "密钥存储预检"
+      manual_secret_store: "密钥存储预检",
+      manual_controlled_restart: "受控重启证据"
     }[mode] ?? mode.replaceAll("_", " ")
   );
 }

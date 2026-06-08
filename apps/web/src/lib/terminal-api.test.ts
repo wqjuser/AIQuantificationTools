@@ -36,6 +36,8 @@ import {
   buildCacheRefreshUrl,
   buildExecutionAdapterCertificationApplyUrl,
   buildExecutionAdapterCertificationAppliesUrl,
+  buildExecutionAdapterControlledRestartEvidenceHistoryUrl,
+  buildExecutionAdapterControlledRestartEvidenceUrl,
   buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
@@ -61,6 +63,7 @@ import {
   loadPortfolioPaperOrderSimulations,
   loadExecutionAdapterLedger,
   loadExecutionAdapterCertificationApplies,
+  loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterCertifications,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
@@ -68,6 +71,7 @@ import {
   recordPortfolioPaperOrderSimulation,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
+  recordExecutionAdapterControlledRestartEvidence,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -1951,6 +1955,190 @@ describe("terminal workspace API client", () => {
     expect(result.certificationApplies[0].status).toBe("ready_for_restart");
     expect(result.certificationApplies[0].liveTradingAllowed).toBe(false);
     expect(JSON.stringify(result)).not.toContain("secret-key-should-not-leak");
+  });
+
+  test("records controlled restart evidence without enabling live routing", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          controlledRestartEvidence: {
+            schemaVersion: 1,
+            evidenceId: "execution-adapter-controlled-restart-us-live",
+            applyId: "execution-adapter-certification-apply-us-live-ready",
+            certificationId: "adapter-certification-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "evidence_recorded",
+            operator: "restart-operator",
+            recordedAt: "2026-06-08T08:10:00+00:00",
+            evidenceMode: "manual_controlled_restart",
+            restartRequired: true,
+            requiredConfirmations: [
+              {
+                id: "restart-window-executed",
+                label: "Controlled restart window was executed",
+                status: "confirmed"
+              },
+              {
+                id: "rollback-plan-confirmed",
+                label: "Rollback plan is available and confirmed",
+                status: "confirmed"
+              },
+              {
+                id: "post-restart-validation-passed",
+                label: "Post-restart validation passed",
+                status: "confirmed"
+              },
+              {
+                id: "operator-reviewed-restart-logs",
+                label: "Operator reviewed restart logs and adapter status",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { restartWindowId: "window-us-live-1", privateKey: "[redacted]" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-controlled-restart-us-live",
+            eventType: "execution_adapter_controlled_restart_evidence",
+            runId: "",
+            createdAt: "2026-06-08T08:10:00+00:00",
+            stage: "execution-adapter-controlled-restart",
+            source: "execution-adapter-ledger",
+            summary: "us-live controlled restart evidence recorded as evidence_recorded.",
+            detail: "Controlled restart evidence is paper-only.",
+            metadata: {
+              evidenceId: "execution-adapter-controlled-restart-us-live",
+              adapterId: "us-live",
+              status: "evidence_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterControlledRestartEvidenceUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/restart-evidence"
+    );
+
+    const result = await recordExecutionAdapterControlledRestartEvidence(
+      "/",
+      {
+        applyId: "execution-adapter-certification-apply-us-live-ready",
+        operator: "restart-operator",
+        confirmations: {
+          restartWindowExecuted: true,
+          rollbackPlanConfirmed: true,
+          postRestartValidationPassed: true,
+          operatorReviewedRestartLogs: true
+        },
+        metadata: { restartWindowId: "window-us-live-1" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-certifications/restart-evidence"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      applyId: "execution-adapter-certification-apply-us-live-ready",
+      operator: "restart-operator",
+      confirmations: {
+        restartWindowExecuted: true,
+        rollbackPlanConfirmed: true,
+        postRestartValidationPassed: true,
+        operatorReviewedRestartLogs: true
+      },
+      metadata: { restartWindowId: "window-us-live-1" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.controlledRestartEvidence?.status).toBe("evidence_recorded");
+    expect(result.controlledRestartEvidence?.liveTradingAllowed).toBe(false);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_controlled_restart_evidence");
+  });
+
+  test("loads controlled restart evidence history from the local core", async () => {
+    const calls: string[] = [];
+    const controlledRestartEvidence = {
+      schemaVersion: 1,
+      evidenceId: "execution-adapter-controlled-restart-us-live",
+      applyId: "execution-adapter-certification-apply-us-live-ready",
+      certificationId: "adapter-certification-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "evidence_recorded",
+      operator: "restart-operator",
+      recordedAt: "2026-06-08T08:10:00+00:00",
+      evidenceMode: "manual_controlled_restart",
+      restartRequired: true,
+      requiredConfirmations: [
+        {
+          id: "restart-window-executed",
+          label: "Controlled restart window was executed",
+          status: "confirmed"
+        },
+        {
+          id: "rollback-plan-confirmed",
+          label: "Rollback plan is available and confirmed",
+          status: "confirmed"
+        },
+        {
+          id: "post-restart-validation-passed",
+          label: "Post-restart validation passed",
+          status: "confirmed"
+        },
+        {
+          id: "operator-reviewed-restart-logs",
+          label: "Operator reviewed restart logs and adapter status",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { restartWindowId: "window-us-live-1", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterControlledRestartEvidence(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ controlledRestartEvidence: [controlledRestartEvidence] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterControlledRestartEvidenceHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-certifications/restart-evidence?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/restart-evidence?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.controlledRestartEvidence).toHaveLength(1);
+    expect(result.controlledRestartEvidence[0].status).toBe("evidence_recorded");
+    expect(result.controlledRestartEvidence[0].liveTradingAllowed).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("restart-secret-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

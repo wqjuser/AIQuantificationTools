@@ -1343,7 +1343,7 @@ describe("terminal layout css", () => {
 
   test("renders promotion certification evidence from recorded adapter certifications", () => {
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows"
     );
     expect(appSource).toContain("adapterCertificationRows={executionAdapterCertificationRows}");
     expect(appSource).toContain("adapterCertificationApplyRows={executionAdapterCertificationApplyRows}");
@@ -1360,6 +1360,29 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".promotion-certification-evidence-row");
     expect(styles).toContain(".promotion-certification-apply-evidence");
     expect(styles).toContain(".promotion-certification-apply-evidence-row");
+  });
+
+  test("renders controlled restart evidence history in promotion queue", () => {
+    expect(appSource).toContain("loadExecutionAdapterControlledRestartEvidence(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterControlledRestartEvidence(restartEvidenceResults.flatMap((result) => result.controlledRestartEvidence))"
+    );
+    expect(appSource).toContain(
+      "buildExecutionAdapterControlledRestartEvidenceRows(executionAdapterControlledRestartEvidence)"
+    );
+    expect(appSource).toContain(
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows)"
+    );
+    expect(appSource).toContain(
+      "adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}"
+    );
+    expect(appSource).toContain("adapterControlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[]");
+    expect(appSource).toContain('className="promotion-controlled-restart-evidence"');
+    expect(appSource).toContain('className={`promotion-controlled-restart-evidence-row');
+    expect(appSource).toContain("adapterControlledRestartEvidenceStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterControlledRestartEvidenceConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(styles).toContain(".promotion-controlled-restart-evidence");
+    expect(styles).toContain(".promotion-controlled-restart-evidence-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

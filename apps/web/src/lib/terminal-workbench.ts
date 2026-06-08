@@ -1823,6 +1823,52 @@ export interface ExecutionAdapterCertificationApplyRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterControlledRestartEvidenceStatus = "blocked" | "evidence_recorded";
+export type ExecutionAdapterControlledRestartEvidenceConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterControlledRestartEvidenceSnapshot {
+  schemaVersion: 1;
+  evidenceId: string;
+  applyId: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterControlledRestartEvidenceStatus;
+  operator: string;
+  recordedAt: string;
+  evidenceMode: string;
+  restartRequired: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterControlledRestartEvidenceConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterControlledRestartEvidenceRow {
+  id: string;
+  applyId: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterControlledRestartEvidenceStatus;
+  statusLabel: string;
+  evidenceMode: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  restartRequired: boolean;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -7818,6 +7864,37 @@ export function buildExecutionAdapterCertificationApplyRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterControlledRestartEvidenceRows(
+  evidence: ExecutionAdapterControlledRestartEvidenceSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterControlledRestartEvidenceRow[] {
+  return (evidence ?? [])
+    .map((row) => ({
+      id: row.evidenceId,
+      applyId: row.applyId,
+      certificationId: row.certificationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterControlledRestartEvidenceStatusLabel(row.status),
+      evidenceMode: row.evidenceMode,
+      confirmationSummary: executionAdapterControlledRestartEvidenceConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterControlledRestartEvidenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      restartRequired: row.restartRequired,
+      auditEventId: row.evidenceId,
+      tone: executionAdapterControlledRestartEvidenceTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -7896,10 +7973,32 @@ function latestPromotionCertificationApplyRow(
   );
 }
 
+function latestPromotionControlledRestartEvidenceRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterControlledRestartEvidenceRow[],
+  latestCertification: ExecutionAdapterCertificationRow | null,
+  latestApply: ExecutionAdapterCertificationApplyRow | null
+): ExecutionAdapterControlledRestartEvidenceRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestCertification ||
+            (row.adapterId === latestCertification.adapterId && row.certificationId === latestCertification.id)) &&
+          (!latestApply || row.applyId === latestApply.id)
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
   latestApply: ExecutionAdapterCertificationApplyRow | null,
+  latestRestartEvidence: ExecutionAdapterControlledRestartEvidenceRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -7918,22 +8017,25 @@ function buildPromotionAdapterCertificationStage(
   }
 
   const certificationDetail = `Latest certification ${latestCertification.auditEventId}: ${latestCertification.checkSummary} · ${latestCertification.boundary}.`;
+  const restartEvidenceDetail = latestRestartEvidence
+    ? ` Latest restart evidence ${latestRestartEvidence.auditEventId}: ${latestRestartEvidence.statusLabel} · ${latestRestartEvidence.confirmationSummary} · ${latestRestartEvidence.blockerSummary} · ${latestRestartEvidence.boundary}. ${promotionControlledRestartEvidenceNextStep(latestRestartEvidence)}`
+    : "";
   const applyDetail = latestApply
-    ? ` Latest apply ${latestApply.auditEventId}: ${latestApply.statusLabel} · ${latestApply.confirmationSummary} · ${latestApply.blockerSummary} · ${latestApply.boundary}. ${promotionCertificationApplyNextStep(latestApply)}`
+    ? ` Latest apply ${latestApply.auditEventId}: ${latestApply.statusLabel} · ${latestApply.confirmationSummary} · ${latestApply.blockerSummary} · ${latestApply.boundary}.${latestRestartEvidence ? "" : ` ${promotionCertificationApplyNextStep(latestApply)}`}`
     : "";
   const gateDetail =
-    !latestApply && latestCertification.status === "passed" && latestCertification.liveTradingAllowed && !adapterGatePassed
+    !latestApply && !latestRestartEvidence && latestCertification.status === "passed" && latestCertification.liveTradingAllowed && !adapterGatePassed
       ? " Workspace adapter gate is still blocked."
       : "";
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
-    detail: `${certificationDetail}${applyDetail}${gateDetail}`,
+    value: `${latestRestartEvidence?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    detail: `${certificationDetail}${applyDetail}${restartEvidenceDetail}${gateDetail}`,
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
-      : latestApply?.status === "ready_for_restart"
+      : latestRestartEvidence?.status === "evidence_recorded" || latestApply?.status === "ready_for_restart"
         ? "warning"
       : latestCertification.status === "passed" && latestCertification.liveTradingAllowed
         ? "warning"
@@ -7948,12 +8050,20 @@ function promotionCertificationApplyNextStep(apply: ExecutionAdapterCertificatio
   return "Resolve apply preflight blockers before live routing.";
 }
 
+function promotionControlledRestartEvidenceNextStep(evidence: ExecutionAdapterControlledRestartEvidenceRow): string {
+  if (evidence.status === "evidence_recorded") {
+    return "Controlled restart evidence is recorded; live routing remains blocked until controlled orchestration and human confirmation pass.";
+  }
+  return "Resolve controlled restart evidence blockers before live routing.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
   brokerRows: BrokerAdapterRow[],
   certificationRows: ExecutionAdapterCertificationRow[] = [],
-  certificationApplyRows: ExecutionAdapterCertificationApplyRow[] = []
+  certificationApplyRows: ExecutionAdapterCertificationApplyRow[] = [],
+  controlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -7966,6 +8076,12 @@ export function buildPromotionReadiness(
   const humanGatePassed = workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true;
   const latestCertification = latestPromotionCertificationRow(workspace, certificationRows);
   const latestCertificationApply = latestPromotionCertificationApplyRow(workspace, certificationApplyRows, latestCertification);
+  const latestRestartEvidence = latestPromotionControlledRestartEvidenceRow(
+    workspace,
+    controlledRestartEvidenceRows,
+    latestCertification,
+    latestCertificationApply
+  );
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
   const certifiedLiveAdapters = brokerRows.filter(
@@ -8031,6 +8147,7 @@ export function buildPromotionReadiness(
     certifiedLiveAdapters,
     latestCertification,
     latestCertificationApply,
+    latestRestartEvidence,
     liveAdapterCertified,
     adapterGatePassed
   );
@@ -9594,6 +9711,41 @@ function executionAdapterCertificationApplyConfirmationSummary(
 }
 
 function executionAdapterCertificationApplyBlockerSummary(blockedReasons: string[]): string {
+  if (!blockedReasons.length) {
+    return "No blockers";
+  }
+  return blockedReasons.length === 1 ? "1 blocker" : `${blockedReasons.length} blockers`;
+}
+
+function executionAdapterControlledRestartEvidenceTone(
+  status: ExecutionAdapterControlledRestartEvidenceStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  if (status === "evidence_recorded") {
+    return "positive";
+  }
+  return "risk";
+}
+
+function executionAdapterControlledRestartEvidenceStatusLabel(
+  status: ExecutionAdapterControlledRestartEvidenceStatus
+): string {
+  return (
+    {
+      blocked: "Blocked",
+      evidence_recorded: "Evidence recorded"
+    } satisfies Record<ExecutionAdapterControlledRestartEvidenceStatus, string>
+  )[status];
+}
+
+function executionAdapterControlledRestartEvidenceConfirmationSummary(
+  confirmations: ExecutionAdapterControlledRestartEvidenceSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterControlledRestartEvidenceBlockerSummary(blockedReasons: string[]): string {
   if (!blockedReasons.length) {
     return "No blockers";
   }

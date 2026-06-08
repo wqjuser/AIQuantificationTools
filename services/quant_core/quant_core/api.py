@@ -49,6 +49,7 @@ from quant_core.execution import (
     build_portfolio_paper_order_state_history,
     build_promotion_candidate,
     build_execution_adapter_certification_apply,
+    build_execution_adapter_controlled_restart_evidence,
     create_execution_adapter_certification_run,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
@@ -57,6 +58,9 @@ from quant_core.execution import (
     execution_adapter_certification_apply_payload_from_audit_event,
     execution_adapter_certification_apply_to_audit_event_payload,
     execution_adapter_certification_apply_to_payload,
+    execution_adapter_controlled_restart_evidence_payload_from_audit_event,
+    execution_adapter_controlled_restart_evidence_to_audit_event_payload,
+    execution_adapter_controlled_restart_evidence_to_payload,
     execution_adapter_certification_to_audit_event_payload,
     execution_adapter_certification_to_payload,
     paper_execution_payload_to_record,
@@ -339,6 +343,42 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if certification_apply.status == "blocked" else 200,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-certifications/restart-evidence":
+            payload = self._read_json_body()
+            apply_id = str(payload.get("applyId") or "").strip()
+            apply_event = self.audit_event_store.get(apply_id)
+            certification_apply = (
+                execution_adapter_certification_apply_payload_from_audit_event(apply_event) if apply_event else None
+            )
+            if not certification_apply:
+                self._send_json(
+                    {"error": "execution_adapter_certification_apply_not_found", "applyId": apply_id},
+                    status=404,
+                )
+                return
+            try:
+                restart_evidence = build_execution_adapter_controlled_restart_evidence(
+                    certification_apply,
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_controlled_restart_evidence", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_controlled_restart_evidence_to_audit_event_payload(restart_evidence)
+            )
+            self._send_json(
+                {
+                    "controlledRestartEvidence": execution_adapter_controlled_restart_evidence_to_payload(
+                        restart_evidence
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if restart_evidence.status == "blocked" else 200,
             )
             return
         if parsed.path == "/api/portfolio/backtest":
@@ -823,6 +863,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/execution/adapter-ledger":
             settings = self._settings_status_payload()
             self._send_json({"adapterLedger": build_execution_adapter_state_ledger(settings)})
+            return
+        if parsed.path == "/api/execution/adapter-certifications/restart-evidence":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_controlled_restart_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            evidence_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_controlled_restart_evidence",
+                limit=50,
+                query=adapter_id,
+            )
+            restart_evidence = []
+            for event in evidence_events:
+                payload = execution_adapter_controlled_restart_evidence_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    restart_evidence.append(payload)
+                if len(restart_evidence) >= limit:
+                    break
+            self._send_json({"controlledRestartEvidence": restart_evidence})
             return
         if parsed.path == "/api/execution/adapter-certifications/applies":
             query = parse_qs(parsed.query)

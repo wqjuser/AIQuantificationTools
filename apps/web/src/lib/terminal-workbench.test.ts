@@ -40,6 +40,7 @@ import {
   buildBrokerAdapterRows,
   buildExecutionAdapterCertificationApplyConfirmationRows,
   buildExecutionAdapterCertificationApplyRows,
+  buildExecutionAdapterControlledRestartEvidenceRows,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
@@ -7136,6 +7137,57 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("builds compact controlled restart evidence rows from ledger results", () => {
+    const rows = buildExecutionAdapterControlledRestartEvidenceRows([
+      {
+        schemaVersion: 1,
+        evidenceId: "execution-adapter-controlled-restart-us-live",
+        applyId: "execution-adapter-certification-apply-us-live",
+        certificationId: "adapter-certification-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "evidence_recorded",
+        operator: "settings-panel",
+        recordedAt: "2026-06-08T08:05:00+00:00",
+        evidenceMode: "manual_controlled_restart",
+        restartRequired: true,
+        requiredConfirmations: [
+          { id: "restart-window-executed", label: "Restart window", status: "confirmed" },
+          { id: "rollback-plan-confirmed", label: "Rollback plan", status: "confirmed" },
+          { id: "post-restart-validation-passed", label: "Validation", status: "confirmed" },
+          { id: "operator-reviewed-restart-logs", label: "Log review", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { source: "settings-panel", token: "[redacted]" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-controlled-restart-us-live",
+        applyId: "execution-adapter-certification-apply-us-live",
+        certificationId: "adapter-certification-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-08T08:05:00+00:00",
+        status: "evidence_recorded",
+        statusLabel: "Evidence recorded",
+        evidenceMode: "manual_controlled_restart",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        restartRequired: true,
+        auditEventId: "execution-adapter-controlled-restart-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("token");
+  });
+
   test("blocks promotion readiness before an audited run is bound", () => {
     const workspace = buildTerminalWorkspace();
     const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
@@ -7509,6 +7561,143 @@ describe("terminal workbench model", () => {
       tone: "warning",
       detail:
         "Latest certification adapter-certification-ashare-apply: 4 passed / 4 checks · Live trading allowed. Latest apply execution-adapter-certification-apply-ashare-ready: Ready for restart · 3 confirmed / 0 missing · No blockers · Paper only · live trading blocked. Controlled restart evidence is still required before live routing."
+    });
+  });
+
+  test("keeps promotion blocked after controlled restart evidence is recorded", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-restart-evidence",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-restart-evidence",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      strategyConfig: {
+        name: "SMA Trend / Bank Sector",
+        revision: "rev-promotion-restart-evidence",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+        risk: {
+          positionPct: 0.2,
+          stopLossPct: 0.08,
+          takeProfitPct: 0.12,
+          maxDrawdownPct: 0.12
+        }
+      }
+    });
+    const execution = {
+      executionId: "paper-execution-promotion-restart-evidence",
+      runId: "run-promotion-restart-evidence",
+      createdAt: "2026-05-26T08:05:00+00:00",
+      mode: "paper",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion-restart-evidence",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+    const brokerRows = buildBrokerAdapterRows(workspace).map((row) =>
+      row.id === "ashare-live" ? { ...row, status: "paper_ready" as const } : row
+    );
+    const certificationRows = [
+      {
+        id: "adapter-certification-ashare-restart",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-08T08:01:00+00:00",
+        status: "passed" as const,
+        statusLabel: "Passed",
+        checkSummary: "4 passed / 4 checks",
+        auditEventId: "adapter-certification-ashare-restart",
+        boundary: "Live trading allowed",
+        liveTradingAllowed: true,
+        tone: "positive" as const
+      }
+    ];
+    const applyRows = [
+      {
+        id: "execution-adapter-certification-apply-ashare-restart",
+        certificationId: "adapter-certification-ashare-restart",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-08T08:03:00+00:00",
+        status: "ready_for_restart" as const,
+        statusLabel: "Ready for restart",
+        applyMode: "manual_secret_store",
+        confirmationSummary: "3 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        restartRequired: true,
+        auditEventId: "execution-adapter-certification-apply-ashare-restart",
+        tone: "positive" as const
+      }
+    ];
+    const restartEvidenceRows = [
+      {
+        id: "execution-adapter-controlled-restart-ashare-recorded",
+        applyId: "execution-adapter-certification-apply-ashare-restart",
+        certificationId: "adapter-certification-ashare-restart",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-08T08:06:00+00:00",
+        status: "evidence_recorded" as const,
+        statusLabel: "Evidence recorded",
+        evidenceMode: "manual_controlled_restart",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        restartRequired: true,
+        auditEventId: "execution-adapter-controlled-restart-ashare-recorded",
+        tone: "positive" as const
+      }
+    ];
+
+    const readiness = buildPromotionReadiness(
+      workspace,
+      execution,
+      brokerRows,
+      certificationRows,
+      applyRows,
+      restartEvidenceRows
+    );
+
+    expect(readiness.status).toBe("certification_pending");
+    expect(readiness.stages.find((stage) => stage.id === "adapter-certification")).toMatchObject({
+      value: "Evidence recorded · ashare-live",
+      status: "blocked",
+      tone: "warning",
+      detail:
+        "Latest certification adapter-certification-ashare-restart: 4 passed / 4 checks · Live trading allowed. Latest apply execution-adapter-certification-apply-ashare-restart: Ready for restart · 3 confirmed / 0 missing · No blockers · Paper only · live trading blocked. Latest restart evidence execution-adapter-controlled-restart-ashare-recorded: Evidence recorded · 4 confirmed / 0 missing · No blockers · Paper only · live trading blocked. Controlled restart evidence is recorded; live routing remains blocked until controlled orchestration and human confirmation pass."
     });
   });
 

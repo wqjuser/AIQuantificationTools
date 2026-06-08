@@ -880,6 +880,60 @@ export interface ExecutionAdapterCertificationApplyHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterControlledRestartEvidenceStatus = "blocked" | "evidence_recorded";
+export type ExecutionAdapterControlledRestartEvidenceConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterControlledRestartEvidenceConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterControlledRestartEvidenceConfirmationStatus;
+}
+
+export interface ExecutionAdapterControlledRestartEvidenceResult {
+  schemaVersion: 1;
+  evidenceId: string;
+  applyId: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterControlledRestartEvidenceStatus;
+  operator: string;
+  recordedAt: string;
+  evidenceMode: string;
+  restartRequired: boolean;
+  requiredConfirmations: ExecutionAdapterControlledRestartEvidenceConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterControlledRestartEvidenceRequest {
+  applyId: string;
+  operator?: string;
+  confirmations?: {
+    restartWindowExecuted?: boolean;
+    rollbackPlanConfirmed?: boolean;
+    postRestartValidationPassed?: boolean;
+    operatorReviewedRestartLogs?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterControlledRestartEvidenceRecordResult {
+  controlledRestartEvidence?: ExecutionAdapterControlledRestartEvidenceResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterControlledRestartEvidenceHistoryResult {
+  controlledRestartEvidence: ExecutionAdapterControlledRestartEvidenceResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1672,11 +1726,29 @@ export function buildExecutionAdapterCertificationApplyUrl(baseUrl: string): str
   return buildApiUrl(baseUrl, "api/execution/adapter-certifications/apply");
 }
 
+export function buildExecutionAdapterControlledRestartEvidenceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications/restart-evidence");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-certifications/applies", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterControlledRestartEvidenceHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications/restart-evidence", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -3348,6 +3420,49 @@ export async function recordExecutionAdapterCertificationApply(
   }
 }
 
+export async function recordExecutionAdapterControlledRestartEvidence(
+  baseUrl: string,
+  request: ExecutionAdapterControlledRestartEvidenceRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterControlledRestartEvidenceRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterControlledRestartEvidenceUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        applyId: request.applyId,
+        operator: request.operator ?? "local-operator",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterControlledRestartEvidenceRecordPayload(payload)) {
+      return {
+        controlledRestartEvidence: payload.controlledRestartEvidence,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter controlled restart evidence contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter controlled restart evidence error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -3400,6 +3515,36 @@ export async function loadExecutionAdapterCertificationApplies(
       certificationApplies: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter certification apply history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterControlledRestartEvidence(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterControlledRestartEvidenceHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildExecutionAdapterControlledRestartEvidenceHistoryUrl(baseUrl, { adapterId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterControlledRestartEvidenceHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter controlled restart evidence history contract");
+    }
+    return {
+      controlledRestartEvidence: payload.controlledRestartEvidence,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      controlledRestartEvidence: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter controlled restart evidence history error"
     };
   }
 }
@@ -5014,6 +5159,19 @@ function isExecutionAdapterCertificationApplyRecordPayload(
   );
 }
 
+function isExecutionAdapterControlledRestartEvidenceRecordPayload(
+  value: unknown
+): value is { controlledRestartEvidence: ExecutionAdapterControlledRestartEvidenceResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { controlledRestartEvidence?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterControlledRestartEvidenceResult(payload.controlledRestartEvidence) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -5037,6 +5195,19 @@ function isExecutionAdapterCertificationApplyHistoryPayload(
   return (
     Array.isArray(payload.certificationApplies) &&
     payload.certificationApplies.every(isExecutionAdapterCertificationApplyResult)
+  );
+}
+
+function isExecutionAdapterControlledRestartEvidenceHistoryPayload(
+  value: unknown
+): value is { controlledRestartEvidence: ExecutionAdapterControlledRestartEvidenceResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { controlledRestartEvidence?: unknown };
+  return (
+    Array.isArray(payload.controlledRestartEvidence) &&
+    payload.controlledRestartEvidence.every(isExecutionAdapterControlledRestartEvidenceResult)
   );
 }
 
@@ -5067,6 +5238,36 @@ function isExecutionAdapterCertificationApplyResult(value: unknown): value is Ex
   );
 }
 
+function isExecutionAdapterControlledRestartEvidenceResult(
+  value: unknown
+): value is ExecutionAdapterControlledRestartEvidenceResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterControlledRestartEvidenceResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.evidenceId === "string" &&
+    typeof result.applyId === "string" &&
+    typeof result.certificationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterControlledRestartEvidenceStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.evidenceMode === "string" &&
+    typeof result.restartRequired === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterControlledRestartEvidenceConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -5074,6 +5275,20 @@ function isExecutionAdapterCertificationApplyConfirmation(
     return false;
   }
   const confirmation = value as Partial<ExecutionAdapterCertificationApplyConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isExecutionAdapterControlledRestartEvidenceConfirmation(
+  value: unknown
+): value is ExecutionAdapterControlledRestartEvidenceConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterControlledRestartEvidenceConfirmation>;
   return (
     typeof confirmation.id === "string" &&
     typeof confirmation.label === "string" &&
@@ -5142,6 +5357,12 @@ function isExecutionAdapterCertificationApplyStatus(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyStatus {
   return value === "blocked" || value === "ready_for_restart";
+}
+
+function isExecutionAdapterControlledRestartEvidenceStatus(
+  value: unknown
+): value is ExecutionAdapterControlledRestartEvidenceStatus {
+  return value === "blocked" || value === "evidence_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
