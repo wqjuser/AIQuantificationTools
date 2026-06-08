@@ -5544,6 +5544,7 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
     .replace("Draft not saved", "草稿未保存")
     .replace("Unsaved changes since", "自上次保存后有未保存更改")
     .replace("Saved", "已保存")
+    .replace("source requires review", "来源需复核")
     .replace("complete", "完整")
     .replace("review", "需复核")
     .replace("watched", "个自选")

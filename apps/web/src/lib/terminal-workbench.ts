@@ -5736,10 +5736,12 @@ export function buildResearchContextReadinessRows(
   const symbolReady = Boolean(instrument.symbol.trim());
   const warnings = input.dataQuality.warnings.filter((warning) => warning.trim());
   const barCount = Math.max(0, Math.floor(input.barCount || input.dataQuality.rows || 0));
+  const klineSource = input.dataQuality.source || "unknown";
+  const klineSourceNeedsReview = isReviewRequiredKlineSource(klineSource);
   const klineStatus: ResearchContextReadinessStatus =
-    barCount <= 0 ? "blocked" : input.dataQuality.isComplete ? "ready" : "review";
-  const klineDetail = `${input.dataQuality.source || "unknown"} ${input.dataQuality.isComplete ? "complete" : "review"} · ${
-    warnings[0] ?? formatWarningCount(0)
+    barCount <= 0 ? "blocked" : input.dataQuality.isComplete && warnings.length === 0 && !klineSourceNeedsReview ? "ready" : "review";
+  const klineDetail = `${klineSource} ${input.dataQuality.isComplete ? "complete" : "review"} · ${
+    warnings[0] ?? (klineSourceNeedsReview ? "source requires review" : formatWarningCount(0))
   }`;
   const cache = input.cacheContext ?? null;
   const cacheRows = cache ? Math.max(0, Math.floor(cache.rowCount || 0)) : 0;
@@ -5810,6 +5812,11 @@ function readinessTone(status: ResearchContextReadinessStatus): "positive" | "wa
     return "positive";
   }
   return status === "review" ? "warning" : "risk";
+}
+
+function isReviewRequiredKlineSource(source: string): boolean {
+  const normalized = source.trim().toLowerCase();
+  return normalized === "demo-fallback" || normalized === "unknown";
 }
 
 function cacheReadinessDetail(cache: ResearchContextReadinessCacheContext | null, rowCount: number): string {

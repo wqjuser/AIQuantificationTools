@@ -273,6 +273,61 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("marks warning K-line data as review instead of ready", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: ["5 missing sessions"], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.find((row) => row.id === "klines")).toMatchObject({
+      value: "240 bars",
+      detail: "tencent complete · 5 missing sessions",
+      status: "review",
+      tone: "warning",
+      action: "refresh-cache"
+    });
+  });
+
+  test("marks demo fallback K-line data as review even when rows exist", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 160,
+      dataQuality: { source: "demo-fallback", isComplete: true, warnings: [], rows: 160 },
+      cacheContext: {
+        rowCount: 0,
+        freshness: "empty",
+        ageHours: null,
+        latestTimestamp: null
+      },
+      note: {
+        source: "fallback",
+        body: "",
+        updatedAt: null
+      }
+    });
+
+    expect(rows.find((row) => row.id === "klines")).toMatchObject({
+      value: "160 bars",
+      detail: "demo-fallback complete · source requires review",
+      status: "review",
+      tone: "warning",
+      action: "refresh-cache"
+    });
+  });
+
   test("marks a new research note draft as unsaved until it is stored", () => {
     const rows = buildResearchContextReadinessRows({
       workspace: buildTerminalWorkspace(),
