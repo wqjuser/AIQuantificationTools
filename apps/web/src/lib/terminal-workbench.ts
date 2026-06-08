@@ -2592,6 +2592,8 @@ export function buildAgentCommitteeRounds(workspace: TerminalWorkspace): AgentCo
   const technicalNote = findDecisionMessage(workspace, "Technical");
   const riskNote = findDecisionMessage(workspace, "Risk");
   const portfolioNote = findDecisionMessage(workspace, "Portfolio Manager");
+  const auditBinding = buildResearchRunContextBinding(workspace);
+  const usableRun = auditBinding.canUseRun ? workspace.researchRun : null;
 
   return [
     {
@@ -2639,11 +2641,13 @@ export function buildAgentCommitteeRounds(workspace: TerminalWorkspace): AgentCo
       phase: "decision",
       agent: "Portfolio Manager",
       thesis: portfolioNote,
-      evidence: workspace.researchRun
-        ? `Audited run ${workspace.researchRun.runId} · ${workspace.researchRun.dataRows} bars`
-        : "No audited run is bound to this research context yet.",
+      evidence: usableRun
+        ? `Audited run ${usableRun.runId} · ${usableRun.dataRows} bars`
+        : auditBinding.status === "mismatched"
+          ? auditBinding.detail
+          : "No audited run is bound to this research context yet.",
       verdict: "watch",
-      confidence: workspace.researchRun ? 66 : 60,
+      confidence: usableRun ? 66 : 60,
       tone: "ai"
     }
   ];
@@ -2651,11 +2655,13 @@ export function buildAgentCommitteeRounds(workspace: TerminalWorkspace): AgentCo
 
 export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCard[] {
   const selected = workspace.selectedInstrument;
+  const auditBinding = buildResearchRunContextBinding(workspace);
+  const usableRun = auditBinding.canUseRun ? workspace.researchRun : null;
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const gateDetail = workspace.execution.gates
     .map((gate) => `${gate.label}: ${gate.passed ? "passed" : "blocked"}`)
     .join(" · ");
-  const researchNote = normalizedResearchNote(workspace.researchRun?.researchNote);
+  const researchNote = normalizedResearchNote(usableRun?.researchNote);
   const cards: AiEvidenceCard[] = [
     {
       id: "context",
@@ -2664,14 +2670,22 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
       detail: `${selected.market} · price ${formatInstrumentPrice(selected.price)}`,
       tone: "neutral"
     },
-    workspace.researchRun
+    usableRun
       ? {
           id: "backtest",
           label: "Backtest evidence",
-          value: `${workspace.researchRun.dataRows} ${workspace.researchRun.timeframe} bars`,
-          detail: `Audited run ${workspace.researchRun.runId} · revision ${workspace.researchRun.strategyRevision}`,
+          value: `${usableRun.dataRows} ${usableRun.timeframe} bars`,
+          detail: `Audited run ${usableRun.runId} · revision ${usableRun.strategyRevision}`,
           tone: "positive"
         }
+      : auditBinding.status === "mismatched"
+        ? {
+            id: "backtest",
+            label: "Backtest evidence",
+            value: "Stale audited run",
+            detail: auditBinding.detail,
+            tone: "risk"
+          }
       : {
           id: "backtest",
           label: "Backtest evidence",
@@ -2681,7 +2695,7 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
         },
   ];
 
-  if (workspace.researchRun) {
+  if (usableRun) {
     const benchmark = buildBacktestBenchmark(workspace);
     cards.push({
       id: "benchmark",
@@ -2723,6 +2737,7 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
 }
 
 export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDossier {
+  const auditBinding = buildResearchRunContextBinding(workspace);
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const riskGateCitation: AiReviewCitation = {
     id: "risk-gates",
@@ -2752,6 +2767,31 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
           label: "Data quality",
           value: "Unavailable",
           detail: "Data quality is only trusted after an audited run is loaded.",
+          tone: "warning"
+        },
+        riskGateCitation
+      ]
+    };
+  }
+
+  if (!auditBinding.canUseRun) {
+    return {
+      status: "blocked",
+      headline: "Current audit context required",
+      summary: "Run Pipeline to bind AI review to the selected research context before exporting or saving records.",
+      citations: [
+        {
+          id: "run",
+          label: "Run id",
+          value: auditBinding.runId ?? "Stale audited run",
+          detail: auditBinding.detail,
+          tone: "risk"
+        },
+        {
+          id: "data-quality",
+          label: "Data quality",
+          value: "Stale context",
+          detail: "Data quality cannot be trusted until the run matches the selected market, symbol, and timeframe.",
           tone: "warning"
         },
         riskGateCitation
@@ -9412,14 +9452,16 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
     );
   }
 
-  if (!workspace.researchRun) {
+  const auditBinding = buildResearchRunContextBinding(workspace);
+  const run = workspace.researchRun;
+  if (!auditBinding.canUseRun || !run) {
     const actionLabel = action === "explain" ? "explanation" : "debate";
     return {
       ...workspace,
       decisionLog: [
         {
           agent: "AI Review Gate",
-          message: `AI ${actionLabel} blocked for ${workspace.selectedInstrument.symbol}: run Pipeline to create an audited backtest first.`,
+          message: aiReviewActionBlockedMessage(workspace, actionLabel, auditBinding),
           tone: "warning"
         },
         ...workspace.decisionLog
@@ -9441,7 +9483,7 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
       decisionLog: [
         {
           agent: "AI Summary",
-          message: `Backtest explanation for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: return ${returnMetric}${benchmarkClause}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
+          message: `Backtest explanation for ${workspace.selectedInstrument.symbol} using audited run ${run.runId}: return ${returnMetric}${benchmarkClause}, max drawdown ${drawdownMetric}, trades ${tradeMetric}; no guaranteed outcome.`,
           tone: "ai"
         },
         ...workspace.decisionLog
@@ -9454,12 +9496,22 @@ export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWo
     decisionLog: [
       {
         agent: "AI Debate",
-        message: `Debate generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}: bull case requires momentum confirmation; bear case flags drawdown and data quality.`,
+        message: `Debate generated for ${workspace.selectedInstrument.symbol} using audited run ${run.runId}: bull case requires momentum confirmation; bear case flags drawdown and data quality.`,
         tone: "ai"
       },
       ...workspace.decisionLog
     ]
   };
+}
+
+function aiReviewActionBlockedMessage(
+  workspace: TerminalWorkspace,
+  actionLabel: "explanation" | "debate",
+  auditBinding: ResearchRunContextBinding
+): string {
+  const reason =
+    auditBinding.status === "mismatched" ? auditBinding.detail : "run Pipeline to create an audited backtest first.";
+  return `AI ${actionLabel} blocked for ${workspace.selectedInstrument.symbol}: ${reason}`;
 }
 
 export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action: AiWorkbenchAction): WorkflowRunState {
@@ -9488,9 +9540,11 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
   const returnMetric = metricValue(workspace, "Return", "N/A");
   const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
   const benchmark = buildBacktestBenchmark(workspace);
-  if (!workspace.researchRun) {
+  const auditBinding = buildResearchRunContextBinding(workspace);
+  const run = auditBinding.canUseRun ? workspace.researchRun : null;
+  if (!run) {
     const actionLabel = action === "explain" ? "explanation" : "debate";
-    const blockedMessage = `AI ${actionLabel} blocked for ${workspace.selectedInstrument.symbol}: run Pipeline to create an audited backtest first.`;
+    const blockedMessage = aiReviewActionBlockedMessage(workspace, actionLabel, auditBinding);
     return {
       activeStageId: "backtest",
       completedStageIds: ["data", "factor"],
@@ -9511,7 +9565,10 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
           id: `ai-action-${workspace.selectedInstrument.symbol}-backtest`,
           stageId: "backtest",
           level: "warning",
-          message: "Audited backtest is missing; run Pipeline before AI review."
+          message:
+            auditBinding.status === "mismatched"
+              ? "Audited backtest does not match the current context; run Pipeline before AI review."
+              : "Audited backtest is missing; run Pipeline before AI review."
         },
         {
           id: `ai-action-${workspace.selectedInstrument.symbol}-agent`,
@@ -9526,13 +9583,13 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
   const actionMessage =
     action === "explain"
       ? `AI explanation generated for ${workspace.selectedInstrument.symbol} using audited run ${
-          workspace.researchRun.runId
+          run.runId
         }: return ${returnMetric}${
           benchmark.sampleBars > 0 && benchmark.benchmarkReturn !== "Pending snapshot"
             ? `, benchmark ${benchmark.benchmarkReturn}, alpha ${benchmark.alpha}`
             : ""
         }, max drawdown ${drawdownMetric}; no guaranteed outcome.`
-      : `AI debate generated for ${workspace.selectedInstrument.symbol} using audited run ${workspace.researchRun.runId}; bull, bear, and risk notes updated.`;
+      : `AI debate generated for ${workspace.selectedInstrument.symbol} using audited run ${run.runId}; bull, bear, and risk notes updated.`;
 
   return {
     activeStageId: "agent",
@@ -9541,17 +9598,17 @@ export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action:
       {
         id: `ai-action-${workspace.selectedInstrument.symbol}-data`,
         stageId: "data",
-        level: workspace.researchRun ? "success" : "warning",
-        message: workspace.researchRun
-          ? `Research context bound to ${workspace.researchRun.runId}: ${context}`
+        level: run ? "success" : "warning",
+        message: run
+          ? `Research context bound to ${run.runId}: ${context}`
           : `Research context selected without an audited run: ${context}`
       },
       {
         id: `ai-action-${workspace.selectedInstrument.symbol}-backtest`,
         stageId: "backtest",
-        level: workspace.researchRun ? "success" : "warning",
-        message: workspace.researchRun
-          ? `Backtest evidence available: ${workspace.researchRun.dataRows} bars`
+        level: run ? "success" : "warning",
+        message: run
+          ? `Backtest evidence available: ${run.dataRows} bars`
           : "Backtest evidence is local workspace state; run Pipeline for an audited snapshot."
       },
       {

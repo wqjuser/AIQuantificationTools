@@ -1836,6 +1836,75 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("blocks AI review artifacts when the audited run belongs to another context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-stale",
+      createdAt: "2026-05-28T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-ai-stale",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const mismatchedWorkspace: TerminalWorkspace = {
+      ...auditedWorkspace,
+      selectedInstrument: {
+        symbol: "AAPL",
+        name: "Apple",
+        market: "us",
+        price: 191.2,
+        changePct: -0.36
+      }
+    };
+
+    expect(buildAiEvidenceCards(mismatchedWorkspace).find((card) => card.id === "backtest")).toEqual({
+      id: "backtest",
+      label: "Backtest evidence",
+      value: "Stale audited run",
+      detail: "Audited run run-ai-stale belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d.",
+      tone: "risk"
+    });
+    expect(buildAiReviewDossier(mismatchedWorkspace)).toEqual({
+      status: "blocked",
+      headline: "Current audit context required",
+      summary: "Run Pipeline to bind AI review to the selected research context before exporting or saving records.",
+      citations: [
+        {
+          id: "run",
+          label: "Run id",
+          value: "run-ai-stale",
+          detail: "Audited run run-ai-stale belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d.",
+          tone: "risk"
+        },
+        {
+          id: "data-quality",
+          label: "Data quality",
+          value: "Stale context",
+          detail: "Data quality cannot be trusted until the run matches the selected market, symbol, and timeframe.",
+          tone: "warning"
+        },
+        {
+          id: "risk-gates",
+          label: "Risk gates",
+          value: "3 blocked gates",
+          detail: "Adapter certified: blocked · Risk approved: blocked · Human confirmed: blocked",
+          tone: "risk"
+        }
+      ]
+    });
+    expect(buildAiReviewReportMarkdown(mismatchedWorkspace)).toBeNull();
+    expect(buildAiReviewRunRecord(mismatchedWorkspace)).toBeNull();
+  });
+
   test("builds an evidence-locked AI review dossier from audited run metadata", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-ai-dossier",
@@ -8476,6 +8545,45 @@ describe("terminal workbench model", () => {
       message: "AI explanation blocked for 600000: run Pipeline to create an audited backtest first.",
       tone: "warning"
     });
+  });
+
+  test("warns instead of explaining when audited evidence belongs to another context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-ai-mismatch",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev123",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const mismatchedWorkspace: TerminalWorkspace = {
+      ...auditedWorkspace,
+      selectedTimeframe: "5m"
+    };
+
+    const workspace = workspaceWithAiAction(mismatchedWorkspace, "explain");
+    const state = buildAiActionWorkflowState(workspace, "explain");
+
+    expect(workspace.decisionLog[0]).toEqual({
+      agent: "AI Review Gate",
+      message:
+        "AI explanation blocked for 600000: Audited run run-ai-mismatch belongs to ASHARE · 600000 · 1d, not ASHARE · 600000 · 5m.",
+      tone: "warning"
+    });
+    expect(state.activeStageId).toBe("backtest");
+    expect(state.log.at(-1)?.message).toBe(
+      "AI explanation blocked for 600000: Audited run run-ai-mismatch belongs to ASHARE · 600000 · 1d, not ASHARE · 600000 · 5m."
+    );
   });
 
   test("generates a paper-only strategy draft from the current context", () => {
