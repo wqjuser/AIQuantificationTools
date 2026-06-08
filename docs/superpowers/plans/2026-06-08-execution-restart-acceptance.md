@@ -183,7 +183,7 @@ docker compose up -d
 
 Open `http://127.0.0.1:5173/?workspace=execution`, verify no console errors, seed/read a local paper-only acceptance event if needed, and confirm the promotion queue renders the acceptance evidence without extra nested scrollbars.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 Run:
 
