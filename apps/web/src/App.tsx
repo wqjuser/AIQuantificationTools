@@ -45,6 +45,8 @@ import {
   loadResearchNote,
   loadPlatformSettings,
   loadExecutionAdapterLedger,
+  loadExecutionAdapterCertifications,
+  recordExecutionAdapterCertification,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   refreshMarketCache,
@@ -79,7 +81,9 @@ import {
   AuditSigningKeyRotationPlanResult,
   GoldenPathStatus,
   GoldenPathStatusResult,
+  ExecutionAdapterCertificationCheck,
   ExecutionAdapterLedgerResult,
+  ExecutionAdapterCertificationRun,
   PlatformSettingsResult,
   PlatformSettingsStatus,
   PortfolioBacktestResult,
@@ -139,6 +143,7 @@ import {
   buildBacktestRunComparisonMatrixSummary,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
@@ -219,6 +224,7 @@ import {
   BacktestRunComparisonMatrixSummary,
   BacktestTradeRow,
   BrokerAdapterRow,
+  ExecutionAdapterCertificationRow,
   ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
@@ -557,6 +563,44 @@ function waitForWorkflowStep() {
   return new Promise<void>((resolve) => window.setTimeout(resolve, workflowStepDelayMs));
 }
 
+function buildAdapterCertificationEvidenceChecks(
+  adapter: PlatformSettingsStatus["executionAdapters"][number]
+): ExecutionAdapterCertificationCheck[] {
+  const hasPaperReadyContract = adapter.status === "paper_ready";
+  return [
+    {
+      id: "sandbox-credentials",
+      label: "Sandbox credential reference",
+      status: hasPaperReadyContract ? "passed" : "blocked",
+      detail: hasPaperReadyContract
+        ? "Paper or sandbox route is present without exposing secret material."
+        : "Sandbox or paper credential reference has not been certified.",
+      metadata: {
+        adapterStatus: adapter.status,
+        credentialReference: "not-requested"
+      }
+    },
+    {
+      id: "order-lifecycle",
+      label: "Order lifecycle evidence",
+      status: "blocked",
+      detail: "Submit, cancel, fill, reject, and reconnect evidence must be replayed before live routing."
+    },
+    {
+      id: "emergency-stop",
+      label: "Emergency stop and limits",
+      status: "blocked",
+      detail: "Max order, position, drawdown, and emergency-stop controls require operator evidence."
+    },
+    {
+      id: "controlled-restart",
+      label: "Controlled restart evidence",
+      status: "review",
+      detail: "Controlled restart and account sync evidence is not bound to this certification run."
+    }
+  ];
+}
+
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
@@ -568,6 +612,9 @@ export function App() {
   const [executionAdapterLedger, setExecutionAdapterLedger] = useState<ExecutionAdapterLedgerResult>(
     initialExecutionAdapterLedgerState
   );
+  const [executionAdapterCertifications, setExecutionAdapterCertifications] = useState<
+    ExecutionAdapterCertificationRun[]
+  >([]);
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
   );
@@ -627,6 +674,7 @@ export function App() {
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
   const [isIndexingExportPackages, setIsIndexingExportPackages] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
+  const [recordingAdapterCertificationId, setRecordingAdapterCertificationId] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
@@ -721,6 +769,7 @@ export function App() {
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
   const executionAdapterLedgerRows = buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger);
+  const executionAdapterCertificationRows = buildExecutionAdapterCertificationRows(executionAdapterCertifications);
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -1118,9 +1167,60 @@ export function App() {
       loadPlatformSettings(quantCoreBaseUrl),
       loadExecutionAdapterLedger(quantCoreBaseUrl)
     ]);
+    const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
+    const certificationResults = await Promise.all(
+      liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))
+    );
     setSettingsStatus(settingsResult);
     setExecutionAdapterLedger(adapterLedgerResult);
+    setExecutionAdapterCertifications(certificationResults.flatMap((result) => result.adapterCertifications));
   }, []);
+
+  const recordAdapterCertificationEvidence = useCallback(
+    async (adapter: PlatformSettingsStatus["executionAdapters"][number]) => {
+      const timestamp = new Date().toISOString();
+      setRecordingAdapterCertificationId(adapter.id);
+      try {
+        const result = await recordExecutionAdapterCertification(quantCoreBaseUrl, {
+          adapterId: adapter.id,
+          market: adapter.market,
+          route: adapter.route,
+          operator: "settings-panel",
+          startedAt: timestamp,
+          completedAt: timestamp,
+          checks: buildAdapterCertificationEvidenceChecks(adapter),
+          metadata: {
+            adapterStatus: adapter.status,
+            liveTradingAllowed: adapter.liveTradingAllowed,
+            source: "settings-panel"
+          }
+        });
+        if (result.adapterCertification) {
+          setExecutionAdapterCertifications((current) => [
+            result.adapterCertification!,
+            ...current.filter((row) => row.certificationId !== result.adapterCertification!.certificationId)
+          ]);
+        }
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: result.error,
+            statusLabel: "Adapter certification evidence failed"
+          }));
+        } else {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: undefined,
+            statusLabel: `Adapter certification recorded · ${adapter.id}`
+          }));
+          await refreshSettingsStatus();
+        }
+      } finally {
+        setRecordingAdapterCertificationId(null);
+      }
+    },
+    [refreshSettingsStatus]
+  );
 
   const refreshAuditSigningKeys = useCallback(async () => {
     setAuditSigningKeyRegistry(await loadAuditSigningKeys(quantCoreBaseUrl));
@@ -3772,11 +3872,14 @@ export function App() {
       return (
         <>
           <PlatformSettingsPanel
+            adapterCertificationRows={executionAdapterCertificationRows}
             adapterRows={brokerAdapterRows}
             adapterLedgerRows={executionAdapterLedgerRows}
             className="workflow-settings-panel"
             i18n={i18n}
+            onRecordAdapterCertification={recordAdapterCertificationEvidence}
             onRefreshContext={refreshCacheContext}
+            recordingAdapterCertificationId={recordingAdapterCertificationId}
             refreshingCacheKey={refreshingCacheKey}
             settings={settingsStatus.settings}
             state={klinesState}
@@ -5761,21 +5864,27 @@ function ResearchNotesPanel({
 }
 
 function PlatformSettingsPanel({
+  adapterCertificationRows,
   adapterRows,
   adapterLedgerRows,
   className,
   i18n,
+  onRecordAdapterCertification,
   onRefreshContext,
+  recordingAdapterCertificationId,
   refreshingCacheKey,
   settings,
   state,
   workspace
 }: {
+  adapterCertificationRows: ExecutionAdapterCertificationRow[];
   adapterRows: BrokerAdapterRow[];
   adapterLedgerRows: ExecutionAdapterLedgerRow[];
   className?: string;
   i18n: AppI18n;
+  onRecordAdapterCertification?: (adapter: PlatformSettingsStatus["executionAdapters"][number]) => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
+  recordingAdapterCertificationId?: string | null;
   refreshingCacheKey?: string | null;
   settings?: PlatformSettingsStatus;
   state: MarketKlinesResult;
@@ -5900,6 +6009,23 @@ function PlatformSettingsPanel({
                   ? "实盘关闭"
                   : "Live blocked"}
             </em>
+            {row.route === "live" && onRecordAdapterCertification ? (
+              <button
+                className="adapter-certification-button"
+                disabled={recordingAdapterCertificationId === row.id}
+                onClick={() => onRecordAdapterCertification(row)}
+                type="button"
+              >
+                <ShieldCheck size={13} />
+                {recordingAdapterCertificationId === row.id
+                  ? i18n.locale === "zh-CN"
+                    ? "记录中"
+                    : "Recording"
+                  : i18n.locale === "zh-CN"
+                    ? "记录认证"
+                    : "Record evidence"}
+              </button>
+            ) : null}
           </article>
         ))}
       </div>
@@ -5919,6 +6045,29 @@ function PlatformSettingsPanel({
               </div>
               <p>{adapterLedgerReason(i18n, row)}</p>
               <em>{adapterLedgerNextStep(i18n, row)}</em>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      {adapterCertificationRows.length ? (
+        <div className="adapter-certification-list">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "适配器认证流水" : "Adapter certification evidence"}</span>
+            <strong>{adapterCertificationRows.length}</strong>
+          </div>
+          {adapterCertificationRows.map((row) => (
+            <article className={`adapter-certification-row ${row.tone}`} key={row.id}>
+              <div>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterCertificationStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <span>{formatChartDate(row.timestamp)}</span>
+              </div>
+              <p>{adapterCertificationBoundaryLabel(i18n, row.boundary)}</p>
+              <em>
+                {adapterCertificationCheckSummary(i18n, row.checkSummary)} · {row.auditEventId}
+              </em>
             </article>
           ))}
         </div>
@@ -11526,6 +11675,56 @@ function adapterLedgerNextStep(i18n: AppI18n, row: ExecutionAdapterLedgerRow): s
     .replace("Configure sandbox credentials, order lifecycle tests, and emergency-stop limits before certification.", "认证前先配置 sandbox 凭证、订单生命周期测试和紧急停止限制。")
     .replace("Keep human confirmation and risk approval gates attached to every promoted order.", "每笔晋级订单都必须绑定人工确认和风控审批闸门。")
     .replace("Keep live trading blocked until a legal adapter certification passes.", "合法适配器认证通过前，继续阻断实盘交易。");
+}
+
+function adapterCertificationAdapterName(i18n: AppI18n, adapterId: string): string {
+  if (i18n.locale === "en-US") {
+    return adapterId;
+  }
+  return (
+    {
+      "ashare-live": "A 股券商接口",
+      "crypto-live": "加密交易所接口",
+      "paper-local": "本地模拟盘",
+      "us-live": "美股实盘接口"
+    }[adapterId] ?? adapterId
+  );
+}
+
+function adapterCertificationStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Blocked: "阻断",
+      Failed: "失败",
+      Passed: "通过",
+      Review: "待复核"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
+function adapterCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
+  if (i18n.locale === "en-US") {
+    return boundary;
+  }
+  return boundary
+    .replace("Paper only · live trading blocked", "仅记录模拟/沙盒证据，实盘交易保持阻断")
+    .replace("Live trading allowed", "实盘交易已允许")
+    .replace("Live trading blocked", "实盘交易保持阻断");
+}
+
+function adapterCertificationCheckSummary(i18n: AppI18n, checkSummary: string): string {
+  if (i18n.locale === "en-US") {
+    return checkSummary;
+  }
+  return checkSummary
+    .replace("passed", "通过")
+    .replace("blocked", "阻断")
+    .replace("failed", "失败")
+    .replace("review", "复核")
+    .replace("checks", "项检查");
 }
 
 function settingsStatusLabel(i18n: AppI18n, status: PlatformSettingsStatus["dataSources"][number]["status"]): string {

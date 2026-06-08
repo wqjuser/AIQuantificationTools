@@ -38,6 +38,7 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
@@ -6977,6 +6978,67 @@ describe("terminal workbench model", () => {
       gateSummary: "1/1 gates",
       tone: "positive"
     });
+  });
+
+  test("builds compact execution adapter certification rows from persisted evidence", () => {
+    const rows = buildExecutionAdapterCertificationRows([
+      {
+        schemaVersion: 1,
+        certificationId: "adapter-certification-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "blocked",
+        operator: "local-operator",
+        startedAt: "2026-06-08T08:00:00+00:00",
+        completedAt: "2026-06-08T08:01:00+00:00",
+        checks: [
+          {
+            id: "sandbox-credentials",
+            label: "Sandbox credentials",
+            status: "passed",
+            detail: "Sandbox references are present.",
+            metadata: { keyId: "paper-us-key", apiKey: "[redacted]" }
+          },
+          {
+            id: "controlled-restart",
+            label: "Controlled restart",
+            status: "blocked",
+            detail: "Controlled restart evidence is missing."
+          }
+        ],
+        metadata: { source: "settings-panel", password: "[redacted]" },
+        summary: {
+          checkCount: 2,
+          checkStatusCounts: { passed: 1, blocked: 1 },
+          passedChecks: 1,
+          blockedChecks: 1,
+          failedChecks: 0,
+          reviewChecks: 0
+        },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "adapter-certification-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-08T08:01:00+00:00",
+        status: "blocked",
+        statusLabel: "Blocked",
+        checkSummary: "1 passed / 1 blocked / 2 checks",
+        auditEventId: "adapter-certification-us-live",
+        boundary: "Paper only · live trading blocked",
+        liveTradingAllowed: false,
+        tone: "risk"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("apiKey");
+    expect(JSON.stringify(rows)).not.toContain("password");
   });
 
   test("blocks promotion readiness before an audited run is bound", () => {

@@ -768,6 +768,66 @@ export interface ExecutionAdapterLedgerResult {
   error?: string;
 }
 
+export type ExecutionAdapterCertificationStatus = "passed" | "blocked" | "failed" | "review";
+
+export interface ExecutionAdapterCertificationCheck {
+  id: string;
+  label: string;
+  status: ExecutionAdapterCertificationStatus;
+  detail: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterCertificationSummary {
+  checkCount: number;
+  checkStatusCounts: Record<string, number>;
+  passedChecks: number;
+  blockedChecks: number;
+  failedChecks: number;
+  reviewChecks: number;
+}
+
+export interface ExecutionAdapterCertificationRun {
+  schemaVersion: 1;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterCertificationStatus;
+  operator: string;
+  startedAt: string;
+  completedAt: string | null;
+  checks: ExecutionAdapterCertificationCheck[];
+  metadata: Record<string, unknown>;
+  summary: ExecutionAdapterCertificationSummary;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterCertificationRequest {
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  operator?: string;
+  startedAt?: string;
+  completedAt?: string;
+  checks: ExecutionAdapterCertificationCheck[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterCertificationRecordResult {
+  adapterCertification?: ExecutionAdapterCertificationRun;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterCertificationHistoryResult {
+  adapterCertifications: ExecutionAdapterCertificationRun[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1540,6 +1600,20 @@ export function buildSettingsStatusUrl(baseUrl: string): string {
 
 export function buildExecutionAdapterLedgerUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-ledger");
+}
+
+export function buildExecutionAdapterCertificationsUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
 }
 
 export function buildGoldenPathStatusUrl(baseUrl: string, params: TerminalResearchParams): string {
@@ -3110,6 +3184,81 @@ export async function loadExecutionAdapterLedger(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter ledger error"
+    };
+  }
+}
+
+export async function recordExecutionAdapterCertification(
+  baseUrl: string,
+  request: ExecutionAdapterCertificationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterCertificationRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterCertificationsUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        market: request.market,
+        route: request.route,
+        operator: request.operator ?? "local-operator",
+        startedAt: request.startedAt,
+        completedAt: request.completedAt,
+        checks: request.checks,
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isExecutionAdapterCertificationRecordPayload(payload)) {
+      throw new Error("Invalid execution adapter certification record contract");
+    }
+    return {
+      adapterCertification: payload.adapterCertification,
+      auditEvent: payload.auditEvent,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter certification record error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterCertifications(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterCertificationHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterCertificationsUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterCertificationHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter certification history contract");
+    }
+    return {
+      adapterCertifications: payload.adapterCertifications,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterCertifications: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter certification history error"
     };
   }
 }
@@ -4696,6 +4845,111 @@ function isExecutionAdapterLedgerEvent(value: unknown): value is ExecutionAdapte
     typeof event.reason === "string" &&
     typeof event.liveTradingAllowed === "boolean"
   );
+}
+
+function isExecutionAdapterCertificationRecordPayload(
+  value: unknown
+): value is { adapterCertification: ExecutionAdapterCertificationRun; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterCertification?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterCertificationRun(payload.adapterCertification) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterCertificationHistoryPayload(
+  value: unknown
+): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterCertifications?: unknown };
+  return (
+    Array.isArray(payload.adapterCertifications) &&
+    payload.adapterCertifications.every(isExecutionAdapterCertificationRun)
+  );
+}
+
+function isExecutionAdapterCertificationRun(value: unknown): value is ExecutionAdapterCertificationRun {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const run = value as Partial<ExecutionAdapterCertificationRun>;
+  return (
+    run.schemaVersion === 1 &&
+    typeof run.certificationId === "string" &&
+    typeof run.adapterId === "string" &&
+    (isMarket(run.market) || run.market === "multi") &&
+    (run.route === "paper" || run.route === "live") &&
+    isExecutionAdapterCertificationStatus(run.status) &&
+    typeof run.operator === "string" &&
+    typeof run.startedAt === "string" &&
+    (run.completedAt === null || typeof run.completedAt === "string") &&
+    Array.isArray(run.checks) &&
+    run.checks.every(isExecutionAdapterCertificationCheck) &&
+    isSecretFreeRecord(run.metadata) &&
+    isExecutionAdapterCertificationSummary(run.summary) &&
+    typeof run.liveTradingAllowed === "boolean" &&
+    typeof run.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterCertificationCheck(value: unknown): value is ExecutionAdapterCertificationCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<ExecutionAdapterCertificationCheck>;
+  return (
+    typeof check.id === "string" &&
+    typeof check.label === "string" &&
+    isExecutionAdapterCertificationStatus(check.status) &&
+    typeof check.detail === "string" &&
+    (check.metadata === undefined || isSecretFreeRecord(check.metadata))
+  );
+}
+
+function isExecutionAdapterCertificationSummary(value: unknown): value is ExecutionAdapterCertificationSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<ExecutionAdapterCertificationSummary>;
+  return (
+    typeof summary.checkCount === "number" &&
+    isNumberRecord(summary.checkStatusCounts) &&
+    typeof summary.passedChecks === "number" &&
+    typeof summary.blockedChecks === "number" &&
+    typeof summary.failedChecks === "number" &&
+    typeof summary.reviewChecks === "number"
+  );
+}
+
+function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
+  return value === "passed" || value === "blocked" || value === "failed" || value === "review";
+}
+
+function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).every(([key, item]) => {
+    if (isSecretLikeKey(key)) {
+      return item === "[redacted]";
+    }
+    if (item && typeof item === "object") {
+      return Array.isArray(item)
+        ? item.every((entry) => !entry || typeof entry !== "object" || isSecretFreeRecord(entry))
+        : isSecretFreeRecord(item);
+    }
+    return true;
+  });
+}
+
+function isSecretLikeKey(key: string): boolean {
+  const normalized = key.replace(/[_-]/g, "").toLowerCase();
+  return ["secret", "token", "apikey", "privatekey", "password"].some((marker) => normalized.includes(marker));
 }
 
 function isGoldenPathStatus(value: unknown): value is GoldenPathStatus {

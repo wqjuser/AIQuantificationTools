@@ -1368,6 +1368,22 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-ledger-row");
   });
 
+  test("renders execution adapter certification evidence controls in settings", () => {
+    expect(appSource).toContain("loadExecutionAdapterCertifications(quantCoreBaseUrl");
+    expect(appSource).toContain("recordExecutionAdapterCertification(quantCoreBaseUrl");
+    expect(appSource).toContain("buildExecutionAdapterCertificationRows(executionAdapterCertifications)");
+    expect(appSource).toContain("adapterCertificationRows={executionAdapterCertificationRows}");
+    expect(appSource).toContain("onRecordAdapterCertification={recordAdapterCertificationEvidence}");
+    expect(appSource).toContain("recordingAdapterCertificationId={recordingAdapterCertificationId}");
+    expect(appSource).toContain('className="adapter-certification-button"');
+    expect(appSource).toContain('className="adapter-certification-list"');
+    expect(appSource).toContain('className={`adapter-certification-row');
+    expect(appSource).not.toContain("secret-key");
+    expect(styles).toContain(".adapter-certification-button");
+    expect(styles).toContain(".adapter-certification-list");
+    expect(styles).toContain(".adapter-certification-row");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

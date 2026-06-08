@@ -3998,7 +3998,22 @@ em {
   margin-top: 10px;
 }
 
+.adapter-certification-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .adapter-ledger-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.adapter-certification-row {
   min-width: 0;
   border: 1px solid #27364a;
   border-left: 3px solid #2a3b51;
@@ -4011,11 +4026,23 @@ em {
   border-left-color: #4cc9ad;
 }
 
+.adapter-certification-row.positive {
+  border-left-color: #4cc9ad;
+}
+
 .adapter-ledger-row.warning {
   border-left-color: #e8be62;
 }
 
+.adapter-certification-row.warning {
+  border-left-color: #e8be62;
+}
+
 .adapter-ledger-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-certification-row.risk {
   border-left-color: #ff7f6d;
 }
 
@@ -4026,32 +4053,48 @@ em {
   gap: 10px;
 }
 
+.adapter-certification-row div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .adapter-ledger-row strong,
 .adapter-ledger-row span,
 .adapter-ledger-row p,
-.adapter-ledger-row em {
+.adapter-ledger-row em,
+.adapter-certification-row strong,
+.adapter-certification-row span,
+.adapter-certification-row p,
+.adapter-certification-row em {
   min-width: 0;
 }
 
-.adapter-ledger-row strong {
+.adapter-ledger-row strong,
+.adapter-certification-row strong {
   color: #e8f0f8;
   font-size: 13px;
 }
 
 .adapter-ledger-row span,
-.adapter-ledger-row em {
+.adapter-ledger-row em,
+.adapter-certification-row span,
+.adapter-certification-row em {
   color: #9fb0c3;
   font-size: 12px;
 }
 
-.adapter-ledger-row p {
+.adapter-ledger-row p,
+.adapter-certification-row p {
   color: #c9d7e7;
   font-size: 12px;
   line-height: 1.45;
   margin: 7px 0 0;
 }
 
-.adapter-ledger-row em {
+.adapter-ledger-row em,
+.adapter-certification-row em {
   display: block;
   font-style: normal;
   margin-top: 5px;
@@ -4106,6 +4149,27 @@ em {
   line-height: 1.35;
   margin: 6px 0 0;
   overflow-wrap: anywhere;
+}
+
+.adapter-certification-button {
+  align-items: center;
+  border: 1px solid #295a52;
+  border-radius: 6px;
+  background: #0c2523;
+  color: #7df5db;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  margin-top: 8px;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.adapter-certification-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .settings-cache-row .settings-cache-stats {

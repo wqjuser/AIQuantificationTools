@@ -34,6 +34,7 @@ import {
   buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
+  buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
@@ -57,10 +58,12 @@ import {
   loadPortfolioPaperOrderStateHistory,
   loadPortfolioPaperOrderSimulations,
   loadExecutionAdapterLedger,
+  loadExecutionAdapterCertifications,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   recordPortfolioPaperOrderApproval,
   recordPortfolioPaperOrderSimulation,
+  recordExecutionAdapterCertification,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -262,6 +265,15 @@ describe("terminal workspace API client", () => {
   test("builds the execution adapter ledger URL", () => {
     expect(buildExecutionAdapterLedgerUrl("http://127.0.0.1:8765/")).toBe(
       "http://127.0.0.1:8765/api/execution/adapter-ledger"
+    );
+  });
+
+  test("builds the execution adapter certifications URL with an encoded adapter query", () => {
+    expect(buildExecutionAdapterCertificationsUrl("http://127.0.0.1:8765/", { adapterId: "us live/1", limit: 3 })).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-certifications?adapterId=us+live%2F1&limit=3"
+    );
+    expect(buildExecutionAdapterCertificationsUrl("/", { adapterId: "crypto-live" })).toBe(
+      "/api/execution/adapter-certifications?adapterId=crypto-live"
     );
   });
 
@@ -1641,6 +1653,129 @@ describe("terminal workspace API client", () => {
       liveTradingAllowed: false
     });
     expect(JSON.stringify(result.adapterLedger)).not.toContain("secret");
+  });
+
+  test("records and loads execution adapter certification evidence without secrets", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const certification = {
+      schemaVersion: 1,
+      certificationId: "adapter-certification-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "blocked",
+      operator: "local-operator",
+      startedAt: "2026-06-08T08:00:00+00:00",
+      completedAt: "2026-06-08T08:01:00+00:00",
+      checks: [
+        {
+          id: "sandbox-credentials",
+          label: "Sandbox credentials",
+          status: "passed",
+          detail: "Sandbox references are present.",
+          metadata: { apiKey: "[redacted]", keyId: "paper-us-key" }
+        },
+        {
+          id: "controlled-restart",
+          label: "Controlled restart",
+          status: "blocked",
+          detail: "Controlled restart evidence is missing.",
+          metadata: { token: "[redacted]", restartWindow: "manual" }
+        }
+      ],
+      metadata: { source: "settings-panel", password: "[redacted]" },
+      summary: {
+        checkCount: 2,
+        checkStatusCounts: { blocked: 1, passed: 1 },
+        passedChecks: 1,
+        blockedChecks: 1,
+        failedChecks: 0,
+        reviewChecks: 0
+      },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (init?.method === "POST") {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            adapterCertification: certification,
+            auditEvent: {
+              schemaVersion: 1,
+              eventId: "adapter-certification-us-live",
+              eventType: "execution_adapter_certification",
+              runId: "",
+              createdAt: "2026-06-08T08:01:00+00:00",
+              stage: "execution-adapter-certification",
+              source: "execution-adapter-ledger",
+              summary: "us-live certification recorded as blocked.",
+              detail: "Adapter certification evidence is stored without secrets and live trading remains blocked.",
+              metadata: {
+                adapterId: "us-live",
+                status: "blocked",
+                liveTradingAllowed: false
+              }
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ adapterCertifications: [certification] })
+      };
+    };
+
+    const recordResult = await recordExecutionAdapterCertification(
+      "/",
+      {
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        operator: "local-operator",
+        checks: [
+          {
+            id: "sandbox-credentials",
+            label: "Sandbox credentials",
+            status: "passed",
+            detail: "Sandbox references are present.",
+            metadata: { credentialRef: "paper-us-key" }
+          },
+          {
+            id: "controlled-restart",
+            label: "Controlled restart",
+            status: "blocked",
+            detail: "Controlled restart evidence is missing.",
+            metadata: { restartWindow: "manual" }
+          }
+        ],
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+    const loadResult = await loadExecutionAdapterCertifications("/", "us-live", fetcher, 3);
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-certifications",
+      "GET /api/execution/adapter-certifications?adapterId=us-live&limit=3"
+    ]);
+    expect(calls[0].body).toMatchObject({
+      adapterId: "us-live",
+      route: "live",
+      checks: [{ id: "sandbox-credentials" }, { id: "controlled-restart" }]
+    });
+    expect(JSON.stringify(calls[0].body)).not.toContain("apiKey");
+    expect(recordResult.source).toBe("core");
+    expect(recordResult.adapterCertification?.status).toBe("blocked");
+    expect(recordResult.adapterCertification?.summary.checkStatusCounts).toEqual({ blocked: 1, passed: 1 });
+    expect(recordResult.auditEvent?.eventType).toBe("execution_adapter_certification");
+    expect(loadResult.adapterCertifications[0].adapterId).toBe("us-live");
+    expect(loadResult.adapterCertifications[0].liveTradingAllowed).toBe(false);
+    expect(JSON.stringify(recordResult)).not.toContain("secret-key-should-not-leak");
+    expect(JSON.stringify(loadResult)).not.toContain("token-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

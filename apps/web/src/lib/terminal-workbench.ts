@@ -1732,6 +1732,53 @@ export interface ExecutionAdapterLedgerRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterCertificationStatus = "passed" | "blocked" | "failed" | "review";
+
+export interface ExecutionAdapterCertificationSnapshot {
+  schemaVersion: 1;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterCertificationStatus;
+  operator: string;
+  startedAt: string;
+  completedAt: string | null;
+  checks: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterCertificationStatus;
+    detail: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  metadata: Record<string, unknown>;
+  summary: {
+    checkCount: number;
+    checkStatusCounts: Record<string, number>;
+    passedChecks: number;
+    blockedChecks: number;
+    failedChecks: number;
+    reviewChecks: number;
+  };
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterCertificationRow {
+  id: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterCertificationStatus;
+  statusLabel: string;
+  checkSummary: string;
+  auditEventId: string;
+  boundary: string;
+  liveTradingAllowed: boolean;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type PromotionReadinessStatus = "blocked" | "paper_pending" | "certification_pending" | "live_ready";
 
 export interface PromotionQueueStage {
@@ -7651,6 +7698,33 @@ export function buildExecutionAdapterLedgerRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterCertificationRows(
+  certifications: ExecutionAdapterCertificationSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterCertificationRow[] {
+  return (certifications ?? [])
+    .map((certification) => ({
+      id: certification.certificationId,
+      adapterId: certification.adapterId,
+      market: certification.market,
+      route: certification.route,
+      timestamp: certification.completedAt ?? certification.startedAt,
+      status: certification.status,
+      statusLabel: executionAdapterCertificationStatusLabel(certification.status),
+      checkSummary: executionAdapterCertificationCheckSummary(certification.summary),
+      auditEventId: certification.certificationId,
+      boundary: certification.liveTradingAllowed
+        ? "Live trading allowed"
+        : certification.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      liveTradingAllowed: certification.liveTradingAllowed,
+      tone: executionAdapterCertificationTone(certification.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -9221,6 +9295,46 @@ function executionAdapterLedgerTone(state: string): "positive" | "warning" | "ne
     return "risk";
   }
   return "neutral";
+}
+
+function executionAdapterCertificationTone(
+  status: ExecutionAdapterCertificationStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  if (status === "passed") {
+    return "positive";
+  }
+  if (status === "review") {
+    return "warning";
+  }
+  if (status === "blocked" || status === "failed") {
+    return "risk";
+  }
+  return "neutral";
+}
+
+function executionAdapterCertificationStatusLabel(status: ExecutionAdapterCertificationStatus): string {
+  return (
+    {
+      blocked: "Blocked",
+      failed: "Failed",
+      passed: "Passed",
+      review: "Review"
+    } satisfies Record<ExecutionAdapterCertificationStatus, string>
+  )[status];
+}
+
+function executionAdapterCertificationCheckSummary(
+  summary: ExecutionAdapterCertificationSnapshot["summary"]
+): string {
+  const parts = [
+    [summary.passedChecks, "passed"],
+    [summary.blockedChecks, "blocked"],
+    [summary.failedChecks, "failed"],
+    [summary.reviewChecks, "review"]
+  ]
+    .filter(([count]) => Number(count) > 0)
+    .map(([count, label]) => `${count} ${label}`);
+  return [...(parts.length ? parts : ["0 passed"]), `${summary.checkCount} checks`].join(" / ");
 }
 
 function formatAssumptionCurrency(value: number): string {
