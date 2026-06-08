@@ -35,6 +35,7 @@ from quant_core.domain import (
     StrategyConfig,
 )
 from quant_core.execution import (
+    ExecutionAdapterCertificationStore,
     PaperExecutionRecord,
     PaperExecutionStore,
     PortfolioPaperOrderApproval,
@@ -47,10 +48,13 @@ from quant_core.execution import (
     build_portfolio_paper_order_replay,
     build_portfolio_paper_order_state_history,
     build_promotion_candidate,
+    create_execution_adapter_certification_run,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
     create_portfolio_paper_order_batch,
     create_portfolio_paper_order_simulation,
+    execution_adapter_certification_to_audit_event_payload,
+    execution_adapter_certification_to_payload,
     paper_execution_payload_to_record,
     paper_execution_record_to_payload,
     portfolio_paper_order_approval_to_audit_event_payload,
@@ -173,6 +177,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     portfolio_paper_order_store = PortfolioPaperOrderStore(Path("data/portfolio_paper_orders.sqlite"))
     portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(Path("data/portfolio_paper_order_approvals.sqlite"))
     portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(Path("data/portfolio_paper_order_simulations.sqlite"))
+    execution_adapter_certification_store = ExecutionAdapterCertificationStore(Path("data/execution_adapter_certifications.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
@@ -271,6 +276,34 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     },
                     "settings": self._settings_status_payload(),
                 }
+            )
+            return
+        if parsed.path == "/api/execution/adapter-certifications":
+            try:
+                payload = self._read_json_body()
+                certification = create_execution_adapter_certification_run(
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    market=str(payload.get("market") or ""),
+                    route=str(payload.get("route") or ""),
+                    operator=str(payload.get("operator") or "local-operator"),
+                    started_at=payload.get("startedAt"),
+                    completed_at=payload.get("completedAt"),
+                    checks=payload.get("checks") if isinstance(payload.get("checks"), list) else [],
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_certification", "detail": str(error)}, status=400)
+                return
+            self.execution_adapter_certification_store.record(certification)
+            audit_event = self.audit_event_store.record(
+                execution_adapter_certification_to_audit_event_payload(certification)
+            )
+            self._send_json(
+                {
+                    "adapterCertification": execution_adapter_certification_to_payload(certification),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=201,
             )
             return
         if parsed.path == "/api/portfolio/backtest":
@@ -755,6 +788,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/execution/adapter-ledger":
             settings = self._settings_status_payload()
             self._send_json({"adapterLedger": build_execution_adapter_state_ledger(settings)})
+            return
+        if parsed.path == "/api/execution/adapter-certifications":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_certification_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            certifications = self.execution_adapter_certification_store.list_by_adapter(adapter_id, limit=limit)
+            self._send_json(
+                {
+                    "adapterCertifications": [
+                        execution_adapter_certification_to_payload(certification) for certification in certifications
+                    ]
+                }
+            )
             return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)

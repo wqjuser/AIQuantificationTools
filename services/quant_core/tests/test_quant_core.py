@@ -1407,6 +1407,157 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["adapterLedger"]["summary"]["certifiedLiveAdapters"], 0)
         self.assertEqual(payload["adapterLedger"]["adapters"][0]["id"], "paper-local")
 
+    def test_execution_adapter_certification_store_persists_secret_free_runs(self):
+        import json
+
+        from quant_core.execution import (
+            ExecutionAdapterCertificationStore,
+            create_execution_adapter_certification_run,
+            execution_adapter_certification_to_audit_event_payload,
+            execution_adapter_certification_to_payload,
+        )
+
+        run = create_execution_adapter_certification_run(
+            adapter_id="us-live",
+            market="us",
+            route="live",
+            operator="local-operator",
+            started_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 26, 8, 1, tzinfo=timezone.utc),
+            checks=[
+                {
+                    "id": "sandbox-credentials",
+                    "label": "Sandbox credentials",
+                    "status": "passed",
+                    "detail": "Sandbox credential references are present.",
+                    "metadata": {"apiKey": "secret-key-should-not-leak", "keyId": "paper-us-key"},
+                },
+                {
+                    "id": "order-lifecycle",
+                    "label": "Order lifecycle",
+                    "status": "blocked",
+                    "detail": "Sandbox fill replay has not completed.",
+                    "metadata": {"token": "token-should-not-leak", "attempts": 0},
+                },
+            ],
+            metadata={
+                "source": "settings-panel",
+                "password": "password-should-not-leak",
+                "nested": {"privateKey": "private-key-should-not-leak", "safe": "kept"},
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ExecutionAdapterCertificationStore(Path(tmp) / "adapter_certifications.sqlite")
+            store.record(run)
+            fetched = store.list_by_adapter("us-live")
+
+        payload = execution_adapter_certification_to_payload(fetched[0])
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(payload["adapterId"], "us-live")
+        self.assertEqual(payload["status"], "blocked")
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertEqual(payload["summary"]["checkStatusCounts"], {"blocked": 1, "passed": 1})
+        self.assertEqual(payload["checks"][0]["metadata"]["apiKey"], "[redacted]")
+        self.assertEqual(payload["checks"][1]["metadata"]["token"], "[redacted]")
+        self.assertEqual(payload["metadata"]["password"], "[redacted]")
+        self.assertEqual(payload["metadata"]["nested"]["privateKey"], "[redacted]")
+        self.assertEqual(payload["metadata"]["nested"]["safe"], "kept")
+        self.assertNotIn("secret-key-should-not-leak", serialized)
+        self.assertNotIn("token-should-not-leak", serialized)
+        self.assertNotIn("password-should-not-leak", serialized)
+        self.assertNotIn("private-key-should-not-leak", serialized)
+
+        audit_payload = execution_adapter_certification_to_audit_event_payload(fetched[0])
+        audit_serialized = json.dumps(audit_payload, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(audit_payload["eventType"], "execution_adapter_certification")
+        self.assertEqual(audit_payload["metadata"]["adapterId"], "us-live")
+        self.assertEqual(audit_payload["metadata"]["status"], "blocked")
+        self.assertFalse(audit_payload["metadata"]["liveTradingAllowed"])
+        self.assertNotIn("secret-key-should-not-leak", audit_serialized)
+        self.assertNotIn("token-should-not-leak", audit_serialized)
+
+    def test_execution_adapter_certification_api_records_and_lists_runs(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import ExecutionAdapterCertificationStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.execution_adapter_certification_store = ExecutionAdapterCertificationStore(
+                Path(tmp) / "adapter_certifications.sqlite"
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                request = {
+                    "adapterId": "crypto-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "operator": "local-operator",
+                    "startedAt": "2026-05-26T08:00:00+00:00",
+                    "completedAt": "2026-05-26T08:02:00+00:00",
+                    "checks": [
+                        {
+                            "id": "sandbox-credentials",
+                            "label": "Sandbox credentials",
+                            "status": "passed",
+                            "detail": "Sandbox credentials are configured.",
+                            "metadata": {"apiKey": "crypto-secret-key-should-not-leak"},
+                        },
+                        {
+                            "id": "kill-switch",
+                            "label": "Kill switch",
+                            "status": "blocked",
+                            "detail": "Emergency stop has not been acknowledged.",
+                            "metadata": {"token": "crypto-token-should-not-leak"},
+                        },
+                    ],
+                    "metadata": {"source": "settings-panel", "password": "crypto-password-should-not-leak"},
+                }
+                body = json.dumps(request).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications",
+                    body=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                post_response = connection.getresponse()
+                post_payload = json.loads(post_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/execution/adapter-certifications?adapterId=crypto-live")
+                get_response = connection.getresponse()
+                get_payload = json.loads(get_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized_post = json.dumps(post_payload, ensure_ascii=False, sort_keys=True)
+        serialized_get = json.dumps(get_payload, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(post_response.status, 201)
+        self.assertEqual(post_payload["adapterCertification"]["adapterId"], "crypto-live")
+        self.assertEqual(post_payload["adapterCertification"]["status"], "blocked")
+        self.assertFalse(post_payload["adapterCertification"]["liveTradingAllowed"])
+        self.assertEqual(post_payload["auditEvent"]["eventType"], "execution_adapter_certification")
+        self.assertEqual(get_response.status, 200)
+        self.assertEqual(len(get_payload["adapterCertifications"]), 1)
+        self.assertEqual(get_payload["adapterCertifications"][0]["adapterId"], "crypto-live")
+        self.assertNotIn("crypto-secret-key-should-not-leak", serialized_post)
+        self.assertNotIn("crypto-token-should-not-leak", serialized_post)
+        self.assertNotIn("crypto-password-should-not-leak", serialized_get)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

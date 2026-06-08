@@ -67,6 +67,22 @@ class PortfolioPaperOrderSimulation:
     approved_by: str | None
 
 
+@dataclass(frozen=True)
+class ExecutionAdapterCertificationRun:
+    certification_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    started_at: datetime
+    completed_at: datetime | None
+    checks: list[dict[str, Any]]
+    metadata: dict[str, Any]
+    summary: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
 class PaperExecutionAdapter:
     def __init__(self, initial_cash: float = 100_000, max_position_value: float = 20_000) -> None:
         self.cash = initial_cash
@@ -234,6 +250,118 @@ class PaperExecutionStore:
             connection.commit()
         finally:
             connection.close()
+
+
+class ExecutionAdapterCertificationStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path)
+
+    def _init_schema(self) -> None:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                create table if not exists execution_adapter_certifications (
+                    certification_id text primary key,
+                    adapter_id text not null,
+                    market text not null,
+                    route text not null,
+                    status text not null,
+                    operator text not null,
+                    started_at text not null,
+                    completed_at text,
+                    live_trading_allowed integer not null,
+                    checks_json text not null,
+                    metadata_json text not null,
+                    summary_json text not null
+                )
+                """
+            )
+            connection.execute(
+                """
+                create index if not exists idx_execution_adapter_certifications_adapter_started
+                on execution_adapter_certifications(adapter_id, started_at desc)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    def record(self, run: ExecutionAdapterCertificationRun) -> ExecutionAdapterCertificationRun:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                insert into execution_adapter_certifications (
+                    certification_id,
+                    adapter_id,
+                    market,
+                    route,
+                    status,
+                    operator,
+                    started_at,
+                    completed_at,
+                    live_trading_allowed,
+                    checks_json,
+                    metadata_json,
+                    summary_json
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(certification_id) do update set
+                    adapter_id = excluded.adapter_id,
+                    market = excluded.market,
+                    route = excluded.route,
+                    status = excluded.status,
+                    operator = excluded.operator,
+                    started_at = excluded.started_at,
+                    completed_at = excluded.completed_at,
+                    live_trading_allowed = excluded.live_trading_allowed,
+                    checks_json = excluded.checks_json,
+                    metadata_json = excluded.metadata_json,
+                    summary_json = excluded.summary_json
+                """,
+                (
+                    run.certification_id,
+                    run.adapter_id,
+                    run.market,
+                    run.route,
+                    run.status,
+                    run.operator,
+                    run.started_at.isoformat(),
+                    run.completed_at.isoformat() if run.completed_at else None,
+                    1 if run.live_trading_allowed else 0,
+                    json.dumps(run.checks, ensure_ascii=False, sort_keys=True),
+                    json.dumps(run.metadata, ensure_ascii=False, sort_keys=True),
+                    json.dumps(run.summary, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return run
+
+    def list_by_adapter(self, adapter_id: str, limit: int = 20) -> list[ExecutionAdapterCertificationRun]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select certification_id, adapter_id, market, route, status, operator, started_at,
+                       completed_at, live_trading_allowed, checks_json, metadata_json, summary_json
+                from execution_adapter_certifications
+                where adapter_id = ?
+                order by started_at desc
+                limit ?
+                """,
+                (adapter_id, max(1, min(limit, 50))),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_execution_adapter_certification(row) for row in rows]
 
 
 class PortfolioPaperOrderStore:
@@ -1210,6 +1338,108 @@ def build_portfolio_paper_order_state_history(
     }
 
 
+def create_execution_adapter_certification_run(
+    *,
+    adapter_id: str,
+    market: str,
+    route: str,
+    operator: str = "local-operator",
+    checks: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
+    started_at: datetime | str | None = None,
+    completed_at: datetime | str | None = None,
+    certification_id: str | None = None,
+) -> ExecutionAdapterCertificationRun:
+    normalized_adapter_id = str(adapter_id or "").strip()
+    normalized_market = str(market or "").strip()
+    normalized_route = _enum_value(route, {"paper", "live"}, "execution_adapter_certification_route_invalid")
+    if not normalized_adapter_id:
+        raise ValueError("execution_adapter_certification_adapter_id_required")
+    if not normalized_market:
+        raise ValueError("execution_adapter_certification_market_required")
+    normalized_checks = _normalize_execution_adapter_certification_checks(checks or [])
+    status = _execution_adapter_certification_status(normalized_checks)
+    started = _coerce_optional_datetime(
+        started_at,
+        error_code="execution_adapter_certification_started_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    completed = _coerce_optional_datetime(
+        completed_at,
+        error_code="execution_adapter_certification_completed_at_invalid",
+        fallback=None,
+    )
+    summary = {
+        "checkCount": len(normalized_checks),
+        "checkStatusCounts": _sorted_counts(str(check.get("status") or "") for check in normalized_checks),
+        "passedChecks": sum(1 for check in normalized_checks if check.get("status") == "passed"),
+        "blockedChecks": sum(1 for check in normalized_checks if check.get("status") == "blocked"),
+        "failedChecks": sum(1 for check in normalized_checks if check.get("status") == "failed"),
+        "reviewChecks": sum(1 for check in normalized_checks if check.get("status") == "review"),
+    }
+    return ExecutionAdapterCertificationRun(
+        certification_id=str(certification_id or f"adapter-certification-{uuid4()}"),
+        adapter_id=normalized_adapter_id,
+        market=normalized_market,
+        route=normalized_route,
+        status=status,
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        started_at=started,
+        completed_at=completed,
+        checks=normalized_checks,
+        metadata=_redact_secret_fields(metadata or {}),
+        summary=summary,
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_certification_to_payload(run: ExecutionAdapterCertificationRun) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "certificationId": run.certification_id,
+        "adapterId": run.adapter_id,
+        "market": run.market,
+        "route": run.route,
+        "status": run.status,
+        "operator": run.operator,
+        "startedAt": run.started_at.isoformat(),
+        "completedAt": run.completed_at.isoformat() if run.completed_at else None,
+        "checks": run.checks,
+        "metadata": run.metadata,
+        "summary": run.summary,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_certification_to_audit_event_payload(run: ExecutionAdapterCertificationRun) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "eventId": run.certification_id,
+        "eventType": "execution_adapter_certification",
+        "runId": "",
+        "createdAt": (run.completed_at or run.started_at).isoformat(),
+        "stage": "execution-adapter-certification",
+        "source": "execution-adapter-ledger",
+        "summary": f"{run.adapter_id} certification recorded as {run.status}.",
+        "detail": "Adapter certification evidence is stored without secrets and live trading remains blocked.",
+        "metadata": {
+            "certificationId": run.certification_id,
+            "adapterId": run.adapter_id,
+            "market": run.market,
+            "route": run.route,
+            "status": run.status,
+            "operator": run.operator,
+            "startedAt": run.started_at.isoformat(),
+            "completedAt": run.completed_at.isoformat() if run.completed_at else None,
+            "checkStatusCounts": dict(run.summary.get("checkStatusCounts", {})),
+            "checkCount": run.summary.get("checkCount", 0),
+            "liveTradingAllowed": False,
+            "paperOnly": True,
+        },
+    }
+
+
 def portfolio_paper_order_approvals_to_map(
     approvals: list[PortfolioPaperOrderApproval],
 ) -> dict[str, dict[str, Any]]:
@@ -1637,6 +1867,23 @@ def _row_to_paper_execution(row: sqlite3.Row | tuple[Any, ...]) -> PaperExecutio
     )
 
 
+def _row_to_execution_adapter_certification(row: sqlite3.Row | tuple[Any, ...]) -> ExecutionAdapterCertificationRun:
+    return ExecutionAdapterCertificationRun(
+        certification_id=str(row[0]),
+        adapter_id=str(row[1]),
+        market=str(row[2]),
+        route=str(row[3]),
+        status=str(row[4]),
+        operator=str(row[5]),
+        started_at=datetime.fromisoformat(str(row[6])),
+        completed_at=datetime.fromisoformat(str(row[7])) if row[7] else None,
+        live_trading_allowed=False,
+        checks=[dict(check) for check in json.loads(row[9])],
+        metadata=dict(json.loads(row[10])),
+        summary=dict(json.loads(row[11])),
+    )
+
+
 def _row_to_portfolio_paper_order_batch(row: sqlite3.Row | tuple[Any, ...]) -> PortfolioPaperOrderBatch:
     return PortfolioPaperOrderBatch(
         batch_id=str(row[0]),
@@ -1738,6 +1985,66 @@ def _normalize_portfolio_paper_order(payload: dict[str, Any]) -> dict[str, Any]:
         "riskStatus": risk_status,
         "reason": str(payload.get("reason") or "").strip(),
     }
+
+
+def _normalize_execution_adapter_certification_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized = []
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict):
+            raise ValueError("execution_adapter_certification_check_must_be_object")
+        check_id = str(check.get("id") or f"check-{index + 1}").strip()
+        status = _enum_value(
+            check.get("status") or "review",
+            {"passed", "blocked", "failed", "review"},
+            "execution_adapter_certification_check_status_invalid",
+        )
+        metadata = check.get("metadata") if isinstance(check.get("metadata"), dict) else {}
+        normalized.append(
+            {
+                "id": check_id,
+                "label": str(check.get("label") or check_id.replace("-", " ").title()),
+                "status": status,
+                "detail": str(check.get("detail") or ""),
+                "metadata": _redact_secret_fields(metadata),
+            }
+        )
+    return normalized
+
+
+def _execution_adapter_certification_status(checks: list[dict[str, Any]]) -> str:
+    statuses = {str(check.get("status") or "") for check in checks}
+    if "blocked" in statuses:
+        return "blocked"
+    if "failed" in statuses:
+        return "failed"
+    if checks and statuses == {"passed"}:
+        return "passed"
+    return "review"
+
+
+def _coerce_optional_datetime(value: datetime | str | None, *, error_code: str, fallback: datetime | None) -> datetime | None:
+    if value is None:
+        return fallback
+    if isinstance(value, datetime):
+        return value
+    return _parse_payload_datetime(value, error_code)
+
+
+def _redact_secret_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            text_key = str(key)
+            redacted[text_key] = "[redacted]" if _is_secret_key(text_key) else _redact_secret_fields(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_secret_fields(item) for item in value]
+    return value
+
+
+def _is_secret_key(key: str) -> bool:
+    normalized = key.replace("_", "").replace("-", "").lower()
+    return any(marker in normalized for marker in ("secret", "token", "apikey", "privatekey", "password"))
 
 
 def _portfolio_paper_order_lifecycle_row(
