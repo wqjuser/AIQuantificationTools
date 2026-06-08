@@ -40,7 +40,7 @@
 - [x] GREEN: Use the helper in `App.tsx` when choosing Strategy Lab readiness gates.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification Checklist
 
@@ -62,3 +62,4 @@ git diff --check
 - GREEN targeted test passed after App readiness selection merged core gates with the local audit context gate.
 - Verification passed on 2026-06-08: targeted merge test, full `terminal-workbench.test.ts` (164 tests), `npm test` (128 Python tests and 342 web tests), `npm run build`, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification passed on `http://127.0.0.1:5173/?workspace=strategy`: Strategy Lab rendered, validation source label was visible, audit evidence label was present, four readiness gates were visible, and console error count was 0.
+- Shipped in commit `005aa60` and pushed through proxy to `origin/codex/p0-product-workspaces`; GitHub Actions CI run `27125592399` completed with `success`.
