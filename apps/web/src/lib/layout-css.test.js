@@ -1326,10 +1326,10 @@ describe("terminal layout css", () => {
   });
 
   test("renders execution promotion readiness as a separate queue after paper execution", () => {
-    expect(appSource).toContain("buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows)");
+    expect(appSource).toContain("buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows");
     expect(appSource).toContain("loadResearchRunPromotion(quantCoreBaseUrl");
     expect(appSource).toContain("setPromotionCandidateRecord(result.promotion ?? null)");
-    expect(appSource).toContain("activePromotionCandidateRecord ?? buildPromotionReadiness");
+    expect(appSource).toContain("activePromotionCandidateRecord ??");
     expect(appSource).toContain("<PromotionQueuePanel");
     expect(appSource).toContain("readiness={promotionReadiness}");
     expect(appSource).toContain('className="promotion-stage-list"');
@@ -1339,6 +1339,19 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".promotion-stage");
     expect(cssBlock(".workflow-promotion-panel")).toContain("grid-area: promotion;");
     expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion broker"'])).toBe(true);
+  });
+
+  test("renders promotion certification evidence from recorded adapter certifications", () => {
+    expect(appSource).toContain(
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows)"
+    );
+    expect(appSource).toContain("adapterCertificationRows={executionAdapterCertificationRows}");
+    expect(appSource).toContain("adapterCertificationRows: ExecutionAdapterCertificationRow[]");
+    expect(appSource).toContain('className="promotion-certification-evidence"');
+    expect(appSource).toContain('className={`promotion-certification-evidence-row');
+    expect(appSource).toContain("promotionCertificationBoundaryLabel(i18n, row.boundary)");
+    expect(styles).toContain(".promotion-certification-evidence");
+    expect(styles).toContain(".promotion-certification-evidence-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

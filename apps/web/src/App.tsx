@@ -838,7 +838,8 @@ export function App() {
   const backtestTradeRows = buildBacktestTradeRows(workspace);
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
-    activePromotionCandidateRecord ?? buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows);
+    activePromotionCandidateRecord ??
+    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
   const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
     (context) =>
@@ -3719,6 +3720,7 @@ export function App() {
             workspace={workspace}
           />
           <PromotionQueuePanel
+            adapterCertificationRows={executionAdapterCertificationRows}
             className="workflow-promotion-panel"
             i18n={i18n}
             readiness={promotionReadiness}
@@ -10105,14 +10107,17 @@ function BrokerWorkspace({
 }
 
 function PromotionQueuePanel({
+  adapterCertificationRows,
   className,
   i18n,
   readiness
 }: {
+  adapterCertificationRows: ExecutionAdapterCertificationRow[];
   className?: string;
   i18n: AppI18n;
   readiness: PromotionReadiness;
 }) {
+  const recentCertificationRows = adapterCertificationRows.slice(0, 3);
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "晋级队列" : "Promotion Queue"}
@@ -10135,6 +10140,25 @@ function PromotionQueuePanel({
             </article>
           ))}
         </div>
+        {recentCertificationRows.length ? (
+          <div className="promotion-certification-evidence">
+            <span>
+              {i18n.locale === "zh-CN" ? "最近适配器认证证据" : "Recent adapter certification evidence"}
+            </span>
+            {recentCertificationRows.map((row) => (
+              <article className={`promotion-certification-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterCertificationStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{promotionCertificationBoundaryLabel(i18n, row.boundary)}</p>
+                <em>
+                  {adapterCertificationCheckSummary(i18n, row.checkSummary)} · {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </div>
     </Panel>
   );
@@ -10286,6 +10310,13 @@ function promotionStageDetail(i18n: AppI18n, detail: string): string {
     .replace("A human operator confirmed this promotion path.", "人工操作员已确认该晋级路径。")
     .replace("Live promotion requires explicit human confirmation after adapter certification.", "适配器认证后，实盘晋级仍需要明确人工确认。")
     .replace("Bind an audited run before paper or live execution.", "先绑定审计运行，再进入模拟或实盘执行。");
+}
+
+function promotionCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
+  if (i18n.locale === "en-US") {
+    return boundary;
+  }
+  return adapterCertificationBoundaryLabel(i18n, boundary);
 }
 
 function scannerSignalLabel(i18n: AppI18n, signal: ScannerCandidate["signal"]): string {

@@ -7725,10 +7725,65 @@ export function buildExecutionAdapterCertificationRows(
     .slice(0, Math.max(1, limit));
 }
 
+function latestPromotionCertificationRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterCertificationRow[]
+): ExecutionAdapterCertificationRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local"
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function buildPromotionAdapterCertificationStage(
+  certifiedLiveAdapters: number,
+  latestCertification: ExecutionAdapterCertificationRow | null,
+  liveAdapterCertified: boolean,
+  adapterGatePassed: boolean
+): PromotionQueueStage {
+  if (!latestCertification) {
+    return {
+      id: "adapter-certification",
+      label: "Adapter certification",
+      value:
+        certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
+      detail: liveAdapterCertified
+        ? "A certified live adapter is available for the selected market."
+        : "Live adapters remain interface-only or configuration-required until certification passes.",
+      status: liveAdapterCertified ? "passed" : "blocked",
+      tone: liveAdapterCertified ? "positive" : "risk"
+    };
+  }
+
+  const gateDetail =
+    latestCertification.status === "passed" && latestCertification.liveTradingAllowed && !adapterGatePassed
+      ? " Workspace adapter gate is still blocked."
+      : "";
+  return {
+    id: "adapter-certification",
+    label: "Adapter certification",
+    value: `${latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    detail: `Latest certification ${latestCertification.auditEventId}: ${latestCertification.checkSummary} · ${latestCertification.boundary}.${gateDetail}`,
+    status: liveAdapterCertified ? "passed" : "blocked",
+    tone: liveAdapterCertified
+      ? "positive"
+      : latestCertification.status === "passed" && latestCertification.liveTradingAllowed
+        ? "warning"
+        : latestCertification.tone
+  };
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
-  brokerRows: BrokerAdapterRow[]
+  brokerRows: BrokerAdapterRow[],
+  certificationRows: ExecutionAdapterCertificationRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -7739,8 +7794,16 @@ export function buildPromotionReadiness(
   const paperExecutionPassed = filledOrders.length > 0 && paperRiskGate?.passed === true;
   const adapterGatePassed = workspace.execution.gates.find((gate) => gate.id === "adapter-certified")?.passed === true;
   const humanGatePassed = workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true;
-  const certifiedLiveAdapters = brokerRows.filter((row) => row.route === "live" && row.status === "paper_ready").length;
-  const liveAdapterCertified = adapterGatePassed && certifiedLiveAdapters > 0;
+  const latestCertification = latestPromotionCertificationRow(workspace, certificationRows);
+  const evidenceCertified =
+    latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
+  const certifiedLiveAdapters = brokerRows.filter(
+    (row) =>
+      row.route === "live" &&
+      row.status === "paper_ready" &&
+      (!latestCertification || (row.id === latestCertification.adapterId && evidenceCertified))
+  ).length;
+  const liveAdapterCertified = adapterGatePassed && evidenceCertified && certifiedLiveAdapters > 0;
 
   const auditedStage: PromotionQueueStage = run
     ? {
@@ -7793,17 +7856,12 @@ export function buildPromotionReadiness(
         tone: "warning"
       };
 
-  const adapterStage: PromotionQueueStage = {
-    id: "adapter-certification",
-    label: "Adapter certification",
-    value:
-      certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
-    detail: liveAdapterCertified
-      ? "A certified live adapter is available for the selected market."
-      : "Live adapters remain interface-only or configuration-required until certification passes.",
-    status: liveAdapterCertified ? "passed" : "blocked",
-    tone: liveAdapterCertified ? "positive" : "risk"
-  };
+  const adapterStage = buildPromotionAdapterCertificationStage(
+    certifiedLiveAdapters,
+    latestCertification,
+    liveAdapterCertified,
+    adapterGatePassed
+  );
 
   const humanStage: PromotionQueueStage = {
     id: "human-confirmation",

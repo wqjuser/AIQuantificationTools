@@ -7173,6 +7173,156 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("keeps promotion blocked while surfacing recent adapter certification evidence", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-cert-evidence",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-cert-evidence",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 }
+    });
+    const execution = {
+      executionId: "paper-promotion-cert-evidence",
+      runId: "run-promotion-cert-evidence",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      mode: "paper_only",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion-cert-evidence",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+    const certificationRows = [
+      {
+        id: "adapter-certification-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-08T08:01:00+00:00",
+        status: "blocked" as const,
+        statusLabel: "Blocked",
+        checkSummary: "1 passed / 2 blocked / 1 review / 4 checks",
+        auditEventId: "adapter-certification-ashare-live",
+        boundary: "Paper only · live trading blocked",
+        liveTradingAllowed: false,
+        tone: "risk" as const
+      }
+    ];
+
+    const readiness = buildPromotionReadiness(workspace, execution, buildBrokerAdapterRows(workspace), certificationRows);
+
+    expect(readiness.status).toBe("certification_pending");
+    expect(readiness.stages.find((stage) => stage.id === "adapter-certification")).toMatchObject({
+      value: "Blocked · ashare-live",
+      status: "blocked",
+      tone: "risk",
+      detail:
+        "Latest certification adapter-certification-ashare-live: 1 passed / 2 blocked / 1 review / 4 checks · Paper only · live trading blocked."
+    });
+  });
+
+  test("requires workspace gates and human confirmation even after a positive adapter certification", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-cert-positive",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-cert-positive",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 }
+    });
+    const execution = {
+      executionId: "paper-promotion-cert-positive",
+      runId: "run-promotion-cert-positive",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      mode: "paper_only",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion-cert-positive",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+    const brokerRows = buildBrokerAdapterRows(workspace).map((row) =>
+      row.id === "ashare-live" ? { ...row, status: "paper_ready" as const } : row
+    );
+    const certificationRows = [
+      {
+        id: "adapter-certification-ashare-positive",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-08T08:01:00+00:00",
+        status: "passed" as const,
+        statusLabel: "Passed",
+        checkSummary: "4 passed / 4 checks",
+        auditEventId: "adapter-certification-ashare-positive",
+        boundary: "Live trading allowed",
+        liveTradingAllowed: true,
+        tone: "positive" as const
+      }
+    ];
+
+    const readiness = buildPromotionReadiness(workspace, execution, brokerRows, certificationRows);
+
+    expect(readiness.status).toBe("certification_pending");
+    expect(readiness.stages.find((stage) => stage.id === "adapter-certification")).toMatchObject({
+      value: "Passed · ashare-live",
+      status: "blocked",
+      tone: "warning",
+      detail:
+        "Latest certification adapter-certification-ashare-positive: 4 passed / 4 checks · Live trading allowed. Workspace adapter gate is still blocked."
+    });
+    expect(readiness.stages.find((stage) => stage.id === "human-confirmation")).toMatchObject({
+      status: "blocked"
+    });
+  });
+
   test("derives visual strategy rule rows from the active strategy snapshot", () => {
     const rows = buildStrategyRuleRows(buildTerminalWorkspace());
 
