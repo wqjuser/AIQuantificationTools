@@ -54,6 +54,7 @@ from quant_core.execution import (
     create_portfolio_paper_order_approval,
     create_portfolio_paper_order_batch,
     create_portfolio_paper_order_simulation,
+    execution_adapter_certification_apply_payload_from_audit_event,
     execution_adapter_certification_apply_to_audit_event_payload,
     execution_adapter_certification_apply_to_payload,
     execution_adapter_certification_to_audit_event_payload,
@@ -822,6 +823,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/execution/adapter-ledger":
             settings = self._settings_status_payload()
             self._send_json({"adapterLedger": build_execution_adapter_state_ledger(settings)})
+            return
+        if parsed.path == "/api/execution/adapter-certifications/applies":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_certification_apply_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            apply_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_certification_apply",
+                limit=50,
+                query=adapter_id,
+            )
+            certification_applies = []
+            for event in apply_events:
+                payload = execution_adapter_certification_apply_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    certification_applies.append(payload)
+                if len(certification_applies) >= limit:
+                    break
+            self._send_json({"certificationApplies": certification_applies})
             return
         if parsed.path == "/api/execution/adapter-certifications":
             query = parse_qs(parsed.query)

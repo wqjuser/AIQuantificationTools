@@ -35,6 +35,7 @@ import {
   buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
   buildExecutionAdapterCertificationApplyUrl,
+  buildExecutionAdapterCertificationAppliesUrl,
   buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
@@ -59,6 +60,7 @@ import {
   loadPortfolioPaperOrderStateHistory,
   loadPortfolioPaperOrderSimulations,
   loadExecutionAdapterLedger,
+  loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterCertifications,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
@@ -1885,6 +1887,70 @@ describe("terminal workspace API client", () => {
     expect(result.certificationApply?.status).toBe("blocked");
     expect(result.certificationApply?.blockedReasons).toContain("controlled_restart_not_confirmed");
     expect(result.auditEvent?.eventType).toBe("execution_adapter_certification_apply");
+  });
+
+  test("loads execution adapter certification apply history from the local core", async () => {
+    const calls: string[] = [];
+    const certificationApply = {
+      schemaVersion: 1,
+      applyId: "execution-adapter-certification-apply-us-live-ready",
+      certificationId: "adapter-certification-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "ready_for_restart",
+      operator: "local-operator",
+      generatedAt: "2026-06-08T08:06:00+00:00",
+      applyMode: "manual_secret_store",
+      restartRequired: true,
+      requiredConfirmations: [
+        {
+          id: "secret-reference-stored",
+          label: "Secret-store reference is saved outside the UI",
+          status: "confirmed"
+        },
+        {
+          id: "controlled-restart-window-approved",
+          label: "Controlled restart window is approved",
+          status: "confirmed"
+        },
+        {
+          id: "operator-reviewed-certification",
+          label: "Operator reviewed certification evidence and restart impact",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", secretStorePath: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterCertificationApplies(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ certificationApplies: [certificationApply] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterCertificationAppliesUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-certifications/applies?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/applies?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.certificationApplies).toHaveLength(1);
+    expect(result.certificationApplies[0].status).toBe("ready_for_restart");
+    expect(result.certificationApplies[0].liveTradingAllowed).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("secret-key-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

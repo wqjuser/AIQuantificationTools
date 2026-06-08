@@ -1488,29 +1488,9 @@ def build_execution_adapter_certification_apply(
 ) -> ExecutionAdapterCertificationApplyResult:
     if not isinstance(confirmations, dict):
         confirmations = {}
-    confirmation_specs = [
-        (
-            "secret-reference-stored",
-            "secretReferenceStored",
-            "Secret-store reference is saved outside the UI",
-            "secret_reference_not_confirmed",
-        ),
-        (
-            "controlled-restart-window-approved",
-            "controlledRestartWindowApproved",
-            "Controlled restart window is approved",
-            "controlled_restart_not_confirmed",
-        ),
-        (
-            "operator-reviewed-certification",
-            "operatorReviewedCertification",
-            "Operator reviewed certification evidence and restart impact",
-            "operator_review_not_confirmed",
-        ),
-    ]
     blocked_reasons = []
     required_confirmations = []
-    for confirmation_id, payload_key, label, blocked_reason in confirmation_specs:
+    for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_certification_apply_confirmation_specs():
         confirmed = bool(confirmations.get(payload_key))
         required_confirmations.append(
             {
@@ -1572,6 +1552,78 @@ def execution_adapter_certification_apply_to_payload(result: ExecutionAdapterCer
     }
 
 
+def execution_adapter_certification_apply_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_certification_apply":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    apply_id = str(metadata.get("applyId") or getattr(event, "event_id", "")).strip()
+    certification_id = str(metadata.get("certificationId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    market = str(metadata.get("market") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    operator = str(metadata.get("operator") or "local-operator").strip() or "local-operator"
+    if not apply_id or not certification_id or not adapter_id or not market:
+        return None
+    if route not in {"paper", "live"}:
+        return None
+    if status not in {"blocked", "ready_for_restart"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _execution_adapter_certification_apply_confirmation_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+
+    generated_at = getattr(event, "created_at", None)
+    if isinstance(generated_at, datetime):
+        generated_at_value = generated_at.isoformat()
+    else:
+        generated_at_value = datetime.now(timezone.utc).isoformat()
+
+    return {
+        "schemaVersion": 1,
+        "applyId": apply_id,
+        "certificationId": certification_id,
+        "adapterId": adapter_id,
+        "market": market,
+        "route": route,
+        "status": status,
+        "operator": operator,
+        "generatedAt": generated_at_value,
+        "applyMode": str(metadata.get("applyMode") or "manual_secret_store"),
+        "restartRequired": bool(metadata.get("restartRequired", True)),
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
 def execution_adapter_certification_apply_to_audit_event_payload(
     result: ExecutionAdapterCertificationApplyResult,
 ) -> dict[str, Any]:
@@ -1607,6 +1659,29 @@ def execution_adapter_certification_apply_to_audit_event_payload(
             }
         ),
     }
+
+
+def _execution_adapter_certification_apply_confirmation_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "secret-reference-stored",
+            "secretReferenceStored",
+            "Secret-store reference is saved outside the UI",
+            "secret_reference_not_confirmed",
+        ),
+        (
+            "controlled-restart-window-approved",
+            "controlledRestartWindowApproved",
+            "Controlled restart window is approved",
+            "controlled_restart_not_confirmed",
+        ),
+        (
+            "operator-reviewed-certification",
+            "operatorReviewedCertification",
+            "Operator reviewed certification evidence and restart impact",
+            "operator_review_not_confirmed",
+        ),
+    ]
 
 
 def portfolio_paper_order_approvals_to_map(

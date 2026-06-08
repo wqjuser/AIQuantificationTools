@@ -1709,6 +1709,144 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("apply-password-should-not-leak", serialized)
         self.assertNotIn("apply-token-should-not-leak", serialized)
 
+    def test_execution_adapter_certification_apply_history_lists_recent_preflights_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import ExecutionAdapterCertificationStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.execution_adapter_certification_store = ExecutionAdapterCertificationStore(
+                Path(tmp) / "adapter_certifications.sqlite"
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                certification_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "local-operator",
+                    "startedAt": "2026-06-08T08:00:00+00:00",
+                    "completedAt": "2026-06-08T08:02:00+00:00",
+                    "checks": [
+                        {
+                            "id": "sandbox-credentials",
+                            "label": "Sandbox credentials",
+                            "status": "passed",
+                            "detail": "Sandbox references are present.",
+                            "metadata": {"apiKey": "history-cert-key-should-not-leak"},
+                        },
+                        {
+                            "id": "order-lifecycle",
+                            "label": "Order lifecycle",
+                            "status": "passed",
+                            "detail": "Order lifecycle replay is complete.",
+                            "metadata": {"token": "history-cert-token-should-not-leak"},
+                        },
+                    ],
+                    "metadata": {"source": "settings-panel", "password": "history-cert-password-should-not-leak"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications",
+                    body=json.dumps(certification_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                certification_response = connection.getresponse()
+                certification_payload = json.loads(certification_response.read().decode("utf-8"))
+                certification_id = certification_payload["adapterCertification"]["certificationId"]
+
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/apply",
+                    body=json.dumps(
+                        {
+                            "certificationId": certification_id,
+                            "operator": "apply-operator",
+                            "confirmations": {},
+                            "metadata": {
+                                "source": "settings-panel",
+                                "secretStorePath": "vault://paper/ashare-live",
+                                "password": "history-apply-password-should-not-leak",
+                            },
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                blocked_response = connection.getresponse()
+                blocked_response.read()
+
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/apply",
+                    body=json.dumps(
+                        {
+                            "certificationId": certification_id,
+                            "operator": "apply-operator",
+                            "confirmations": {
+                                "secretReferenceStored": True,
+                                "controlledRestartWindowApproved": True,
+                                "operatorReviewedCertification": True,
+                            },
+                            "metadata": {
+                                "source": "settings-panel",
+                                "apiToken": "history-apply-token-should-not-leak",
+                            },
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                ready_response = connection.getresponse()
+                ready_response.read()
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-certifications/applies?adapterId=ashare-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(history_payload, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(certification_response.status, 201)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(ready_response.status, 200)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["certificationApplies"]), 2)
+        self.assertEqual(history_payload["certificationApplies"][0]["status"], "ready_for_restart")
+        self.assertEqual(history_payload["certificationApplies"][1]["status"], "blocked")
+        self.assertEqual(history_payload["certificationApplies"][0]["adapterId"], "ashare-live")
+        self.assertFalse(history_payload["certificationApplies"][0]["liveTradingAllowed"])
+        self.assertTrue(history_payload["certificationApplies"][0]["paperOnly"])
+        self.assertEqual(
+            [item["status"] for item in history_payload["certificationApplies"][0]["requiredConfirmations"]],
+            ["confirmed", "confirmed", "confirmed"],
+        )
+        self.assertEqual(
+            [item["status"] for item in history_payload["certificationApplies"][1]["requiredConfirmations"]],
+            ["missing", "missing", "missing"],
+        )
+        self.assertNotIn("history-cert-key-should-not-leak", serialized)
+        self.assertNotIn("history-cert-token-should-not-leak", serialized)
+        self.assertNotIn("history-cert-password-should-not-leak", serialized)
+        self.assertNotIn("history-apply-password-should-not-leak", serialized)
+        self.assertNotIn("history-apply-token-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

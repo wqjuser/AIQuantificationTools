@@ -874,6 +874,12 @@ export interface ExecutionAdapterCertificationApplyRecordResult {
   error?: string;
 }
 
+export interface ExecutionAdapterCertificationApplyHistoryResult {
+  certificationApplies: ExecutionAdapterCertificationApplyResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1664,6 +1670,20 @@ export function buildExecutionAdapterCertificationsUrl(
 
 export function buildExecutionAdapterCertificationApplyUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-certifications/apply");
+}
+
+export function buildExecutionAdapterCertificationAppliesUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications/applies", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
 }
 
 export function buildGoldenPathStatusUrl(baseUrl: string, params: TerminalResearchParams): string {
@@ -3356,6 +3376,34 @@ export async function loadExecutionAdapterCertifications(
   }
 }
 
+export async function loadExecutionAdapterCertificationApplies(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterCertificationApplyHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterCertificationAppliesUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterCertificationApplyHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter certification apply history contract");
+    }
+    return {
+      certificationApplies: payload.certificationApplies,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      certificationApplies: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter certification apply history error"
+    };
+  }
+}
+
 export async function recordPortfolioPaperOrderSimulation(
   baseUrl: string,
   request: PortfolioPaperOrderSimulationRequest,
@@ -4976,6 +5024,19 @@ function isExecutionAdapterCertificationHistoryPayload(
   return (
     Array.isArray(payload.adapterCertifications) &&
     payload.adapterCertifications.every(isExecutionAdapterCertificationRun)
+  );
+}
+
+function isExecutionAdapterCertificationApplyHistoryPayload(
+  value: unknown
+): value is { certificationApplies: ExecutionAdapterCertificationApplyResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { certificationApplies?: unknown };
+  return (
+    Array.isArray(payload.certificationApplies) &&
+    payload.certificationApplies.every(isExecutionAdapterCertificationApplyResult)
   );
 }
 

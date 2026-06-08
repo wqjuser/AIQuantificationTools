@@ -45,6 +45,7 @@ import {
   loadResearchNote,
   loadPlatformSettings,
   loadExecutionAdapterLedger,
+  loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterCertifications,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
@@ -1186,12 +1187,14 @@ export function App() {
       loadExecutionAdapterLedger(quantCoreBaseUrl)
     ]);
     const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
-    const certificationResults = await Promise.all(
-      liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))
-    );
+    const [certificationResults, applyResults] = await Promise.all([
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))),
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5)))
+    ]);
     setSettingsStatus(settingsResult);
     setExecutionAdapterLedger(adapterLedgerResult);
     setExecutionAdapterCertifications(certificationResults.flatMap((result) => result.adapterCertifications));
+    setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies));
   }, []);
 
   const recordAdapterCertificationEvidence = useCallback(

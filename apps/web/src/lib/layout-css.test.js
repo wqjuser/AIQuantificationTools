@@ -1398,6 +1398,8 @@ describe("terminal layout css", () => {
   });
 
   test("renders execution adapter certification apply preflight controls in settings", () => {
+    expect(appSource).toContain("loadExecutionAdapterCertificationApplies(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies))");
     expect(appSource).toContain("recordExecutionAdapterCertificationApply(quantCoreBaseUrl");
     expect(appSource).toContain("buildExecutionAdapterCertificationApplyRows(executionAdapterCertificationApplies)");
     expect(appSource).toContain("adapterCertificationApplyRows={executionAdapterCertificationApplyRows}");
