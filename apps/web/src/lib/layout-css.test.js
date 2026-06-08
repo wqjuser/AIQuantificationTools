@@ -1343,15 +1343,23 @@ describe("terminal layout css", () => {
 
   test("renders promotion certification evidence from recorded adapter certifications", () => {
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows)"
     );
     expect(appSource).toContain("adapterCertificationRows={executionAdapterCertificationRows}");
+    expect(appSource).toContain("adapterCertificationApplyRows={executionAdapterCertificationApplyRows}");
     expect(appSource).toContain("adapterCertificationRows: ExecutionAdapterCertificationRow[]");
+    expect(appSource).toContain("adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[]");
     expect(appSource).toContain('className="promotion-certification-evidence"');
     expect(appSource).toContain('className={`promotion-certification-evidence-row');
+    expect(appSource).toContain('className="promotion-certification-apply-evidence"');
+    expect(appSource).toContain('className={`promotion-certification-apply-evidence-row');
     expect(appSource).toContain("promotionCertificationBoundaryLabel(i18n, row.boundary)");
+    expect(appSource).toContain("adapterCertificationApplyStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterCertificationApplyConfirmationSummary(i18n, row.confirmationSummary)");
     expect(styles).toContain(".promotion-certification-evidence");
     expect(styles).toContain(".promotion-certification-evidence-row");
+    expect(styles).toContain(".promotion-certification-apply-evidence");
+    expect(styles).toContain(".promotion-certification-apply-evidence-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

@@ -6830,7 +6830,8 @@ em {
   overflow-wrap: anywhere;
 }
 
-.promotion-certification-evidence {
+.promotion-certification-evidence,
+.promotion-certification-apply-evidence {
   display: grid;
   gap: 7px;
   border: 1px solid #27364a;
@@ -6839,13 +6840,15 @@ em {
   padding: 8px;
 }
 
-.promotion-certification-evidence > span {
+.promotion-certification-evidence > span,
+.promotion-certification-apply-evidence > span {
   color: #8fa0b2;
   font-size: 11px;
   font-weight: 900;
 }
 
-.promotion-certification-evidence-row {
+.promotion-certification-evidence-row,
+.promotion-certification-apply-evidence-row {
   display: grid;
   grid-template-columns: minmax(160px, 0.8fr) minmax(160px, 1fr) minmax(220px, 1.2fr);
   gap: 8px;
@@ -6858,33 +6861,42 @@ em {
   padding: 7px 9px;
 }
 
-.promotion-certification-evidence-row.positive {
+.promotion-certification-evidence-row.positive,
+.promotion-certification-apply-evidence-row.positive {
   border-left-color: #4cc9ad;
 }
 
-.promotion-certification-evidence-row.warning {
+.promotion-certification-evidence-row.warning,
+.promotion-certification-apply-evidence-row.warning {
   border-left-color: #e8be62;
 }
 
-.promotion-certification-evidence-row.risk {
+.promotion-certification-evidence-row.risk,
+.promotion-certification-apply-evidence-row.risk {
   border-left-color: #ff7f6d;
 }
 
 .promotion-certification-evidence-row strong,
 .promotion-certification-evidence-row p,
-.promotion-certification-evidence-row em {
+.promotion-certification-evidence-row em,
+.promotion-certification-apply-evidence-row strong,
+.promotion-certification-apply-evidence-row p,
+.promotion-certification-apply-evidence-row em {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
 }
 
-.promotion-certification-evidence-row strong {
+.promotion-certification-evidence-row strong,
+.promotion-certification-apply-evidence-row strong {
   color: #e8f0f8;
   font-size: 12px;
 }
 
 .promotion-certification-evidence-row p,
-.promotion-certification-evidence-row em {
+.promotion-certification-evidence-row em,
+.promotion-certification-apply-evidence-row p,
+.promotion-certification-apply-evidence-row em {
   color: #9fb0c3;
   font-size: 12px;
   font-style: normal;

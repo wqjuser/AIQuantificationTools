@@ -7877,9 +7877,29 @@ function latestPromotionCertificationRow(
   );
 }
 
+function latestPromotionCertificationApplyRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterCertificationApplyRow[],
+  latestCertification: ExecutionAdapterCertificationRow | null
+): ExecutionAdapterCertificationApplyRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestCertification ||
+            (row.adapterId === latestCertification.adapterId && row.certificationId === latestCertification.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
+  latestApply: ExecutionAdapterCertificationApplyRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -7897,29 +7917,43 @@ function buildPromotionAdapterCertificationStage(
     };
   }
 
+  const certificationDetail = `Latest certification ${latestCertification.auditEventId}: ${latestCertification.checkSummary} · ${latestCertification.boundary}.`;
+  const applyDetail = latestApply
+    ? ` Latest apply ${latestApply.auditEventId}: ${latestApply.statusLabel} · ${latestApply.confirmationSummary} · ${latestApply.blockerSummary} · ${latestApply.boundary}. ${promotionCertificationApplyNextStep(latestApply)}`
+    : "";
   const gateDetail =
-    latestCertification.status === "passed" && latestCertification.liveTradingAllowed && !adapterGatePassed
+    !latestApply && latestCertification.status === "passed" && latestCertification.liveTradingAllowed && !adapterGatePassed
       ? " Workspace adapter gate is still blocked."
       : "";
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestCertification.statusLabel} · ${latestCertification.adapterId}`,
-    detail: `Latest certification ${latestCertification.auditEventId}: ${latestCertification.checkSummary} · ${latestCertification.boundary}.${gateDetail}`,
+    value: `${latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    detail: `${certificationDetail}${applyDetail}${gateDetail}`,
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
+      : latestApply?.status === "ready_for_restart"
+        ? "warning"
       : latestCertification.status === "passed" && latestCertification.liveTradingAllowed
         ? "warning"
         : latestCertification.tone
   };
 }
 
+function promotionCertificationApplyNextStep(apply: ExecutionAdapterCertificationApplyRow): string {
+  if (apply.status === "ready_for_restart") {
+    return "Controlled restart evidence is still required before live routing.";
+  }
+  return "Resolve apply preflight blockers before live routing.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
   brokerRows: BrokerAdapterRow[],
-  certificationRows: ExecutionAdapterCertificationRow[] = []
+  certificationRows: ExecutionAdapterCertificationRow[] = [],
+  certificationApplyRows: ExecutionAdapterCertificationApplyRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -7931,6 +7965,7 @@ export function buildPromotionReadiness(
   const adapterGatePassed = workspace.execution.gates.find((gate) => gate.id === "adapter-certified")?.passed === true;
   const humanGatePassed = workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true;
   const latestCertification = latestPromotionCertificationRow(workspace, certificationRows);
+  const latestCertificationApply = latestPromotionCertificationApplyRow(workspace, certificationApplyRows, latestCertification);
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
   const certifiedLiveAdapters = brokerRows.filter(
@@ -7995,6 +8030,7 @@ export function buildPromotionReadiness(
   const adapterStage = buildPromotionAdapterCertificationStage(
     certifiedLiveAdapters,
     latestCertification,
+    latestCertificationApply,
     liveAdapterCertified,
     adapterGatePassed
   );

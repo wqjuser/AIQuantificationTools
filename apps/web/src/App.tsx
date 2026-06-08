@@ -857,7 +857,7 @@ export function App() {
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
     activePromotionCandidateRecord ??
-    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows);
+    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
   const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
     (context) =>
@@ -3798,6 +3798,7 @@ export function App() {
             workspace={workspace}
           />
           <PromotionQueuePanel
+            adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
             adapterCertificationRows={executionAdapterCertificationRows}
             className="workflow-promotion-panel"
             i18n={i18n}
@@ -10266,17 +10267,20 @@ function BrokerWorkspace({
 }
 
 function PromotionQueuePanel({
+  adapterCertificationApplyRows,
   adapterCertificationRows,
   className,
   i18n,
   readiness
 }: {
+  adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
   className?: string;
   i18n: AppI18n;
   readiness: PromotionReadiness;
 }) {
   const recentCertificationRows = adapterCertificationRows.slice(0, 3);
+  const recentApplyRows = adapterCertificationApplyRows.slice(0, 3);
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "晋级队列" : "Promotion Queue"}
@@ -10313,6 +10317,24 @@ function PromotionQueuePanel({
                 <p>{promotionCertificationBoundaryLabel(i18n, row.boundary)}</p>
                 <em>
                   {adapterCertificationCheckSummary(i18n, row.checkSummary)} · {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentApplyRows.length ? (
+          <div className="promotion-certification-apply-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近应用预检证据" : "Recent apply preflight evidence"}</span>
+            {recentApplyRows.map((row) => (
+              <article className={`promotion-certification-apply-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterCertificationApplyStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterCertificationApplyConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.applyMode)} · {row.auditEventId}
                 </em>
               </article>
             ))}
