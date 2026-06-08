@@ -1779,6 +1779,50 @@ export interface ExecutionAdapterCertificationRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterCertificationApplyStatus = "blocked" | "ready_for_restart";
+export type ExecutionAdapterCertificationApplyConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterCertificationApplySnapshot {
+  schemaVersion: 1;
+  applyId: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterCertificationApplyStatus;
+  operator: string;
+  generatedAt: string;
+  applyMode: string;
+  restartRequired: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterCertificationApplyConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterCertificationApplyRow {
+  id: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterCertificationApplyStatus;
+  statusLabel: string;
+  applyMode: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  restartRequired: boolean;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type PromotionReadinessStatus = "blocked" | "paper_pending" | "certification_pending" | "live_ready";
 
 export interface PromotionQueueStage {
@@ -7725,6 +7769,36 @@ export function buildExecutionAdapterCertificationRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterCertificationApplyRows(
+  applies: ExecutionAdapterCertificationApplySnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterCertificationApplyRow[] {
+  return (applies ?? [])
+    .map((apply) => ({
+      id: apply.applyId,
+      certificationId: apply.certificationId,
+      adapterId: apply.adapterId,
+      market: apply.market,
+      route: apply.route,
+      timestamp: apply.generatedAt,
+      status: apply.status,
+      statusLabel: executionAdapterCertificationApplyStatusLabel(apply.status),
+      applyMode: apply.applyMode,
+      confirmationSummary: executionAdapterCertificationApplyConfirmationSummary(apply.requiredConfirmations),
+      blockerSummary: executionAdapterCertificationApplyBlockerSummary(apply.blockedReasons),
+      boundary: apply.liveTradingAllowed
+        ? "Live trading allowed"
+        : apply.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      restartRequired: apply.restartRequired,
+      auditEventId: apply.applyId,
+      tone: executionAdapterCertificationApplyTone(apply.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 function latestPromotionCertificationRow(
   workspace: TerminalWorkspace,
   rows: ExecutionAdapterCertificationRow[]
@@ -9393,6 +9467,39 @@ function executionAdapterCertificationCheckSummary(
     .filter(([count]) => Number(count) > 0)
     .map(([count, label]) => `${count} ${label}`);
   return [...(parts.length ? parts : ["0 passed"]), `${summary.checkCount} checks`].join(" / ");
+}
+
+function executionAdapterCertificationApplyTone(
+  status: ExecutionAdapterCertificationApplyStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  if (status === "ready_for_restart") {
+    return "warning";
+  }
+  return "risk";
+}
+
+function executionAdapterCertificationApplyStatusLabel(status: ExecutionAdapterCertificationApplyStatus): string {
+  return (
+    {
+      blocked: "Blocked",
+      ready_for_restart: "Ready for restart"
+    } satisfies Record<ExecutionAdapterCertificationApplyStatus, string>
+  )[status];
+}
+
+function executionAdapterCertificationApplyConfirmationSummary(
+  confirmations: ExecutionAdapterCertificationApplySnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterCertificationApplyBlockerSummary(blockedReasons: string[]): string {
+  if (!blockedReasons.length) {
+    return "No blockers";
+  }
+  return blockedReasons.length === 1 ? "1 blocker" : `${blockedReasons.length} blockers`;
 }
 
 function formatAssumptionCurrency(value: number): string {

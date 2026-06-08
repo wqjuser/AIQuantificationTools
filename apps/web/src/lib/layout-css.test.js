@@ -1397,6 +1397,20 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-certification-row");
   });
 
+  test("renders execution adapter certification apply preflight controls in settings", () => {
+    expect(appSource).toContain("recordExecutionAdapterCertificationApply(quantCoreBaseUrl");
+    expect(appSource).toContain("buildExecutionAdapterCertificationApplyRows(executionAdapterCertificationApplies)");
+    expect(appSource).toContain("adapterCertificationApplyRows={executionAdapterCertificationApplyRows}");
+    expect(appSource).toContain("onApplyAdapterCertification={applyAdapterCertificationPreflight}");
+    expect(appSource).toContain("applyingAdapterCertificationId={applyingAdapterCertificationId}");
+    expect(appSource).toContain('className="adapter-certification-apply-button"');
+    expect(appSource).toContain('className="adapter-certification-apply-list"');
+    expect(appSource).toContain('className={`adapter-certification-apply-row');
+    expect(styles).toContain(".adapter-certification-apply-button");
+    expect(styles).toContain(".adapter-certification-apply-list");
+    expect(styles).toContain(".adapter-certification-apply-row");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

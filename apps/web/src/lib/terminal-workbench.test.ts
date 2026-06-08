@@ -38,6 +38,7 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterCertificationApplyRows,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
   buildGoldenPathRunbookPreview,
@@ -7039,6 +7040,58 @@ describe("terminal workbench model", () => {
     ]);
     expect(JSON.stringify(rows)).not.toContain("apiKey");
     expect(JSON.stringify(rows)).not.toContain("password");
+  });
+
+  test("builds compact execution adapter certification apply rows from preflight results", () => {
+    const rows = buildExecutionAdapterCertificationApplyRows([
+      {
+        schemaVersion: 1,
+        applyId: "execution-adapter-certification-apply-us-live",
+        certificationId: "adapter-certification-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "blocked",
+        operator: "settings-panel",
+        generatedAt: "2026-06-08T08:02:00+00:00",
+        applyMode: "manual_secret_store",
+        restartRequired: false,
+        requiredConfirmations: [
+          { id: "secret-reference-stored", label: "Secret reference stored", status: "missing" },
+          { id: "controlled-restart", label: "Controlled restart", status: "missing" },
+          { id: "operator-review", label: "Operator review", status: "missing" }
+        ],
+        blockedReasons: [
+          "secret_reference_not_confirmed",
+          "controlled_restart_not_confirmed",
+          "operator_review_not_confirmed"
+        ],
+        metadata: { source: "settings-panel", token: "[redacted]" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-certification-apply-us-live",
+        certificationId: "adapter-certification-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-08T08:02:00+00:00",
+        status: "blocked",
+        statusLabel: "Blocked",
+        applyMode: "manual_secret_store",
+        confirmationSummary: "0 confirmed / 3 missing",
+        blockerSummary: "3 blockers",
+        boundary: "Paper only · live trading blocked",
+        restartRequired: false,
+        auditEventId: "execution-adapter-certification-apply-us-live",
+        tone: "risk"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("token");
   });
 
   test("blocks promotion readiness before an audited run is bound", () => {

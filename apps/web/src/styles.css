@@ -4004,6 +4004,12 @@ em {
   margin-top: 10px;
 }
 
+.adapter-certification-apply-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .adapter-ledger-row {
   min-width: 0;
   border: 1px solid #27364a;
@@ -4022,11 +4028,24 @@ em {
   padding: 10px;
 }
 
+.adapter-certification-apply-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
 .adapter-ledger-row.positive {
   border-left-color: #4cc9ad;
 }
 
 .adapter-certification-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.adapter-certification-apply-row.positive {
   border-left-color: #4cc9ad;
 }
 
@@ -4038,11 +4057,19 @@ em {
   border-left-color: #e8be62;
 }
 
+.adapter-certification-apply-row.warning {
+  border-left-color: #e8be62;
+}
+
 .adapter-ledger-row.risk {
   border-left-color: #ff7f6d;
 }
 
 .adapter-certification-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-certification-apply-row.risk {
   border-left-color: #ff7f6d;
 }
 
@@ -4060,6 +4087,13 @@ em {
   gap: 10px;
 }
 
+.adapter-certification-apply-row div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .adapter-ledger-row strong,
 .adapter-ledger-row span,
 .adapter-ledger-row p,
@@ -4067,12 +4101,17 @@ em {
 .adapter-certification-row strong,
 .adapter-certification-row span,
 .adapter-certification-row p,
-.adapter-certification-row em {
+.adapter-certification-row em,
+.adapter-certification-apply-row strong,
+.adapter-certification-apply-row span,
+.adapter-certification-apply-row p,
+.adapter-certification-apply-row em {
   min-width: 0;
 }
 
 .adapter-ledger-row strong,
-.adapter-certification-row strong {
+.adapter-certification-row strong,
+.adapter-certification-apply-row strong {
   color: #e8f0f8;
   font-size: 13px;
 }
@@ -4080,13 +4119,16 @@ em {
 .adapter-ledger-row span,
 .adapter-ledger-row em,
 .adapter-certification-row span,
-.adapter-certification-row em {
+.adapter-certification-row em,
+.adapter-certification-apply-row span,
+.adapter-certification-apply-row em {
   color: #9fb0c3;
   font-size: 12px;
 }
 
 .adapter-ledger-row p,
-.adapter-certification-row p {
+.adapter-certification-row p,
+.adapter-certification-apply-row p {
   color: #c9d7e7;
   font-size: 12px;
   line-height: 1.45;
@@ -4094,7 +4136,8 @@ em {
 }
 
 .adapter-ledger-row em,
-.adapter-certification-row em {
+.adapter-certification-row em,
+.adapter-certification-apply-row em {
   display: block;
   font-style: normal;
   margin-top: 5px;
@@ -4168,6 +4211,27 @@ em {
 }
 
 .adapter-certification-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.adapter-certification-apply-button {
+  align-items: center;
+  border: 1px solid #51492b;
+  border-radius: 6px;
+  background: #2a2412;
+  color: #f2d27a;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  margin-top: 8px;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.adapter-certification-apply-button:disabled {
   cursor: wait;
   opacity: 0.62;
 }
