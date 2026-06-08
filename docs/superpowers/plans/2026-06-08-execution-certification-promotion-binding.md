@@ -106,13 +106,15 @@ Result: PASS on 2026-06-08.
 - Docker was restarted with `docker compose up -d`.
 - Browser verification on `http://127.0.0.1:5173/?workspace=execution`: PASS. A local blocked `ashare-live` certification record showed in the promotion queue as recent adapter certification evidence, while live promotion remained blocked.
 
-- [ ] **Step 7: Commit and push**
+- [x] **Step 7: Commit and push**
 
 ```powershell
 git add apps/web/src/App.tsx apps/web/src/styles.css apps/web/src/lib/layout-css.test.js apps/web/src/lib/terminal-workbench.ts apps/web/src/lib/terminal-workbench.test.ts docs/product-plan.md docs/superpowers/plans/2026-06-08-execution-certification-promotion-binding.md
 git commit -m "feat: bind certification evidence to promotion"
 git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 push origin codex/p0-product-workspaces
 ```
+
+Result: PASS on 2026-06-08. Feature commit `d8ecd1e` was pushed to `origin/codex/p0-product-workspaces` through proxy `127.0.0.1:7890`.
 
 ### Notes
 
