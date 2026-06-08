@@ -40,7 +40,7 @@
 - [x] GREEN: Render the evidence row in `ResearchContextReadinessPanel` with Chinese labels.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification Checklist
 
@@ -62,3 +62,4 @@ git diff --check
 - GREEN targeted test passed for missing, matched, and mismatched current audited run evidence rows.
 - Verification passed on 2026-06-08: targeted research context evidence test, full `terminal-workbench.test.ts` (162 tests), `npm test` (128 Python tests and 340 web tests), `npm run build`, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification passed on `http://127.0.0.1:5173/?workspace=research`: Research readiness rendered, `600000` rendered, `审计运行` evidence row was present, five research context rows were visible, and console error count was 0.
+- Shipped in commit `392b53f` and pushed through proxy to `origin/codex/p0-product-workspaces`; GitHub Actions CI run `27122926805` failed once on Docker Hub metadata timeouts, then rerun attempt 2 completed with `success`.
