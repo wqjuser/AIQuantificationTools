@@ -7773,7 +7773,7 @@ export function buildStrategyReadinessGates(workspace: TerminalWorkspace): Strat
     draft.stopLossPct > 0 &&
     draft.takeProfitPct > 0 &&
     draft.maxDrawdownPct > 0;
-  const auditIsReady = Boolean(workspace.researchRun?.runId);
+  const auditBinding = buildResearchRunContextBinding(workspace);
   const hasBlockedGate = !schemaIsReady || !riskIsReady;
 
   return [
@@ -7827,15 +7827,24 @@ export function buildStrategyReadinessGates(workspace: TerminalWorkspace): Strat
       status: draft.paperOnly ? "passed" : "review",
       tone: draft.paperOnly ? "positive" : "warning"
     },
-    auditIsReady
+    auditBinding.status === "matched"
       ? {
           id: "audit",
           label: "Audit evidence",
-          value: workspace.researchRun?.runId ?? "bound",
-          detail: "This draft is bound to a reproducible audit run.",
+          value: auditBinding.runId ?? "bound",
+          detail: auditBinding.detail,
           status: "passed",
           tone: "positive"
         }
+      : auditBinding.status === "mismatched"
+        ? {
+            id: "audit",
+            label: "Audit evidence",
+            value: auditBinding.runId ?? "stale run",
+            detail: auditBinding.detail,
+            status: "blocked",
+            tone: "risk"
+          }
       : {
           id: "audit",
           label: "Audit evidence",

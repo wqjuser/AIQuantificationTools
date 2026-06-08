@@ -1093,6 +1093,46 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("blocks Strategy Lab audit evidence when an audited run belongs to another context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-strategy-context",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-strategy-context",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const mismatchedWorkspace = {
+      ...auditedWorkspace,
+      selectedInstrument: {
+        symbol: "AAPL",
+        name: "Apple",
+        market: "us" as const,
+        price: 191.2,
+        changePct: 0
+      }
+    };
+
+    expect(buildStrategyReadinessGates(mismatchedWorkspace).find((gate) => gate.id === "audit")).toEqual({
+      id: "audit",
+      label: "Audit evidence",
+      value: "run-strategy-context",
+      detail: "Audited run run-strategy-context belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d.",
+      status: "blocked",
+      tone: "risk"
+    });
+  });
+
   test("blocks Strategy Lab readiness when the selected context has pending rules", () => {
     const workspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
       symbol: "300750",
