@@ -39,7 +39,7 @@
 - [x] GREEN: Wire Backtest evidence, readiness gates, and report status to the helper.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification Checklist
 
@@ -60,3 +60,4 @@ git diff --check
 - Targeted GREEN checks now pass for context binding and mismatched Backtest report behavior.
 - Verification passed on 2026-06-08: `npm --prefix apps/web test -- --run src/lib/terminal-workbench.test.ts` (161 tests), `npm test` (128 Python tests and 339 web tests), `npm run build`, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification passed on `http://127.0.0.1:5173/?workspace=research`: the Research page rendered `600000`, the readiness panel and run action were present, and browser console error count was 0.
+- Shipped in commit `9b6c11d` and pushed through proxy to `origin/codex/p0-product-workspaces`; GitHub Actions CI run `27121502647` completed with `success`.
