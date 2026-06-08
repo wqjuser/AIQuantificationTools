@@ -1772,6 +1772,8 @@ export type AiWorkbenchAction = "debate" | "explain" | "strategy-draft";
 export interface ResearchRunSummary {
   runId: string;
   createdAt: string;
+  market?: Market;
+  symbol?: string;
   timeframe: Timeframe;
   strategyRevision: string;
   dataRows: number;
@@ -1925,6 +1927,15 @@ export interface ResearchRunAudit {
   backtestTrades?: BacktestTradeRow[];
   backtestEquityCurve?: BacktestEquityPoint[];
   backtestDiagnostics?: BacktestDiagnostic[];
+}
+
+export interface ResearchRunContextBinding {
+  status: "missing" | "matched" | "mismatched";
+  canUseRun: boolean;
+  runId: string | null;
+  selectedContext: string;
+  runContext: string | null;
+  detail: string;
 }
 
 export interface ResearchRunComparisonRow {
@@ -7925,6 +7936,54 @@ function strategyContextLabel(market: Market, symbol: string, timeframe: Timefra
   return `${market.toUpperCase()} · ${symbol} · ${timeframe}`;
 }
 
+export function buildResearchRunContextBinding(workspace: TerminalWorkspace): ResearchRunContextBinding {
+  const selectedContext = strategyContextLabel(
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  );
+  const run = workspace.researchRun;
+
+  if (!run) {
+    return {
+      status: "missing",
+      canUseRun: false,
+      runId: null,
+      selectedContext,
+      runContext: null,
+      detail: "Run Pipeline to bind a matching audited research run."
+    };
+  }
+
+  const runMarket = run.market ?? workspace.selectedInstrument.market;
+  const runSymbol = run.symbol ?? workspace.selectedInstrument.symbol;
+  const runContext = strategyContextLabel(runMarket, runSymbol, run.timeframe);
+  const matches =
+    runMarket === workspace.selectedInstrument.market &&
+    runSymbol === workspace.selectedInstrument.symbol &&
+    run.timeframe === workspace.selectedTimeframe;
+
+  if (matches) {
+    return {
+      status: "matched",
+      canUseRun: true,
+      runId: run.runId,
+      selectedContext,
+      runContext,
+      detail: `Audited run ${run.runId} matches the selected research context.`
+    };
+  }
+
+  return {
+    status: "mismatched",
+    canUseRun: false,
+    runId: run.runId,
+    selectedContext,
+    runContext,
+    detail: `Audited run ${run.runId} belongs to ${runContext}, not ${selectedContext}.`
+  };
+}
+
 function normalizeDiffValue(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -8047,9 +8106,10 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
   const diagnostics = workspace.backtestDiagnostics ?? [];
   const firstDiagnostic = diagnostics[0];
   const run = workspace.researchRun;
+  const contextBinding = buildResearchRunContextBinding(workspace);
 
   return [
-    run
+    run && contextBinding.canUseRun
       ? {
           id: "run",
           label: "Run package",
@@ -8057,6 +8117,14 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
           detail: `${run.dataRows} ${run.timeframe} bars · ${run.executionMode}`,
           tone: "positive"
         }
+      : run
+        ? {
+            id: "run",
+            label: "Run package",
+            value: run.runId,
+            detail: contextBinding.detail,
+            tone: "risk"
+          }
       : {
           id: "run",
           label: "Run package",
@@ -8069,7 +8137,7 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
       label: "Strategy revision",
       value: run?.strategyRevision ?? "Local draft",
       detail: workspace.strategy.name,
-      tone: run ? "positive" : "warning"
+      tone: run ? (contextBinding.canUseRun ? "positive" : "risk") : "warning"
     },
     {
       id: "costs",
@@ -8092,7 +8160,9 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
 
 export function buildBacktestReadinessGates(workspace: TerminalWorkspace): BacktestReadinessGate[] {
   const assumptions = resolveBacktestAssumptions(workspace);
-  const hasAuditedRun = Boolean(workspace.researchRun?.runId);
+  const contextBinding = buildResearchRunContextBinding(workspace);
+  const run = workspace.researchRun;
+  const hasAuditedRun = contextBinding.canUseRun;
   const strategyIsParseable =
     !isPendingStrategyText(workspace.strategy.entry) &&
     !isPendingStrategyText(workspace.strategy.exit) &&
@@ -8105,9 +8175,17 @@ export function buildBacktestReadinessGates(workspace: TerminalWorkspace): Backt
           id: "data",
           label: "Data snapshot",
           status: "passed",
-          detail: `Audited ${workspace.researchRun?.dataRows ?? 0} ${workspace.selectedTimeframe} bars are bound.`,
+          detail: `Audited ${run?.dataRows ?? 0} ${run?.timeframe ?? workspace.selectedTimeframe} bars are bound.`,
           tone: "positive"
         }
+      : run
+        ? {
+            id: "data",
+            label: "Data snapshot",
+            status: "blocked",
+            detail: contextBinding.detail,
+            tone: "risk"
+          }
       : {
           id: "data",
           label: "Data snapshot",
@@ -8164,10 +8242,12 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
   const diagnostics = workspace.backtestDiagnostics ?? [];
   const equityCurve = workspace.backtestEquityCurve ?? [];
   const run = workspace.researchRun;
+  const contextBinding = buildResearchRunContextBinding(workspace);
   const benchmark = buildBacktestBenchmark(workspace);
   const blockedGates = readinessGates.filter((gate) => gate.status === "blocked");
-  const aiReviewReady = Boolean(run) && !blockedGates.some((gate) => gate.id === "data" || gate.id === "strategy");
-  const executionReady = Boolean(run) && !blockedGates.length;
+  const aiReviewReady =
+    contextBinding.canUseRun && !blockedGates.some((gate) => gate.id === "data" || gate.id === "strategy");
+  const executionReady = contextBinding.canUseRun && !blockedGates.length;
   const metricTradeCount = metricValue(workspace, "Trades", "0");
 
   if (!run) {
@@ -8176,6 +8256,29 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
       headline: "Backtest report needs an audited run",
       summary: "Run Pipeline to create a reproducible backtest before AI review or execution.",
       runId: null,
+      aiReviewReady: false,
+      executionReady: false,
+      assumptions,
+      assumptionRows,
+      evidenceCards,
+      readinessGates,
+      benchmark,
+      metrics: workspace.metrics,
+      trades,
+      diagnostics,
+      equityCurve,
+      tradeCount: trades.length,
+      equityPointCount: equityCurve.length,
+      diagnosticCount: diagnostics.length
+    };
+  }
+
+  if (!contextBinding.canUseRun) {
+    return {
+      status: "blocked",
+      headline: "Backtest report needs a matching audited run",
+      summary: "Run Pipeline to create a fresh audited run for the selected market, symbol, and timeframe.",
+      runId: run.runId,
       aiReviewReady: false,
       executionReady: false,
       assumptions,
@@ -8218,6 +8321,10 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
 }
 
 export function buildBacktestParameterScanRows(workspace: TerminalWorkspace): BacktestParameterScanRow[] {
+  if (!buildResearchRunContextBinding(workspace).canUseRun) {
+    return [];
+  }
+
   const run = workspace.researchRun;
   const bars = run?.dataSnapshot?.bars
     .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
@@ -8557,20 +8664,24 @@ export function buildBacktestReportMarkdown(
 }
 
 export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBenchmark {
+  const contextBinding = buildResearchRunContextBinding(workspace);
   const run = workspace.researchRun;
   const snapshot = run?.dataSnapshot;
   const bars = snapshot?.bars.filter((bar) => Number.isFinite(bar.close) && bar.close > 0) ?? [];
   const strategyReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
   const formattedStrategyReturn = strategyReturn === null ? "N/A" : formatSignedPct(strategyReturn);
 
-  if (!run || bars.length < 2) {
+  if (!run || !contextBinding.canUseRun || bars.length < 2) {
     return {
       label: "Buy and hold",
       symbol: workspace.selectedInstrument.symbol,
       strategyReturn: formattedStrategyReturn,
       benchmarkReturn: "Pending snapshot",
       alpha: "N/A",
-      detail: "Run Pipeline must include a data snapshot before benchmark comparison.",
+      detail:
+        run && !contextBinding.canUseRun
+          ? contextBinding.detail
+          : "Run Pipeline must include a data snapshot before benchmark comparison.",
       tone: "warning",
       sampleBars: 0,
       source: snapshot?.source ?? "missing snapshot"
@@ -9869,6 +9980,8 @@ export function workspaceFromResearchRunAudit(
   const researchRun: ResearchRunSummary = {
     runId: run.runId,
     createdAt: run.createdAt,
+    market: run.market,
+    symbol: run.symbol,
     timeframe: run.timeframe,
     strategyRevision: run.strategyRevision,
     dataRows: run.dataRows,

@@ -153,6 +153,8 @@ def run_terminal_research(
         research_run=ResearchRunSummary(
             run_id=run_id,
             created_at=created_at,
+            market=market,
+            symbol=symbol,
             timeframe=timeframe,
             strategy_revision=strategy.revision,
             data_rows=quality.rows,

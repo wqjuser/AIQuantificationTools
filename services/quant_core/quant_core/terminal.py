@@ -142,6 +142,8 @@ class WorkflowNode:
 class ResearchRunSummary:
     run_id: str
     created_at: datetime
+    market: Market
+    symbol: str
     timeframe: Timeframe
     strategy_revision: str
     data_rows: int

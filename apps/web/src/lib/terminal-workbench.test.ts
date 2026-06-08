@@ -65,6 +65,7 @@ import {
   buildResearchRunComparisonRows,
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
+  buildResearchRunContextBinding,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -1102,6 +1103,102 @@ describe("terminal workbench model", () => {
       backtest: "ready",
       "agent-review": "ready",
       paper: "locked"
+    });
+  });
+
+  test("identifies whether an audited run matches the selected research context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-context-match",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-context",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    expect(buildResearchRunContextBinding(auditedWorkspace)).toMatchObject({
+      status: "matched",
+      canUseRun: true,
+      runId: "run-context-match",
+      selectedContext: "ASHARE · 600000 · 1d",
+      runContext: "ASHARE · 600000 · 1d",
+      detail: "Audited run run-context-match matches the selected research context."
+    });
+
+    const mismatchedWorkspace = {
+      ...auditedWorkspace,
+      selectedInstrument: {
+        symbol: "AAPL",
+        name: "Apple",
+        market: "us" as const,
+        changePct: 0,
+        price: 191.2
+      }
+    };
+
+    expect(buildResearchRunContextBinding(mismatchedWorkspace)).toMatchObject({
+      status: "mismatched",
+      canUseRun: false,
+      runId: "run-context-match",
+      selectedContext: "US · AAPL · 1d",
+      runContext: "ASHARE · 600000 · 1d",
+      detail: "Audited run run-context-match belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d."
+    });
+  });
+
+  test("blocks Backtest report evidence when an audited run belongs to another context", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-context-mismatch",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-context",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const mismatchedWorkspace = {
+      ...auditedWorkspace,
+      selectedTimeframe: "5m" as const
+    };
+
+    expect(buildBacktestEvidenceCards(mismatchedWorkspace)[0]).toMatchObject({
+      id: "run",
+      value: "run-context-mismatch",
+      tone: "risk",
+      detail: "Audited run run-context-mismatch belongs to ASHARE · 600000 · 1d, not ASHARE · 600000 · 5m."
+    });
+    expect(buildBacktestReadinessGates(mismatchedWorkspace)[0]).toMatchObject({
+      id: "data",
+      status: "blocked",
+      tone: "risk",
+      detail: "Audited run run-context-mismatch belongs to ASHARE · 600000 · 1d, not ASHARE · 600000 · 5m."
+    });
+    expect(buildBacktestReport(mismatchedWorkspace)).toMatchObject({
+      status: "blocked",
+      headline: "Backtest report needs a matching audited run",
+      summary: "Run Pipeline to create a fresh audited run for the selected market, symbol, and timeframe.",
+      runId: "run-context-mismatch",
+      aiReviewReady: false,
+      executionReady: false
     });
   });
 
