@@ -140,13 +140,15 @@ Result: PASS on 2026-06-08.
 - Docker API smoke: `POST /api/execution/adapter-certifications/apply` returned `409` blocked with three missing confirmation reasons and `liveTradingAllowed=false`.
 - Browser verification on `http://127.0.0.1:5173/?workspace=execution`: PASS. Execution workspace and promotion queue rendered without runtime error text.
 
-- [ ] **Step 9: Commit and push**
+- [x] **Step 9: Commit and push**
 
 ```powershell
 git add services/quant_core/quant_core/execution.py services/quant_core/quant_core/api.py services/quant_core/tests/test_quant_core.py apps/web/src/lib/terminal-api.ts apps/web/src/lib/terminal-api.test.ts docs/product-plan.md docs/superpowers/plans/2026-06-08-execution-certification-apply-preflight.md
 git commit -m "feat: add certification apply preflight"
 git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 push origin codex/p0-product-workspaces
 ```
+
+Result: PASS on 2026-06-08. Feature commit `3707770` was pushed to `origin/codex/p0-product-workspaces` through proxy `127.0.0.1:7890`.
 
 ### Notes
 
