@@ -1371,7 +1371,7 @@ describe("terminal layout css", () => {
       "buildExecutionAdapterControlledRestartEvidenceRows(executionAdapterControlledRestartEvidence)"
     );
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows"
     );
     expect(appSource).toContain(
       "adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}"
@@ -1383,6 +1383,25 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("adapterControlledRestartEvidenceConfirmationSummary(i18n, row.confirmationSummary)");
     expect(styles).toContain(".promotion-controlled-restart-evidence");
     expect(styles).toContain(".promotion-controlled-restart-evidence-row");
+  });
+
+  test("renders restart acceptance history in promotion queue", () => {
+    expect(appSource).toContain("loadExecutionAdapterRestartAcceptances(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterRestartAcceptances(restartAcceptanceResults.flatMap((result) => result.restartAcceptances))"
+    );
+    expect(appSource).toContain("buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances)");
+    expect(appSource).toContain(
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows)"
+    );
+    expect(appSource).toContain("adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}");
+    expect(appSource).toContain("adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[]");
+    expect(appSource).toContain('className="promotion-restart-acceptance"');
+    expect(appSource).toContain('className={`promotion-restart-acceptance-row');
+    expect(appSource).toContain("adapterRestartAcceptanceStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterRestartAcceptanceConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(styles).toContain(".promotion-restart-acceptance");
+    expect(styles).toContain(".promotion-restart-acceptance-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

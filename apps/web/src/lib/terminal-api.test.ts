@@ -38,6 +38,8 @@ import {
   buildExecutionAdapterCertificationAppliesUrl,
   buildExecutionAdapterControlledRestartEvidenceHistoryUrl,
   buildExecutionAdapterControlledRestartEvidenceUrl,
+  buildExecutionAdapterRestartAcceptanceHistoryUrl,
+  buildExecutionAdapterRestartAcceptanceUrl,
   buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
@@ -64,6 +66,7 @@ import {
   loadExecutionAdapterLedger,
   loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterControlledRestartEvidence,
+  loadExecutionAdapterRestartAcceptances,
   loadExecutionAdapterCertifications,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
@@ -72,6 +75,7 @@ import {
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
   recordExecutionAdapterControlledRestartEvidence,
+  recordExecutionAdapterRestartAcceptance,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -2139,6 +2143,207 @@ describe("terminal workspace API client", () => {
     expect(result.controlledRestartEvidence[0].status).toBe("evidence_recorded");
     expect(result.controlledRestartEvidence[0].liveTradingAllowed).toBe(false);
     expect(JSON.stringify(result)).not.toContain("restart-secret-should-not-leak");
+  });
+
+  test("records restart acceptance evidence without enabling live trading", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          restartAcceptance: {
+            schemaVersion: 1,
+            acceptanceId: "execution-adapter-restart-acceptance-us-live",
+            evidenceId: "execution-adapter-controlled-restart-us-live",
+            applyId: "execution-adapter-certification-apply-us-live-ready",
+            certificationId: "adapter-certification-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "acceptance_recorded",
+            operator: "acceptance-operator",
+            recordedAt: "2026-06-08T08:15:00+00:00",
+            acceptanceMode: "manual_post_restart_acceptance",
+            restartRequired: true,
+            requiredConfirmations: [
+              {
+                id: "core-health-checked",
+                label: "Local core health was checked after restart",
+                status: "confirmed"
+              },
+              {
+                id: "settings-reload-observed",
+                label: "Adapter settings reload was observed",
+                status: "confirmed"
+              },
+              {
+                id: "paper-route-handshake-passed",
+                label: "Sandbox or paper route handshake passed",
+                status: "confirmed"
+              },
+              {
+                id: "emergency-stop-armed",
+                label: "Emergency stop remains armed",
+                status: "confirmed"
+              },
+              {
+                id: "account-sync-dry-run-passed",
+                label: "Account sync dry-run passed",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { probeId: "post-restart-acceptance-1", privateKey: "[redacted]" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-restart-acceptance-us-live",
+            eventType: "execution_adapter_restart_acceptance",
+            runId: "",
+            createdAt: "2026-06-08T08:15:00+00:00",
+            stage: "execution-adapter-restart-acceptance",
+            source: "execution-adapter-ledger",
+            summary: "us-live restart acceptance recorded as acceptance_recorded.",
+            detail: "Post-restart acceptance is paper-only.",
+            metadata: {
+              acceptanceId: "execution-adapter-restart-acceptance-us-live",
+              adapterId: "us-live",
+              status: "acceptance_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterRestartAcceptanceUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/restart-acceptance"
+    );
+
+    const result = await recordExecutionAdapterRestartAcceptance(
+      "/",
+      {
+        evidenceId: "execution-adapter-controlled-restart-us-live",
+        operator: "acceptance-operator",
+        confirmations: {
+          coreHealthChecked: true,
+          settingsReloadObserved: true,
+          paperRouteHandshakePassed: true,
+          emergencyStopArmed: true,
+          accountSyncDryRunPassed: true
+        },
+        metadata: { probeId: "post-restart-acceptance-1" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-certifications/restart-acceptance"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      evidenceId: "execution-adapter-controlled-restart-us-live",
+      operator: "acceptance-operator",
+      confirmations: {
+        coreHealthChecked: true,
+        settingsReloadObserved: true,
+        paperRouteHandshakePassed: true,
+        emergencyStopArmed: true,
+        accountSyncDryRunPassed: true
+      },
+      metadata: { probeId: "post-restart-acceptance-1" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.restartAcceptance?.status).toBe("acceptance_recorded");
+    expect(result.restartAcceptance?.liveTradingAllowed).toBe(false);
+    expect(result.restartAcceptance?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_restart_acceptance");
+  });
+
+  test("loads restart acceptance history from the local core", async () => {
+    const calls: string[] = [];
+    const restartAcceptance = {
+      schemaVersion: 1,
+      acceptanceId: "execution-adapter-restart-acceptance-us-live",
+      evidenceId: "execution-adapter-controlled-restart-us-live",
+      applyId: "execution-adapter-certification-apply-us-live-ready",
+      certificationId: "adapter-certification-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "acceptance_recorded",
+      operator: "acceptance-operator",
+      recordedAt: "2026-06-08T08:15:00+00:00",
+      acceptanceMode: "manual_post_restart_acceptance",
+      restartRequired: true,
+      requiredConfirmations: [
+        {
+          id: "core-health-checked",
+          label: "Local core health was checked after restart",
+          status: "confirmed"
+        },
+        {
+          id: "settings-reload-observed",
+          label: "Adapter settings reload was observed",
+          status: "confirmed"
+        },
+        {
+          id: "paper-route-handshake-passed",
+          label: "Sandbox or paper route handshake passed",
+          status: "confirmed"
+        },
+        {
+          id: "emergency-stop-armed",
+          label: "Emergency stop remains armed",
+          status: "confirmed"
+        },
+        {
+          id: "account-sync-dry-run-passed",
+          label: "Account sync dry-run passed",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { probeId: "post-restart-acceptance-1", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterRestartAcceptances(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ restartAcceptances: [restartAcceptance] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterRestartAcceptanceHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/restart-acceptance?adapterId=us-live&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/restart-acceptance?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.restartAcceptances).toHaveLength(1);
+    expect(result.restartAcceptances[0].status).toBe("acceptance_recorded");
+    expect(result.restartAcceptances[0].liveTradingAllowed).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("acceptance-secret-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

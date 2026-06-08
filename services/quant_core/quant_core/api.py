@@ -50,6 +50,7 @@ from quant_core.execution import (
     build_promotion_candidate,
     build_execution_adapter_certification_apply,
     build_execution_adapter_controlled_restart_evidence,
+    build_execution_adapter_restart_acceptance,
     create_execution_adapter_certification_run,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
@@ -61,6 +62,9 @@ from quant_core.execution import (
     execution_adapter_controlled_restart_evidence_payload_from_audit_event,
     execution_adapter_controlled_restart_evidence_to_audit_event_payload,
     execution_adapter_controlled_restart_evidence_to_payload,
+    execution_adapter_restart_acceptance_payload_from_audit_event,
+    execution_adapter_restart_acceptance_to_audit_event_payload,
+    execution_adapter_restart_acceptance_to_payload,
     execution_adapter_certification_to_audit_event_payload,
     execution_adapter_certification_to_payload,
     paper_execution_payload_to_record,
@@ -379,6 +383,42 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if restart_evidence.status == "blocked" else 200,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
+            payload = self._read_json_body()
+            evidence_id = str(payload.get("evidenceId") or "").strip()
+            evidence_event = self.audit_event_store.get(evidence_id)
+            controlled_restart_evidence = (
+                execution_adapter_controlled_restart_evidence_payload_from_audit_event(evidence_event)
+                if evidence_event
+                else None
+            )
+            if not controlled_restart_evidence:
+                self._send_json(
+                    {"error": "execution_adapter_controlled_restart_evidence_not_found", "evidenceId": evidence_id},
+                    status=404,
+                )
+                return
+            try:
+                restart_acceptance = build_execution_adapter_restart_acceptance(
+                    controlled_restart_evidence,
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_restart_acceptance", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_restart_acceptance_to_audit_event_payload(restart_acceptance)
+            )
+            self._send_json(
+                {
+                    "restartAcceptance": execution_adapter_restart_acceptance_to_payload(restart_acceptance),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if restart_acceptance.status == "blocked" else 200,
             )
             return
         if parsed.path == "/api/portfolio/backtest":
@@ -863,6 +903,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/execution/adapter-ledger":
             settings = self._settings_status_payload()
             self._send_json({"adapterLedger": build_execution_adapter_state_ledger(settings)})
+            return
+        if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_restart_acceptance_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            acceptance_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_restart_acceptance",
+                limit=50,
+                query=adapter_id,
+            )
+            restart_acceptances = []
+            for event in acceptance_events:
+                payload = execution_adapter_restart_acceptance_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    restart_acceptances.append(payload)
+                if len(restart_acceptances) >= limit:
+                    break
+            self._send_json({"restartAcceptances": restart_acceptances})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-evidence":
             query = parse_qs(parsed.query)

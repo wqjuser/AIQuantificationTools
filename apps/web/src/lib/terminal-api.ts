@@ -934,6 +934,62 @@ export interface ExecutionAdapterControlledRestartEvidenceHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterRestartAcceptanceStatus = "blocked" | "acceptance_recorded";
+export type ExecutionAdapterRestartAcceptanceConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRestartAcceptanceConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterRestartAcceptanceConfirmationStatus;
+}
+
+export interface ExecutionAdapterRestartAcceptanceResult {
+  schemaVersion: 1;
+  acceptanceId: string;
+  evidenceId: string;
+  applyId: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRestartAcceptanceStatus;
+  operator: string;
+  recordedAt: string;
+  acceptanceMode: string;
+  restartRequired: boolean;
+  requiredConfirmations: ExecutionAdapterRestartAcceptanceConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRestartAcceptanceRequest {
+  evidenceId: string;
+  operator?: string;
+  confirmations?: {
+    coreHealthChecked?: boolean;
+    settingsReloadObserved?: boolean;
+    paperRouteHandshakePassed?: boolean;
+    emergencyStopArmed?: boolean;
+    accountSyncDryRunPassed?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterRestartAcceptanceRecordResult {
+  restartAcceptance?: ExecutionAdapterRestartAcceptanceResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterRestartAcceptanceHistoryResult {
+  restartAcceptances: ExecutionAdapterRestartAcceptanceResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1730,6 +1786,10 @@ export function buildExecutionAdapterControlledRestartEvidenceUrl(baseUrl: strin
   return buildApiUrl(baseUrl, "api/execution/adapter-certifications/restart-evidence");
 }
 
+export function buildExecutionAdapterRestartAcceptanceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications/restart-acceptance");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -1749,6 +1809,20 @@ export function buildExecutionAdapterControlledRestartEvidenceHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-certifications/restart-evidence", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterRestartAcceptanceHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications/restart-acceptance", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -3463,6 +3537,49 @@ export async function recordExecutionAdapterControlledRestartEvidence(
   }
 }
 
+export async function recordExecutionAdapterRestartAcceptance(
+  baseUrl: string,
+  request: ExecutionAdapterRestartAcceptanceRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterRestartAcceptanceRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRestartAcceptanceUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        evidenceId: request.evidenceId,
+        operator: request.operator ?? "local-operator",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterRestartAcceptanceRecordPayload(payload)) {
+      return {
+        restartAcceptance: payload.restartAcceptance,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter restart acceptance contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter restart acceptance error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -3545,6 +3662,34 @@ export async function loadExecutionAdapterControlledRestartEvidence(
       controlledRestartEvidence: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter controlled restart evidence history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterRestartAcceptances(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterRestartAcceptanceHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRestartAcceptanceHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterRestartAcceptanceHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter restart acceptance history contract");
+    }
+    return {
+      restartAcceptances: payload.restartAcceptances,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      restartAcceptances: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter restart acceptance history error"
     };
   }
 }
@@ -5172,6 +5317,19 @@ function isExecutionAdapterControlledRestartEvidenceRecordPayload(
   );
 }
 
+function isExecutionAdapterRestartAcceptanceRecordPayload(
+  value: unknown
+): value is { restartAcceptance: ExecutionAdapterRestartAcceptanceResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { restartAcceptance?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterRestartAcceptanceResult(payload.restartAcceptance) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -5208,6 +5366,19 @@ function isExecutionAdapterControlledRestartEvidenceHistoryPayload(
   return (
     Array.isArray(payload.controlledRestartEvidence) &&
     payload.controlledRestartEvidence.every(isExecutionAdapterControlledRestartEvidenceResult)
+  );
+}
+
+function isExecutionAdapterRestartAcceptanceHistoryPayload(
+  value: unknown
+): value is { restartAcceptances: ExecutionAdapterRestartAcceptanceResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { restartAcceptances?: unknown };
+  return (
+    Array.isArray(payload.restartAcceptances) &&
+    payload.restartAcceptances.every(isExecutionAdapterRestartAcceptanceResult)
   );
 }
 
@@ -5260,6 +5431,37 @@ function isExecutionAdapterControlledRestartEvidenceResult(
     typeof result.restartRequired === "boolean" &&
     Array.isArray(result.requiredConfirmations) &&
     result.requiredConfirmations.every(isExecutionAdapterControlledRestartEvidenceConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterRestartAcceptanceResult(
+  value: unknown
+): value is ExecutionAdapterRestartAcceptanceResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterRestartAcceptanceResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.evidenceId === "string" &&
+    typeof result.applyId === "string" &&
+    typeof result.certificationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterRestartAcceptanceStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.restartRequired === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterRestartAcceptanceConfirmation) &&
     Array.isArray(result.blockedReasons) &&
     result.blockedReasons.every((reason) => typeof reason === "string") &&
     isSecretFreeRecord(result.metadata) &&
@@ -5349,6 +5551,20 @@ function isExecutionAdapterCertificationSummary(value: unknown): value is Execut
   );
 }
 
+function isExecutionAdapterRestartAcceptanceConfirmation(
+  value: unknown
+): value is ExecutionAdapterRestartAcceptanceConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterRestartAcceptanceConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -5363,6 +5579,12 @@ function isExecutionAdapterControlledRestartEvidenceStatus(
   value: unknown
 ): value is ExecutionAdapterControlledRestartEvidenceStatus {
   return value === "blocked" || value === "evidence_recorded";
+}
+
+function isExecutionAdapterRestartAcceptanceStatus(
+  value: unknown
+): value is ExecutionAdapterRestartAcceptanceStatus {
+  return value === "blocked" || value === "acceptance_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

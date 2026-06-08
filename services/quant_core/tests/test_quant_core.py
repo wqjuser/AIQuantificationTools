@@ -2023,6 +2023,204 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("restart-evidence-secret-should-not-leak", serialized)
         self.assertNotIn("restart-evidence-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_restart_acceptance_records_history_without_enabling_live(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import ExecutionAdapterCertificationStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.execution_adapter_certification_store = ExecutionAdapterCertificationStore(
+                Path(tmp) / "adapter_certifications.sqlite"
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                certification_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "local-operator",
+                    "startedAt": "2026-06-08T08:00:00+00:00",
+                    "completedAt": "2026-06-08T08:02:00+00:00",
+                    "checks": [
+                        {
+                            "id": "sandbox-credentials",
+                            "label": "Sandbox credentials",
+                            "status": "passed",
+                            "detail": "Sandbox references are present.",
+                            "metadata": {"apiKey": "acceptance-cert-key-should-not-leak"},
+                        },
+                        {
+                            "id": "order-lifecycle",
+                            "label": "Order lifecycle",
+                            "status": "passed",
+                            "detail": "Order lifecycle replay is complete.",
+                            "metadata": {"token": "acceptance-cert-token-should-not-leak"},
+                        },
+                    ],
+                    "metadata": {"source": "settings-panel", "password": "acceptance-cert-password-should-not-leak"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications",
+                    body=json.dumps(certification_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                certification_response = connection.getresponse()
+                certification_payload = json.loads(certification_response.read().decode("utf-8"))
+                certification_id = certification_payload["adapterCertification"]["certificationId"]
+
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/apply",
+                    body=json.dumps(
+                        {
+                            "certificationId": certification_id,
+                            "operator": "apply-operator",
+                            "confirmations": {
+                                "secretReferenceStored": True,
+                                "controlledRestartWindowApproved": True,
+                                "operatorReviewedCertification": True,
+                            },
+                            "metadata": {"source": "settings-panel", "apiToken": "acceptance-apply-token-should-not-leak"},
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                apply_response = connection.getresponse()
+                apply_payload = json.loads(apply_response.read().decode("utf-8"))
+                apply_id = apply_payload["certificationApply"]["applyId"]
+
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/restart-evidence",
+                    body=json.dumps(
+                        {
+                            "applyId": apply_id,
+                            "operator": "restart-operator",
+                            "confirmations": {
+                                "restartWindowExecuted": True,
+                                "rollbackPlanConfirmed": True,
+                                "postRestartValidationPassed": True,
+                                "operatorReviewedRestartLogs": True,
+                            },
+                            "metadata": {"restartWindowId": "window-ashare-live-1", "secret": "acceptance-restart-secret"},
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                restart_response = connection.getresponse()
+                restart_payload = json.loads(restart_response.read().decode("utf-8"))
+                evidence_id = restart_payload["controlledRestartEvidence"]["evidenceId"]
+
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/restart-acceptance",
+                    body=json.dumps(
+                        {
+                            "evidenceId": evidence_id,
+                            "operator": "acceptance-operator",
+                            "confirmations": {},
+                            "metadata": {
+                                "probeId": "post-restart-acceptance-1",
+                                "secret": "acceptance-blocked-secret-should-not-leak",
+                            },
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/restart-acceptance",
+                    body=json.dumps(
+                        {
+                            "evidenceId": evidence_id,
+                            "operator": "acceptance-operator",
+                            "confirmations": {
+                                "coreHealthChecked": True,
+                                "settingsReloadObserved": True,
+                                "paperRouteHandshakePassed": True,
+                                "emergencyStopArmed": True,
+                                "accountSyncDryRunPassed": True,
+                            },
+                            "metadata": {
+                                "probeId": "post-restart-acceptance-1",
+                                "privateKey": "acceptance-private-key-should-not-leak",
+                            },
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                recorded_response = connection.getresponse()
+                recorded_payload = json.loads(recorded_response.read().decode("utf-8"))
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-certifications/restart-acceptance?adapterId=ashare-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(certification_response.status, 201)
+        self.assertEqual(apply_response.status, 200)
+        self.assertEqual(restart_response.status, 200)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["restartAcceptance"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["restartAcceptance"]["blockedReasons"],
+            [
+                "local_core_health_not_confirmed",
+                "settings_reload_not_confirmed",
+                "paper_route_handshake_not_confirmed",
+                "emergency_stop_not_confirmed",
+                "account_sync_dry_run_not_confirmed",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 200)
+        self.assertEqual(recorded_payload["restartAcceptance"]["status"], "acceptance_recorded")
+        self.assertEqual(recorded_payload["restartAcceptance"]["evidenceId"], evidence_id)
+        self.assertFalse(recorded_payload["restartAcceptance"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["restartAcceptance"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_restart_acceptance")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["restartAcceptances"]), 2)
+        self.assertEqual(history_payload["restartAcceptances"][0]["status"], "acceptance_recorded")
+        self.assertEqual(history_payload["restartAcceptances"][1]["status"], "blocked")
+        self.assertNotIn("acceptance-cert-key-should-not-leak", serialized)
+        self.assertNotIn("acceptance-cert-token-should-not-leak", serialized)
+        self.assertNotIn("acceptance-cert-password-should-not-leak", serialized)
+        self.assertNotIn("acceptance-apply-token-should-not-leak", serialized)
+        self.assertNotIn("acceptance-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("acceptance-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection
