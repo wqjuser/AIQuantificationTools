@@ -1836,6 +1836,15 @@ export interface ResearchContextReadinessRow {
   action?: ResearchContextReadinessAction;
 }
 
+export interface ResearchContextEvidenceRow {
+  id: "audit-run";
+  label: string;
+  value: string;
+  detail: string;
+  status: ResearchContextReadinessStatus;
+  tone: "positive" | "warning" | "risk";
+}
+
 export interface ResearchPipelinePreflightIssue {
   id: ResearchContextReadinessRow["id"];
   label: string;
@@ -5832,6 +5841,25 @@ export function buildResearchContextReadinessRows(
       status: noteStatus,
       tone: readinessTone(noteStatus),
       action: noteStatus === "ready" ? undefined : "save-note"
+    }
+  ];
+}
+
+export function buildResearchContextEvidenceRows(workspace: TerminalWorkspace): ResearchContextEvidenceRow[] {
+  const binding = buildResearchRunContextBinding(workspace);
+  const status: ResearchContextReadinessStatus =
+    binding.status === "matched" ? "ready" : binding.status === "mismatched" ? "blocked" : "review";
+  const tone: ResearchContextEvidenceRow["tone"] =
+    status === "ready" ? "positive" : status === "blocked" ? "risk" : "warning";
+
+  return [
+    {
+      id: "audit-run",
+      label: "Audited run",
+      value: binding.runId ?? "no audited run",
+      detail: binding.detail,
+      status,
+      tone
     }
   ];
 }

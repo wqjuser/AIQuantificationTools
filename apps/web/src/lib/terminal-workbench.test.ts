@@ -63,6 +63,7 @@ import {
   resolveQuantLoopSelection,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
+  buildResearchContextEvidenceRows,
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
@@ -273,6 +274,71 @@ describe("terminal workbench model", () => {
       detail: "core unavailable",
       action: "save-note"
     });
+  });
+
+  test("builds research context evidence rows for missing, matched, and mismatched audited runs", () => {
+    expect(buildResearchContextEvidenceRows(buildTerminalWorkspace())).toEqual([
+      {
+        id: "audit-run",
+        label: "Audited run",
+        value: "no audited run",
+        detail: "Run Pipeline to bind a matching audited research run.",
+        status: "review",
+        tone: "warning"
+      }
+    ]);
+
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-context-match",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-context",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+
+    expect(buildResearchContextEvidenceRows(auditedWorkspace)).toEqual([
+      {
+        id: "audit-run",
+        label: "Audited run",
+        value: "run-context-match",
+        detail: "Audited run run-context-match matches the selected research context.",
+        status: "ready",
+        tone: "positive"
+      }
+    ]);
+
+    const mismatchedWorkspace = {
+      ...auditedWorkspace,
+      selectedInstrument: {
+        symbol: "AAPL",
+        name: "Apple",
+        market: "us" as const,
+        price: 191.2,
+        changePct: 0
+      }
+    };
+
+    expect(buildResearchContextEvidenceRows(mismatchedWorkspace)).toEqual([
+      {
+        id: "audit-run",
+        label: "Audited run",
+        value: "run-context-match",
+        detail: "Audited run run-context-match belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d.",
+        status: "blocked",
+        tone: "risk"
+      }
+    ]);
   });
 
   test("marks warning K-line data as review instead of ready", () => {

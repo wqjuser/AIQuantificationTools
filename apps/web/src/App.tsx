@@ -157,6 +157,7 @@ import {
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   buildPromotionReadiness,
+  buildResearchContextEvidenceRows,
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
   buildResearchRunComparisonRows,
@@ -236,6 +237,7 @@ import {
   ProductWorkArea,
   ProductWorkAreaId,
   ResearchPipelinePreflight,
+  ResearchContextEvidenceRow,
   ResearchContextReadinessRow,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
@@ -821,6 +823,7 @@ export function App() {
       error: researchNoteState.error ?? null
     }
   });
+  const researchContextEvidenceRows = buildResearchContextEvidenceRows(workspace);
   const researchPipelinePreflight = buildResearchPipelinePreflight(researchContextReadinessRows);
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
   const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
@@ -3798,6 +3801,7 @@ export function App() {
           isSavingNote={isSavingResearchNote}
           onRefreshCache={refreshSelectedMarketCache}
           onSaveNote={saveCurrentResearchNote}
+          evidenceRows={researchContextEvidenceRows}
           rows={researchContextReadinessRows}
         />
         {renderWorkflowNodesPanel("workflow-nodes-panel")}
@@ -5424,6 +5428,7 @@ function ResearchContextReadinessPanel({
   isSavingNote = false,
   onRefreshCache,
   onSaveNote,
+  evidenceRows,
   rows
 }: {
   className?: string;
@@ -5432,12 +5437,17 @@ function ResearchContextReadinessPanel({
   isSavingNote?: boolean;
   onRefreshCache?: () => void;
   onSaveNote?: () => void;
+  evidenceRows: ResearchContextEvidenceRow[];
   rows: ResearchContextReadinessRow[];
 }) {
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "研究上下文就绪" : "Research Context Readiness"}
-      subtitle={i18n.locale === "zh-CN" ? "阶段 1 · 标的、K线、缓存、笔记" : "Stage 1 · symbol, K-lines, cache, notes"}
+      subtitle={
+        i18n.locale === "zh-CN"
+          ? "阶段 1 · 标的、K线、缓存、笔记、审计运行"
+          : "Stage 1 · symbol, K-lines, cache, notes, audited run"
+      }
       className={className}
     >
       <div className="research-context-checklist">
@@ -5468,6 +5478,21 @@ function ResearchContextReadinessPanel({
             </article>
           );
         })}
+        {evidenceRows.map((row, index) => (
+          <article className={`research-context-row ${row.tone}`} key={row.id}>
+            <span className="research-context-index">{rows.length + index + 1}</span>
+            <div>
+              <strong>
+                {researchContextEvidenceLabel(i18n, row)}
+                <span>{researchContextEvidenceValue(i18n, row)}</span>
+              </strong>
+              <p>{researchContextEvidenceDetail(i18n, row)}</p>
+            </div>
+            <div className="research-context-actions">
+              <em>{researchContextReadinessStatusLabel(i18n, row.status)}</em>
+            </div>
+          </article>
+        ))}
       </div>
     </Panel>
   );
@@ -5556,12 +5581,44 @@ function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadin
 
 function researchContextReadinessStatusLabel(
   i18n: AppI18n,
-  status: ResearchContextReadinessRow["status"]
+  status: ResearchContextReadinessRow["status"] | ResearchContextEvidenceRow["status"]
 ): string {
   if (i18n.locale !== "zh-CN") {
     return status === "ready" ? "Ready" : status === "review" ? "Review" : "Blocked";
   }
   return status === "ready" ? "就绪" : status === "review" ? "复核" : "阻断";
+}
+
+function researchContextEvidenceLabel(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.label;
+  }
+  return "审计运行";
+}
+
+function researchContextEvidenceValue(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
+  if (i18n.locale !== "zh-CN" || row.value !== "no audited run") {
+    return row.value;
+  }
+  return "无审计运行";
+}
+
+function researchContextEvidenceDetail(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.detail;
+  }
+  if (row.detail === "Run Pipeline to bind a matching audited research run.") {
+    return "运行流水线以绑定匹配当前上下文的审计运行。";
+  }
+  const matched = row.detail.match(/^Audited run (.+) matches the selected research context\.$/);
+  if (matched) {
+    return `审计运行 ${matched[1]} 匹配当前研究上下文。`;
+  }
+  const mismatched = row.detail.match(/^Audited run (.+) belongs to (.+), not (.+)\.$/);
+  if (mismatched) {
+    return `审计运行 ${mismatched[1]} 属于 ${mismatched[2]}，而不是 ${mismatched[3]}。`;
+  }
+  return row.detail;
 }
 
 function researchPipelinePreflightStatusLabel(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
