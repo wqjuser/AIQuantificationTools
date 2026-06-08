@@ -92,13 +92,15 @@ Result: PASS on 2026-06-08.
 - `git diff --check`: passed.
 - Browser check: Settings workspace showed 4 adapter rows and 3 live adapter certification buttons; after recording one paper-only certification evidence run it showed the adapter certification list, live-blocked boundary, no console errors, and no `secret-key` text.
 
-- [ ] **Step 7: Commit and push**
+- [x] **Step 7: Commit and push**
 
 ```powershell
 git add apps/web/src/lib/terminal-api.ts apps/web/src/lib/terminal-api.test.ts apps/web/src/lib/terminal-workbench.ts apps/web/src/lib/terminal-workbench.test.ts apps/web/src/App.tsx apps/web/src/lib/layout-css.test.js docs/product-plan.md docs/superpowers/plans/2026-06-08-adapter-certification-frontend.md
 git commit -m "feat: surface adapter certification evidence"
 git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 push origin codex/p0-product-workspaces
 ```
+
+Result: PASS on 2026-06-08. Feature commit `8ff10d2` pushed to `origin/codex/p0-product-workspaces` with the configured proxy; this plan status was followed up in a docs-only push.
 
 ### Notes
 
