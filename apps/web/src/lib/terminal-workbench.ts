@@ -7858,6 +7858,24 @@ export function buildStrategyReadinessGates(workspace: TerminalWorkspace): Strat
   ];
 }
 
+export function mergeStrategyReadinessGatesWithLocalAudit(
+  coreGates: StrategyReadinessGate[] | null | undefined,
+  localGates: StrategyReadinessGate[]
+): StrategyReadinessGate[] {
+  if (!coreGates) {
+    return localGates;
+  }
+  const localAuditGate = localGates.find((gate) => gate.id === "audit");
+  if (!localAuditGate) {
+    return coreGates;
+  }
+  const merged = coreGates.map((gate) => (gate.id === "audit" ? localAuditGate : gate));
+  if (!merged.some((gate) => gate.id === "audit")) {
+    merged.push(localAuditGate);
+  }
+  return merged;
+}
+
 export function buildStrategyVersionDiffRows(
   workspace: TerminalWorkspace,
   item: StrategyLibraryDraftItem

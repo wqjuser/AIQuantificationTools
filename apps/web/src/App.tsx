@@ -190,6 +190,7 @@ import {
   filterResearchRunImportDiffRows,
   formatInstrumentPrice,
   mergeResearchRunImportAuditEvents,
+  mergeStrategyReadinessGatesWithLocalAudit,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
   AiWorkbenchAction,
@@ -770,7 +771,10 @@ export function App() {
   const strategyRuleDraft = buildStrategyRuleDraft(workspace);
   const strategyTemplateOptions = buildStrategyTemplateOptions();
   const localStrategyReadinessGates = buildStrategyReadinessGates(workspace);
-  const strategyReadinessGates = strategyValidationState.validation?.gates ?? localStrategyReadinessGates;
+  const strategyReadinessGates = mergeStrategyReadinessGatesWithLocalAudit(
+    strategyValidationState.validation?.gates,
+    localStrategyReadinessGates
+  );
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const visibleStrategyLibrary = strategyLibraryState.strategies;
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);

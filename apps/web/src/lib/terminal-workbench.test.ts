@@ -60,6 +60,7 @@ import {
   buildProductDevelopmentStages,
   buildProductWorkAreas,
   buildQuantLoopNavigationTarget,
+  mergeStrategyReadinessGatesWithLocalAudit,
   resolveQuantLoopSelection,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
@@ -1128,6 +1129,61 @@ describe("terminal workbench model", () => {
       label: "Audit evidence",
       value: "run-strategy-context",
       detail: "Audited run run-strategy-context belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d.",
+      status: "blocked",
+      tone: "risk"
+    });
+  });
+
+  test("keeps local audit context gate when core validation returns a passed audit gate", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-core-validation-stale",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-core-validation-stale",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const mismatchedWorkspace = {
+      ...auditedWorkspace,
+      selectedInstrument: {
+        symbol: "AAPL",
+        name: "Apple",
+        market: "us" as const,
+        price: 191.2,
+        changePct: 0
+      }
+    };
+    const localGates = buildStrategyReadinessGates(mismatchedWorkspace);
+    const coreGates = localGates.map((gate) =>
+      gate.id === "audit"
+        ? {
+            id: "audit" as const,
+            label: "Audit evidence" as const,
+            value: "run-core-validation-stale",
+            detail: "This draft is bound to a reproducible audit run.",
+            status: "passed" as const,
+            tone: "positive" as const
+          }
+        : gate
+    );
+
+    const merged = mergeStrategyReadinessGatesWithLocalAudit(coreGates, localGates);
+
+    expect(merged.find((gate) => gate.id === "audit")).toEqual({
+      id: "audit",
+      label: "Audit evidence",
+      value: "run-core-validation-stale",
+      detail: "Audited run run-core-validation-stale belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d.",
       status: "blocked",
       tone: "risk"
     });
