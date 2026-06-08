@@ -37,7 +37,7 @@
 - [x] GREEN: Wire Strategy Lab audit gate to `buildResearchRunContextBinding`.
 - [x] DOCS: Update product plan and this plan.
 - [x] VERIFY: Run targeted tests, full tests, build, Docker smoke, browser check, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification Checklist
 
@@ -59,3 +59,4 @@ git diff --check
 - GREEN targeted test passed after wiring the audit gate to the shared run context binding.
 - Verification passed on 2026-06-08: targeted Strategy Lab audit evidence test, full `terminal-workbench.test.ts` (163 tests), `npm test` (128 Python tests and 341 web tests), `npm run build`, `docker compose config`, `docker compose build`, `python tools\docker_smoke.py --no-build --down`, and `git diff --check`.
 - Browser verification passed on `http://127.0.0.1:5173/?workspace=strategy`: Strategy Lab rendered, `600000` rendered, four readiness gates were visible, audit evidence label was present, and console error count was 0.
+- Shipped in commit `8125fc1` and pushed through proxy to `origin/codex/p0-product-workspaces`; GitHub Actions CI run `27124348843` completed with `success`.
