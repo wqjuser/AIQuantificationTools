@@ -4215,6 +4215,54 @@ em {
   opacity: 0.62;
 }
 
+.adapter-certification-apply-confirmations {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.adapter-certification-apply-confirmation {
+  align-items: flex-start;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #0d1724;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.adapter-certification-apply-confirmation.positive {
+  border-color: #2e6b5d;
+  background: #0d211f;
+}
+
+.adapter-certification-apply-confirmation input {
+  accent-color: #4cc9ad;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.adapter-certification-apply-confirmation span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.adapter-certification-apply-confirmation strong {
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.adapter-certification-apply-confirmation em {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
 .adapter-certification-apply-button {
   align-items: center;
   border: 1px solid #51492b;

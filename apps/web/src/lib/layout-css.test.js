@@ -1411,6 +1411,21 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-certification-apply-row");
   });
 
+  test("renders execution adapter certification apply confirmation checklist in settings", () => {
+    expect(appSource).toContain("buildExecutionAdapterCertificationApplyConfirmationRows(");
+    expect(appSource).toContain("createDefaultExecutionAdapterCertificationApplyConfirmations()");
+    expect(appSource).toContain("adapterCertificationApplyConfirmations={adapterCertificationApplyConfirmations}");
+    expect(appSource).toContain("onApplyConfirmationChange={updateAdapterCertificationApplyConfirmation}");
+    expect(appSource).toContain("const confirmations = adapterCertificationApplyConfirmations[row.id]");
+    expect(appSource).toContain("confirmations: confirmations");
+    expect(appSource).toContain('className="adapter-certification-apply-confirmations"');
+    expect(appSource).toContain('className={`adapter-certification-apply-confirmation');
+    expect(appSource).toContain('type="checkbox"');
+    expect(appSource).toContain("adapterCertificationApplyConfirmationLabel(i18n, confirmation.label)");
+    expect(styles).toContain(".adapter-certification-apply-confirmations");
+    expect(styles).toContain(".adapter-certification-apply-confirmation");
+  });
+
   test("keeps history replay and export as separate compact row actions", () => {
     expect(appSource).toContain("onExport={onExport}");
     expect(appSource).toContain('className="history-row-actions"');

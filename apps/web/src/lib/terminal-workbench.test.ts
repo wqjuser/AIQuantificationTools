@@ -38,7 +38,9 @@ import {
   buildBacktestReadinessGates,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterCertificationApplyConfirmationRows,
   buildExecutionAdapterCertificationApplyRows,
+  createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
   buildGoldenPathRunbookPreview,
@@ -7092,6 +7094,46 @@ describe("terminal workbench model", () => {
       }
     ]);
     expect(JSON.stringify(rows)).not.toContain("token");
+  });
+
+  test("builds certification apply confirmation rows with stable payload keys", () => {
+    const rows = buildExecutionAdapterCertificationApplyConfirmationRows({
+      secretReferenceStored: true,
+      controlledRestartWindowApproved: false,
+      operatorReviewedCertification: true
+    });
+
+    expect(createDefaultExecutionAdapterCertificationApplyConfirmations()).toEqual({
+      secretReferenceStored: false,
+      controlledRestartWindowApproved: false,
+      operatorReviewedCertification: false
+    });
+    expect(rows).toEqual([
+      {
+        id: "secret-reference-stored",
+        key: "secretReferenceStored",
+        label: "Secret-store reference saved",
+        detail: "Confirm the real credential reference is stored outside this UI.",
+        checked: true,
+        tone: "positive"
+      },
+      {
+        id: "controlled-restart-window-approved",
+        key: "controlledRestartWindowApproved",
+        label: "Controlled restart window approved",
+        detail: "Confirm an operator-approved restart window exists before applying.",
+        checked: false,
+        tone: "neutral"
+      },
+      {
+        id: "operator-reviewed-certification",
+        key: "operatorReviewedCertification",
+        label: "Operator reviewed certification",
+        detail: "Confirm the certification evidence and restart impact were reviewed.",
+        checked: true,
+        tone: "positive"
+      }
+    ]);
   });
 
   test("blocks promotion readiness before an audited run is bound", () => {

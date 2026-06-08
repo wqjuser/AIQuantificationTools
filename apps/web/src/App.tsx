@@ -145,9 +145,11 @@ import {
   buildBacktestRunComparisonMatrixSummary,
   buildBacktestTradeRows,
   buildBrokerAdapterRows,
+  buildExecutionAdapterCertificationApplyConfirmationRows,
   buildExecutionAdapterCertificationApplyRows,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
+  createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
   buildPaperExecutionSummaryTiles,
@@ -227,6 +229,9 @@ import {
   BacktestRunComparisonMatrixSummary,
   BacktestTradeRow,
   BrokerAdapterRow,
+  ExecutionAdapterCertificationApplyConfirmationKey,
+  ExecutionAdapterCertificationApplyConfirmationRow,
+  ExecutionAdapterCertificationApplyConfirmations,
   ExecutionAdapterCertificationApplyRow,
   ExecutionAdapterCertificationRow,
   ExecutionAdapterLedgerRow,
@@ -622,6 +627,9 @@ export function App() {
   const [executionAdapterCertificationApplies, setExecutionAdapterCertificationApplies] = useState<
     ExecutionAdapterCertificationApplyResult[]
   >([]);
+  const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
+    Record<string, ExecutionAdapterCertificationApplyConfirmations>
+  >({});
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
   );
@@ -1232,49 +1240,63 @@ export function App() {
     [refreshSettingsStatus]
   );
 
-  const applyAdapterCertificationPreflight = useCallback(async (row: ExecutionAdapterCertificationRow) => {
-    setApplyingAdapterCertificationId(row.id);
-    try {
-      const result = await recordExecutionAdapterCertificationApply(quantCoreBaseUrl, {
-        certificationId: row.id,
-        operator: "settings-panel",
-        confirmations: {
-          secretReferenceStored: false,
-          controlledRestartWindowApproved: false,
-          operatorReviewedCertification: false
-        },
-        metadata: {
-          adapterId: row.adapterId,
-          source: "settings-panel"
+  const updateAdapterCertificationApplyConfirmation = useCallback(
+    (certificationId: string, key: ExecutionAdapterCertificationApplyConfirmationKey, checked: boolean) => {
+      setAdapterCertificationApplyConfirmations((current) => ({
+        ...current,
+        [certificationId]: {
+          ...createDefaultExecutionAdapterCertificationApplyConfirmations(),
+          ...(current[certificationId] ?? {}),
+          [key]: checked
         }
-      });
-      if (result.certificationApply) {
-        setExecutionAdapterCertificationApplies((current) => [
-          result.certificationApply!,
-          ...current.filter((currentRow) => currentRow.applyId !== result.certificationApply!.applyId)
-        ]);
+      }));
+    },
+    []
+  );
+
+  const applyAdapterCertificationPreflight = useCallback(
+    async (row: ExecutionAdapterCertificationRow) => {
+      const confirmations = adapterCertificationApplyConfirmations[row.id] ?? createDefaultExecutionAdapterCertificationApplyConfirmations();
+      setApplyingAdapterCertificationId(row.id);
+      try {
+        const result = await recordExecutionAdapterCertificationApply(quantCoreBaseUrl, {
+          certificationId: row.id,
+          operator: "settings-panel",
+          confirmations: confirmations,
+          metadata: {
+            adapterId: row.adapterId,
+            source: "settings-panel"
+          }
+        });
+        if (result.certificationApply) {
+          setExecutionAdapterCertificationApplies((current) => [
+            result.certificationApply!,
+            ...current.filter((currentRow) => currentRow.applyId !== result.certificationApply!.applyId)
+          ]);
+        }
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: result.error,
+            statusLabel: "Adapter apply preflight failed"
+          }));
+        } else {
+          const status = result.certificationApply?.status ?? "blocked";
+          setWorkspaceState((current) => ({
+            ...current,
+            error: undefined,
+            statusLabel:
+              status === "ready_for_restart"
+                ? `Adapter apply preflight ready · ${row.adapterId}`
+                : `Adapter apply preflight blocked · ${row.adapterId}`
+          }));
+        }
+      } finally {
+        setApplyingAdapterCertificationId(null);
       }
-      if (result.error) {
-        setWorkspaceState((current) => ({
-          ...current,
-          error: result.error,
-          statusLabel: "Adapter apply preflight failed"
-        }));
-      } else {
-        const status = result.certificationApply?.status ?? "blocked";
-        setWorkspaceState((current) => ({
-          ...current,
-          error: undefined,
-          statusLabel:
-            status === "ready_for_restart"
-              ? `Adapter apply preflight ready · ${row.adapterId}`
-              : `Adapter apply preflight blocked · ${row.adapterId}`
-        }));
-      }
-    } finally {
-      setApplyingAdapterCertificationId(null);
-    }
-  }, []);
+    },
+    [adapterCertificationApplyConfirmations]
+  );
 
   const refreshAuditSigningKeys = useCallback(async () => {
     setAuditSigningKeyRegistry(await loadAuditSigningKeys(quantCoreBaseUrl));
@@ -3928,6 +3950,7 @@ export function App() {
         <>
           <PlatformSettingsPanel
             adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
+            adapterCertificationApplyConfirmations={adapterCertificationApplyConfirmations}
             adapterCertificationRows={executionAdapterCertificationRows}
             adapterRows={brokerAdapterRows}
             adapterLedgerRows={executionAdapterLedgerRows}
@@ -3935,6 +3958,7 @@ export function App() {
             className="workflow-settings-panel"
             i18n={i18n}
             onApplyAdapterCertification={applyAdapterCertificationPreflight}
+            onApplyConfirmationChange={updateAdapterCertificationApplyConfirmation}
             onRecordAdapterCertification={recordAdapterCertificationEvidence}
             onRefreshContext={refreshCacheContext}
             recordingAdapterCertificationId={recordingAdapterCertificationId}
@@ -5922,6 +5946,7 @@ function ResearchNotesPanel({
 }
 
 function PlatformSettingsPanel({
+  adapterCertificationApplyConfirmations,
   adapterCertificationApplyRows,
   adapterCertificationRows,
   adapterRows,
@@ -5930,6 +5955,7 @@ function PlatformSettingsPanel({
   className,
   i18n,
   onApplyAdapterCertification,
+  onApplyConfirmationChange,
   onRecordAdapterCertification,
   onRefreshContext,
   recordingAdapterCertificationId,
@@ -5938,6 +5964,7 @@ function PlatformSettingsPanel({
   state,
   workspace
 }: {
+  adapterCertificationApplyConfirmations: Record<string, ExecutionAdapterCertificationApplyConfirmations>;
   adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
   adapterRows: BrokerAdapterRow[];
@@ -5946,6 +5973,11 @@ function PlatformSettingsPanel({
   className?: string;
   i18n: AppI18n;
   onApplyAdapterCertification?: (row: ExecutionAdapterCertificationRow) => void;
+  onApplyConfirmationChange?: (
+    certificationId: string,
+    key: ExecutionAdapterCertificationApplyConfirmationKey,
+    checked: boolean
+  ) => void;
   onRecordAdapterCertification?: (adapter: PlatformSettingsStatus["executionAdapters"][number]) => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
   recordingAdapterCertificationId?: string | null;
@@ -6132,6 +6164,26 @@ function PlatformSettingsPanel({
               <em>
                 {adapterCertificationCheckSummary(i18n, row.checkSummary)} · {row.auditEventId}
               </em>
+              {onApplyConfirmationChange ? (
+                <div className="adapter-certification-apply-confirmations">
+                  {buildExecutionAdapterCertificationApplyConfirmationRows(
+                    adapterCertificationApplyConfirmations[row.id] ??
+                      createDefaultExecutionAdapterCertificationApplyConfirmations()
+                  ).map((confirmation) => (
+                    <label className={`adapter-certification-apply-confirmation ${confirmation.tone}`} key={confirmation.id}>
+                      <input
+                        checked={confirmation.checked}
+                        onChange={(event) => onApplyConfirmationChange(row.id, confirmation.key, event.currentTarget.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>{adapterCertificationApplyConfirmationLabel(i18n, confirmation.label)}</strong>
+                        <em>{adapterCertificationApplyConfirmationDetail(i18n, confirmation.detail)}</em>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
               {onApplyAdapterCertification ? (
                 <button
                   className="adapter-certification-apply-button"
@@ -11900,6 +11952,32 @@ function adapterCertificationApplyModeLabel(i18n: AppI18n, mode: string): string
       manual_preflight: "人工预检",
       manual_secret_store: "密钥存储预检"
     }[mode] ?? mode.replaceAll("_", " ")
+  );
+}
+
+function adapterCertificationApplyConfirmationLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return (
+    {
+      "Secret-store reference saved": "密钥引用已本地保存",
+      "Controlled restart window approved": "受控重启窗口已批准",
+      "Operator reviewed certification": "操作员已复核认证"
+    }[label] ?? label
+  );
+}
+
+function adapterCertificationApplyConfirmationDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return (
+    {
+      "Confirm the real credential reference is stored outside this UI.": "确认真实凭证引用已保存在 UI 之外。",
+      "Confirm an operator-approved restart window exists before applying.": "确认应用前已有操作员批准的重启窗口。",
+      "Confirm the certification evidence and restart impact were reviewed.": "确认已复核认证证据和重启影响。"
+    }[detail] ?? detail
   );
 }
 

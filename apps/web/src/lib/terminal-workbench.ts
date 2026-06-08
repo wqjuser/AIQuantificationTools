@@ -1823,6 +1823,25 @@ export interface ExecutionAdapterCertificationApplyRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterCertificationApplyConfirmationKey =
+  | "secretReferenceStored"
+  | "controlledRestartWindowApproved"
+  | "operatorReviewedCertification";
+
+export type ExecutionAdapterCertificationApplyConfirmations = Record<
+  ExecutionAdapterCertificationApplyConfirmationKey,
+  boolean
+>;
+
+export interface ExecutionAdapterCertificationApplyConfirmationRow {
+  id: string;
+  key: ExecutionAdapterCertificationApplyConfirmationKey;
+  label: string;
+  detail: string;
+  checked: boolean;
+  tone: "positive" | "neutral";
+}
+
 export type PromotionReadinessStatus = "blocked" | "paper_pending" | "certification_pending" | "live_ready";
 
 export interface PromotionQueueStage {
@@ -7797,6 +7816,49 @@ export function buildExecutionAdapterCertificationApplyRows(
     }))
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
     .slice(0, Math.max(1, limit));
+}
+
+export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
+  return {
+    secretReferenceStored: false,
+    controlledRestartWindowApproved: false,
+    operatorReviewedCertification: false
+  };
+}
+
+export function buildExecutionAdapterCertificationApplyConfirmationRows(
+  confirmations: Partial<ExecutionAdapterCertificationApplyConfirmations> | null | undefined = {}
+): ExecutionAdapterCertificationApplyConfirmationRow[] {
+  const values = {
+    ...createDefaultExecutionAdapterCertificationApplyConfirmations(),
+    ...(confirmations ?? {})
+  };
+  return [
+    {
+      id: "secret-reference-stored",
+      key: "secretReferenceStored",
+      label: "Secret-store reference saved",
+      detail: "Confirm the real credential reference is stored outside this UI.",
+      checked: values.secretReferenceStored,
+      tone: values.secretReferenceStored ? "positive" : "neutral"
+    },
+    {
+      id: "controlled-restart-window-approved",
+      key: "controlledRestartWindowApproved",
+      label: "Controlled restart window approved",
+      detail: "Confirm an operator-approved restart window exists before applying.",
+      checked: values.controlledRestartWindowApproved,
+      tone: values.controlledRestartWindowApproved ? "positive" : "neutral"
+    },
+    {
+      id: "operator-reviewed-certification",
+      key: "operatorReviewedCertification",
+      label: "Operator reviewed certification",
+      detail: "Confirm the certification evidence and restart impact were reviewed.",
+      checked: values.operatorReviewedCertification,
+      tone: values.operatorReviewedCertification ? "positive" : "neutral"
+    }
+  ];
 }
 
 function latestPromotionCertificationRow(
