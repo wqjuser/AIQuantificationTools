@@ -48,11 +48,14 @@ from quant_core.execution import (
     build_portfolio_paper_order_replay,
     build_portfolio_paper_order_state_history,
     build_promotion_candidate,
+    build_execution_adapter_certification_apply,
     create_execution_adapter_certification_run,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
     create_portfolio_paper_order_batch,
     create_portfolio_paper_order_simulation,
+    execution_adapter_certification_apply_to_audit_event_payload,
+    execution_adapter_certification_apply_to_payload,
     execution_adapter_certification_to_audit_event_payload,
     execution_adapter_certification_to_payload,
     paper_execution_payload_to_record,
@@ -304,6 +307,37 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-certifications/apply":
+            payload = self._read_json_body()
+            certification_id = str(payload.get("certificationId") or "").strip()
+            certification = self.execution_adapter_certification_store.get(certification_id)
+            if not certification:
+                self._send_json(
+                    {"error": "execution_adapter_certification_not_found", "certificationId": certification_id},
+                    status=404,
+                )
+                return
+            try:
+                certification_apply = build_execution_adapter_certification_apply(
+                    certification,
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_certification_apply", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_certification_apply_to_audit_event_payload(certification_apply)
+            )
+            self._send_json(
+                {
+                    "certificationApply": execution_adapter_certification_apply_to_payload(certification_apply),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if certification_apply.status == "blocked" else 200,
             )
             return
         if parsed.path == "/api/portfolio/backtest":

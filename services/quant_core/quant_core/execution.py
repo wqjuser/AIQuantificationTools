@@ -83,6 +83,24 @@ class ExecutionAdapterCertificationRun:
     live_trading_allowed: bool = False
 
 
+@dataclass(frozen=True)
+class ExecutionAdapterCertificationApplyResult:
+    apply_id: str
+    certification_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    generated_at: datetime
+    apply_mode: str
+    restart_required: bool
+    required_confirmations: list[dict[str, Any]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
 class PaperExecutionAdapter:
     def __init__(self, initial_cash: float = 100_000, max_position_value: float = 20_000) -> None:
         self.cash = initial_cash
@@ -344,6 +362,25 @@ class ExecutionAdapterCertificationStore:
         finally:
             connection.close()
         return run
+
+    def get(self, certification_id: str) -> ExecutionAdapterCertificationRun | None:
+        normalized_id = str(certification_id or "").strip()
+        if not normalized_id:
+            return None
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                select certification_id, adapter_id, market, route, status, operator, started_at,
+                       completed_at, live_trading_allowed, checks_json, metadata_json, summary_json
+                from execution_adapter_certifications
+                where certification_id = ?
+                """,
+                (normalized_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return _row_to_execution_adapter_certification(row) if row else None
 
     def list_by_adapter(self, adapter_id: str, limit: int = 20) -> list[ExecutionAdapterCertificationRun]:
         connection = self._connect()
@@ -1437,6 +1474,138 @@ def execution_adapter_certification_to_audit_event_payload(run: ExecutionAdapter
             "liveTradingAllowed": False,
             "paperOnly": True,
         },
+    }
+
+
+def build_execution_adapter_certification_apply(
+    certification: ExecutionAdapterCertificationRun,
+    *,
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    generated_at: datetime | str | None = None,
+    apply_id: str | None = None,
+) -> ExecutionAdapterCertificationApplyResult:
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+    confirmation_specs = [
+        (
+            "secret-reference-stored",
+            "secretReferenceStored",
+            "Secret-store reference is saved outside the UI",
+            "secret_reference_not_confirmed",
+        ),
+        (
+            "controlled-restart-window-approved",
+            "controlledRestartWindowApproved",
+            "Controlled restart window is approved",
+            "controlled_restart_not_confirmed",
+        ),
+        (
+            "operator-reviewed-certification",
+            "operatorReviewedCertification",
+            "Operator reviewed certification evidence and restart impact",
+            "operator_review_not_confirmed",
+        ),
+    ]
+    blocked_reasons = []
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in confirmation_specs:
+        confirmed = bool(confirmations.get(payload_key))
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if certification.route != "live":
+        blocked_reasons.append("certification_route_not_live")
+    if certification.status != "passed":
+        blocked_reasons.append("certification_not_passed")
+
+    generated = _coerce_optional_datetime(
+        generated_at,
+        error_code="execution_adapter_certification_apply_generated_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return ExecutionAdapterCertificationApplyResult(
+        apply_id=str(apply_id or f"execution-adapter-certification-apply-{certification.certification_id}-{uuid4()}"),
+        certification_id=certification.certification_id,
+        adapter_id=certification.adapter_id,
+        market=certification.market,
+        route=certification.route,
+        status="blocked" if unique_blocked_reasons else "ready_for_restart",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        generated_at=generated or datetime.now(timezone.utc),
+        apply_mode="manual_secret_store",
+        restart_required=True,
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_certification_apply_to_payload(result: ExecutionAdapterCertificationApplyResult) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "applyId": result.apply_id,
+        "certificationId": result.certification_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "generatedAt": result.generated_at.isoformat(),
+        "applyMode": result.apply_mode,
+        "restartRequired": result.restart_required,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_certification_apply_to_audit_event_payload(
+    result: ExecutionAdapterCertificationApplyResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "eventId": result.apply_id,
+        "eventType": "execution_adapter_certification_apply",
+        "runId": "",
+        "createdAt": result.generated_at.isoformat(),
+        "stage": "execution-adapter-certification-apply",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} certification apply preflight recorded as {result.status}.",
+        "detail": "Certification apply preflight records manual secret-store and restart confirmations without secrets or live trading.",
+        "metadata": _redact_secret_fields(
+            {
+                "applyId": result.apply_id,
+                "certificationId": result.certification_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "applyMode": result.apply_mode,
+                "restartRequired": result.restart_required,
+                "blockedReasons": list(result.blocked_reasons),
+                "requiredConfirmationIds": [item["id"] for item in result.required_confirmations],
+                "confirmedConfirmationIds": [
+                    item["id"] for item in result.required_confirmations if item.get("status") == "confirmed"
+                ],
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
     }
 
 

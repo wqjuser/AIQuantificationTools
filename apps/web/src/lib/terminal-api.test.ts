@@ -34,6 +34,7 @@ import {
   buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
+  buildExecutionAdapterCertificationApplyUrl,
   buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
@@ -64,6 +65,7 @@ import {
   recordPortfolioPaperOrderApproval,
   recordPortfolioPaperOrderSimulation,
   recordExecutionAdapterCertification,
+  recordExecutionAdapterCertificationApply,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -1776,6 +1778,113 @@ describe("terminal workspace API client", () => {
     expect(loadResult.adapterCertifications[0].liveTradingAllowed).toBe(false);
     expect(JSON.stringify(recordResult)).not.toContain("secret-key-should-not-leak");
     expect(JSON.stringify(loadResult)).not.toContain("token-should-not-leak");
+  });
+
+  test("records execution adapter certification apply preflight results", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const certificationApply = {
+      schemaVersion: 1,
+      applyId: "execution-adapter-certification-apply-us-live",
+      certificationId: "adapter-certification-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "blocked",
+      operator: "local-operator",
+      generatedAt: "2026-06-08T08:05:00+00:00",
+      applyMode: "manual_secret_store",
+      restartRequired: true,
+      requiredConfirmations: [
+        {
+          id: "secret-reference-stored",
+          label: "Secret-store reference is saved outside the UI",
+          status: "missing"
+        },
+        {
+          id: "controlled-restart-window-approved",
+          label: "Controlled restart window is approved",
+          status: "missing"
+        },
+        {
+          id: "operator-reviewed-certification",
+          label: "Operator reviewed certification evidence and restart impact",
+          status: "missing"
+        }
+      ],
+      blockedReasons: [
+        "secret_reference_not_confirmed",
+        "controlled_restart_not_confirmed",
+        "operator_review_not_confirmed"
+      ],
+      metadata: { source: "settings-panel", secretStorePath: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      return {
+        ok: false,
+        status: 409,
+        json: async () => ({
+          certificationApply,
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-certification-apply-us-live",
+            eventType: "execution_adapter_certification_apply",
+            runId: "",
+            createdAt: "2026-06-08T08:05:00+00:00",
+            stage: "execution-adapter-certification-apply",
+            source: "execution-adapter-ledger",
+            summary: "us-live certification apply preflight recorded as blocked.",
+            detail: "Certification apply preflight records manual confirmations without secrets.",
+            metadata: {
+              certificationId: "adapter-certification-us-live",
+              adapterId: "us-live",
+              status: "blocked",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterCertificationApplyUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-certifications/apply"
+    );
+
+    const result = await recordExecutionAdapterCertificationApply(
+      "/",
+      {
+        certificationId: "adapter-certification-us-live",
+        operator: "local-operator",
+        confirmations: {
+          secretReferenceStored: false,
+          controlledRestartWindowApproved: false,
+          operatorReviewedCertification: false
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-certifications/apply"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      certificationId: "adapter-certification-us-live",
+      operator: "local-operator",
+      confirmations: {
+        secretReferenceStored: false,
+        controlledRestartWindowApproved: false,
+        operatorReviewedCertification: false
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.certificationApply?.status).toBe("blocked");
+    expect(result.certificationApply?.blockedReasons).toContain("controlled_restart_not_confirmed");
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_certification_apply");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

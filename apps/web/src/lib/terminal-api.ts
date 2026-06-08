@@ -828,6 +828,52 @@ export interface ExecutionAdapterCertificationHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterCertificationApplyStatus = "blocked" | "ready_for_restart";
+export type ExecutionAdapterCertificationApplyConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterCertificationApplyConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterCertificationApplyConfirmationStatus;
+}
+
+export interface ExecutionAdapterCertificationApplyResult {
+  schemaVersion: 1;
+  applyId: string;
+  certificationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterCertificationApplyStatus;
+  operator: string;
+  generatedAt: string;
+  applyMode: string;
+  restartRequired: boolean;
+  requiredConfirmations: ExecutionAdapterCertificationApplyConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterCertificationApplyRequest {
+  certificationId: string;
+  operator?: string;
+  confirmations?: {
+    secretReferenceStored?: boolean;
+    controlledRestartWindowApproved?: boolean;
+    operatorReviewedCertification?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterCertificationApplyRecordResult {
+  certificationApply?: ExecutionAdapterCertificationApplyResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1614,6 +1660,10 @@ export function buildExecutionAdapterCertificationsUrl(
       url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
     }
   });
+}
+
+export function buildExecutionAdapterCertificationApplyUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-certifications/apply");
 }
 
 export function buildGoldenPathStatusUrl(baseUrl: string, params: TerminalResearchParams): string {
@@ -3231,6 +3281,49 @@ export async function recordExecutionAdapterCertification(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter certification record error"
+    };
+  }
+}
+
+export async function recordExecutionAdapterCertificationApply(
+  baseUrl: string,
+  request: ExecutionAdapterCertificationApplyRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterCertificationApplyRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterCertificationApplyUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        certificationId: request.certificationId,
+        operator: request.operator ?? "local-operator",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterCertificationApplyRecordPayload(payload)) {
+      return {
+        certificationApply: payload.certificationApply,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter certification apply contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter certification apply error"
     };
   }
 }
@@ -4860,6 +4953,19 @@ function isExecutionAdapterCertificationRecordPayload(
   );
 }
 
+function isExecutionAdapterCertificationApplyRecordPayload(
+  value: unknown
+): value is { certificationApply: ExecutionAdapterCertificationApplyResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { certificationApply?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterCertificationApplyResult(payload.certificationApply) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -4870,6 +4976,47 @@ function isExecutionAdapterCertificationHistoryPayload(
   return (
     Array.isArray(payload.adapterCertifications) &&
     payload.adapterCertifications.every(isExecutionAdapterCertificationRun)
+  );
+}
+
+function isExecutionAdapterCertificationApplyResult(value: unknown): value is ExecutionAdapterCertificationApplyResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterCertificationApplyResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.applyId === "string" &&
+    typeof result.certificationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterCertificationApplyStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.generatedAt === "string" &&
+    typeof result.applyMode === "string" &&
+    typeof result.restartRequired === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterCertificationApplyConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterCertificationApplyConfirmation(
+  value: unknown
+): value is ExecutionAdapterCertificationApplyConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterCertificationApplyConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
   );
 }
 
@@ -4928,6 +5075,12 @@ function isExecutionAdapterCertificationSummary(value: unknown): value is Execut
 
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
+}
+
+function isExecutionAdapterCertificationApplyStatus(
+  value: unknown
+): value is ExecutionAdapterCertificationApplyStatus {
+  return value === "blocked" || value === "ready_for_restart";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

@@ -1558,6 +1558,157 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("crypto-token-should-not-leak", serialized_post)
         self.assertNotIn("crypto-password-should-not-leak", serialized_get)
 
+    def test_execution_adapter_certification_apply_preflight_requires_confirmations_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import ExecutionAdapterCertificationStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.execution_adapter_certification_store = ExecutionAdapterCertificationStore(
+                Path(tmp) / "adapter_certifications.sqlite"
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                certification_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "local-operator",
+                    "startedAt": "2026-06-08T08:00:00+00:00",
+                    "completedAt": "2026-06-08T08:02:00+00:00",
+                    "checks": [
+                        {
+                            "id": "sandbox-credentials",
+                            "label": "Sandbox credentials",
+                            "status": "passed",
+                            "detail": "Sandbox references are present.",
+                            "metadata": {"apiKey": "cert-secret-key-should-not-leak"},
+                        },
+                        {
+                            "id": "order-lifecycle",
+                            "label": "Order lifecycle",
+                            "status": "passed",
+                            "detail": "Order lifecycle replay is complete.",
+                            "metadata": {"token": "cert-token-should-not-leak"},
+                        },
+                    ],
+                    "metadata": {"source": "settings-panel", "password": "cert-password-should-not-leak"},
+                }
+                certification_body = json.dumps(certification_request).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications",
+                    body=certification_body,
+                    headers={"Content-Type": "application/json"},
+                )
+                certification_response = connection.getresponse()
+                certification_payload = json.loads(certification_response.read().decode("utf-8"))
+                certification_id = certification_payload["adapterCertification"]["certificationId"]
+
+                blocked_body = json.dumps(
+                    {
+                        "certificationId": certification_id,
+                        "operator": "apply-operator",
+                        "confirmations": {},
+                        "metadata": {
+                            "source": "settings-panel",
+                            "secretStorePath": "vault://paper/ashare-live",
+                            "password": "apply-password-should-not-leak",
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/apply",
+                    body=blocked_body,
+                    headers={"Content-Type": "application/json"},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                ready_body = json.dumps(
+                    {
+                        "certificationId": certification_id,
+                        "operator": "apply-operator",
+                        "confirmations": {
+                            "secretReferenceStored": True,
+                            "controlledRestartWindowApproved": True,
+                            "operatorReviewedCertification": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "apiToken": "apply-token-should-not-leak",
+                            "restartWindow": "manual-maintenance",
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-certifications/apply",
+                    body=ready_body,
+                    headers={"Content-Type": "application/json"},
+                )
+                ready_response = connection.getresponse()
+                ready_payload = json.loads(ready_response.read().decode("utf-8"))
+                apply_events = TestHandler.audit_event_store.list_recent(
+                    event_type="execution_adapter_certification_apply",
+                    limit=5,
+                )
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "ready": ready_payload,
+                "events": [event.metadata for event in apply_events],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(certification_response.status, 201)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["certificationApply"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["certificationApply"]["blockedReasons"],
+            [
+                "secret_reference_not_confirmed",
+                "controlled_restart_not_confirmed",
+                "operator_review_not_confirmed",
+            ],
+        )
+        self.assertEqual(
+            [item["id"] for item in blocked_payload["certificationApply"]["requiredConfirmations"]],
+            ["secret-reference-stored", "controlled-restart-window-approved", "operator-reviewed-certification"],
+        )
+        self.assertEqual(ready_response.status, 200)
+        self.assertEqual(ready_payload["certificationApply"]["status"], "ready_for_restart")
+        self.assertEqual(ready_payload["certificationApply"]["blockedReasons"], [])
+        self.assertFalse(ready_payload["certificationApply"]["liveTradingAllowed"])
+        self.assertTrue(ready_payload["certificationApply"]["paperOnly"])
+        self.assertEqual(ready_payload["auditEvent"]["eventType"], "execution_adapter_certification_apply")
+        self.assertEqual(len(apply_events), 2)
+        self.assertNotIn("cert-secret-key-should-not-leak", serialized)
+        self.assertNotIn("cert-token-should-not-leak", serialized)
+        self.assertNotIn("cert-password-should-not-leak", serialized)
+        self.assertNotIn("apply-password-should-not-leak", serialized)
+        self.assertNotIn("apply-token-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection
