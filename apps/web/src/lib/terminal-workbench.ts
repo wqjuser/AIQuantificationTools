@@ -1834,6 +1834,24 @@ export interface ResearchContextReadinessRow {
   action?: ResearchContextReadinessAction;
 }
 
+export interface ResearchPipelinePreflightIssue {
+  id: ResearchContextReadinessRow["id"];
+  label: string;
+  value: string;
+  detail: string;
+  status: Exclude<ResearchContextReadinessStatus, "ready">;
+  action?: ResearchContextReadinessAction;
+}
+
+export interface ResearchPipelinePreflight {
+  status: ResearchContextReadinessStatus;
+  canRun: boolean;
+  requiresConfirmation: boolean;
+  summary: string;
+  primaryAction?: ResearchContextReadinessAction;
+  issues: ResearchPipelinePreflightIssue[];
+}
+
 export interface ResearchRunDataSnapshotBar {
   timestamp: string;
   timestampMs: number;
@@ -5805,6 +5823,56 @@ export function buildResearchContextReadinessRows(
       action: noteStatus === "ready" ? undefined : "save-note"
     }
   ];
+}
+
+export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow[]): ResearchPipelinePreflight {
+  const issues = rows
+    .flatMap<ResearchPipelinePreflightIssue>((row) =>
+      row.status === "ready"
+        ? []
+        : [
+            {
+              id: row.id,
+              label: row.label,
+              value: row.value,
+              detail: row.detail,
+              status: row.status,
+              action: row.action
+            }
+          ]
+    );
+  const blockedIssues = issues.filter((issue) => issue.status === "blocked");
+  const primaryAction = issues.find((issue) => issue.action)?.action;
+
+  if (blockedIssues.length) {
+    return {
+      status: "blocked",
+      canRun: false,
+      requiresConfirmation: false,
+      summary: `Fix ${blockedIssues.length} blocked research context ${blockedIssues.length === 1 ? "gate" : "gates"} before running the pipeline.`,
+      primaryAction,
+      issues
+    };
+  }
+
+  if (issues.length) {
+    return {
+      status: "review",
+      canRun: true,
+      requiresConfirmation: true,
+      summary: `Review ${issues.length} research context ${issues.length === 1 ? "gate" : "gates"} before running the pipeline.`,
+      primaryAction,
+      issues
+    };
+  }
+
+  return {
+    status: "ready",
+    canRun: true,
+    requiresConfirmation: false,
+    summary: "Research context is ready for pipeline run.",
+    issues: []
+  };
 }
 
 function readinessTone(status: ResearchContextReadinessStatus): "positive" | "warning" | "risk" {

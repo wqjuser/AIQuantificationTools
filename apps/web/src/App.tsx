@@ -158,6 +158,7 @@ import {
   buildProductWorkAreas,
   buildPromotionReadiness,
   buildResearchContextReadinessRows,
+  buildResearchPipelinePreflight,
   buildResearchRunComparisonRows,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
@@ -234,6 +235,7 @@ import {
   PromotionReadiness,
   ProductWorkArea,
   ProductWorkAreaId,
+  ResearchPipelinePreflight,
   ResearchContextReadinessRow,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
@@ -819,6 +821,7 @@ export function App() {
       error: researchNoteState.error ?? null
     }
   });
+  const researchPipelinePreflight = buildResearchPipelinePreflight(researchContextReadinessRows);
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
   const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
   const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
@@ -1385,6 +1388,23 @@ export function App() {
   }, []);
 
   const runPipeline = useCallback(async () => {
+    if (!researchPipelinePreflight.canRun) {
+      setActiveWorkAreaId("research");
+      setActiveLoopStepId("research");
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight),
+        error: researchPipelinePreflightIssueDetail(i18n, researchPipelinePreflight)
+      }));
+      return;
+    }
+    if (
+      researchPipelinePreflight.requiresConfirmation &&
+      !window.confirm(researchPipelinePreflightConfirmMessage(i18n, researchPipelinePreflight))
+    ) {
+      return;
+    }
+
     const runId = workflowRunIdRef.current + 1;
     workflowRunIdRef.current = runId;
     let log: WorkflowRunLogEntry[] = [];
@@ -1503,7 +1523,7 @@ export function App() {
     await refreshRunHistory();
     await refreshStrategyLibrary();
     setIsRunning(false);
-  }, [refreshRunHistory, refreshStrategyLibrary, resetAiReviewHistoryState, workspace]);
+  }, [i18n, refreshRunHistory, refreshStrategyLibrary, researchPipelinePreflight, resetAiReviewHistoryState, workspace]);
 
   const runPortfolioBacktestDraft = useCallback(async () => {
     if (!portfolioBacktestDraft.request) {
@@ -3282,12 +3302,15 @@ export function App() {
       if (actionId === "refresh-data") {
         return Boolean(refreshingCacheKey);
       }
+      if (actionId === "run-pipeline") {
+        return !researchPipelinePreflight.canRun;
+      }
       if (actionId === "submit-paper-order") {
         return isSubmittingPaperExecution || !workspace.researchRun?.runId;
       }
       return false;
     },
-    [isRefreshing, isRunning, isSubmittingPaperExecution, refreshingCacheKey, workspace.researchRun?.runId]
+    [isRefreshing, isRunning, isSubmittingPaperExecution, refreshingCacheKey, researchPipelinePreflight.canRun, workspace.researchRun?.runId]
   );
 
   const goldenPathActionId = goldenPath?.nextAction?.id;
@@ -3936,7 +3959,12 @@ export function App() {
                 </button>
               ))}
             </div>
-            <button className="run-button" disabled={isRefreshing || isRunning} onClick={runPipeline}>
+            <button
+              className="run-button"
+              disabled={isRefreshing || isRunning || !researchPipelinePreflight.canRun}
+              onClick={runPipeline}
+              title={researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight)}
+            >
               {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
               {i18n.t("action.runPipeline")}
             </button>
@@ -4007,7 +4035,13 @@ export function App() {
                 </div>
               ) : null}
             </div>
-            <button className="run-button compact" disabled={isGoldenPathActionDisabled} onClick={runGoldenPathAction} type="button">
+            <button
+              className="run-button compact"
+              disabled={isGoldenPathActionDisabled}
+              onClick={runGoldenPathAction}
+              title={goldenPathActionId === "run-pipeline" ? researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight) : undefined}
+              type="button"
+            >
               {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
               {goldenPath?.nextAction
                 ? goldenPathActionLabel(i18n, goldenPath.nextAction)
@@ -5528,6 +5562,52 @@ function researchContextReadinessStatusLabel(
     return status === "ready" ? "Ready" : status === "review" ? "Review" : "Blocked";
   }
   return status === "ready" ? "就绪" : status === "review" ? "复核" : "阻断";
+}
+
+function researchPipelinePreflightStatusLabel(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
+  if (preflight.status === "ready") {
+    return i18n.locale === "zh-CN" ? "研究上下文已就绪，可以运行流水线。" : preflight.summary;
+  }
+  if (preflight.status === "review") {
+    return i18n.locale === "zh-CN"
+      ? `研究上下文有 ${preflight.issues.length} 项需复核，运行前需要确认。`
+      : preflight.summary;
+  }
+  return i18n.locale === "zh-CN"
+    ? `研究上下文有 ${preflight.issues.filter((issue) => issue.status === "blocked").length} 项阻断，先修复后再运行流水线。`
+    : preflight.summary;
+}
+
+function researchPipelinePreflightIssueDetail(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
+  const issueSummary = preflight.issues
+    .slice(0, 3)
+    .map((issue) => `${researchPipelinePreflightIssueLabel(i18n, issue)}: ${issue.value}`)
+    .join(" · ");
+  const summary = researchPipelinePreflightStatusLabel(i18n, preflight);
+  return issueSummary ? `${summary} ${issueSummary}` : summary;
+}
+
+function researchPipelinePreflightConfirmMessage(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
+  const issues = preflight.issues
+    .map((issue) => `- ${researchPipelinePreflightIssueLabel(i18n, issue)}: ${issue.value}`)
+    .join("\n");
+  if (i18n.locale === "zh-CN") {
+    return `研究上下文仍有 ${preflight.issues.length} 项需复核：\n${issues}\n\n仍然运行审计流水线吗？`;
+  }
+  return `${preflight.summary}\n${issues}\n\nRun the audited pipeline anyway?`;
+}
+
+function researchPipelinePreflightIssueLabel(
+  i18n: AppI18n,
+  issue: ResearchPipelinePreflight["issues"][number]
+): string {
+  const labels: Record<ResearchContextReadinessRow["id"], string> = {
+    instrument: "当前标的",
+    klines: "K线数据",
+    cache: "本地缓存",
+    note: "研究笔记"
+  };
+  return i18n.locale === "zh-CN" ? labels[issue.id] : issue.label;
 }
 
 function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadinessRow): string {

@@ -64,6 +64,7 @@ import {
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
   buildResearchContextReadinessRows,
+  buildResearchPipelinePreflight,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -325,6 +326,90 @@ describe("terminal workbench model", () => {
       status: "review",
       tone: "warning",
       action: "refresh-cache"
+    });
+  });
+
+  test("blocks the research pipeline when readiness rows contain blockers", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 0,
+      dataQuality: { source: "demo-fallback", isComplete: false, warnings: ["upstream timeout"], rows: 0 },
+      cacheContext: {
+        rowCount: 0,
+        freshness: "empty",
+        ageHours: null,
+        latestTimestamp: null
+      },
+      note: {
+        source: "fallback",
+        body: "观察假设：等待真实 K 线恢复。",
+        savedBody: "观察假设：等待真实 K 线恢复。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(buildResearchPipelinePreflight(rows)).toMatchObject({
+      status: "blocked",
+      canRun: false,
+      requiresConfirmation: false,
+      summary: "Fix 2 blocked research context gates before running the pipeline.",
+      primaryAction: "refresh-cache",
+      issues: [
+        {
+          id: "klines",
+          label: "K-line data",
+          status: "blocked",
+          action: "refresh-cache"
+        },
+        {
+          id: "cache",
+          label: "Local cache",
+          status: "blocked",
+          action: "refresh-cache"
+        }
+      ]
+    });
+  });
+
+  test("requires confirmation but allows the research pipeline when readiness rows need review", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: ["5 missing sessions"], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量二次确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(buildResearchPipelinePreflight(rows)).toMatchObject({
+      status: "review",
+      canRun: true,
+      requiresConfirmation: true,
+      summary: "Review 2 research context gates before running the pipeline.",
+      primaryAction: "refresh-cache",
+      issues: [
+        {
+          id: "klines",
+          label: "K-line data",
+          status: "review",
+          action: "refresh-cache"
+        },
+        {
+          id: "note",
+          label: "Research note",
+          status: "review",
+          action: "save-note"
+        }
+      ]
     });
   });
 
