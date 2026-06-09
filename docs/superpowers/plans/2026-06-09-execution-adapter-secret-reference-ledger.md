@@ -198,7 +198,7 @@ Result: PASS on 2026-06-09:
 - `docker compose config`, `git diff --check`, `docker compose build`, and `tools/docker_smoke.py --no-build --down` passed
 - Browser smoke confirmed the Execution page renders recent secret-reference evidence with no console errors
 
-- [ ] **Step 3: Commit and push**
+- [x] **Step 3: Commit and push**
 
 Commit with:
 
@@ -207,3 +207,5 @@ git add .
 git commit -m "feat: record adapter secret references"
 git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 push origin codex/p0-product-workspaces
 ```
+
+Result: PASS on 2026-06-09. Committed `feat: record adapter secret references` and pushed branch `codex/p0-product-workspaces` to `origin` through proxy `127.0.0.1:7890`.
