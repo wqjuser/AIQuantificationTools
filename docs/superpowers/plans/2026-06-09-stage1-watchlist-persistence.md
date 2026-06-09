@@ -214,7 +214,9 @@ Expected: all PASS, with no new warnings.
 
 Docker service was rebuilt and left running on `http://127.0.0.1:5173/`. Browser smoke verified the `保存自选` action and `/api/watchlist` response.
 
-- [ ] **Step 5: Push through proxy**
+- [x] **Step 5: Push through proxy**
+
+Pushed `ca1110b feat: persist stage1 watchlist` to `origin/codex/p0-product-workspaces` with `HTTP_PROXY` and `HTTPS_PROXY` set to `http://127.0.0.1:7890`.
 
 Run Docker smoke or restart the service if needed, leaving the web app on `http://127.0.0.1:5173/`.
 
