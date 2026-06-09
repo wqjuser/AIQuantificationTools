@@ -222,6 +222,8 @@ import {
   mergeStrategyReadinessGatesWithLocalAudit,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
+  resolveSavedResearchWorkspaceSelection,
+  resolveSavedResearchWorkspaceId,
   AiWorkbenchAction,
   AiEvidenceCard,
   AiReviewDossier,
@@ -533,7 +535,18 @@ function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidence
 }
 
 function resolveInitialWorkAreaSelection(workspace: TerminalWorkspace) {
-  return resolveProductWorkAreaSelection(workspace, resolveInitialWorkAreaId("research"));
+  return resolveProductWorkAreaSelection(
+    workspace,
+    resolveInitialWorkAreaId(resolveSavedResearchWorkspaceId(workspace, "research"))
+  );
+}
+
+function hasExplicitWorkAreaUrl(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  return params.has("workspace") || params.has("workflow");
 }
 
 function createWorkflowRunState(): WorkflowRunState {
@@ -774,6 +787,7 @@ export function App() {
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
   const [revokingAuditReportEventId, setRevokingAuditReportEventId] = useState<string | null>(null);
   const manualSelectionVersionRef = useRef(0);
+  const savedResearchWorkspaceSelectionAppliedRef = useRef(hasExplicitWorkAreaUrl());
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
@@ -1453,6 +1467,9 @@ export function App() {
     const startedSelectionVersion = manualSelectionVersionRef.current;
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
+    const shouldConsiderSavedWorkArea = !savedResearchWorkspaceSelectionAppliedRef.current;
+    const shouldApplySavedWorkArea =
+      shouldConsiderSavedWorkArea && manualSelectionVersionRef.current === startedSelectionVersion;
     setWorkspaceState((current) => {
       if (manualSelectionVersionRef.current === startedSelectionVersion) {
         return result;
@@ -1463,6 +1480,15 @@ export function App() {
         statusLabel: current.statusLabel
       };
     });
+    if (shouldConsiderSavedWorkArea) {
+      savedResearchWorkspaceSelectionAppliedRef.current = true;
+      if (shouldApplySavedWorkArea) {
+        const selection = resolveSavedResearchWorkspaceSelection(result.workspace, "research");
+        setActiveWorkAreaId(selection.areaId);
+        setActiveLoopStepId(selection.quantLoopStepId);
+        setActiveWorkflowStageId(selection.workflowStageId);
+      }
+    }
     await refreshRunHistory();
     await refreshSettingsStatus();
     await refreshAuditSigningKeys();
@@ -3346,6 +3372,7 @@ export function App() {
 
   const selectProductWorkArea = useCallback(
     (areaId: ProductWorkAreaId) => {
+      manualSelectionVersionRef.current += 1;
       const selection = resolveProductWorkAreaSelection(workspace, areaId, activeWorkAreaId);
       setActiveWorkAreaId(selection.areaId);
       setActiveLoopStepId(selection.quantLoopStepId);

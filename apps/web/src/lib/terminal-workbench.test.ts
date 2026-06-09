@@ -70,6 +70,8 @@ import {
   buildQuantLoopNavigationTarget,
   mergeStrategyReadinessGatesWithLocalAudit,
   resolveQuantLoopSelection,
+  resolveSavedResearchWorkspaceSelection,
+  resolveSavedResearchWorkspaceId,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
   buildResearchContextEvidenceRows,
@@ -229,6 +231,43 @@ describe("terminal workbench model", () => {
       workspaceId: "research"
     });
     expect(buildResearchWorkspaceStateDraft(workspace, "execution").workspaceId).toBe("research");
+  });
+
+  test("resolves the saved Stage 1 work area from workspace state", () => {
+    const workspace: TerminalWorkspace = {
+      ...buildTerminalWorkspace(),
+      researchWorkspaceState: {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "market",
+        updatedAt: "2026-06-09T00:00:00+00:00"
+      }
+    };
+
+    expect(resolveSavedResearchWorkspaceId(workspace, "research")).toBe("market");
+    expect(resolveSavedResearchWorkspaceId(buildTerminalWorkspace(), "research")).toBe("research");
+  });
+
+  test("resolves a full product selection from saved Stage 1 workspace state", () => {
+    const workspace: TerminalWorkspace = {
+      ...buildTerminalWorkspace(),
+      researchWorkspaceState: {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "market",
+        updatedAt: "2026-06-09T00:00:00+00:00"
+      }
+    };
+
+    expect(resolveSavedResearchWorkspaceSelection(workspace, "research")).toMatchObject({
+      areaId: "market",
+      quantLoopStepId: "research",
+      workflowStageId: "data"
+    });
   });
 
   test("builds ready Stage 1 research context readiness rows", () => {

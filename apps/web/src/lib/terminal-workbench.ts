@@ -82,6 +82,10 @@ export interface ResearchWorkspaceStateDraft {
   workspaceId: Stage1ResearchWorkspaceId;
 }
 
+export interface ResearchWorkspaceStateSnapshot extends ResearchWorkspaceStateDraft {
+  updatedAt?: string;
+}
+
 export type GoldenPathRunbookStatus = "passed" | "review" | "blocked";
 
 export interface GoldenPathRunbookSourceItem {
@@ -2307,6 +2311,7 @@ export interface TerminalWorkspace {
   schemaVersion: number;
   selectedInstrument: Instrument;
   selectedTimeframe: Timeframe;
+  researchWorkspaceState?: ResearchWorkspaceStateSnapshot | null;
   watchlist: Instrument[];
   quantLoop: QuantLoopStep[];
   modules: TerminalModule[];
@@ -11424,6 +11429,21 @@ export function buildResearchWorkspaceStateDraft(
     timeframe: workspace.selectedTimeframe,
     workspaceId
   };
+}
+
+export function resolveSavedResearchWorkspaceId(
+  workspace: TerminalWorkspace,
+  fallback: Stage1ResearchWorkspaceId
+): Stage1ResearchWorkspaceId {
+  const workspaceId = workspace.researchWorkspaceState?.workspaceId;
+  return workspaceId === "market" || workspaceId === "research" ? workspaceId : fallback;
+}
+
+export function resolveSavedResearchWorkspaceSelection(
+  workspace: TerminalWorkspace,
+  fallback: Stage1ResearchWorkspaceId
+): ProductWorkAreaSelection {
+  return resolveProductWorkAreaSelection(workspace, resolveSavedResearchWorkspaceId(workspace, fallback));
 }
 
 export function workspaceWithStrategyLibraryItem(

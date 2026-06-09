@@ -1000,8 +1000,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
             return
         if parsed.path == "/api/workspace":
-            workspace, _quotes = workspace_with_live_quotes(self._workspace_with_saved_watchlist(), self.quote_adapter)
-            self._send_json(terminal_workspace_to_payload(workspace))
+            workspace = self._workspace_with_saved_watchlist()
+            saved_state = self.workspace_state_store.get()
+            workspace, _quotes = workspace_with_live_quotes(workspace, self.quote_adapter)
+            payload = terminal_workspace_to_payload(workspace)
+            if saved_state:
+                payload["researchWorkspaceState"] = research_workspace_state_to_payload(saved_state)
+            self._send_json(payload)
             return
         if parsed.path == "/api/watchlist":
             watchlist = self.watchlist_store.list_instruments() or build_terminal_workspace().watchlist

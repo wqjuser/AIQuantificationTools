@@ -5844,6 +5844,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspace_payload["selectedInstrument"]["name"], "Microsoft")
         self.assertEqual(workspace_payload["selectedTimeframe"], "5m")
         self.assertEqual(workspace_payload["watchlist"][0]["symbol"], "MSFT")
+        self.assertEqual(workspace_payload["researchWorkspaceState"]["workspaceId"], "research")
+        self.assertEqual(workspace_payload["researchWorkspaceState"]["symbol"], "MSFT")
         self.assertEqual(state_response.status, 200)
         self.assertEqual(state_payload["state"]["workspaceId"], "research")
 
