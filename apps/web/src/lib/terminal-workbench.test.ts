@@ -106,6 +106,7 @@ import {
   researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
+  resolveWatchlistCacheRefreshRunIdFromUrl,
   resolveWatchlistCacheRefreshRunSelection,
   mergeResearchRunImportAuditEvents,
   quantLoopLabels,
@@ -10280,6 +10281,24 @@ describe("terminal workbench model", () => {
     );
     expect(resolveWatchlistCacheRefreshRunSelection([latest, older], "missing")?.runId).toBe("cache-refresh-latest");
     expect(resolveWatchlistCacheRefreshRunSelection([], "missing")).toBeNull();
+  });
+
+  test("resolves a watchlist cache refresh run id from the URL", () => {
+    expect(
+      resolveWatchlistCacheRefreshRunIdFromUrl(
+        "?workspace=market&watchlistRefreshRun=cache-refresh-f10efd7401b7"
+      )
+    ).toBe("cache-refresh-f10efd7401b7");
+    expect(resolveWatchlistCacheRefreshRunIdFromUrl("?watchlistRefreshRun=run:600000_1d.20260610")).toBe(
+      "run:600000_1d.20260610"
+    );
+  });
+
+  test("rejects unsafe watchlist cache refresh run ids from the URL", () => {
+    expect(resolveWatchlistCacheRefreshRunIdFromUrl("?watchlistRefreshRun=")).toBeNull();
+    expect(resolveWatchlistCacheRefreshRunIdFromUrl("?watchlistRefreshRun=../cache-refresh-latest")).toBeNull();
+    expect(resolveWatchlistCacheRefreshRunIdFromUrl("?watchlistRefreshRun=<script>alert(1)</script>")).toBeNull();
+    expect(resolveWatchlistCacheRefreshRunIdFromUrl("?workspace=market")).toBeNull();
   });
 
   test("summarizes watchlist cache refresh item details for the market health panel", () => {

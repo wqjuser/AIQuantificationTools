@@ -83,7 +83,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 - `GET /api/execution/adapter-ledger`：返回真实适配器前的只读执行状态账本，按 paper/local、A 股、美股和加密路由输出当前状态、状态事件、闸门通过数、阻断原因和下一步；该接口只从 Settings 状态派生，不读取交易密钥、不连接真实券商、不放开实盘交易。
 - `POST /api/cache/refresh`：按 `market/symbol/timeframe/limit` 主动刷新单个缓存上下文，复用现有 K 线适配器写入 SQLite，并返回刷新摘要、数据质量和最新 Settings 状态；该接口只影响行情缓存，不触发研究 run、AI 评审或交易执行。
 - `POST /api/cache/watchlist-refreshes`：按提交的 watchlist 顺序批量刷新同一周期 K 线；完整数据写入 SQLite，incomplete 或异常数据只记录 skipped/failed，不污染缓存。响应包含 `watchlistRefresh` run id、逐标的质量/行数/错误、汇总计数和最新 Settings 状态。
-- `GET /api/cache/watchlist-refreshes?limit=10`：回读最近 watchlist cache refresh run，用于行情中心显示最近多次刷新历史和选中运行的逐标的刷新/跳过/失败明细；前端历史行只切换明细视图，明细行会携带可切换研究上下文的标的信息，并为后续审计/任务卡引用数据准备证据。
+- `GET /api/cache/watchlist-refreshes?limit=10`：回读最近 watchlist cache refresh run，用于行情中心显示最近多次刷新历史和选中运行的逐标的刷新/跳过/失败明细；前端历史行只切换明细视图，并把选中的 run id 写入 `watchlistRefreshRun` URL 参数用于刷新后恢复或外部引用；明细行会携带可切换研究上下文的标的信息，并为后续审计/任务卡引用数据准备证据。
 - `POST /api/strategies/validate`：校验 Strategy Lab 草稿，返回策略结构、风控参数、执行模式和审计证据四个 readiness gates、整体状态、稳定 revision 和标准化 `strategyConfig`；前端优先使用该核心校验结果，核心不可用时回退到本地 gate。
 - `POST /api/strategies`：保存当前 Strategy Lab 草稿为本地策略版本；保存前复用 `validate_strategy_snapshot`，schema 或风控 gate 阻断时返回 `strategy_not_ready` 和完整 validation gates，不写入策略库。预检通过后返回稳定 revision、strategy config、可回放 snapshot 和 `draft/audited` 状态。
 - `GET /api/strategies?market=ashare&symbol=600000&limit=8`：按标的读取最近策略版本，用于 Strategy Lab 快速复用。

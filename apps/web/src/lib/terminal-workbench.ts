@@ -6323,6 +6323,18 @@ export function resolveWatchlistCacheRefreshRunSelection(
   return runs.find((run) => run.runId === selectedRunId) ?? runs[0] ?? null;
 }
 
+export function resolveWatchlistCacheRefreshRunIdFromUrl(search: string | URLSearchParams | null | undefined): string | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search : `?${search}`);
+  const runId = params.get("watchlistRefreshRun")?.trim() ?? "";
+  return /^[A-Za-z0-9._:-]{1,120}$/.test(runId) ? runId : null;
+}
+
 export function buildWatchlistCacheRefreshItemRows(
   run: WatchlistCacheRefreshRunSnapshot | null | undefined
 ): WatchlistCacheRefreshItemRow[] {

@@ -228,6 +228,7 @@ import {
   resolveProductWorkAreaSelection,
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
+  resolveWatchlistCacheRefreshRunIdFromUrl,
   AiWorkbenchAction,
   AiEvidenceCard,
   AiReviewDossier,
@@ -541,6 +542,27 @@ function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidence
   };
 }
 
+function resolveInitialWatchlistCacheRefreshRunId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return resolveWatchlistCacheRefreshRunIdFromUrl(window.location.search);
+}
+
+function replaceWatchlistCacheRefreshRunUrlParam(runId: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const url = new URL(window.location.href);
+  if (runId) {
+    url.searchParams.set("watchlistRefreshRun", runId);
+  } else {
+    url.searchParams.delete("watchlistRefreshRun");
+  }
+  const search = url.searchParams.toString();
+  window.history.replaceState({}, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
+}
+
 function resolveInitialWorkAreaSelection(workspace: TerminalWorkspace) {
   return resolveProductWorkAreaSelection(
     workspace,
@@ -750,7 +772,9 @@ export function App() {
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
-  const [selectedWatchlistCacheRefreshRunId, setSelectedWatchlistCacheRefreshRunId] = useState<string | null>(null);
+  const [selectedWatchlistCacheRefreshRunId, setSelectedWatchlistCacheRefreshRunId] = useState<string | null>(
+    resolveInitialWatchlistCacheRefreshRunId
+  );
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -811,6 +835,10 @@ export function App() {
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
   const skipNextSymbolSearchRef = useRef(false);
+  const setWatchlistCacheRefreshRunSelection = useCallback((runId: string | null) => {
+    setSelectedWatchlistCacheRefreshRunId(runId);
+    replaceWatchlistCacheRefreshRunUrlParam(runId);
+  }, []);
   const i18n = createI18n(locale);
   const goldenPath = goldenPathState.goldenPath;
   const productWorkAreas = productWorkAreasWithGoldenPath(buildProductWorkAreas(workspace), goldenPath);
@@ -1616,7 +1644,7 @@ export function App() {
           result.watchlistRefresh!,
           ...current.filter((run) => run.runId !== result.watchlistRefresh!.runId)
         ].slice(0, 4));
-        setSelectedWatchlistCacheRefreshRunId(result.watchlistRefresh.runId);
+        setWatchlistCacheRefreshRunSelection(result.watchlistRefresh.runId);
       }
       if (
         result.watchlistRefresh?.items.some(
@@ -1636,6 +1664,7 @@ export function App() {
   }, [
     refreshChart,
     refreshGoldenPathStatus,
+    setWatchlistCacheRefreshRunSelection,
     workspace.selectedInstrument.market,
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe,
@@ -3147,8 +3176,8 @@ export function App() {
   );
 
   const selectWatchlistCacheRefreshRun = useCallback((row: WatchlistCacheRefreshHistoryRow) => {
-    setSelectedWatchlistCacheRefreshRunId(row.runId);
-  }, []);
+    setWatchlistCacheRefreshRunSelection(row.runId);
+  }, [setWatchlistCacheRefreshRunSelection]);
 
   const selectTimeframe = useCallback(
     (timeframe: Timeframe) => {
