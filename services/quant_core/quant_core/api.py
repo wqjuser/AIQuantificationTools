@@ -22,6 +22,12 @@ from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_re
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
+from quant_core.cache_refresh_runs import (
+    WatchlistCacheRefreshRunStore,
+    create_watchlist_cache_refresh_run,
+    watchlist_cache_refresh_item_from_quality,
+    watchlist_cache_refresh_run_to_payload,
+)
 from quant_core.domain import (
     AiResearchRequest,
     BacktestMetrics,
@@ -211,6 +217,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     watchlist_store = WatchlistStore(Path("data/watchlist.sqlite"))
     workspace_state_store = ResearchWorkspaceStateStore(Path("data/research_workspace_state.sqlite"))
+    watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(Path("data/watchlist_cache_refreshes.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -330,6 +337,57 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     },
                     "settings": self._settings_status_payload(),
                 }
+            )
+            return
+        if parsed.path == "/api/cache/watchlist-refreshes":
+            try:
+                payload = self._read_json_body()
+                instruments = watchlist_from_payload(payload.get("watchlist"))
+                timeframe = str(payload.get("timeframe") or "1d")
+                limit = _parse_kline_limit(str(payload.get("limit") or "160"))
+                items = []
+                for instrument in instruments:
+                    request = MarketDataRequest(market=instrument.market, symbol=instrument.symbol, timeframe=timeframe)
+                    try:
+                        bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                        upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
+                        items.append(
+                            watchlist_cache_refresh_item_from_quality(
+                                instrument=instrument,
+                                timeframe=timeframe,
+                                requested_limit=limit,
+                                quality=quality,
+                                upserted_rows=upserted_rows,
+                            )
+                        )
+                    except Exception as error:
+                        items.append(
+                            watchlist_cache_refresh_item_from_quality(
+                                instrument=instrument,
+                                timeframe=timeframe,
+                                requested_limit=limit,
+                                quality=DataQuality(
+                                    source="unavailable",
+                                    is_complete=False,
+                                    warnings=[str(error)],
+                                    rows=0,
+                                ),
+                                upserted_rows=0,
+                                error=str(error),
+                            )
+                        )
+                refresh_run = self.watchlist_cache_refresh_store.record(
+                    create_watchlist_cache_refresh_run(items=items, timeframe=timeframe, requested_limit=limit)
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_watchlist_cache_refresh", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "watchlistRefresh": watchlist_cache_refresh_run_to_payload(refresh_run),
+                    "settings": self._settings_status_payload(),
+                },
+                status=201,
             )
             return
         if parsed.path == "/api/execution/adapter-secret-references":
@@ -1018,6 +1076,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
+            return
+        if parsed.path == "/api/cache/watchlist-refreshes":
+            query = parse_qs(parsed.query)
+            limit = _parse_limit(query.get("limit", ["10"])[0])
+            refreshes = self.watchlist_cache_refresh_store.list_recent(limit=limit)
+            self._send_json({"watchlistRefreshes": [watchlist_cache_refresh_run_to_payload(run) for run in refreshes]})
             return
         if parsed.path == "/api/execution/adapter-ledger":
             settings = self._settings_status_payload()

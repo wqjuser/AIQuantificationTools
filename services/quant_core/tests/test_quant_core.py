@@ -2547,6 +2547,92 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["settings"]["cache"]["contexts"][0]["symbol"], "600000")
         self.assertEqual(payload["settings"]["cache"]["freshnessSummary"]["fresh"], 1)
 
+    def test_watchlist_cache_refresh_api_records_refresh_run(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import WatchlistCacheRefreshRunStore
+        from quant_core.domain import DataQuality, OHLCVBar
+
+        class RecordingKlineAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request, limit=160):
+                self.calls.append((request.market, request.symbol, request.timeframe, limit))
+                base_timestamp = datetime(2026, 5, 25, tzinfo=timezone.utc)
+                bars = [
+                    OHLCVBar(
+                        market=request.market,
+                        symbol=request.symbol,
+                        timeframe=request.timeframe,
+                        timestamp=base_timestamp + timedelta(days=index),
+                        open=10 + index,
+                        high=11 + index,
+                        low=9 + index,
+                        close=10.5 + index,
+                        volume=1000 + index,
+                    )
+                    for index in range(2)
+                ]
+                return bars, DataQuality(source="test-kline", is_complete=True, warnings=[], rows=len(bars))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = RecordingKlineAdapter()
+
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+                kline_adapter = adapter
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/cache/watchlist-refreshes",
+                    body=json.dumps(
+                        {
+                            "timeframe": "1d",
+                            "limit": 240,
+                            "watchlist": [
+                                {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
+                                {"market": "us", "symbol": "AAPL", "name": "Apple"},
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", "/api/cache/watchlist-refreshes?limit=3")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(adapter.calls, [("ashare", "600000", "1d", 240), ("us", "AAPL", "1d", 240)])
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["totalSymbols"], 2)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["refreshed"], 2)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["failed"], 0)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["upsertedRows"], 4)
+        self.assertEqual(payload["watchlistRefresh"]["items"][0]["symbol"], "600000")
+        self.assertEqual(payload["watchlistRefresh"]["items"][0]["status"], "refreshed")
+        self.assertEqual(payload["settings"]["cache"]["rowCount"], 4)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["watchlistRefreshes"][0]["runId"], payload["watchlistRefresh"]["runId"])
+        self.assertEqual(history_payload["watchlistRefreshes"][0]["summary"]["refreshed"], 2)
+
     def test_market_klines_api_serves_sqlite_cache_when_adapter_unavailable(self):
         import json
         from http.client import HTTPConnection

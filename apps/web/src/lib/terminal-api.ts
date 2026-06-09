@@ -1216,6 +1216,44 @@ export interface CacheRefreshResult {
   error?: string;
 }
 
+export type CacheWatchlistRefreshItemStatus = "refreshed" | "skipped" | "failed";
+
+export interface CacheWatchlistRefreshItem extends CacheRefreshSummary {
+  name: string;
+  status: CacheWatchlistRefreshItemStatus;
+  error: string | null;
+}
+
+export interface CacheWatchlistRefreshRunSummary {
+  totalSymbols: number;
+  refreshed: number;
+  skipped: number;
+  failed: number;
+  upsertedRows: number;
+}
+
+export interface CacheWatchlistRefreshRun {
+  runId: string;
+  createdAt: string;
+  timeframe: ResearchTimeframe;
+  requestedLimit: number;
+  summary: CacheWatchlistRefreshRunSummary;
+  items: CacheWatchlistRefreshItem[];
+}
+
+export interface CacheWatchlistRefreshParams {
+  timeframe: ResearchTimeframe;
+  limit?: number;
+  watchlist: TerminalWorkspace["watchlist"];
+}
+
+export interface CacheWatchlistRefreshResult {
+  watchlistRefresh?: CacheWatchlistRefreshRun;
+  settings?: PlatformSettingsStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface CacheBatchRefreshResult {
   refreshes: CacheRefreshSummary[];
   settings?: PlatformSettingsStatus;
@@ -2022,6 +2060,10 @@ export function buildGoldenPathStatusUrl(baseUrl: string, params: TerminalResear
 
 export function buildCacheRefreshUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/cache/refresh");
+}
+
+export function buildWatchlistCacheRefreshUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/cache/watchlist-refreshes");
 }
 
 export function buildPortfolioBacktestUrl(baseUrl: string): string {
@@ -4280,6 +4322,45 @@ export async function refreshMarketCache(
   }
 }
 
+export async function refreshWatchlistCacheRun(
+  baseUrl: string,
+  params: CacheWatchlistRefreshParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<CacheWatchlistRefreshResult> {
+  try {
+    const response = await fetcher(buildWatchlistCacheRefreshUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        timeframe: params.timeframe,
+        limit: Math.max(1, Math.min(params.limit ?? 160, 500)),
+        watchlist: params.watchlist.map((instrument) => ({
+          market: instrument.market,
+          symbol: instrument.symbol,
+          name: instrument.name
+        }))
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isCacheWatchlistRefreshPayload(payload)) {
+      throw new Error("Invalid watchlist cache refresh contract");
+    }
+    return {
+      watchlistRefresh: payload.watchlistRefresh,
+      settings: payload.settings,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown watchlist cache refresh error"
+    };
+  }
+}
+
 export async function refreshMarketCacheBatch(
   baseUrl: string,
   paramsList: CacheRefreshParams[],
@@ -5136,6 +5217,59 @@ function isCacheRefreshSummary(value: unknown): value is CacheRefreshSummary {
     typeof refresh.requestedLimit === "number" &&
     typeof refresh.upsertedRows === "number" &&
     isMarketKlineQuality(refresh.quality)
+  );
+}
+
+function isCacheWatchlistRefreshPayload(
+  value: unknown
+): value is { watchlistRefresh: CacheWatchlistRefreshRun; settings: PlatformSettingsStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { watchlistRefresh?: unknown; settings?: unknown };
+  return isCacheWatchlistRefreshRun(payload.watchlistRefresh) && isPlatformSettingsStatus(payload.settings);
+}
+
+function isCacheWatchlistRefreshRun(value: unknown): value is CacheWatchlistRefreshRun {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const run = value as Partial<CacheWatchlistRefreshRun>;
+  return (
+    typeof run.runId === "string" &&
+    typeof run.createdAt === "string" &&
+    isTimeframe(run.timeframe) &&
+    typeof run.requestedLimit === "number" &&
+    isCacheWatchlistRefreshRunSummary(run.summary) &&
+    Array.isArray(run.items) &&
+    run.items.every(isCacheWatchlistRefreshItem)
+  );
+}
+
+function isCacheWatchlistRefreshRunSummary(value: unknown): value is CacheWatchlistRefreshRunSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<CacheWatchlistRefreshRunSummary>;
+  return (
+    typeof summary.totalSymbols === "number" &&
+    typeof summary.refreshed === "number" &&
+    typeof summary.skipped === "number" &&
+    typeof summary.failed === "number" &&
+    typeof summary.upsertedRows === "number"
+  );
+}
+
+function isCacheWatchlistRefreshItem(value: unknown): value is CacheWatchlistRefreshItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const item = value as Partial<CacheWatchlistRefreshItem>;
+  return (
+    isCacheRefreshSummary(value) &&
+    typeof item.name === "string" &&
+    (item.status === "refreshed" || item.status === "skipped" || item.status === "failed") &&
+    (item.error === null || typeof item.error === "string")
   );
 }
 

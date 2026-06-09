@@ -34,6 +34,7 @@ import {
   buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
   buildCacheRefreshUrl,
+  buildWatchlistCacheRefreshUrl,
   buildExecutionAdapterCertificationApplyUrl,
   buildExecutionAdapterCertificationAppliesUrl,
   buildExecutionAdapterControlledRestartEvidenceHistoryUrl,
@@ -89,6 +90,7 @@ import {
   loadPlatformSettings,
   refreshMarketCache,
   refreshMarketCacheBatch,
+  refreshWatchlistCacheRun,
   loadStrategyLibrary,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
@@ -3399,6 +3401,139 @@ describe("terminal workspace API client", () => {
     expect(result.refreshes.map((refresh) => refresh.symbol)).toEqual(["600000", "AAPL"]);
     expect(result.settings?.cache.rowCount).toBe(240);
     expect(result.failedCount).toBe(0);
+  });
+
+  test("records a watchlist cache refresh run", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await refreshWatchlistCacheRun(
+      "http://127.0.0.1:8765/",
+      {
+        timeframe: "1d",
+        limit: 240,
+        watchlist: [
+          { market: "ashare", symbol: "600000", name: "浦发银行", changePct: 0 },
+          { market: "us", symbol: "AAPL", name: "Apple", changePct: 0 }
+        ]
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          json: async () => ({
+            watchlistRefresh: {
+              runId: "cache-refresh-run-1",
+              createdAt: "2026-06-09T22:50:00+08:00",
+              timeframe: "1d",
+              requestedLimit: 240,
+              summary: {
+                totalSymbols: 2,
+                refreshed: 2,
+                skipped: 0,
+                failed: 0,
+                upsertedRows: 740
+              },
+              items: [
+                {
+                  market: "ashare",
+                  symbol: "600000",
+                  name: "浦发银行",
+                  timeframe: "1d",
+                  requestedLimit: 240,
+                  upsertedRows: 500,
+                  status: "refreshed",
+                  error: null,
+                  quality: { source: "tencent", isComplete: true, warnings: [], rows: 500 }
+                },
+                {
+                  market: "us",
+                  symbol: "AAPL",
+                  name: "Apple",
+                  timeframe: "1d",
+                  requestedLimit: 240,
+                  upsertedRows: 240,
+                  status: "refreshed",
+                  error: null,
+                  quality: { source: "yfinance", isComplete: true, warnings: [], rows: 240 }
+                }
+              ]
+            },
+            settings: {
+              schemaVersion: 1,
+              generatedAt: "2026-05-31T09:00:00+08:00",
+              dataSources: [
+                {
+                  market: "ashare",
+                  label: "A shares",
+                  quoteSource: "tencent",
+                  klineSource: "tencent",
+                  status: "ready",
+                  optionalKeyName: null,
+                  optionalKeyConfigured: false,
+                  note: "No key required."
+                }
+              ],
+              cache: {
+                engine: "sqlite",
+                path: "data/market.sqlite",
+                exists: true,
+                scope: "ohlcv",
+                rowCount: 740,
+                contextCount: 2,
+                latestTimestamp: "2026-05-29T00:00:00+00:00",
+                freshnessSummary: { fresh: 2, stale: 0, empty: 0 },
+                contexts: [
+                  {
+                    market: "ashare",
+                    symbol: "600000",
+                    timeframe: "1d",
+                    rowCount: 500,
+                    startTimestamp: "2026-05-25T00:00:00+00:00",
+                    endTimestamp: "2026-05-29T00:00:00+00:00",
+                    freshness: "fresh",
+                    ageHours: 48
+                  }
+                ]
+              },
+              executionAdapters: [
+                {
+                  id: "paper-local",
+                  market: "multi",
+                  adapter: "Paper Trading",
+                  route: "paper",
+                  status: "paper_ready",
+                  certification: "local",
+                  liveTradingAllowed: false,
+                  note: "Paper only."
+                }
+              ],
+              safety: {
+                liveTradingAllowed: false,
+                requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+              }
+            }
+          })
+        };
+      }
+    );
+
+    expect(buildWatchlistCacheRefreshUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/cache/watchlist-refreshes"
+    );
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/cache/watchlist-refreshes");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({
+      timeframe: "1d",
+      limit: 240,
+      watchlist: [
+        { market: "ashare", symbol: "600000", name: "浦发银行" },
+        { market: "us", symbol: "AAPL", name: "Apple" }
+      ]
+    });
+    expect(result.source).toBe("core");
+    expect(result.watchlistRefresh?.runId).toBe("cache-refresh-run-1");
+    expect(result.watchlistRefresh?.summary.refreshed).toBe(2);
+    expect(result.watchlistRefresh?.items.map((item) => item.symbol)).toEqual(["600000", "AAPL"]);
+    expect(result.settings?.cache.rowCount).toBe(740);
   });
 
   test("rejects settings status when cache freshness summary is missing", async () => {

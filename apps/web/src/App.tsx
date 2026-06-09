@@ -58,7 +58,7 @@ import {
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   refreshMarketCache,
-  refreshMarketCacheBatch,
+  refreshWatchlistCacheRun,
   loadStrategyLibrary,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
@@ -87,6 +87,7 @@ import {
   AuditSigningKeyRotationApplyResult,
   AuditSigningKeyRotationPlan,
   AuditSigningKeyRotationPlanResult,
+  CacheWatchlistRefreshRun,
   GoldenPathStatus,
   GoldenPathStatusResult,
   ExecutionAdapterCertificationCheck,
@@ -742,6 +743,7 @@ export function App() {
   const [recordingAdapterCertificationId, setRecordingAdapterCertificationId] = useState<string | null>(null);
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
+  const [latestWatchlistCacheRefresh, setLatestWatchlistCacheRefresh] = useState<CacheWatchlistRefreshRun | null>(null);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -1579,26 +1581,26 @@ export function App() {
     }
     setIsRefreshingWatchlistCache(true);
     try {
-      const result = await refreshMarketCacheBatch(
-        quantCoreBaseUrl,
-        workspace.watchlist.map((instrument) => ({
-          market: instrument.market,
-          symbol: instrument.symbol,
-          timeframe: workspace.selectedTimeframe,
-          limit: chartKlineLimit
-        }))
-      );
+      const result = await refreshWatchlistCacheRun(quantCoreBaseUrl, {
+        timeframe: workspace.selectedTimeframe,
+        limit: chartKlineLimit,
+        watchlist: workspace.watchlist
+      });
       setSettingsStatus((current) => ({
         settings: result.settings ?? current.settings,
         source: result.source,
         error: result.error
       }));
+      if (result.watchlistRefresh) {
+        setLatestWatchlistCacheRefresh(result.watchlistRefresh);
+      }
       if (
-        result.refreshes.some(
-          (refresh) =>
-            refresh.market === workspace.selectedInstrument.market &&
-            refresh.symbol === workspace.selectedInstrument.symbol &&
-            refresh.timeframe === workspace.selectedTimeframe
+        result.watchlistRefresh?.items.some(
+          (item) =>
+            item.market === workspace.selectedInstrument.market &&
+            item.symbol === workspace.selectedInstrument.symbol &&
+            item.timeframe === workspace.selectedTimeframe &&
+            item.status === "refreshed"
         )
       ) {
         await refreshChart();
@@ -3755,6 +3757,7 @@ export function App() {
             i18n={i18n}
             isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
             isRefreshingWatchlistCache={isRefreshingWatchlistCache}
+            latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
             state={klinesState}
@@ -5645,6 +5648,7 @@ function MarketDataHealthPanel({
   i18n,
   isRefreshingCache = false,
   isRefreshingWatchlistCache = false,
+  latestWatchlistCacheRefresh,
   onRefreshCache,
   onRefreshWatchlistCache,
   state,
@@ -5656,6 +5660,7 @@ function MarketDataHealthPanel({
   i18n: AppI18n;
   isRefreshingCache?: boolean;
   isRefreshingWatchlistCache?: boolean;
+  latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
   state: MarketKlinesResult;
@@ -5680,6 +5685,20 @@ function MarketDataHealthPanel({
     i18n.locale === "zh-CN"
       ? `${watchlistCacheSummary.fresh} 新鲜 · ${watchlistCacheSummary.stale} 过期 · ${watchlistCacheSummary.empty} 缺失 · ${watchlistCacheSummary.rows.toLocaleString("zh-CN")} 行`
       : `${watchlistCacheSummary.fresh} fresh · ${watchlistCacheSummary.stale} stale · ${watchlistCacheSummary.empty} missing · ${watchlistCacheSummary.rows.toLocaleString("en-US")} rows`;
+  const latestRefreshLabel = latestWatchlistCacheRefresh
+    ? i18n.locale === "zh-CN"
+      ? `${latestWatchlistCacheRefresh.summary.refreshed}/${latestWatchlistCacheRefresh.summary.totalSymbols} 已刷新 · ${latestWatchlistCacheRefresh.summary.failed} 失败`
+      : `${latestWatchlistCacheRefresh.summary.refreshed}/${latestWatchlistCacheRefresh.summary.totalSymbols} refreshed · ${latestWatchlistCacheRefresh.summary.failed} failed`
+    : i18n.locale === "zh-CN"
+      ? "暂无自选刷新记录"
+      : "No watchlist refresh run yet";
+  const latestRefreshDetail = latestWatchlistCacheRefresh
+    ? i18n.locale === "zh-CN"
+      ? `${latestWatchlistCacheRefresh.runId} · ${latestWatchlistCacheRefresh.summary.upsertedRows.toLocaleString("zh-CN")} 行入库`
+      : `${latestWatchlistCacheRefresh.runId} · ${latestWatchlistCacheRefresh.summary.upsertedRows.toLocaleString("en-US")} rows cached`
+    : i18n.locale === "zh-CN"
+      ? "批量刷新后会生成可追踪 run。"
+      : "Bulk refreshes create a traceable run.";
 
   return (
     <Panel
@@ -5755,6 +5774,11 @@ function MarketDataHealthPanel({
           <span>{i18n.locale === "zh-CN" ? "自选缓存" : "Watchlist cache"}</span>
           <strong>{`${watchlistCacheSummary.fresh}/${watchlistCacheSummary.total}`}</strong>
           <p>{watchlistSummaryDetail}</p>
+        </article>
+        <article className={latestWatchlistCacheRefresh?.summary.failed ? "warning" : "neutral"}>
+          <span>{i18n.locale === "zh-CN" ? "最近自选刷新" : "Latest watchlist refresh"}</span>
+          <strong>{latestRefreshLabel}</strong>
+          <p>{latestRefreshDetail}</p>
         </article>
       </div>
     </Panel>
