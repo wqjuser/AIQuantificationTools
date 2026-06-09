@@ -208,6 +208,7 @@ import {
   buildStrategyRuleRows,
   buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
+  buildWatchlistCacheRefreshItemRows,
   buildWatchlistCacheRefreshHistoryRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
@@ -309,6 +310,7 @@ import {
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
+  WatchlistCacheRefreshItemRow,
   WatchlistCacheRefreshHistoryRow,
   WorkflowRunLogEntry,
   WorkflowRunState,
@@ -933,6 +935,7 @@ export function App() {
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
   const watchlistCacheRefreshHistoryRows = buildWatchlistCacheRefreshHistoryRows(watchlistCacheRefreshHistory, 4);
   const latestWatchlistCacheRefresh = watchlistCacheRefreshHistory[0] ?? null;
+  const watchlistCacheRefreshItemRows = buildWatchlistCacheRefreshItemRows(latestWatchlistCacheRefresh);
   const researchContextReadinessRows = buildResearchContextReadinessRows({
     workspace,
     barCount: klinesState.bars.length,
@@ -3771,6 +3774,7 @@ export function App() {
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
             state={klinesState}
+            watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
             watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
             watchlistCacheSummary={watchlistCacheSummary}
             workspace={workspace}
@@ -5663,6 +5667,7 @@ function MarketDataHealthPanel({
   onRefreshCache,
   onRefreshWatchlistCache,
   state,
+  watchlistCacheRefreshItemRows = [],
   watchlistCacheRefreshHistoryRows = [],
   watchlistCacheSummary,
   workspace
@@ -5676,6 +5681,7 @@ function MarketDataHealthPanel({
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
   state: MarketKlinesResult;
+  watchlistCacheRefreshItemRows?: WatchlistCacheRefreshItemRow[];
   watchlistCacheRefreshHistoryRows?: WatchlistCacheRefreshHistoryRow[];
   watchlistCacheSummary: WatchlistCacheSummary;
   workspace: TerminalWorkspace;
@@ -5813,6 +5819,26 @@ function MarketDataHealthPanel({
           </div>
         </div>
       ) : null}
+      {watchlistCacheRefreshItemRows.length ? (
+        <div className="watchlist-refresh-items">
+          <div className="watchlist-refresh-history-head">
+            <span>{i18n.locale === "zh-CN" ? "最近运行明细" : "Latest run details"}</span>
+            <strong>{watchlistCacheRefreshItemRows.length}</strong>
+          </div>
+          <div className="watchlist-refresh-item-list">
+            {watchlistCacheRefreshItemRows.map((row) => (
+              <article className={`watchlist-refresh-item-row ${row.tone}`} key={row.id}>
+                <div>
+                  <strong>{row.symbol}</strong>
+                  <span>{row.name}</span>
+                </div>
+                <em>{watchlistCacheRefreshItemStatusLabel(i18n, row)}</em>
+                <p>{watchlistCacheRefreshItemDetail(i18n, row)}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -5829,6 +5855,27 @@ function watchlistCacheRefreshHistoryDetail(i18n: AppI18n, row: WatchlistCacheRe
     return row.detail;
   }
   return `${row.upsertedRows.toLocaleString("zh-CN")} 行入库 · ${row.skipped} 跳过 · ${row.failed} 失败`;
+}
+
+function watchlistCacheRefreshItemStatusLabel(i18n: AppI18n, row: WatchlistCacheRefreshItemRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.statusLabel;
+  }
+  if (row.status === "refreshed") {
+    return "已刷新";
+  }
+  if (row.status === "skipped") {
+    return "已跳过";
+  }
+  return "失败";
+}
+
+function watchlistCacheRefreshItemDetail(i18n: AppI18n, row: WatchlistCacheRefreshItemRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return `${row.value} · ${row.detail}`;
+  }
+  const rows = row.upsertedRows.toLocaleString("zh-CN");
+  return `${rows} 行入库 · ${row.detail}`;
 }
 
 function ResearchContextReadinessPanel({

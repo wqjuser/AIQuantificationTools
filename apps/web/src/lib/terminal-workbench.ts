@@ -2169,7 +2169,24 @@ export interface WatchlistCacheRefreshRunSnapshot {
     failed: number;
     upsertedRows: number;
   };
-  items: unknown[];
+  items: WatchlistCacheRefreshItemSnapshot[];
+}
+
+export interface WatchlistCacheRefreshItemSnapshot {
+  market: Market;
+  symbol: string;
+  name: string;
+  timeframe: Timeframe;
+  requestedLimit: number;
+  upsertedRows: number;
+  status: "refreshed" | "skipped" | "failed";
+  quality: {
+    source: string;
+    isComplete: boolean;
+    warnings: string[];
+    rows: number;
+  };
+  error: string | null;
 }
 
 export interface WatchlistCacheRefreshHistoryRow {
@@ -2186,6 +2203,21 @@ export interface WatchlistCacheRefreshHistoryRow {
   value: string;
   detail: string;
   tone: "positive" | "warning" | "risk" | "neutral";
+}
+
+export interface WatchlistCacheRefreshItemRow {
+  id: string;
+  market: Market;
+  symbol: string;
+  name: string;
+  status: WatchlistCacheRefreshItemSnapshot["status"];
+  statusLabel: string;
+  source: string;
+  rows: number;
+  upsertedRows: number;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "risk";
 }
 
 export interface ResearchPipelinePreflightIssue {
@@ -6272,6 +6304,41 @@ export function buildWatchlistCacheRefreshHistoryRows(
       upsertedRows: Math.max(0, run.summary.upsertedRows),
       value: `${refreshed}/${total} refreshed`,
       detail: `${Math.max(0, run.summary.upsertedRows)} rows cached · ${skipped} skipped · ${failed} failed`,
+      tone
+    };
+  });
+}
+
+export function buildWatchlistCacheRefreshItemRows(
+  run: WatchlistCacheRefreshRunSnapshot | null | undefined
+): WatchlistCacheRefreshItemRow[] {
+  if (!run) {
+    return [];
+  }
+
+  return run.items.map((item) => {
+    const upsertedRows = Math.max(0, item.upsertedRows);
+    const rows = Math.max(0, item.quality.rows);
+    const source = item.quality.source || "unknown";
+    const firstWarning = item.quality.warnings.find((warning) => warning.trim().length > 0);
+    const detail =
+      item.error ??
+      (firstWarning ? `${source} · ${firstWarning}` : `${source} · ${item.quality.isComplete ? "complete" : "incomplete"}`);
+    const tone: WatchlistCacheRefreshItemRow["tone"] =
+      item.status === "failed" ? "risk" : item.status === "skipped" ? "warning" : "positive";
+
+    return {
+      id: `${run.runId}:${item.market}:${item.symbol}`,
+      market: item.market,
+      symbol: item.symbol,
+      name: item.name || item.symbol,
+      status: item.status,
+      statusLabel: item.status,
+      source,
+      rows,
+      upsertedRows,
+      value: `${upsertedRows} rows cached`,
+      detail,
       tone
     };
   });

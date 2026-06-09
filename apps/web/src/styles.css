@@ -3956,8 +3956,17 @@ em {
   padding: 8px;
 }
 
+.watchlist-refresh-items {
+  border: 1px solid #24344a;
+  border-radius: 7px;
+  background: #0b1421;
+  margin-top: 8px;
+  padding: 8px;
+}
+
 .watchlist-refresh-history-head,
 .watchlist-refresh-history-row,
+.watchlist-refresh-item-row,
 .watchlist-refresh-history-row div {
   align-items: center;
   display: flex;
@@ -3985,6 +3994,11 @@ em {
   gap: 6px;
 }
 
+.watchlist-refresh-item-list {
+  display: grid;
+  gap: 6px;
+}
+
 .watchlist-refresh-history-row {
   border: 1px solid #24344a;
   border-left: 3px solid #2a3b51;
@@ -3992,6 +4006,17 @@ em {
   background: #121b29;
   gap: 8px;
   justify-content: space-between;
+  padding: 7px 8px;
+}
+
+.watchlist-refresh-item-row {
+  border: 1px solid #24344a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 6px;
+  background: #121b29;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(180px, 1.2fr);
   padding: 7px 8px;
 }
 
@@ -4007,8 +4032,27 @@ em {
   border-left-color: #ff7f6d;
 }
 
+.watchlist-refresh-item-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.watchlist-refresh-item-row.warning {
+  border-left-color: #e8be62;
+}
+
+.watchlist-refresh-item-row.risk {
+  border-left-color: #ff7f6d;
+}
+
 .watchlist-refresh-history-row div {
   gap: 8px;
+}
+
+.watchlist-refresh-item-row div {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
 }
 
 .watchlist-refresh-history-row strong {
@@ -4017,21 +4061,39 @@ em {
   white-space: nowrap;
 }
 
+.watchlist-refresh-item-row strong {
+  color: #dce6ee;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .watchlist-refresh-history-row span,
-.watchlist-refresh-history-row p {
+.watchlist-refresh-history-row p,
+.watchlist-refresh-item-row span,
+.watchlist-refresh-item-row p {
   color: #91a2b5;
   font-size: 11px;
 }
 
-.watchlist-refresh-history-row span {
+.watchlist-refresh-history-row span,
+.watchlist-refresh-item-row span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.watchlist-refresh-history-row p {
+.watchlist-refresh-history-row p,
+.watchlist-refresh-item-row p {
   margin: 0;
   text-align: right;
+}
+
+.watchlist-refresh-item-row em {
+  color: #dce6ee;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .market-cache-actions {
@@ -8629,6 +8691,7 @@ button.ai-review-record {
   .research-import-event-row,
   .audit-report-ledger-row,
   .research-export-index-row,
+  .watchlist-refresh-item-row,
   .backtest-evidence-grid,
   .backtest-readiness-list,
   .backtest-benchmark-strip,
@@ -8650,6 +8713,10 @@ button.ai-review-record {
 
   .audit-ai-drift-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .watchlist-refresh-item-row p {
+    text-align: left;
   }
 
   .watchlist-layout {

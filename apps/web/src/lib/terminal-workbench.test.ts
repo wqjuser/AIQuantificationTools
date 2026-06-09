@@ -76,6 +76,7 @@ import {
   buildResearchRunComparisonRows,
   buildResearchContextEvidenceRows,
   buildResearchContextReadinessRows,
+  buildWatchlistCacheRefreshItemRows,
   buildWatchlistCacheRefreshHistoryRows,
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
@@ -10218,6 +10219,96 @@ describe("terminal workbench model", () => {
         upsertedRows: 120,
         value: "1/2 refreshed",
         detail: "120 rows cached · 0 skipped · 1 failed",
+        tone: "risk"
+      }
+    ]);
+  });
+
+  test("summarizes watchlist cache refresh item details for the market health panel", () => {
+    const rows = buildWatchlistCacheRefreshItemRows({
+      runId: "cache-refresh-run-1",
+      createdAt: "2026-06-09T23:10:00+08:00",
+      timeframe: "1d",
+      requestedLimit: 240,
+      summary: { totalSymbols: 3, refreshed: 1, skipped: 1, failed: 1, upsertedRows: 240 },
+      items: [
+        {
+          market: "ashare",
+          symbol: "600000",
+          name: "浦发银行",
+          timeframe: "1d",
+          requestedLimit: 240,
+          upsertedRows: 240,
+          status: "refreshed",
+          quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+          error: null
+        },
+        {
+          market: "ashare",
+          symbol: "000300",
+          name: "沪深300",
+          timeframe: "1d",
+          requestedLimit: 240,
+          upsertedRows: 0,
+          status: "skipped",
+          quality: { source: "demo-fallback", isComplete: false, warnings: ["incomplete upstream data"], rows: 0 },
+          error: null
+        },
+        {
+          market: "us",
+          symbol: "AAPL",
+          name: "Apple",
+          timeframe: "1d",
+          requestedLimit: 240,
+          upsertedRows: 0,
+          status: "failed",
+          quality: { source: "unknown", isComplete: false, warnings: [], rows: 0 },
+          error: "rate limited"
+        }
+      ]
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "cache-refresh-run-1:ashare:600000",
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        status: "refreshed",
+        statusLabel: "refreshed",
+        source: "tencent",
+        rows: 240,
+        upsertedRows: 240,
+        value: "240 rows cached",
+        detail: "tencent · complete",
+        tone: "positive"
+      },
+      {
+        id: "cache-refresh-run-1:ashare:000300",
+        market: "ashare",
+        symbol: "000300",
+        name: "沪深300",
+        status: "skipped",
+        statusLabel: "skipped",
+        source: "demo-fallback",
+        rows: 0,
+        upsertedRows: 0,
+        value: "0 rows cached",
+        detail: "demo-fallback · incomplete upstream data",
+        tone: "warning"
+      },
+      {
+        id: "cache-refresh-run-1:us:AAPL",
+        market: "us",
+        symbol: "AAPL",
+        name: "Apple",
+        status: "failed",
+        statusLabel: "failed",
+        source: "unknown",
+        rows: 0,
+        upsertedRows: 0,
+        value: "0 rows cached",
+        detail: "rate limited",
         tone: "risk"
       }
     ]);
