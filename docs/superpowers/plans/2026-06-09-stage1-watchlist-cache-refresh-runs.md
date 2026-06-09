@@ -32,6 +32,8 @@ Turn the Market workspace watchlist cache refresh from a transient frontend loop
 - [x] Show the latest watchlist cache refresh summary in the data source health panel.
 - [x] Add a frontend history loader for `GET /api/cache/watchlist-refreshes?limit=...`.
 - [x] Hydrate the data source health panel from the latest persisted watchlist refresh run during settings refresh.
+- [x] Add a compact frontend history row builder for recent watchlist cache refresh runs.
+- [x] Show the recent watchlist cache refresh history inside the Market data source health panel.
 - [x] Update `docs/product-plan.md` and `docs/architecture.md`.
 - [x] Run focused tests, broader tests/build, Docker smoke, then commit and push through proxy.
 
@@ -41,6 +43,7 @@ Turn the Market workspace watchlist cache refresh from a transient frontend loop
 $env:PYTHONPATH='services/quant_core'; python -m unittest services.quant_core.tests.test_quant_core.QuantCoreContractTest.test_watchlist_cache_refresh_api_records_refresh_run
 npm --prefix apps/web test -- --run src/lib/terminal-api.test.ts -t "records a watchlist cache refresh run"
 npm --prefix apps/web test -- --run src/lib/terminal-api.test.ts -t "loads recent watchlist cache refresh runs"
+npm --prefix apps/web test -- --run src/lib/terminal-workbench.test.ts -t "summarizes recent watchlist cache refresh runs"
 $env:PYTHONPATH='services/quant_core'; python -m unittest services.quant_core.tests.test_quant_core
 npm --prefix apps/web test -- --run src/lib/terminal-api.test.ts src/lib/terminal-workbench.test.ts
 npm --prefix apps/web run build

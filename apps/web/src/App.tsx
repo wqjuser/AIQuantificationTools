@@ -208,6 +208,7 @@ import {
   buildStrategyRuleRows,
   buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
+  buildWatchlistCacheRefreshHistoryRows,
   buildWorkflowStages,
   buildInstrumentFromSymbol,
   filterAiReviewExportEvidenceIndexRows,
@@ -308,6 +309,7 @@ import {
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
+  WatchlistCacheRefreshHistoryRow,
   WorkflowRunLogEntry,
   WorkflowRunState,
   WorkflowStageView,
@@ -744,7 +746,7 @@ export function App() {
   const [recordingAdapterCertificationId, setRecordingAdapterCertificationId] = useState<string | null>(null);
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
-  const [latestWatchlistCacheRefresh, setLatestWatchlistCacheRefresh] = useState<CacheWatchlistRefreshRun | null>(null);
+  const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -929,6 +931,8 @@ export function App() {
     timeframe: workspace.selectedTimeframe
   });
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
+  const watchlistCacheRefreshHistoryRows = buildWatchlistCacheRefreshHistoryRows(watchlistCacheRefreshHistory, 4);
+  const latestWatchlistCacheRefresh = watchlistCacheRefreshHistory[0] ?? null;
   const researchContextReadinessRows = buildResearchContextReadinessRows({
     workspace,
     barCount: klinesState.bars.length,
@@ -1243,7 +1247,7 @@ export function App() {
     const [settingsResult, adapterLedgerResult, watchlistRefreshHistory] = await Promise.all([
       loadPlatformSettings(quantCoreBaseUrl),
       loadExecutionAdapterLedger(quantCoreBaseUrl),
-      loadWatchlistCacheRefreshRuns(quantCoreBaseUrl, { limit: 1 })
+      loadWatchlistCacheRefreshRuns(quantCoreBaseUrl, { limit: 4 })
     ]);
     const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
     const [
@@ -1262,7 +1266,7 @@ export function App() {
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterSecretMaterializations(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
-    setLatestWatchlistCacheRefresh(watchlistRefreshHistory.watchlistRefreshes[0] ?? null);
+    setWatchlistCacheRefreshHistory(watchlistRefreshHistory.watchlistRefreshes);
     setExecutionAdapterLedger(adapterLedgerResult);
     setExecutionAdapterCertifications(certificationResults.flatMap((result) => result.adapterCertifications));
     setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies));
@@ -1595,7 +1599,10 @@ export function App() {
         error: result.error
       }));
       if (result.watchlistRefresh) {
-        setLatestWatchlistCacheRefresh(result.watchlistRefresh);
+        setWatchlistCacheRefreshHistory((current) => [
+          result.watchlistRefresh!,
+          ...current.filter((run) => run.runId !== result.watchlistRefresh!.runId)
+        ].slice(0, 4));
       }
       if (
         result.watchlistRefresh?.items.some(
@@ -3764,6 +3771,7 @@ export function App() {
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
             state={klinesState}
+            watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
             watchlistCacheSummary={watchlistCacheSummary}
             workspace={workspace}
           />
@@ -5655,6 +5663,7 @@ function MarketDataHealthPanel({
   onRefreshCache,
   onRefreshWatchlistCache,
   state,
+  watchlistCacheRefreshHistoryRows = [],
   watchlistCacheSummary,
   workspace
 }: {
@@ -5667,6 +5676,7 @@ function MarketDataHealthPanel({
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
   state: MarketKlinesResult;
+  watchlistCacheRefreshHistoryRows?: WatchlistCacheRefreshHistoryRow[];
   watchlistCacheSummary: WatchlistCacheSummary;
   workspace: TerminalWorkspace;
 }) {
@@ -5784,8 +5794,41 @@ function MarketDataHealthPanel({
           <p>{latestRefreshDetail}</p>
         </article>
       </div>
+      {watchlistCacheRefreshHistoryRows.length ? (
+        <div className="watchlist-refresh-history">
+          <div className="watchlist-refresh-history-head">
+            <span>{i18n.locale === "zh-CN" ? "自选刷新历史" : "Watchlist refresh history"}</span>
+            <strong>{watchlistCacheRefreshHistoryRows.length}</strong>
+          </div>
+          <div className="watchlist-refresh-history-list">
+            {watchlistCacheRefreshHistoryRows.map((row) => (
+              <article className={`watchlist-refresh-history-row ${row.tone}`} key={row.id}>
+                <div>
+                  <strong>{watchlistCacheRefreshHistoryValue(i18n, row)}</strong>
+                  <span>{row.label}</span>
+                </div>
+                <p>{watchlistCacheRefreshHistoryDetail(i18n, row)}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </Panel>
   );
+}
+
+function watchlistCacheRefreshHistoryValue(i18n: AppI18n, row: WatchlistCacheRefreshHistoryRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.value;
+  }
+  return `${row.refreshed}/${row.total} 已刷新`;
+}
+
+function watchlistCacheRefreshHistoryDetail(i18n: AppI18n, row: WatchlistCacheRefreshHistoryRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.detail;
+  }
+  return `${row.upsertedRows.toLocaleString("zh-CN")} 行入库 · ${row.skipped} 跳过 · ${row.failed} 失败`;
 }
 
 function ResearchContextReadinessPanel({

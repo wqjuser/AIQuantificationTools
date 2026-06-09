@@ -2157,6 +2157,37 @@ export interface ResearchContextEvidenceRow {
   tone: "positive" | "warning" | "risk";
 }
 
+export interface WatchlistCacheRefreshRunSnapshot {
+  runId: string;
+  createdAt: string;
+  timeframe: Timeframe;
+  requestedLimit: number;
+  summary: {
+    totalSymbols: number;
+    refreshed: number;
+    skipped: number;
+    failed: number;
+    upsertedRows: number;
+  };
+  items: unknown[];
+}
+
+export interface WatchlistCacheRefreshHistoryRow {
+  id: string;
+  runId: string;
+  createdAt: string;
+  timeframe: Timeframe;
+  label: string;
+  total: number;
+  refreshed: number;
+  skipped: number;
+  failed: number;
+  upsertedRows: number;
+  value: string;
+  detail: string;
+  tone: "positive" | "warning" | "risk" | "neutral";
+}
+
 export interface ResearchPipelinePreflightIssue {
   id: ResearchContextReadinessRow["id"];
   label: string;
@@ -6215,6 +6246,35 @@ export function buildResearchContextEvidenceRows(workspace: TerminalWorkspace): 
       tone
     }
   ];
+}
+
+export function buildWatchlistCacheRefreshHistoryRows(
+  runs: WatchlistCacheRefreshRunSnapshot[],
+  limit = 4
+): WatchlistCacheRefreshHistoryRow[] {
+  const boundedLimit = Math.max(1, Math.min(limit, 8));
+  return runs.slice(0, boundedLimit).map((run) => {
+    const total = Math.max(0, run.summary.totalSymbols);
+    const refreshed = Math.max(0, run.summary.refreshed);
+    const skipped = Math.max(0, run.summary.skipped);
+    const failed = Math.max(0, run.summary.failed);
+    const tone: WatchlistCacheRefreshHistoryRow["tone"] = failed > 0 ? "risk" : skipped > 0 ? "warning" : "positive";
+    return {
+      id: run.runId,
+      runId: run.runId,
+      createdAt: run.createdAt,
+      timeframe: run.timeframe,
+      label: `${run.runId} · ${run.timeframe}`,
+      total,
+      refreshed,
+      skipped,
+      failed,
+      upsertedRows: Math.max(0, run.summary.upsertedRows),
+      value: `${refreshed}/${total} refreshed`,
+      detail: `${Math.max(0, run.summary.upsertedRows)} rows cached · ${skipped} skipped · ${failed} failed`,
+      tone
+    };
+  });
 }
 
 export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow[]): ResearchPipelinePreflight {

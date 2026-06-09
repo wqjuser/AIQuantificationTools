@@ -3948,6 +3948,92 @@ em {
   line-height: 1.45;
 }
 
+.watchlist-refresh-history {
+  border: 1px solid #24344a;
+  border-radius: 7px;
+  background: #0d1623;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.watchlist-refresh-history-head,
+.watchlist-refresh-history-row,
+.watchlist-refresh-history-row div {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+}
+
+.watchlist-refresh-history-head {
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.watchlist-refresh-history-head span {
+  color: #9eb0c4;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.watchlist-refresh-history-head strong {
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.watchlist-refresh-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.watchlist-refresh-history-row {
+  border: 1px solid #24344a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 6px;
+  background: #121b29;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 8px;
+}
+
+.watchlist-refresh-history-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.watchlist-refresh-history-row.warning {
+  border-left-color: #e8be62;
+}
+
+.watchlist-refresh-history-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.watchlist-refresh-history-row div {
+  gap: 8px;
+}
+
+.watchlist-refresh-history-row strong {
+  color: #dce6ee;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.watchlist-refresh-history-row span,
+.watchlist-refresh-history-row p {
+  color: #91a2b5;
+  font-size: 11px;
+}
+
+.watchlist-refresh-history-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlist-refresh-history-row p {
+  margin: 0;
+  text-align: right;
+}
+
 .market-cache-actions {
   display: flex;
   flex-wrap: wrap;

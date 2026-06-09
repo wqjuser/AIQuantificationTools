@@ -76,6 +76,7 @@ import {
   buildResearchRunComparisonRows,
   buildResearchContextEvidenceRows,
   buildResearchContextReadinessRows,
+  buildWatchlistCacheRefreshHistoryRows,
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
   buildResearchWorkspaceStateDraft,
@@ -10163,6 +10164,63 @@ describe("terminal workbench model", () => {
     expect(formatInstrumentPrice(8.66)).toBe("8.66");
     expect(formatInstrumentPrice(3898.221)).toBe("3898.22");
     expect(formatInstrumentPrice(undefined)).toBe("N/A");
+  });
+
+  test("summarizes recent watchlist cache refresh runs for the market health panel", () => {
+    const rows = buildWatchlistCacheRefreshHistoryRows(
+      [
+        {
+          runId: "cache-refresh-latest",
+          createdAt: "2026-06-09T23:10:00+08:00",
+          timeframe: "1d",
+          requestedLimit: 240,
+          summary: { totalSymbols: 3, refreshed: 2, skipped: 1, failed: 0, upsertedRows: 480 },
+          items: []
+        },
+        {
+          runId: "cache-refresh-failed",
+          createdAt: "2026-06-09T22:50:00+08:00",
+          timeframe: "5m",
+          requestedLimit: 120,
+          summary: { totalSymbols: 2, refreshed: 1, skipped: 0, failed: 1, upsertedRows: 120 },
+          items: []
+        }
+      ],
+      2
+    );
+
+    expect(rows).toEqual([
+      {
+        id: "cache-refresh-latest",
+        runId: "cache-refresh-latest",
+        createdAt: "2026-06-09T23:10:00+08:00",
+        timeframe: "1d",
+        label: "cache-refresh-latest · 1d",
+        total: 3,
+        refreshed: 2,
+        skipped: 1,
+        failed: 0,
+        upsertedRows: 480,
+        value: "2/3 refreshed",
+        detail: "480 rows cached · 1 skipped · 0 failed",
+        tone: "warning"
+      },
+      {
+        id: "cache-refresh-failed",
+        runId: "cache-refresh-failed",
+        createdAt: "2026-06-09T22:50:00+08:00",
+        timeframe: "5m",
+        label: "cache-refresh-failed · 5m",
+        total: 2,
+        refreshed: 1,
+        skipped: 0,
+        failed: 1,
+        upsertedRows: 120,
+        value: "1/2 refreshed",
+        detail: "120 rows cached · 0 skipped · 1 failed",
+        tone: "risk"
+      }
+    ]);
   });
 
   test("builds a research instrument from a manually entered symbol", () => {
