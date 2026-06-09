@@ -53,6 +53,7 @@ import {
   buildResearchRunsUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
+  buildWatchlistUrl,
   buildLoadingMarketKlinesResult,
   buildGoldenPathStatusUrl,
   loadGoldenPathStatus,
@@ -124,6 +125,7 @@ import {
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  saveWatchlist,
   type AuditEventRecord,
   type PortfolioBacktestRun,
   type ResearchRunExportPackage
@@ -132,6 +134,50 @@ import {
 describe("terminal workspace API client", () => {
   test("builds the local core workspace URL without duplicate slashes", () => {
     expect(buildWorkspaceUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/workspace");
+  });
+
+  test("saves the market watchlist through the local core", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          watchlist: [
+            {
+              market: "us",
+              symbol: "MSFT",
+              name: "Microsoft",
+              changePct: 1.2,
+              price: 420.5
+            }
+          ]
+        })
+      };
+    };
+
+    expect(buildWatchlistUrl("/")).toBe("/api/watchlist");
+
+    const result = await saveWatchlist(
+      "/",
+      [{ market: "us", symbol: "MSFT", name: "Microsoft", changePct: 1.2, price: 420.5 }],
+      fetcher
+    );
+
+    expect(calls).toEqual([
+      {
+        url: "/api/watchlist",
+        method: "PUT",
+        body: {
+          watchlist: [
+            { market: "us", symbol: "MSFT", name: "Microsoft", price: 420.5, changePct: 1.2 }
+          ]
+        }
+      }
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.watchlist[0]?.symbol).toBe("MSFT");
   });
 
   test("builds same-origin API URLs for containerized web deployments", () => {

@@ -5668,6 +5668,87 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["workflowNodes"][-1]["id"], "execution")
         self.assertGreaterEqual(len(payload["decisionLog"]), 4)
 
+    def test_watchlist_store_persists_ordered_instruments(self):
+        from quant_core.terminal import Instrument
+        from quant_core.watchlist import WatchlistStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = WatchlistStore(Path(tmp) / "watchlist.sqlite")
+            store.replace_all(
+                [
+                    Instrument(symbol="MSFT", name="Microsoft", market="us", change_pct=0.0, price=420.5),
+                    Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=0.0, price=9.21),
+                    Instrument(symbol="MSFT", name="Duplicate", market="us", change_pct=0.0, price=1.0),
+                ]
+            )
+
+            saved = store.list_instruments()
+
+        self.assertEqual(
+            [(instrument.market, instrument.symbol, instrument.name, instrument.price) for instrument in saved],
+            [("us", "MSFT", "Microsoft", 420.5), ("ashare", "600000", "浦发银行", 9.21)],
+        )
+
+    def test_watchlist_api_persists_user_watchlist_for_workspace(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.watchlist import WatchlistStore
+
+        class EmptyQuoteAdapter:
+            def fetch_quotes(self, instruments):
+                return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            watchlist_store = WatchlistStore(Path(tmp) / "watchlist.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.watchlist_store = watchlist_store
+            TestHandler.quote_adapter = EmptyQuoteAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "PUT",
+                    "/api/watchlist",
+                    body=json.dumps(
+                        {
+                            "watchlist": [
+                                {"market": "us", "symbol": "MSFT", "name": "Microsoft", "price": 420.5, "changePct": 1.2},
+                                {"market": "ashare", "symbol": "600000", "name": "浦发银行", "price": 9.21, "changePct": -2.33},
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                save_response = connection.getresponse()
+                save_payload = json.loads(save_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/workspace")
+                workspace_response = connection.getresponse()
+                workspace_payload = json.loads(workspace_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(save_response.status, 200)
+        self.assertEqual(save_payload["watchlist"][0]["symbol"], "MSFT")
+        self.assertEqual(workspace_response.status, 200)
+        self.assertEqual(workspace_payload["watchlist"][0]["symbol"], "MSFT")
+        self.assertEqual(workspace_payload["watchlist"][0]["name"], "Microsoft")
+        self.assertEqual(workspace_payload["selectedInstrument"]["symbol"], "MSFT")
+
     def test_research_api_builds_engine_from_backtest_assumption_query(self):
         from quant_core.api import _backtest_engine_from_query
 

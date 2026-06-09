@@ -812,6 +812,11 @@ h2 {
   font-weight: 900;
 }
 
+.watchlist-save-action {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
 em {
   font-style: normal;
 }

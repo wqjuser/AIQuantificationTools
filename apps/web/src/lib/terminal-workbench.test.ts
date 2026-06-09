@@ -122,6 +122,7 @@ import {
   workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
+  workspaceWithSavedWatchlist,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
@@ -10139,6 +10140,24 @@ describe("terminal workbench model", () => {
     expect(workspace.watchlist[0].symbol).toBe("MSFT");
     expect(workspace.watchlist).toHaveLength(5);
     expect(workspace.researchRun).toBeNull();
+  });
+
+  test("merges a saved watchlist into the selected research context", () => {
+    const workspace = workspaceWithSelectedInstrument(
+      buildTerminalWorkspace(),
+      buildInstrumentFromSymbol("us", "MSFT")!
+    );
+
+    const saved = workspaceWithSavedWatchlist(workspace, [
+      { market: "us", symbol: "MSFT", name: "Microsoft", changePct: 1.2, price: 420.5 },
+      { market: "ashare", symbol: "600000", name: "浦发银行", changePct: -2.33, price: 9.21 }
+    ]);
+
+    expect(saved.watchlist[0]?.name).toBe("Microsoft");
+    expect(saved.watchlist[0]?.price).toBe(420.5);
+    expect(saved.selectedInstrument.name).toBe("Microsoft");
+    expect(saved.selectedInstrument.price).toBe(420.5);
+    expect(saved.researchRun).toBeNull();
   });
 
   test("preserves a manual symbol selection when a workspace refresh completes later", () => {

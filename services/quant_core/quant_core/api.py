@@ -123,6 +123,7 @@ from quant_core.strategy_library import (
 )
 from quant_core.strategy_validation import strategy_validation_to_payload, validate_strategy_snapshot
 from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
+from quant_core.watchlist import WatchlistStore, instrument_to_payload, watchlist_from_payload, workspace_with_watchlist
 
 
 def _json_default(value):
@@ -203,6 +204,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
+    watchlist_store = WatchlistStore(Path("data/watchlist.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -214,6 +216,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/watchlist":
+            try:
+                payload = self._read_json_body()
+                instruments = watchlist_from_payload(payload.get("watchlist"))
+                watchlist = self.watchlist_store.replace_all(instruments)
+            except ValueError as error:
+                self._send_json({"error": "invalid_watchlist", "detail": str(error)}, status=400)
+                return
+            self._send_json({"watchlist": [instrument_to_payload(instrument) for instrument in watchlist]})
+            return
+        self._send_json({"error": "not_found"}, status=404)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -966,8 +982,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
             return
         if parsed.path == "/api/workspace":
-            workspace, _quotes = workspace_with_live_quotes(build_terminal_workspace(), self.quote_adapter)
+            workspace, _quotes = workspace_with_live_quotes(self._workspace_with_saved_watchlist(), self.quote_adapter)
             self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if parsed.path == "/api/watchlist":
+            watchlist = self.watchlist_store.list_instruments() or build_terminal_workspace().watchlist
+            self._send_json({"watchlist": [instrument_to_payload(instrument) for instrument in watchlist]})
             return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
@@ -1263,7 +1283,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/market/quotes":
             query = parse_qs(parsed.query)
-            workspace = build_terminal_workspace()
+            workspace = self._workspace_with_saved_watchlist()
             instruments = workspace.watchlist
             market = query.get("market", [""])[0]
             symbol = query.get("symbol", [""])[0]
@@ -1524,7 +1544,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -1544,6 +1564,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("request_body_must_be_object")
         return payload
+
+    def _workspace_with_saved_watchlist(self):
+        workspace = build_terminal_workspace()
+        saved_watchlist = self.watchlist_store.list_instruments()
+        if saved_watchlist:
+            return workspace_with_watchlist(workspace, saved_watchlist)
+        return workspace
 
     def _audit_report_signer(self) -> AuditReportSigner:
         return AuditReportSigner(

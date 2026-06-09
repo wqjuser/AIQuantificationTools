@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookmarkPlus,
   BrainCircuit,
   Check,
   Copy,
@@ -109,6 +110,7 @@ import {
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
   ResearchNoteResult,
+  saveWatchlist,
   saveResearchNote,
   saveAuditEvent,
   signAuditReportEvent,
@@ -307,6 +309,7 @@ import {
   workspaceWithBacktestAssumption,
   workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
+  workspaceWithSavedWatchlist,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
@@ -707,6 +710,7 @@ export function App() {
   const [isSymbolSearching, setIsSymbolSearching] = useState(false);
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
+  const [isSavingWatchlist, setIsSavingWatchlist] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
   const [isRecordingPortfolioPaperOrders, setIsRecordingPortfolioPaperOrders] = useState(false);
@@ -3218,6 +3222,21 @@ export function App() {
     setIsSavingResearchNote(false);
   }, [researchNoteDraft, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
+  const saveCurrentWatchlist = useCallback(async () => {
+    setIsSavingWatchlist(true);
+    const result = await saveWatchlist(quantCoreBaseUrl, workspace.watchlist);
+    setWorkspaceState((current) => ({
+      workspace:
+        result.source === "core"
+          ? workspaceWithSavedWatchlist(current.workspace, result.watchlist)
+          : current.workspace,
+      source: result.source,
+      statusLabel: result.source === "core" ? "Watchlist saved" : "Watchlist save failed",
+      error: result.error
+    }));
+    setIsSavingWatchlist(false);
+  }, [workspace.watchlist]);
+
   const loadSavedStrategyVersion = useCallback((strategy: StrategyLibraryItem) => {
     manualSelectionVersionRef.current += 1;
     workflowRunIdRef.current += 1;
@@ -4326,6 +4345,15 @@ export function App() {
                 </em>
               </button>
             ))}
+            <button
+              className="compact-action watchlist-save-action"
+              disabled={isSavingWatchlist || !workspace.watchlist.length}
+              onClick={saveCurrentWatchlist}
+              type="button"
+            >
+              {isSavingWatchlist ? <RefreshCw className="spin" size={15} /> : <BookmarkPlus size={15} />}
+              {i18n.t("action.saveWatchlist")}
+            </button>
           </section>
 
           <section className="metrics-row">

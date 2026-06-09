@@ -11374,6 +11374,26 @@ export function workspaceWithSelectedInstrument(
   };
 }
 
+export function workspaceWithSavedWatchlist(
+  currentWorkspace: TerminalWorkspace,
+  savedWatchlist: Instrument[]
+): TerminalWorkspace {
+  if (!savedWatchlist.length) {
+    return currentWorkspace;
+  }
+  const selectedInstrument =
+    savedWatchlist.find(
+      (instrument) =>
+        instrument.market === currentWorkspace.selectedInstrument.market &&
+        instrument.symbol === currentWorkspace.selectedInstrument.symbol
+    ) ?? currentWorkspace.selectedInstrument;
+  return {
+    ...currentWorkspace,
+    selectedInstrument,
+    watchlist: savedWatchlist
+  };
+}
+
 export function workspaceWithSelectedTimeframe(
   currentWorkspace: TerminalWorkspace,
   timeframe: Timeframe

@@ -32,6 +32,12 @@ export interface WorkspaceLoadResult {
   error?: string;
 }
 
+export interface WatchlistSaveResult {
+  watchlist: TerminalWorkspace["watchlist"];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface ResearchRunHistoryResult {
   runs: ResearchRunAudit[];
   source: WorkspaceSource;
@@ -1683,6 +1689,10 @@ export function buildWorkspaceUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/workspace");
 }
 
+export function buildWatchlistUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/watchlist");
+}
+
 export function buildResearchRunUrl(
   baseUrl: string,
   market: Market,
@@ -2109,6 +2119,45 @@ export async function loadTerminalWorkspace(
       source: "fallback",
       statusLabel: "Offline snapshot",
       error: error instanceof Error ? error.message : "Unknown workspace load error"
+    };
+  }
+}
+
+export async function saveWatchlist(
+  baseUrl: string,
+  watchlist: TerminalWorkspace["watchlist"],
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<WatchlistSaveResult> {
+  try {
+    const response = await fetcher(buildWatchlistUrl(baseUrl), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        watchlist: watchlist.map((instrument) => ({
+          market: instrument.market,
+          symbol: instrument.symbol,
+          name: instrument.name,
+          price: instrument.price,
+          changePct: instrument.changePct
+        }))
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isWatchlistPayload(payload)) {
+      throw new Error("Invalid watchlist contract");
+    }
+    return {
+      watchlist: payload.watchlist,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      watchlist,
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown watchlist save error"
     };
   }
 }
@@ -7528,6 +7577,28 @@ function isTerminalWorkspace(value: unknown): value is TerminalWorkspace {
     Array.isArray(workspace.metrics) &&
     Array.isArray(workspace.decisionLog) &&
     Array.isArray(workspace.workflowNodes)
+  );
+}
+
+function isWatchlistPayload(value: unknown): value is Pick<WatchlistSaveResult, "watchlist"> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<WatchlistSaveResult>;
+  return Array.isArray(payload.watchlist) && payload.watchlist.every(isWatchlistInstrument);
+}
+
+function isWatchlistInstrument(value: unknown): value is TerminalWorkspace["watchlist"][number] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const instrument = value as Partial<TerminalWorkspace["watchlist"][number]>;
+  return (
+    (instrument.market === "ashare" || instrument.market === "us" || instrument.market === "crypto") &&
+    typeof instrument.symbol === "string" &&
+    instrument.symbol.length > 0 &&
+    typeof instrument.name === "string" &&
+    typeof instrument.changePct === "number"
   );
 }
 
