@@ -124,6 +124,11 @@ from quant_core.strategy_library import (
 from quant_core.strategy_validation import strategy_validation_to_payload, validate_strategy_snapshot
 from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 from quant_core.watchlist import WatchlistStore, instrument_to_payload, watchlist_from_payload, workspace_with_watchlist
+from quant_core.workspace_state import (
+    ResearchWorkspaceStateStore,
+    research_workspace_state_to_payload,
+    workspace_with_research_workspace_state,
+)
 
 
 def _json_default(value):
@@ -205,6 +210,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     watchlist_store = WatchlistStore(Path("data/watchlist.sqlite"))
+    workspace_state_store = ResearchWorkspaceStateStore(Path("data/research_workspace_state.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -219,6 +225,18 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/research/workspace-state":
+            try:
+                payload = self._read_json_body()
+                raw_state = payload.get("state")
+                if not isinstance(raw_state, dict):
+                    raise ValueError("workspace_state_must_be_object")
+                state = self.workspace_state_store.save(raw_state)
+            except ValueError as error:
+                self._send_json({"error": "invalid_workspace_state", "detail": str(error)}, status=400)
+                return
+            self._send_json({"state": research_workspace_state_to_payload(state)})
+            return
         if parsed.path == "/api/watchlist":
             try:
                 payload = self._read_json_body()
@@ -989,6 +1007,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             watchlist = self.watchlist_store.list_instruments() or build_terminal_workspace().watchlist
             self._send_json({"watchlist": [instrument_to_payload(instrument) for instrument in watchlist]})
             return
+        if parsed.path == "/api/research/workspace-state":
+            state = self.workspace_state_store.get()
+            self._send_json({"state": research_workspace_state_to_payload(state) if state else None})
+            return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
             return
@@ -1569,8 +1591,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         workspace = build_terminal_workspace()
         saved_watchlist = self.watchlist_store.list_instruments()
         if saved_watchlist:
-            return workspace_with_watchlist(workspace, saved_watchlist)
-        return workspace
+            workspace = workspace_with_watchlist(workspace, saved_watchlist)
+        saved_state = self.workspace_state_store.get()
+        return workspace_with_research_workspace_state(workspace, saved_state)
 
     def _audit_report_signer(self) -> AuditReportSigner:
         return AuditReportSigner(

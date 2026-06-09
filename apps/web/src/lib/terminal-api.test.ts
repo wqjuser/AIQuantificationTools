@@ -125,6 +125,8 @@ import {
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  buildResearchWorkspaceStateUrl,
+  saveResearchWorkspaceState,
   saveWatchlist,
   type AuditEventRecord,
   type PortfolioBacktestRun,
@@ -178,6 +180,48 @@ describe("terminal workspace API client", () => {
     ]);
     expect(result.source).toBe("core");
     expect(result.watchlist[0]?.symbol).toBe("MSFT");
+  });
+
+  test("saves the research workspace state through the local core", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          state: {
+            market: "us",
+            symbol: "MSFT",
+            name: "Microsoft",
+            timeframe: "5m",
+            workspaceId: "research",
+            updatedAt: "2026-06-09T00:00:00+00:00"
+          }
+        })
+      };
+    };
+
+    expect(buildResearchWorkspaceStateUrl("/")).toBe("/api/research/workspace-state");
+
+    const result = await saveResearchWorkspaceState(
+      "/",
+      { market: "us", symbol: "MSFT", name: "Microsoft", timeframe: "5m", workspaceId: "research" },
+      fetcher
+    );
+
+    expect(calls).toEqual([
+      {
+        url: "/api/research/workspace-state",
+        method: "PUT",
+        body: {
+          state: { market: "us", symbol: "MSFT", name: "Microsoft", timeframe: "5m", workspaceId: "research" }
+        }
+      }
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.state?.symbol).toBe("MSFT");
+    expect(result.state?.timeframe).toBe("5m");
   });
 
   test("builds same-origin API URLs for containerized web deployments", () => {

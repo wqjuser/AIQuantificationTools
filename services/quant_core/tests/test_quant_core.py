@@ -5749,6 +5749,104 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspace_payload["watchlist"][0]["name"], "Microsoft")
         self.assertEqual(workspace_payload["selectedInstrument"]["symbol"], "MSFT")
 
+    def test_research_workspace_state_store_persists_context(self):
+        from quant_core.workspace_state import ResearchWorkspaceStateStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchWorkspaceStateStore(Path(tmp) / "workspace_state.sqlite")
+            state = store.save(
+                {
+                    "market": "us",
+                    "symbol": "msft",
+                    "name": "Microsoft",
+                    "timeframe": "5m",
+                    "workspaceId": "research",
+                }
+            )
+
+            saved = store.get()
+
+        self.assertIsNotNone(saved)
+        self.assertEqual(state.symbol, "MSFT")
+        self.assertEqual(saved.market, "us")
+        self.assertEqual(saved.symbol, "MSFT")
+        self.assertEqual(saved.name, "Microsoft")
+        self.assertEqual(saved.timeframe, "5m")
+        self.assertEqual(saved.workspace_id, "research")
+
+    def test_research_workspace_state_api_restores_workspace_context(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.watchlist import WatchlistStore
+        from quant_core.workspace_state import ResearchWorkspaceStateStore
+
+        class EmptyQuoteAdapter:
+            def fetch_quotes(self, instruments):
+                return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace_state_store = ResearchWorkspaceStateStore(Path(tmp) / "workspace_state.sqlite")
+            watchlist_store = WatchlistStore(Path(tmp) / "watchlist.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.workspace_state_store = workspace_state_store
+            TestHandler.watchlist_store = watchlist_store
+            TestHandler.quote_adapter = EmptyQuoteAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "PUT",
+                    "/api/research/workspace-state",
+                    body=json.dumps(
+                        {
+                            "state": {
+                                "market": "us",
+                                "symbol": "MSFT",
+                                "name": "Microsoft",
+                                "timeframe": "5m",
+                                "workspaceId": "research",
+                            }
+                        },
+                        ensure_ascii=False,
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                save_response = connection.getresponse()
+                save_payload = json.loads(save_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/workspace")
+                workspace_response = connection.getresponse()
+                workspace_payload = json.loads(workspace_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/research/workspace-state")
+                state_response = connection.getresponse()
+                state_payload = json.loads(state_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(save_response.status, 200)
+        self.assertEqual(save_payload["state"]["symbol"], "MSFT")
+        self.assertEqual(workspace_response.status, 200)
+        self.assertEqual(workspace_payload["selectedInstrument"]["symbol"], "MSFT")
+        self.assertEqual(workspace_payload["selectedInstrument"]["name"], "Microsoft")
+        self.assertEqual(workspace_payload["selectedTimeframe"], "5m")
+        self.assertEqual(workspace_payload["watchlist"][0]["symbol"], "MSFT")
+        self.assertEqual(state_response.status, 200)
+        self.assertEqual(state_payload["state"]["workspaceId"], "research")
+
     def test_research_api_builds_engine_from_backtest_assumption_query(self):
         from quant_core.api import _backtest_engine_from_query
 

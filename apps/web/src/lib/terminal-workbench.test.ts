@@ -76,6 +76,7 @@ import {
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
+  buildResearchWorkspaceStateDraft,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -206,6 +207,28 @@ describe("terminal workbench model", () => {
     expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
       "market-research"
     ]);
+  });
+
+  test("builds a Stage 1 research workspace state draft from the selected context", () => {
+    const workspace = workspaceWithSelectedTimeframe(
+      workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
+        market: "us",
+        symbol: "MSFT",
+        name: "Microsoft",
+        changePct: 1.2,
+        price: 420.5
+      }),
+      "5m"
+    );
+
+    expect(buildResearchWorkspaceStateDraft(workspace, "research")).toEqual({
+      market: "us",
+      symbol: "MSFT",
+      name: "Microsoft",
+      timeframe: "5m",
+      workspaceId: "research"
+    });
+    expect(buildResearchWorkspaceStateDraft(workspace, "execution").workspaceId).toBe("research");
   });
 
   test("builds ready Stage 1 research context readiness rows", () => {

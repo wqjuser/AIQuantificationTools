@@ -38,6 +38,21 @@ export interface WatchlistSaveResult {
   error?: string;
 }
 
+export interface ResearchWorkspaceState {
+  market: Market;
+  symbol: string;
+  name: string;
+  timeframe: ResearchTimeframe;
+  workspaceId: "market" | "research";
+  updatedAt?: string;
+}
+
+export interface ResearchWorkspaceStateSaveResult {
+  state?: ResearchWorkspaceState;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface ResearchRunHistoryResult {
   runs: ResearchRunAudit[];
   source: WorkspaceSource;
@@ -1693,6 +1708,10 @@ export function buildWatchlistUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/watchlist");
 }
 
+export function buildResearchWorkspaceStateUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/research/workspace-state");
+}
+
 export function buildResearchRunUrl(
   baseUrl: string,
   market: Market,
@@ -2158,6 +2177,36 @@ export async function saveWatchlist(
       watchlist,
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown watchlist save error"
+    };
+  }
+}
+
+export async function saveResearchWorkspaceState(
+  baseUrl: string,
+  state: Omit<ResearchWorkspaceState, "updatedAt">,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ResearchWorkspaceStateSaveResult> {
+  try {
+    const response = await fetcher(buildResearchWorkspaceStateUrl(baseUrl), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isResearchWorkspaceStatePayload(payload)) {
+      throw new Error("Invalid research workspace state contract");
+    }
+    return {
+      state: payload.state,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown research workspace state save error"
     };
   }
 }
@@ -7599,6 +7648,30 @@ function isWatchlistInstrument(value: unknown): value is TerminalWorkspace["watc
     instrument.symbol.length > 0 &&
     typeof instrument.name === "string" &&
     typeof instrument.changePct === "number"
+  );
+}
+
+function isResearchWorkspaceStatePayload(value: unknown): value is Pick<ResearchWorkspaceStateSaveResult, "state"> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<ResearchWorkspaceStateSaveResult>;
+  return payload.state === undefined || isResearchWorkspaceState(payload.state);
+}
+
+function isResearchWorkspaceState(value: unknown): value is ResearchWorkspaceState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const state = value as Partial<ResearchWorkspaceState>;
+  return (
+    isMarket(state.market) &&
+    typeof state.symbol === "string" &&
+    state.symbol.length > 0 &&
+    typeof state.name === "string" &&
+    isTimeframe(state.timeframe) &&
+    (state.workspaceId === "market" || state.workspaceId === "research") &&
+    (state.updatedAt === undefined || typeof state.updatedAt === "string")
   );
 }
 

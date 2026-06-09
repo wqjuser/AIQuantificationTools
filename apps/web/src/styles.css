@@ -844,6 +844,15 @@ em {
   white-space: nowrap;
 }
 
+.module-focus-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 300px;
+}
+
 .module-focus-card.strategy {
   border-color: #614e20;
 }

@@ -12,6 +12,7 @@ import {
   Play,
   Radar,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   Timer,
@@ -110,6 +111,7 @@ import {
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
   ResearchNoteResult,
+  saveResearchWorkspaceState,
   saveWatchlist,
   saveResearchNote,
   saveAuditEvent,
@@ -187,6 +189,7 @@ import {
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
   buildResearchRunComparisonRows,
+  buildResearchWorkspaceStateDraft,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
@@ -711,6 +714,7 @@ export function App() {
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSavingWatchlist, setIsSavingWatchlist] = useState(false);
+  const [isSavingResearchWorkspace, setIsSavingResearchWorkspace] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
   const [isRecordingPortfolioPaperOrders, setIsRecordingPortfolioPaperOrders] = useState(false);
@@ -791,6 +795,7 @@ export function App() {
     productWorkAreas.find((area) => area.id === activeWorkAreaId) ?? productWorkAreas.find((area) => area.id === "research");
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeWorkflowAccent = activeWorkArea?.accent ?? workflowAccentByStep[activeLoopStep?.id ?? "research"] ?? "market";
+  const canSaveResearchWorkspace = activeWorkAreaId === "market" || activeWorkAreaId === "research";
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
@@ -3237,6 +3242,21 @@ export function App() {
     setIsSavingWatchlist(false);
   }, [workspace.watchlist]);
 
+  const saveCurrentResearchWorkspace = useCallback(async () => {
+    setIsSavingResearchWorkspace(true);
+    const result = await saveResearchWorkspaceState(
+      quantCoreBaseUrl,
+      buildResearchWorkspaceStateDraft(workspace, activeWorkAreaId)
+    );
+    setWorkspaceState((current) => ({
+      ...current,
+      source: result.source,
+      statusLabel: result.source === "core" ? "Research workspace saved" : "Research workspace save failed",
+      error: result.error
+    }));
+    setIsSavingResearchWorkspace(false);
+  }, [activeWorkAreaId, workspace]);
+
   const loadSavedStrategyVersion = useCallback((strategy: StrategyLibraryItem) => {
     manualSelectionVersionRef.current += 1;
     workflowRunIdRef.current += 1;
@@ -4310,18 +4330,31 @@ export function App() {
                 </div>
               ) : null}
             </div>
-            <button
-              className="run-button compact"
-              disabled={isGoldenPathActionDisabled}
-              onClick={runGoldenPathAction}
-              title={goldenPathActionId === "run-pipeline" ? researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight) : undefined}
-              type="button"
-            >
-              {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
-              {goldenPath?.nextAction
-                ? goldenPathActionLabel(i18n, goldenPath.nextAction)
-                : workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
-            </button>
+            <div className="module-focus-actions">
+              {canSaveResearchWorkspace ? (
+                <button
+                  className="compact-action"
+                  disabled={isSavingResearchWorkspace}
+                  onClick={saveCurrentResearchWorkspace}
+                  type="button"
+                >
+                  {isSavingResearchWorkspace ? <RefreshCw className="spin" size={15} /> : <Save size={15} />}
+                  {i18n.t("action.saveResearchWorkspace")}
+                </button>
+              ) : null}
+              <button
+                className="run-button compact"
+                disabled={isGoldenPathActionDisabled}
+                onClick={runGoldenPathAction}
+                title={goldenPathActionId === "run-pipeline" ? researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight) : undefined}
+                type="button"
+              >
+                {isRefreshing || isRunning || isSubmittingPaperExecution ? <RefreshCw className="spin" size={15} /> : <Play size={15} />}
+                {goldenPath?.nextAction
+                  ? goldenPathActionLabel(i18n, goldenPath.nextAction)
+                  : workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
+              </button>
+            </div>
           </section>
 
           <section className="watchlist-strip">

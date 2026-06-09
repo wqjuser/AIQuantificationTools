@@ -33,6 +33,8 @@ export type ProductWorkAreaId =
   | "audit"
   | "settings";
 
+export type Stage1ResearchWorkspaceId = Extract<ProductWorkAreaId, "market" | "research">;
+
 export type ProductWorkAreaStatus = "ready" | "needs_run" | "blocked";
 export type ProductDevelopmentStageId =
   | "foundation"
@@ -70,6 +72,14 @@ export interface ProductWorkAreaSelection {
   areaId: ProductWorkAreaId;
   quantLoopStepId: string;
   workflowStageId: string;
+}
+
+export interface ResearchWorkspaceStateDraft {
+  market: Market;
+  symbol: string;
+  name: string;
+  timeframe: Timeframe;
+  workspaceId: Stage1ResearchWorkspaceId;
 }
 
 export type GoldenPathRunbookStatus = "passed" | "review" | "blocked";
@@ -11399,6 +11409,21 @@ export function workspaceWithSelectedTimeframe(
   timeframe: Timeframe
 ): TerminalWorkspace {
   return freshResearchContext(currentWorkspace, currentWorkspace.selectedInstrument, timeframe);
+}
+
+export function buildResearchWorkspaceStateDraft(
+  workspace: TerminalWorkspace,
+  activeWorkAreaId: ProductWorkAreaId
+): ResearchWorkspaceStateDraft {
+  const workspaceId: Stage1ResearchWorkspaceId =
+    activeWorkAreaId === "market" || activeWorkAreaId === "research" ? activeWorkAreaId : "research";
+  return {
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    name: workspace.selectedInstrument.name,
+    timeframe: workspace.selectedTimeframe,
+    workspaceId
+  };
 }
 
 export function workspaceWithStrategyLibraryItem(
