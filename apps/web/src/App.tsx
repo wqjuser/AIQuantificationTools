@@ -315,6 +315,7 @@ import {
   WorkflowRunLogEntry,
   WorkflowRunState,
   WorkflowStageView,
+  resolveWatchlistCacheRefreshRunSelection,
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
@@ -749,6 +750,7 @@ export function App() {
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
+  const [selectedWatchlistCacheRefreshRunId, setSelectedWatchlistCacheRefreshRunId] = useState<string | null>(null);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -933,9 +935,17 @@ export function App() {
     timeframe: workspace.selectedTimeframe
   });
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
-  const watchlistCacheRefreshHistoryRows = buildWatchlistCacheRefreshHistoryRows(watchlistCacheRefreshHistory, 4);
   const latestWatchlistCacheRefresh = watchlistCacheRefreshHistory[0] ?? null;
-  const watchlistCacheRefreshItemRows = buildWatchlistCacheRefreshItemRows(latestWatchlistCacheRefresh);
+  const selectedWatchlistCacheRefresh = resolveWatchlistCacheRefreshRunSelection(
+    watchlistCacheRefreshHistory,
+    selectedWatchlistCacheRefreshRunId
+  );
+  const watchlistCacheRefreshHistoryRows = buildWatchlistCacheRefreshHistoryRows(
+    watchlistCacheRefreshHistory,
+    4,
+    selectedWatchlistCacheRefresh?.runId ?? null
+  );
+  const watchlistCacheRefreshItemRows = buildWatchlistCacheRefreshItemRows(selectedWatchlistCacheRefresh);
   const researchContextReadinessRows = buildResearchContextReadinessRows({
     workspace,
     barCount: klinesState.bars.length,
@@ -1606,6 +1616,7 @@ export function App() {
           result.watchlistRefresh!,
           ...current.filter((run) => run.runId !== result.watchlistRefresh!.runId)
         ].slice(0, 4));
+        setSelectedWatchlistCacheRefreshRunId(result.watchlistRefresh.runId);
       }
       if (
         result.watchlistRefresh?.items.some(
@@ -3135,6 +3146,10 @@ export function App() {
     [selectInstrument, workspace.watchlist]
   );
 
+  const selectWatchlistCacheRefreshRun = useCallback((row: WatchlistCacheRefreshHistoryRow) => {
+    setSelectedWatchlistCacheRefreshRunId(row.runId);
+  }, []);
+
   const selectTimeframe = useCallback(
     (timeframe: Timeframe) => {
       manualSelectionVersionRef.current += 1;
@@ -3783,6 +3798,7 @@ export function App() {
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
+            onSelectWatchlistCacheRefreshRun={selectWatchlistCacheRefreshRun}
             onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
             state={klinesState}
             watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
@@ -5677,6 +5693,7 @@ function MarketDataHealthPanel({
   latestWatchlistCacheRefresh,
   onRefreshCache,
   onRefreshWatchlistCache,
+  onSelectWatchlistCacheRefreshRun,
   onSelectWatchlistCacheRefreshItem,
   state,
   watchlistCacheRefreshItemRows = [],
@@ -5692,6 +5709,7 @@ function MarketDataHealthPanel({
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
+  onSelectWatchlistCacheRefreshRun?: (row: WatchlistCacheRefreshHistoryRow) => void;
   onSelectWatchlistCacheRefreshItem?: (row: WatchlistCacheRefreshItemRow) => void;
   state: MarketKlinesResult;
   watchlistCacheRefreshItemRows?: WatchlistCacheRefreshItemRow[];
@@ -5821,13 +5839,24 @@ function MarketDataHealthPanel({
           </div>
           <div className="watchlist-refresh-history-list">
             {watchlistCacheRefreshHistoryRows.map((row) => (
-              <article className={`watchlist-refresh-history-row ${row.tone}`} key={row.id}>
+              <button
+                aria-pressed={row.selected}
+                className={`watchlist-refresh-history-row ${row.tone}${row.selected ? " selected" : ""}`}
+                key={row.id}
+                onClick={() => onSelectWatchlistCacheRefreshRun?.(row)}
+                title={
+                  i18n.locale === "zh-CN"
+                    ? `查看 ${row.runId} 明细`
+                    : `Inspect ${row.runId} details`
+                }
+                type="button"
+              >
                 <div>
                   <strong>{watchlistCacheRefreshHistoryValue(i18n, row)}</strong>
                   <span>{row.label}</span>
                 </div>
                 <p>{watchlistCacheRefreshHistoryDetail(i18n, row)}</p>
-              </article>
+              </button>
             ))}
           </div>
         </div>
@@ -5835,7 +5864,7 @@ function MarketDataHealthPanel({
       {watchlistCacheRefreshItemRows.length ? (
         <div className="watchlist-refresh-items">
           <div className="watchlist-refresh-history-head">
-            <span>{i18n.locale === "zh-CN" ? "最近运行明细" : "Latest run details"}</span>
+            <span>{i18n.locale === "zh-CN" ? "选中运行明细" : "Selected run details"}</span>
             <strong>{watchlistCacheRefreshItemRows.length}</strong>
           </div>
           <div className="watchlist-refresh-item-list">

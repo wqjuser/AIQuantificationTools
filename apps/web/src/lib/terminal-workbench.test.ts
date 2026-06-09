@@ -106,6 +106,7 @@ import {
   researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
+  resolveWatchlistCacheRefreshRunSelection,
   mergeResearchRunImportAuditEvents,
   quantLoopLabels,
   resolveBacktestAssumptions,
@@ -10204,6 +10205,7 @@ describe("terminal workbench model", () => {
         upsertedRows: 480,
         value: "2/3 refreshed",
         detail: "480 rows cached · 1 skipped · 0 failed",
+        selected: false,
         tone: "warning"
       },
       {
@@ -10219,9 +10221,65 @@ describe("terminal workbench model", () => {
         upsertedRows: 120,
         value: "1/2 refreshed",
         detail: "120 rows cached · 0 skipped · 1 failed",
+        selected: false,
         tone: "risk"
       }
     ]);
+  });
+
+  test("marks the selected watchlist cache refresh history row", () => {
+    const rows = buildWatchlistCacheRefreshHistoryRows(
+      [
+        {
+          runId: "cache-refresh-latest",
+          createdAt: "2026-06-09T23:10:00+08:00",
+          timeframe: "1d",
+          requestedLimit: 240,
+          summary: { totalSymbols: 2, refreshed: 2, skipped: 0, failed: 0, upsertedRows: 480 },
+          items: []
+        },
+        {
+          runId: "cache-refresh-older",
+          createdAt: "2026-06-09T22:50:00+08:00",
+          timeframe: "5m",
+          requestedLimit: 120,
+          summary: { totalSymbols: 2, refreshed: 1, skipped: 1, failed: 0, upsertedRows: 120 },
+          items: []
+        }
+      ],
+      2,
+      "cache-refresh-older"
+    );
+
+    expect(rows.map((row) => ({ runId: row.runId, selected: row.selected }))).toEqual([
+      { runId: "cache-refresh-latest", selected: false },
+      { runId: "cache-refresh-older", selected: true }
+    ]);
+  });
+
+  test("resolves the selected watchlist cache refresh run with latest fallback", () => {
+    const latest = {
+      runId: "cache-refresh-latest",
+      createdAt: "2026-06-09T23:10:00+08:00",
+      timeframe: "1d" as const,
+      requestedLimit: 240,
+      summary: { totalSymbols: 2, refreshed: 2, skipped: 0, failed: 0, upsertedRows: 480 },
+      items: []
+    };
+    const older = {
+      runId: "cache-refresh-older",
+      createdAt: "2026-06-09T22:50:00+08:00",
+      timeframe: "5m" as const,
+      requestedLimit: 120,
+      summary: { totalSymbols: 2, refreshed: 1, skipped: 1, failed: 0, upsertedRows: 120 },
+      items: []
+    };
+
+    expect(resolveWatchlistCacheRefreshRunSelection([latest, older], "cache-refresh-older")?.runId).toBe(
+      "cache-refresh-older"
+    );
+    expect(resolveWatchlistCacheRefreshRunSelection([latest, older], "missing")?.runId).toBe("cache-refresh-latest");
+    expect(resolveWatchlistCacheRefreshRunSelection([], "missing")).toBeNull();
   });
 
   test("summarizes watchlist cache refresh item details for the market health panel", () => {

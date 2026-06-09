@@ -2202,6 +2202,7 @@ export interface WatchlistCacheRefreshHistoryRow {
   upsertedRows: number;
   value: string;
   detail: string;
+  selected: boolean;
   tone: "positive" | "warning" | "risk" | "neutral";
 }
 
@@ -6283,7 +6284,8 @@ export function buildResearchContextEvidenceRows(workspace: TerminalWorkspace): 
 
 export function buildWatchlistCacheRefreshHistoryRows(
   runs: WatchlistCacheRefreshRunSnapshot[],
-  limit = 4
+  limit = 4,
+  selectedRunId: string | null = null
 ): WatchlistCacheRefreshHistoryRow[] {
   const boundedLimit = Math.max(1, Math.min(limit, 8));
   return runs.slice(0, boundedLimit).map((run) => {
@@ -6305,9 +6307,20 @@ export function buildWatchlistCacheRefreshHistoryRows(
       upsertedRows: Math.max(0, run.summary.upsertedRows),
       value: `${refreshed}/${total} refreshed`,
       detail: `${Math.max(0, run.summary.upsertedRows)} rows cached · ${skipped} skipped · ${failed} failed`,
+      selected: selectedRunId === run.runId,
       tone
     };
   });
+}
+
+export function resolveWatchlistCacheRefreshRunSelection(
+  runs: WatchlistCacheRefreshRunSnapshot[],
+  selectedRunId: string | null | undefined
+): WatchlistCacheRefreshRunSnapshot | null {
+  if (!runs.length) {
+    return null;
+  }
+  return runs.find((run) => run.runId === selectedRunId) ?? runs[0] ?? null;
 }
 
 export function buildWatchlistCacheRefreshItemRows(
