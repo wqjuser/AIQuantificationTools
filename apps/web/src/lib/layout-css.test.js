@@ -1392,7 +1392,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows)"
     );
     expect(appSource).toContain("adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}");
     expect(appSource).toContain("adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[]");
@@ -1402,6 +1402,25 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("adapterRestartAcceptanceConfirmationSummary(i18n, row.confirmationSummary)");
     expect(styles).toContain(".promotion-restart-acceptance");
     expect(styles).toContain(".promotion-restart-acceptance-row");
+  });
+
+  test("renders secret reference history in promotion queue", () => {
+    expect(appSource).toContain("loadExecutionAdapterSecretReferences(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterSecretReferences(secretReferenceResults.flatMap((result) => result.adapterSecretReferences))"
+    );
+    expect(appSource).toContain("buildExecutionAdapterSecretReferenceRows(executionAdapterSecretReferences)");
+    expect(appSource).toContain(
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows)"
+    );
+    expect(appSource).toContain("adapterSecretReferenceRows={executionAdapterSecretReferenceRows}");
+    expect(appSource).toContain("adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[]");
+    expect(appSource).toContain('className="promotion-secret-reference-evidence"');
+    expect(appSource).toContain('className={`promotion-secret-reference-evidence-row');
+    expect(appSource).toContain("adapterSecretReferenceStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterSecretReferenceConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(styles).toContain(".promotion-secret-reference-evidence");
+    expect(styles).toContain(".promotion-secret-reference-evidence-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

@@ -2221,6 +2221,116 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("acceptance-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("acceptance-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_secret_reference_records_history_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                blocked_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "settings-panel",
+                    "referenceName": "ashare-live/broker-sandbox",
+                    "backend": "local-secret-store",
+                    "requiredEnvVars": [
+                        "ASHARE_BROKER_CLIENT_ID",
+                        "ASHARE_BROKER_CLIENT_SECRET",
+                    ],
+                    "confirmations": {},
+                    "metadata": {
+                        "source": "settings-panel",
+                        "secret": "secret-reference-blocked-secret-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(blocked_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                recorded_request = {
+                    **blocked_request,
+                    "confirmations": {
+                        "referenceCreatedOutsideUi": True,
+                        "operatorVerifiedFingerprint": True,
+                        "rotationPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                        "fingerprint": "sha256:paper-only-reference",
+                        "privateKey": "secret-reference-private-key-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(recorded_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                recorded_response = connection.getresponse()
+                recorded_payload = json.loads(recorded_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/execution/adapter-secret-references?adapterId=ashare-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterSecretReference"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterSecretReference"]["blockedReasons"],
+            [
+                "secret_reference_not_created",
+                "secret_reference_fingerprint_not_verified",
+                "secret_reference_rotation_plan_not_documented",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterSecretReference"]["status"], "reference_recorded")
+        self.assertEqual(recorded_payload["adapterSecretReference"]["adapterId"], "ashare-live")
+        self.assertEqual(recorded_payload["adapterSecretReference"]["referenceName"], "ashare-live/broker-sandbox")
+        self.assertEqual(recorded_payload["adapterSecretReference"]["requiredEnvVars"][0], "ASHARE_BROKER_CLIENT_ID")
+        self.assertFalse(recorded_payload["adapterSecretReference"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterSecretReference"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_secret_reference")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterSecretReferences"]), 2)
+        self.assertEqual(history_payload["adapterSecretReferences"][0]["status"], "reference_recorded")
+        self.assertEqual(history_payload["adapterSecretReferences"][1]["status"], "blocked")
+        self.assertNotIn("secret-reference-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("secret-reference-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

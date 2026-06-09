@@ -40,6 +40,8 @@ import {
   buildExecutionAdapterControlledRestartEvidenceUrl,
   buildExecutionAdapterRestartAcceptanceHistoryUrl,
   buildExecutionAdapterRestartAcceptanceUrl,
+  buildExecutionAdapterSecretReferenceHistoryUrl,
+  buildExecutionAdapterSecretReferenceUrl,
   buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
   buildSettingsStatusUrl,
@@ -67,6 +69,7 @@ import {
   loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterRestartAcceptances,
+  loadExecutionAdapterSecretReferences,
   loadExecutionAdapterCertifications,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
@@ -76,6 +79,7 @@ import {
   recordExecutionAdapterCertificationApply,
   recordExecutionAdapterControlledRestartEvidence,
   recordExecutionAdapterRestartAcceptance,
+  recordExecutionAdapterSecretReference,
   loadResearchNote,
   loadPlatformSettings,
   refreshMarketCache,
@@ -2344,6 +2348,198 @@ describe("terminal workspace API client", () => {
     expect(result.restartAcceptances[0].status).toBe("acceptance_recorded");
     expect(result.restartAcceptances[0].liveTradingAllowed).toBe(false);
     expect(JSON.stringify(result)).not.toContain("acceptance-secret-should-not-leak");
+  });
+
+  test("records execution adapter secret references without raw secret values", async () => {
+    const calls: { url: string; method?: string; body?: unknown }[] = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method,
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterSecretReference: {
+            schemaVersion: 1,
+            referenceId: "execution-adapter-secret-reference-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "reference_recorded",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T08:00:00+00:00",
+            referenceName: "us-live/alpaca-sandbox",
+            backend: "local-secret-store",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              {
+                id: "reference-created-outside-ui",
+                label: "Secret reference was created outside this UI",
+                status: "confirmed"
+              },
+              {
+                id: "operator-verified-fingerprint",
+                label: "Operator verified the stored secret fingerprint",
+                status: "confirmed"
+              },
+              {
+                id: "rotation-plan-documented",
+                label: "Secret rotation plan is documented",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel", secret: "[redacted]" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-secret-reference-us-live",
+            eventType: "execution_adapter_secret_reference",
+            runId: "",
+            createdAt: "2026-06-09T08:00:00+00:00",
+            stage: "execution-adapter-secret-reference",
+            source: "execution-adapter-ledger",
+            summary: "us-live secret reference recorded as reference_recorded.",
+            detail: "Secret reference is paper-only.",
+            metadata: {
+              referenceId: "execution-adapter-secret-reference-us-live",
+              adapterId: "us-live",
+              status: "reference_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterSecretReferenceUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-secret-references"
+    );
+
+    const result = await recordExecutionAdapterSecretReference(
+      "/",
+      {
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        operator: "settings-panel",
+        referenceName: "us-live/alpaca-sandbox",
+        backend: "local-secret-store",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        confirmations: {
+          referenceCreatedOutsideUi: true,
+          operatorVerifiedFingerprint: true,
+          rotationPlanDocumented: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-secret-references"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      operator: "settings-panel",
+      referenceName: "us-live/alpaca-sandbox",
+      backend: "local-secret-store",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      confirmations: {
+        referenceCreatedOutsideUi: true,
+        operatorVerifiedFingerprint: true,
+        rotationPlanDocumented: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterSecretReference?.status).toBe("reference_recorded");
+    expect(result.adapterSecretReference?.liveTradingAllowed).toBe(false);
+    expect(result.adapterSecretReference?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_secret_reference");
+  });
+
+  test("loads secret reference history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const secretReference = {
+      schemaVersion: 1,
+      referenceId: "execution-adapter-secret-reference-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "reference_recorded",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T08:00:00+00:00",
+      referenceName: "us-live/alpaca-sandbox",
+      backend: "local-secret-store",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        {
+          id: "reference-created-outside-ui",
+          label: "Secret reference was created outside this UI",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", privateKey: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterSecretReferences(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterSecretReferences: [secretReference] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterSecretReferenceHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-secret-references?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-secret-references?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterSecretReferences).toHaveLength(1);
+    expect(result.adapterSecretReferences[0].status).toBe("reference_recorded");
+    expect(result.adapterSecretReferences[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterSecretReferences(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterSecretReferences: [
+            {
+              ...secretReference,
+              metadata: { privateKey: "secret-reference-private-key-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterSecretReferences).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("secret-reference-private-key-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

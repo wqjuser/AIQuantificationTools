@@ -51,6 +51,7 @@ from quant_core.execution import (
     build_execution_adapter_certification_apply,
     build_execution_adapter_controlled_restart_evidence,
     build_execution_adapter_restart_acceptance,
+    build_execution_adapter_secret_reference,
     create_execution_adapter_certification_run,
     create_paper_execution_from_audit,
     create_portfolio_paper_order_approval,
@@ -65,6 +66,9 @@ from quant_core.execution import (
     execution_adapter_restart_acceptance_payload_from_audit_event,
     execution_adapter_restart_acceptance_to_audit_event_payload,
     execution_adapter_restart_acceptance_to_payload,
+    execution_adapter_secret_reference_payload_from_audit_event,
+    execution_adapter_secret_reference_to_audit_event_payload,
+    execution_adapter_secret_reference_to_payload,
     execution_adapter_certification_to_audit_event_payload,
     execution_adapter_certification_to_payload,
     paper_execution_payload_to_record,
@@ -288,6 +292,34 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     },
                     "settings": self._settings_status_payload(),
                 }
+            )
+            return
+        if parsed.path == "/api/execution/adapter-secret-references":
+            try:
+                payload = self._read_json_body()
+                secret_reference = build_execution_adapter_secret_reference(
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    market=str(payload.get("market") or ""),
+                    route=str(payload.get("route") or ""),
+                    reference_name=str(payload.get("referenceName") or ""),
+                    backend=str(payload.get("backend") or ""),
+                    required_env_vars=payload.get("requiredEnvVars") if isinstance(payload.get("requiredEnvVars"), list) else [],
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_secret_reference", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_secret_reference_to_audit_event_payload(secret_reference)
+            )
+            self._send_json(
+                {
+                    "adapterSecretReference": execution_adapter_secret_reference_to_payload(secret_reference),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if secret_reference.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -903,6 +935,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/execution/adapter-ledger":
             settings = self._settings_status_payload()
             self._send_json({"adapterLedger": build_execution_adapter_state_ledger(settings)})
+            return
+        if parsed.path == "/api/execution/adapter-secret-references":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_secret_reference_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            reference_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_secret_reference",
+                limit=50,
+                query=adapter_id,
+            )
+            secret_references = []
+            for event in reference_events:
+                payload = execution_adapter_secret_reference_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    secret_references.append(payload)
+                if len(secret_references) >= limit:
+                    break
+            self._send_json({"adapterSecretReferences": secret_references})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

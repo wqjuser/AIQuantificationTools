@@ -42,6 +42,7 @@ import {
   buildExecutionAdapterCertificationApplyRows,
   buildExecutionAdapterControlledRestartEvidenceRows,
   buildExecutionAdapterRestartAcceptanceRows,
+  buildExecutionAdapterSecretReferenceRows,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
@@ -7241,6 +7242,54 @@ describe("terminal workbench model", () => {
       }
     ]);
     expect(JSON.stringify(rows)).not.toContain("token");
+  });
+
+  test("builds compact secret reference rows from ledger results", () => {
+    const rows = buildExecutionAdapterSecretReferenceRows([
+      {
+        schemaVersion: 1,
+        referenceId: "execution-adapter-secret-reference-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "reference_recorded",
+        operator: "settings-panel",
+        recordedAt: "2026-06-09T08:00:00+00:00",
+        referenceName: "us-live/alpaca-sandbox",
+        backend: "local-secret-store",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "reference-created-outside-ui", label: "Reference created outside UI", status: "confirmed" },
+          { id: "operator-verified-fingerprint", label: "Fingerprint verified", status: "confirmed" },
+          { id: "rotation-plan-documented", label: "Rotation plan documented", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { source: "settings-panel", secret: "[redacted]" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-secret-reference-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T08:00:00+00:00",
+        status: "reference_recorded",
+        statusLabel: "Reference recorded",
+        referenceName: "us-live/alpaca-sandbox",
+        backend: "local-secret-store",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "3 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-secret-reference-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
   });
 
   test("blocks promotion readiness before an audited run is bound", () => {

@@ -48,6 +48,7 @@ import {
   loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterRestartAcceptances,
+  loadExecutionAdapterSecretReferences,
   loadExecutionAdapterCertifications,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
@@ -89,6 +90,7 @@ import {
   ExecutionAdapterCertificationApplyResult,
   ExecutionAdapterControlledRestartEvidenceResult,
   ExecutionAdapterRestartAcceptanceResult,
+  ExecutionAdapterSecretReferenceResult,
   ExecutionAdapterLedgerResult,
   ExecutionAdapterCertificationRun,
   PlatformSettingsResult,
@@ -154,6 +156,7 @@ import {
   buildExecutionAdapterCertificationApplyRows,
   buildExecutionAdapterControlledRestartEvidenceRows,
   buildExecutionAdapterRestartAcceptanceRows,
+  buildExecutionAdapterSecretReferenceRows,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
@@ -242,6 +245,7 @@ import {
   ExecutionAdapterCertificationApplyRow,
   ExecutionAdapterControlledRestartEvidenceRow,
   ExecutionAdapterRestartAcceptanceRow,
+  ExecutionAdapterSecretReferenceRow,
   ExecutionAdapterCertificationRow,
   ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
@@ -642,6 +646,9 @@ export function App() {
   const [executionAdapterRestartAcceptances, setExecutionAdapterRestartAcceptances] = useState<
     ExecutionAdapterRestartAcceptanceResult[]
   >([]);
+  const [executionAdapterSecretReferences, setExecutionAdapterSecretReferences] = useState<
+    ExecutionAdapterSecretReferenceResult[]
+  >([]);
   const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
     Record<string, ExecutionAdapterCertificationApplyConfirmations>
   >({});
@@ -804,6 +811,7 @@ export function App() {
   const executionAdapterCertificationApplyRows = buildExecutionAdapterCertificationApplyRows(executionAdapterCertificationApplies);
   const executionAdapterControlledRestartEvidenceRows = buildExecutionAdapterControlledRestartEvidenceRows(executionAdapterControlledRestartEvidence);
   const executionAdapterRestartAcceptanceRows = buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances);
+  const executionAdapterSecretReferenceRows = buildExecutionAdapterSecretReferenceRows(executionAdapterSecretReferences);
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -873,7 +881,7 @@ export function App() {
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
     activePromotionCandidateRecord ??
-    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows);
+    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
   const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
     (context) =>
@@ -1203,11 +1211,12 @@ export function App() {
       loadExecutionAdapterLedger(quantCoreBaseUrl)
     ]);
     const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
-    const [certificationResults, applyResults, restartEvidenceResults, restartAcceptanceResults] = await Promise.all([
+    const [certificationResults, applyResults, restartEvidenceResults, restartAcceptanceResults, secretReferenceResults] = await Promise.all([
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterControlledRestartEvidence(quantCoreBaseUrl, row.id, undefined, 5))),
-      Promise.all(liveAdapters.map((row) => loadExecutionAdapterRestartAcceptances(quantCoreBaseUrl, row.id, undefined, 5)))
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterRestartAcceptances(quantCoreBaseUrl, row.id, undefined, 5))),
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterSecretReferences(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
     setExecutionAdapterLedger(adapterLedgerResult);
@@ -1215,6 +1224,7 @@ export function App() {
     setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies));
     setExecutionAdapterControlledRestartEvidence(restartEvidenceResults.flatMap((result) => result.controlledRestartEvidence));
     setExecutionAdapterRestartAcceptances(restartAcceptanceResults.flatMap((result) => result.restartAcceptances));
+    setExecutionAdapterSecretReferences(secretReferenceResults.flatMap((result) => result.adapterSecretReferences));
   }, []);
 
   const recordAdapterCertificationEvidence = useCallback(
@@ -3821,6 +3831,7 @@ export function App() {
             adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
             adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}
             adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}
+            adapterSecretReferenceRows={executionAdapterSecretReferenceRows}
             adapterCertificationRows={executionAdapterCertificationRows}
             className="workflow-promotion-panel"
             i18n={i18n}
@@ -10292,6 +10303,7 @@ function PromotionQueuePanel({
   adapterCertificationApplyRows,
   adapterControlledRestartEvidenceRows,
   adapterRestartAcceptanceRows,
+  adapterSecretReferenceRows,
   adapterCertificationRows,
   className,
   i18n,
@@ -10300,6 +10312,7 @@ function PromotionQueuePanel({
   adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
   adapterControlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[];
   adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[];
+  adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[];
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
   className?: string;
   i18n: AppI18n;
@@ -10309,6 +10322,7 @@ function PromotionQueuePanel({
   const recentApplyRows = adapterCertificationApplyRows.slice(0, 3);
   const recentRestartEvidenceRows = adapterControlledRestartEvidenceRows.slice(0, 3);
   const recentRestartAcceptanceRows = adapterRestartAcceptanceRows.slice(0, 3);
+  const recentSecretReferenceRows = adapterSecretReferenceRows.slice(0, 3);
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "晋级队列" : "Promotion Queue"}
@@ -10345,6 +10359,24 @@ function PromotionQueuePanel({
                 <p>{promotionCertificationBoundaryLabel(i18n, row.boundary)}</p>
                 <em>
                   {adapterCertificationCheckSummary(i18n, row.checkSummary)} · {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentSecretReferenceRows.length ? (
+          <div className="promotion-secret-reference-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近密钥引用证据" : "Recent secret reference evidence"}</span>
+            {recentSecretReferenceRows.map((row) => (
+              <article className={`promotion-secret-reference-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterSecretReferenceStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterSecretReferenceConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} · {row.backend} ·{" "}
+                  {row.envVarSummary} · {row.auditEventId}
                 </em>
               </article>
             ))}
@@ -12017,6 +12049,18 @@ function adapterRestartAcceptanceStatusLabel(i18n: AppI18n, statusLabel: string)
   );
 }
 
+function adapterSecretReferenceStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Blocked: "阻断",
+      "Reference recorded": "引用已记录"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
 function adapterCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
   if (i18n.locale === "en-US") {
     return boundary;
@@ -12051,6 +12095,10 @@ function adapterControlledRestartEvidenceConfirmationSummary(i18n: AppI18n, summ
 }
 
 function adapterRestartAcceptanceConfirmationSummary(i18n: AppI18n, summary: string): string {
+  return adapterCertificationApplyConfirmationSummary(i18n, summary);
+}
+
+function adapterSecretReferenceConfirmationSummary(i18n: AppI18n, summary: string): string {
   return adapterCertificationApplyConfirmationSummary(i18n, summary);
 }
 

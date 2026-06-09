@@ -1917,6 +1917,50 @@ export interface ExecutionAdapterRestartAcceptanceRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterSecretReferenceStatus = "blocked" | "reference_recorded";
+export type ExecutionAdapterSecretReferenceConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSecretReferenceSnapshot {
+  schemaVersion: 1;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSecretReferenceStatus;
+  operator: string;
+  recordedAt: string;
+  referenceName: string;
+  backend: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterSecretReferenceConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSecretReferenceRow {
+  id: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSecretReferenceStatus;
+  statusLabel: string;
+  referenceName: string;
+  backend: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -7975,6 +8019,36 @@ export function buildExecutionAdapterRestartAcceptanceRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSecretReferenceRows(
+  references: ExecutionAdapterSecretReferenceSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSecretReferenceRow[] {
+  return (references ?? [])
+    .map((row) => ({
+      id: row.referenceId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSecretReferenceStatusLabel(row.status),
+      referenceName: row.referenceName,
+      backend: row.backend,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterSecretReferenceConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.referenceId,
+      tone: executionAdapterSecretReferenceTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -8097,15 +8171,35 @@ function latestPromotionRestartAcceptanceRow(
   );
 }
 
+function latestPromotionSecretReferenceRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterSecretReferenceRow[]
+): ExecutionAdapterSecretReferenceRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local"
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
   latestApply: ExecutionAdapterCertificationApplyRow | null,
   latestRestartEvidence: ExecutionAdapterControlledRestartEvidenceRow | null,
   latestRestartAcceptance: ExecutionAdapterRestartAcceptanceRow | null,
+  latestSecretReference: ExecutionAdapterSecretReferenceRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
+  const secretReferenceDetail = latestSecretReference
+    ? ` Latest secret reference ${latestSecretReference.auditEventId}: ${latestSecretReference.statusLabel} · ${latestSecretReference.confirmationSummary} · ${latestSecretReference.blockerSummary} · ${latestSecretReference.backend} · ${latestSecretReference.envVarSummary} · ${latestSecretReference.boundary}.`
+    : "";
   if (!latestCertification) {
     return {
       id: "adapter-certification",
@@ -8114,9 +8208,9 @@ function buildPromotionAdapterCertificationStage(
         certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
       detail: liveAdapterCertified
         ? "A certified live adapter is available for the selected market."
-        : "Live adapters remain interface-only or configuration-required until certification passes.",
+        : `Live adapters remain interface-only or configuration-required until certification passes.${secretReferenceDetail}`,
       status: liveAdapterCertified ? "passed" : "blocked",
-      tone: liveAdapterCertified ? "positive" : "risk"
+      tone: liveAdapterCertified ? "positive" : latestSecretReference?.status === "reference_recorded" ? "warning" : "risk"
     };
   }
 
@@ -8138,7 +8232,7 @@ function buildPromotionAdapterCertificationStage(
     id: "adapter-certification",
     label: "Adapter certification",
     value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
-    detail: `${certificationDetail}${applyDetail}${restartEvidenceDetail}${restartAcceptanceDetail}${gateDetail}`,
+    detail: `${secretReferenceDetail}${certificationDetail}${applyDetail}${restartEvidenceDetail}${restartAcceptanceDetail}${gateDetail}`,
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
@@ -8180,7 +8274,8 @@ export function buildPromotionReadiness(
   certificationRows: ExecutionAdapterCertificationRow[] = [],
   certificationApplyRows: ExecutionAdapterCertificationApplyRow[] = [],
   controlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[] = [],
-  restartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[] = []
+  restartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[] = [],
+  secretReferenceRows: ExecutionAdapterSecretReferenceRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -8206,6 +8301,7 @@ export function buildPromotionReadiness(
     latestCertificationApply,
     latestRestartEvidence
   );
+  const latestSecretReference = latestPromotionSecretReferenceRow(workspace, secretReferenceRows);
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
   const certifiedLiveAdapters = brokerRows.filter(
@@ -8273,6 +8369,7 @@ export function buildPromotionReadiness(
     latestCertificationApply,
     latestRestartEvidence,
     latestRestartAcceptance,
+    latestSecretReference,
     liveAdapterCertified,
     adapterGatePassed
   );
@@ -9904,6 +10001,46 @@ function executionAdapterRestartAcceptanceConfirmationSummary(
 }
 
 function executionAdapterRestartAcceptanceBlockerSummary(blockedReasons: string[]): string {
+  if (!blockedReasons.length) {
+    return "No blockers";
+  }
+  return blockedReasons.length === 1 ? "1 blocker" : `${blockedReasons.length} blockers`;
+}
+
+function executionAdapterSecretReferenceTone(
+  status: ExecutionAdapterSecretReferenceStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  if (status === "reference_recorded") {
+    return "positive";
+  }
+  return "risk";
+}
+
+function executionAdapterSecretReferenceStatusLabel(status: ExecutionAdapterSecretReferenceStatus): string {
+  return (
+    {
+      blocked: "Blocked",
+      reference_recorded: "Reference recorded"
+    } satisfies Record<ExecutionAdapterSecretReferenceStatus, string>
+  )[status];
+}
+
+function executionAdapterSecretReferenceEnvVarSummary(requiredEnvVars: string[]): string {
+  if (!requiredEnvVars.length) {
+    return "No env vars";
+  }
+  return requiredEnvVars.length === 1 ? "1 env var" : `${requiredEnvVars.length} env vars`;
+}
+
+function executionAdapterSecretReferenceConfirmationSummary(
+  confirmations: ExecutionAdapterSecretReferenceSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterSecretReferenceBlockerSummary(blockedReasons: string[]): string {
   if (!blockedReasons.length) {
     return "No blockers";
   }
