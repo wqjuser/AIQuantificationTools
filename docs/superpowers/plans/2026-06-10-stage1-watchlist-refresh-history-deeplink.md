@@ -18,7 +18,7 @@ Make a selected Market watchlist cache refresh run restorable from the URL so re
 - [x] GREEN: Wire Market history selection and new refresh runs to URL state.
 - [x] DOCS: Update product and architecture docs.
 - [x] VERIFY: Run targeted tests, broader frontend/backend tests, production build, Docker deploy, browser smoke, and diff checks.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
