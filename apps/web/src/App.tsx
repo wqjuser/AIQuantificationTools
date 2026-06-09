@@ -46,6 +46,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadPlatformSettings,
+  loadWatchlistCacheRefreshRuns,
   loadExecutionAdapterLedger,
   loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterControlledRestartEvidence,
@@ -1239,9 +1240,10 @@ export function App() {
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const refreshSettingsStatus = useCallback(async () => {
-    const [settingsResult, adapterLedgerResult] = await Promise.all([
+    const [settingsResult, adapterLedgerResult, watchlistRefreshHistory] = await Promise.all([
       loadPlatformSettings(quantCoreBaseUrl),
-      loadExecutionAdapterLedger(quantCoreBaseUrl)
+      loadExecutionAdapterLedger(quantCoreBaseUrl),
+      loadWatchlistCacheRefreshRuns(quantCoreBaseUrl, { limit: 1 })
     ]);
     const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
     const [
@@ -1260,6 +1262,7 @@ export function App() {
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterSecretMaterializations(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
+    setLatestWatchlistCacheRefresh(watchlistRefreshHistory.watchlistRefreshes[0] ?? null);
     setExecutionAdapterLedger(adapterLedgerResult);
     setExecutionAdapterCertifications(certificationResults.flatMap((result) => result.adapterCertifications));
     setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies));

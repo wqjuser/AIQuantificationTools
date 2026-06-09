@@ -1254,6 +1254,12 @@ export interface CacheWatchlistRefreshResult {
   error?: string;
 }
 
+export interface CacheWatchlistRefreshHistoryResult {
+  watchlistRefreshes: CacheWatchlistRefreshRun[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface CacheBatchRefreshResult {
   refreshes: CacheRefreshSummary[];
   settings?: PlatformSettingsStatus;
@@ -2062,8 +2068,12 @@ export function buildCacheRefreshUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/cache/refresh");
 }
 
-export function buildWatchlistCacheRefreshUrl(baseUrl: string): string {
-  return buildApiUrl(baseUrl, "api/cache/watchlist-refreshes");
+export function buildWatchlistCacheRefreshUrl(baseUrl: string, params: { limit?: number } = {}): string {
+  return buildApiUrl(baseUrl, "api/cache/watchlist-refreshes", (url) => {
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
 }
 
 export function buildPortfolioBacktestUrl(baseUrl: string): string {
@@ -4361,6 +4371,33 @@ export async function refreshWatchlistCacheRun(
   }
 }
 
+export async function loadWatchlistCacheRefreshRuns(
+  baseUrl: string,
+  params: { limit?: number } = {},
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<CacheWatchlistRefreshHistoryResult> {
+  try {
+    const response = await fetcher(buildWatchlistCacheRefreshUrl(baseUrl, params));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isCacheWatchlistRefreshHistoryPayload(payload)) {
+      throw new Error("Invalid watchlist cache refresh history contract");
+    }
+    return {
+      watchlistRefreshes: payload.watchlistRefreshes,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      watchlistRefreshes: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown watchlist cache refresh history error"
+    };
+  }
+}
+
 export async function refreshMarketCacheBatch(
   baseUrl: string,
   paramsList: CacheRefreshParams[],
@@ -5228,6 +5265,14 @@ function isCacheWatchlistRefreshPayload(
   }
   const payload = value as { watchlistRefresh?: unknown; settings?: unknown };
   return isCacheWatchlistRefreshRun(payload.watchlistRefresh) && isPlatformSettingsStatus(payload.settings);
+}
+
+function isCacheWatchlistRefreshHistoryPayload(value: unknown): value is { watchlistRefreshes: CacheWatchlistRefreshRun[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { watchlistRefreshes?: unknown };
+  return Array.isArray(payload.watchlistRefreshes) && payload.watchlistRefreshes.every(isCacheWatchlistRefreshRun);
 }
 
 function isCacheWatchlistRefreshRun(value: unknown): value is CacheWatchlistRefreshRun {
