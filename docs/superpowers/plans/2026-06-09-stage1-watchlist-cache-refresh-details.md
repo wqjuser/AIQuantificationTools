@@ -18,6 +18,12 @@ Make each watchlist cache refresh run explain which symbols were refreshed, skip
 - [x] Update product and architecture docs.
 - [x] Run frontend/backend tests, build, Docker/browser smoke, commit, and push through proxy.
 
+## Follow-up Slice
+
+- [x] Add selectable instrument payloads to latest refresh item rows.
+- [x] Let the Market data health panel open a refresh item in the research context while preserving any existing watchlist quote fields.
+- [x] Verify targeted model coverage, broader frontend/backend suites, production build, Docker deployment, and browser click-through smoke.
+
 ## Verification
 
 ```powershell

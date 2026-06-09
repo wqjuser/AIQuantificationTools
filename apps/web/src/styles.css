@@ -4010,14 +4010,27 @@ em {
 }
 
 .watchlist-refresh-item-row {
+  appearance: none;
   border: 1px solid #24344a;
   border-left: 3px solid #2a3b51;
   border-radius: 6px;
   background: #121b29;
+  color: inherit;
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: 8px;
   grid-template-columns: minmax(120px, 1fr) auto minmax(180px, 1.2fr);
   padding: 7px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.watchlist-refresh-item-row:hover,
+.watchlist-refresh-item-row:focus-visible {
+  background: #162133;
+  border-color: #355d66;
+  outline: none;
 }
 
 .watchlist-refresh-history-row.positive {
@@ -4089,10 +4102,13 @@ em {
 }
 
 .watchlist-refresh-item-row em {
+  align-items: center;
   color: #dce6ee;
+  display: inline-flex;
   font-size: 11px;
   font-style: normal;
   font-weight: 900;
+  gap: 5px;
   white-space: nowrap;
 }
 

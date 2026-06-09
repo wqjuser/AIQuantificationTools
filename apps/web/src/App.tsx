@@ -3125,6 +3125,16 @@ export function App() {
     [resetAiReviewHistoryState]
   );
 
+  const selectWatchlistCacheRefreshItem = useCallback(
+    (row: WatchlistCacheRefreshItemRow) => {
+      const existingInstrument =
+        workspace.watchlist.find((instrument) => instrument.market === row.market && instrument.symbol === row.symbol) ??
+        row.instrument;
+      selectInstrument(existingInstrument);
+    },
+    [selectInstrument, workspace.watchlist]
+  );
+
   const selectTimeframe = useCallback(
     (timeframe: Timeframe) => {
       manualSelectionVersionRef.current += 1;
@@ -3773,6 +3783,7 @@ export function App() {
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
+            onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
             state={klinesState}
             watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
             watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
@@ -5666,6 +5677,7 @@ function MarketDataHealthPanel({
   latestWatchlistCacheRefresh,
   onRefreshCache,
   onRefreshWatchlistCache,
+  onSelectWatchlistCacheRefreshItem,
   state,
   watchlistCacheRefreshItemRows = [],
   watchlistCacheRefreshHistoryRows = [],
@@ -5680,6 +5692,7 @@ function MarketDataHealthPanel({
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
+  onSelectWatchlistCacheRefreshItem?: (row: WatchlistCacheRefreshItemRow) => void;
   state: MarketKlinesResult;
   watchlistCacheRefreshItemRows?: WatchlistCacheRefreshItemRow[];
   watchlistCacheRefreshHistoryRows?: WatchlistCacheRefreshHistoryRow[];
@@ -5827,14 +5840,27 @@ function MarketDataHealthPanel({
           </div>
           <div className="watchlist-refresh-item-list">
             {watchlistCacheRefreshItemRows.map((row) => (
-              <article className={`watchlist-refresh-item-row ${row.tone}`} key={row.id}>
+              <button
+                className={`watchlist-refresh-item-row ${row.tone}`}
+                key={row.id}
+                onClick={() => onSelectWatchlistCacheRefreshItem?.(row)}
+                title={
+                  i18n.locale === "zh-CN"
+                    ? `切换到 ${row.name} ${row.symbol}`
+                    : `Open ${row.name} ${row.symbol}`
+                }
+                type="button"
+              >
                 <div>
                   <strong>{row.symbol}</strong>
                   <span>{row.name}</span>
                 </div>
-                <em>{watchlistCacheRefreshItemStatusLabel(i18n, row)}</em>
+                <em>
+                  <Search size={13} />
+                  {watchlistCacheRefreshItemStatusLabel(i18n, row)}
+                </em>
                 <p>{watchlistCacheRefreshItemDetail(i18n, row)}</p>
-              </article>
+              </button>
             ))}
           </div>
         </div>
