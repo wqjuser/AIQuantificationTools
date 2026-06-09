@@ -1961,6 +1961,56 @@ export interface ExecutionAdapterSecretReferenceRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterSecretMaterializationStatus = "blocked" | "manifest_recorded";
+export type ExecutionAdapterSecretMaterializationConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSecretMaterializationSnapshot {
+  schemaVersion: 1;
+  materializationId: string;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSecretMaterializationStatus;
+  operator: string;
+  recordedAt: string;
+  materializationMode: string;
+  referenceName: string;
+  backend: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterSecretMaterializationConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSecretMaterializationRow {
+  id: string;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSecretMaterializationStatus;
+  statusLabel: string;
+  referenceName: string;
+  backend: string;
+  manifestPath: string;
+  materializationMode: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -8049,6 +8099,39 @@ export function buildExecutionAdapterSecretReferenceRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSecretMaterializationRows(
+  materializations: ExecutionAdapterSecretMaterializationSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSecretMaterializationRow[] {
+  return (materializations ?? [])
+    .map((row) => ({
+      id: row.materializationId,
+      referenceId: row.referenceId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSecretMaterializationStatusLabel(row.status),
+      referenceName: row.referenceName,
+      backend: row.backend,
+      manifestPath: row.manifestPath,
+      materializationMode: row.materializationMode,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterSecretMaterializationConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.materializationId,
+      tone: executionAdapterSecretMaterializationTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -8187,6 +8270,25 @@ function latestPromotionSecretReferenceRow(
   );
 }
 
+function latestPromotionSecretMaterializationRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterSecretMaterializationRow[],
+  latestSecretReference: ExecutionAdapterSecretReferenceRow | null
+): ExecutionAdapterSecretMaterializationRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSecretReference ||
+            (row.adapterId === latestSecretReference.adapterId && row.referenceId === latestSecretReference.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -8194,49 +8296,70 @@ function buildPromotionAdapterCertificationStage(
   latestRestartEvidence: ExecutionAdapterControlledRestartEvidenceRow | null,
   latestRestartAcceptance: ExecutionAdapterRestartAcceptanceRow | null,
   latestSecretReference: ExecutionAdapterSecretReferenceRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
   const secretReferenceDetail = latestSecretReference
-    ? ` Latest secret reference ${latestSecretReference.auditEventId}: ${latestSecretReference.statusLabel} · ${latestSecretReference.confirmationSummary} · ${latestSecretReference.blockerSummary} · ${latestSecretReference.backend} · ${latestSecretReference.envVarSummary} · ${latestSecretReference.boundary}.`
+    ? `Latest secret reference ${latestSecretReference.auditEventId}: ${latestSecretReference.statusLabel} · ${latestSecretReference.confirmationSummary} · ${latestSecretReference.blockerSummary} · ${latestSecretReference.backend} · ${latestSecretReference.envVarSummary} · ${latestSecretReference.boundary}.`
+    : "";
+  const secretMaterializationDetail = latestSecretMaterialization
+    ? `Latest secret materialization ${latestSecretMaterialization.auditEventId}: ${latestSecretMaterialization.statusLabel} · ${latestSecretMaterialization.confirmationSummary} · ${latestSecretMaterialization.blockerSummary} · ${latestSecretMaterialization.backend} · ${latestSecretMaterialization.envVarSummary} · ${latestSecretMaterialization.boundary}. ${promotionSecretMaterializationNextStep(latestSecretMaterialization)}`
     : "";
   if (!latestCertification) {
+    const liveAdapterDetail = liveAdapterCertified
+      ? "A certified live adapter is available for the selected market."
+      : "Live adapters remain interface-only or configuration-required until certification passes.";
     return {
       id: "adapter-certification",
       label: "Adapter certification",
       value:
         certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
-      detail: liveAdapterCertified
-        ? "A certified live adapter is available for the selected market."
-        : `Live adapters remain interface-only or configuration-required until certification passes.${secretReferenceDetail}`,
+      detail: [liveAdapterDetail, secretReferenceDetail, secretMaterializationDetail].filter(Boolean).join(" "),
       status: liveAdapterCertified ? "passed" : "blocked",
-      tone: liveAdapterCertified ? "positive" : latestSecretReference?.status === "reference_recorded" ? "warning" : "risk"
+      tone: liveAdapterCertified
+        ? "positive"
+        : latestSecretMaterialization?.status === "manifest_recorded" ||
+            latestSecretReference?.status === "reference_recorded"
+          ? "warning"
+          : "risk"
     };
   }
 
   const certificationDetail = `Latest certification ${latestCertification.auditEventId}: ${latestCertification.checkSummary} · ${latestCertification.boundary}.`;
   const restartEvidenceDetail = latestRestartEvidence
-    ? ` Latest restart evidence ${latestRestartEvidence.auditEventId}: ${latestRestartEvidence.statusLabel} · ${latestRestartEvidence.confirmationSummary} · ${latestRestartEvidence.blockerSummary} · ${latestRestartEvidence.boundary}.${latestRestartAcceptance ? "" : ` ${promotionControlledRestartEvidenceNextStep(latestRestartEvidence)}`}`
+    ? `Latest restart evidence ${latestRestartEvidence.auditEventId}: ${latestRestartEvidence.statusLabel} · ${latestRestartEvidence.confirmationSummary} · ${latestRestartEvidence.blockerSummary} · ${latestRestartEvidence.boundary}.${latestRestartAcceptance ? "" : ` ${promotionControlledRestartEvidenceNextStep(latestRestartEvidence)}`}`
     : "";
   const restartAcceptanceDetail = latestRestartAcceptance
-    ? ` Latest restart acceptance ${latestRestartAcceptance.auditEventId}: ${latestRestartAcceptance.statusLabel} · ${latestRestartAcceptance.confirmationSummary} · ${latestRestartAcceptance.blockerSummary} · ${latestRestartAcceptance.boundary}. ${promotionRestartAcceptanceNextStep(latestRestartAcceptance)}`
+    ? `Latest restart acceptance ${latestRestartAcceptance.auditEventId}: ${latestRestartAcceptance.statusLabel} · ${latestRestartAcceptance.confirmationSummary} · ${latestRestartAcceptance.blockerSummary} · ${latestRestartAcceptance.boundary}. ${promotionRestartAcceptanceNextStep(latestRestartAcceptance)}`
     : "";
   const applyDetail = latestApply
-    ? ` Latest apply ${latestApply.auditEventId}: ${latestApply.statusLabel} · ${latestApply.confirmationSummary} · ${latestApply.blockerSummary} · ${latestApply.boundary}.${latestRestartEvidence ? "" : ` ${promotionCertificationApplyNextStep(latestApply)}`}`
+    ? `Latest apply ${latestApply.auditEventId}: ${latestApply.statusLabel} · ${latestApply.confirmationSummary} · ${latestApply.blockerSummary} · ${latestApply.boundary}.${latestRestartEvidence ? "" : ` ${promotionCertificationApplyNextStep(latestApply)}`}`
     : "";
   const gateDetail =
     !latestApply && !latestRestartEvidence && latestCertification.status === "passed" && latestCertification.liveTradingAllowed && !adapterGatePassed
-      ? " Workspace adapter gate is still blocked."
+      ? "Workspace adapter gate is still blocked."
       : "";
   return {
     id: "adapter-certification",
     label: "Adapter certification",
     value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
-    detail: `${secretReferenceDetail}${certificationDetail}${applyDetail}${restartEvidenceDetail}${restartAcceptanceDetail}${gateDetail}`,
+    detail: [
+      secretReferenceDetail,
+      secretMaterializationDetail,
+      certificationDetail,
+      applyDetail,
+      restartEvidenceDetail,
+      restartAcceptanceDetail,
+      gateDetail
+    ]
+      .filter(Boolean)
+      .join(" "),
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
-      : latestRestartAcceptance?.status === "acceptance_recorded" ||
+      : latestSecretMaterialization?.status === "manifest_recorded" ||
+          latestRestartAcceptance?.status === "acceptance_recorded" ||
           latestRestartEvidence?.status === "evidence_recorded" ||
           latestApply?.status === "ready_for_restart"
         ? "warning"
@@ -8267,6 +8390,13 @@ function promotionRestartAcceptanceNextStep(acceptance: ExecutionAdapterRestartA
   return "Resolve post-restart acceptance blockers before live routing.";
 }
 
+function promotionSecretMaterializationNextStep(materialization: ExecutionAdapterSecretMaterializationRow): string {
+  if (materialization.status === "manifest_recorded") {
+    return "Secret materialization manifest is recorded; live routing remains blocked until env writes, restart orchestration, and human confirmation pass.";
+  }
+  return "Resolve secret materialization blockers before restart orchestration.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -8275,7 +8405,8 @@ export function buildPromotionReadiness(
   certificationApplyRows: ExecutionAdapterCertificationApplyRow[] = [],
   controlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[] = [],
   restartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[] = [],
-  secretReferenceRows: ExecutionAdapterSecretReferenceRow[] = []
+  secretReferenceRows: ExecutionAdapterSecretReferenceRow[] = [],
+  secretMaterializationRows: ExecutionAdapterSecretMaterializationRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -8302,6 +8433,11 @@ export function buildPromotionReadiness(
     latestRestartEvidence
   );
   const latestSecretReference = latestPromotionSecretReferenceRow(workspace, secretReferenceRows);
+  const latestSecretMaterialization = latestPromotionSecretMaterializationRow(
+    workspace,
+    secretMaterializationRows,
+    latestSecretReference
+  );
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
   const certifiedLiveAdapters = brokerRows.filter(
@@ -8370,6 +8506,7 @@ export function buildPromotionReadiness(
     latestRestartEvidence,
     latestRestartAcceptance,
     latestSecretReference,
+    latestSecretMaterialization,
     liveAdapterCertified,
     adapterGatePassed
   );
@@ -10045,6 +10182,34 @@ function executionAdapterSecretReferenceBlockerSummary(blockedReasons: string[])
     return "No blockers";
   }
   return blockedReasons.length === 1 ? "1 blocker" : `${blockedReasons.length} blockers`;
+}
+
+function executionAdapterSecretMaterializationTone(
+  status: ExecutionAdapterSecretMaterializationStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  if (status === "manifest_recorded") {
+    return "positive";
+  }
+  return "risk";
+}
+
+function executionAdapterSecretMaterializationStatusLabel(
+  status: ExecutionAdapterSecretMaterializationStatus
+): string {
+  return (
+    {
+      blocked: "Blocked",
+      manifest_recorded: "Manifest recorded"
+    } satisfies Record<ExecutionAdapterSecretMaterializationStatus, string>
+  )[status];
+}
+
+function executionAdapterSecretMaterializationConfirmationSummary(
+  confirmations: ExecutionAdapterSecretMaterializationSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
 }
 
 function formatAssumptionCurrency(value: number): string {

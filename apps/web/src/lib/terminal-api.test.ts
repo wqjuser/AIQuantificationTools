@@ -40,6 +40,8 @@ import {
   buildExecutionAdapterControlledRestartEvidenceUrl,
   buildExecutionAdapterRestartAcceptanceHistoryUrl,
   buildExecutionAdapterRestartAcceptanceUrl,
+  buildExecutionAdapterSecretMaterializationHistoryUrl,
+  buildExecutionAdapterSecretMaterializationUrl,
   buildExecutionAdapterSecretReferenceHistoryUrl,
   buildExecutionAdapterSecretReferenceUrl,
   buildExecutionAdapterCertificationsUrl,
@@ -69,6 +71,7 @@ import {
   loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterRestartAcceptances,
+  loadExecutionAdapterSecretMaterializations,
   loadExecutionAdapterSecretReferences,
   loadExecutionAdapterCertifications,
   runPortfolioBacktest,
@@ -79,6 +82,7 @@ import {
   recordExecutionAdapterCertificationApply,
   recordExecutionAdapterControlledRestartEvidence,
   recordExecutionAdapterRestartAcceptance,
+  recordExecutionAdapterSecretMaterialization,
   recordExecutionAdapterSecretReference,
   loadResearchNote,
   loadPlatformSettings,
@@ -2540,6 +2544,206 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterSecretReferences).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("secret-reference-private-key-should-not-leak");
+  });
+
+  test("records secret materialization manifests against a reference without enabling live trading", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterSecretMaterialization: {
+            schemaVersion: 1,
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            referenceId: "execution-adapter-secret-reference-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "manifest_recorded",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T08:10:00+00:00",
+            materializationMode: "local_secret_store_manifest",
+            referenceName: "us-live/alpaca-sandbox",
+            backend: "local-secret-store",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              {
+                id: "local-secret-store-write-verified",
+                label: "Local secret-store write was verified",
+                status: "confirmed"
+              },
+              {
+                id: "no-raw-secret-in-payload",
+                label: "No raw secret is present in this payload",
+                status: "confirmed"
+              },
+              {
+                id: "env-binding-plan-documented",
+                label: "Environment binding plan is documented",
+                status: "confirmed"
+              },
+              {
+                id: "rollback-plan-documented",
+                label: "Rollback plan is documented",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-secret-materialization-us-live",
+            eventType: "execution_adapter_secret_materialization",
+            runId: "",
+            createdAt: "2026-06-09T08:10:00+00:00",
+            stage: "execution-adapter-secret-materialization",
+            source: "execution-adapter-ledger",
+            summary: "us-live secret materialization manifest recorded as manifest_recorded.",
+            detail: "Secret materialization is paper-only.",
+            metadata: {
+              materializationId: "execution-adapter-secret-materialization-us-live",
+              adapterId: "us-live",
+              status: "manifest_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterSecretMaterializationUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-secret-materializations"
+    );
+
+    const result = await recordExecutionAdapterSecretMaterialization(
+      "/",
+      {
+        adapterId: "us-live",
+        referenceId: "execution-adapter-secret-reference-us-live",
+        operator: "settings-panel",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        confirmations: {
+          localSecretStoreWriteVerified: true,
+          noRawSecretInPayload: true,
+          envBindingPlanDocumented: true,
+          rollbackPlanDocumented: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-secret-materializations"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      referenceId: "execution-adapter-secret-reference-us-live",
+      operator: "settings-panel",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      confirmations: {
+        localSecretStoreWriteVerified: true,
+        noRawSecretInPayload: true,
+        envBindingPlanDocumented: true,
+        rollbackPlanDocumented: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterSecretMaterialization?.status).toBe("manifest_recorded");
+    expect(result.adapterSecretMaterialization?.referenceId).toBe("execution-adapter-secret-reference-us-live");
+    expect(result.adapterSecretMaterialization?.liveTradingAllowed).toBe(false);
+    expect(result.adapterSecretMaterialization?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_secret_materialization");
+  });
+
+  test("loads secret materialization history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const materialization = {
+      schemaVersion: 1,
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      referenceId: "execution-adapter-secret-reference-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "manifest_recorded",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T08:10:00+00:00",
+      materializationMode: "local_secret_store_manifest",
+      referenceName: "us-live/alpaca-sandbox",
+      backend: "local-secret-store",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        {
+          id: "local-secret-store-write-verified",
+          label: "Local secret-store write was verified",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", privateKey: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterSecretMaterializations(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterSecretMaterializations: [materialization] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterSecretMaterializationHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-secret-materializations?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-secret-materializations?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterSecretMaterializations).toHaveLength(1);
+    expect(result.adapterSecretMaterializations[0].status).toBe("manifest_recorded");
+    expect(result.adapterSecretMaterializations[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterSecretMaterializations(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterSecretMaterializations: [
+            {
+              ...materialization,
+              metadata: { privateKey: "secret-materialization-private-key-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterSecretMaterializations).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("secret-materialization-private-key-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

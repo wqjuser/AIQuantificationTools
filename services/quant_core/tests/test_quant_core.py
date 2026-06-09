@@ -2331,6 +2331,148 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("secret-reference-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("secret-reference-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_secret_materialization_records_manifest_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                reference_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "settings-panel",
+                    "referenceName": "ashare-live/broker-sandbox",
+                    "backend": "local-secret-store",
+                    "requiredEnvVars": [
+                        "ASHARE_BROKER_CLIENT_ID",
+                        "ASHARE_BROKER_CLIENT_SECRET",
+                    ],
+                    "confirmations": {
+                        "referenceCreatedOutsideUi": True,
+                        "operatorVerifiedFingerprint": True,
+                        "rotationPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                        "fingerprint": "sha256:reference-before-materialization",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(reference_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                reference_response = connection.getresponse()
+                reference_payload = json.loads(reference_response.read().decode("utf-8"))
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                blocked_request = {
+                    "adapterId": "ashare-live",
+                    "referenceId": reference_id,
+                    "operator": "settings-panel",
+                    "manifestPath": "local-secret-store://ashare-live/broker-sandbox",
+                    "confirmations": {},
+                    "metadata": {
+                        "source": "settings-panel",
+                        "secret": "secret-materialization-blocked-secret-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-materializations",
+                    body=json.dumps(blocked_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                recorded_request = {
+                    **blocked_request,
+                    "confirmations": {
+                        "localSecretStoreWriteVerified": True,
+                        "noRawSecretInPayload": True,
+                        "envBindingPlanDocumented": True,
+                        "rollbackPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                        "fingerprint": "sha256:materialized-reference",
+                        "privateKey": "secret-materialization-private-key-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-materializations",
+                    body=json.dumps(recorded_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                recorded_response = connection.getresponse()
+                recorded_payload = json.loads(recorded_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/execution/adapter-secret-materializations?adapterId=ashare-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "reference": reference_payload,
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterSecretMaterialization"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterSecretMaterialization"]["blockedReasons"],
+            [
+                "secret_materialization_local_store_not_verified",
+                "secret_materialization_raw_secret_boundary_not_confirmed",
+                "secret_materialization_env_binding_plan_missing",
+                "secret_materialization_rollback_plan_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["status"], "manifest_recorded")
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["referenceId"], reference_id)
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["adapterId"], "ashare-live")
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["referenceName"], "ashare-live/broker-sandbox")
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["backend"], "local-secret-store")
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["manifestPath"], "local-secret-store://ashare-live/broker-sandbox")
+        self.assertEqual(recorded_payload["adapterSecretMaterialization"]["requiredEnvVars"][0], "ASHARE_BROKER_CLIENT_ID")
+        self.assertFalse(recorded_payload["adapterSecretMaterialization"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterSecretMaterialization"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_secret_materialization")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterSecretMaterializations"]), 2)
+        self.assertEqual(history_payload["adapterSecretMaterializations"][0]["status"], "manifest_recorded")
+        self.assertEqual(history_payload["adapterSecretMaterializations"][1]["status"], "blocked")
+        self.assertNotIn("secret-materialization-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("secret-materialization-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

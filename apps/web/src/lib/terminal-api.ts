@@ -1047,6 +1047,64 @@ export interface ExecutionAdapterSecretReferenceHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterSecretMaterializationStatus = "blocked" | "manifest_recorded";
+export type ExecutionAdapterSecretMaterializationConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSecretMaterializationConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterSecretMaterializationConfirmationStatus;
+}
+
+export interface ExecutionAdapterSecretMaterializationResult {
+  schemaVersion: 1;
+  materializationId: string;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSecretMaterializationStatus;
+  operator: string;
+  recordedAt: string;
+  materializationMode: string;
+  referenceName: string;
+  backend: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterSecretMaterializationConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSecretMaterializationRequest {
+  adapterId: string;
+  referenceId: string;
+  operator?: string;
+  manifestPath: string;
+  confirmations?: {
+    localSecretStoreWriteVerified?: boolean;
+    noRawSecretInPayload?: boolean;
+    envBindingPlanDocumented?: boolean;
+    rollbackPlanDocumented?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterSecretMaterializationRecordResult {
+  adapterSecretMaterialization?: ExecutionAdapterSecretMaterializationResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterSecretMaterializationHistoryResult {
+  adapterSecretMaterializations: ExecutionAdapterSecretMaterializationResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1851,6 +1909,10 @@ export function buildExecutionAdapterSecretReferenceUrl(baseUrl: string): string
   return buildApiUrl(baseUrl, "api/execution/adapter-secret-references");
 }
 
+export function buildExecutionAdapterSecretMaterializationUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-secret-materializations");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -1898,6 +1960,20 @@ export function buildExecutionAdapterSecretReferenceHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-secret-references", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterSecretMaterializationHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-secret-materializations", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -3703,6 +3779,51 @@ export async function recordExecutionAdapterSecretReference(
   }
 }
 
+export async function recordExecutionAdapterSecretMaterialization(
+  baseUrl: string,
+  request: ExecutionAdapterSecretMaterializationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterSecretMaterializationRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSecretMaterializationUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        referenceId: request.referenceId,
+        operator: request.operator ?? "local-operator",
+        manifestPath: request.manifestPath,
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterSecretMaterializationRecordPayload(payload)) {
+      return {
+        adapterSecretMaterialization: payload.adapterSecretMaterialization,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter secret materialization contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter secret materialization error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -3841,6 +3962,34 @@ export async function loadExecutionAdapterSecretReferences(
       adapterSecretReferences: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter secret reference history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterSecretMaterializations(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterSecretMaterializationHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSecretMaterializationHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterSecretMaterializationHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter secret materialization history contract");
+    }
+    return {
+      adapterSecretMaterializations: payload.adapterSecretMaterializations,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterSecretMaterializations: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter secret materialization history error"
     };
   }
 }
@@ -5494,6 +5643,19 @@ function isExecutionAdapterSecretReferenceRecordPayload(
   );
 }
 
+function isExecutionAdapterSecretMaterializationRecordPayload(
+  value: unknown
+): value is { adapterSecretMaterialization: ExecutionAdapterSecretMaterializationResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSecretMaterialization?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterSecretMaterializationResult(payload.adapterSecretMaterialization) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -5556,6 +5718,19 @@ function isExecutionAdapterSecretReferenceHistoryPayload(
   return (
     Array.isArray(payload.adapterSecretReferences) &&
     payload.adapterSecretReferences.every(isExecutionAdapterSecretReferenceResult)
+  );
+}
+
+function isExecutionAdapterSecretMaterializationHistoryPayload(
+  value: unknown
+): value is { adapterSecretMaterializations: ExecutionAdapterSecretMaterializationResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSecretMaterializations?: unknown };
+  return (
+    Array.isArray(payload.adapterSecretMaterializations) &&
+    payload.adapterSecretMaterializations.every(isExecutionAdapterSecretMaterializationResult)
   );
 }
 
@@ -5677,6 +5852,39 @@ function isExecutionAdapterSecretReferenceResult(
   );
 }
 
+function isExecutionAdapterSecretMaterializationResult(
+  value: unknown
+): value is ExecutionAdapterSecretMaterializationResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterSecretMaterializationResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.materializationId === "string" &&
+    typeof result.referenceId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterSecretMaterializationStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.materializationMode === "string" &&
+    typeof result.referenceName === "string" &&
+    typeof result.backend === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterSecretMaterializationConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -5786,6 +5994,20 @@ function isExecutionAdapterSecretReferenceConfirmation(
   );
 }
 
+function isExecutionAdapterSecretMaterializationConfirmation(
+  value: unknown
+): value is ExecutionAdapterSecretMaterializationConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterSecretMaterializationConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -5812,6 +6034,12 @@ function isExecutionAdapterSecretReferenceStatus(
   value: unknown
 ): value is ExecutionAdapterSecretReferenceStatus {
   return value === "blocked" || value === "reference_recorded";
+}
+
+function isExecutionAdapterSecretMaterializationStatus(
+  value: unknown
+): value is ExecutionAdapterSecretMaterializationStatus {
+  return value === "blocked" || value === "manifest_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

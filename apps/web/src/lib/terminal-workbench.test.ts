@@ -42,6 +42,7 @@ import {
   buildExecutionAdapterCertificationApplyRows,
   buildExecutionAdapterControlledRestartEvidenceRows,
   buildExecutionAdapterRestartAcceptanceRows,
+  buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildExecutionAdapterCertificationRows,
@@ -7292,6 +7293,61 @@ describe("terminal workbench model", () => {
     expect(JSON.stringify(rows)).not.toContain("[redacted]");
   });
 
+  test("builds compact secret materialization rows from ledger results", () => {
+    const rows = buildExecutionAdapterSecretMaterializationRows([
+      {
+        schemaVersion: 1,
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        referenceId: "execution-adapter-secret-reference-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "manifest_recorded",
+        operator: "settings-panel",
+        recordedAt: "2026-06-09T08:15:00+00:00",
+        referenceName: "us-live/alpaca-sandbox",
+        backend: "local-secret-store",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        materializationMode: "local_secret_store_manifest",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "local-secret-store-write-verified", label: "Local store write verified", status: "confirmed" },
+          { id: "no-raw-secret-in-payload", label: "Raw secret boundary confirmed", status: "confirmed" },
+          { id: "env-binding-plan-documented", label: "Env binding plan documented", status: "confirmed" },
+          { id: "rollback-plan-documented", label: "Rollback plan documented", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { secret: "[redacted]", fingerprint: "sha256:local-manifest" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-secret-materialization-us-live",
+        referenceId: "execution-adapter-secret-reference-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T08:15:00+00:00",
+        status: "manifest_recorded",
+        statusLabel: "Manifest recorded",
+        referenceName: "us-live/alpaca-sandbox",
+        backend: "local-secret-store",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        materializationMode: "local_secret_store_manifest",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-secret-materialization-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
   test("blocks promotion readiness before an audited run is bound", () => {
     const workspace = buildTerminalWorkspace();
     const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
@@ -7961,6 +8017,132 @@ describe("terminal workbench model", () => {
       tone: "warning",
       detail:
         "Latest certification adapter-certification-ashare-acceptance: 4 passed / 4 checks · Live trading allowed. Latest apply execution-adapter-certification-apply-ashare-acceptance: Ready for restart · 3 confirmed / 0 missing · No blockers · Paper only · live trading blocked. Latest restart evidence execution-adapter-controlled-restart-ashare-acceptance: Evidence recorded · 4 confirmed / 0 missing · No blockers · Paper only · live trading blocked. Latest restart acceptance execution-adapter-restart-acceptance-ashare-recorded: Acceptance recorded · 5 confirmed / 0 missing · No blockers · Paper only · live trading blocked. Post-restart acceptance is recorded; live routing remains blocked until real adapter orchestration and human confirmation pass."
+    });
+  });
+
+  test("keeps promotion blocked after secret materialization manifest is recorded", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-secret-materialization",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-secret-materialization",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 }
+    });
+    const execution = {
+      executionId: "paper-execution-promotion-secret-materialization",
+      runId: "run-promotion-secret-materialization",
+      createdAt: "2026-05-26T08:05:00+00:00",
+      mode: "paper",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion-secret-materialization",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+    const brokerRows = buildBrokerAdapterRows(workspace).map((row) =>
+      row.id === "ashare-live" ? { ...row, status: "paper_ready" as const } : row
+    );
+    const certificationRows = [
+      {
+        id: "adapter-certification-ashare-materialized",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-08T08:01:00+00:00",
+        status: "passed" as const,
+        statusLabel: "Passed",
+        checkSummary: "4 passed / 4 checks",
+        auditEventId: "adapter-certification-ashare-materialized",
+        boundary: "Live trading allowed",
+        liveTradingAllowed: true,
+        tone: "positive" as const
+      }
+    ];
+    const secretReferenceRows = [
+      {
+        id: "execution-adapter-secret-reference-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:00:00+00:00",
+        status: "reference_recorded" as const,
+        statusLabel: "Reference recorded",
+        referenceName: "ashare-live/broker-vault",
+        backend: "local-secret-store",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "3 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-secret-reference-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+    const secretMaterializationRows = [
+      {
+        id: "execution-adapter-secret-materialization-ashare-live",
+        referenceId: "execution-adapter-secret-reference-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:15:00+00:00",
+        status: "manifest_recorded" as const,
+        statusLabel: "Manifest recorded",
+        referenceName: "ashare-live/broker-vault",
+        backend: "local-secret-store",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        materializationMode: "local_secret_store_manifest",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-secret-materialization-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+
+    const readiness = buildPromotionReadiness(
+      workspace,
+      execution,
+      brokerRows,
+      certificationRows,
+      [],
+      [],
+      [],
+      secretReferenceRows,
+      secretMaterializationRows
+    );
+
+    expect(readiness.status).toBe("certification_pending");
+    expect(readiness.stages.find((stage) => stage.id === "adapter-certification")).toMatchObject({
+      value: "Passed · ashare-live",
+      status: "blocked",
+      tone: "warning",
+      detail:
+        "Latest secret reference execution-adapter-secret-reference-ashare-live: Reference recorded · 3 confirmed / 0 missing · No blockers · local-secret-store · 2 env vars · Paper only · live trading blocked. Latest secret materialization execution-adapter-secret-materialization-ashare-live: Manifest recorded · 4 confirmed / 0 missing · No blockers · local-secret-store · 2 env vars · Paper only · live trading blocked. Secret materialization manifest is recorded; live routing remains blocked until env writes, restart orchestration, and human confirmation pass. Latest certification adapter-certification-ashare-materialized: 4 passed / 4 checks · Live trading allowed. Workspace adapter gate is still blocked."
     });
   });
 

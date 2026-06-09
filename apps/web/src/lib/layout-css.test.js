@@ -1392,7 +1392,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows)"
     );
     expect(appSource).toContain("adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}");
     expect(appSource).toContain("adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[]");
@@ -1411,7 +1411,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretReferenceRows(executionAdapterSecretReferences)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows)"
     );
     expect(appSource).toContain("adapterSecretReferenceRows={executionAdapterSecretReferenceRows}");
     expect(appSource).toContain("adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[]");
@@ -1421,6 +1421,25 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("adapterSecretReferenceConfirmationSummary(i18n, row.confirmationSummary)");
     expect(styles).toContain(".promotion-secret-reference-evidence");
     expect(styles).toContain(".promotion-secret-reference-evidence-row");
+  });
+
+  test("renders secret materialization history in promotion queue", () => {
+    expect(appSource).toContain("loadExecutionAdapterSecretMaterializations(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterSecretMaterializations(materializationResults.flatMap((result) => result.adapterSecretMaterializations))"
+    );
+    expect(appSource).toContain("buildExecutionAdapterSecretMaterializationRows(executionAdapterSecretMaterializations)");
+    expect(appSource).toContain(
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows)"
+    );
+    expect(appSource).toContain("adapterSecretMaterializationRows={executionAdapterSecretMaterializationRows}");
+    expect(appSource).toContain("adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[]");
+    expect(appSource).toContain('className="promotion-secret-materialization-evidence"');
+    expect(appSource).toContain('className={`promotion-secret-materialization-evidence-row');
+    expect(appSource).toContain("adapterSecretMaterializationStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterSecretMaterializationConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(styles).toContain(".promotion-secret-materialization-evidence");
+    expect(styles).toContain(".promotion-secret-materialization-evidence-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

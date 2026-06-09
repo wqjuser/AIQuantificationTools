@@ -51,6 +51,7 @@ from quant_core.execution import (
     build_execution_adapter_certification_apply,
     build_execution_adapter_controlled_restart_evidence,
     build_execution_adapter_restart_acceptance,
+    build_execution_adapter_secret_materialization,
     build_execution_adapter_secret_reference,
     create_execution_adapter_certification_run,
     create_paper_execution_from_audit,
@@ -66,6 +67,9 @@ from quant_core.execution import (
     execution_adapter_restart_acceptance_payload_from_audit_event,
     execution_adapter_restart_acceptance_to_audit_event_payload,
     execution_adapter_restart_acceptance_to_payload,
+    execution_adapter_secret_materialization_payload_from_audit_event,
+    execution_adapter_secret_materialization_to_audit_event_payload,
+    execution_adapter_secret_materialization_to_payload,
     execution_adapter_secret_reference_payload_from_audit_event,
     execution_adapter_secret_reference_to_audit_event_payload,
     execution_adapter_secret_reference_to_payload,
@@ -320,6 +324,42 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if secret_reference.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-secret-materializations":
+            payload = self._read_json_body()
+            reference_id = str(payload.get("referenceId") or "").strip()
+            reference_event = self.audit_event_store.get(reference_id)
+            secret_reference = (
+                execution_adapter_secret_reference_payload_from_audit_event(reference_event) if reference_event else None
+            )
+            if not secret_reference:
+                self._send_json(
+                    {"error": "execution_adapter_secret_reference_not_found", "referenceId": reference_id},
+                    status=404,
+                )
+                return
+            try:
+                materialization = build_execution_adapter_secret_materialization(
+                    secret_reference,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    manifest_path=str(payload.get("manifestPath") or ""),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_secret_materialization", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_secret_materialization_to_audit_event_payload(materialization)
+            )
+            self._send_json(
+                {
+                    "adapterSecretMaterialization": execution_adapter_secret_materialization_to_payload(materialization),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if materialization.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -956,6 +996,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(secret_references) >= limit:
                     break
             self._send_json({"adapterSecretReferences": secret_references})
+            return
+        if parsed.path == "/api/execution/adapter-secret-materializations":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_secret_materialization_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            materialization_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_secret_materialization",
+                limit=50,
+                query=adapter_id,
+            )
+            materializations = []
+            for event in materialization_events:
+                payload = execution_adapter_secret_materialization_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    materializations.append(payload)
+                if len(materializations) >= limit:
+                    break
+            self._send_json({"adapterSecretMaterializations": materializations})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)
