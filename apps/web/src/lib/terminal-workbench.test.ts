@@ -2825,6 +2825,104 @@ describe("terminal workbench model", () => {
     expect(buildAiReviewRunRecord(buildTerminalWorkspace())).toBeNull();
   });
 
+  test("surfaces market calendar report evidence in AI anchors and Backtest Markdown", () => {
+    const marketCalendar = {
+      market: "ashare",
+      timezone: "Asia/Shanghai",
+      status: "break",
+      isOpen: false,
+      session: "lunch_break",
+      asOf: "2026-06-11T12:00:00+08:00",
+      tradingDay: "2026-06-11",
+      nextOpen: "2026-06-11T13:00:00+08:00",
+      nextClose: "2026-06-11T15:00:00+08:00",
+      detail: "A-share lunch break.",
+      warnings: ["Static session template only; exchange holiday calendar is not configured."],
+      source: "static-session-template"
+    } satisfies ResearchContextMarketCalendar;
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-calendar-report-evidence",
+      createdAt: "2026-06-11T04:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Calendar evidence SMA",
+      strategyRevision: "rev-calendar-report",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Calendar evidence is bound to the audit.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T04:00:00+00:00",
+        hash: "snapshot-calendar-report",
+        bars: [
+          {
+            timestamp: "2026-06-10T08:00:00+00:00",
+            timestampMs: 1781078400000,
+            open: 10,
+            high: 10.2,
+            low: 9.9,
+            close: 10,
+            volume: 1200000
+          },
+          {
+            timestamp: "2026-06-11T04:00:00+00:00",
+            timestampMs: 1781150400000,
+            open: 10.1,
+            high: 10.7,
+            low: 10,
+            close: 10.5,
+            volume: 1300000
+          }
+        ],
+        marketCalendar
+      },
+      backtestTrades: [
+        {
+          id: "trade-calendar-report",
+          timestamp: "2026-06-11T04:00:00+00:00",
+          symbol: "600000",
+          side: "BUY",
+          status: "filled",
+          price: "10.50",
+          quantity: "2000",
+          exposure: "20%",
+          pnl: "+8.20%",
+          reason: "Close > SMA20",
+          tone: "positive"
+        }
+      ]
+    });
+
+    const record = buildAiReviewRunRecord(workspace);
+    const markdown = buildBacktestReportMarkdown(workspace);
+
+    expect(record?.evidenceAnchors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "marketCalendar:ashare:2026-06-11",
+          type: "market-calendar",
+          label: "Market calendar",
+          reference: "ashare 2026-06-11 break/lunch_break",
+          exportPath: "researchRun.dataSnapshot.marketCalendar"
+        })
+      ])
+    );
+    expect(markdown).toContain(
+      "| Market calendar | ashare · Asia/Shanghai · break/lunch_break · next open 2026-06-11T13:00:00+08:00 · Static session template only; exchange holiday calendar is not configured. · 1 warning |"
+    );
+  });
+
   test("builds audit drift rows for saved AI review records", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-ai-record",

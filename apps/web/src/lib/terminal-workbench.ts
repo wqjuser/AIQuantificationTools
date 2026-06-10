@@ -478,6 +478,7 @@ export type AiReviewEvidenceAnchorType =
   | "research-run"
   | "strategy-revision"
   | "data-snapshot"
+  | "market-calendar"
   | "data-preparation"
   | "citation"
   | "committee-rounds"
@@ -3668,6 +3669,17 @@ function buildAiReviewEvidenceAnchors(
     });
   }
 
+  if (run.dataSnapshot?.marketCalendar) {
+    const calendar = run.dataSnapshot.marketCalendar;
+    anchors.push({
+      id: `marketCalendar:${calendar.market}:${calendar.tradingDay}`,
+      type: "market-calendar",
+      label: "Market calendar",
+      reference: `${calendar.market} ${calendar.tradingDay} ${calendar.status}/${calendar.session}`,
+      exportPath: "researchRun.dataSnapshot.marketCalendar"
+    });
+  }
+
   if (run.dataSnapshot?.preparationEvidence) {
     anchors.push({
       id: `preparationEvidence:${run.dataSnapshot.preparationEvidence.runId}`,
@@ -6667,6 +6679,9 @@ function buildMarketCalendarReadinessRow(calendar: ResearchContextMarketCalendar
 }
 
 function marketCalendarNextEventDetail(calendar: ResearchContextMarketCalendar): string {
+  if ((calendar.status === "break" || calendar.status === "closed") && calendar.nextOpen) {
+    return `next open ${calendar.nextOpen}`;
+  }
   if (calendar.nextClose) {
     return `next close ${calendar.nextClose}`;
   }
@@ -10387,6 +10402,7 @@ export function buildBacktestReportMarkdown(
   const aiDossier = buildAiReviewDossier(workspace);
   const snapshot = run.dataSnapshot;
   const preparationEvidence = snapshot?.preparationEvidence ?? null;
+  const marketCalendar = snapshot?.marketCalendar ?? null;
   const researchNote = normalizedResearchNote(run.researchNote);
   const metricRows = report.metrics.map((metric) => [metric.label, metric.value, metric.tone]);
   const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
@@ -10478,6 +10494,7 @@ export function buildBacktestReportMarkdown(
         ["Hash", snapshot?.hash ?? ""],
         ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? "unknown"}`],
         ["Quality", run.dataQuality ? `${run.dataQuality.source} · ${run.dataQuality.isComplete ? "complete" : "incomplete"}` : "not attached"],
+        ["Market calendar", marketCalendar ? formatMarketCalendarEvidenceDetail(marketCalendar) : "not locked"],
         ["Preparation evidence", preparationEvidence ? formatPreparationEvidenceDetail(preparationEvidence) : "not locked"]
       ]
     ),
