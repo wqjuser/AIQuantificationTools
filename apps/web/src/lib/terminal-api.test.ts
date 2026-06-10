@@ -43,6 +43,8 @@ import {
   buildExecutionAdapterRestartAcceptanceUrl,
   buildExecutionAdapterSecretMaterializationHistoryUrl,
   buildExecutionAdapterSecretMaterializationUrl,
+  buildExecutionAdapterEnvironmentBindingHistoryUrl,
+  buildExecutionAdapterEnvironmentBindingUrl,
   buildExecutionAdapterSecretReferenceHistoryUrl,
   buildExecutionAdapterSecretReferenceUrl,
   buildExecutionAdapterCertificationsUrl,
@@ -74,6 +76,7 @@ import {
   loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterRestartAcceptances,
   loadExecutionAdapterSecretMaterializations,
+  loadExecutionAdapterEnvironmentBindings,
   loadExecutionAdapterSecretReferences,
   loadExecutionAdapterCertifications,
   runPortfolioBacktest,
@@ -85,6 +88,7 @@ import {
   recordExecutionAdapterControlledRestartEvidence,
   recordExecutionAdapterRestartAcceptance,
   recordExecutionAdapterSecretMaterialization,
+  recordExecutionAdapterEnvironmentBinding,
   recordExecutionAdapterSecretReference,
   loadResearchNote,
   loadPlatformSettings,
@@ -2854,6 +2858,202 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterSecretMaterializations).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("secret-materialization-private-key-should-not-leak");
+  });
+
+  test("records environment binding evidence after secret materialization without enabling live trading", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterEnvironmentBinding: {
+            schemaVersion: 1,
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "binding_recorded",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T08:20:00+00:00",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              {
+                id: "runtime-env-mapping-verified",
+                label: "Runtime environment mapping was verified",
+                status: "confirmed"
+              },
+              {
+                id: "config-reload-plan-documented",
+                label: "Config reload plan is documented",
+                status: "confirmed"
+              },
+              {
+                id: "no-raw-secret-in-payload",
+                label: "No raw secret is present in this payload",
+                status: "confirmed"
+              },
+              {
+                id: "rollback-snapshot-recorded",
+                label: "Rollback snapshot is recorded",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-environment-binding-us-live",
+            eventType: "execution_adapter_environment_binding",
+            runId: "",
+            createdAt: "2026-06-09T08:20:00+00:00",
+            stage: "execution-adapter-environment-binding",
+            source: "execution-adapter-ledger",
+            summary: "us-live environment binding recorded as binding_recorded.",
+            detail: "Environment binding is paper-only.",
+            metadata: {
+              bindingId: "execution-adapter-environment-binding-us-live",
+              adapterId: "us-live",
+              status: "binding_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterEnvironmentBindingUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-environment-bindings"
+    );
+
+    const result = await recordExecutionAdapterEnvironmentBinding(
+      "/",
+      {
+        adapterId: "us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        operator: "settings-panel",
+        bindingMode: "container_env_reference",
+        confirmations: {
+          runtimeEnvMappingVerified: true,
+          configReloadPlanDocumented: true,
+          noRawSecretInPayload: true,
+          rollbackSnapshotRecorded: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-environment-bindings"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      operator: "settings-panel",
+      bindingMode: "container_env_reference",
+      confirmations: {
+        runtimeEnvMappingVerified: true,
+        configReloadPlanDocumented: true,
+        noRawSecretInPayload: true,
+        rollbackSnapshotRecorded: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterEnvironmentBinding?.status).toBe("binding_recorded");
+    expect(result.adapterEnvironmentBinding?.materializationId).toBe("execution-adapter-secret-materialization-us-live");
+    expect(result.adapterEnvironmentBinding?.liveTradingAllowed).toBe(false);
+    expect(result.adapterEnvironmentBinding?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_environment_binding");
+  });
+
+  test("loads environment binding history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const binding = {
+      schemaVersion: 1,
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "binding_recorded",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T08:20:00+00:00",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        {
+          id: "runtime-env-mapping-verified",
+          label: "Runtime environment mapping was verified",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", privateKey: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterEnvironmentBindings(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterEnvironmentBindings: [binding] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterEnvironmentBindingHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-environment-bindings?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-environment-bindings?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterEnvironmentBindings).toHaveLength(1);
+    expect(result.adapterEnvironmentBindings[0].status).toBe("binding_recorded");
+    expect(result.adapterEnvironmentBindings[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterEnvironmentBindings(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterEnvironmentBindings: [
+            {
+              ...binding,
+              metadata: { privateKey: "environment-binding-private-key-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterEnvironmentBindings).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("environment-binding-private-key-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

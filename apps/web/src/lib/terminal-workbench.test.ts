@@ -41,6 +41,7 @@ import {
   buildExecutionAdapterCertificationApplyConfirmationRows,
   buildExecutionAdapterCertificationApplyRows,
   buildExecutionAdapterControlledRestartEvidenceRows,
+  buildExecutionAdapterEnvironmentBindingRows,
   buildExecutionAdapterRestartAcceptanceRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
@@ -7962,6 +7963,57 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-secret-materialization-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
+  test("builds compact environment binding rows from ledger results", () => {
+    const rows = buildExecutionAdapterEnvironmentBindingRows([
+      {
+        schemaVersion: 1,
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "binding_recorded",
+        operator: "settings-panel",
+        recordedAt: "2026-06-09T08:20:00+00:00",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "runtime-env-mapping-verified", label: "Runtime env mapping verified", status: "confirmed" },
+          { id: "config-reload-plan-documented", label: "Config reload plan documented", status: "confirmed" },
+          { id: "no-raw-secret-in-payload", label: "Raw secret boundary confirmed", status: "confirmed" },
+          { id: "rollback-snapshot-recorded", label: "Rollback snapshot recorded", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { secret: "[redacted]", fingerprint: "sha256:env-binding" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T08:20:00+00:00",
+        status: "binding_recorded",
+        statusLabel: "Binding recorded",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-environment-binding-us-live",
         tone: "positive"
       }
     ]);

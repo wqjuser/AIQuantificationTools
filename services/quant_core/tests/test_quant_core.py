@@ -2473,6 +2473,166 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("secret-materialization-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("secret-materialization-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_environment_binding_records_evidence_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                reference_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "settings-panel",
+                    "referenceName": "ashare-live/broker-sandbox",
+                    "backend": "local-secret-store",
+                    "requiredEnvVars": [
+                        "ASHARE_BROKER_CLIENT_ID",
+                        "ASHARE_BROKER_CLIENT_SECRET",
+                    ],
+                    "confirmations": {
+                        "referenceCreatedOutsideUi": True,
+                        "operatorVerifiedFingerprint": True,
+                        "rotationPlanDocumented": True,
+                    },
+                    "metadata": {"source": "settings-panel"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(reference_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                reference_response = connection.getresponse()
+                reference_payload = json.loads(reference_response.read().decode("utf-8"))
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_request = {
+                    "adapterId": "ashare-live",
+                    "referenceId": reference_id,
+                    "operator": "settings-panel",
+                    "manifestPath": "local-secret-store://ashare-live/broker-sandbox",
+                    "confirmations": {
+                        "localSecretStoreWriteVerified": True,
+                        "noRawSecretInPayload": True,
+                        "envBindingPlanDocumented": True,
+                        "rollbackPlanDocumented": True,
+                    },
+                    "metadata": {"source": "settings-panel"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-materializations",
+                    body=json.dumps(materialization_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                materialization_response = connection.getresponse()
+                materialization_payload = json.loads(materialization_response.read().decode("utf-8"))
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                blocked_request = {
+                    "adapterId": "ashare-live",
+                    "materializationId": materialization_id,
+                    "operator": "settings-panel",
+                    "bindingMode": "container_env_reference",
+                    "confirmations": {},
+                    "metadata": {
+                        "source": "settings-panel",
+                        "secret": "environment-binding-blocked-secret-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-environment-bindings",
+                    body=json.dumps(blocked_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                recorded_request = {
+                    **blocked_request,
+                    "confirmations": {
+                        "runtimeEnvMappingVerified": True,
+                        "configReloadPlanDocumented": True,
+                        "noRawSecretInPayload": True,
+                        "rollbackSnapshotRecorded": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                        "fingerprint": "sha256:env-binding-reference",
+                        "privateKey": "environment-binding-private-key-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-environment-bindings",
+                    body=json.dumps(recorded_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                recorded_response = connection.getresponse()
+                recorded_payload = json.loads(recorded_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/execution/adapter-environment-bindings?adapterId=ashare-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterEnvironmentBinding"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterEnvironmentBinding"]["blockedReasons"],
+            [
+                "environment_binding_runtime_env_mapping_missing",
+                "environment_binding_config_reload_plan_missing",
+                "environment_binding_raw_secret_boundary_not_confirmed",
+                "environment_binding_rollback_snapshot_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterEnvironmentBinding"]["status"], "binding_recorded")
+        self.assertEqual(recorded_payload["adapterEnvironmentBinding"]["materializationId"], materialization_id)
+        self.assertEqual(recorded_payload["adapterEnvironmentBinding"]["adapterId"], "ashare-live")
+        self.assertEqual(recorded_payload["adapterEnvironmentBinding"]["bindingMode"], "container_env_reference")
+        self.assertEqual(recorded_payload["adapterEnvironmentBinding"]["requiredEnvVars"][0], "ASHARE_BROKER_CLIENT_ID")
+        self.assertFalse(recorded_payload["adapterEnvironmentBinding"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterEnvironmentBinding"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_environment_binding")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterEnvironmentBindings"]), 2)
+        self.assertEqual(history_payload["adapterEnvironmentBindings"][0]["status"], "binding_recorded")
+        self.assertEqual(history_payload["adapterEnvironmentBindings"][1]["status"], "blocked")
+        self.assertNotIn("environment-binding-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("environment-binding-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

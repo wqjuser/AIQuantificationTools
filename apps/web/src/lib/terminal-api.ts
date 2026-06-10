@@ -1127,6 +1127,62 @@ export interface ExecutionAdapterSecretMaterializationHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterEnvironmentBindingStatus = "blocked" | "binding_recorded";
+export type ExecutionAdapterEnvironmentBindingConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterEnvironmentBindingConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterEnvironmentBindingConfirmationStatus;
+}
+
+export interface ExecutionAdapterEnvironmentBindingResult {
+  schemaVersion: 1;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterEnvironmentBindingStatus;
+  operator: string;
+  recordedAt: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterEnvironmentBindingConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterEnvironmentBindingRequest {
+  adapterId: string;
+  materializationId: string;
+  operator?: string;
+  bindingMode?: string;
+  confirmations?: {
+    runtimeEnvMappingVerified?: boolean;
+    configReloadPlanDocumented?: boolean;
+    noRawSecretInPayload?: boolean;
+    rollbackSnapshotRecorded?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterEnvironmentBindingRecordResult {
+  adapterEnvironmentBinding?: ExecutionAdapterEnvironmentBindingResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterEnvironmentBindingHistoryResult {
+  adapterEnvironmentBindings: ExecutionAdapterEnvironmentBindingResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -1992,6 +2048,10 @@ export function buildExecutionAdapterSecretMaterializationUrl(baseUrl: string): 
   return buildApiUrl(baseUrl, "api/execution/adapter-secret-materializations");
 }
 
+export function buildExecutionAdapterEnvironmentBindingUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-environment-bindings");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -2053,6 +2113,20 @@ export function buildExecutionAdapterSecretMaterializationHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-secret-materializations", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterEnvironmentBindingHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-environment-bindings", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -3980,6 +4054,51 @@ export async function recordExecutionAdapterSecretMaterialization(
   }
 }
 
+export async function recordExecutionAdapterEnvironmentBinding(
+  baseUrl: string,
+  request: ExecutionAdapterEnvironmentBindingRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterEnvironmentBindingRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterEnvironmentBindingUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        materializationId: request.materializationId,
+        operator: request.operator ?? "local-operator",
+        bindingMode: request.bindingMode ?? "container_env_reference",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterEnvironmentBindingRecordPayload(payload)) {
+      return {
+        adapterEnvironmentBinding: payload.adapterEnvironmentBinding,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter environment binding contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter environment binding error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -4146,6 +4265,34 @@ export async function loadExecutionAdapterSecretMaterializations(
       adapterSecretMaterializations: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter secret materialization history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterEnvironmentBindings(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterEnvironmentBindingHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterEnvironmentBindingHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterEnvironmentBindingHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter environment binding history contract");
+    }
+    return {
+      adapterEnvironmentBindings: payload.adapterEnvironmentBindings,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterEnvironmentBindings: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter environment binding history error"
     };
   }
 }
@@ -5940,6 +6087,19 @@ function isExecutionAdapterSecretMaterializationRecordPayload(
   );
 }
 
+function isExecutionAdapterEnvironmentBindingRecordPayload(
+  value: unknown
+): value is { adapterEnvironmentBinding: ExecutionAdapterEnvironmentBindingResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterEnvironmentBinding?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterEnvironmentBindingResult(payload.adapterEnvironmentBinding) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -6015,6 +6175,19 @@ function isExecutionAdapterSecretMaterializationHistoryPayload(
   return (
     Array.isArray(payload.adapterSecretMaterializations) &&
     payload.adapterSecretMaterializations.every(isExecutionAdapterSecretMaterializationResult)
+  );
+}
+
+function isExecutionAdapterEnvironmentBindingHistoryPayload(
+  value: unknown
+): value is { adapterEnvironmentBindings: ExecutionAdapterEnvironmentBindingResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterEnvironmentBindings?: unknown };
+  return (
+    Array.isArray(payload.adapterEnvironmentBindings) &&
+    payload.adapterEnvironmentBindings.every(isExecutionAdapterEnvironmentBindingResult)
   );
 }
 
@@ -6169,6 +6342,37 @@ function isExecutionAdapterSecretMaterializationResult(
   );
 }
 
+function isExecutionAdapterEnvironmentBindingResult(
+  value: unknown
+): value is ExecutionAdapterEnvironmentBindingResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterEnvironmentBindingResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterEnvironmentBindingStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterEnvironmentBindingConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -6292,6 +6496,20 @@ function isExecutionAdapterSecretMaterializationConfirmation(
   );
 }
 
+function isExecutionAdapterEnvironmentBindingConfirmation(
+  value: unknown
+): value is ExecutionAdapterEnvironmentBindingConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterEnvironmentBindingConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -6324,6 +6542,10 @@ function isExecutionAdapterSecretMaterializationStatus(
   value: unknown
 ): value is ExecutionAdapterSecretMaterializationStatus {
   return value === "blocked" || value === "manifest_recorded";
+}
+
+function isExecutionAdapterEnvironmentBindingStatus(value: unknown): value is ExecutionAdapterEnvironmentBindingStatus {
+  return value === "blocked" || value === "binding_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

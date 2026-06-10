@@ -2035,6 +2035,52 @@ export interface ExecutionAdapterSecretMaterializationRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterEnvironmentBindingStatus = "blocked" | "binding_recorded";
+export type ExecutionAdapterEnvironmentBindingConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterEnvironmentBindingSnapshot {
+  schemaVersion: 1;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterEnvironmentBindingStatus;
+  operator: string;
+  recordedAt: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterEnvironmentBindingConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterEnvironmentBindingRow {
+  id: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterEnvironmentBindingStatus;
+  statusLabel: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -8629,6 +8675,37 @@ export function buildExecutionAdapterSecretMaterializationRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterEnvironmentBindingRows(
+  bindings: ExecutionAdapterEnvironmentBindingSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterEnvironmentBindingRow[] {
+  return (bindings ?? [])
+    .map((row) => ({
+      id: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterEnvironmentBindingStatusLabel(row.status),
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterEnvironmentBindingConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.bindingId,
+      tone: executionAdapterEnvironmentBindingTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -10715,6 +10792,29 @@ function executionAdapterSecretMaterializationStatusLabel(
 
 function executionAdapterSecretMaterializationConfirmationSummary(
   confirmations: ExecutionAdapterSecretMaterializationSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterEnvironmentBindingTone(
+  status: ExecutionAdapterEnvironmentBindingStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "binding_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterEnvironmentBindingStatusLabel(status: ExecutionAdapterEnvironmentBindingStatus): string {
+  return (
+    {
+      binding_recorded: "Binding recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterEnvironmentBindingStatus, string>
+  )[status];
+}
+
+function executionAdapterEnvironmentBindingConfirmationSummary(
+  confirmations: ExecutionAdapterEnvironmentBindingSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
