@@ -28,4 +28,4 @@ Connect the paper-only runtime reload execution evidence ledger to the live prom
 - [x] Render recent execution evidence in the Promotion Queue.
 - [x] Update product plan.
 - [x] Run tests/build/Docker smoke.
-- [ ] Commit and push with the configured proxy.
+- [x] Commit and push with the configured proxy.
