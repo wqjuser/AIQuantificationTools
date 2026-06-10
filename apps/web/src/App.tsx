@@ -33,6 +33,7 @@ import {
   prepareAuditSigningKeyRotationPlan,
   loadResearchRunAiReviews,
   loadMarketKlines,
+  loadMarketCalendarStatus,
   loadMarketSearch,
   loadLatestResearchRunPaperExecution,
   loadPortfolioPaperOrderBatches,
@@ -77,6 +78,8 @@ import {
   withResearchRunExportAuditEvidenceArtifacts,
   withVerifiedResearchRunExportPackageReportSignatures,
   withResearchRunExportReportSignatures,
+  MarketCalendarResult,
+  MarketCalendarStatus,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
@@ -376,6 +379,26 @@ const initialKlinesState: MarketKlinesResult = {
   },
   source: "fallback"
 };
+function buildFallbackMarketCalendarState(market: Market, error?: string): MarketCalendarResult {
+  return {
+    calendar: {
+      market,
+      timezone: "unknown",
+      status: "unknown",
+      isOpen: false,
+      session: "unknown",
+      asOf: "",
+      tradingDay: "",
+      nextOpen: null,
+      nextClose: null,
+      detail: "Market calendar unavailable.",
+      warnings: [],
+      source: "fallback"
+    },
+    source: "fallback",
+    error
+  };
+}
 const initialStrategyLibraryState: StrategyLibraryResult = {
   strategies: [],
   source: "fallback"
@@ -779,6 +802,9 @@ export function App() {
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
+  const [marketCalendarState, setMarketCalendarState] = useState<MarketCalendarResult>(() =>
+    buildFallbackMarketCalendarState(workspace.selectedInstrument.market)
+  );
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
@@ -1359,6 +1385,17 @@ export function App() {
     setResearchNoteState(result);
     setResearchNoteDraft(result.note?.body ?? "");
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+
+  const refreshMarketCalendarStatus = useCallback(async () => {
+    const market = workspace.selectedInstrument.market;
+    setMarketCalendarState(buildFallbackMarketCalendarState(market));
+    const result = await loadMarketCalendarStatus(quantCoreBaseUrl, market);
+    setMarketCalendarState(result);
+  }, [workspace.selectedInstrument.market]);
+
+  useEffect(() => {
+    void refreshMarketCalendarStatus();
+  }, [refreshMarketCalendarStatus]);
 
   const refreshSettingsStatus = useCallback(async () => {
     const [settingsResult, adapterLedgerResult, watchlistRefreshHistory] = await Promise.all([
@@ -4053,6 +4090,13 @@ export function App() {
             watchlistCacheSummary={watchlistCacheSummary}
             workspace={workspace}
           />
+          <MarketCalendarStatusCard
+            calendar={marketCalendarState.calendar}
+            className="workflow-market-calendar-panel"
+            error={marketCalendarState.error}
+            i18n={i18n}
+            source={marketCalendarState.source}
+          />
           <ScannerWorkspace
             candidates={scannerCandidates}
             className="workflow-scanner-panel"
@@ -6058,6 +6102,101 @@ function BacktestReportPanel({
       </div>
     </Panel>
   );
+}
+
+function MarketCalendarStatusCard({
+  calendar,
+  className,
+  error,
+  i18n,
+  source
+}: {
+  calendar?: MarketCalendarStatus;
+  className?: string;
+  error?: string;
+  i18n: AppI18n;
+  source: "core" | "fallback";
+}) {
+  const status = calendar?.status ?? "unknown";
+  const warningCount = calendar?.warnings.length ?? 0;
+  const nextEvent = marketCalendarNextEventLabel(i18n, calendar);
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "交易日历" : "Market Calendar"}
+      subtitle={calendar ? `${i18n.marketLabel(calendar.market)} · ${calendar.timezone}` : source}
+      className={`market-calendar-card ${status} ${className ?? ""}`}
+    >
+      <div className="market-calendar-head">
+        <span>{i18n.locale === "zh-CN" ? "当前市场状态" : "Current session"}</span>
+        <strong>{marketCalendarStatusLabel(i18n, status)}</strong>
+        <em>{calendar?.session ?? "unknown"}</em>
+      </div>
+      <div className="market-calendar-grid">
+        <article>
+          <span>{i18n.locale === "zh-CN" ? "交易日" : "Trading day"}</span>
+          <strong>{calendar?.tradingDay || "n/a"}</strong>
+          <small>{calendar?.asOf || (i18n.locale === "zh-CN" ? "等待本地核心" : "Awaiting local core")}</small>
+        </article>
+        <article>
+          <span>{i18n.locale === "zh-CN" ? "下一事件" : "Next event"}</span>
+          <strong>{nextEvent.value}</strong>
+          <small>{nextEvent.label}</small>
+        </article>
+        <article>
+          <span>{i18n.locale === "zh-CN" ? "日历来源" : "Calendar source"}</span>
+          <strong>{calendar?.source ?? source}</strong>
+          <small>{source === "core" ? (i18n.locale === "zh-CN" ? "本地核心" : "Local core") : error ?? "fallback"}</small>
+        </article>
+        <article>
+          <span>{i18n.locale === "zh-CN" ? "限制提示" : "Limits"}</span>
+          <strong>{warningCount}</strong>
+          <small>{calendar?.warnings[0] ?? (i18n.locale === "zh-CN" ? "无额外提示" : "No additional warning")}</small>
+        </article>
+      </div>
+      {calendar?.detail || error ? <p className="market-calendar-detail">{calendar?.detail ?? error}</p> : null}
+    </Panel>
+  );
+}
+
+function marketCalendarStatusLabel(i18n: AppI18n, status: MarketCalendarStatus["status"] | "unknown"): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    open: { zh: "开市", en: "Open" },
+    closed: { zh: "休市", en: "Closed" },
+    break: { zh: "盘中休市", en: "Break" },
+    always_open: { zh: "连续交易", en: "Always open" },
+    unknown: { zh: "未知", en: "Unknown" }
+  };
+  const label = labels[status] ?? labels.unknown;
+  return i18n.locale === "zh-CN" ? label.zh : label.en;
+}
+
+function marketCalendarNextEventLabel(
+  i18n: AppI18n,
+  calendar: MarketCalendarStatus | undefined
+): { label: string; value: string } {
+  if (!calendar) {
+    return {
+      label: i18n.locale === "zh-CN" ? "等待日历状态" : "Awaiting calendar status",
+      value: "n/a"
+    };
+  }
+  if (calendar.nextClose) {
+    return {
+      label: i18n.locale === "zh-CN" ? "下一次收盘" : "Next close",
+      value: calendar.nextClose
+    };
+  }
+  if (calendar.nextOpen) {
+    return {
+      label: i18n.locale === "zh-CN" ? "下一次开盘" : "Next open",
+      value: calendar.nextOpen
+    };
+  }
+  return {
+    label: i18n.locale === "zh-CN" ? "连续交易或无计划事件" : "Continuous or no scheduled event",
+    value: calendar.status === "always_open" ? "24/7" : "n/a"
+  };
 }
 
 function MarketDataHealthPanel({

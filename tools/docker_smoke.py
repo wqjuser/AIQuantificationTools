@@ -78,7 +78,16 @@ def join_url(base_url: str, path: str) -> str:
 
 def run_command(args: Sequence[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
     print(f"$ {' '.join(args)}")
-    result = subprocess.run(args, cwd=cwd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(
+        args,
+        cwd=cwd,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     if check and result.returncode:
         if result.stdout:
             print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")

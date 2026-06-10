@@ -627,6 +627,29 @@ export interface MarketKlinesResult {
   error?: string;
 }
 
+export type MarketCalendarStatusValue = "open" | "closed" | "break" | "always_open" | "unknown";
+
+export interface MarketCalendarStatus {
+  market: Market;
+  timezone: string;
+  status: MarketCalendarStatusValue;
+  isOpen: boolean;
+  session: string;
+  asOf: string;
+  tradingDay: string;
+  nextOpen: string | null;
+  nextClose: string | null;
+  detail: string;
+  warnings: string[];
+  source: string;
+}
+
+export interface MarketCalendarResult {
+  calendar?: MarketCalendarStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketSearchSuggestion {
   market: Market;
   symbol: string;
@@ -2127,6 +2150,15 @@ export function buildMarketKlinesUrl(
     url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
     if (end?.trim()) {
       url.searchParams.set("end", end.trim());
+    }
+  });
+}
+
+export function buildMarketCalendarUrl(baseUrl: string, market: Market, at?: string): string {
+  return buildApiUrl(baseUrl, "api/market/calendar", (url) => {
+    url.searchParams.set("market", market);
+    if (at?.trim()) {
+      url.searchParams.set("at", at.trim());
     }
   });
 }
@@ -5123,6 +5155,47 @@ export async function loadMarketKlines(
   }
 }
 
+export async function loadMarketCalendarStatus(
+  baseUrl: string,
+  market: Market,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  at?: string
+): Promise<MarketCalendarResult> {
+  try {
+    const response = await fetcher(buildMarketCalendarUrl(baseUrl, market, at));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isMarketCalendarPayload(payload)) {
+      throw new Error("Invalid market calendar contract");
+    }
+    return {
+      calendar: payload.calendar,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      calendar: {
+        market,
+        timezone: "unknown",
+        status: "unknown",
+        isOpen: false,
+        session: "unknown",
+        asOf: "",
+        tradingDay: "",
+        nextOpen: null,
+        nextClose: null,
+        detail: "Market calendar unavailable.",
+        warnings: [],
+        source: "fallback"
+      },
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown market calendar error"
+    };
+  }
+}
+
 export function marketKlinesFromResearchRunAudit(run: ResearchRunAudit): MarketKlinesResult | null {
   const snapshot = run.dataSnapshot;
   if (!snapshot || !snapshot.bars.length) {
@@ -7634,6 +7707,40 @@ function isMarketKlineBar(value: unknown): value is MarketKlineBar {
     typeof bar.close === "number" &&
     typeof bar.volume === "number"
   );
+}
+
+function isMarketCalendarPayload(value: unknown): value is { calendar: MarketCalendarStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { calendar?: unknown };
+  return isMarketCalendarStatus(payload.calendar);
+}
+
+function isMarketCalendarStatus(value: unknown): value is MarketCalendarStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const calendar = value as Partial<MarketCalendarStatus>;
+  return (
+    isMarket(calendar.market) &&
+    typeof calendar.timezone === "string" &&
+    isMarketCalendarStatusValue(calendar.status) &&
+    typeof calendar.isOpen === "boolean" &&
+    typeof calendar.session === "string" &&
+    typeof calendar.asOf === "string" &&
+    typeof calendar.tradingDay === "string" &&
+    (calendar.nextOpen === null || typeof calendar.nextOpen === "string") &&
+    (calendar.nextClose === null || typeof calendar.nextClose === "string") &&
+    typeof calendar.detail === "string" &&
+    Array.isArray(calendar.warnings) &&
+    calendar.warnings.every((warning) => typeof warning === "string") &&
+    typeof calendar.source === "string"
+  );
+}
+
+function isMarketCalendarStatusValue(value: unknown): value is MarketCalendarStatusValue {
+  return value === "open" || value === "closed" || value === "break" || value === "always_open" || value === "unknown";
 }
 
 function isPortfolioBacktestPayload(value: unknown): value is { portfolio: PortfolioBacktestRun } {

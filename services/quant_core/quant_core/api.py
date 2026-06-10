@@ -110,6 +110,7 @@ from quant_core.execution import (
 )
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
+from quant_core.market_calendar import build_market_calendar_status
 from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
@@ -1583,6 +1584,17 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     instruments = [Instrument(symbol=symbol, name=symbol, market=market, change_pct=0.0)]
             quotes = self.quote_adapter.fetch_quotes(instruments)
             self._send_json(market_quotes_to_payload(quotes))
+            return
+        if parsed.path == "/api/market/calendar":
+            query = parse_qs(parsed.query)
+            market = query.get("market", ["ashare"])[0]
+            at = query.get("at", [""])[0].strip() or None
+            try:
+                calendar = build_market_calendar_status(market, at=at)
+            except ValueError as error:
+                self._send_json({"error": "invalid_market_calendar_request", "detail": str(error)}, status=400)
+                return
+            self._send_json({"calendar": calendar})
             return
         if parsed.path == "/api/market/search":
             query = parse_qs(parsed.query)

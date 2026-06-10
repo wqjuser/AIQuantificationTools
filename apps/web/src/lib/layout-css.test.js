@@ -1102,6 +1102,22 @@ describe("terminal layout css", () => {
     expect(cssBlock(".market-cache-bulk-refresh")).toContain("display: inline-flex;");
   });
 
+  test("renders selected market calendar session status in the market work area", () => {
+    const marketWorkspaceSource = sourceBetween('if (activeWorkAreaId === "market")', 'if (activeWorkAreaId === "strategy")');
+
+    expect(appSource).toContain("loadMarketCalendarStatus");
+    expect(appSource).toContain("const [marketCalendarState, setMarketCalendarState]");
+    expect(appSource).toContain("refreshMarketCalendarStatus");
+    expect(appSource).toContain("workspace.selectedInstrument.market");
+    expect(marketWorkspaceSource).toContain("<MarketCalendarStatusCard");
+    expect(marketWorkspaceSource).toContain("calendar={marketCalendarState.calendar}");
+    expect(appSource).toContain("function MarketCalendarStatusCard");
+    expect(appSource).toContain("className={`market-calendar-card ${status} ${className ?? \"\"}`}");
+    expect(appSource).toContain("marketCalendarStatusLabel");
+    expect(cssBlock(".market-calendar-card")).toContain("display: grid;");
+    expect(cssBlock(".market-calendar-grid")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+  });
+
   test("renders the strategy lab as a structured rule builder", () => {
     expect(appSource).toContain("buildStrategyRuleDraft(workspace)");
     expect(appSource).toContain("buildStrategyReadinessGates(workspace)");

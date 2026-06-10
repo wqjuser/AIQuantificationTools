@@ -19,6 +19,7 @@ import {
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
+  buildMarketCalendarUrl,
   buildPortfolioBacktestUrl,
   buildPortfolioPaperOrderApprovalsUrl,
   buildPortfolioPaperOrdersUrl,
@@ -65,6 +66,7 @@ import {
   buildGoldenPathStatusUrl,
   loadGoldenPathStatus,
   loadMarketKlines,
+  loadMarketCalendarStatus,
   loadMarketSearch,
   loadResearchRunDetail,
   loadResearchRunExport,
@@ -237,6 +239,58 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.state?.symbol).toBe("MSFT");
     expect(result.state?.timeframe).toBe("5m");
+  });
+
+  test("loads the selected market calendar status through the local core", async () => {
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          calendar: {
+            market: "ashare",
+            timezone: "Asia/Shanghai",
+            status: "open",
+            isOpen: true,
+            session: "morning",
+            asOf: "2026-06-11T10:00:00+08:00",
+            tradingDay: "2026-06-11",
+            nextOpen: null,
+            nextClose: "2026-06-11T11:30:00+08:00",
+            detail: "A-share market is open in the morning session.",
+            warnings: ["Static session template only; exchange holiday calendar is not configured."],
+            source: "static-session-template"
+          }
+        })
+      };
+    };
+
+    expect(buildMarketCalendarUrl("/", "ashare")).toBe("/api/market/calendar?market=ashare");
+
+    const result = await loadMarketCalendarStatus("/", "ashare", fetcher);
+
+    expect(calls).toEqual(["/api/market/calendar?market=ashare"]);
+    expect(result.source).toBe("core");
+    expect(result.calendar?.market).toBe("ashare");
+    expect(result.calendar?.status).toBe("open");
+    expect(result.calendar?.nextClose).toBe("2026-06-11T11:30:00+08:00");
+  });
+
+  test("falls back when the market calendar contract is invalid", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ calendar: { market: "ashare", status: "open" } })
+    });
+
+    const result = await loadMarketCalendarStatus("/", "ashare", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.calendar?.market).toBe("ashare");
+    expect(result.calendar?.status).toBe("unknown");
+    expect(result.error).toBe("Invalid market calendar contract");
   });
 
   test("builds same-origin API URLs for containerized web deployments", () => {

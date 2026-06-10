@@ -1333,6 +1333,7 @@ em {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
     "chart data"
+    "chart calendar"
     "scanner workflow";
 }
 
@@ -1430,6 +1431,11 @@ em {
 .workflow-data-panel {
   align-self: start;
   grid-area: data;
+}
+
+.workflow-market-calendar-panel {
+  align-self: start;
+  grid-area: calendar;
 }
 
 .workflow-scanner-panel .scanner-head {
@@ -4072,6 +4078,92 @@ em {
 .health-grid article p,
 .settings-grid article p {
   margin: 7px 0 0;
+  color: #a8b7c7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.market-calendar-card {
+  display: grid;
+  gap: 10px;
+}
+
+.market-calendar-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  border-radius: 7px;
+  background: rgba(15, 46, 42, 0.38);
+  padding: 10px;
+}
+
+.market-calendar-card.closed .market-calendar-head,
+.market-calendar-card.unknown .market-calendar-head {
+  border-color: rgba(255, 127, 109, 0.28);
+  background: rgba(55, 24, 30, 0.36);
+}
+
+.market-calendar-card.break .market-calendar-head {
+  border-color: rgba(232, 190, 98, 0.32);
+  background: rgba(63, 48, 18, 0.34);
+}
+
+.market-calendar-head span,
+.market-calendar-head em,
+.market-calendar-grid span,
+.market-calendar-grid small {
+  min-width: 0;
+  color: #8fa0b2;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 820;
+}
+
+.market-calendar-head strong {
+  color: #83e6ce;
+  font-size: 18px;
+}
+
+.market-calendar-head em {
+  justify-self: end;
+}
+
+.market-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.market-calendar-grid article {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 9px 10px;
+}
+
+.market-calendar-grid strong {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: #dce6ee;
+  font-size: 13px;
+}
+
+.market-calendar-grid small {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-calendar-detail {
+  margin: 0;
+  border-top: 1px solid rgba(38, 55, 76, 0.72);
+  padding-top: 8px;
   color: #a8b7c7;
   font-size: 12px;
   line-height: 1.45;
@@ -8755,6 +8847,7 @@ button.ai-review-record {
     grid-template-areas:
       "chart"
       "data"
+      "calendar"
       "scanner"
       "workflow";
   }
@@ -9008,6 +9101,7 @@ button.ai-review-record {
     grid-template-areas:
       "chart"
       "data"
+      "calendar"
       "scanner"
       "workflow";
   }

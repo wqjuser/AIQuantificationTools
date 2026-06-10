@@ -134,6 +134,26 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(calls[0][1]["stdout"], subprocess.PIPE)
         self.assertEqual(calls[0][1]["stderr"], subprocess.STDOUT)
 
+    def test_docker_smoke_command_runner_uses_utf8_output_decoding(self):
+        import subprocess
+
+        docker_smoke = self._load_docker_smoke_module()
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="compose ✓\n")
+
+        original_run = docker_smoke.subprocess.run
+        docker_smoke.subprocess.run = fake_run
+        try:
+            docker_smoke.run_command(["docker", "compose", "config"], cwd=Path("F:/MyProjects/AIQuantificationTools"))
+        finally:
+            docker_smoke.subprocess.run = original_run
+
+        self.assertEqual(calls[0][1]["encoding"], "utf-8")
+        self.assertEqual(calls[0][1]["errors"], "replace")
+
     def test_quant_api_bind_uses_container_environment(self):
         from quant_core.api import resolve_api_bind
 
@@ -3159,6 +3179,69 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_response.status, 200)
         self.assertEqual(history_payload["watchlistRefreshes"][0]["runId"], payload["watchlistRefresh"]["runId"])
         self.assertEqual(history_payload["watchlistRefreshes"][0]["summary"]["refreshed"], 2)
+
+    def test_market_calendar_builds_deterministic_session_status(self):
+        from quant_core.market_calendar import build_market_calendar_status
+
+        ashare_open = build_market_calendar_status("ashare", at="2026-06-11T10:00:00+08:00")
+        self.assertEqual(ashare_open["market"], "ashare")
+        self.assertEqual(ashare_open["timezone"], "Asia/Shanghai")
+        self.assertEqual(ashare_open["status"], "open")
+        self.assertEqual(ashare_open["session"], "morning")
+        self.assertEqual(ashare_open["nextClose"], "2026-06-11T11:30:00+08:00")
+        self.assertIsNone(ashare_open["nextOpen"])
+        self.assertIn("holiday calendar", ashare_open["warnings"][0])
+
+        ashare_break = build_market_calendar_status("ashare", at="2026-06-11T12:00:00+08:00")
+        self.assertEqual(ashare_break["status"], "break")
+        self.assertFalse(ashare_break["isOpen"])
+        self.assertEqual(ashare_break["session"], "lunch_break")
+        self.assertEqual(ashare_break["nextOpen"], "2026-06-11T13:00:00+08:00")
+
+        us_open = build_market_calendar_status("us", at="2026-06-11T10:00:00-04:00")
+        self.assertEqual(us_open["timezone"], "America/New_York")
+        self.assertEqual(us_open["status"], "open")
+        self.assertEqual(us_open["session"], "regular")
+        self.assertEqual(us_open["nextClose"], "2026-06-11T16:00:00-04:00")
+
+        crypto = build_market_calendar_status("crypto", at="2026-06-11T10:00:00+08:00")
+        self.assertEqual(crypto["timezone"], "UTC")
+        self.assertEqual(crypto["status"], "always_open")
+        self.assertTrue(crypto["isOpen"])
+        self.assertIsNone(crypto["nextOpen"])
+        self.assertIsNone(crypto["nextClose"])
+
+    def test_market_calendar_api_returns_status_and_rejects_invalid_market(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        server = HTTPServer(("127.0.0.1", 0), QuantApiHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+        try:
+            connection.request("GET", "/api/market/calendar?market=ashare&at=2026-06-11T10%3A00%3A00%2B08%3A00")
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            connection.request("GET", "/api/market/calendar?market=forex")
+            invalid_response = connection.getresponse()
+            invalid_payload = json.loads(invalid_response.read().decode("utf-8"))
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["calendar"]["market"], "ashare")
+        self.assertEqual(payload["calendar"]["status"], "open")
+        self.assertEqual(payload["calendar"]["source"], "static-session-template")
+        self.assertEqual(invalid_response.status, 400)
+        self.assertEqual(invalid_payload["error"], "invalid_market_calendar_request")
 
     def test_market_klines_api_serves_sqlite_cache_when_adapter_unavailable(self):
         import json
