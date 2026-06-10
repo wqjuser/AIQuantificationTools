@@ -1057,6 +1057,7 @@ export interface ResearchRunImportDiffRow {
     | "context"
     | "timeframe"
     | "data-snapshot"
+    | "preparation-evidence"
     | "strategy-revision"
     | "research-note"
     | "paper-executions"
@@ -4568,6 +4569,24 @@ export function buildResearchRunImportDiffRows({
   const incomingRun = exportPackage.researchRun ?? null;
   const currentNote = normalizedResearchNote(currentRun?.researchNote);
   const incomingNote = normalizedResearchNote(incomingRun?.researchNote);
+  const currentPreparationEvidence = currentRun?.dataSnapshot?.preparationEvidence ?? null;
+  const incomingPreparationEvidence = incomingRun?.dataSnapshot?.preparationEvidence ?? null;
+  const currentPreparationEvidenceDetail = currentPreparationEvidence
+    ? formatPreparationEvidenceDetail(currentPreparationEvidence)
+    : "No locked preparation evidence";
+  const incomingPreparationEvidenceDetail = incomingPreparationEvidence
+    ? formatPreparationEvidenceDetail(incomingPreparationEvidence)
+    : "No package preparation evidence";
+  const preparationEvidenceStatus: ResearchRunImportDiffStatus =
+    currentPreparationEvidence && incomingPreparationEvidence
+      ? currentPreparationEvidenceDetail === incomingPreparationEvidenceDetail
+        ? "same"
+        : "change"
+      : incomingPreparationEvidence
+        ? "add"
+        : currentPreparationEvidence
+          ? "change"
+          : "same";
   const integrityHash = exportPackage.integrity?.hash ?? "";
   const integrityIsReady =
     exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
@@ -4731,6 +4750,24 @@ export function buildResearchRunImportDiffRows({
         currentRun?.dataSnapshot?.hash && currentRun.dataSnapshot.hash === exportPackage.manifest.dataHash
           ? "positive"
           : "warning"
+    },
+    {
+      id: "preparation-evidence",
+      label: "Preparation evidence",
+      status: preparationEvidenceStatus,
+      current: currentPreparationEvidenceDetail,
+      incoming: incomingPreparationEvidenceDetail,
+      detail: incomingPreparationEvidence
+        ? preparationEvidenceStatus === "same"
+          ? "Locked data preparation evidence already matches the package snapshot."
+          : currentPreparationEvidence
+            ? "Import will replace locked data preparation evidence used to build the audited snapshot."
+            : "Import will add locked data preparation evidence for the audited snapshot."
+        : currentPreparationEvidence
+          ? "Package does not include locked preparation evidence; import will replace the current replay context without it."
+          : "Neither current workspace nor package includes locked preparation evidence.",
+      exportPath: "researchRun.dataSnapshot.preparationEvidence",
+      tone: preparationEvidenceStatus === "same" ? (incomingPreparationEvidence ? "positive" : "neutral") : "warning"
     },
     {
       id: "strategy-revision",

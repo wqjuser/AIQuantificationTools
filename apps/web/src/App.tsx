@@ -9158,6 +9158,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       context: "市场 / 标的",
       timeframe: "周期",
       "data-snapshot": "数据快照",
+      "preparation-evidence": "准备证据",
       "strategy-revision": "策略版本",
       "research-note": "研究笔记",
       "paper-executions": "模拟执行",
@@ -9469,6 +9470,7 @@ function isResearchRunImportDiffRowId(value: unknown): value is ResearchRunImpor
     value === "context" ||
     value === "timeframe" ||
     value === "data-snapshot" ||
+    value === "preparation-evidence" ||
     value === "strategy-revision" ||
     value === "research-note" ||
     value === "paper-executions" ||

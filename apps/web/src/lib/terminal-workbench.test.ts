@@ -3868,7 +3868,21 @@ describe("terminal workbench model", () => {
           warnings: [],
           start: "2026-05-26T08:00:00+00:00",
           end: "2026-05-26T08:00:00+00:00",
-          bars: []
+          bars: [],
+          preparationEvidence: {
+            kind: "watchlist_cache_refresh",
+            runId: "cache-refresh-current",
+            createdAt: "2026-05-26T07:55:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            name: "浦发银行",
+            timeframe: "1d",
+            status: "refreshed",
+            requestedLimit: 240,
+            upsertedRows: 240,
+            quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+            error: null
+          }
         },
         executionMode: "paper_only",
         strategyConfig: {
@@ -3942,7 +3956,21 @@ describe("terminal workbench model", () => {
           warnings: ["cache replay"],
           start: "2026-05-26T08:00:00+00:00",
           end: "2026-05-26T08:30:00+00:00",
-          bars: []
+          bars: [],
+          preparationEvidence: {
+            kind: "watchlist_cache_refresh",
+            runId: "cache-refresh-imported",
+            createdAt: "2026-05-26T08:20:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            name: "浦发银行",
+            timeframe: "5m",
+            status: "refreshed",
+            requestedLimit: 500,
+            upsertedRows: 500,
+            quality: { source: "local-cache", isComplete: true, warnings: ["cache replay"], rows: 500 },
+            error: null
+          }
         },
         metrics: { totalReturnPct: 12.4, maxDrawdownPct: 5.8, winRatePct: 51, profitFactor: 1.6, tradeCount: 18 },
         decisions: [],
@@ -4165,6 +4193,15 @@ describe("terminal workbench model", () => {
           tone: "warning"
         }),
         expect.objectContaining({
+          id: "preparation-evidence",
+          status: "change",
+          current: "cache-refresh-current · watchlist_cache_refresh · 600000 1d · tencent complete · 240 rows cached",
+          incoming:
+            "cache-refresh-imported · watchlist_cache_refresh · 600000 5m · local-cache complete · 500 rows cached",
+          exportPath: "researchRun.dataSnapshot.preparationEvidence",
+          tone: "warning"
+        }),
+        expect.objectContaining({
           id: "research-note",
           status: "change",
           current: "Current local research note",
@@ -4212,6 +4249,9 @@ describe("terminal workbench model", () => {
       ])
     );
     expect(filterResearchRunImportDiffRows(rows, "hash-imported").map((row) => row.id)).toEqual(["data-snapshot"]);
+    expect(filterResearchRunImportDiffRows(rows, "cache-refresh-imported").map((row) => row.id)).toEqual([
+      "preparation-evidence"
+    ]);
     expect(filterResearchRunImportDiffRows(rows, "researchNote").map((row) => row.id)).toEqual(["research-note"]);
     expect(filterResearchRunImportDiffRows(rows, "portfolioPaperOrderBatches").map((row) => row.id)).toEqual([
       "portfolio-paper-orders"
