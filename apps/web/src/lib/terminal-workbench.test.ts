@@ -8854,6 +8854,49 @@ describe("terminal workbench model", () => {
         tone: "positive" as const
       }
     ];
+    const environmentBindingRows = [
+      {
+        id: "execution-adapter-environment-binding-ashare-live",
+        materializationId: "execution-adapter-secret-materialization-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:30:00+00:00",
+        status: "binding_recorded" as const,
+        statusLabel: "Binding recorded",
+        bindingMode: "local_runtime_env",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-environment-binding-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+    const runtimeReloadPlanRows = [
+      {
+        id: "execution-adapter-runtime-reload-plan-ashare-live",
+        bindingId: "execution-adapter-environment-binding-ashare-live",
+        materializationId: "execution-adapter-secret-materialization-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:45:00+00:00",
+        status: "plan_recorded" as const,
+        statusLabel: "Plan recorded",
+        reloadMode: "manual_runtime_reload",
+        maintenanceWindowId: "maintenance-2026-06-10",
+        bindingMode: "local_runtime_env",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-runtime-reload-plan-ashare-live",
+        tone: "positive" as const
+      }
+    ];
 
     const readiness = buildPromotionReadiness(
       workspace,
@@ -8864,7 +8907,9 @@ describe("terminal workbench model", () => {
       [],
       [],
       secretReferenceRows,
-      secretMaterializationRows
+      secretMaterializationRows,
+      environmentBindingRows,
+      runtimeReloadPlanRows
     );
 
     expect(readiness.status).toBe("certification_pending");
@@ -8873,7 +8918,7 @@ describe("terminal workbench model", () => {
       status: "blocked",
       tone: "warning",
       detail:
-        "Latest secret reference execution-adapter-secret-reference-ashare-live: Reference recorded · 3 confirmed / 0 missing · No blockers · local-secret-store · 2 env vars · Paper only · live trading blocked. Latest secret materialization execution-adapter-secret-materialization-ashare-live: Manifest recorded · 4 confirmed / 0 missing · No blockers · local-secret-store · 2 env vars · Paper only · live trading blocked. Secret materialization manifest is recorded; live routing remains blocked until env writes, restart orchestration, and human confirmation pass. Latest certification adapter-certification-ashare-materialized: 4 passed / 4 checks · Live trading allowed. Workspace adapter gate is still blocked."
+        "Latest secret reference execution-adapter-secret-reference-ashare-live: Reference recorded · 3 confirmed / 0 missing · No blockers · local-secret-store · 2 env vars · Paper only · live trading blocked. Latest secret materialization execution-adapter-secret-materialization-ashare-live: Manifest recorded · 4 confirmed / 0 missing · No blockers · local-secret-store · 2 env vars · Paper only · live trading blocked. Secret materialization manifest is recorded; live routing remains blocked until env writes, restart orchestration, and human confirmation pass. Latest environment binding execution-adapter-environment-binding-ashare-live: Binding recorded · 4 confirmed / 0 missing · No blockers · local_runtime_env · 2 env vars · Paper only · live trading blocked. Environment binding is recorded; live routing remains blocked until runtime reload orchestration and human confirmation pass. Latest runtime reload plan execution-adapter-runtime-reload-plan-ashare-live: Plan recorded · 5 confirmed / 0 missing · No blockers · manual_runtime_reload · maintenance-2026-06-10 · Paper only · live trading blocked. Runtime reload plan is recorded; live routing remains blocked until controlled reload execution, acceptance, and human confirmation pass. Latest certification adapter-certification-ashare-materialized: 4 passed / 4 checks · Live trading allowed. Workspace adapter gate is still blocked."
     });
   });
 

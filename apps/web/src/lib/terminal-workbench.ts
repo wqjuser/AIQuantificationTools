@@ -8949,6 +8949,49 @@ function latestPromotionSecretMaterializationRow(
   );
 }
 
+function latestPromotionEnvironmentBindingRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterEnvironmentBindingRow[],
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterEnvironmentBindingRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionRuntimeReloadPlanRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterRuntimeReloadPlanRow[],
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null
+): ExecutionAdapterRuntimeReloadPlanRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -8957,6 +9000,8 @@ function buildPromotionAdapterCertificationStage(
   latestRestartAcceptance: ExecutionAdapterRestartAcceptanceRow | null,
   latestSecretReference: ExecutionAdapterSecretReferenceRow | null,
   latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -8965,6 +9010,12 @@ function buildPromotionAdapterCertificationStage(
     : "";
   const secretMaterializationDetail = latestSecretMaterialization
     ? `Latest secret materialization ${latestSecretMaterialization.auditEventId}: ${latestSecretMaterialization.statusLabel} · ${latestSecretMaterialization.confirmationSummary} · ${latestSecretMaterialization.blockerSummary} · ${latestSecretMaterialization.backend} · ${latestSecretMaterialization.envVarSummary} · ${latestSecretMaterialization.boundary}. ${promotionSecretMaterializationNextStep(latestSecretMaterialization)}`
+    : "";
+  const environmentBindingDetail = latestEnvironmentBinding
+    ? `Latest environment binding ${latestEnvironmentBinding.auditEventId}: ${latestEnvironmentBinding.statusLabel} · ${latestEnvironmentBinding.confirmationSummary} · ${latestEnvironmentBinding.blockerSummary} · ${latestEnvironmentBinding.bindingMode} · ${latestEnvironmentBinding.envVarSummary} · ${latestEnvironmentBinding.boundary}. ${promotionEnvironmentBindingNextStep(latestEnvironmentBinding)}`
+    : "";
+  const runtimeReloadPlanDetail = latestRuntimeReloadPlan
+    ? `Latest runtime reload plan ${latestRuntimeReloadPlan.auditEventId}: ${latestRuntimeReloadPlan.statusLabel} · ${latestRuntimeReloadPlan.confirmationSummary} · ${latestRuntimeReloadPlan.blockerSummary} · ${latestRuntimeReloadPlan.reloadMode} · ${latestRuntimeReloadPlan.maintenanceWindowId} · ${latestRuntimeReloadPlan.boundary}. ${promotionRuntimeReloadPlanNextStep(latestRuntimeReloadPlan)}`
     : "";
   if (!latestCertification) {
     const liveAdapterDetail = liveAdapterCertified
@@ -8975,11 +9026,21 @@ function buildPromotionAdapterCertificationStage(
       label: "Adapter certification",
       value:
         certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
-      detail: [liveAdapterDetail, secretReferenceDetail, secretMaterializationDetail].filter(Boolean).join(" "),
+      detail: [
+        liveAdapterDetail,
+        secretReferenceDetail,
+        secretMaterializationDetail,
+        environmentBindingDetail,
+        runtimeReloadPlanDetail
+      ]
+        .filter(Boolean)
+        .join(" "),
       status: liveAdapterCertified ? "passed" : "blocked",
       tone: liveAdapterCertified
         ? "positive"
-        : latestSecretMaterialization?.status === "manifest_recorded" ||
+        : latestRuntimeReloadPlan?.status === "plan_recorded" ||
+            latestEnvironmentBinding?.status === "binding_recorded" ||
+            latestSecretMaterialization?.status === "manifest_recorded" ||
             latestSecretReference?.status === "reference_recorded"
           ? "warning"
           : "risk"
@@ -9007,6 +9068,8 @@ function buildPromotionAdapterCertificationStage(
     detail: [
       secretReferenceDetail,
       secretMaterializationDetail,
+      environmentBindingDetail,
+      runtimeReloadPlanDetail,
       certificationDetail,
       applyDetail,
       restartEvidenceDetail,
@@ -9018,7 +9081,9 @@ function buildPromotionAdapterCertificationStage(
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
-      : latestSecretMaterialization?.status === "manifest_recorded" ||
+      : latestRuntimeReloadPlan?.status === "plan_recorded" ||
+          latestEnvironmentBinding?.status === "binding_recorded" ||
+          latestSecretMaterialization?.status === "manifest_recorded" ||
           latestRestartAcceptance?.status === "acceptance_recorded" ||
           latestRestartEvidence?.status === "evidence_recorded" ||
           latestApply?.status === "ready_for_restart"
@@ -9057,6 +9122,20 @@ function promotionSecretMaterializationNextStep(materialization: ExecutionAdapte
   return "Resolve secret materialization blockers before restart orchestration.";
 }
 
+function promotionEnvironmentBindingNextStep(binding: ExecutionAdapterEnvironmentBindingRow): string {
+  if (binding.status === "binding_recorded") {
+    return "Environment binding is recorded; live routing remains blocked until runtime reload orchestration and human confirmation pass.";
+  }
+  return "Resolve environment binding blockers before runtime reload planning.";
+}
+
+function promotionRuntimeReloadPlanNextStep(plan: ExecutionAdapterRuntimeReloadPlanRow): string {
+  if (plan.status === "plan_recorded") {
+    return "Runtime reload plan is recorded; live routing remains blocked until controlled reload execution, acceptance, and human confirmation pass.";
+  }
+  return "Resolve runtime reload plan blockers before controlled reload execution.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -9066,7 +9145,9 @@ export function buildPromotionReadiness(
   controlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[] = [],
   restartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[] = [],
   secretReferenceRows: ExecutionAdapterSecretReferenceRow[] = [],
-  secretMaterializationRows: ExecutionAdapterSecretMaterializationRow[] = []
+  secretMaterializationRows: ExecutionAdapterSecretMaterializationRow[] = [],
+  environmentBindingRows: ExecutionAdapterEnvironmentBindingRow[] = [],
+  runtimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -9097,6 +9178,17 @@ export function buildPromotionReadiness(
     workspace,
     secretMaterializationRows,
     latestSecretReference
+  );
+  const latestEnvironmentBinding = latestPromotionEnvironmentBindingRow(
+    workspace,
+    environmentBindingRows,
+    latestSecretMaterialization
+  );
+  const latestRuntimeReloadPlan = latestPromotionRuntimeReloadPlanRow(
+    workspace,
+    runtimeReloadPlanRows,
+    latestSecretMaterialization,
+    latestEnvironmentBinding
   );
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
@@ -9167,6 +9259,8 @@ export function buildPromotionReadiness(
     latestRestartAcceptance,
     latestSecretReference,
     latestSecretMaterialization,
+    latestEnvironmentBinding,
+    latestRuntimeReloadPlan,
     liveAdapterCertified,
     adapterGatePassed
   );
