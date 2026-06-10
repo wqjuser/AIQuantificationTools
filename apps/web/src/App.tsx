@@ -6659,11 +6659,29 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
   if (i18n.locale !== "zh-CN") {
     return row.detail;
   }
-  if (row.detail === "Refresh the current cache before trusting this research context.") {
-    return "刷新当前缓存后再信任这个研究上下文。";
+  if (
+    row.detail ===
+    "No current-timeframe cache coverage yet. Use search suggestion refresh or refresh current cache before audited research."
+  ) {
+    return "当前周期还没有缓存覆盖。请在搜索建议中刷新缓存，或刷新当前缓存后再运行审计研究。";
   }
   if (row.detail === "Save a note to bind the research hypothesis to this symbol and timeframe.") {
     return "保存笔记，把研究假设绑定到当前标的和周期。";
+  }
+  if (row.id === "cache") {
+    return row.detail
+      .replace("Ready for audited research", "可运行审计研究")
+      .replace("Latest cache", "最新缓存")
+      .replace("Cache is stale.", "缓存已过期。")
+      .replace("Cache is empty.", "缓存为空。")
+      .replace(
+        "Refresh from search suggestions or current cache before audited research",
+        "请从搜索建议或当前缓存入口刷新后再运行审计研究"
+      )
+      .replace("latest timestamp unknown", "最新时间未知")
+      .replace("age unknown", "缓存年龄未知")
+      .replace("h old", " 小时前")
+      .replace("latest", "最新");
   }
   if (row.id === "workspace") {
     return row.detail

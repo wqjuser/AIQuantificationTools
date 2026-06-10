@@ -6917,15 +6917,15 @@ function isReviewRequiredKlineSource(source: string): boolean {
 
 function cacheReadinessDetail(cache: ResearchContextReadinessCacheContext | null, rowCount: number): string {
   if (!cache || rowCount <= 0 || cache.freshness === "empty") {
-    return "Refresh the current cache before trusting this research context.";
+    return "No current-timeframe cache coverage yet. Use search suggestion refresh or refresh current cache before audited research.";
   }
   const age = typeof cache.ageHours === "number" && Number.isFinite(cache.ageHours) ? Math.max(0, cache.ageHours) : null;
   const ageLabel = age === null ? "age unknown" : `${Number.isInteger(age) ? age : age.toFixed(1)}h old`;
   const latest = cache.latestTimestamp || "latest timestamp unknown";
   if (cache.freshness === "fresh") {
-    return `Latest cache ${latest} · ${ageLabel}`;
+    return `Ready for audited research · Latest cache ${latest} · ${ageLabel}`;
   }
-  return `Cache is ${cache.freshness}; latest ${latest} · ${ageLabel}`;
+  return `Cache is ${cache.freshness}. Refresh from search suggestions or current cache before audited research · latest ${latest} · ${ageLabel}`;
 }
 
 export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCandidate[] {

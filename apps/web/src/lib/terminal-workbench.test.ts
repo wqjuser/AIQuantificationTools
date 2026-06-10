@@ -469,7 +469,7 @@ describe("terminal workbench model", () => {
     });
     expect(rows.find((row) => row.id === "cache")).toMatchObject({
       value: "fresh · 240 rows",
-      detail: "Latest cache 2026-05-26T08:00:00+08:00 · 1h old"
+      detail: "Ready for audited research · Latest cache 2026-05-26T08:00:00+08:00 · 1h old"
     });
     expect(rows.find((row) => row.id === "note")).toMatchObject({
       value: "saved",
@@ -697,7 +697,8 @@ describe("terminal workbench model", () => {
     });
     expect(rows.find((row) => row.id === "cache")).toMatchObject({
       value: "missing",
-      detail: "Refresh the current cache before trusting this research context.",
+      detail:
+        "No current-timeframe cache coverage yet. Use search suggestion refresh or refresh current cache before audited research.",
       action: "refresh-cache"
     });
     expect(rows.find((row) => row.id === "note")).toMatchObject({
@@ -821,6 +822,35 @@ describe("terminal workbench model", () => {
     expect(rows.find((row) => row.id === "klines")).toMatchObject({
       value: "160 bars",
       detail: "demo-fallback complete · source requires review",
+      status: "review",
+      tone: "warning",
+      action: "refresh-cache"
+    });
+  });
+
+  test("marks stale Stage 1 cache as refreshable before audited research", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 120,
+        freshness: "stale",
+        ageHours: 18,
+        latestTimestamp: "2026-05-25T14:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.find((row) => row.id === "cache")).toMatchObject({
+      value: "stale · 120 rows",
+      detail:
+        "Cache is stale. Refresh from search suggestions or current cache before audited research · latest 2026-05-25T14:00:00+08:00 · 18h old",
       status: "review",
       tone: "warning",
       action: "refresh-cache"
