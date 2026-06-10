@@ -21,7 +21,7 @@ Let users refresh missing or stale local K-line cache directly from a market sea
 - [x] GREEN: Reload selected symbol K-lines after refreshing suggestion cache.
 - [x] DOCS: Update product planning docs.
 - [x] VERIFY: Run targeted tests, relevant suites, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -38,3 +38,4 @@ npm run docker:smoke
 
 - 2026-06-10: Added failing UI contract coverage, then implemented separate suggestion select/refresh actions and compact styling.
 - 2026-06-10: Verified frontend layout/API tests, production build, full repository tests, Docker rebuild, Docker smoke, and browser smoke that clicked a search suggestion refresh action and landed in the selected research context.
+- 2026-06-10: Shipped to `origin/codex/p0-product-workspaces` through the configured proxy.
