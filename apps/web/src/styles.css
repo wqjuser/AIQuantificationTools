@@ -940,6 +940,23 @@ em {
   max-width: 300px;
 }
 
+.golden-path-action-hint {
+  flex: 1 1 100%;
+  margin-top: -3px;
+  color: #8fa0b2;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.golden-path-action-hint.review {
+  color: #e8be62;
+}
+
+.golden-path-action-hint.blocked {
+  color: #ffad9f;
+}
+
 .module-focus-card.strategy {
   border-color: #614e20;
 }
@@ -1087,6 +1104,17 @@ em {
   color: #8fa0b2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-gate-preflight-hint {
+  grid-column: 1 / -1;
+  border-top: 1px solid #26354a;
+  padding-top: 3px;
+  color: #e8be62;
+}
+
+.workspace-gate-preflight-hint.blocked {
+  color: #ffad9f;
 }
 
 .workspace-gate-summary.needs_run em {

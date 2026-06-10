@@ -207,6 +207,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('if (actionId === "refresh-watchlist-cache")');
     expect(appSource).toContain("void refreshWatchlistMarketCache();");
     expect(appSource).toContain("isRefreshingWatchlistCache || Boolean(refreshingCacheKey)");
+    expect(appSource).toContain("goldenPathActionPreflightHint");
+    expect(overviewSource).toContain("goldenPathActionHint");
+    expect(overviewSource).toContain('className={`golden-path-action-hint ${researchPipelinePreflight.status}`}');
+    expect(overviewSource).toContain("workspaceContextActionHint");
+    expect(overviewSource).toContain('className={`workspace-gate-preflight-hint ${researchPipelinePreflight.status}`}');
     expect(overviewSource).toContain('className={`workspace-gate-summary ${activeWorkspaceContext.status}`}');
     expect(overviewSource).toContain("goldenPathWorkspaceContextLabel");
     expect(overviewSource).toContain("goldenPathWorkspaceContextDetail");
@@ -216,6 +221,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workspace-gate-summary")).toContain("display: grid;");
     expect(cssBlock(".workspace-gate-summary")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
     expect(cssBlock(".workspace-gate-action")).toContain("cursor: pointer;");
+    expect(cssBlock(".golden-path-action-hint")).toContain("font-size: 0.76rem;");
+    expect(cssBlock(".workspace-gate-preflight-hint")).toContain("grid-column: 1 / -1;");
   });
 
   test("renders a compact Stage 1 research context readiness checklist", () => {

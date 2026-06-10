@@ -3904,6 +3904,12 @@ export function App() {
   const workspaceContextActionId = activeWorkspaceContext?.actionId;
   const isWorkspaceContextActionDisabled =
     !workspaceContextActionId || isGoldenPathActionDisabledById(workspaceContextActionId);
+  const goldenPathActionHint = goldenPathActionPreflightHint(i18n, goldenPathActionId, researchPipelinePreflight);
+  const workspaceContextActionHint = goldenPathActionPreflightHint(
+    i18n,
+    workspaceContextActionId,
+    researchPipelinePreflight
+  );
 
   const renderChartPanel = (className = "chart-panel") => (
     <Panel
@@ -4658,6 +4664,11 @@ export function App() {
                     {goldenPathWorkspaceContextActionLabel(i18n, activeWorkspaceContext)}
                   </button>
                   <small>{goldenPathWorkspaceContextDetail(i18n, activeWorkspaceContext)}</small>
+                  {workspaceContextActionHint ? (
+                    <small className={`workspace-gate-preflight-hint ${researchPipelinePreflight.status}`}>
+                      {workspaceContextActionHint}
+                    </small>
+                  ) : null}
                 </div>
               ) : null}
               {goldenPathRunbookPreview.length ? (
@@ -4718,6 +4729,11 @@ export function App() {
                   ? goldenPathActionLabel(i18n, goldenPath.nextAction)
                   : workflowNextActionLabel(i18n, activeLoopStep?.id ?? "research")}
               </button>
+              {goldenPathActionHint ? (
+                <small className={`golden-path-action-hint ${researchPipelinePreflight.status}`}>
+                  {goldenPathActionHint}
+                </small>
+              ) : null}
             </div>
           </section>
 
@@ -6691,6 +6707,17 @@ function researchPipelinePreflightIssueDetail(i18n: AppI18n, preflight: Research
     .join(" · ");
   const summary = researchPipelinePreflightStatusLabel(i18n, preflight);
   return issueSummary ? `${summary} ${issueSummary}` : summary;
+}
+
+function goldenPathActionPreflightHint(
+  i18n: AppI18n,
+  actionId: string | null | undefined,
+  preflight: ResearchPipelinePreflight
+): string | null {
+  if (actionId !== "run-pipeline" || preflight.status === "ready") {
+    return null;
+  }
+  return researchPipelinePreflightIssueDetail(i18n, preflight);
 }
 
 function researchPipelinePreflightConfirmMessage(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
