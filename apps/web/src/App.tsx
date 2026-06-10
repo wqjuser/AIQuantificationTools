@@ -4266,10 +4266,12 @@ export function App() {
           className="workflow-readiness-panel"
           i18n={i18n}
           isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
+          isRefreshingWatchlistCache={isRefreshingWatchlistCache}
           isSavingNote={isSavingResearchNote}
           isSavingWatchlist={isSavingWatchlist}
           isSavingWorkspace={isSavingResearchWorkspace}
           onRefreshCache={refreshSelectedMarketCache}
+          onRefreshWatchlistCache={refreshWatchlistMarketCache}
           onSaveNote={saveCurrentResearchNote}
           onSaveWatchlist={saveCurrentWatchlist}
           onSaveWorkspace={saveCurrentResearchWorkspace}
@@ -6074,10 +6076,12 @@ function ResearchContextReadinessPanel({
   className,
   i18n,
   isRefreshingCache = false,
+  isRefreshingWatchlistCache = false,
   isSavingNote = false,
   isSavingWatchlist = false,
   isSavingWorkspace = false,
   onRefreshCache,
+  onRefreshWatchlistCache,
   onSaveNote,
   onSaveWatchlist,
   onSaveWorkspace,
@@ -6087,10 +6091,12 @@ function ResearchContextReadinessPanel({
   className?: string;
   i18n: AppI18n;
   isRefreshingCache?: boolean;
+  isRefreshingWatchlistCache?: boolean;
   isSavingNote?: boolean;
   isSavingWatchlist?: boolean;
   isSavingWorkspace?: boolean;
   onRefreshCache?: () => void;
+  onRefreshWatchlistCache?: () => void;
   onSaveNote?: () => void;
   onSaveWatchlist?: () => void;
   onSaveWorkspace?: () => void;
@@ -6127,6 +6133,7 @@ function ResearchContextReadinessPanel({
                     disabled={isResearchContextActionDisabled(
                       action,
                       isRefreshingCache,
+                      isRefreshingWatchlistCache,
                       isSavingNote,
                       isSavingWatchlist,
                       isSavingWorkspace
@@ -6135,6 +6142,7 @@ function ResearchContextReadinessPanel({
                       runResearchContextReadinessAction(
                         action,
                         onRefreshCache,
+                        onRefreshWatchlistCache,
                         onSaveNote,
                         onSaveWatchlist,
                         onSaveWorkspace
@@ -6146,6 +6154,7 @@ function ResearchContextReadinessPanel({
                       i18n,
                       action,
                       isRefreshingCache,
+                      isRefreshingWatchlistCache,
                       isSavingNote,
                       isSavingWatchlist,
                       isSavingWorkspace
@@ -6180,6 +6189,7 @@ function researchContextReadinessActionLabel(
   i18n: AppI18n,
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   isRefreshingCache: boolean,
+  isRefreshingWatchlistCache: boolean,
   isSavingNote: boolean,
   isSavingWatchlist: boolean,
   isSavingWorkspace: boolean
@@ -6189,6 +6199,12 @@ function researchContextReadinessActionLabel(
       return i18n.locale === "zh-CN" ? "刷新中" : "Refreshing";
     }
     return i18n.locale === "zh-CN" ? "刷新缓存" : "Refresh cache";
+  }
+  if (action === "refresh-watchlist-cache") {
+    if (isRefreshingWatchlistCache) {
+      return i18n.locale === "zh-CN" ? "刷新中" : "Refreshing";
+    }
+    return i18n.locale === "zh-CN" ? "刷新自选缓存" : "Refresh watchlist";
   }
   if (action === "save-workspace") {
     if (isSavingWorkspace) {
@@ -6211,12 +6227,16 @@ function researchContextReadinessActionLabel(
 function isResearchContextActionDisabled(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   isRefreshingCache: boolean,
+  isRefreshingWatchlistCache: boolean,
   isSavingNote: boolean,
   isSavingWatchlist: boolean,
   isSavingWorkspace: boolean
 ): boolean {
   if (action === "refresh-cache") {
     return isRefreshingCache;
+  }
+  if (action === "refresh-watchlist-cache") {
+    return isRefreshingWatchlistCache;
   }
   if (action === "save-workspace") {
     return isSavingWorkspace;
@@ -6230,12 +6250,17 @@ function isResearchContextActionDisabled(
 function runResearchContextReadinessAction(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   onRefreshCache?: () => void,
+  onRefreshWatchlistCache?: () => void,
   onSaveNote?: () => void,
   onSaveWatchlist?: () => void,
   onSaveWorkspace?: () => void
 ): void {
   if (action === "refresh-cache") {
     onRefreshCache?.();
+    return;
+  }
+  if (action === "refresh-watchlist-cache") {
+    onRefreshWatchlistCache?.();
     return;
   }
   if (action === "save-workspace") {

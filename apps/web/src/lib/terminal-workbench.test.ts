@@ -557,20 +557,20 @@ describe("terminal workbench model", () => {
       detail: "Run watchlist cache refresh for ASHARE · 600000 · 1d before relying on this context.",
       status: "review",
       tone: "warning",
-      action: "refresh-cache"
+      action: "refresh-watchlist-cache"
     });
     expect(buildResearchPipelinePreflight(rows)).toMatchObject({
       status: "review",
       canRun: true,
       requiresConfirmation: true,
       summary: "Review 1 research context gate before running the pipeline.",
-      primaryAction: "refresh-cache",
+      primaryAction: "refresh-watchlist-cache",
       issues: [
         {
           id: "refresh",
           label: "Refresh evidence",
           status: "review",
-          action: "refresh-cache"
+          action: "refresh-watchlist-cache"
         }
       ]
     });

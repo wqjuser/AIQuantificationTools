@@ -2147,7 +2147,12 @@ export interface ResearchContextReadinessInput {
   note?: ResearchContextReadinessNoteInput | null;
 }
 
-export type ResearchContextReadinessAction = "refresh-cache" | "save-note" | "save-watchlist" | "save-workspace";
+export type ResearchContextReadinessAction =
+  | "refresh-cache"
+  | "refresh-watchlist-cache"
+  | "save-note"
+  | "save-watchlist"
+  | "save-workspace";
 
 export interface ResearchContextReadinessRow {
   id: "instrument" | "watchlist" | "klines" | "cache" | "refresh" | "note" | "workspace";
@@ -6320,7 +6325,7 @@ function buildRefreshEvidenceReadinessRow(
       detail: `Run watchlist cache refresh for ${context} before relying on this context.`,
       status: "review",
       tone: "warning",
-      action: "refresh-cache"
+      action: "refresh-watchlist-cache"
     };
   }
 
@@ -6347,7 +6352,7 @@ function buildRefreshEvidenceReadinessRow(
         )}`,
     status: isReady ? "ready" : "review",
     tone: isReady ? "positive" : "warning",
-    action: isReady ? undefined : "refresh-cache"
+    action: isReady ? undefined : "refresh-watchlist-cache"
   };
 }
 
