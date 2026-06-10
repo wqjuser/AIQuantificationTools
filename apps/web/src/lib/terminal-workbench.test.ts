@@ -72,6 +72,7 @@ import {
   resolveQuantLoopSelection,
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
+  researchWorkspaceStateMatchesDraft,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
   buildResearchContextEvidenceRows,
@@ -81,6 +82,8 @@ import {
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
   buildResearchWorkspaceStateDraft,
+  workspaceWithSavedResearchWorkspaceState,
+  workspaceWithAppliedResearchWorkspaceState,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -236,6 +239,73 @@ describe("terminal workbench model", () => {
       workspaceId: "research"
     });
     expect(buildResearchWorkspaceStateDraft(workspace, "execution").workspaceId).toBe("research");
+  });
+
+  test("detects whether the current Stage 1 research workspace state is saved", () => {
+    const workspace = workspaceWithSelectedTimeframe(buildTerminalWorkspace(), "1d");
+    const draft = buildResearchWorkspaceStateDraft(workspace, "research");
+
+    expect(
+      researchWorkspaceStateMatchesDraft(
+        {
+          ...draft,
+          name: "Saved display name can drift",
+          updatedAt: "2026-06-10T00:00:00+00:00"
+        },
+        draft
+      )
+    ).toBe(true);
+    expect(
+      researchWorkspaceStateMatchesDraft(
+        {
+          ...draft,
+          timeframe: "5m",
+          updatedAt: "2026-06-10T00:00:00+00:00"
+        },
+        draft
+      )
+    ).toBe(false);
+    expect(researchWorkspaceStateMatchesDraft(null, draft)).toBe(false);
+  });
+
+  test("merges a saved Stage 1 research workspace state snapshot without changing context", () => {
+    const workspace = workspaceWithSelectedTimeframe(buildTerminalWorkspace(), "5m");
+    const merged = workspaceWithSavedResearchWorkspaceState(workspace, {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "5m",
+      workspaceId: "research",
+      updatedAt: "2026-06-10T00:00:00+00:00"
+    });
+
+    expect(merged.selectedInstrument).toEqual(workspace.selectedInstrument);
+    expect(merged.selectedTimeframe).toBe("5m");
+    expect(merged.researchWorkspaceState?.updatedAt).toBe("2026-06-10T00:00:00+00:00");
+  });
+
+  test("applies a saved Stage 1 research workspace state to the selected context", () => {
+    const workspace: TerminalWorkspace = {
+      ...buildTerminalWorkspace(),
+      researchWorkspaceState: {
+        market: "crypto",
+        symbol: "BTC/USDT",
+        name: "Bitcoin",
+        timeframe: "5m",
+        workspaceId: "research",
+        updatedAt: "2026-06-10T00:00:00+00:00"
+      }
+    };
+    const restored = workspaceWithAppliedResearchWorkspaceState(workspace);
+
+    expect(restored.selectedInstrument).toMatchObject({
+      market: "crypto",
+      symbol: "BTC/USDT",
+      name: "Bitcoin"
+    });
+    expect(restored.selectedTimeframe).toBe("5m");
+    expect(restored.researchWorkspaceState?.symbol).toBe("BTC/USDT");
+    expect(restored.watchlist.some((instrument) => instrument.market === "crypto" && instrument.symbol === "BTC/USDT")).toBe(true);
   });
 
   test("resolves the saved Stage 1 work area from workspace state", () => {

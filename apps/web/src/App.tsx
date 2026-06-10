@@ -21,7 +21,7 @@ import {
   X
 } from "lucide-react";
 import { ActionType, dispose, init, LoadDataType, type Chart, type KLineData } from "klinecharts";
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import {
   buildLoadingMarketKlinesResult,
   loadGoldenPathStatus,
@@ -192,6 +192,7 @@ import {
   buildResearchRunContextBinding,
   buildResearchRunComparisonRows,
   buildResearchWorkspaceStateDraft,
+  researchWorkspaceStateMatchesDraft,
   buildResearchRunExportBrowserRows,
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
@@ -322,7 +323,9 @@ import {
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
   workspaceWithBacktestParameterCandidate,
+  workspaceWithAppliedResearchWorkspaceState,
   workspaceWithPreservedInteractiveState,
+  workspaceWithSavedResearchWorkspaceState,
   workspaceWithSavedWatchlist,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
@@ -849,6 +852,20 @@ export function App() {
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
   const activeWorkflowAccent = activeWorkArea?.accent ?? workflowAccentByStep[activeLoopStep?.id ?? "research"] ?? "market";
   const canSaveResearchWorkspace = activeWorkAreaId === "market" || activeWorkAreaId === "research";
+  const currentResearchWorkspaceStateDraft = useMemo(
+    () => buildResearchWorkspaceStateDraft(workspace, activeWorkAreaId),
+    [
+      activeWorkAreaId,
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.name,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
+    ]
+  );
+  const isResearchWorkspaceSaved = researchWorkspaceStateMatchesDraft(
+    workspace.researchWorkspaceState,
+    currentResearchWorkspaceStateDraft
+  );
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
@@ -1519,23 +1536,27 @@ export function App() {
     const startedSelectionVersion = manualSelectionVersionRef.current;
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
+    const restoredResult = {
+      ...result,
+      workspace: workspaceWithAppliedResearchWorkspaceState(result.workspace)
+    };
     const shouldConsiderSavedWorkArea = !savedResearchWorkspaceSelectionAppliedRef.current;
     const shouldApplySavedWorkArea =
       shouldConsiderSavedWorkArea && manualSelectionVersionRef.current === startedSelectionVersion;
     setWorkspaceState((current) => {
       if (manualSelectionVersionRef.current === startedSelectionVersion) {
-        return result;
+        return restoredResult;
       }
       return {
-        ...result,
-        workspace: workspaceWithPreservedInteractiveState(result.workspace, current.workspace),
+        ...restoredResult,
+        workspace: workspaceWithPreservedInteractiveState(restoredResult.workspace, current.workspace),
         statusLabel: current.statusLabel
       };
     });
     if (shouldConsiderSavedWorkArea) {
       savedResearchWorkspaceSelectionAppliedRef.current = true;
       if (shouldApplySavedWorkArea) {
-        const selection = resolveSavedResearchWorkspaceSelection(result.workspace, "research");
+        const selection = resolveSavedResearchWorkspaceSelection(restoredResult.workspace, "research");
         setActiveWorkAreaId(selection.areaId);
         setActiveLoopStepId(selection.quantLoopStepId);
         setActiveWorkflowStageId(selection.workflowStageId);
@@ -3348,16 +3369,19 @@ export function App() {
     setIsSavingResearchWorkspace(true);
     const result = await saveResearchWorkspaceState(
       quantCoreBaseUrl,
-      buildResearchWorkspaceStateDraft(workspace, activeWorkAreaId)
+      currentResearchWorkspaceStateDraft
     );
     setWorkspaceState((current) => ({
-      ...current,
+      workspace:
+        result.source === "core" && result.state
+          ? workspaceWithSavedResearchWorkspaceState(current.workspace, result.state)
+          : current.workspace,
       source: result.source,
       statusLabel: result.source === "core" ? "Research workspace saved" : "Research workspace save failed",
       error: result.error
     }));
     setIsSavingResearchWorkspace(false);
-  }, [activeWorkAreaId, workspace]);
+  }, [currentResearchWorkspaceStateDraft]);
 
   const loadSavedStrategyVersion = useCallback((strategy: StrategyLibraryItem) => {
     manualSelectionVersionRef.current += 1;
@@ -4441,13 +4465,29 @@ export function App() {
             <div className="module-focus-actions">
               {canSaveResearchWorkspace ? (
                 <button
-                  className="compact-action"
+                  className={`compact-action research-workspace-save-action ${
+                    isResearchWorkspaceSaved ? "saved" : "dirty"
+                  }`}
                   disabled={isSavingResearchWorkspace}
                   onClick={saveCurrentResearchWorkspace}
+                  title={
+                    isResearchWorkspaceSaved
+                      ? i18n.t("researchWorkspace.savedDetail")
+                      : i18n.t("researchWorkspace.unsavedDetail")
+                  }
                   type="button"
                 >
                   {isSavingResearchWorkspace ? <RefreshCw className="spin" size={15} /> : <Save size={15} />}
-                  {i18n.t("action.saveResearchWorkspace")}
+                  <span>
+                    {isResearchWorkspaceSaved
+                      ? i18n.t("action.saveResearchWorkspace")
+                      : i18n.t("action.saveResearchWorkspaceChanges")}
+                  </span>
+                  <em>
+                    {isResearchWorkspaceSaved
+                      ? i18n.t("researchWorkspace.saved")
+                      : i18n.t("researchWorkspace.unsaved")}
+                  </em>
                 </button>
               ) : null}
               <button

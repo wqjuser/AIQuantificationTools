@@ -11572,11 +11572,51 @@ export function workspaceWithSavedWatchlist(
   };
 }
 
+export function workspaceWithSavedResearchWorkspaceState(
+  currentWorkspace: TerminalWorkspace,
+  savedState: ResearchWorkspaceStateSnapshot
+): TerminalWorkspace {
+  return {
+    ...currentWorkspace,
+    researchWorkspaceState: savedState
+  };
+}
+
 export function workspaceWithSelectedTimeframe(
   currentWorkspace: TerminalWorkspace,
   timeframe: Timeframe
 ): TerminalWorkspace {
   return freshResearchContext(currentWorkspace, currentWorkspace.selectedInstrument, timeframe);
+}
+
+export function workspaceWithAppliedResearchWorkspaceState(currentWorkspace: TerminalWorkspace): TerminalWorkspace {
+  const savedState = currentWorkspace.researchWorkspaceState;
+  if (!savedState) {
+    return currentWorkspace;
+  }
+  const savedInstrument =
+    currentWorkspace.watchlist.find(
+      (instrument) => instrument.market === savedState.market && instrument.symbol === savedState.symbol
+    ) ?? {
+      market: savedState.market,
+      symbol: savedState.symbol,
+      name: savedState.name || savedState.symbol,
+      changePct: 0
+    };
+  const sameInstrument =
+    currentWorkspace.selectedInstrument.market === savedInstrument.market &&
+    currentWorkspace.selectedInstrument.symbol === savedInstrument.symbol;
+  const instrumentWorkspace = sameInstrument
+    ? currentWorkspace
+    : workspaceWithSelectedInstrument(currentWorkspace, savedInstrument);
+  const timeframeWorkspace =
+    instrumentWorkspace.selectedTimeframe === savedState.timeframe
+      ? instrumentWorkspace
+      : workspaceWithSelectedTimeframe(instrumentWorkspace, savedState.timeframe);
+  return {
+    ...timeframeWorkspace,
+    researchWorkspaceState: savedState
+  };
 }
 
 export function buildResearchWorkspaceStateDraft(
@@ -11592,6 +11632,19 @@ export function buildResearchWorkspaceStateDraft(
     timeframe: workspace.selectedTimeframe,
     workspaceId
   };
+}
+
+export function researchWorkspaceStateMatchesDraft(
+  savedState: ResearchWorkspaceStateSnapshot | null | undefined,
+  draft: ResearchWorkspaceStateDraft
+): boolean {
+  return Boolean(
+    savedState &&
+      savedState.market === draft.market &&
+      savedState.symbol === draft.symbol &&
+      savedState.timeframe === draft.timeframe &&
+      savedState.workspaceId === draft.workspaceId
+  );
 }
 
 export function resolveSavedResearchWorkspaceId(

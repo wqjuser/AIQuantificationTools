@@ -815,10 +815,15 @@ h2 {
 .watchlist-save-action {
   grid-column: 1 / -1;
   justify-self: end;
+}
+
+.watchlist-save-action,
+.research-workspace-save-action {
   gap: 7px;
 }
 
-.watchlist-save-action em {
+.watchlist-save-action em,
+.research-workspace-save-action em {
   border: 1px solid #2b6f62;
   border-radius: 999px;
   color: #71dfc5;
@@ -828,12 +833,14 @@ h2 {
   padding: 3px 6px;
 }
 
-.watchlist-save-action.dirty {
+.watchlist-save-action.dirty,
+.research-workspace-save-action.dirty {
   border-color: #8a6a2d;
   background: #261f12;
 }
 
-.watchlist-save-action.dirty em {
+.watchlist-save-action.dirty em,
+.research-workspace-save-action.dirty em {
   border-color: #8a6a2d;
   color: #e8be62;
 }
@@ -855,12 +862,24 @@ em {
 }
 
 .terminal-overview-grid .module-focus-card {
+  align-items: stretch;
+  flex-direction: column;
+  justify-content: center;
   min-height: 42px;
   padding: 7px 9px;
 }
 
+.terminal-overview-grid .module-focus-actions {
+  justify-content: flex-start;
+  max-width: 100%;
+}
+
+.terminal-overview-grid .module-focus-actions .compact-action,
+.terminal-overview-grid .module-focus-actions .run-button.compact {
+  flex: 1 1 100%;
+}
+
 .terminal-overview-grid .module-focus-card .run-button.compact {
-  flex: 0 0 auto;
   min-width: 82px;
   white-space: nowrap;
 }
