@@ -9327,6 +9327,7 @@ function researchExportPreviewLabel(i18n: AppI18n, row: ResearchRunExportPreview
     {
       "research-run": "研究运行",
       "data-snapshot": "数据快照",
+      "market-calendar": "交易日历",
       "preparation-evidence": "准备证据",
       "strategy-config": "策略配置",
       "research-note": "研究笔记",
@@ -9416,6 +9417,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       package: "导出包",
       integrity: "完整性",
       data: "数据快照",
+      "market-calendar": "交易日历",
       "preparation-evidence": "准备证据",
       backtest: "回测回放",
       "backtest-report": "回测报告",
@@ -9527,6 +9529,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       context: "市场 / 标的",
       timeframe: "周期",
       "data-snapshot": "数据快照",
+      "market-calendar": "交易日历",
       "preparation-evidence": "准备证据",
       "strategy-revision": "策略版本",
       "research-note": "研究笔记",

@@ -570,6 +570,7 @@ export interface ResearchRunExportPreviewRow {
   id:
     | "research-run"
     | "data-snapshot"
+    | "market-calendar"
     | "preparation-evidence"
     | "strategy-config"
     | "research-note"
@@ -1011,6 +1012,7 @@ export interface ResearchRunExportBrowserRow {
     | "package"
     | "integrity"
     | "data"
+    | "market-calendar"
     | "preparation-evidence"
     | "backtest"
     | "backtest-report"
@@ -1058,6 +1060,7 @@ export interface ResearchRunImportDiffRow {
     | "context"
     | "timeframe"
     | "data-snapshot"
+    | "market-calendar"
     | "preparation-evidence"
     | "strategy-revision"
     | "research-note"
@@ -3954,6 +3957,7 @@ export function buildResearchRunExportPreviewRows({
   const runId = run?.runId ?? "pending-run";
   const dataSnapshot = run?.dataSnapshot ?? null;
   const preparationEvidence = dataSnapshot?.preparationEvidence ?? null;
+  const marketCalendar = dataSnapshot?.marketCalendar ?? null;
   const researchNote = normalizedResearchNote(run?.researchNote);
   const activePaperExecution = run && paperExecution?.runId === run.runId ? paperExecution : null;
   const activePromotionCandidate =
@@ -4004,6 +4008,20 @@ export function buildResearchRunExportPreviewRows({
           : run
             ? "warning"
             : "risk"
+    },
+    {
+      id: "market-calendar",
+      label: "Market calendar",
+      status: marketCalendar ? "ready" : run ? "missing" : "blocked",
+      count: marketCalendar ? `${marketCalendar.status} · ${marketCalendar.session}` : "missing",
+      anchor: marketCalendar ? `marketCalendar:${marketCalendar.market}:${marketCalendar.tradingDay}` : `marketCalendar:${runId}:missing`,
+      exportPath: "researchRun.dataSnapshot.marketCalendar",
+      detail: marketCalendar
+        ? formatMarketCalendarEvidenceDetail(marketCalendar)
+        : run
+          ? "The audited run did not include market calendar evidence."
+          : "Run Pipeline before market calendar evidence can be exported.",
+      tone: marketCalendar ? marketCalendarEvidenceTone(marketCalendar) : run ? "warning" : "risk"
     },
     {
       id: "preparation-evidence",
@@ -4189,6 +4207,7 @@ export function buildResearchRunExportBrowserRows(
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
   const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
   const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
+  const marketCalendar = exportPackage.researchRun?.dataSnapshot?.marketCalendar ?? null;
   const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
   const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
   const integrityHash = exportPackage.integrity?.hash ?? "";
@@ -4277,6 +4296,17 @@ export function buildResearchRunExportBrowserRows(
       detail: `${exportPackage.manifest.dataHash || "missing hash"} · ${exportPackage.manifest.market}`,
       exportPath: "manifest.artifactCounts.bars",
       tone: dataIsReady ? "positive" : "risk"
+    },
+    {
+      id: "market-calendar",
+      label: "Market calendar",
+      status: marketCalendar ? "ready" : "missing",
+      value: marketCalendar ? `${marketCalendar.status} · ${marketCalendar.session}` : "No market calendar evidence",
+      detail: marketCalendar
+        ? formatMarketCalendarEvidenceDetail(marketCalendar)
+        : "Package research run does not include market calendar evidence.",
+      exportPath: "researchRun.dataSnapshot.marketCalendar",
+      tone: marketCalendar ? marketCalendarEvidenceTone(marketCalendar) : "neutral"
     },
     {
       id: "preparation-evidence",
@@ -4540,6 +4570,8 @@ export function buildResearchRunExportIndexRows(
       const integrityHash = exportPackage.integrity?.hash ?? "";
       const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
       const preparationEvidenceArtifact = preparationEvidence ? `prep ${preparationEvidence.runId}` : null;
+      const marketCalendar = exportPackage.researchRun?.dataSnapshot?.marketCalendar ?? null;
+      const marketCalendarArtifact = marketCalendar ? `calendar ${marketCalendar.status}/${marketCalendar.session}` : null;
       const auditReport = exportPackage.auditReport;
       const auditReportHash = auditReport?.contentSha256.hash ?? "";
       const auditReportIsReady =
@@ -4635,6 +4667,7 @@ export function buildResearchRunExportIndexRows(
         artifacts: [
           `${artifactCounts.bars} bars`,
           `${artifactCounts.trades} trades`,
+          marketCalendarArtifact,
           preparationEvidenceArtifact,
           `${artifactCounts.portfolioPaperOrderBatches ?? 0} portfolio batches`,
           `${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals`,
@@ -4760,6 +4793,24 @@ export function buildResearchRunImportDiffRows({
   const incomingNote = normalizedResearchNote(incomingRun?.researchNote);
   const currentPreparationEvidence = currentRun?.dataSnapshot?.preparationEvidence ?? null;
   const incomingPreparationEvidence = incomingRun?.dataSnapshot?.preparationEvidence ?? null;
+  const currentMarketCalendar = currentRun?.dataSnapshot?.marketCalendar ?? null;
+  const incomingMarketCalendar = incomingRun?.dataSnapshot?.marketCalendar ?? null;
+  const currentMarketCalendarDetail = currentMarketCalendar
+    ? formatMarketCalendarEvidenceDetail(currentMarketCalendar)
+    : "No market calendar evidence";
+  const incomingMarketCalendarDetail = incomingMarketCalendar
+    ? formatMarketCalendarEvidenceDetail(incomingMarketCalendar)
+    : "No package market calendar evidence";
+  const marketCalendarStatus: ResearchRunImportDiffStatus =
+    currentMarketCalendar && incomingMarketCalendar
+      ? currentMarketCalendarDetail === incomingMarketCalendarDetail
+        ? "same"
+        : "change"
+      : incomingMarketCalendar
+        ? "add"
+        : currentMarketCalendar
+          ? "change"
+          : "same";
   const currentPreparationEvidenceDetail = currentPreparationEvidence
     ? formatPreparationEvidenceDetail(currentPreparationEvidence)
     : "No locked preparation evidence";
@@ -4939,6 +4990,24 @@ export function buildResearchRunImportDiffRows({
         currentRun?.dataSnapshot?.hash && currentRun.dataSnapshot.hash === exportPackage.manifest.dataHash
           ? "positive"
           : "warning"
+    },
+    {
+      id: "market-calendar",
+      label: "Market calendar",
+      status: marketCalendarStatus,
+      current: currentMarketCalendarDetail,
+      incoming: incomingMarketCalendarDetail,
+      detail: incomingMarketCalendar
+        ? marketCalendarStatus === "same"
+          ? "Market calendar evidence already matches the package snapshot."
+          : currentMarketCalendar
+            ? "Import will replace market calendar evidence used to review the audited snapshot."
+            : "Import will add market calendar evidence for the audited snapshot."
+        : currentMarketCalendar
+          ? "Package does not include market calendar evidence; import will replace the current replay context without it."
+          : "Neither current workspace nor package includes market calendar evidence.",
+      exportPath: "researchRun.dataSnapshot.marketCalendar",
+      tone: marketCalendarStatus === "same" ? (incomingMarketCalendar ? "positive" : "neutral") : "warning"
     },
     {
       id: "preparation-evidence",
@@ -10918,6 +10987,23 @@ function formatPreparationEvidenceDetail(evidence: ResearchRunDataPreparationEvi
     `${evidence.quality.source} ${evidence.quality.isComplete ? "complete" : "review"}`,
     `${evidence.upsertedRows} rows cached`
   ].join(" · ");
+}
+
+function formatMarketCalendarEvidenceDetail(calendar: ResearchContextMarketCalendar): string {
+  const warnings = calendar.warnings.filter((warning) => warning.trim());
+  return [
+    calendar.market,
+    calendar.timezone,
+    `${calendar.status}/${calendar.session}`,
+    marketCalendarNextEventDetail(calendar),
+    warnings[0] ?? calendar.source,
+    formatWarningCount(warnings.length)
+  ].join(" · ");
+}
+
+function marketCalendarEvidenceTone(calendar: ResearchContextMarketCalendar): "positive" | "warning" {
+  const hasWarnings = calendar.warnings.some((warning) => warning.trim());
+  return (calendar.status === "open" || calendar.status === "always_open") && !hasWarnings ? "positive" : "warning";
 }
 
 function parsePercentMetric(value: string): number | null {

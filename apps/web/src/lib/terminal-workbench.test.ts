@@ -128,6 +128,7 @@ import {
   type ResearchRunExportBrowserRow,
   type ResearchRunExportIndexRow,
   type ResearchRunExportBrowserPackage,
+  type ResearchContextMarketCalendar,
   type ResearchRunImportAuditEvent,
   type ResearchRunImportDiffRow,
   type ResearchRunAudit,
@@ -3323,6 +3324,7 @@ describe("terminal workbench model", () => {
     );
     expect(filterResearchRunExportPreviewRows(rows, "snapshot").map((row) => row.id)).toEqual([
       "data-snapshot",
+      "market-calendar",
       "preparation-evidence"
     ]);
     expect(filterResearchRunExportPreviewRows(rows, "cache-refresh-export-preview").map((row) => row.id)).toEqual([
@@ -3722,6 +3724,159 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportBrowserRows(rows, "local-audit-key").map((row) => row.id)).toEqual([
       "backtest-report",
       "audit-report"
+    ]);
+  });
+
+  test("surfaces market calendar export evidence across preview browser index and import diff", () => {
+    const marketCalendar = {
+      market: "ashare",
+      timezone: "Asia/Shanghai",
+      status: "open",
+      isOpen: true,
+      session: "morning",
+      asOf: "2026-06-11T10:15:00+08:00",
+      tradingDay: "2026-06-11",
+      nextOpen: null,
+      nextClose: "2026-06-11T11:30:00+08:00",
+      detail: "A-share morning session is open.",
+      warnings: [],
+      source: "static-session-template"
+    } satisfies ResearchContextMarketCalendar;
+    const researchRunAudit = {
+      runId: "run-calendar-export",
+      createdAt: "2026-06-11T02:15:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Calendar evidence SMA",
+      strategyRevision: "rev-calendar-export",
+      dataRows: 240,
+      metrics: { total_return_pct: 4.2, max_drawdown_pct: 2.1, win_rate_pct: 52, trade_count: 8 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T02:15:00+00:00",
+        hash: "snapshot-calendar-export",
+        bars: [],
+        marketCalendar
+      },
+      backtestTrades: [],
+      backtestEquityCurve: []
+    } satisfies ResearchRunAudit;
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), researchRunAudit);
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-06-11T02:20:00+00:00",
+      integrity: { algorithm: "sha256", hash: "a".repeat(64) },
+      manifest: {
+        runId: "run-calendar-export",
+        createdAt: "2026-06-11T02:15:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-calendar-export",
+        dataHash: "snapshot-calendar-export",
+        dataRows: 240,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 240,
+          trades: 0,
+          equityPoints: 0,
+          decisions: 0,
+          aiRisks: 0,
+          paperExecutions: 0,
+          portfolioPaperOrderBatches: 0,
+          portfolioPaperOrderApprovals: 0,
+          portfolioPaperOrderSimulations: 0,
+          promotionCandidates: 0,
+          researchNotes: 0,
+          aiReviewRuns: 0
+        }
+      },
+      researchRun: researchRunAudit,
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: []
+      }
+    } satisfies ResearchRunExportBrowserPackage;
+
+    const previewRows = buildResearchRunExportPreviewRows({ workspace });
+    const browserRows = buildResearchRunExportBrowserRows(exportPackage);
+    const indexRows = buildResearchRunExportIndexRows([exportPackage]);
+    const importRows = buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage });
+
+    expect(previewRows).toEqual(
+      expect.arrayContaining<ResearchRunExportPreviewRow>([
+        expect.objectContaining({
+          id: "market-calendar",
+          label: "Market calendar",
+          status: "ready",
+          count: "open · morning",
+          anchor: "marketCalendar:ashare:2026-06-11",
+          exportPath: "researchRun.dataSnapshot.marketCalendar",
+          detail:
+            "ashare · Asia/Shanghai · open/morning · next close 2026-06-11T11:30:00+08:00 · static-session-template · 0 warnings",
+          tone: "positive"
+        })
+      ])
+    );
+    expect(browserRows).toEqual(
+      expect.arrayContaining<ResearchRunExportBrowserRow>([
+        expect.objectContaining({
+          id: "market-calendar",
+          status: "ready",
+          value: "open · morning",
+          detail:
+            "ashare · Asia/Shanghai · open/morning · next close 2026-06-11T11:30:00+08:00 · static-session-template · 0 warnings",
+          exportPath: "researchRun.dataSnapshot.marketCalendar",
+          tone: "positive"
+        })
+      ])
+    );
+    expect(indexRows).toEqual(
+      expect.arrayContaining<ResearchRunExportIndexRow>([
+        expect.objectContaining({
+          id: "run-calendar-export",
+          artifacts: expect.stringContaining("calendar open/morning")
+        })
+      ])
+    );
+    expect(importRows).toEqual(
+      expect.arrayContaining<ResearchRunImportDiffRow>([
+        expect.objectContaining({
+          id: "market-calendar",
+          status: "add",
+          current: "No market calendar evidence",
+          incoming:
+            "ashare · Asia/Shanghai · open/morning · next close 2026-06-11T11:30:00+08:00 · static-session-template · 0 warnings",
+          exportPath: "researchRun.dataSnapshot.marketCalendar",
+          tone: "warning"
+        })
+      ])
+    );
+
+    expect(filterResearchRunExportPreviewRows(previewRows, "static-session-template").map((row) => row.id)).toEqual([
+      "market-calendar"
+    ]);
+    expect(filterResearchRunExportBrowserRows(browserRows, "marketCalendar").map((row) => row.id)).toEqual([
+      "market-calendar"
+    ]);
+    expect(filterResearchRunExportIndexRows(indexRows, "morning").map((row) => row.id)).toEqual([
+      "run-calendar-export"
+    ]);
+    expect(filterResearchRunImportDiffRows(importRows, "next close").map((row) => row.id)).toEqual([
+      "market-calendar"
     ]);
   });
 
