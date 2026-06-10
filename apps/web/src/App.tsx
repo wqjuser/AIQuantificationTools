@@ -4951,6 +4951,24 @@ function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
   ) {
     return "当前上下文没有可用 K 线缓存，先刷新行情数据后再运行审计研究。";
   }
+  const missingRefreshEvidence = detail.match(
+    /^(\d+) fresh cached K-line rows are available, but no matching watchlist cache refresh evidence covers (.+)\. Refresh watchlist cache before audited research\.$/
+  );
+  if (missingRefreshEvidence) {
+    return `${missingRefreshEvidence[1]} 根新鲜 K 线缓存可用，但 ${missingRefreshEvidence[2]} 还没有匹配的自选刷新证据；先刷新自选缓存后再运行审计研究。`;
+  }
+  const readyRefreshEvidence = detail.match(
+    /^(\d+) fresh cached K-line rows are available\. Matching watchlist cache refresh evidence (.+) confirms (\d+) rows from (.+)\.$/
+  );
+  if (readyRefreshEvidence) {
+    return `${readyRefreshEvidence[1]} 根新鲜 K 线缓存可用，自选刷新证据 ${readyRefreshEvidence[2]} 已确认 ${readyRefreshEvidence[3]} 行来自 ${readyRefreshEvidence[4]}。`;
+  }
+  const reviewRefreshEvidence = detail.match(
+    /^(\d+) fresh cached K-line rows are available, but watchlist cache refresh evidence (.+) requires review: (.+)\. Refresh watchlist cache before audited research\.$/
+  );
+  if (reviewRefreshEvidence) {
+    return `${reviewRefreshEvidence[1]} 根新鲜 K 线缓存可用，但自选刷新证据 ${reviewRefreshEvidence[2]} 需要复核：${reviewRefreshEvidence[3]}；先刷新自选缓存后再运行审计研究。`;
+  }
   return detail;
 }
 

@@ -1537,6 +1537,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         settings=self._settings_status_payload(),
                         runs=context_runs,
                         paper_executions=paper_executions,
+                        watchlist_refreshes=self.watchlist_cache_refresh_store.list_recent(limit=10),
                     )
                 }
             )

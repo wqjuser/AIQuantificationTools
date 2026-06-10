@@ -6079,6 +6079,105 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspaces["market"]["status"], "needs_run")
         self.assertEqual(workspaces["market"]["reason"], expected_detail)
 
+    def test_golden_path_status_marks_fresh_cache_review_without_matching_refresh_evidence(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[],
+            paper_executions=[],
+            watchlist_refreshes=[],
+        )
+
+        expected_detail = (
+            "500 fresh cached K-line rows are available, but no matching watchlist cache refresh evidence covers "
+            "ASHARE · 600000 · 1d. Refresh watchlist cache before audited research."
+        )
+        self.assertEqual(status["status"], "review")
+        self.assertEqual(status["currentStepId"], "market-data")
+        self.assertEqual(status["nextAction"]["id"], "refresh-data")
+        self.assertEqual(status["nextAction"]["reason"], expected_detail)
+        self.assertEqual(status["steps"][0]["status"], "review")
+        self.assertEqual(status["steps"][0]["detail"], expected_detail)
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertEqual(runbook_by_step["market-data"]["blocker"], expected_detail)
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "needs_run")
+        self.assertEqual(workspaces["market"]["reason"], expected_detail)
+
+    def test_golden_path_status_passes_with_matching_refresh_evidence(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[],
+            paper_executions=[],
+            watchlist_refreshes=[
+                {
+                    "runId": "cache-refresh-ready",
+                    "createdAt": "2026-06-10T06:00:00+00:00",
+                    "items": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "name": "浦发银行",
+                            "timeframe": "1d",
+                            "status": "refreshed",
+                            "upsertedRows": 240,
+                            "quality": {"source": "tencent", "isComplete": True, "warnings": [], "rows": 240},
+                            "error": None,
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertEqual(status["status"], "blocked")
+        self.assertEqual(status["currentStepId"], "research-run")
+        self.assertEqual(status["nextAction"]["id"], "run-pipeline")
+        self.assertEqual(status["steps"][0]["status"], "passed")
+        self.assertEqual(
+            status["steps"][0]["detail"],
+            "500 fresh cached K-line rows are available. Matching watchlist cache refresh evidence cache-refresh-ready confirms 240 rows from tencent.",
+        )
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertIsNone(runbook_by_step["market-data"]["blocker"])
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "ready")
+        self.assertEqual(workspaces["research"]["actionId"], "run-pipeline")
+
     def test_golden_path_status_advances_to_paper_execution_after_audited_ai_run(self):
         from quant_core.golden_path import build_golden_path_status
         from quant_core.runs import ResearchRunAudit
@@ -6193,7 +6292,12 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
-        from quant_core.domain import OHLCVBar
+        from quant_core.cache_refresh_runs import (
+            WatchlistCacheRefreshItem,
+            WatchlistCacheRefreshRunStore,
+            create_watchlist_cache_refresh_run,
+        )
+        from quant_core.domain import DataQuality, OHLCVBar
         from quant_core.execution import PaperExecutionStore
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
 
@@ -6264,6 +6368,27 @@ class QuantCoreContractTest(unittest.TestCase):
             )
             research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
             paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+            refresh_store.record(
+                create_watchlist_cache_refresh_run(
+                    run_id="cache-refresh-golden-api",
+                    created_at=datetime(2026, 6, 10, 6, 0, tzinfo=timezone.utc),
+                    timeframe="1d",
+                    requested_limit=240,
+                    items=[
+                        WatchlistCacheRefreshItem(
+                            market="ashare",
+                            symbol="600000",
+                            name="浦发银行",
+                            timeframe="1d",
+                            requested_limit=240,
+                            upserted_rows=240,
+                            status="refreshed",
+                            quality=DataQuality(source="tencent", is_complete=True, warnings=[], rows=240),
+                        )
+                    ],
+                )
+            )
             research_store.record(audit)
 
             class TestHandler(QuantApiHandler):
@@ -6272,6 +6397,7 @@ class QuantCoreContractTest(unittest.TestCase):
             TestHandler.cache = cache
             TestHandler.run_store = research_store
             TestHandler.paper_execution_store = paper_store
+            TestHandler.watchlist_cache_refresh_store = refresh_store
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -6297,6 +6423,94 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["goldenPath"]["runbook"][4]["actionId"], "submit-paper-order")
         self.assertEqual(payload["goldenPath"]["workspaces"][0]["id"], "market")
         self.assertEqual(payload["goldenPath"]["workspaces"][0]["status"], "ready")
+
+    def test_golden_path_status_api_uses_watchlist_refresh_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import (
+            WatchlistCacheRefreshItem,
+            WatchlistCacheRefreshRunStore,
+            create_watchlist_cache_refresh_run,
+        )
+        from quant_core.domain import DataQuality, OHLCVBar
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        market="ashare",
+                        symbol="600000",
+                        timeframe="1d",
+                        timestamp=datetime.now(timezone.utc),
+                        open=9.1,
+                        high=9.3,
+                        low=9.0,
+                        close=9.2,
+                        volume=1200000,
+                    )
+                ]
+            )
+            refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+            refresh_store.record(
+                create_watchlist_cache_refresh_run(
+                    run_id="cache-refresh-api-ready",
+                    created_at=datetime(2026, 6, 10, 6, 0, tzinfo=timezone.utc),
+                    timeframe="1d",
+                    requested_limit=240,
+                    items=[
+                        WatchlistCacheRefreshItem(
+                            market="ashare",
+                            symbol="600000",
+                            name="浦发银行",
+                            timeframe="1d",
+                            requested_limit=240,
+                            upserted_rows=240,
+                            status="refreshed",
+                            quality=DataQuality(source="tencent", is_complete=True, warnings=[], rows=240),
+                        )
+                    ],
+                )
+            )
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.cache = cache
+            TestHandler.run_store = research_store
+            TestHandler.paper_execution_store = paper_store
+            TestHandler.watchlist_cache_refresh_store = refresh_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/golden-path/status?market=ashare&symbol=600000&timeframe=1d")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["goldenPath"]["currentStepId"], "research-run")
+        self.assertEqual(payload["goldenPath"]["steps"][0]["status"], "passed")
+        self.assertEqual(
+            payload["goldenPath"]["steps"][0]["detail"],
+            "1 fresh cached K-line rows are available. Matching watchlist cache refresh evidence cache-refresh-api-ready confirms 240 rows from tencent.",
+        )
 
     def test_research_run_paper_execution_api_returns_404_for_missing_run(self):
         import json

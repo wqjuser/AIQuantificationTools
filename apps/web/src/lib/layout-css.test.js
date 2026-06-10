@@ -187,10 +187,14 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Refresh market data before audited research");
     expect(appSource).toContain("No cached K-line context exists for the selected instrument");
     expect(appSource).toContain("The selected context has no usable cached K-line rows");
+    expect(appSource).toContain("no matching watchlist cache refresh evidence covers");
+    expect(appSource).toContain("Matching watchlist cache refresh evidence");
     expect(appSource).toContain("可支撑审计研究");
     expect(appSource).toContain("先刷新行情数据后再运行审计研究");
     expect(appSource).toContain("当前标的还没有 K 线缓存上下文");
     expect(appSource).toContain("当前上下文没有可用 K 线缓存");
+    expect(appSource).toContain("还没有匹配的自选刷新证据");
+    expect(appSource).toContain("自选刷新证据");
   });
 
   test("renders the active work-area golden path context inside the task card", () => {

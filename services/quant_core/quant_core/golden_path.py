@@ -17,12 +17,26 @@ def build_golden_path_status(
     settings: dict[str, Any],
     runs: list[Any],
     paper_executions: list[PaperExecutionRecord],
+    watchlist_refreshes: list[Any] | None = None,
 ) -> GoldenPathPayload:
     context_runs = _matching_runs(runs, market=market, symbol=symbol, timeframe=timeframe)
     latest_run = context_runs[0] if context_runs else None
     cache_context = _matching_cache_context(settings, market=market, symbol=symbol, timeframe=timeframe)
+    refresh_evidence = _matching_watchlist_refresh_evidence(
+        watchlist_refreshes,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
 
-    market_step = _market_data_step(cache_context)
+    market_step = _market_data_step(
+        cache_context,
+        refresh_evidence,
+        refresh_evidence_supplied=watchlist_refreshes is not None,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
     research_step = _research_run_step(latest_run)
     backtest_step = _backtest_report_step(latest_run)
     ai_step = _ai_review_step(latest_run)
@@ -82,7 +96,41 @@ def _matching_cache_context(settings: dict[str, Any], *, market: str, symbol: st
     return None
 
 
-def _market_data_step(cache_context: dict[str, Any] | None) -> GoldenPathPayload:
+def _matching_watchlist_refresh_evidence(
+    refreshes: list[Any] | None,
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> dict[str, Any] | None:
+    if refreshes is None:
+        return None
+    for refresh in refreshes:
+        items = _field(refresh, "items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if (
+                str(_field(item, "market") or "") == market
+                and str(_field(item, "symbol") or "") == symbol
+                and str(_field(item, "timeframe") or "") == timeframe
+            ):
+                return {
+                    "run_id": str(_field(refresh, "runId") or _field(refresh, "run_id") or ""),
+                    "item": item,
+                }
+    return None
+
+
+def _market_data_step(
+    cache_context: dict[str, Any] | None,
+    refresh_evidence: dict[str, Any] | None = None,
+    *,
+    refresh_evidence_supplied: bool = False,
+    market: str = "",
+    symbol: str = "",
+    timeframe: str = "",
+) -> GoldenPathPayload:
     if not cache_context:
         return _step(
             "market-data",
@@ -109,12 +157,79 @@ def _market_data_step(cache_context: dict[str, Any] | None) -> GoldenPathPayload
             f"{row_count} cached rows are stale. Refresh market data before audited research.",
             "refresh-data",
         )
+    refresh_ready = _refresh_evidence_is_ready(refresh_evidence)
+    refresh_needs_review = refresh_evidence_supplied and not refresh_ready
     return _step(
         "market-data",
         "Market data",
-        "passed",
-        f"{row_count} fresh cached K-line rows are available for audited research.",
+        "review" if refresh_needs_review else "passed",
+        _fresh_market_data_detail(
+            row_count,
+            refresh_evidence,
+            refresh_evidence_supplied=refresh_evidence_supplied,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+        ),
+        "refresh-data" if refresh_needs_review else None,
     )
+
+
+def _fresh_market_data_detail(
+    row_count: int,
+    refresh_evidence: dict[str, Any] | None,
+    *,
+    refresh_evidence_supplied: bool,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> str:
+    if not refresh_evidence_supplied:
+        return f"{row_count} fresh cached K-line rows are available for audited research."
+    if not refresh_evidence:
+        return (
+            f"{row_count} fresh cached K-line rows are available, but no matching watchlist cache refresh evidence covers "
+            f"{market.upper()} · {symbol} · {timeframe}. Refresh watchlist cache before audited research."
+        )
+    reason = _refresh_evidence_review_reason(refresh_evidence)
+    run_id = str(refresh_evidence.get("run_id") or "unknown")
+    item = refresh_evidence.get("item")
+    quality = _field(item, "quality") or {}
+    source = str(_field(quality, "source") or "unknown")
+    rows_cached = _positive_int(_field(item, "upsertedRows") or _field(item, "upserted_rows"))
+    if reason:
+        return (
+            f"{row_count} fresh cached K-line rows are available, but watchlist cache refresh evidence {run_id} "
+            f"requires review: {reason}. Refresh watchlist cache before audited research."
+        )
+    return (
+        f"{row_count} fresh cached K-line rows are available. Matching watchlist cache refresh evidence {run_id} "
+        f"confirms {rows_cached} rows from {source}."
+    )
+
+
+def _refresh_evidence_is_ready(refresh_evidence: dict[str, Any] | None) -> bool:
+    return refresh_evidence is not None and _refresh_evidence_review_reason(refresh_evidence) is None
+
+
+def _refresh_evidence_review_reason(refresh_evidence: dict[str, Any]) -> str | None:
+    item = refresh_evidence.get("item")
+    error = str(_field(item, "error") or "").strip()
+    if error:
+        return error
+    status = str(_field(item, "status") or "failed")
+    if status != "refreshed":
+        return f"refresh {status}"
+    quality = _field(item, "quality") or {}
+    if not bool(_field(quality, "isComplete") if _field(quality, "isComplete") is not None else _field(quality, "is_complete")):
+        return "refresh quality incomplete"
+    warnings = [str(warning).strip() for warning in (_field(quality, "warnings") or []) if str(warning).strip()]
+    if warnings:
+        return warnings[0]
+    source = str(_field(quality, "source") or "unknown").strip().lower()
+    if source in {"demo-fallback", "unknown"}:
+        return "source requires review"
+    return None
 
 
 def _research_run_step(latest_run: Any | None) -> GoldenPathPayload:
@@ -444,3 +559,28 @@ def _positive_int(value: Any) -> int:
     if isinstance(value, int) and value > 0:
         return value
     return 0
+
+
+def _field(value: Any, name: str) -> Any:
+    if isinstance(value, dict):
+        if name in value:
+            return value.get(name)
+        snake_name = _camel_to_snake(name)
+        return value.get(snake_name)
+    if value is None:
+        return None
+    if hasattr(value, name):
+        return getattr(value, name)
+    snake_name = _camel_to_snake(name)
+    return getattr(value, snake_name, None)
+
+
+def _camel_to_snake(name: str) -> str:
+    chars: list[str] = []
+    for char in name:
+        if char.isupper():
+            chars.append("_")
+            chars.append(char.lower())
+        else:
+            chars.append(char)
+    return "".join(chars).lstrip("_")
