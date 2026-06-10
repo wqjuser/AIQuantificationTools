@@ -4939,6 +4939,18 @@ function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
   if (staleCache) {
     return `${staleCache[1]} 根缓存已过期，先刷新行情数据后再运行审计研究。`;
   }
+  if (
+    detail ===
+    "No cached K-line context exists for the selected instrument. Refresh market data before audited research."
+  ) {
+    return "当前标的还没有 K 线缓存上下文，先刷新行情数据后再运行审计研究。";
+  }
+  if (
+    detail ===
+    "The selected context has no usable cached K-line rows. Refresh market data before audited research."
+  ) {
+    return "当前上下文没有可用 K 线缓存，先刷新行情数据后再运行审计研究。";
+  }
   return detail;
 }
 

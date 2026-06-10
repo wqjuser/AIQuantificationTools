@@ -6016,6 +6016,69 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspaces["market"]["reason"], "120 cached rows are stale. Refresh market data before audited research.")
         self.assertEqual(workspaces["market"]["actionId"], "refresh-data")
 
+    def test_golden_path_status_points_missing_cache_to_market_refresh_before_research(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={"cache": {"contexts": []}, "safety": {"liveTradingAllowed": False}},
+            runs=[],
+            paper_executions=[],
+        )
+
+        expected_detail = "No cached K-line context exists for the selected instrument. Refresh market data before audited research."
+        self.assertEqual(status["status"], "blocked")
+        self.assertEqual(status["currentStepId"], "market-data")
+        self.assertEqual(status["nextAction"]["id"], "refresh-data")
+        self.assertEqual(status["nextAction"]["reason"], expected_detail)
+        self.assertEqual(status["steps"][0]["status"], "blocked")
+        self.assertEqual(status["steps"][0]["detail"], expected_detail)
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertEqual(runbook_by_step["market-data"]["blocker"], expected_detail)
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "needs_run")
+        self.assertEqual(workspaces["market"]["reason"], expected_detail)
+
+    def test_golden_path_status_points_empty_cache_to_market_refresh_before_research(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 0,
+                            "freshness": "empty",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[],
+            paper_executions=[],
+        )
+
+        expected_detail = "The selected context has no usable cached K-line rows. Refresh market data before audited research."
+        self.assertEqual(status["status"], "blocked")
+        self.assertEqual(status["currentStepId"], "market-data")
+        self.assertEqual(status["nextAction"]["id"], "refresh-data")
+        self.assertEqual(status["nextAction"]["reason"], expected_detail)
+        self.assertEqual(status["steps"][0]["status"], "blocked")
+        self.assertEqual(status["steps"][0]["detail"], expected_detail)
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertEqual(runbook_by_step["market-data"]["blocker"], expected_detail)
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "needs_run")
+        self.assertEqual(workspaces["market"]["reason"], expected_detail)
+
     def test_golden_path_status_advances_to_paper_execution_after_audited_ai_run(self):
         from quant_core.golden_path import build_golden_path_status
         from quant_core.runs import ResearchRunAudit

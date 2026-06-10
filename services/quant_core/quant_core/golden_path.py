@@ -88,7 +88,7 @@ def _market_data_step(cache_context: dict[str, Any] | None) -> GoldenPathPayload
             "market-data",
             "Market data",
             "blocked",
-            "No cached K-line context exists for the selected instrument.",
+            "No cached K-line context exists for the selected instrument. Refresh market data before audited research.",
             "refresh-data",
         )
     row_count = _positive_int(cache_context.get("rowCount"))
@@ -98,7 +98,7 @@ def _market_data_step(cache_context: dict[str, Any] | None) -> GoldenPathPayload
             "market-data",
             "Market data",
             "blocked",
-            "The selected context has no usable cached K-line rows.",
+            "The selected context has no usable cached K-line rows. Refresh market data before audited research.",
             "refresh-data",
         )
     if freshness == "stale":
