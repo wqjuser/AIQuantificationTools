@@ -20,7 +20,7 @@ Make the Market workspace explain whether the selected watchlist refresh run act
 - [x] GREEN: Render the Market coverage card and return-to-Research action.
 - [x] DOCS: Update product planning docs with coverage behavior.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -37,3 +37,4 @@ docker compose up --build -d
 - 2026-06-10: Added RED model tests for selected watchlist refresh coverage ready/mismatch states.
 - 2026-06-10: Implemented `buildWatchlistCacheRefreshCoverageRow` and rendered a compact Market coverage card with a return-to-Research action for matching context evidence.
 - 2026-06-10: Verified frontend model/API tests, quant core unittest, production build, Docker rebuild, and browser smoke. Browser smoke opened `workspace=market&market=ashare&symbol=600000&timeframe=1d&watchlistRefreshRun=cache-refresh-f10efd7401b7`, confirmed the coverage card and `回到研究` action, clicked it, and landed on `workspace=research` with the same context and no console errors.
+- 2026-06-10: Shipped through proxy `127.0.0.1:7890` as commit `f42de9d`.
