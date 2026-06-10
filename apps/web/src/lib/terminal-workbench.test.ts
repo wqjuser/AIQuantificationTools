@@ -79,6 +79,7 @@ import {
   buildResearchContextEvidenceRows,
   buildResearchContextReadinessRows,
   buildWatchlistCacheRefreshItemRows,
+  buildWatchlistCacheRefreshCoverageRow,
   buildWatchlistCacheRefreshHistoryRows,
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
@@ -10755,6 +10756,47 @@ describe("terminal workbench model", () => {
         tone: "risk"
       }
     ]);
+  });
+
+  test("summarizes selected watchlist refresh coverage for the current research context", () => {
+    const workspace = buildTerminalWorkspace();
+    const row = buildWatchlistCacheRefreshCoverageRow(watchlistRefreshRunFixture(), workspace);
+
+    expect(row).toEqual({
+      id: "cache-refresh-ready:coverage",
+      runId: "cache-refresh-ready",
+      label: "Selected refresh coverage",
+      value: "covered · refreshed",
+      detail: "600000 · 1d covered by tencent · 240 rows cached",
+      status: "ready",
+      tone: "positive",
+      canOpenResearch: true
+    });
+  });
+
+  test("marks selected watchlist refresh coverage as review when it misses the current context", () => {
+    const workspace = buildTerminalWorkspace();
+    const row = buildWatchlistCacheRefreshCoverageRow(
+      watchlistRefreshRunFixture({
+        runId: "cache-refresh-other",
+        item: {
+          symbol: "000300",
+          name: "沪深300"
+        }
+      }),
+      workspace
+    );
+
+    expect(row).toEqual({
+      id: "cache-refresh-other:coverage",
+      runId: "cache-refresh-other",
+      label: "Selected refresh coverage",
+      value: "not current context",
+      detail: "Selected run does not include ASHARE · 600000 · 1d; choose a matching run or refresh the watchlist cache.",
+      status: "review",
+      tone: "warning",
+      canOpenResearch: false
+    });
   });
 
   test("builds a research instrument from a manually entered symbol", () => {

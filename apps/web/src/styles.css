@@ -3996,6 +3996,71 @@ em {
   padding: 8px;
 }
 
+.watchlist-refresh-coverage {
+  align-items: center;
+  border: 1px solid #24344a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101a28;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.watchlist-refresh-coverage.positive {
+  border-left-color: #4cc9ad;
+}
+
+.watchlist-refresh-coverage.warning {
+  border-left-color: #e8be62;
+}
+
+.watchlist-refresh-coverage.risk {
+  border-left-color: #ff7f6d;
+}
+
+.watchlist-refresh-coverage div {
+  min-width: 0;
+}
+
+.watchlist-refresh-coverage span {
+  color: #9eb0c4;
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.watchlist-refresh-coverage strong {
+  color: #dce6ee;
+  display: block;
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+.watchlist-refresh-coverage p {
+  color: #91a2b5;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 5px 0 0;
+}
+
+.watchlist-refresh-coverage button {
+  border: 1px solid #295a52;
+  border-radius: 6px;
+  background: #0c2523;
+  color: #7df5db;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  min-height: 30px;
+  padding: 6px 10px;
+}
+
 .watchlist-refresh-items {
   border: 1px solid #24344a;
   border-radius: 7px;

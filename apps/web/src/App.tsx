@@ -209,6 +209,7 @@ import {
   buildStrategyRuleRows,
   buildStrategyTemplateOptions,
   buildStrategyVersionDiffRows,
+  buildWatchlistCacheRefreshCoverageRow,
   buildWatchlistCacheRefreshItemRows,
   buildWatchlistCacheRefreshHistoryRows,
   buildWorkflowStages,
@@ -314,6 +315,7 @@ import {
   Timeframe,
   TerminalModule,
   TerminalWorkspace,
+  WatchlistCacheRefreshCoverageRow,
   WatchlistCacheRefreshItemRow,
   WatchlistCacheRefreshHistoryRow,
   WorkflowRunLogEntry,
@@ -1011,6 +1013,10 @@ export function App() {
     selectedWatchlistCacheRefresh?.runId ?? null
   );
   const watchlistCacheRefreshItemRows = buildWatchlistCacheRefreshItemRows(selectedWatchlistCacheRefresh);
+  const watchlistCacheRefreshCoverageRow = buildWatchlistCacheRefreshCoverageRow(
+    selectedWatchlistCacheRefresh,
+    workspace
+  );
   const researchContextReadinessRows = buildResearchContextReadinessRows({
     workspace,
     barCount: klinesState.bars.length,
@@ -3523,6 +3529,10 @@ export function App() {
     [selectProductWorkArea, setWatchlistCacheRefreshRunSelection]
   );
 
+  const openSelectedRefreshCoverageInResearch = useCallback(() => {
+    selectProductWorkArea("research");
+  }, [selectProductWorkArea]);
+
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -3911,9 +3921,11 @@ export function App() {
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
+            onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
             onSelectWatchlistCacheRefreshRun={selectWatchlistCacheRefreshRun}
             onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
             state={klinesState}
+            watchlistCacheRefreshCoverageRow={watchlistCacheRefreshCoverageRow}
             watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
             watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
             watchlistCacheSummary={watchlistCacheSummary}
@@ -5841,9 +5853,11 @@ function MarketDataHealthPanel({
   latestWatchlistCacheRefresh,
   onRefreshCache,
   onRefreshWatchlistCache,
+  onOpenCoverageResearch,
   onSelectWatchlistCacheRefreshRun,
   onSelectWatchlistCacheRefreshItem,
   state,
+  watchlistCacheRefreshCoverageRow,
   watchlistCacheRefreshItemRows = [],
   watchlistCacheRefreshHistoryRows = [],
   watchlistCacheSummary,
@@ -5857,9 +5871,11 @@ function MarketDataHealthPanel({
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
+  onOpenCoverageResearch?: () => void;
   onSelectWatchlistCacheRefreshRun?: (row: WatchlistCacheRefreshHistoryRow) => void;
   onSelectWatchlistCacheRefreshItem?: (row: WatchlistCacheRefreshItemRow) => void;
   state: MarketKlinesResult;
+  watchlistCacheRefreshCoverageRow?: WatchlistCacheRefreshCoverageRow | null;
   watchlistCacheRefreshItemRows?: WatchlistCacheRefreshItemRow[];
   watchlistCacheRefreshHistoryRows?: WatchlistCacheRefreshHistoryRow[];
   watchlistCacheSummary: WatchlistCacheSummary;
@@ -5979,6 +5995,20 @@ function MarketDataHealthPanel({
           <p>{latestRefreshDetail}</p>
         </article>
       </div>
+      {watchlistCacheRefreshCoverageRow ? (
+        <div className={`watchlist-refresh-coverage ${watchlistCacheRefreshCoverageRow.tone}`}>
+          <div>
+            <span>{watchlistCacheRefreshCoverageLabel(i18n, watchlistCacheRefreshCoverageRow)}</span>
+            <strong>{watchlistCacheRefreshCoverageValue(i18n, watchlistCacheRefreshCoverageRow)}</strong>
+            <p>{watchlistCacheRefreshCoverageDetail(i18n, watchlistCacheRefreshCoverageRow)}</p>
+          </div>
+          {watchlistCacheRefreshCoverageRow.canOpenResearch ? (
+            <button onClick={onOpenCoverageResearch} type="button">
+              {i18n.locale === "zh-CN" ? "回到研究" : "Open Research"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {watchlistCacheRefreshHistoryRows.length ? (
         <div className="watchlist-refresh-history">
           <div className="watchlist-refresh-history-head">
@@ -6058,6 +6088,47 @@ function watchlistCacheRefreshHistoryDetail(i18n: AppI18n, row: WatchlistCacheRe
     return row.detail;
   }
   return `${row.upsertedRows.toLocaleString("zh-CN")} 行入库 · ${row.skipped} 跳过 · ${row.failed} 失败`;
+}
+
+function watchlistCacheRefreshCoverageLabel(i18n: AppI18n, row: WatchlistCacheRefreshCoverageRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.label;
+  }
+  return "当前上下文覆盖";
+}
+
+function watchlistCacheRefreshCoverageValue(i18n: AppI18n, row: WatchlistCacheRefreshCoverageRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.value;
+  }
+  if (row.value === "not current context") {
+    return "未覆盖当前上下文";
+  }
+  return row.value
+    .replace("covered", "已覆盖")
+    .replace("review", "需复核")
+    .replace("refreshed", "已刷新")
+    .replace("skipped", "已跳过")
+    .replace("failed", "失败");
+}
+
+function watchlistCacheRefreshCoverageDetail(i18n: AppI18n, row: WatchlistCacheRefreshCoverageRow): string {
+  if (i18n.locale !== "zh-CN") {
+    return row.detail;
+  }
+  if (row.value === "not current context") {
+    return row.detail
+      .replace("Selected run does not include ", "选中的刷新 run 未包含 ")
+      .replace("; choose a matching run or refresh the watchlist cache.", "；请选择匹配 run 或刷新自选缓存。");
+  }
+  return row.detail
+    .replace(" covered by ", " 已由 ")
+    .replace(" rows cached", " 行入库")
+    .replace("refresh skipped", "刷新已跳过")
+    .replace("refresh failed", "刷新失败")
+    .replace("refresh quality incomplete", "刷新质量不完整")
+    .replace("source requires review", "数据源需复核")
+    .replace("refresh requires review", "刷新证据需复核");
 }
 
 function watchlistCacheRefreshItemStatusLabel(i18n: AppI18n, row: WatchlistCacheRefreshItemRow): string {

@@ -2239,6 +2239,17 @@ export interface WatchlistCacheRefreshItemRow {
   tone: "positive" | "warning" | "risk";
 }
 
+export interface WatchlistCacheRefreshCoverageRow {
+  id: string;
+  runId: string;
+  label: string;
+  value: string;
+  detail: string;
+  status: ResearchContextReadinessStatus;
+  tone: "positive" | "warning" | "risk";
+  canOpenResearch: boolean;
+}
+
 export interface ResearchPipelinePreflightIssue {
   id: ResearchContextReadinessRow["id"];
   label: string;
@@ -6535,6 +6546,57 @@ export function buildWatchlistCacheRefreshItemRows(
       tone
     };
   });
+}
+
+export function buildWatchlistCacheRefreshCoverageRow(
+  run: WatchlistCacheRefreshRunSnapshot | null | undefined,
+  workspace: TerminalWorkspace
+): WatchlistCacheRefreshCoverageRow | null {
+  if (!run) {
+    return null;
+  }
+
+  const instrument = workspace.selectedInstrument;
+  const timeframe = workspace.selectedTimeframe;
+  const context = strategyContextLabel(instrument.market, instrument.symbol, timeframe);
+  const matching = run.items.find(
+    (item) => item.market === instrument.market && item.symbol === instrument.symbol && item.timeframe === timeframe
+  );
+
+  if (!matching) {
+    return {
+      id: `${run.runId}:coverage`,
+      runId: run.runId,
+      label: "Selected refresh coverage",
+      value: "not current context",
+      detail: `Selected run does not include ${context}; choose a matching run or refresh the watchlist cache.`,
+      status: "review",
+      tone: "warning",
+      canOpenResearch: false
+    };
+  }
+
+  const warnings = matching.quality.warnings.filter((warning) => warning.trim());
+  const source = matching.quality.source || "unknown";
+  const sourceNeedsReview = isReviewRequiredKlineSource(source);
+  const isReady =
+    matching.status === "refreshed" &&
+    matching.quality.isComplete &&
+    warnings.length === 0 &&
+    !sourceNeedsReview;
+  const rowsCached = Math.max(0, Math.floor(matching.upsertedRows || 0));
+  const baseDetail = `${matching.symbol} · ${matching.timeframe} covered by ${source} · ${rowsCached} rows cached`;
+
+  return {
+    id: `${run.runId}:coverage`,
+    runId: run.runId,
+    label: "Selected refresh coverage",
+    value: `${isReady ? "covered" : "review"} · ${matching.status}`,
+    detail: isReady ? baseDetail : `${baseDetail} · ${refreshEvidenceReviewReason(matching, sourceNeedsReview, warnings)}`,
+    status: isReady ? "ready" : "review",
+    tone: isReady ? "positive" : "warning",
+    canOpenResearch: true
+  };
 }
 
 export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow[]): ResearchPipelinePreflight {
