@@ -1011,6 +1011,7 @@ export interface ResearchRunExportBrowserRow {
     | "package"
     | "integrity"
     | "data"
+    | "preparation-evidence"
     | "backtest"
     | "backtest-report"
     | "research-note"
@@ -4014,6 +4015,7 @@ export function buildResearchRunExportBrowserRows(
   const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
   const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
+  const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
   const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
   const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
   const integrityHash = exportPackage.integrity?.hash ?? "";
@@ -4102,6 +4104,17 @@ export function buildResearchRunExportBrowserRows(
       detail: `${exportPackage.manifest.dataHash || "missing hash"} · ${exportPackage.manifest.market}`,
       exportPath: "manifest.artifactCounts.bars",
       tone: dataIsReady ? "positive" : "risk"
+    },
+    {
+      id: "preparation-evidence",
+      label: "Preparation evidence",
+      status: preparationEvidence ? "ready" : "missing",
+      value: preparationEvidence?.runId ?? "No preparation evidence",
+      detail: preparationEvidence
+        ? formatPreparationEvidenceDetail(preparationEvidence)
+        : "Package research run does not include locked watchlist cache refresh evidence.",
+      exportPath: "researchRun.dataSnapshot.preparationEvidence",
+      tone: preparationEvidence ? (preparationEvidence.quality.isComplete ? "positive" : "warning") : "neutral"
     },
     {
       id: "backtest",

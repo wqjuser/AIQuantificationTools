@@ -3235,6 +3235,46 @@ describe("terminal workbench model", () => {
           aiReviewRuns: 2
         }
       },
+      researchRun: {
+        runId: "run-browser",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Browser SMA",
+        strategyRevision: "rev-browser",
+        dataRows: 240,
+        dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 240,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-27T08:00:00+00:00",
+          hash: "snapshot-browser",
+          bars: [],
+          preparationEvidence: {
+            kind: "watchlist_cache_refresh",
+            runId: "cache-refresh-browser",
+            createdAt: "2026-05-26T08:05:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            name: "浦发银行",
+            timeframe: "1d",
+            status: "refreshed",
+            requestedLimit: 240,
+            upsertedRows: 240,
+            quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+            error: null
+          }
+        },
+        metrics: {},
+        decisions: [],
+        executionMode: "paper_only",
+        backtestTrades: [],
+        backtestEquityCurve: []
+      },
       executionHandoff: {
         mode: "paper_only",
         paperOnly: true,
@@ -3471,6 +3511,13 @@ describe("terminal workbench model", () => {
           exportPath: "manifest.artifactCounts.bars"
         }),
         expect.objectContaining({
+          id: "preparation-evidence",
+          status: "ready",
+          value: "cache-refresh-browser",
+          detail: "cache-refresh-browser · watchlist_cache_refresh · 600000 1d · tencent complete · 240 rows cached",
+          exportPath: "researchRun.dataSnapshot.preparationEvidence"
+        }),
+        expect.objectContaining({
           id: "backtest",
           status: "ready",
           value: "12 trades / 240 equity",
@@ -3521,6 +3568,9 @@ describe("terminal workbench model", () => {
       ])
     );
     expect(filterResearchRunExportBrowserRows(rows, "integrity.hash").map((row) => row.id)).toEqual(["integrity"]);
+    expect(filterResearchRunExportBrowserRows(rows, "cache-refresh-browser").map((row) => row.id)).toEqual([
+      "preparation-evidence"
+    ]);
     expect(filterResearchRunExportBrowserRows(rows, "aiReviewRuns").map((row) => row.id)).toEqual(["ai-reviews"]);
     expect(filterResearchRunExportBrowserRows(rows, "portfolioPaperOrderBatches").map((row) => row.id)).toEqual([
       "portfolio-paper-orders"

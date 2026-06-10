@@ -9048,6 +9048,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       package: "导出包",
       integrity: "完整性",
       data: "数据快照",
+      "preparation-evidence": "准备证据",
       backtest: "回测回放",
       "backtest-report": "回测报告",
       "research-note": "研究笔记",
