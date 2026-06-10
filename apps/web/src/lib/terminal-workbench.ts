@@ -478,6 +478,7 @@ export type AiReviewEvidenceAnchorType =
   | "research-run"
   | "strategy-revision"
   | "data-snapshot"
+  | "data-preparation"
   | "citation"
   | "committee-rounds"
   | "decision-log"
@@ -569,6 +570,7 @@ export interface ResearchRunExportPreviewRow {
   id:
     | "research-run"
     | "data-snapshot"
+    | "preparation-evidence"
     | "strategy-config"
     | "research-note"
     | "backtest-trades"
@@ -3488,6 +3490,16 @@ function buildAiReviewEvidenceAnchors(
     });
   }
 
+  if (run.dataSnapshot?.preparationEvidence) {
+    anchors.push({
+      id: `preparationEvidence:${run.dataSnapshot.preparationEvidence.runId}`,
+      type: "data-preparation",
+      label: "Data preparation",
+      reference: run.dataSnapshot.preparationEvidence.runId,
+      exportPath: "researchRun.dataSnapshot.preparationEvidence"
+    });
+  }
+
   citations.forEach((citation) => {
     anchors.push({
       id: `citation:${citation.id}`,
@@ -3766,6 +3778,7 @@ export function buildResearchRunExportPreviewRows({
   const run = workspace.researchRun ?? null;
   const runId = run?.runId ?? "pending-run";
   const dataSnapshot = run?.dataSnapshot ?? null;
+  const preparationEvidence = dataSnapshot?.preparationEvidence ?? null;
   const researchNote = normalizedResearchNote(run?.researchNote);
   const activePaperExecution = run && paperExecution?.runId === run.runId ? paperExecution : null;
   const activePromotionCandidate =
@@ -3816,6 +3829,22 @@ export function buildResearchRunExportPreviewRows({
           : run
             ? "warning"
             : "risk"
+    },
+    {
+      id: "preparation-evidence",
+      label: "Preparation evidence",
+      status: preparationEvidence ? "ready" : run ? "missing" : "blocked",
+      count: preparationEvidence ? `${preparationEvidence.upsertedRows} rows` : "0 rows",
+      anchor: preparationEvidence
+        ? `preparationEvidence:${preparationEvidence.runId}`
+        : `preparationEvidence:${runId}:missing`,
+      exportPath: "researchRun.dataSnapshot.preparationEvidence",
+      detail: preparationEvidence
+        ? formatPreparationEvidenceDetail(preparationEvidence)
+        : run
+          ? "The audited run did not lock a matching watchlist cache refresh run."
+          : "Run Pipeline from a matched watchlist cache refresh before preparation evidence can be exported.",
+      tone: preparationEvidence ? (preparationEvidence.quality.isComplete ? "positive" : "warning") : run ? "warning" : "risk"
     },
     {
       id: "strategy-config",
@@ -9787,6 +9816,7 @@ export function buildBacktestReportMarkdown(
   const report = buildBacktestReport(workspace);
   const aiDossier = buildAiReviewDossier(workspace);
   const snapshot = run.dataSnapshot;
+  const preparationEvidence = snapshot?.preparationEvidence ?? null;
   const researchNote = normalizedResearchNote(run.researchNote);
   const metricRows = report.metrics.map((metric) => [metric.label, metric.value, metric.tone]);
   const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
@@ -9877,7 +9907,8 @@ export function buildBacktestReportMarkdown(
         ["Rows", String(snapshot?.rows ?? run.dataRows)],
         ["Hash", snapshot?.hash ?? ""],
         ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? "unknown"}`],
-        ["Quality", run.dataQuality ? `${run.dataQuality.source} · ${run.dataQuality.isComplete ? "complete" : "incomplete"}` : "not attached"]
+        ["Quality", run.dataQuality ? `${run.dataQuality.source} · ${run.dataQuality.isComplete ? "complete" : "incomplete"}` : "not attached"],
+        ["Preparation evidence", preparationEvidence ? formatPreparationEvidenceDetail(preparationEvidence) : "not locked"]
       ]
     ),
     "",
@@ -10376,6 +10407,16 @@ function normalizeDrawdownLoss(value: string): string {
 
 function formatWarningCount(count: number): string {
   return count === 1 ? "1 warning" : `${count} warnings`;
+}
+
+function formatPreparationEvidenceDetail(evidence: ResearchRunDataPreparationEvidence): string {
+  return [
+    evidence.runId,
+    evidence.kind,
+    `${evidence.symbol} ${evidence.timeframe}`,
+    `${evidence.quality.source} ${evidence.quality.isComplete ? "complete" : "review"}`,
+    `${evidence.upsertedRows} rows cached`
+  ].join(" · ");
 }
 
 function parsePercentMetric(value: string): number | null {

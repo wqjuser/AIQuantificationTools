@@ -8959,6 +8959,7 @@ function researchExportPreviewLabel(i18n: AppI18n, row: ResearchRunExportPreview
     {
       "research-run": "研究运行",
       "data-snapshot": "数据快照",
+      "preparation-evidence": "准备证据",
       "strategy-config": "策略配置",
       "research-note": "研究笔记",
       "backtest-trades": "回测流水",

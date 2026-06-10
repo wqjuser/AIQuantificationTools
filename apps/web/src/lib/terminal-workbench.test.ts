@@ -2589,7 +2589,26 @@ describe("terminal workbench model", () => {
             close: 10.5,
             volume: 1300000
           }
-        ]
+        ],
+        preparationEvidence: {
+          kind: "watchlist_cache_refresh",
+          runId: "cache-refresh-ai-record",
+          createdAt: "2026-05-26T08:05:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          name: "浦发银行",
+          timeframe: "1d",
+          status: "refreshed",
+          requestedLimit: 240,
+          upsertedRows: 240,
+          quality: {
+            source: "tencent",
+            isComplete: true,
+            warnings: [],
+            rows: 240
+          },
+          error: null
+        }
       }
     });
 
@@ -2635,6 +2654,13 @@ describe("terminal workbench model", () => {
           type: "data-snapshot",
           reference: "snapshot-ai-record",
           exportPath: "researchRun.dataSnapshot.hash"
+        }),
+        expect.objectContaining({
+          id: "preparationEvidence:cache-refresh-ai-record",
+          type: "data-preparation",
+          label: "Data preparation",
+          reference: "cache-refresh-ai-record",
+          exportPath: "researchRun.dataSnapshot.preparationEvidence"
         }),
         expect.objectContaining({
           id: "citation:parameter-scan",
@@ -3003,7 +3029,26 @@ describe("terminal workbench model", () => {
             close: 9.27,
             volume: 1_464_000
           }
-        ]
+        ],
+        preparationEvidence: {
+          kind: "watchlist_cache_refresh",
+          runId: "cache-refresh-export-preview",
+          createdAt: "2026-05-26T08:05:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          name: "浦发银行",
+          timeframe: "1d",
+          status: "refreshed",
+          requestedLimit: 240,
+          upsertedRows: 240,
+          quality: {
+            source: "tencent",
+            isComplete: true,
+            warnings: [],
+            rows: 240
+          },
+          error: null
+        }
       },
       researchNote: {
         market: "ashare",
@@ -3103,6 +3148,13 @@ describe("terminal workbench model", () => {
           anchor: "dataSnapshot:snapshot-export-preview"
         }),
         expect.objectContaining({
+          id: "preparation-evidence",
+          status: "ready",
+          count: "240 rows",
+          exportPath: "researchRun.dataSnapshot.preparationEvidence",
+          anchor: "preparationEvidence:cache-refresh-export-preview"
+        }),
+        expect.objectContaining({
           id: "strategy-config",
           status: "ready",
           exportPath: "researchRun.strategyConfig",
@@ -3135,7 +3187,13 @@ describe("terminal workbench model", () => {
         })
       ])
     );
-    expect(filterResearchRunExportPreviewRows(rows, "snapshot").map((row) => row.id)).toEqual(["data-snapshot"]);
+    expect(filterResearchRunExportPreviewRows(rows, "snapshot").map((row) => row.id)).toEqual([
+      "data-snapshot",
+      "preparation-evidence"
+    ]);
+    expect(filterResearchRunExportPreviewRows(rows, "cache-refresh-export-preview").map((row) => row.id)).toEqual([
+      "preparation-evidence"
+    ]);
     expect(filterResearchRunExportPreviewRows(rows, "paperExecutions").map((row) => row.id)).toEqual([
       "paper-executions"
     ]);
@@ -9629,7 +9687,26 @@ describe("terminal workbench model", () => {
             close: 10.5,
             volume: 1300000
           }
-        ]
+        ],
+        preparationEvidence: {
+          kind: "watchlist_cache_refresh",
+          runId: "cache-refresh-report-md",
+          createdAt: "2026-05-28T08:05:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          name: "浦发银行",
+          timeframe: "1d",
+          status: "refreshed",
+          requestedLimit: 240,
+          upsertedRows: 240,
+          quality: {
+            source: "tencent",
+            isComplete: true,
+            warnings: [],
+            rows: 240
+          },
+          error: null
+        }
       },
       backtestAssumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
       backtestTrades: [
@@ -9664,6 +9741,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| Benchmark buy and hold | +5.00% |");
     expect(markdown).toContain("| Alpha | +3.20pp |");
     expect(markdown).toContain("snapshot-report-md");
+    expect(markdown).toContain(
+      "| Preparation evidence | cache-refresh-report-md · watchlist_cache_refresh · 600000 1d · tencent complete · 240 rows cached |"
+    );
     expect(markdown).toContain("AI Evidence Boundary");
     expect(markdown).toContain("No investment advice");
     expect(markdown).toContain("Parameter Sensitivity");
