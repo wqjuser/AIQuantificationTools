@@ -19,7 +19,7 @@ Let Stage 1 market/research URLs carry the selected market, symbol, and timefram
 - [x] GREEN: Wire App bootstrap and URL synchronization.
 - [x] DOCS: Update product planning docs with the new Stage 1 capability.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -39,3 +39,4 @@ Results:
 - Python core unittest suite passed: `141` tests.
 - Docker rebuild/restart completed for the web and API services.
 - Browser smoke passed on `http://127.0.0.1:5173/?workspace=research&market=us&symbol=NVDA&timeframe=15m`: page restored `NVDA`, preserved `workspace=research`, marked the session watchlist as unsaved for the deep-linked symbol, switching to `60m` updated the URL to `timeframe=60m`, and no console errors were reported.
+- Shipped through proxy to `origin/codex/p0-product-workspaces` as `8b96a58`.
