@@ -20,7 +20,7 @@ Make Golden Path missing and empty cache blockers point to the same Stage 1 reco
 - [x] GREEN: Extend Golden Path detail translation for missing and empty cache details.
 - [x] DOCS: Update product planning docs.
 - [x] VERIFY: Run targeted tests, relevant suites, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -40,3 +40,4 @@ npm run docker:smoke
 - 2026-06-10: Added frontend UI contract coverage for Chinese missing/empty cache translations.
 - 2026-06-10: Updated backend Golden Path details and shared frontend translation while preserving blocked `refresh-data` semantics.
 - 2026-06-10: Verified targeted backend/frontend tests, related frontend suites, production build, full repository tests, Docker rebuild, Docker smoke, and browser smoke on `http://127.0.0.1:5173/?workspace=audit&market=ashare&symbol=600000&timeframe=1d`.
+- 2026-06-10: Marked this Stage 1 slice shipped after commit and proxy push preparation.
