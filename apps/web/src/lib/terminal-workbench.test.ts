@@ -43,6 +43,7 @@ import {
   buildExecutionAdapterControlledRestartEvidenceRows,
   buildExecutionAdapterEnvironmentBindingRows,
   buildExecutionAdapterRestartAcceptanceRows,
+  buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
@@ -8073,6 +8074,68 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-runtime-reload-plan-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
+  test("builds compact runtime reload execution rows from ledger results", () => {
+    const rows = buildExecutionAdapterRuntimeReloadExecutionRows([
+      {
+        schemaVersion: 1,
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "execution_recorded",
+        operator: "settings-panel",
+        recordedAt: "2026-06-09T08:45:00+00:00",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "pre-reload-health-verified", label: "Pre reload health verified", status: "confirmed" },
+          { id: "reload-action-recorded", label: "Reload action recorded", status: "confirmed" },
+          { id: "post-reload-smoke-passed", label: "Post reload smoke passed", status: "confirmed" },
+          { id: "rollback-readiness-confirmed", label: "Rollback readiness confirmed", status: "confirmed" },
+          { id: "operator-confirmed-live-blocked", label: "Live route remains blocked", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { token: "[redacted]", fingerprint: "sha256:runtime-reload-execution" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T08:45:00+00:00",
+        status: "execution_recorded",
+        statusLabel: "Execution recorded",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-runtime-reload-execution-us-live",
         tone: "positive"
       }
     ]);

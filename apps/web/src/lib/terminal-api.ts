@@ -1244,6 +1244,68 @@ export interface ExecutionAdapterRuntimeReloadPlanHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterRuntimeReloadExecutionStatus = "blocked" | "execution_recorded";
+export type ExecutionAdapterRuntimeReloadExecutionConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRuntimeReloadExecutionConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterRuntimeReloadExecutionConfirmationStatus;
+}
+
+export interface ExecutionAdapterRuntimeReloadExecutionResult {
+  schemaVersion: 1;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRuntimeReloadExecutionStatus;
+  operator: string;
+  recordedAt: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterRuntimeReloadExecutionConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRuntimeReloadExecutionRequest {
+  adapterId: string;
+  planId: string;
+  operator?: string;
+  executionMode?: string;
+  confirmations?: {
+    preReloadHealthVerified?: boolean;
+    reloadActionRecorded?: boolean;
+    postReloadSmokePassed?: boolean;
+    rollbackReadinessConfirmed?: boolean;
+    operatorConfirmedLiveBlocked?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterRuntimeReloadExecutionRecordResult {
+  adapterRuntimeReloadExecution?: ExecutionAdapterRuntimeReloadExecutionResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterRuntimeReloadExecutionHistoryResult {
+  adapterRuntimeReloadExecutions: ExecutionAdapterRuntimeReloadExecutionResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -2117,6 +2179,10 @@ export function buildExecutionAdapterRuntimeReloadPlanUrl(baseUrl: string): stri
   return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-plans");
 }
 
+export function buildExecutionAdapterRuntimeReloadExecutionUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-executions");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -2206,6 +2272,20 @@ export function buildExecutionAdapterRuntimeReloadPlanHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-plans", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterRuntimeReloadExecutionHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-executions", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -4224,6 +4304,51 @@ export async function recordExecutionAdapterRuntimeReloadPlan(
   }
 }
 
+export async function recordExecutionAdapterRuntimeReloadExecution(
+  baseUrl: string,
+  request: ExecutionAdapterRuntimeReloadExecutionRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterRuntimeReloadExecutionRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRuntimeReloadExecutionUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        planId: request.planId,
+        operator: request.operator ?? "local-operator",
+        executionMode: request.executionMode ?? "manual_controlled_reload",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterRuntimeReloadExecutionRecordPayload(payload)) {
+      return {
+        adapterRuntimeReloadExecution: payload.adapterRuntimeReloadExecution,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter runtime reload execution contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload execution error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -4446,6 +4571,34 @@ export async function loadExecutionAdapterRuntimeReloadPlans(
       adapterRuntimeReloadPlans: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload plan history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterRuntimeReloadExecutions(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterRuntimeReloadExecutionHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRuntimeReloadExecutionHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterRuntimeReloadExecutionHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter runtime reload execution history contract");
+    }
+    return {
+      adapterRuntimeReloadExecutions: payload.adapterRuntimeReloadExecutions,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterRuntimeReloadExecutions: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload execution history error"
     };
   }
 }
@@ -6266,6 +6419,19 @@ function isExecutionAdapterRuntimeReloadPlanRecordPayload(
   );
 }
 
+function isExecutionAdapterRuntimeReloadExecutionRecordPayload(
+  value: unknown
+): value is { adapterRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterRuntimeReloadExecution?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterRuntimeReloadExecutionResult(payload.adapterRuntimeReloadExecution) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -6367,6 +6533,19 @@ function isExecutionAdapterRuntimeReloadPlanHistoryPayload(
   return (
     Array.isArray(payload.adapterRuntimeReloadPlans) &&
     payload.adapterRuntimeReloadPlans.every(isExecutionAdapterRuntimeReloadPlanResult)
+  );
+}
+
+function isExecutionAdapterRuntimeReloadExecutionHistoryPayload(
+  value: unknown
+): value is { adapterRuntimeReloadExecutions: ExecutionAdapterRuntimeReloadExecutionResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterRuntimeReloadExecutions?: unknown };
+  return (
+    Array.isArray(payload.adapterRuntimeReloadExecutions) &&
+    payload.adapterRuntimeReloadExecutions.every(isExecutionAdapterRuntimeReloadExecutionResult)
   );
 }
 
@@ -6586,6 +6765,42 @@ function isExecutionAdapterRuntimeReloadPlanResult(
   );
 }
 
+function isExecutionAdapterRuntimeReloadExecutionResult(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadExecutionResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterRuntimeReloadExecutionResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterRuntimeReloadExecutionStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterRuntimeReloadExecutionConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -6737,6 +6952,20 @@ function isExecutionAdapterRuntimeReloadPlanConfirmation(
   );
 }
 
+function isExecutionAdapterRuntimeReloadExecutionConfirmation(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadExecutionConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterRuntimeReloadExecutionConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -6779,6 +7008,12 @@ function isExecutionAdapterRuntimeReloadPlanStatus(
   value: unknown
 ): value is ExecutionAdapterRuntimeReloadPlanStatus {
   return value === "blocked" || value === "plan_recorded";
+}
+
+function isExecutionAdapterRuntimeReloadExecutionStatus(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadExecutionStatus {
+  return value === "blocked" || value === "execution_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

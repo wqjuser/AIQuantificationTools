@@ -59,6 +59,7 @@ from quant_core.execution import (
     build_execution_adapter_controlled_restart_evidence,
     build_execution_adapter_environment_binding,
     build_execution_adapter_restart_acceptance,
+    build_execution_adapter_runtime_reload_execution,
     build_execution_adapter_runtime_reload_plan,
     build_execution_adapter_secret_materialization,
     build_execution_adapter_secret_reference,
@@ -82,6 +83,9 @@ from quant_core.execution import (
     execution_adapter_runtime_reload_plan_payload_from_audit_event,
     execution_adapter_runtime_reload_plan_to_audit_event_payload,
     execution_adapter_runtime_reload_plan_to_payload,
+    execution_adapter_runtime_reload_execution_payload_from_audit_event,
+    execution_adapter_runtime_reload_execution_to_audit_event_payload,
+    execution_adapter_runtime_reload_execution_to_payload,
     execution_adapter_secret_materialization_payload_from_audit_event,
     execution_adapter_secret_materialization_to_audit_event_payload,
     execution_adapter_secret_materialization_to_payload,
@@ -542,6 +546,45 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if runtime_reload_plan.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-runtime-reload-executions":
+            payload = self._read_json_body()
+            plan_id = str(payload.get("planId") or "").strip()
+            plan_event = self.audit_event_store.get(plan_id)
+            runtime_reload_plan = (
+                execution_adapter_runtime_reload_plan_payload_from_audit_event(plan_event) if plan_event else None
+            )
+            if not runtime_reload_plan:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_runtime_reload_plan_not_found",
+                        "planId": plan_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                runtime_reload_execution = build_execution_adapter_runtime_reload_execution(
+                    runtime_reload_plan,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    execution_mode=str(payload.get("executionMode") or "manual_controlled_reload"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_runtime_reload_execution", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_runtime_reload_execution_to_audit_event_payload(runtime_reload_execution)
+            )
+            self._send_json(
+                {
+                    "adapterRuntimeReloadExecution": execution_adapter_runtime_reload_execution_to_payload(runtime_reload_execution),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if runtime_reload_execution.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -1260,6 +1303,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(runtime_reload_plans) >= limit:
                     break
             self._send_json({"adapterRuntimeReloadPlans": runtime_reload_plans})
+            return
+        if parsed.path == "/api/execution/adapter-runtime-reload-executions":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_runtime_reload_execution_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            reload_execution_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_runtime_reload_execution",
+                limit=50,
+                query=adapter_id,
+            )
+            runtime_reload_executions = []
+            for event in reload_execution_events:
+                payload = execution_adapter_runtime_reload_execution_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    runtime_reload_executions.append(payload)
+                if len(runtime_reload_executions) >= limit:
+                    break
+            self._send_json({"adapterRuntimeReloadExecutions": runtime_reload_executions})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

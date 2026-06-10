@@ -2807,6 +2807,199 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("runtime-reload-blocked-token-should-not-leak", serialized)
         self.assertNotIn("runtime-reload-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_runtime_reload_execution_records_evidence_without_enabling_live(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "us-live",
+                        "market": "us",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "us-live/alpaca-sandbox",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "us-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": "local-secret-store://us-live/alpaca-sandbox",
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "us-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "us-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-us-live-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                plan_id = plan_payload["adapterRuntimeReloadPlan"]["planId"]
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "us-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {},
+                        "metadata": {
+                            "source": "settings-panel",
+                            "token": "runtime-reload-execution-blocked-token-should-not-leak",
+                        },
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "us-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "runtime-reload-execution-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-runtime-reload-executions?adapterId=us-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterRuntimeReloadExecution"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterRuntimeReloadExecution"]["blockedReasons"],
+            [
+                "runtime_reload_execution_pre_health_missing",
+                "runtime_reload_execution_action_record_missing",
+                "runtime_reload_execution_post_smoke_missing",
+                "runtime_reload_execution_rollback_readiness_missing",
+                "runtime_reload_execution_live_block_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterRuntimeReloadExecution"]["status"], "execution_recorded")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadExecution"]["planId"], plan_id)
+        self.assertEqual(recorded_payload["adapterRuntimeReloadExecution"]["adapterId"], "us-live")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadExecution"]["executionMode"], "manual_controlled_reload")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadExecution"]["maintenanceWindowId"], "window-us-live-1")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadExecution"]["requiredEnvVars"], ["ALPACA_API_KEY", "ALPACA_API_SECRET"])
+        self.assertFalse(recorded_payload["adapterRuntimeReloadExecution"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterRuntimeReloadExecution"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_runtime_reload_execution")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterRuntimeReloadExecutions"]), 2)
+        self.assertEqual(history_payload["adapterRuntimeReloadExecutions"][0]["status"], "execution_recorded")
+        self.assertEqual(history_payload["adapterRuntimeReloadExecutions"][1]["status"], "blocked")
+        self.assertNotIn("runtime-reload-execution-blocked-token-should-not-leak", serialized)
+        self.assertNotIn("runtime-reload-execution-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

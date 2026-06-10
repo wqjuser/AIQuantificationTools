@@ -2133,6 +2133,62 @@ export interface ExecutionAdapterRuntimeReloadPlanRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterRuntimeReloadExecutionStatus = "blocked" | "execution_recorded";
+export type ExecutionAdapterRuntimeReloadExecutionConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRuntimeReloadExecutionSnapshot {
+  schemaVersion: 1;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRuntimeReloadExecutionStatus;
+  operator: string;
+  recordedAt: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterRuntimeReloadExecutionConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRuntimeReloadExecutionRow {
+  id: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterRuntimeReloadExecutionStatus;
+  statusLabel: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -8792,6 +8848,42 @@ export function buildExecutionAdapterRuntimeReloadPlanRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterRuntimeReloadExecutionRows(
+  executions: ExecutionAdapterRuntimeReloadExecutionSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterRuntimeReloadExecutionRow[] {
+  return (executions ?? [])
+    .map((row) => ({
+      id: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterRuntimeReloadExecutionStatusLabel(row.status),
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterRuntimeReloadExecutionConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.executionId,
+      tone: executionAdapterRuntimeReloadExecutionTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -11018,6 +11110,31 @@ function executionAdapterRuntimeReloadPlanStatusLabel(status: ExecutionAdapterRu
 
 function executionAdapterRuntimeReloadPlanConfirmationSummary(
   confirmations: ExecutionAdapterRuntimeReloadPlanSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterRuntimeReloadExecutionTone(
+  status: ExecutionAdapterRuntimeReloadExecutionStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "execution_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterRuntimeReloadExecutionStatusLabel(
+  status: ExecutionAdapterRuntimeReloadExecutionStatus
+): string {
+  return (
+    {
+      execution_recorded: "Execution recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterRuntimeReloadExecutionStatus, string>
+  )[status];
+}
+
+function executionAdapterRuntimeReloadExecutionConfirmationSummary(
+  confirmations: ExecutionAdapterRuntimeReloadExecutionSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;

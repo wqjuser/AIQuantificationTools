@@ -45,6 +45,8 @@ import {
   buildExecutionAdapterSecretMaterializationUrl,
   buildExecutionAdapterEnvironmentBindingHistoryUrl,
   buildExecutionAdapterEnvironmentBindingUrl,
+  buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
+  buildExecutionAdapterRuntimeReloadExecutionUrl,
   buildExecutionAdapterRuntimeReloadPlanHistoryUrl,
   buildExecutionAdapterRuntimeReloadPlanUrl,
   buildExecutionAdapterSecretReferenceHistoryUrl,
@@ -79,6 +81,7 @@ import {
   loadExecutionAdapterRestartAcceptances,
   loadExecutionAdapterSecretMaterializations,
   loadExecutionAdapterEnvironmentBindings,
+  loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterSecretReferences,
   loadExecutionAdapterCertifications,
@@ -92,6 +95,7 @@ import {
   recordExecutionAdapterRestartAcceptance,
   recordExecutionAdapterSecretMaterialization,
   recordExecutionAdapterEnvironmentBinding,
+  recordExecutionAdapterRuntimeReloadExecution,
   recordExecutionAdapterRuntimeReloadPlan,
   recordExecutionAdapterSecretReference,
   loadResearchNote,
@@ -3269,6 +3273,220 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterRuntimeReloadPlans).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("runtime-reload-private-key-should-not-leak");
+  });
+
+  test("records runtime reload execution evidence after a reload plan without enabling live trading", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterRuntimeReloadExecution: {
+            schemaVersion: 1,
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "execution_recorded",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T08:45:00+00:00",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              {
+                id: "pre-reload-health-verified",
+                label: "Pre-reload health is verified",
+                status: "confirmed"
+              },
+              {
+                id: "reload-action-recorded",
+                label: "Reload action is recorded",
+                status: "confirmed"
+              },
+              {
+                id: "post-reload-smoke-passed",
+                label: "Post-reload smoke passed",
+                status: "confirmed"
+              },
+              {
+                id: "rollback-readiness-confirmed",
+                label: "Rollback readiness is confirmed",
+                status: "confirmed"
+              },
+              {
+                id: "operator-confirmed-live-blocked",
+                label: "Operator confirmed live routing remains blocked",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-runtime-reload-execution-us-live",
+            eventType: "execution_adapter_runtime_reload_execution",
+            runId: "",
+            createdAt: "2026-06-09T08:45:00+00:00",
+            stage: "execution-adapter-runtime-reload-execution",
+            source: "execution-adapter-ledger",
+            summary: "us-live runtime reload execution recorded as execution_recorded.",
+            detail: "Runtime reload execution evidence is paper-only.",
+            metadata: {
+              executionId: "execution-adapter-runtime-reload-execution-us-live",
+              planId: "execution-adapter-runtime-reload-plan-us-live",
+              adapterId: "us-live",
+              status: "execution_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterRuntimeReloadExecutionUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-runtime-reload-executions"
+    );
+
+    const result = await recordExecutionAdapterRuntimeReloadExecution(
+      "/",
+      {
+        adapterId: "us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        operator: "settings-panel",
+        executionMode: "manual_controlled_reload",
+        confirmations: {
+          preReloadHealthVerified: true,
+          reloadActionRecorded: true,
+          postReloadSmokePassed: true,
+          rollbackReadinessConfirmed: true,
+          operatorConfirmedLiveBlocked: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-runtime-reload-executions"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      operator: "settings-panel",
+      executionMode: "manual_controlled_reload",
+      confirmations: {
+        preReloadHealthVerified: true,
+        reloadActionRecorded: true,
+        postReloadSmokePassed: true,
+        rollbackReadinessConfirmed: true,
+        operatorConfirmedLiveBlocked: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterRuntimeReloadExecution?.status).toBe("execution_recorded");
+    expect(result.adapterRuntimeReloadExecution?.planId).toBe("execution-adapter-runtime-reload-plan-us-live");
+    expect(result.adapterRuntimeReloadExecution?.liveTradingAllowed).toBe(false);
+    expect(result.adapterRuntimeReloadExecution?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_runtime_reload_execution");
+  });
+
+  test("loads runtime reload execution history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const execution = {
+      schemaVersion: 1,
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "execution_recorded",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T08:45:00+00:00",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        {
+          id: "pre-reload-health-verified",
+          label: "Pre-reload health is verified",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterRuntimeReloadExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterRuntimeReloadExecutions: [execution] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterRuntimeReloadExecutionHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-runtime-reload-executions?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-runtime-reload-executions?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterRuntimeReloadExecutions).toHaveLength(1);
+    expect(result.adapterRuntimeReloadExecutions[0].status).toBe("execution_recorded");
+    expect(result.adapterRuntimeReloadExecutions[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterRuntimeReloadExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterRuntimeReloadExecutions: [
+            {
+              ...execution,
+              metadata: { token: "runtime-reload-execution-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterRuntimeReloadExecutions).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("runtime-reload-execution-token-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {
