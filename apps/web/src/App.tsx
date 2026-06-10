@@ -4911,6 +4911,10 @@ function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPreviewIt
   if (i18n.locale === "en-US") {
     return item.detail;
   }
+  const translatedDetail = translateGoldenPathDetail(i18n, item.detail);
+  if (translatedDetail !== item.detail) {
+    return translatedDetail;
+  }
   return (
     {
       "market-data": "补齐或刷新当前标的 K 线缓存。",
@@ -4921,6 +4925,21 @@ function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPreviewIt
       "live-gate": "保持实盘阻断，等待认证和确认。"
     }[item.stepId] ?? item.detail
   );
+}
+
+function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  const freshCache = detail.match(/^(\d+) fresh cached K-line rows are available for audited research\.$/);
+  if (freshCache) {
+    return `${freshCache[1]} 根新鲜 K 线缓存可支撑审计研究。`;
+  }
+  const staleCache = detail.match(/^(\d+) cached rows are stale\. Refresh market data before audited research\.$/);
+  if (staleCache) {
+    return `${staleCache[1]} 根缓存已过期，先刷新行情数据后再运行审计研究。`;
+  }
+  return detail;
 }
 
 function auditRunbookStatusLabel(i18n: AppI18n, item: GoldenPathStatus["runbook"][number]): string {
@@ -5019,6 +5038,10 @@ function goldenPathDetail(
   }
   if (step.id === "paper-execution" && step.status === "blocked") {
     return "模拟执行交接未通过，请先修复数据质量或结构化风控。";
+  }
+  const translatedDetail = translateGoldenPathDetail(i18n, step.detail);
+  if (translatedDetail !== step.detail) {
+    return translatedDetail;
   }
   return (
     {

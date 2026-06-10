@@ -106,10 +106,15 @@ def _market_data_step(cache_context: dict[str, Any] | None) -> GoldenPathPayload
             "market-data",
             "Market data",
             "review",
-            f"{row_count} cached rows exist, but the context is stale.",
+            f"{row_count} cached rows are stale. Refresh market data before audited research.",
             "refresh-data",
         )
-    return _step("market-data", "Market data", "passed", f"{row_count} fresh cached K-line rows are available.")
+    return _step(
+        "market-data",
+        "Market data",
+        "passed",
+        f"{row_count} fresh cached K-line rows are available for audited research.",
+    )
 
 
 def _research_run_step(latest_run: Any | None) -> GoldenPathPayload:

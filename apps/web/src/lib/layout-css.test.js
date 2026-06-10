@@ -180,6 +180,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".golden-path-runbook-item")).toContain("cursor: pointer;");
   });
 
+  test("translates golden path cache readiness guidance for audited research", () => {
+    expect(appSource).toContain("translateGoldenPathDetail");
+    expect(appSource).toContain("fresh cached K-line rows are available for audited research");
+    expect(appSource).toContain("cached rows are stale");
+    expect(appSource).toContain("Refresh market data before audited research");
+    expect(appSource).toContain("可支撑审计研究");
+    expect(appSource).toContain("先刷新行情数据后再运行审计研究");
+  });
+
   test("renders the active work-area golden path context inside the task card", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 
