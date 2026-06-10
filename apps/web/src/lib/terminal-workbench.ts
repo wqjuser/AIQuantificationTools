@@ -9084,6 +9084,32 @@ function latestPromotionRuntimeReloadPlanRow(
   );
 }
 
+function latestPromotionRuntimeReloadExecutionRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterRuntimeReloadExecutionRow[],
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null
+): ExecutionAdapterRuntimeReloadExecutionRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -9094,6 +9120,7 @@ function buildPromotionAdapterCertificationStage(
   latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null,
   latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
   latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -9109,6 +9136,9 @@ function buildPromotionAdapterCertificationStage(
   const runtimeReloadPlanDetail = latestRuntimeReloadPlan
     ? `Latest runtime reload plan ${latestRuntimeReloadPlan.auditEventId}: ${latestRuntimeReloadPlan.statusLabel} · ${latestRuntimeReloadPlan.confirmationSummary} · ${latestRuntimeReloadPlan.blockerSummary} · ${latestRuntimeReloadPlan.reloadMode} · ${latestRuntimeReloadPlan.maintenanceWindowId} · ${latestRuntimeReloadPlan.boundary}. ${promotionRuntimeReloadPlanNextStep(latestRuntimeReloadPlan)}`
     : "";
+  const runtimeReloadExecutionDetail = latestRuntimeReloadExecution
+    ? `Latest runtime reload execution ${latestRuntimeReloadExecution.auditEventId}: ${latestRuntimeReloadExecution.statusLabel} · ${latestRuntimeReloadExecution.confirmationSummary} · ${latestRuntimeReloadExecution.blockerSummary} · ${latestRuntimeReloadExecution.executionMode} · ${latestRuntimeReloadExecution.reloadMode} · ${latestRuntimeReloadExecution.maintenanceWindowId} · ${latestRuntimeReloadExecution.boundary}. ${promotionRuntimeReloadExecutionNextStep(latestRuntimeReloadExecution)}`
+    : "";
   if (!latestCertification) {
     const liveAdapterDetail = liveAdapterCertified
       ? "A certified live adapter is available for the selected market."
@@ -9123,14 +9153,16 @@ function buildPromotionAdapterCertificationStage(
         secretReferenceDetail,
         secretMaterializationDetail,
         environmentBindingDetail,
-        runtimeReloadPlanDetail
+        runtimeReloadPlanDetail,
+        runtimeReloadExecutionDetail
       ]
         .filter(Boolean)
         .join(" "),
       status: liveAdapterCertified ? "passed" : "blocked",
       tone: liveAdapterCertified
         ? "positive"
-        : latestRuntimeReloadPlan?.status === "plan_recorded" ||
+        : latestRuntimeReloadExecution?.status === "execution_recorded" ||
+            latestRuntimeReloadPlan?.status === "plan_recorded" ||
             latestEnvironmentBinding?.status === "binding_recorded" ||
             latestSecretMaterialization?.status === "manifest_recorded" ||
             latestSecretReference?.status === "reference_recorded"
@@ -9156,12 +9188,13 @@ function buildPromotionAdapterCertificationStage(
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
     detail: [
       secretReferenceDetail,
       secretMaterializationDetail,
       environmentBindingDetail,
       runtimeReloadPlanDetail,
+      runtimeReloadExecutionDetail,
       certificationDetail,
       applyDetail,
       restartEvidenceDetail,
@@ -9173,7 +9206,8 @@ function buildPromotionAdapterCertificationStage(
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
-      : latestRuntimeReloadPlan?.status === "plan_recorded" ||
+      : latestRuntimeReloadExecution?.status === "execution_recorded" ||
+          latestRuntimeReloadPlan?.status === "plan_recorded" ||
           latestEnvironmentBinding?.status === "binding_recorded" ||
           latestSecretMaterialization?.status === "manifest_recorded" ||
           latestRestartAcceptance?.status === "acceptance_recorded" ||
@@ -9228,6 +9262,13 @@ function promotionRuntimeReloadPlanNextStep(plan: ExecutionAdapterRuntimeReloadP
   return "Resolve runtime reload plan blockers before controlled reload execution.";
 }
 
+function promotionRuntimeReloadExecutionNextStep(execution: ExecutionAdapterRuntimeReloadExecutionRow): string {
+  if (execution.status === "execution_recorded") {
+    return "Runtime reload execution evidence is recorded; live routing remains blocked until post-reload acceptance, real adapter orchestration, and human confirmation pass.";
+  }
+  return "Resolve runtime reload execution blockers before post-reload acceptance.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -9239,7 +9280,8 @@ export function buildPromotionReadiness(
   secretReferenceRows: ExecutionAdapterSecretReferenceRow[] = [],
   secretMaterializationRows: ExecutionAdapterSecretMaterializationRow[] = [],
   environmentBindingRows: ExecutionAdapterEnvironmentBindingRow[] = [],
-  runtimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[] = []
+  runtimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[] = [],
+  runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -9281,6 +9323,13 @@ export function buildPromotionReadiness(
     runtimeReloadPlanRows,
     latestSecretMaterialization,
     latestEnvironmentBinding
+  );
+  const latestRuntimeReloadExecution = latestPromotionRuntimeReloadExecutionRow(
+    workspace,
+    runtimeReloadExecutionRows,
+    latestSecretMaterialization,
+    latestEnvironmentBinding,
+    latestRuntimeReloadPlan
   );
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
@@ -9353,6 +9402,7 @@ export function buildPromotionReadiness(
     latestSecretMaterialization,
     latestEnvironmentBinding,
     latestRuntimeReloadPlan,
+    latestRuntimeReloadExecution,
     liveAdapterCertified,
     adapterGatePassed
   );

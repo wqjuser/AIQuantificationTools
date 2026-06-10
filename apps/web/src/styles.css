@@ -7136,6 +7136,7 @@ em {
 .promotion-controlled-restart-evidence,
 .promotion-environment-binding-evidence,
 .promotion-restart-acceptance,
+.promotion-runtime-reload-execution-evidence,
 .promotion-runtime-reload-plan-evidence,
 .promotion-secret-materialization-evidence,
 .promotion-secret-reference-evidence {
@@ -7152,6 +7153,7 @@ em {
 .promotion-controlled-restart-evidence > span,
 .promotion-environment-binding-evidence > span,
 .promotion-restart-acceptance > span,
+.promotion-runtime-reload-execution-evidence > span,
 .promotion-runtime-reload-plan-evidence > span,
 .promotion-secret-materialization-evidence > span,
 .promotion-secret-reference-evidence > span {
@@ -7165,6 +7167,7 @@ em {
 .promotion-controlled-restart-evidence-row,
 .promotion-environment-binding-evidence-row,
 .promotion-restart-acceptance-row,
+.promotion-runtime-reload-execution-evidence-row,
 .promotion-runtime-reload-plan-evidence-row,
 .promotion-secret-materialization-evidence-row,
 .promotion-secret-reference-evidence-row {
@@ -7185,6 +7188,7 @@ em {
 .promotion-controlled-restart-evidence-row.positive,
 .promotion-environment-binding-evidence-row.positive,
 .promotion-restart-acceptance-row.positive,
+.promotion-runtime-reload-execution-evidence-row.positive,
 .promotion-runtime-reload-plan-evidence-row.positive,
 .promotion-secret-materialization-evidence-row.positive,
 .promotion-secret-reference-evidence-row.positive {
@@ -7196,6 +7200,7 @@ em {
 .promotion-controlled-restart-evidence-row.warning,
 .promotion-environment-binding-evidence-row.warning,
 .promotion-restart-acceptance-row.warning,
+.promotion-runtime-reload-execution-evidence-row.warning,
 .promotion-runtime-reload-plan-evidence-row.warning,
 .promotion-secret-materialization-evidence-row.warning,
 .promotion-secret-reference-evidence-row.warning {
@@ -7207,6 +7212,7 @@ em {
 .promotion-controlled-restart-evidence-row.risk,
 .promotion-environment-binding-evidence-row.risk,
 .promotion-restart-acceptance-row.risk,
+.promotion-runtime-reload-execution-evidence-row.risk,
 .promotion-runtime-reload-plan-evidence-row.risk,
 .promotion-secret-materialization-evidence-row.risk,
 .promotion-secret-reference-evidence-row.risk {
@@ -7228,6 +7234,9 @@ em {
 .promotion-restart-acceptance-row strong,
 .promotion-restart-acceptance-row p,
 .promotion-restart-acceptance-row em,
+.promotion-runtime-reload-execution-evidence-row strong,
+.promotion-runtime-reload-execution-evidence-row p,
+.promotion-runtime-reload-execution-evidence-row em,
 .promotion-runtime-reload-plan-evidence-row strong,
 .promotion-runtime-reload-plan-evidence-row p,
 .promotion-runtime-reload-plan-evidence-row em,
@@ -7247,6 +7256,7 @@ em {
 .promotion-controlled-restart-evidence-row strong,
 .promotion-environment-binding-evidence-row strong,
 .promotion-restart-acceptance-row strong,
+.promotion-runtime-reload-execution-evidence-row strong,
 .promotion-runtime-reload-plan-evidence-row strong,
 .promotion-secret-materialization-evidence-row strong,
 .promotion-secret-reference-evidence-row strong {
@@ -7264,6 +7274,8 @@ em {
 .promotion-environment-binding-evidence-row em,
 .promotion-restart-acceptance-row p,
 .promotion-restart-acceptance-row em,
+.promotion-runtime-reload-execution-evidence-row p,
+.promotion-runtime-reload-execution-evidence-row em,
 .promotion-runtime-reload-plan-evidence-row p,
 .promotion-runtime-reload-plan-evidence-row em,
 .promotion-secret-materialization-evidence-row p,

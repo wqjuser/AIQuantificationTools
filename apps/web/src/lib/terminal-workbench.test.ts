@@ -8985,6 +8985,202 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("surfaces controlled runtime reload execution evidence in promotion readiness", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-runtime-reload-execution",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-runtime-reload-execution",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 }
+    });
+    const execution = {
+      executionId: "paper-promotion-runtime-reload-execution",
+      runId: "run-promotion-runtime-reload-execution",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      mode: "paper_only",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion-runtime-reload-execution",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+    const brokerRows = [
+      ...buildBrokerAdapterRows(workspace),
+      {
+        id: "ashare-live",
+        market: "ashare" as const,
+        adapter: "A-share live adapter",
+        route: "live" as const,
+        label: "A-share live adapter",
+        provider: "broker-gateway",
+        status: "paper_ready" as const,
+        statusLabel: "Paper ready",
+        certification: "passed",
+        latency: "manual",
+        nextStep: "Keep live route blocked until final confirmation.",
+        risk: "blocked",
+        detail: "Live route remains blocked until every execution evidence layer is present.",
+        tone: "warning" as const
+      }
+    ];
+    const certificationRows = [
+      {
+        id: "adapter-certification-ashare-runtime-reload-execution",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:00:00+00:00",
+        status: "passed" as const,
+        statusLabel: "Passed",
+        checkSummary: "4 passed / 4 checks",
+        auditEventId: "adapter-certification-ashare-runtime-reload-execution",
+        boundary: "Live trading allowed",
+        liveTradingAllowed: true,
+        tone: "positive" as const
+      }
+    ];
+    const secretMaterializationRows = [
+      {
+        id: "execution-adapter-secret-materialization-ashare-live",
+        referenceId: "execution-adapter-secret-reference-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:15:00+00:00",
+        status: "manifest_recorded" as const,
+        statusLabel: "Manifest recorded",
+        referenceName: "ashare-live/broker-vault",
+        backend: "local-secret-store",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        materializationMode: "local_secret_store_manifest",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-secret-materialization-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+    const environmentBindingRows = [
+      {
+        id: "execution-adapter-environment-binding-ashare-live",
+        materializationId: "execution-adapter-secret-materialization-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:30:00+00:00",
+        status: "binding_recorded" as const,
+        statusLabel: "Binding recorded",
+        bindingMode: "local_runtime_env",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "4 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-environment-binding-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+    const runtimeReloadPlanRows = [
+      {
+        id: "execution-adapter-runtime-reload-plan-ashare-live",
+        bindingId: "execution-adapter-environment-binding-ashare-live",
+        materializationId: "execution-adapter-secret-materialization-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T08:45:00+00:00",
+        status: "plan_recorded" as const,
+        statusLabel: "Plan recorded",
+        reloadMode: "manual_runtime_reload",
+        maintenanceWindowId: "maintenance-2026-06-10",
+        bindingMode: "local_runtime_env",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-runtime-reload-plan-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+    const runtimeReloadExecutionRows = [
+      {
+        id: "execution-adapter-runtime-reload-execution-ashare-live",
+        planId: "execution-adapter-runtime-reload-plan-ashare-live",
+        bindingId: "execution-adapter-environment-binding-ashare-live",
+        materializationId: "execution-adapter-secret-materialization-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T09:00:00+00:00",
+        status: "execution_recorded" as const,
+        statusLabel: "Execution recorded",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_runtime_reload",
+        maintenanceWindowId: "maintenance-2026-06-10",
+        bindingMode: "local_runtime_env",
+        manifestPath: "local-secret-store://ashare-live/broker-vault",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-runtime-reload-execution-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+
+    const readiness = buildPromotionReadiness(
+      workspace,
+      execution,
+      brokerRows,
+      certificationRows,
+      [],
+      [],
+      [],
+      [],
+      secretMaterializationRows,
+      environmentBindingRows,
+      runtimeReloadPlanRows,
+      runtimeReloadExecutionRows
+    );
+
+    const adapterStage = readiness.stages.find((stage) => stage.id === "adapter-certification");
+    expect(readiness.status).toBe("certification_pending");
+    expect(adapterStage).toMatchObject({
+      value: "Execution recorded · ashare-live",
+      status: "blocked",
+      tone: "warning"
+    });
+    expect(adapterStage?.detail).toContain(
+      "Latest runtime reload execution execution-adapter-runtime-reload-execution-ashare-live: Execution recorded · 5 confirmed / 0 missing · No blockers · manual_controlled_reload · manual_runtime_reload · maintenance-2026-06-10 · Paper only · live trading blocked. Runtime reload execution evidence is recorded; live routing remains blocked until post-reload acceptance, real adapter orchestration, and human confirmation pass."
+    );
+  });
+
   test("derives visual strategy rule rows from the active strategy snapshot", () => {
     const rows = buildStrategyRuleRows(buildTerminalWorkspace());
 
