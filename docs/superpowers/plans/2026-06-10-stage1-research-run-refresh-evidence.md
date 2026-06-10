@@ -20,7 +20,7 @@ When an audited research run is created from a context that has matching watchli
 - [x] GREEN: Pass selected refresh run id from the web research pipeline.
 - [x] DOCS: Update product planning and architecture docs.
 - [x] VERIFY: Run targeted tests, full relevant suites, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -37,3 +37,4 @@ docker compose up --build -d
 - 2026-06-10: Added failing backend/API coverage, then locked matching watchlist refresh evidence into `researchRun.dataSnapshot.preparationEvidence` and passed the selected coverage run id from the web pipeline.
 - 2026-06-10: Updated product planning and architecture notes to describe the new Stage 1 preparation-evidence boundary.
 - 2026-06-10: Verified backend and frontend targeted tests, full API/workbench suites, quant-core unittest suite, production build, Docker rebuild, browser page smoke, and a container API run whose detail locked `cache-refresh-f10efd7401b7` as `watchlist_cache_refresh` evidence.
+- 2026-06-10: Shipped in `e8a7a13` and pushed to `origin/codex/p0-product-workspaces` through the configured proxy.
