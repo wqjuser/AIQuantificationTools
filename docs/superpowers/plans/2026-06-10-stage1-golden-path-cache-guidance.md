@@ -20,7 +20,7 @@ Align the Golden Path market-data step with the Stage 1 research cache readiness
 - [x] GREEN: Reuse a Golden Path detail translator in task cards and audit runbook rows.
 - [x] DOCS: Update product planning docs.
 - [x] VERIFY: Run targeted tests, relevant suites, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -39,3 +39,4 @@ npm run docker:smoke
 - 2026-06-10: Added failing backend Golden Path tests for fresh/stale cache guidance and implemented the backend detail copy.
 - 2026-06-10: Added failing frontend UI contract coverage and implemented shared Golden Path detail translation for cache readiness guidance.
 - 2026-06-10: Verified targeted backend/frontend tests, related frontend suites, production build, full repository tests, Docker rebuild, Docker smoke, and browser smoke on `http://127.0.0.1:5173/?workspace=audit&market=ashare&symbol=600000&timeframe=1d`.
+- 2026-06-10: Marked this Stage 1 slice shipped after commit and proxy push preparation.
