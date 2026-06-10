@@ -229,6 +229,7 @@ import {
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
   resolveWatchlistCacheRefreshRunIdFromUrl,
+  watchlistIncludesInstrument,
   AiWorkbenchAction,
   AiEvidenceCard,
   AiReviewDossier,
@@ -753,6 +754,7 @@ export function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [isChartLoading, setIsChartLoading] = useState(false);
   const [isSymbolSearching, setIsSymbolSearching] = useState(false);
+  const [hasUnsavedWatchlistChanges, setHasUnsavedWatchlistChanges] = useState(false);
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
   const [isSavingWatchlist, setIsSavingWatchlist] = useState(false);
@@ -3146,12 +3148,14 @@ export function App() {
 
   const selectInstrument = useCallback(
     (instrument: TerminalWorkspace["selectedInstrument"]) => {
+      const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, instrument);
       manualSelectionVersionRef.current += 1;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
       resetAiReviewHistoryState();
+      setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
         source: "core",
@@ -3162,7 +3166,7 @@ export function App() {
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
     },
-    [resetAiReviewHistoryState]
+    [resetAiReviewHistoryState, workspace.watchlist]
   );
 
   const selectWatchlistCacheRefreshItem = useCallback(
@@ -3334,6 +3338,9 @@ export function App() {
       statusLabel: result.source === "core" ? "Watchlist saved" : "Watchlist save failed",
       error: result.error
     }));
+    if (result.source === "core") {
+      setHasUnsavedWatchlistChanges(false);
+    }
     setIsSavingWatchlist(false);
   }, [workspace.watchlist]);
 
@@ -4480,13 +4487,25 @@ export function App() {
               </button>
             ))}
             <button
-              className="compact-action watchlist-save-action"
+              className={`compact-action watchlist-save-action ${
+                hasUnsavedWatchlistChanges ? "dirty" : "saved"
+              }`}
               disabled={isSavingWatchlist || !workspace.watchlist.length}
               onClick={saveCurrentWatchlist}
+              title={
+                hasUnsavedWatchlistChanges
+                  ? i18n.t("watchlist.unsavedDetail")
+                  : i18n.t("watchlist.savedDetail")
+              }
               type="button"
             >
               {isSavingWatchlist ? <RefreshCw className="spin" size={15} /> : <BookmarkPlus size={15} />}
-              {i18n.t("action.saveWatchlist")}
+              <span>
+                {hasUnsavedWatchlistChanges
+                  ? i18n.t("action.saveWatchlistChanges")
+                  : i18n.t("action.saveWatchlist")}
+              </span>
+              <em>{hasUnsavedWatchlistChanges ? i18n.t("watchlist.unsaved") : i18n.t("watchlist.saved")}</em>
             </button>
           </section>
 

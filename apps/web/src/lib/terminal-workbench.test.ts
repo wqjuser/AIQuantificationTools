@@ -106,6 +106,7 @@ import {
   researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
+  watchlistIncludesInstrument,
   resolveWatchlistCacheRefreshRunIdFromUrl,
   resolveWatchlistCacheRefreshRunSelection,
   mergeResearchRunImportAuditEvents,
@@ -10431,6 +10432,13 @@ describe("terminal workbench model", () => {
     expect(workspace.watchlist[0].symbol).toBe("MSFT");
     expect(workspace.watchlist).toHaveLength(5);
     expect(workspace.researchRun).toBeNull();
+  });
+
+  test("detects whether an instrument already belongs to the active watchlist", () => {
+    const workspace = buildTerminalWorkspace();
+
+    expect(watchlistIncludesInstrument(workspace.watchlist, { market: "ashare", symbol: "600000" })).toBe(true);
+    expect(watchlistIncludesInstrument(workspace.watchlist, { market: "us", symbol: "MSFT" })).toBe(false);
   });
 
   test("merges a saved watchlist into the selected research context", () => {

@@ -11236,6 +11236,10 @@ export function buildInstrumentFromSymbol(market: Market, rawSymbol: string): In
   };
 }
 
+export function watchlistIncludesInstrument(watchlist: Instrument[], instrument: Pick<Instrument, "market" | "symbol">): boolean {
+  return watchlist.some((item) => item.market === instrument.market && item.symbol === instrument.symbol);
+}
+
 export function normalizeInstrumentSymbol(market: Market, rawSymbol: string): string {
   const compact = rawSymbol.trim().toUpperCase().replace(/\s+/g, "");
   if (!compact) {

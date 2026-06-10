@@ -815,6 +815,27 @@ h2 {
 .watchlist-save-action {
   grid-column: 1 / -1;
   justify-self: end;
+  gap: 7px;
+}
+
+.watchlist-save-action em {
+  border: 1px solid #2b6f62;
+  border-radius: 999px;
+  color: #71dfc5;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 3px 6px;
+}
+
+.watchlist-save-action.dirty {
+  border-color: #8a6a2d;
+  background: #261f12;
+}
+
+.watchlist-save-action.dirty em {
+  border-color: #8a6a2d;
+  color: #e8be62;
 }
 
 em {
