@@ -1183,6 +1183,67 @@ export interface ExecutionAdapterEnvironmentBindingHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterRuntimeReloadPlanStatus = "blocked" | "plan_recorded";
+export type ExecutionAdapterRuntimeReloadPlanConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRuntimeReloadPlanConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterRuntimeReloadPlanConfirmationStatus;
+}
+
+export interface ExecutionAdapterRuntimeReloadPlanResult {
+  schemaVersion: 1;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRuntimeReloadPlanStatus;
+  operator: string;
+  recordedAt: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterRuntimeReloadPlanConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRuntimeReloadPlanRequest {
+  adapterId: string;
+  bindingId: string;
+  operator?: string;
+  reloadMode?: string;
+  maintenanceWindowId: string;
+  confirmations?: {
+    maintenanceWindowApproved?: boolean;
+    healthBaselineCaptured?: boolean;
+    configDiffReviewed?: boolean;
+    postReloadSmokePlanDocumented?: boolean;
+    rollbackOwnerAssigned?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterRuntimeReloadPlanRecordResult {
+  adapterRuntimeReloadPlan?: ExecutionAdapterRuntimeReloadPlanResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterRuntimeReloadPlanHistoryResult {
+  adapterRuntimeReloadPlans: ExecutionAdapterRuntimeReloadPlanResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -2052,6 +2113,10 @@ export function buildExecutionAdapterEnvironmentBindingUrl(baseUrl: string): str
   return buildApiUrl(baseUrl, "api/execution/adapter-environment-bindings");
 }
 
+export function buildExecutionAdapterRuntimeReloadPlanUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-plans");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -2127,6 +2192,20 @@ export function buildExecutionAdapterEnvironmentBindingHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-environment-bindings", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterRuntimeReloadPlanHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-plans", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -4099,6 +4178,52 @@ export async function recordExecutionAdapterEnvironmentBinding(
   }
 }
 
+export async function recordExecutionAdapterRuntimeReloadPlan(
+  baseUrl: string,
+  request: ExecutionAdapterRuntimeReloadPlanRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterRuntimeReloadPlanRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRuntimeReloadPlanUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        bindingId: request.bindingId,
+        operator: request.operator ?? "local-operator",
+        reloadMode: request.reloadMode ?? "manual_container_reload_plan",
+        maintenanceWindowId: request.maintenanceWindowId,
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterRuntimeReloadPlanRecordPayload(payload)) {
+      return {
+        adapterRuntimeReloadPlan: payload.adapterRuntimeReloadPlan,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter runtime reload plan contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload plan error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -4293,6 +4418,34 @@ export async function loadExecutionAdapterEnvironmentBindings(
       adapterEnvironmentBindings: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter environment binding history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterRuntimeReloadPlans(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterRuntimeReloadPlanHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRuntimeReloadPlanHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterRuntimeReloadPlanHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter runtime reload plan history contract");
+    }
+    return {
+      adapterRuntimeReloadPlans: payload.adapterRuntimeReloadPlans,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterRuntimeReloadPlans: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload plan history error"
     };
   }
 }
@@ -6100,6 +6253,19 @@ function isExecutionAdapterEnvironmentBindingRecordPayload(
   );
 }
 
+function isExecutionAdapterRuntimeReloadPlanRecordPayload(
+  value: unknown
+): value is { adapterRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterRuntimeReloadPlan?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterRuntimeReloadPlanResult(payload.adapterRuntimeReloadPlan) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -6188,6 +6354,19 @@ function isExecutionAdapterEnvironmentBindingHistoryPayload(
   return (
     Array.isArray(payload.adapterEnvironmentBindings) &&
     payload.adapterEnvironmentBindings.every(isExecutionAdapterEnvironmentBindingResult)
+  );
+}
+
+function isExecutionAdapterRuntimeReloadPlanHistoryPayload(
+  value: unknown
+): value is { adapterRuntimeReloadPlans: ExecutionAdapterRuntimeReloadPlanResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterRuntimeReloadPlans?: unknown };
+  return (
+    Array.isArray(payload.adapterRuntimeReloadPlans) &&
+    payload.adapterRuntimeReloadPlans.every(isExecutionAdapterRuntimeReloadPlanResult)
   );
 }
 
@@ -6373,6 +6552,40 @@ function isExecutionAdapterEnvironmentBindingResult(
   );
 }
 
+function isExecutionAdapterRuntimeReloadPlanResult(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadPlanResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterRuntimeReloadPlanResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterRuntimeReloadPlanStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterRuntimeReloadPlanConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -6510,6 +6723,20 @@ function isExecutionAdapterEnvironmentBindingConfirmation(
   );
 }
 
+function isExecutionAdapterRuntimeReloadPlanConfirmation(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadPlanConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterRuntimeReloadPlanConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -6546,6 +6773,12 @@ function isExecutionAdapterSecretMaterializationStatus(
 
 function isExecutionAdapterEnvironmentBindingStatus(value: unknown): value is ExecutionAdapterEnvironmentBindingStatus {
   return value === "blocked" || value === "binding_recorded";
+}
+
+function isExecutionAdapterRuntimeReloadPlanStatus(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadPlanStatus {
+  return value === "blocked" || value === "plan_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

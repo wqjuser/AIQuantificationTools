@@ -2633,6 +2633,180 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("environment-binding-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("environment-binding-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_runtime_reload_plan_records_evidence_without_enabling_live(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "crypto-live",
+                        "market": "crypto",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "crypto-live/binance-sandbox",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "crypto-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": "local-secret-store://crypto-live/binance-sandbox",
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "crypto-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "crypto-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-crypto-live-1",
+                        "confirmations": {},
+                        "metadata": {
+                            "source": "settings-panel",
+                            "token": "runtime-reload-blocked-token-should-not-leak",
+                        },
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "crypto-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-crypto-live-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "runtime-reload-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-runtime-reload-plans?adapterId=crypto-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterRuntimeReloadPlan"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterRuntimeReloadPlan"]["blockedReasons"],
+            [
+                "runtime_reload_maintenance_window_missing",
+                "runtime_reload_health_baseline_missing",
+                "runtime_reload_config_diff_missing",
+                "runtime_reload_smoke_plan_missing",
+                "runtime_reload_rollback_owner_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["status"], "plan_recorded")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["bindingId"], binding_id)
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["adapterId"], "crypto-live")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["reloadMode"], "manual_container_reload_plan")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["maintenanceWindowId"], "window-crypto-live-1")
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["requiredEnvVars"], ["CCXT_API_KEY", "CCXT_API_SECRET"])
+        self.assertFalse(recorded_payload["adapterRuntimeReloadPlan"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterRuntimeReloadPlan"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_runtime_reload_plan")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterRuntimeReloadPlans"]), 2)
+        self.assertEqual(history_payload["adapterRuntimeReloadPlans"][0]["status"], "plan_recorded")
+        self.assertEqual(history_payload["adapterRuntimeReloadPlans"][1]["status"], "blocked")
+        self.assertNotIn("runtime-reload-blocked-token-should-not-leak", serialized)
+        self.assertNotIn("runtime-reload-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

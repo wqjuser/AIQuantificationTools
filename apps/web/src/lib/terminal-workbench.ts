@@ -2081,6 +2081,58 @@ export interface ExecutionAdapterEnvironmentBindingRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterRuntimeReloadPlanStatus = "blocked" | "plan_recorded";
+export type ExecutionAdapterRuntimeReloadPlanConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRuntimeReloadPlanSnapshot {
+  schemaVersion: 1;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRuntimeReloadPlanStatus;
+  operator: string;
+  recordedAt: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterRuntimeReloadPlanConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRuntimeReloadPlanRow {
+  id: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterRuntimeReloadPlanStatus;
+  statusLabel: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -8706,6 +8758,40 @@ export function buildExecutionAdapterEnvironmentBindingRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterRuntimeReloadPlanRows(
+  plans: ExecutionAdapterRuntimeReloadPlanSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterRuntimeReloadPlanRow[] {
+  return (plans ?? [])
+    .map((row) => ({
+      id: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterRuntimeReloadPlanStatusLabel(row.status),
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterRuntimeReloadPlanConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.planId,
+      tone: executionAdapterRuntimeReloadPlanTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -10815,6 +10901,29 @@ function executionAdapterEnvironmentBindingStatusLabel(status: ExecutionAdapterE
 
 function executionAdapterEnvironmentBindingConfirmationSummary(
   confirmations: ExecutionAdapterEnvironmentBindingSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterRuntimeReloadPlanTone(
+  status: ExecutionAdapterRuntimeReloadPlanStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "plan_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterRuntimeReloadPlanStatusLabel(status: ExecutionAdapterRuntimeReloadPlanStatus): string {
+  return (
+    {
+      plan_recorded: "Plan recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterRuntimeReloadPlanStatus, string>
+  )[status];
+}
+
+function executionAdapterRuntimeReloadPlanConfirmationSummary(
+  confirmations: ExecutionAdapterRuntimeReloadPlanSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
