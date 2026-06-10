@@ -4230,6 +4230,7 @@ export function App() {
             isActionDisabled={isGoldenPathActionDisabledById}
             onRunAction={runGoldenPathActionById}
             onSelectWorkspace={selectProductWorkArea}
+            preflight={researchPipelinePreflight}
             runbook={goldenPath?.runbook ?? []}
           />
           <RunHistoryPanel
@@ -13533,6 +13534,7 @@ function GoldenPathRunbookPanel({
   isActionDisabled,
   onRunAction,
   onSelectWorkspace,
+  preflight,
   runbook
 }: {
   className?: string;
@@ -13540,6 +13542,7 @@ function GoldenPathRunbookPanel({
   isActionDisabled: (actionId: string | null | undefined) => boolean;
   onRunAction: (actionId: string | null | undefined, targetWorkspace?: string | null) => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
+  preflight: ResearchPipelinePreflight;
   runbook: GoldenPathStatus["runbook"];
 }) {
   return (
@@ -13556,6 +13559,7 @@ function GoldenPathRunbookPanel({
               : null;
             const canRunAction = Boolean(item.actionId) && !item.passed;
             const isRunbookActionDisabled = !canRunAction || isActionDisabled(item.actionId);
+            const actionHint = goldenPathActionPreflightHint(i18n, item.actionId, preflight);
             return (
               <article
                 className={`audit-runbook-row ${item.status} ${item.current ? "current" : ""}`}
@@ -13565,6 +13569,9 @@ function GoldenPathRunbookPanel({
                 <div className="audit-runbook-main">
                   <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
                   <small>{auditRunbookDetail(i18n, item)}</small>
+                  {actionHint ? (
+                    <small className={`audit-runbook-preflight-hint ${preflight.status}`}>{actionHint}</small>
+                  ) : null}
                 </div>
                 <em>{auditRunbookStatusLabel(i18n, item)}</em>
                 <div className="audit-runbook-actions">

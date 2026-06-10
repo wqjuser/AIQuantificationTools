@@ -1206,6 +1206,20 @@ em {
   color: #e8be62;
 }
 
+.audit-runbook-preflight-hint {
+  display: block;
+  grid-column: 2 / -1;
+  margin-top: 2px;
+  overflow: hidden;
+  color: #e8be62;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-runbook-preflight-hint.blocked {
+  color: #ffad9f;
+}
+
 .module-focus-symbol {
   flex: 0 0 auto;
   border: 1px solid #2b6f62;

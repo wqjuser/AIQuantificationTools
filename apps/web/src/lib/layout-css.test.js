@@ -247,10 +247,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("isGoldenPathActionDisabledById");
     expect(auditWorkspaceSource).toContain("<GoldenPathRunbookPanel");
     expect(auditWorkspaceSource).toContain("runbook={goldenPath?.runbook ?? []}");
+    expect(auditWorkspaceSource).toContain("preflight={researchPipelinePreflight}");
     expect(auditWorkspaceSource).toContain("onSelectWorkspace={selectProductWorkArea}");
     expect(auditWorkspaceSource).toContain("onRunAction={runGoldenPathActionById}");
     expect(auditWorkspaceSource).toContain("isActionDisabled={isGoldenPathActionDisabledById}");
     expect(appSource).toContain("const isRunbookActionDisabled = !canRunAction || isActionDisabled(item.actionId);");
+    expect(appSource).toContain("const actionHint = goldenPathActionPreflightHint(i18n, item.actionId, preflight);");
+    expect(appSource).toContain('className={`audit-runbook-preflight-hint ${preflight.status}`}');
     expect(appSource).toContain("disabled={isRunbookActionDisabled}");
     expect(appSource).toContain("isGoldenPathActionDisabledById(goldenPathActionId)");
     expect(appSource).toContain("isGoldenPathActionDisabledById(workspaceContextActionId)");
@@ -259,6 +262,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-runbook-list")).toContain("display: grid;");
     expect(cssBlock(".audit-runbook-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto;");
     expect(cssBlock(".audit-runbook-actions")).toContain("display: flex;");
+    expect(cssBlock(".audit-runbook-preflight-hint")).toContain("grid-column: 2 / -1;");
     expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"'])).toBe(true);
   });
