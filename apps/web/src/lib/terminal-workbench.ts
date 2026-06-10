@@ -4365,6 +4365,8 @@ export function buildResearchRunExportIndexRows(
       const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
       const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
       const integrityHash = exportPackage.integrity?.hash ?? "";
+      const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
+      const preparationEvidenceArtifact = preparationEvidence ? `prep ${preparationEvidence.runId}` : null;
       const auditReport = exportPackage.auditReport;
       const auditReportHash = auditReport?.contentSha256.hash ?? "";
       const auditReportIsReady =
@@ -4460,6 +4462,7 @@ export function buildResearchRunExportIndexRows(
         artifacts: [
           `${artifactCounts.bars} bars`,
           `${artifactCounts.trades} trades`,
+          preparationEvidenceArtifact,
           `${artifactCounts.portfolioPaperOrderBatches ?? 0} portfolio batches`,
           `${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals`,
           `${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,

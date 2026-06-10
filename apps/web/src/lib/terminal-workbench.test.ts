@@ -3636,6 +3636,43 @@ describe("terminal workbench model", () => {
           { id: "risk-approved", label: "Risk approved", passed: true, reason: "paper approved" }
         ]
       },
+      researchRun: {
+        ...auditedRunFixture({
+          runId: "run-index-a",
+          strategyRevision: "rev-index-a",
+          dataRows: 500,
+          tradeCount: 18
+        }),
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 500,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-27T08:00:00+00:00",
+          hash: "hash-index-a",
+          bars: [],
+          preparationEvidence: {
+            kind: "watchlist_cache_refresh" as const,
+            runId: "cache-refresh-index-a",
+            createdAt: "2026-05-26T08:05:00+00:00",
+            market: "ashare" as const,
+            symbol: "600000",
+            name: "浦发银行",
+            timeframe: "1d" as const,
+            status: "refreshed",
+            requestedLimit: 500,
+            upsertedRows: 500,
+            quality: {
+              source: "tencent",
+              isComplete: true,
+              warnings: [],
+              rows: 500
+            },
+            error: null
+          }
+        }
+      },
       paperExecutions: [
         {
           executionId: "paper-index-a",
@@ -3849,6 +3886,7 @@ describe("terminal workbench model", () => {
           }
         },
         paperExecutions: [],
+        researchRun: undefined,
         aiReviewRuns: []
       }
     ]);
@@ -3871,7 +3909,7 @@ describe("terminal workbench model", () => {
           context: "600000 · 1d",
           integrity: "sha256 · cccccccc",
           artifacts:
-            "500 bars / 18 trades / 1 portfolio batches / 1 approvals / 1 fills / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
+            "500 bars / 18 trades / prep cache-refresh-index-a / 1 portfolio batches / 1 approvals / 1 fills / 1 AI / 2 reports / auditReport eeeeeeee verified / backtestReport ffffffff signed",
           execution: "1/2 gates · paper_only"
         })
       ])
@@ -3890,6 +3928,9 @@ describe("terminal workbench model", () => {
       "run-index-a"
     ]);
     expect(filterResearchRunExportIndexRows(rows, "local-audit-key").map((row) => row.id)).toEqual(["run-index-a"]);
+    expect(filterResearchRunExportIndexRows(rows, "cache-refresh-index-a").map((row) => row.id)).toEqual([
+      "run-index-a"
+    ]);
   });
 
   test("builds searchable import diff rows before applying a research run export package", () => {
