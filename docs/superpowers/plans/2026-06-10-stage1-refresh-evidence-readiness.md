@@ -19,7 +19,7 @@ Make the Stage 1 research context checklist show whether the current market/symb
 - [x] GREEN: Wire App readiness input to recent watchlist refresh history.
 - [x] DOCS: Update product planning docs with the new Stage 1 capability.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -39,3 +39,4 @@ Results:
 - Python core unittest suite passed: `141` tests.
 - Docker rebuild/restart completed for the web and API services.
 - Browser smoke passed on `http://127.0.0.1:5173/?workspace=research&market=ashare&symbol=600000&timeframe=1d`: the Research readiness checklist showed `刷新证据`, matched the recent `cache-refresh-f10efd7401b7` run for `600000 · 1d`, displayed the row as ready, and reported no console errors.
+- Shipped through proxy to `origin/codex/p0-product-workspaces` as `5294a15`.
