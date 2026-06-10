@@ -2132,14 +2132,15 @@ export interface ResearchContextReadinessInput {
   workspace: TerminalWorkspace;
   barCount: number;
   dataQuality: ResearchRunDataQuality;
+  activeWorkAreaId?: ProductWorkAreaId;
   cacheContext?: ResearchContextReadinessCacheContext | null;
   note?: ResearchContextReadinessNoteInput | null;
 }
 
-export type ResearchContextReadinessAction = "refresh-cache" | "save-note";
+export type ResearchContextReadinessAction = "refresh-cache" | "save-note" | "save-workspace";
 
 export interface ResearchContextReadinessRow {
-  id: "instrument" | "klines" | "cache" | "note";
+  id: "instrument" | "klines" | "cache" | "note" | "workspace";
   label: string;
   value: string;
   detail: string;
@@ -6259,8 +6260,33 @@ export function buildResearchContextReadinessRows(
       status: noteStatus,
       tone: readinessTone(noteStatus),
       action: noteStatus === "ready" ? undefined : "save-note"
-    }
+    },
+    buildResearchWorkspaceReadinessRow(input.workspace, input.activeWorkAreaId ?? "research")
   ];
+}
+
+function buildResearchWorkspaceReadinessRow(
+  workspace: TerminalWorkspace,
+  activeWorkAreaId: ProductWorkAreaId
+): ResearchContextReadinessRow {
+  const draft = buildResearchWorkspaceStateDraft(workspace, activeWorkAreaId);
+  const savedState = workspace.researchWorkspaceState ?? null;
+  const isSaved = researchWorkspaceStateMatchesDraft(savedState, draft);
+  const context = `${strategyContextLabel(draft.market, draft.symbol, draft.timeframe)} · ${draft.workspaceId}`;
+  const value = isSaved ? "saved" : savedState ? "unsaved changes" : "not saved";
+  const detail = isSaved
+    ? `Saved ${savedState?.updatedAt ?? "time unknown"} · ${draft.workspaceId} entry`
+    : `Save ${context} before relying on this workspace context.`;
+
+  return {
+    id: "workspace",
+    label: "Workspace state",
+    value,
+    detail,
+    status: isSaved ? "ready" : "review",
+    tone: isSaved ? "positive" : "warning",
+    action: isSaved ? undefined : "save-workspace"
+  };
 }
 
 export function buildResearchContextEvidenceRows(workspace: TerminalWorkspace): ResearchContextEvidenceRow[] {

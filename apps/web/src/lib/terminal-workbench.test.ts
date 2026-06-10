@@ -347,7 +347,14 @@ describe("terminal workbench model", () => {
 
   test("builds ready Stage 1 research context readiness rows", () => {
     const rows = buildResearchContextReadinessRows({
-      workspace: buildTerminalWorkspace(),
+      workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "research",
+        updatedAt: "2026-05-26T08:40:00+08:00"
+      }),
       barCount: 240,
       dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
       cacheContext: {
@@ -363,9 +370,9 @@ describe("terminal workbench model", () => {
       }
     });
 
-    expect(rows.map((row) => row.id)).toEqual(["instrument", "klines", "cache", "note"]);
-    expect(rows.map((row) => row.status)).toEqual(["ready", "ready", "ready", "ready"]);
-    expect(rows.map((row) => row.action ?? null)).toEqual([null, null, null, null]);
+    expect(rows.map((row) => row.id)).toEqual(["instrument", "klines", "cache", "note", "workspace"]);
+    expect(rows.map((row) => row.status)).toEqual(["ready", "ready", "ready", "ready", "ready"]);
+    expect(rows.map((row) => row.action ?? null)).toEqual([null, null, null, null, null]);
     expect(rows.find((row) => row.id === "instrument")).toMatchObject({
       value: "600000 · 1d",
       tone: "positive"
@@ -377,6 +384,38 @@ describe("terminal workbench model", () => {
     expect(rows.find((row) => row.id === "note")).toMatchObject({
       value: "saved",
       detail: "Saved 2026-05-26T08:30:00+08:00 · 观察假设：银行板块修复中，等待成交量确认。"
+    });
+    expect(rows.find((row) => row.id === "workspace")).toMatchObject({
+      value: "saved",
+      detail: "Saved 2026-05-26T08:40:00+08:00 · research entry"
+    });
+  });
+
+  test("marks unsaved workspace persistence as review with save action", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: buildTerminalWorkspace(),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.find((row) => row.id === "workspace")).toMatchObject({
+      value: "not saved",
+      detail: "Save ASHARE · 600000 · 1d · research before relying on this workspace context.",
+      status: "review",
+      tone: "warning",
+      action: "save-workspace"
     });
   });
 
@@ -404,7 +443,8 @@ describe("terminal workbench model", () => {
       ["instrument", "ready"],
       ["klines", "blocked"],
       ["cache", "blocked"],
-      ["note", "review"]
+      ["note", "review"],
+      ["workspace", "review"]
     ]);
     expect(rows.find((row) => row.id === "klines")).toMatchObject({
       value: "0 bars",
@@ -580,6 +620,12 @@ describe("terminal workbench model", () => {
           label: "Local cache",
           status: "blocked",
           action: "refresh-cache"
+        },
+        {
+          id: "workspace",
+          label: "Workspace state",
+          status: "review",
+          action: "save-workspace"
         }
       ]
     });
@@ -608,7 +654,7 @@ describe("terminal workbench model", () => {
       status: "review",
       canRun: true,
       requiresConfirmation: true,
-      summary: "Review 2 research context gates before running the pipeline.",
+      summary: "Review 3 research context gates before running the pipeline.",
       primaryAction: "refresh-cache",
       issues: [
         {
@@ -622,6 +668,12 @@ describe("terminal workbench model", () => {
           label: "Research note",
           status: "review",
           action: "save-note"
+        },
+        {
+          id: "workspace",
+          label: "Workspace state",
+          status: "review",
+          action: "save-workspace"
         }
       ]
     });
