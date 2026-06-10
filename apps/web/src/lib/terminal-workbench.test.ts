@@ -419,6 +419,59 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("marks unsaved watchlist persistence as review with save action", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "research",
+        updatedAt: "2026-05-26T08:40:00+08:00"
+      }),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      watchlist: {
+        hasUnsavedChanges: true
+      },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["instrument", "watchlist", "klines", "cache", "note", "workspace"]);
+    expect(rows.find((row) => row.id === "watchlist")).toMatchObject({
+      value: "unsaved changes",
+      detail: "Save 4 watched symbols before relying on this research context.",
+      status: "review",
+      tone: "warning",
+      action: "save-watchlist"
+    });
+    expect(buildResearchPipelinePreflight(rows)).toMatchObject({
+      status: "review",
+      canRun: true,
+      requiresConfirmation: true,
+      primaryAction: "save-watchlist",
+      issues: [
+        {
+          id: "watchlist",
+          label: "Watchlist state",
+          status: "review",
+          action: "save-watchlist"
+        }
+      ]
+    });
+  });
+
   test("flags blocked or review Stage 1 research context gaps", () => {
     const workspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
       symbol: "MSFT",

@@ -2133,14 +2133,17 @@ export interface ResearchContextReadinessInput {
   barCount: number;
   dataQuality: ResearchRunDataQuality;
   activeWorkAreaId?: ProductWorkAreaId;
+  watchlist?: {
+    hasUnsavedChanges: boolean;
+  } | null;
   cacheContext?: ResearchContextReadinessCacheContext | null;
   note?: ResearchContextReadinessNoteInput | null;
 }
 
-export type ResearchContextReadinessAction = "refresh-cache" | "save-note" | "save-workspace";
+export type ResearchContextReadinessAction = "refresh-cache" | "save-note" | "save-watchlist" | "save-workspace";
 
 export interface ResearchContextReadinessRow {
-  id: "instrument" | "klines" | "cache" | "note" | "workspace";
+  id: "instrument" | "watchlist" | "klines" | "cache" | "note" | "workspace";
   label: string;
   value: string;
   detail: string;
@@ -6225,7 +6228,7 @@ export function buildResearchContextReadinessRows(
     : "not saved";
   const noteStatus: ResearchContextReadinessStatus = noteValue === "saved" ? "ready" : "review";
 
-  return [
+  const rows: ResearchContextReadinessRow[] = [
     {
       id: "instrument",
       label: "Selected symbol",
@@ -6233,7 +6236,14 @@ export function buildResearchContextReadinessRows(
       detail: `${instrument.name || instrument.symbol || "Unknown"} · ${instrument.market} · ${input.workspace.watchlist.length} watched`,
       status: symbolReady ? "ready" : "blocked",
       tone: symbolReady ? "positive" : "risk"
-    },
+    }
+  ];
+
+  if (input.watchlist) {
+    rows.push(buildWatchlistReadinessRow(input.workspace, input.watchlist.hasUnsavedChanges));
+  }
+
+  rows.push(
     {
       id: "klines",
       label: "K-line data",
@@ -6262,7 +6272,27 @@ export function buildResearchContextReadinessRows(
       action: noteStatus === "ready" ? undefined : "save-note"
     },
     buildResearchWorkspaceReadinessRow(input.workspace, input.activeWorkAreaId ?? "research")
-  ];
+  );
+
+  return rows;
+}
+
+function buildWatchlistReadinessRow(
+  workspace: TerminalWorkspace,
+  hasUnsavedChanges: boolean
+): ResearchContextReadinessRow {
+  const watchedCount = workspace.watchlist.length;
+  return {
+    id: "watchlist",
+    label: "Watchlist state",
+    value: hasUnsavedChanges ? "unsaved changes" : "saved",
+    detail: hasUnsavedChanges
+      ? `Save ${watchedCount} watched symbols before relying on this research context.`
+      : `${watchedCount} watched symbols are persisted for local research.`,
+    status: hasUnsavedChanges ? "review" : "ready",
+    tone: hasUnsavedChanges ? "warning" : "positive",
+    action: hasUnsavedChanges ? "save-watchlist" : undefined
+  };
 }
 
 function buildResearchWorkspaceReadinessRow(

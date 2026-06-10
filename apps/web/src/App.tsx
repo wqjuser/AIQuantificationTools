@@ -1003,6 +1003,9 @@ export function App() {
       rows: klinesState.quality.rows || klinesState.bars.length
     },
     activeWorkAreaId,
+    watchlist: {
+      hasUnsavedChanges: hasUnsavedWatchlistChanges
+    },
     cacheContext: activeCacheContext
       ? {
           rowCount: activeCacheContext.rowCount,
@@ -4223,9 +4226,11 @@ export function App() {
           i18n={i18n}
           isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
           isSavingNote={isSavingResearchNote}
+          isSavingWatchlist={isSavingWatchlist}
           isSavingWorkspace={isSavingResearchWorkspace}
           onRefreshCache={refreshSelectedMarketCache}
           onSaveNote={saveCurrentResearchNote}
+          onSaveWatchlist={saveCurrentWatchlist}
           onSaveWorkspace={saveCurrentResearchWorkspace}
           evidenceRows={researchContextEvidenceRows}
           rows={researchContextReadinessRows}
@@ -6029,9 +6034,11 @@ function ResearchContextReadinessPanel({
   i18n,
   isRefreshingCache = false,
   isSavingNote = false,
+  isSavingWatchlist = false,
   isSavingWorkspace = false,
   onRefreshCache,
   onSaveNote,
+  onSaveWatchlist,
   onSaveWorkspace,
   evidenceRows,
   rows
@@ -6040,9 +6047,11 @@ function ResearchContextReadinessPanel({
   i18n: AppI18n;
   isRefreshingCache?: boolean;
   isSavingNote?: boolean;
+  isSavingWatchlist?: boolean;
   isSavingWorkspace?: boolean;
   onRefreshCache?: () => void;
   onSaveNote?: () => void;
+  onSaveWatchlist?: () => void;
   onSaveWorkspace?: () => void;
   evidenceRows: ResearchContextEvidenceRow[];
   rows: ResearchContextReadinessRow[];
@@ -6052,8 +6061,8 @@ function ResearchContextReadinessPanel({
       title={i18n.locale === "zh-CN" ? "研究上下文就绪" : "Research Context Readiness"}
       subtitle={
         i18n.locale === "zh-CN"
-          ? "阶段 1 · 标的、K线、缓存、笔记、工作区、审计运行"
-          : "Stage 1 · symbol, K-lines, cache, notes, workspace, audited run"
+          ? "阶段 1 · 标的、自选、K线、缓存、笔记、工作区、审计运行"
+          : "Stage 1 · symbol, watchlist, K-lines, cache, notes, workspace, audited run"
       }
       className={className}
     >
@@ -6078,10 +6087,17 @@ function ResearchContextReadinessPanel({
                       action,
                       isRefreshingCache,
                       isSavingNote,
+                      isSavingWatchlist,
                       isSavingWorkspace
                     )}
                     onClick={() =>
-                      runResearchContextReadinessAction(action, onRefreshCache, onSaveNote, onSaveWorkspace)
+                      runResearchContextReadinessAction(
+                        action,
+                        onRefreshCache,
+                        onSaveNote,
+                        onSaveWatchlist,
+                        onSaveWorkspace
+                      )
                     }
                     type="button"
                   >
@@ -6090,6 +6106,7 @@ function ResearchContextReadinessPanel({
                       action,
                       isRefreshingCache,
                       isSavingNote,
+                      isSavingWatchlist,
                       isSavingWorkspace
                     )}
                   </button>
@@ -6123,6 +6140,7 @@ function researchContextReadinessActionLabel(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   isRefreshingCache: boolean,
   isSavingNote: boolean,
+  isSavingWatchlist: boolean,
   isSavingWorkspace: boolean
 ): string {
   if (action === "refresh-cache") {
@@ -6137,6 +6155,12 @@ function researchContextReadinessActionLabel(
     }
     return i18n.locale === "zh-CN" ? "保存工作区" : "Save workspace";
   }
+  if (action === "save-watchlist") {
+    if (isSavingWatchlist) {
+      return i18n.locale === "zh-CN" ? "保存中" : "Saving";
+    }
+    return i18n.locale === "zh-CN" ? "保存自选" : "Save watchlist";
+  }
   if (isSavingNote) {
     return i18n.locale === "zh-CN" ? "保存中" : "Saving";
   }
@@ -6147,6 +6171,7 @@ function isResearchContextActionDisabled(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   isRefreshingCache: boolean,
   isSavingNote: boolean,
+  isSavingWatchlist: boolean,
   isSavingWorkspace: boolean
 ): boolean {
   if (action === "refresh-cache") {
@@ -6155,6 +6180,9 @@ function isResearchContextActionDisabled(
   if (action === "save-workspace") {
     return isSavingWorkspace;
   }
+  if (action === "save-watchlist") {
+    return isSavingWatchlist;
+  }
   return isSavingNote;
 }
 
@@ -6162,6 +6190,7 @@ function runResearchContextReadinessAction(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   onRefreshCache?: () => void,
   onSaveNote?: () => void,
+  onSaveWatchlist?: () => void,
   onSaveWorkspace?: () => void
 ): void {
   if (action === "refresh-cache") {
@@ -6170,6 +6199,10 @@ function runResearchContextReadinessAction(
   }
   if (action === "save-workspace") {
     onSaveWorkspace?.();
+    return;
+  }
+  if (action === "save-watchlist") {
+    onSaveWatchlist?.();
     return;
   }
   onSaveNote?.();
@@ -6181,6 +6214,7 @@ function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadin
   }
   const labels: Record<ResearchContextReadinessRow["id"], string> = {
     instrument: "标的",
+    watchlist: "自选状态",
     klines: "K线数据",
     cache: "本地缓存",
     note: "研究笔记",
@@ -6224,6 +6258,9 @@ function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadin
       return "未保存更改";
     }
     return "未保存";
+  }
+  if (row.id === "watchlist") {
+    return row.value === "saved" ? "已保存" : "未保存更改";
   }
   return row.value;
 }
@@ -6309,6 +6346,7 @@ function researchPipelinePreflightIssueLabel(
 ): string {
   const labels: Record<ResearchContextReadinessRow["id"], string> = {
     instrument: "当前标的",
+    watchlist: "自选状态",
     klines: "K线数据",
     cache: "本地缓存",
     note: "研究笔记",
@@ -6337,6 +6375,12 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
       .replace(" before relying on this workspace context.", " 后再信任这个工作区上下文。")
       .replace(" · research", " · 研究入口")
       .replace(" · market", " · 行情入口");
+  }
+  if (row.id === "watchlist") {
+    return row.detail
+      .replace(/^Save /, "保存 ")
+      .replace(" watched symbols before relying on this research context.", " 个自选标的后再信任这个研究上下文。")
+      .replace(" watched symbols are persisted for local research.", " 个自选标的已为本地研究持久化。");
   }
   return row.detail
     .replace("Draft not saved", "草稿未保存")
