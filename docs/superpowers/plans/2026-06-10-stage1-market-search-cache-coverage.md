@@ -22,7 +22,7 @@ Show whether each market search suggestion already has local K-line cache covera
 - [x] GREEN: Render cache coverage in the symbol dropdown.
 - [x] DOCS: Update product planning docs.
 - [x] VERIFY: Run targeted tests, relevant suites, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -42,3 +42,4 @@ npm run docker:smoke
 - 2026-06-10: Added failing backend, frontend API, and UI contract tests.
 - 2026-06-10: Implemented cache coverage enrichment for market search suggestions and rendered compact coverage in the dropdown.
 - 2026-06-10: Verified backend suite, frontend API/layout suite, production build, full repository test, Docker rebuild, Docker smoke, direct container API response, and browser dropdown smoke on `/?workspace=market`.
+- 2026-06-10: Shipped to `origin/codex/p0-product-workspaces` through the configured proxy.
