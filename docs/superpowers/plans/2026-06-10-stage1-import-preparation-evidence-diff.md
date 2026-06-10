@@ -63,6 +63,6 @@ Expected: PASS.
 
 Rebuild/restart Docker services and load `http://127.0.0.1:5173/?workspace=audit` without console errors.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 Commit implementation and docs, then push `codex/p0-product-workspaces` through `127.0.0.1:7890`.
