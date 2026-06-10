@@ -25,4 +25,4 @@ Surface the adapter environment binding and runtime reload plan evidence that al
 - [x] Implement row filtering, readiness copy, App state/loading and panel rendering.
 - [x] Update product plan.
 - [x] Run targeted tests, build, Docker smoke, and browser smoke.
-- [ ] Commit and push with the configured proxy.
+- [x] Commit and push with the configured proxy.
