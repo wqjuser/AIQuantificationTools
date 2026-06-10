@@ -27,4 +27,4 @@ Add the next paper-only safety ledger after adapter runtime reload planning: a c
 - [x] Implement frontend API helpers and workbench row model.
 - [x] Update product plan.
 - [x] Run tests/build/Docker smoke.
-- [ ] Commit and push with the configured proxy.
+- [x] Commit and push with the configured proxy.
