@@ -29,4 +29,4 @@ Add the next paper-only live-readiness ledger step after secret materialization:
 - [x] Frontend API/model implementation added.
 - [x] Product plan updated.
 - [x] Verification completed.
-- [ ] Changes committed and pushed.
+- [x] Changes committed and pushed.
