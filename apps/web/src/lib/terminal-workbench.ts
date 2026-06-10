@@ -2228,6 +2228,7 @@ export interface WatchlistCacheRefreshItemRow {
   market: Market;
   symbol: string;
   name: string;
+  timeframe: Timeframe;
   instrument: Instrument;
   status: WatchlistCacheRefreshItemSnapshot["status"];
   statusLabel: string;
@@ -6530,6 +6531,7 @@ export function buildWatchlistCacheRefreshItemRows(
       market: item.market,
       symbol: item.symbol,
       name: item.name || item.symbol,
+      timeframe: item.timeframe,
       instrument: {
         symbol: item.symbol,
         name: item.name || item.symbol,

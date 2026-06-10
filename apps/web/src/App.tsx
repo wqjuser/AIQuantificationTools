@@ -3235,9 +3235,32 @@ export function App() {
       const existingInstrument =
         workspace.watchlist.find((instrument) => instrument.market === row.market && instrument.symbol === row.symbol) ??
         row.instrument;
-      selectInstrument(existingInstrument);
+      const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, existingInstrument);
+      manualSelectionVersionRef.current += 1;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
+      setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
+      resetAiReviewHistoryState();
+      setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
+      setWorkspaceState((current) => {
+        const instrumentWorkspace = workspaceWithSelectedInstrument(current.workspace, existingInstrument);
+        const timeframeWorkspace =
+          instrumentWorkspace.selectedTimeframe === row.timeframe
+            ? instrumentWorkspace
+            : workspaceWithSelectedTimeframe(instrumentWorkspace, row.timeframe);
+        return {
+          workspace: timeframeWorkspace,
+          source: "core",
+          statusLabel: "Refresh item selected"
+        };
+      });
+      setActiveWorkAreaId("research");
+      setActiveLoopStepId("research");
+      setActiveWorkflowStageId("data");
+      setWorkflowRunState(createWorkflowRunState());
     },
-    [selectInstrument, workspace.watchlist]
+    [resetAiReviewHistoryState, workspace.watchlist]
   );
 
   const selectWatchlistCacheRefreshRun = useCallback((row: WatchlistCacheRefreshHistoryRow) => {
@@ -6053,14 +6076,14 @@ function MarketDataHealthPanel({
                 onClick={() => onSelectWatchlistCacheRefreshItem?.(row)}
                 title={
                   i18n.locale === "zh-CN"
-                    ? `切换到 ${row.name} ${row.symbol}`
-                    : `Open ${row.name} ${row.symbol}`
+                    ? `切换到 ${row.name} ${row.symbol} ${row.timeframe}`
+                    : `Open ${row.name} ${row.symbol} ${row.timeframe}`
                 }
                 type="button"
               >
                 <div>
                   <strong>{row.symbol}</strong>
-                  <span>{row.name}</span>
+                  <span>{row.name} · {row.timeframe}</span>
                 </div>
                 <em>
                   <Search size={13} />
