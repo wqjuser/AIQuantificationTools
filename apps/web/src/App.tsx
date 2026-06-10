@@ -1032,6 +1032,7 @@ export function App() {
           latestTimestamp: activeCacheContext.endTimestamp
         }
       : null,
+    watchlistRefreshRuns: watchlistCacheRefreshHistory,
     note: {
       source: researchNoteState.source,
       body: researchNoteDraft,
@@ -6101,8 +6102,8 @@ function ResearchContextReadinessPanel({
       title={i18n.locale === "zh-CN" ? "研究上下文就绪" : "Research Context Readiness"}
       subtitle={
         i18n.locale === "zh-CN"
-          ? "阶段 1 · 标的、自选、K线、缓存、笔记、工作区、审计运行"
-          : "Stage 1 · symbol, watchlist, K-lines, cache, notes, workspace, audited run"
+          ? "阶段 1 · 标的、自选、K线、缓存、刷新证据、笔记、工作区、审计运行"
+          : "Stage 1 · symbol, watchlist, K-lines, cache, refresh evidence, notes, workspace, audited run"
       }
       className={className}
     >
@@ -6257,6 +6258,7 @@ function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadin
     watchlist: "自选状态",
     klines: "K线数据",
     cache: "本地缓存",
+    refresh: "刷新证据",
     note: "研究笔记",
     workspace: "工作区状态"
   };
@@ -6277,6 +6279,15 @@ function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadin
       .replace("empty", "空")
       .replace("missing", "缺失")
       .replace(" rows", " 行");
+  }
+  if (row.id === "refresh") {
+    if (row.value === "no matching refresh") {
+      return "无匹配刷新";
+    }
+    return row.value
+      .replace("refreshed", "已刷新")
+      .replace("skipped", "已跳过")
+      .replace("failed", "失败");
   }
   if (row.id === "note") {
     if (row.value === "saved") {
@@ -6389,6 +6400,7 @@ function researchPipelinePreflightIssueLabel(
     watchlist: "自选状态",
     klines: "K线数据",
     cache: "本地缓存",
+    refresh: "刷新证据",
     note: "研究笔记",
     workspace: "工作区状态"
   };
@@ -6421,6 +6433,17 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
       .replace(/^Save /, "保存 ")
       .replace(" watched symbols before relying on this research context.", " 个自选标的后再信任这个研究上下文。")
       .replace(" watched symbols are persisted for local research.", " 个自选标的已为本地研究持久化。");
+  }
+  if (row.id === "refresh") {
+    return row.detail
+      .replace(/^Run watchlist cache refresh for /, "为 ")
+      .replace(" before relying on this context.", " 运行自选缓存刷新后再信任当前上下文。")
+      .replace(" rows cached", " 行已缓存")
+      .replace("refresh skipped", "刷新已跳过")
+      .replace("refresh failed", "刷新失败")
+      .replace("refresh quality incomplete", "刷新质量不完整")
+      .replace("source requires review", "来源需复核")
+      .replace("refresh requires review", "刷新需复核");
   }
   return row.detail
     .replace("Draft not saved", "草稿未保存")

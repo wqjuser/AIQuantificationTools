@@ -128,6 +128,8 @@ import {
   type ResearchRunImportDiffRow,
   type ResearchRunAudit,
   type TerminalWorkspace,
+  type WatchlistCacheRefreshItemSnapshot,
+  type WatchlistCacheRefreshRunSnapshot,
   type WorkflowRunState,
   visiblePanels,
   workspaceWithAiAction,
@@ -151,6 +153,43 @@ function quantLoopStatuses(workspace: TerminalWorkspace): Record<string, string>
 
 function activeQuantLoopStep(workspace: TerminalWorkspace): string | undefined {
   return workspace.quantLoop.find((step) => step.status === "active")?.id;
+}
+
+function watchlistRefreshRunFixture(
+  overrides: Partial<WatchlistCacheRefreshRunSnapshot> & {
+    item?: Partial<WatchlistCacheRefreshItemSnapshot>;
+  } = {}
+): WatchlistCacheRefreshRunSnapshot {
+  const item: WatchlistCacheRefreshItemSnapshot = {
+    market: overrides.item?.market ?? "ashare",
+    symbol: overrides.item?.symbol ?? "600000",
+    name: overrides.item?.name ?? "浦发银行",
+    timeframe: overrides.item?.timeframe ?? "1d",
+    requestedLimit: overrides.item?.requestedLimit ?? 500,
+    upsertedRows: overrides.item?.upsertedRows ?? 240,
+    status: overrides.item?.status ?? "refreshed",
+    quality: overrides.item?.quality ?? {
+      source: "tencent",
+      isComplete: true,
+      warnings: [],
+      rows: 240
+    },
+    error: overrides.item?.error ?? null
+  };
+  return {
+    runId: overrides.runId ?? "cache-refresh-ready",
+    createdAt: overrides.createdAt ?? "2026-06-10T06:00:00+00:00",
+    timeframe: overrides.timeframe ?? item.timeframe,
+    requestedLimit: overrides.requestedLimit ?? item.requestedLimit,
+    summary: overrides.summary ?? {
+      totalSymbols: 1,
+      refreshed: item.status === "refreshed" ? 1 : 0,
+      skipped: item.status === "skipped" ? 1 : 0,
+      failed: item.status === "failed" ? 1 : 0,
+      upsertedRows: item.upsertedRows
+    },
+    items: overrides.items ?? [item]
+  };
 }
 
 function auditedRunFixture(
@@ -435,6 +474,105 @@ describe("terminal workbench model", () => {
     expect(rows.find((row) => row.id === "workspace")).toMatchObject({
       value: "saved",
       detail: "Saved 2026-05-26T08:40:00+08:00 · research entry"
+    });
+  });
+
+  test("marks matching refresh evidence ready in Stage 1 research context readiness", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "research",
+        updatedAt: "2026-05-26T08:40:00+08:00"
+      }),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      watchlistRefreshRuns: [watchlistRefreshRunFixture()],
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["instrument", "klines", "cache", "refresh", "note", "workspace"]);
+    expect(rows.find((row) => row.id === "refresh")).toMatchObject({
+      label: "Refresh evidence",
+      value: "refreshed · cache-refresh-ready",
+      detail: "2026-06-10T06:00:00+00:00 · tencent · 240 rows cached",
+      status: "ready",
+      tone: "positive",
+      action: undefined
+    });
+  });
+
+  test("marks missing refresh evidence as review without blocking the research pipeline", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "research",
+        updatedAt: "2026-05-26T08:40:00+08:00"
+      }),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      watchlistRefreshRuns: [
+        watchlistRefreshRunFixture({
+          runId: "cache-refresh-aapl",
+          item: {
+            market: "us",
+            symbol: "AAPL",
+            name: "Apple",
+            timeframe: "1d"
+          }
+        })
+      ],
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.find((row) => row.id === "refresh")).toMatchObject({
+      value: "no matching refresh",
+      detail: "Run watchlist cache refresh for ASHARE · 600000 · 1d before relying on this context.",
+      status: "review",
+      tone: "warning",
+      action: "refresh-cache"
+    });
+    expect(buildResearchPipelinePreflight(rows)).toMatchObject({
+      status: "review",
+      canRun: true,
+      requiresConfirmation: true,
+      summary: "Review 1 research context gate before running the pipeline.",
+      primaryAction: "refresh-cache",
+      issues: [
+        {
+          id: "refresh",
+          label: "Refresh evidence",
+          status: "review",
+          action: "refresh-cache"
+        }
+      ]
     });
   });
 

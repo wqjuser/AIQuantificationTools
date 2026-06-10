@@ -2143,13 +2143,14 @@ export interface ResearchContextReadinessInput {
     hasUnsavedChanges: boolean;
   } | null;
   cacheContext?: ResearchContextReadinessCacheContext | null;
+  watchlistRefreshRuns?: WatchlistCacheRefreshRunSnapshot[] | null;
   note?: ResearchContextReadinessNoteInput | null;
 }
 
 export type ResearchContextReadinessAction = "refresh-cache" | "save-note" | "save-watchlist" | "save-workspace";
 
 export interface ResearchContextReadinessRow {
-  id: "instrument" | "watchlist" | "klines" | "cache" | "note" | "workspace";
+  id: "instrument" | "watchlist" | "klines" | "cache" | "refresh" | "note" | "workspace";
   label: string;
   value: string;
   detail: string;
@@ -6267,7 +6268,14 @@ export function buildResearchContextReadinessRows(
       status: cacheStatus,
       tone: readinessTone(cacheStatus),
       action: cacheStatus === "ready" ? undefined : "refresh-cache"
-    },
+    }
+  );
+
+  if (input.watchlistRefreshRuns) {
+    rows.push(buildRefreshEvidenceReadinessRow(input.workspace, input.watchlistRefreshRuns));
+  }
+
+  rows.push(
     {
       id: "note",
       label: "Research note",
@@ -6281,6 +6289,89 @@ export function buildResearchContextReadinessRows(
   );
 
   return rows;
+}
+
+function buildRefreshEvidenceReadinessRow(
+  workspace: TerminalWorkspace,
+  runs: WatchlistCacheRefreshRunSnapshot[]
+): ResearchContextReadinessRow {
+  const instrument = workspace.selectedInstrument;
+  const timeframe = workspace.selectedTimeframe;
+  const context = strategyContextLabel(instrument.market, instrument.symbol, timeframe);
+  const matching = runs
+    .flatMap((run) =>
+      run.items.map((item) => ({
+        run,
+        item
+      }))
+    )
+    .find(
+      ({ item }) =>
+        item.market === instrument.market &&
+        item.symbol === instrument.symbol &&
+        item.timeframe === timeframe
+    );
+
+  if (!matching) {
+    return {
+      id: "refresh",
+      label: "Refresh evidence",
+      value: "no matching refresh",
+      detail: `Run watchlist cache refresh for ${context} before relying on this context.`,
+      status: "review",
+      tone: "warning",
+      action: "refresh-cache"
+    };
+  }
+
+  const warnings = matching.item.quality.warnings.filter((warning) => warning.trim());
+  const source = matching.item.quality.source || "unknown";
+  const sourceNeedsReview = isReviewRequiredKlineSource(source);
+  const isReady =
+    matching.item.status === "refreshed" &&
+    matching.item.quality.isComplete &&
+    warnings.length === 0 &&
+    !sourceNeedsReview;
+  const rowsCached = Math.max(0, Math.floor(matching.item.upsertedRows || 0));
+
+  return {
+    id: "refresh",
+    label: "Refresh evidence",
+    value: `${matching.item.status} · ${matching.run.runId}`,
+    detail: isReady
+      ? `${matching.run.createdAt} · ${source} · ${rowsCached} rows cached`
+      : `${matching.run.createdAt} · ${source} · ${rowsCached} rows cached · ${refreshEvidenceReviewReason(
+          matching.item,
+          sourceNeedsReview,
+          warnings
+        )}`,
+    status: isReady ? "ready" : "review",
+    tone: isReady ? "positive" : "warning",
+    action: isReady ? undefined : "refresh-cache"
+  };
+}
+
+function refreshEvidenceReviewReason(
+  item: WatchlistCacheRefreshItemSnapshot,
+  sourceNeedsReview: boolean,
+  warnings: string[]
+): string {
+  if (item.error) {
+    return item.error;
+  }
+  if (item.status !== "refreshed") {
+    return `refresh ${item.status}`;
+  }
+  if (!item.quality.isComplete) {
+    return "refresh quality incomplete";
+  }
+  if (warnings[0]) {
+    return warnings[0];
+  }
+  if (sourceNeedsReview) {
+    return "source requires review";
+  }
+  return "refresh requires review";
 }
 
 function buildWatchlistReadinessRow(
