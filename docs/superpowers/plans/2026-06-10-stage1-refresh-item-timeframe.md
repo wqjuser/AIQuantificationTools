@@ -18,7 +18,7 @@ When users open a selected watchlist refresh run item, the research context shou
 - [x] GREEN: Wire refresh item selection to switch instrument and timeframe.
 - [x] DOCS: Update product planning docs with exact context switching behavior.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -35,3 +35,4 @@ docker compose up --build -d
 - 2026-06-10: Added RED coverage that watchlist refresh item rows expose the item's timeframe.
 - 2026-06-10: Refresh item rows now carry timeframe, display it in Market details, and selecting a detail row switches both instrument and timeframe in one Stage 1 context update.
 - 2026-06-10: Verified targeted frontend coverage, full terminal API/workbench tests, backend unittest suite, production build, Docker rebuild, and browser smoke from a 5m URL to a 1d refresh item selection.
+- 2026-06-10: Shipped in `60f2128` and pushed to `origin/codex/p0-product-workspaces` through the configured proxy.
