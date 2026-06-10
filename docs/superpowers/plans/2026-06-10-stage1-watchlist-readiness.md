@@ -19,7 +19,7 @@ Make watchlist persistence visible inside the Stage 1 research context checklist
 - [x] GREEN: Wire the readiness action to the existing Save Watchlist API path.
 - [x] DOCS: Update product planning docs with the new Stage 1 capability.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -41,3 +41,4 @@ docker compose up --build -d
 - `docker compose up --build -d` rebuilt the web/API images and left the stack healthy on `http://127.0.0.1:5173/`.
 - Browser smoke on `/?workspace=research` verified the checklist row shows `自选状态`, starts as `已保存`, switching to `MSFT` changes it to `未保存更改` with a row-level `保存自选` action, saving from that row returns it to `已保存`, and console error count is 0.
 - Core watchlist after browser save includes `MSFT` in the saved local watchlist.
+- Shipped to `origin/codex/p0-product-workspaces` with `HTTP_PROXY` and `HTTPS_PROXY` set to `http://127.0.0.1:7890`.
