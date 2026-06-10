@@ -546,6 +546,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   width: 100%;
   min-height: 42px;
@@ -586,6 +587,24 @@ h2 {
   font-size: 10px;
   font-weight: 800;
   text-align: right;
+}
+
+.symbol-suggestion-cache {
+  flex: 1 0 100%;
+  color: #94a3b8;
+  text-align: left;
+}
+
+.symbol-suggestion-cache.fresh {
+  color: #5eead4;
+}
+
+.symbol-suggestion-cache.stale {
+  color: #f6c453;
+}
+
+.symbol-suggestion-cache.empty {
+  color: #ff6b6b;
 }
 
 .symbol-suggestion-state {

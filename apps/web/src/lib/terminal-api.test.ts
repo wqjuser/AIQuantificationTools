@@ -455,9 +455,12 @@ describe("terminal workspace API client", () => {
     );
   });
 
-  test("builds the market search URL with encoded Chinese query text", () => {
+  test("builds the market search URL with encoded Chinese query text and optional timeframe", () => {
     expect(buildMarketSearchUrl("http://127.0.0.1:8765/", "ashare", "浦发", 8)).toBe(
       "http://127.0.0.1:8765/api/market/search?market=ashare&query=%E6%B5%A6%E5%8F%91&limit=8"
+    );
+    expect(buildMarketSearchUrl("http://127.0.0.1:8765/", "ashare", "浦发", 8, "5m")).toBe(
+      "http://127.0.0.1:8765/api/market/search?market=ashare&query=%E6%B5%A6%E5%8F%91&limit=8&timeframe=5m"
     );
   });
 
@@ -8121,7 +8124,7 @@ describe("terminal workspace API client", () => {
     const calls: string[] = [];
     const result = await loadMarketSearch(
       "http://127.0.0.1:8765",
-      { market: "ashare", query: "600", limit: 2 },
+      { market: "ashare", query: "600", limit: 2, timeframe: "1d" },
       async (url) => {
         calls.push(url);
         return {
@@ -8129,6 +8132,7 @@ describe("terminal workspace API client", () => {
           json: async () => ({
             market: "ashare",
             query: "600",
+            timeframe: "1d",
             results: [
               {
                 market: "ashare",
@@ -8136,7 +8140,14 @@ describe("terminal workspace API client", () => {
                 name: "浦发银行",
                 source: "eastmoney",
                 exchange: "沪A",
-                pinyin: "PFYH"
+                pinyin: "PFYH",
+                cache: {
+                  freshness: "fresh",
+                  rowCount: 240,
+                  ageHours: 12,
+                  startTimestamp: "2026-05-01T00:00:00+00:00",
+                  endTimestamp: "2026-06-09T00:00:00+00:00"
+                }
               }
             ]
           })
@@ -8144,9 +8155,11 @@ describe("terminal workspace API client", () => {
       }
     );
 
-    expect(calls).toEqual(["http://127.0.0.1:8765/api/market/search?market=ashare&query=600&limit=2"]);
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/market/search?market=ashare&query=600&limit=2&timeframe=1d"]);
     expect(result.source).toBe("core");
+    expect(result.timeframe).toBe("1d");
     expect(result.results[0].name).toBe("浦发银行");
+    expect(result.results[0].cache).toMatchObject({ freshness: "fresh", rowCount: 240, ageHours: 12 });
   });
 
   test("returns an empty run history when the Python core is unavailable", async () => {

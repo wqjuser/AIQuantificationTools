@@ -3725,7 +3725,7 @@ export function App() {
     setIsSymbolSearching(true);
     setIsSearchOpen(true);
     const timeoutId = window.setTimeout(async () => {
-      const result = await loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8 });
+      const result = await loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8, timeframe: workspace.selectedTimeframe });
       if (symbolSearchRequestIdRef.current === requestId) {
         setSearchSuggestions(result.results);
         setIsSearchOpen(true);
@@ -3734,7 +3734,7 @@ export function App() {
     }, 220);
 
     return () => window.clearTimeout(timeoutId);
-  }, [marketDraft, symbolDraft]);
+  }, [marketDraft, symbolDraft, workspace.selectedTimeframe]);
 
   useEffect(() => {
     if (!isChartExpanded) {
@@ -4487,6 +4487,11 @@ export function App() {
                               {" · "}
                               {suggestion.source}
                             </small>
+                            {suggestion.cache ? (
+                              <small className={`symbol-suggestion-cache ${suggestion.cache.freshness}`}>
+                                {marketSearchCacheSummary(i18n, suggestion.cache)}
+                              </small>
+                            ) : null}
                           </button>
                         ))
                       : null}
@@ -13054,6 +13059,18 @@ function settingsKeyStatusLabel(i18n: AppI18n, keyName: string | null, isConfigu
     return i18n.locale === "zh-CN" ? `${keyName} 已配置` : `${keyName} configured`;
   }
   return i18n.locale === "zh-CN" ? `${keyName} 未配置` : `${keyName} not configured`;
+}
+
+function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearchSuggestion["cache"]>): string {
+  if (cache.freshness === "empty") {
+    return i18n.locale === "zh-CN" ? "当前周期无缓存" : "No cache for this timeframe";
+  }
+  const freshnessLabel = cacheFreshnessLabel(i18n, cache.freshness, cache.ageHours);
+  const rowsLabel =
+    i18n.locale === "zh-CN"
+      ? `${cache.rowCount.toLocaleString("zh-CN")} 行`
+      : `${cache.rowCount.toLocaleString("en-US")} rows`;
+  return `${freshnessLabel} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
 }
 
 function cacheFreshnessLabel(

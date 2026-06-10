@@ -75,6 +75,15 @@ describe("terminal layout css", () => {
     expect(leftRailSource).not.toContain("workspace.quantLoop.map");
   });
 
+  test("shows selected timeframe cache coverage in market search suggestions", () => {
+    const symbolSwitcherSource = sourceBetween('<form className="symbol-switcher"', "</form>");
+
+    expect(appSource).toContain("loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8, timeframe: workspace.selectedTimeframe })");
+    expect(symbolSwitcherSource).toContain("suggestion.cache");
+    expect(symbolSwitcherSource).toContain("marketSearchCacheSummary(i18n, suggestion.cache)");
+    expect(styles).toContain(".symbol-suggestion-cache");
+  });
+
   test("uses the left rail for actionable product work areas instead of passive module switching", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
 

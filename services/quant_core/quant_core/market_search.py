@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from typing import Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -123,12 +124,110 @@ def local_symbol_search(market: Market, query: str, limit: int) -> list[MarketSe
     return [item for _score, item in scored[:limit]]
 
 
-def market_search_to_payload(market: Market, query: str, results: list[MarketSearchResult]) -> dict[str, object]:
+def market_search_to_payload(
+    market: Market,
+    query: str,
+    results: list[MarketSearchResult],
+    *,
+    timeframe: str | None = None,
+    cache_contexts: list[dict[str, object] | None] | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, object]:
+    context_by_key = {
+        _cache_context_key(context): context
+        for context in (cache_contexts or [])
+        if context is not None and _cache_context_key(context)
+    }
+    rows: list[dict[str, object]] = []
+    for result in results:
+        row = asdict(result)
+        if timeframe:
+            row["cache"] = _market_search_cache_payload(
+                context_by_key.get(f"{result.market}:{result.symbol}:{timeframe}"),
+                timeframe=timeframe,
+                generated_at=generated_at,
+            )
+        rows.append(row)
     return {
         "market": market,
         "query": query,
-        "results": [asdict(result) for result in results],
+        **({"timeframe": timeframe} if timeframe else {}),
+        "results": rows,
     }
+
+
+def _cache_context_key(context: dict[str, object] | None) -> str:
+    if not context:
+        return ""
+    market = str(context.get("market") or "")
+    symbol = str(context.get("symbol") or "")
+    timeframe = str(context.get("timeframe") or "")
+    return f"{market}:{symbol}:{timeframe}" if market and symbol and timeframe else ""
+
+
+def _market_search_cache_payload(
+    context: dict[str, object] | None, *, timeframe: str, generated_at: datetime | None = None
+) -> dict[str, object]:
+    if not context:
+        return {
+            "freshness": "empty",
+            "rowCount": 0,
+            "ageHours": None,
+            "startTimestamp": None,
+            "endTimestamp": None,
+        }
+    row_count = _non_negative_int(context.get("row_count"))
+    end_timestamp = _optional_string(context.get("end_timestamp"))
+    freshness, age_hours = _cache_context_freshness(
+        row_count=row_count,
+        timeframe=timeframe,
+        end_timestamp=end_timestamp,
+        generated_at=generated_at or datetime.now(timezone.utc),
+    )
+    return {
+        "freshness": freshness,
+        "rowCount": row_count,
+        "ageHours": age_hours,
+        "startTimestamp": _optional_string(context.get("start_timestamp")),
+        "endTimestamp": end_timestamp,
+    }
+
+
+def _cache_context_freshness(
+    *, row_count: int, timeframe: str, end_timestamp: str | None, generated_at: datetime
+) -> tuple[str, int | None]:
+    end = _parse_timestamp(end_timestamp)
+    if row_count <= 0 or end is None:
+        return "empty", None
+    reference = generated_at if generated_at.tzinfo else generated_at.replace(tzinfo=timezone.utc)
+    age_hours = max(0, int((reference.astimezone(timezone.utc) - end).total_seconds() // 3600))
+    fresh_threshold_hours = 96 if timeframe == "1d" else 24
+    return ("fresh" if age_hours <= fresh_threshold_hours else "stale"), age_hours
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def default_fetch_text(url: str, encoding: str = "utf-8") -> str:

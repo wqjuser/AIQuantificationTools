@@ -634,11 +634,21 @@ export interface MarketSearchSuggestion {
   source: string;
   exchange?: string | null;
   pinyin?: string | null;
+  cache?: MarketSearchCacheCoverage;
+}
+
+export interface MarketSearchCacheCoverage {
+  freshness: "fresh" | "stale" | "empty";
+  rowCount: number;
+  ageHours: number | null;
+  startTimestamp: string | null;
+  endTimestamp: string | null;
 }
 
 export interface MarketSearchResult {
   market: Market;
   query: string;
+  timeframe?: ResearchTimeframe;
   results: MarketSearchSuggestion[];
   source: WorkspaceSource;
   error?: string;
@@ -2121,11 +2131,20 @@ export function buildMarketKlinesUrl(
   });
 }
 
-export function buildMarketSearchUrl(baseUrl: string, market: Market, query: string, limit = 8): string {
+export function buildMarketSearchUrl(
+  baseUrl: string,
+  market: Market,
+  query: string,
+  limit = 8,
+  timeframe?: ResearchTimeframe
+): string {
   return buildApiUrl(baseUrl, "api/market/search", (url) => {
     url.searchParams.set("market", market);
     url.searchParams.set("query", query);
     url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 20))));
+    if (timeframe) {
+      url.searchParams.set("timeframe", timeframe);
+    }
   });
 }
 
@@ -5156,11 +5175,13 @@ export function mergeMarketKlines(current: MarketKlinesResult, incoming: MarketK
 
 export async function loadMarketSearch(
   baseUrl: string,
-  params: { market: Market; query: string; limit?: number },
+  params: { market: Market; query: string; limit?: number; timeframe?: ResearchTimeframe },
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<MarketSearchResult> {
   try {
-    const response = await fetcher(buildMarketSearchUrl(baseUrl, params.market, params.query, params.limit ?? 8));
+    const response = await fetcher(
+      buildMarketSearchUrl(baseUrl, params.market, params.query, params.limit ?? 8, params.timeframe)
+    );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }
@@ -8259,6 +8280,7 @@ function isMarketSearchPayload(value: unknown): value is Omit<MarketSearchResult
   return (
     isMarket(payload.market) &&
     typeof payload.query === "string" &&
+    (payload.timeframe === undefined || isTimeframe(payload.timeframe)) &&
     Array.isArray(payload.results) &&
     payload.results.every(isMarketSearchSuggestion)
   );
@@ -8273,7 +8295,22 @@ function isMarketSearchSuggestion(value: unknown): value is MarketSearchSuggesti
     isMarket(suggestion.market) &&
     typeof suggestion.symbol === "string" &&
     typeof suggestion.name === "string" &&
-    typeof suggestion.source === "string"
+    typeof suggestion.source === "string" &&
+    (suggestion.cache === undefined || isMarketSearchCacheCoverage(suggestion.cache))
+  );
+}
+
+function isMarketSearchCacheCoverage(value: unknown): value is MarketSearchCacheCoverage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const cache = value as Partial<MarketSearchCacheCoverage>;
+  return (
+    (cache.freshness === "fresh" || cache.freshness === "stale" || cache.freshness === "empty") &&
+    typeof cache.rowCount === "number" &&
+    (cache.ageHours === null || typeof cache.ageHours === "number") &&
+    (cache.startTimestamp === null || typeof cache.startTimestamp === "string") &&
+    (cache.endTimestamp === null || typeof cache.endTimestamp === "string")
   );
 }
 

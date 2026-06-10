@@ -1588,8 +1588,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             market = query.get("market", ["ashare"])[0]
             search_query = query.get("query", [""])[0]
             limit = _parse_search_limit(query.get("limit", ["8"])[0])
+            timeframe = query.get("timeframe", [""])[0].strip() or None
             results = self.search_adapter.search(market=market, query=search_query, limit=limit)
-            self._send_json(market_search_to_payload(market, search_query, results))
+            cache_contexts = [
+                self.cache.context(result.market, result.symbol, timeframe)
+                for result in results
+            ] if timeframe else None
+            self._send_json(
+                market_search_to_payload(
+                    market,
+                    search_query,
+                    results,
+                    timeframe=timeframe,
+                    cache_contexts=cache_contexts,
+                )
+            )
             return
         if parsed.path == "/api/market/klines":
             query = parse_qs(parsed.query)

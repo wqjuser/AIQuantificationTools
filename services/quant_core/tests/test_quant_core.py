@@ -9863,6 +9863,92 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(us_results[0].symbol, "AAPL")
         self.assertEqual(crypto_results[0].symbol, "BTC/USDT")
 
+    def test_market_symbol_search_payload_marks_current_timeframe_cache_coverage(self):
+        from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
+
+        adapter = MarketSymbolSearchAdapter(fetch_text=lambda _url, _encoding="utf-8": (_ for _ in ()).throw(OSError("offline")))
+        results = adapter.search("ashare", "600", limit=2)
+        payload = market_search_to_payload(
+            "ashare",
+            "600",
+            results,
+            timeframe="1d",
+            cache_contexts=[
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "row_count": 240,
+                    "start_timestamp": "2026-05-01T00:00:00+00:00",
+                    "end_timestamp": "2026-06-09T00:00:00+00:00",
+                }
+            ],
+            generated_at=datetime(2026, 6, 10, 8, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(payload["timeframe"], "1d")
+        self.assertEqual(payload["results"][0]["cache"]["freshness"], "fresh")
+        self.assertEqual(payload["results"][0]["cache"]["rowCount"], 240)
+        self.assertEqual(payload["results"][0]["cache"]["ageHours"], 32)
+        self.assertEqual(payload["results"][0]["cache"]["endTimestamp"], "2026-06-09T00:00:00+00:00")
+        self.assertEqual(payload["results"][1]["cache"]["freshness"], "empty")
+        self.assertEqual(payload["results"][1]["cache"]["rowCount"], 0)
+
+    def test_market_search_api_includes_current_timeframe_cache_coverage(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+        from quant_core.market_search import MarketSymbolSearchAdapter
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                search_adapter = MarketSymbolSearchAdapter(
+                    fetch_text=lambda _url, _encoding="utf-8": (_ for _ in ()).throw(OSError("offline"))
+                )
+
+            TestHandler.cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        symbol="600000",
+                        market="ashare",
+                        timeframe="1d",
+                        timestamp=datetime.now(timezone.utc) - timedelta(hours=2),
+                        open=9.1,
+                        high=9.4,
+                        low=9.0,
+                        close=9.21,
+                        volume=1_000_000,
+                    )
+                ]
+            )
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/market/search?market=ashare&query=600&limit=2&timeframe=1d")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["timeframe"], "1d")
+        self.assertEqual(payload["results"][0]["symbol"], "600000")
+        self.assertEqual(payload["results"][0]["cache"]["freshness"], "fresh")
+        self.assertEqual(payload["results"][0]["cache"]["rowCount"], 1)
+        self.assertEqual(payload["results"][1]["cache"]["freshness"], "empty")
+
     def test_quantdinger_style_kline_adapter_maps_tencent_fqkline_rows(self):
         from quant_core.domain import MarketDataRequest
         from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload

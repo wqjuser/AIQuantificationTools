@@ -174,3 +174,28 @@ class MarketDataCache:
             }
             for row in rows
         ]
+
+    def context(self, market: str, symbol: str, timeframe: str) -> dict[str, int | str] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                select market, symbol, timeframe, count(*) as row_count, min(timestamp), max(timestamp)
+                from ohlcv
+                where market = ? and symbol = ? and timeframe = ?
+                group by market, symbol, timeframe
+                """,
+                (market, symbol, timeframe),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return {
+            "market": row[0],
+            "symbol": row[1],
+            "timeframe": row[2],
+            "row_count": int(row[3]),
+            "start_timestamp": row[4],
+            "end_timestamp": row[5],
+        }
