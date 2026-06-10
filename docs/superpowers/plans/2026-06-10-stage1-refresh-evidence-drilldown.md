@@ -19,7 +19,7 @@ Let the Research readiness `Refresh evidence` row jump to the matching Market wa
 - [x] GREEN: Wire the Research panel details action to Market refresh run selection.
 - [x] DOCS: Update product planning docs with drilldown behavior.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -36,3 +36,4 @@ docker compose up --build -d
 - 2026-06-10: Targeted refresh evidence model coverage passes and readiness rows now carry the matched watchlist refresh run id.
 - 2026-06-10: Research readiness renders a compact details action for matched refresh evidence and routes it to the Market workspace selected refresh run.
 - 2026-06-10: Verified frontend model/API tests, quant core unittest, production build, Docker rebuild, and browser smoke. Browser smoke opened `workspace=research&market=ashare&symbol=600000&timeframe=1d`, found one `查看明细` action, clicked it, and landed on `workspace=market&watchlistRefreshRun=cache-refresh-f10efd7401b7` with selected run details and no console errors.
+- 2026-06-10: Shipped through proxy `127.0.0.1:7890` as commit `434008c`.
