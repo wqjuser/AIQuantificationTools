@@ -24,4 +24,4 @@ Expose the locked data preparation evidence in the recent research export packag
 - [x] Export index implementation added.
 - [x] Product plan updated.
 - [x] Verification completed.
-- [ ] Changes committed and pushed.
+- [x] Changes committed and pushed.
