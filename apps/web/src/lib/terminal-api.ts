@@ -16,6 +16,7 @@ import {
   type AiReviewRunRecord,
   type AuditEvidenceSummary,
   type BacktestAssumptions,
+  type ResearchRunDataPreparationEvidence,
   type StrategyReadinessGate,
   type StrategySnapshot
 } from "./terminal-workbench";
@@ -1715,6 +1716,7 @@ export interface TerminalResearchParams {
   symbol: string;
   timeframe: ResearchTimeframe;
   limit?: number;
+  watchlistRefreshRunId?: string | null;
 }
 
 export interface MarketKlinesParams extends TerminalResearchParams {
@@ -1763,13 +1765,17 @@ export function buildResearchRunUrl(
   timeframe: ResearchTimeframe,
   assumptions?: BacktestAssumptions,
   limit = 500,
-  strategy?: StrategySnapshot
+  strategy?: StrategySnapshot,
+  watchlistRefreshRunId?: string | null
 ): string {
   return buildApiUrl(baseUrl, "api/research/run", (url) => {
     url.searchParams.set("market", market);
     url.searchParams.set("symbol", symbol);
     url.searchParams.set("timeframe", timeframe);
     url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 500))));
+    if (watchlistRefreshRunId?.trim()) {
+      url.searchParams.set("watchlistRefreshRunId", watchlistRefreshRunId.trim());
+    }
     if (strategy) {
       url.searchParams.set("strategyName", strategy.name);
       url.searchParams.set("strategyEntry", strategy.entry);
@@ -4739,7 +4745,8 @@ export async function runTerminalResearch(
         params.timeframe,
         resolveBacktestAssumptions(currentWorkspace),
         params.limit ?? 500,
-        currentWorkspace.strategy
+        currentWorkspace.strategy,
+        params.watchlistRefreshRunId
       )
     );
     if (!response.ok) {
@@ -7641,7 +7648,30 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
     (snapshot.end === null || typeof snapshot.end === "string") &&
     typeof snapshot.hash === "string" &&
     Array.isArray(snapshot.bars) &&
-    snapshot.bars.every(isMarketKlineBar)
+    snapshot.bars.every(isMarketKlineBar) &&
+    (snapshot.preparationEvidence === undefined ||
+      isResearchRunDataPreparationEvidence(snapshot.preparationEvidence))
+  );
+}
+
+function isResearchRunDataPreparationEvidence(value: unknown): value is ResearchRunDataPreparationEvidence {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const evidence = value as Partial<ResearchRunDataPreparationEvidence>;
+  return (
+    evidence.kind === "watchlist_cache_refresh" &&
+    typeof evidence.runId === "string" &&
+    (evidence.createdAt === null || typeof evidence.createdAt === "string") &&
+    isMarket(evidence.market) &&
+    typeof evidence.symbol === "string" &&
+    typeof evidence.name === "string" &&
+    isTimeframe(evidence.timeframe) &&
+    typeof evidence.status === "string" &&
+    typeof evidence.requestedLimit === "number" &&
+    typeof evidence.upsertedRows === "number" &&
+    isResearchRunDataQuality(evidence.quality) &&
+    (evidence.error === null || typeof evidence.error === "string")
   );
 }
 

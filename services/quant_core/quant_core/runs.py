@@ -1170,7 +1170,7 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
     rows = int(_number_or_default(snapshot.get("rows"), len(normalized_bars)))
     source = str(snapshot.get("source") or DEFAULT_DATA_SNAPSHOT["source"]).strip() or DEFAULT_DATA_SNAPSHOT["source"]
     digest = str(snapshot.get("hash") or "").strip() or _snapshot_hash(normalized_bars)
-    return {
+    normalized = {
         "source": source,
         "isComplete": bool(snapshot.get("isComplete", snapshot.get("is_complete", DEFAULT_DATA_SNAPSHOT["isComplete"]))),
         "warnings": [str(warning) for warning in warnings],
@@ -1179,6 +1179,46 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
         "end": _nullable_string(snapshot.get("end")),
         "hash": digest,
         "bars": normalized_bars,
+    }
+    preparation_evidence = _normalize_data_preparation_evidence(snapshot.get("preparationEvidence"))
+    if preparation_evidence:
+        normalized["preparationEvidence"] = preparation_evidence
+    return normalized
+
+
+def _normalize_data_preparation_evidence(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    run_id = str(value.get("runId") or "").strip()
+    market = str(value.get("market") or "").strip()
+    symbol = str(value.get("symbol") or "").strip()
+    timeframe = str(value.get("timeframe") or "").strip()
+    if not run_id or not market or not symbol or not timeframe:
+        return None
+    quality = value.get("quality")
+    if not isinstance(quality, dict):
+        quality = {}
+    warnings = quality.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    return {
+        "kind": str(value.get("kind") or "watchlist_cache_refresh"),
+        "runId": run_id,
+        "createdAt": _nullable_string(value.get("createdAt")),
+        "market": market,
+        "symbol": symbol,
+        "name": str(value.get("name") or symbol),
+        "timeframe": timeframe,
+        "status": str(value.get("status") or ""),
+        "requestedLimit": max(0, int(_number_or_default(value.get("requestedLimit"), 0))),
+        "upsertedRows": max(0, int(_number_or_default(value.get("upsertedRows"), 0))),
+        "quality": {
+            "source": str(quality.get("source") or "unknown"),
+            "isComplete": bool(quality.get("isComplete", quality.get("is_complete", False))),
+            "warnings": [str(warning) for warning in warnings],
+            "rows": max(0, int(_number_or_default(quality.get("rows"), 0))),
+        },
+        "error": _nullable_string(value.get("error")),
     }
 
 

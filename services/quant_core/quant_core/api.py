@@ -23,6 +23,7 @@ from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.cache_refresh_runs import (
+    WatchlistCacheRefreshRun,
     WatchlistCacheRefreshRunStore,
     create_watchlist_cache_refresh_run,
     watchlist_cache_refresh_item_from_quality,
@@ -1453,6 +1454,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             market = query.get("market", ["ashare"])[0]
             symbol = query.get("symbol", ["600000"])[0]
             timeframe = query.get("timeframe", ["1d"])[0]
+            watchlist_refresh_run_id = query.get("watchlistRefreshRunId", [""])[0].strip()
             strategy_snapshot = _strategy_snapshot_from_query(query)
             if strategy_snapshot:
                 validation = validate_strategy_snapshot(
@@ -1474,6 +1476,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             research_note = research_note_to_payload(
                 self.note_store.get(market=market, symbol=symbol, timeframe=timeframe)
             )
+            data_preparation_evidence = _watchlist_refresh_preparation_evidence(
+                self.watchlist_cache_refresh_store.get(watchlist_refresh_run_id),
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+            )
             workspace = run_terminal_research(
                 market=market,
                 symbol=symbol,
@@ -1486,6 +1494,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
                 strategy_snapshot=strategy_snapshot,
                 research_note=research_note,
+                data_preparation_evidence=data_preparation_evidence,
             )
             if workspace.research_run:
                 strategy = strategy_config_from_snapshot(
@@ -1739,6 +1748,39 @@ def _parse_research_data_limit(raw: str) -> int:
     except ValueError:
         return 500
     return max(1, min(value, 500))
+
+
+def _watchlist_refresh_preparation_evidence(
+    refresh_run: WatchlistCacheRefreshRun | None,
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> dict[str, object] | None:
+    if refresh_run is None:
+        return None
+    for item in refresh_run.items:
+        if item.market == market and item.symbol == symbol and item.timeframe == timeframe:
+            return {
+                "kind": "watchlist_cache_refresh",
+                "runId": refresh_run.run_id,
+                "createdAt": refresh_run.created_at.isoformat(),
+                "market": item.market,
+                "symbol": item.symbol,
+                "name": item.name,
+                "timeframe": item.timeframe,
+                "status": item.status,
+                "requestedLimit": item.requested_limit,
+                "upsertedRows": item.upserted_rows,
+                "quality": {
+                    "source": item.quality.source,
+                    "isComplete": item.quality.is_complete,
+                    "warnings": list(item.quality.warnings),
+                    "rows": item.quality.rows,
+                },
+                "error": item.error,
+            }
+    return None
 
 
 def _portfolio_backtest_from_payload(payload: dict[str, object], run_store: ResearchRunStore):

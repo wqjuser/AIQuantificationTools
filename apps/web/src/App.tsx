@@ -1017,6 +1017,8 @@ export function App() {
     selectedWatchlistCacheRefresh,
     workspace
   );
+  const selectedWatchlistRefreshEvidenceRunId =
+    watchlistCacheRefreshCoverageRow?.status === "ready" ? watchlistCacheRefreshCoverageRow.runId : null;
   const researchContextReadinessRows = buildResearchContextReadinessRows({
     workspace,
     barCount: klinesState.bars.length,
@@ -1876,7 +1878,8 @@ export function App() {
         market: workspace.selectedInstrument.market,
         symbol: workspace.selectedInstrument.symbol,
         timeframe: workspace.selectedTimeframe,
-        limit: chartKlineLimit
+        limit: chartKlineLimit,
+        watchlistRefreshRunId: selectedWatchlistRefreshEvidenceRunId
       },
       workspace
     );
@@ -1910,7 +1913,17 @@ export function App() {
     await refreshRunHistory();
     await refreshStrategyLibrary();
     setIsRunning(false);
-  }, [i18n, refreshRunHistory, refreshStrategyLibrary, researchPipelinePreflight, resetAiReviewHistoryState, workspace]);
+  }, [
+    chartKlineLimit,
+    i18n,
+    quantCoreBaseUrl,
+    refreshRunHistory,
+    refreshStrategyLibrary,
+    researchPipelinePreflight,
+    resetAiReviewHistoryState,
+    selectedWatchlistRefreshEvidenceRunId,
+    workspace
+  ]);
 
   const runPortfolioBacktestDraft = useCallback(async () => {
     if (!portfolioBacktestDraft.request) {

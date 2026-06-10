@@ -2279,6 +2279,21 @@ export interface ResearchRunDataSnapshotBar {
   volume: number;
 }
 
+export interface ResearchRunDataPreparationEvidence {
+  kind: "watchlist_cache_refresh";
+  runId: string;
+  createdAt: string | null;
+  market: Market;
+  symbol: string;
+  name: string;
+  timeframe: Timeframe;
+  status: "refreshed" | "skipped" | "failed" | string;
+  requestedLimit: number;
+  upsertedRows: number;
+  quality: ResearchRunDataQuality;
+  error: string | null;
+}
+
 export interface ResearchRunDataSnapshot {
   source: string;
   isComplete: boolean;
@@ -2288,6 +2303,7 @@ export interface ResearchRunDataSnapshot {
   end: string | null;
   hash: string;
   bars: ResearchRunDataSnapshotBar[];
+  preparationEvidence?: ResearchRunDataPreparationEvidence;
 }
 
 export interface ResearchRunStrategyCondition {

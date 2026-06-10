@@ -6011,6 +6011,90 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
         self.assertEqual(recording_adapter.calls, [("ashare", "600000", "1d", 240)])
 
+    def test_research_api_locks_matching_watchlist_refresh_evidence_into_data_snapshot(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+        from urllib.parse import urlencode
+
+        from quant_core.ai import LocalResearchAssistant
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import (
+            WatchlistCacheRefreshRunStore,
+            create_watchlist_cache_refresh_run,
+            watchlist_cache_refresh_item_from_quality,
+        )
+        from quant_core.domain import DataQuality
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+        from quant_core.terminal import Instrument
+
+        with tempfile.TemporaryDirectory() as tmp:
+            refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+            refresh_run = refresh_store.record(
+                create_watchlist_cache_refresh_run(
+                    items=[
+                        watchlist_cache_refresh_item_from_quality(
+                            instrument=Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=0),
+                            timeframe="1d",
+                            requested_limit=120,
+                            quality=DataQuality(source="tencent", is_complete=True, warnings=[], rows=120),
+                            upserted_rows=120,
+                        )
+                    ],
+                    timeframe="1d",
+                    requested_limit=120,
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                assistant = LocalResearchAssistant()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+                watchlist_cache_refresh_store = refresh_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            params = urlencode(
+                {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "limit": "120",
+                    "watchlistRefreshRunId": refresh_run.run_id,
+                }
+            )
+            try:
+                connection.request("GET", f"/api/research/run?{params}")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                run_id = payload["researchRun"]["runId"]
+                connection.request("GET", f"/api/research/runs/{run_id}")
+                detail_response = connection.getresponse()
+                detail_payload = json.loads(detail_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(detail_response.status, 200)
+        evidence = detail_payload["run"]["dataSnapshot"]["preparationEvidence"]
+        self.assertEqual(evidence["kind"], "watchlist_cache_refresh")
+        self.assertEqual(evidence["runId"], refresh_run.run_id)
+        self.assertEqual(evidence["market"], "ashare")
+        self.assertEqual(evidence["symbol"], "600000")
+        self.assertEqual(evidence["timeframe"], "1d")
+        self.assertEqual(evidence["status"], "refreshed")
+        self.assertEqual(evidence["upsertedRows"], 120)
+        self.assertEqual(evidence["quality"]["source"], "tencent")
+
     def test_research_api_applies_submitted_strategy_snapshot(self):
         import json
         from http.client import HTTPConnection

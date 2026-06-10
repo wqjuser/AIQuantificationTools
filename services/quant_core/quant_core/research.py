@@ -56,6 +56,7 @@ def run_terminal_research(
     data_limit: int = 500,
     strategy_snapshot: StrategySnapshot | None = None,
     research_note: dict[str, Any] | None = None,
+    data_preparation_evidence: dict[str, Any] | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -109,7 +110,7 @@ def run_terminal_research(
         execution_mode="paper_only",
         ai_report=asdict(report),
         data_quality=_data_quality_payload(quality),
-        data_snapshot=_data_snapshot_payload(bars, quality),
+        data_snapshot=_data_snapshot_payload(bars, quality, preparation_evidence=data_preparation_evidence),
         strategy_config=strategy_config_to_payload(strategy),
         backtest_assumptions={
             "initialCash": backtest_engine.initial_cash,
@@ -160,7 +161,7 @@ def run_terminal_research(
             data_rows=quality.rows,
             execution_mode="paper_only",
             data_quality=_data_quality_payload(quality),
-            data_snapshot=_data_snapshot_payload(bars, quality),
+            data_snapshot=_data_snapshot_payload(bars, quality, preparation_evidence=data_preparation_evidence),
             research_note=research_note or None,
             strategy_config=strategy_config_to_payload(strategy),
         ),
@@ -210,9 +211,14 @@ def _data_quality_payload(quality: DataQuality) -> dict[str, object]:
     }
 
 
-def _data_snapshot_payload(bars: list[OHLCVBar], quality: DataQuality) -> dict[str, object]:
+def _data_snapshot_payload(
+    bars: list[OHLCVBar],
+    quality: DataQuality,
+    *,
+    preparation_evidence: dict[str, Any] | None = None,
+) -> dict[str, object]:
     payload_bars = [bar_to_payload(bar) for bar in bars]
-    return {
+    snapshot: dict[str, object] = {
         "source": quality.source,
         "isComplete": quality.is_complete,
         "warnings": list(quality.warnings),
@@ -222,6 +228,9 @@ def _data_snapshot_payload(bars: list[OHLCVBar], quality: DataQuality) -> dict[s
         "hash": _bars_hash(payload_bars),
         "bars": payload_bars,
     }
+    if preparation_evidence:
+        snapshot["preparationEvidence"] = dict(preparation_evidence)
+    return snapshot
 
 
 def _bars_hash(bars: list[dict[str, object]]) -> str:

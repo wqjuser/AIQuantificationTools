@@ -242,6 +242,23 @@ describe("terminal workspace API client", () => {
     );
   });
 
+  test("builds the research run URL with locked watchlist refresh evidence", () => {
+    expect(
+      buildResearchRunUrl(
+        "http://127.0.0.1:8765/",
+        "ashare",
+        "600000",
+        "1d",
+        undefined,
+        120,
+        undefined,
+        "cache-refresh-f10efd7401b7"
+      )
+    ).toBe(
+      "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=120&watchlistRefreshRunId=cache-refresh-f10efd7401b7"
+    );
+  });
+
   test("builds the research run URL with editable backtest assumptions", () => {
     expect(
       buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d", {
@@ -3807,7 +3824,7 @@ describe("terminal workspace API client", () => {
     );
     const result = await runTerminalResearch(
       "http://127.0.0.1:8765",
-      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      { market: "ashare", symbol: "600000", timeframe: "1d", watchlistRefreshRunId: "cache-refresh-f10efd7401b7" },
       workspaceWithBacktestAssumption(currentWorkspace, "slippageBps", 4),
       async (url) => {
         calls.push(url);
@@ -3826,6 +3843,7 @@ describe("terminal workspace API client", () => {
     expect(requestUrl.searchParams.get("initialCash")).toBe("250000");
     expect(requestUrl.searchParams.get("feeBps")).toBe("8");
     expect(requestUrl.searchParams.get("slippageBps")).toBe("4");
+    expect(requestUrl.searchParams.get("watchlistRefreshRunId")).toBe("cache-refresh-f10efd7401b7");
     expect(requestUrl.searchParams.get("strategyName")).toBe("SMA Trend / Bank Sector");
     expect(requestUrl.searchParams.get("strategyEntry")).toBe("Close > SMA5");
     expect(result.source).toBe("core");

@@ -112,6 +112,24 @@ class WatchlistCacheRefreshRunStore:
             connection.close()
         return [_watchlist_cache_refresh_run_from_row(row) for row in rows]
 
+    def get(self, run_id: str | None) -> WatchlistCacheRefreshRun | None:
+        if not run_id:
+            return None
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                select run_id, created_at, timeframe, requested_limit, summary_json, items_json
+                from watchlist_cache_refresh_runs
+                where run_id = ?
+                limit 1
+                """,
+                (run_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return _watchlist_cache_refresh_run_from_row(row) if row else None
+
 
 def create_watchlist_cache_refresh_run(
     *,
