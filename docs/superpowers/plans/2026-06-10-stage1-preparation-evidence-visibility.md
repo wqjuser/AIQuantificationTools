@@ -113,6 +113,6 @@ Expected: PASS.
 
 Rebuild/restart Docker services and open the app on `http://127.0.0.1:5173/?workspace=research` to confirm the frontend loads without console errors.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 Commit code and docs separately if the implementation and plan-update split stays clean; push `codex/p0-product-workspaces` via `127.0.0.1:7890`.
