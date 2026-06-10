@@ -19,7 +19,7 @@ Make the research context readiness checklist explain whether the selected symbo
 - [x] GREEN: Add Chinese UI translation for the new cache guidance.
 - [x] DOCS: Update product planning docs.
 - [x] VERIFY: Run targeted tests, relevant suites, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -37,3 +37,4 @@ npm run docker:smoke
 - 2026-06-10: Added failing Stage 1 readiness tests for fresh, stale, and missing cache guidance.
 - 2026-06-10: Updated the cache readiness row so fresh cache explicitly says it can support audited research, while stale or missing cache points users back to search suggestion/current cache refresh before running audited research.
 - 2026-06-10: Verified focused Stage 1 readiness tests, the full terminal workbench model test, production build, full repository tests, Docker rebuild, Docker smoke, and browser smoke on `http://127.0.0.1:5173/?workspace=research&market=ashare&symbol=600000&timeframe=1d`.
+- 2026-06-10: Marked this Stage 1 slice shipped after commit and proxy push preparation.
