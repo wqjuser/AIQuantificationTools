@@ -86,6 +86,12 @@ export interface ResearchWorkspaceStateSnapshot extends ResearchWorkspaceStateDr
   updatedAt?: string;
 }
 
+export interface ResearchContextUrlState {
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+}
+
 export type GoldenPathRunbookStatus = "passed" | "review" | "blocked";
 
 export interface GoldenPathRunbookSourceItem {
@@ -11296,6 +11302,23 @@ export function watchlistIncludesInstrument(watchlist: Instrument[], instrument:
   return watchlist.some((item) => item.market === instrument.market && item.symbol === instrument.symbol);
 }
 
+function parseMarket(value: string | null | undefined): Market | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "ashare" || normalized === "us" || normalized === "crypto" ? normalized : null;
+}
+
+function parseTimeframe(value: string | null | undefined): Timeframe | null {
+  const normalized = value?.trim();
+  return normalized === "1d" ||
+    normalized === "1m" ||
+    normalized === "5m" ||
+    normalized === "15m" ||
+    normalized === "30m" ||
+    normalized === "60m"
+    ? normalized
+    : null;
+}
+
 export function normalizeInstrumentSymbol(market: Market, rawSymbol: string): string {
   const compact = rawSymbol.trim().toUpperCase().replace(/\s+/g, "");
   if (!compact) {
@@ -11636,6 +11659,56 @@ export function workspaceWithSavedResearchWorkspaceState(
     ...currentWorkspace,
     researchWorkspaceState: savedState
   };
+}
+
+export function resolveResearchContextUrlState(
+  search: string | URLSearchParams | null | undefined
+): ResearchContextUrlState | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const market = parseMarket(params.get("market"));
+  const timeframe = parseTimeframe(params.get("timeframe"));
+  if (!market || !timeframe) {
+    return null;
+  }
+  const symbol = normalizeInstrumentSymbol(market, params.get("symbol") ?? "");
+  if (!symbol) {
+    return null;
+  }
+  return {
+    market,
+    symbol,
+    timeframe
+  };
+}
+
+export function workspaceWithResearchContextUrlState(
+  currentWorkspace: TerminalWorkspace,
+  urlState: ResearchContextUrlState | null | undefined
+): TerminalWorkspace {
+  if (!urlState) {
+    return currentWorkspace;
+  }
+  const instrument =
+    currentWorkspace.watchlist.find(
+      (candidate) => candidate.market === urlState.market && candidate.symbol === urlState.symbol
+    ) ?? buildInstrumentFromSymbol(urlState.market, urlState.symbol);
+  if (!instrument) {
+    return currentWorkspace;
+  }
+  const instrumentWorkspace =
+    currentWorkspace.selectedInstrument.market === instrument.market &&
+    currentWorkspace.selectedInstrument.symbol === instrument.symbol
+      ? currentWorkspace
+      : workspaceWithSelectedInstrument(currentWorkspace, instrument);
+  return instrumentWorkspace.selectedTimeframe === urlState.timeframe
+    ? instrumentWorkspace
+    : workspaceWithSelectedTimeframe(instrumentWorkspace, urlState.timeframe);
 }
 
 export function workspaceWithSelectedTimeframe(

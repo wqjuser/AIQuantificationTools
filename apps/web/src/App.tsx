@@ -284,6 +284,7 @@ import {
   PromotionReadiness,
   ProductWorkArea,
   ProductWorkAreaId,
+  ResearchContextUrlState,
   ResearchPipelinePreflight,
   ResearchContextEvidenceRow,
   ResearchContextReadinessRow,
@@ -318,6 +319,7 @@ import {
   WorkflowRunLogEntry,
   WorkflowRunState,
   WorkflowStageView,
+  resolveResearchContextUrlState,
   resolveWatchlistCacheRefreshRunSelection,
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
@@ -325,6 +327,7 @@ import {
   workspaceWithBacktestParameterCandidate,
   workspaceWithAppliedResearchWorkspaceState,
   workspaceWithPreservedInteractiveState,
+  workspaceWithResearchContextUrlState,
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithSavedWatchlist,
   workspaceWithStrategyLibraryItem,
@@ -338,7 +341,7 @@ const quantCoreBaseUrl = resolveQuantCoreBaseUrl({
   VITE_QUANT_API_BASE: import.meta.env.VITE_QUANT_API_BASE
 });
 const initialWorkspaceState: WorkspaceLoadResult = {
-  workspace: buildTerminalWorkspace(),
+  workspace: buildInitialTerminalWorkspace(),
   source: "fallback",
   statusLabel: "Offline snapshot"
 };
@@ -551,6 +554,21 @@ function resolveInitialWatchlistCacheRefreshRunId(): string | null {
     return null;
   }
   return resolveWatchlistCacheRefreshRunIdFromUrl(window.location.search);
+}
+
+function resolveInitialResearchContextUrlState(): ResearchContextUrlState | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return resolveResearchContextUrlState(window.location.search);
+}
+
+function hasExplicitResearchContextUrl(): boolean {
+  return Boolean(resolveInitialResearchContextUrlState());
+}
+
+function buildInitialTerminalWorkspace(): TerminalWorkspace {
+  return workspaceWithResearchContextUrlState(buildTerminalWorkspace(), resolveInitialResearchContextUrlState());
 }
 
 function replaceWatchlistCacheRefreshRunUrlParam(runId: string | null): void {
@@ -1540,11 +1558,19 @@ export function App() {
     const startedSelectionVersion = manualSelectionVersionRef.current;
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
+    const researchContextUrlState = resolveInitialResearchContextUrlState();
+    const restoredWorkspace = workspaceWithResearchContextUrlState(
+      workspaceWithAppliedResearchWorkspaceState(result.workspace),
+      researchContextUrlState
+    );
     const restoredResult = {
       ...result,
-      workspace: workspaceWithAppliedResearchWorkspaceState(result.workspace)
+      workspace: restoredWorkspace
     };
-    const shouldConsiderSavedWorkArea = !savedResearchWorkspaceSelectionAppliedRef.current;
+    const urlContextCreatesUnsavedWatchlist =
+      Boolean(researchContextUrlState) && !watchlistIncludesInstrument(result.workspace.watchlist, researchContextUrlState!);
+    const shouldConsiderSavedWorkArea =
+      !savedResearchWorkspaceSelectionAppliedRef.current && !hasExplicitResearchContextUrl();
     const shouldApplySavedWorkArea =
       shouldConsiderSavedWorkArea && manualSelectionVersionRef.current === startedSelectionVersion;
     setWorkspaceState((current) => {
@@ -1565,6 +1591,9 @@ export function App() {
         setActiveLoopStepId(selection.quantLoopStepId);
         setActiveWorkflowStageId(selection.workflowStageId);
       }
+    }
+    if (urlContextCreatesUnsavedWatchlist && manualSelectionVersionRef.current === startedSelectionVersion) {
+      setHasUnsavedWatchlistChanges(true);
     }
     await refreshRunHistory();
     await refreshSettingsStatus();
@@ -3558,13 +3587,24 @@ export function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get("workspace") === activeWorkAreaId && !url.searchParams.has("workflow")) {
+    const shouldSyncResearchContext = activeWorkAreaId === "market" || activeWorkAreaId === "research";
+    const contextChanged =
+      shouldSyncResearchContext &&
+      (url.searchParams.get("market") !== workspace.selectedInstrument.market ||
+        url.searchParams.get("symbol") !== workspace.selectedInstrument.symbol ||
+        url.searchParams.get("timeframe") !== workspace.selectedTimeframe);
+    if (url.searchParams.get("workspace") === activeWorkAreaId && !url.searchParams.has("workflow") && !contextChanged) {
       return;
     }
     url.searchParams.set("workspace", activeWorkAreaId);
     url.searchParams.delete("workflow");
+    if (shouldSyncResearchContext) {
+      url.searchParams.set("market", workspace.selectedInstrument.market);
+      url.searchParams.set("symbol", workspace.selectedInstrument.symbol);
+      url.searchParams.set("timeframe", workspace.selectedTimeframe);
+    }
     window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
-  }, [activeWorkAreaId]);
+  }, [activeWorkAreaId, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   useEffect(() => {
     skipNextSymbolSearchRef.current = true;

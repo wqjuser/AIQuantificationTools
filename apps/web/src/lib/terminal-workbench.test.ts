@@ -72,6 +72,7 @@ import {
   resolveQuantLoopSelection,
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
+  resolveResearchContextUrlState,
   researchWorkspaceStateMatchesDraft,
   resolveProductWorkAreaSelection,
   buildResearchRunComparisonRows,
@@ -84,6 +85,7 @@ import {
   buildResearchWorkspaceStateDraft,
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithAppliedResearchWorkspaceState,
+  workspaceWithResearchContextUrlState,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
@@ -306,6 +308,51 @@ describe("terminal workbench model", () => {
     expect(restored.selectedTimeframe).toBe("5m");
     expect(restored.researchWorkspaceState?.symbol).toBe("BTC/USDT");
     expect(restored.watchlist.some((instrument) => instrument.market === "crypto" && instrument.symbol === "BTC/USDT")).toBe(true);
+  });
+
+  test("parses valid Stage 1 research context URL parameters", () => {
+    expect(resolveResearchContextUrlState("?market=crypto&symbol=btcusdt&timeframe=5m")).toEqual({
+      market: "crypto",
+      symbol: "BTC/USDT",
+      timeframe: "5m"
+    });
+    expect(resolveResearchContextUrlState(new URLSearchParams("market=ashare&symbol=sh600000&timeframe=1d"))).toEqual({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d"
+    });
+    expect(resolveResearchContextUrlState("?market=fx&symbol=EURUSD&timeframe=5m")).toBeNull();
+    expect(resolveResearchContextUrlState("?market=us&symbol=MSFT&timeframe=2h")).toBeNull();
+    expect(resolveResearchContextUrlState("?market=us&symbol=&timeframe=5m")).toBeNull();
+  });
+
+  test("applies URL research context ahead of saved workspace state", () => {
+    const workspace: TerminalWorkspace = {
+      ...buildTerminalWorkspace(),
+      researchWorkspaceState: {
+        market: "crypto",
+        symbol: "BTC/USDT",
+        name: "Bitcoin",
+        timeframe: "5m",
+        workspaceId: "research",
+        updatedAt: "2026-06-10T00:00:00+00:00"
+      }
+    };
+
+    const restored = workspaceWithResearchContextUrlState(workspace, {
+      market: "us",
+      symbol: "AAPL",
+      timeframe: "15m"
+    });
+
+    expect(restored.selectedInstrument).toMatchObject({
+      market: "us",
+      symbol: "AAPL",
+      name: "Apple",
+      price: 191.2
+    });
+    expect(restored.selectedTimeframe).toBe("15m");
+    expect(restored.researchWorkspaceState?.symbol).toBe("BTC/USDT");
   });
 
   test("resolves the saved Stage 1 work area from workspace state", () => {
