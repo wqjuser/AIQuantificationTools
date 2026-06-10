@@ -18,7 +18,7 @@ Make the Research readiness `Refresh evidence` row run the same watchlist cache 
 - [x] GREEN: Add the new readiness action and App wiring.
 - [x] DOCS: Update product planning docs with the action semantics.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -38,3 +38,4 @@ Results:
 - Python core unittest suite passed: `141` tests.
 - Docker rebuild/restart completed for the web and API services.
 - Browser smoke passed on `http://127.0.0.1:5173/?workspace=research&market=us&symbol=NVDA&timeframe=15m`: the missing `刷新证据` row displayed the `刷新自选缓存` action, did not show the single-symbol `刷新缓存` action for that row, and reported no console errors.
+- Shipped through proxy to `origin/codex/p0-product-workspaces` as `a1e4fc2`.
