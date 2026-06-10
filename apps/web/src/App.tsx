@@ -3646,6 +3646,42 @@ export function App() {
     [selectInstrument]
   );
 
+  const refreshSearchSuggestionCache = useCallback(
+    async (suggestion: MarketSearchSuggestion) => {
+      const timeframe = workspace.selectedTimeframe;
+      skipNextSymbolSearchRef.current = true;
+      setMarketDraft(suggestion.market);
+      setSymbolDraft(suggestion.symbol);
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
+      selectInstrument({
+        symbol: suggestion.symbol,
+        name: suggestion.name,
+        market: suggestion.market,
+        changePct: 0
+      });
+      await refreshCacheContext({
+        market: suggestion.market,
+        symbol: suggestion.symbol,
+        timeframe,
+        rowCount: suggestion.cache?.rowCount ?? 0,
+        startTimestamp: suggestion.cache?.startTimestamp ?? null,
+        endTimestamp: suggestion.cache?.endTimestamp ?? null,
+        freshness: suggestion.cache?.freshness ?? "empty",
+        ageHours: suggestion.cache?.ageHours ?? null
+      });
+      setKlinesState(
+        await loadMarketKlines(quantCoreBaseUrl, {
+          market: suggestion.market,
+          symbol: suggestion.symbol,
+          timeframe,
+          limit: chartKlineLimit
+        })
+      );
+    },
+    [refreshCacheContext, selectInstrument, workspace.selectedTimeframe]
+  );
+
   useEffect(() => {
     void refreshWorkspace();
   }, [refreshWorkspace]);
@@ -4471,28 +4507,48 @@ export function App() {
                     ) : null}
                     {!isSymbolSearching && searchSuggestions.length
                       ? searchSuggestions.map((suggestion) => (
-                          <button
-                            key={`${suggestion.market}-${suggestion.symbol}-${suggestion.source}`}
-                            onClick={() => selectSearchSuggestion(suggestion)}
-                            role="option"
-                            type="button"
-                          >
-                            <span>
-                              <strong>{suggestion.symbol}</strong>
-                              <em>{suggestion.name}</em>
-                            </span>
-                            <small>
-                              {i18n.marketLabel(suggestion.market)}
-                              {suggestion.exchange ? ` · ${suggestion.exchange}` : ""}
-                              {" · "}
-                              {suggestion.source}
-                            </small>
-                            {suggestion.cache ? (
-                              <small className={`symbol-suggestion-cache ${suggestion.cache.freshness}`}>
-                                {marketSearchCacheSummary(i18n, suggestion.cache)}
+                          <div className="symbol-suggestion-row" key={`${suggestion.market}-${suggestion.symbol}-${suggestion.source}`}>
+                            <button
+                              className="symbol-suggestion-select"
+                              onClick={() => selectSearchSuggestion(suggestion)}
+                              role="option"
+                              type="button"
+                            >
+                              <span>
+                                <strong>{suggestion.symbol}</strong>
+                                <em>{suggestion.name}</em>
+                              </span>
+                              <small>
+                                {i18n.marketLabel(suggestion.market)}
+                                {suggestion.exchange ? ` · ${suggestion.exchange}` : ""}
+                                {" · "}
+                                {suggestion.source}
                               </small>
+                              {suggestion.cache ? (
+                                <small className={`symbol-suggestion-cache ${suggestion.cache.freshness}`}>
+                                  {marketSearchCacheSummary(i18n, suggestion.cache)}
+                                </small>
+                              ) : null}
+                            </button>
+                            {canRefreshSearchSuggestionCache(suggestion) ? (
+                              <button
+                                className="symbol-suggestion-refresh"
+                                disabled={
+                                  refreshingCacheKey ===
+                                  cacheContextKey({
+                                    market: suggestion.market,
+                                    symbol: suggestion.symbol,
+                                    timeframe: workspace.selectedTimeframe
+                                  })
+                                }
+                                onClick={() => void refreshSearchSuggestionCache(suggestion)}
+                                type="button"
+                              >
+                                <RefreshCw size={12} />
+                                {i18n.locale === "zh-CN" ? "刷新缓存" : "Refresh cache"}
+                              </button>
                             ) : null}
-                          </button>
+                          </div>
                         ))
                       : null}
                     {!isSymbolSearching && !searchSuggestions.length ? (
@@ -13071,6 +13127,10 @@ function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearch
       ? `${cache.rowCount.toLocaleString("zh-CN")} 行`
       : `${cache.rowCount.toLocaleString("en-US")} rows`;
   return `${freshnessLabel} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
+}
+
+function canRefreshSearchSuggestionCache(suggestion: MarketSearchSuggestion): boolean {
+  return Boolean(suggestion.cache && suggestion.cache.freshness !== "fresh");
 }
 
 function cacheFreshnessLabel(

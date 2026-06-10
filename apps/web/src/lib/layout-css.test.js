@@ -84,6 +84,21 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".symbol-suggestion-cache");
   });
 
+  test("lets stale or empty market search suggestions refresh cache without nested buttons", () => {
+    const symbolSwitcherSource = sourceBetween('<form className="symbol-switcher"', "</form>");
+
+    expect(appSource).toContain("const refreshSearchSuggestionCache = useCallback(");
+    expect(appSource).toContain("await refreshCacheContext({");
+    expect(appSource).toContain("timeframe: workspace.selectedTimeframe");
+    expect(symbolSwitcherSource).toContain('className="symbol-suggestion-row"');
+    expect(symbolSwitcherSource).toContain('className="symbol-suggestion-select"');
+    expect(symbolSwitcherSource).toContain("canRefreshSearchSuggestionCache(suggestion)");
+    expect(symbolSwitcherSource).toContain("refreshSearchSuggestionCache(suggestion)");
+    expect(symbolSwitcherSource).toContain('className="symbol-suggestion-refresh"');
+    expect(styles).toContain(".symbol-suggestion-row");
+    expect(styles).toContain(".symbol-suggestion-refresh");
+  });
+
   test("uses the left rail for actionable product work areas instead of passive module switching", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
 
