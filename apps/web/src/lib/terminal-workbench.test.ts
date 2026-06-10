@@ -481,6 +481,107 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("marks open market calendar as ready in Stage 1 calendar readiness", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "research",
+        updatedAt: "2026-05-26T08:40:00+08:00"
+      }),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      marketCalendar: {
+        market: "ashare",
+        timezone: "Asia/Shanghai",
+        status: "open",
+        isOpen: true,
+        session: "morning",
+        asOf: "2026-06-11T10:00:00+08:00",
+        tradingDay: "2026-06-11",
+        nextOpen: null,
+        nextClose: "2026-06-11T11:30:00+08:00",
+        detail: "A-share market is open in the morning session.",
+        warnings: [],
+        source: "static-session-template"
+      },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["instrument", "calendar", "klines", "cache", "note", "workspace"]);
+    expect(rows.find((row) => row.id === "calendar")).toMatchObject({
+      label: "Market calendar",
+      value: "open · morning",
+      detail: "Asia/Shanghai · next close 2026-06-11T11:30:00+08:00 · static-session-template",
+      status: "ready",
+      tone: "positive"
+    });
+    expect(rows.find((row) => row.id === "calendar")?.action).toBeUndefined();
+  });
+
+  test("marks static-template market calendar readiness warnings as review without blocking research", () => {
+    const rows = buildResearchContextReadinessRows({
+      workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        timeframe: "1d",
+        workspaceId: "research",
+        updatedAt: "2026-05-26T08:40:00+08:00"
+      }),
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      marketCalendar: {
+        market: "ashare",
+        timezone: "Asia/Shanghai",
+        status: "break",
+        isOpen: false,
+        session: "lunch_break",
+        asOf: "2026-06-11T12:00:00+08:00",
+        tradingDay: "2026-06-11",
+        nextOpen: "2026-06-11T13:00:00+08:00",
+        nextClose: null,
+        detail: "A-share market is between sessions until 2026-06-11T13:00:00+08:00.",
+        warnings: ["Static session template only; exchange holiday calendar is not configured."],
+        source: "static-session-template"
+      },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+
+    expect(rows.find((row) => row.id === "calendar")).toMatchObject({
+      value: "break · lunch_break",
+      detail: "Asia/Shanghai · next open 2026-06-11T13:00:00+08:00 · Static session template only; exchange holiday calendar is not configured.",
+      status: "review",
+      tone: "warning"
+    });
+    expect(rows.find((row) => row.id === "calendar")?.action).toBeUndefined();
+    expect(buildResearchPipelinePreflight(rows).status).toBe("review");
+  });
+
   test("marks matching refresh evidence ready in Stage 1 research context readiness", () => {
     const rows = buildResearchContextReadinessRows({
       workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {

@@ -1084,6 +1084,7 @@ export function App() {
     watchlist: {
       hasUnsavedChanges: hasUnsavedWatchlistChanges
     },
+    marketCalendar: marketCalendarState.calendar,
     cacheContext: activeCacheContext
       ? {
           rowCount: activeCacheContext.rowCount,
@@ -6724,6 +6725,7 @@ function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadin
   const labels: Record<ResearchContextReadinessRow["id"], string> = {
     instrument: "标的",
     watchlist: "自选状态",
+    calendar: "交易日历",
     klines: "K线数据",
     cache: "本地缓存",
     refresh: "刷新证据",
@@ -6780,6 +6782,14 @@ function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadin
   }
   if (row.id === "watchlist") {
     return row.value === "saved" ? "已保存" : "未保存更改";
+  }
+  if (row.id === "calendar") {
+    return row.value
+      .replace("always_open", "连续交易")
+      .replace("open", "开市")
+      .replace("closed", "休市")
+      .replace("break", "盘中休市")
+      .replace("unknown", "未知");
   }
   return row.value;
 }
@@ -6877,6 +6887,7 @@ function researchPipelinePreflightIssueLabel(
   const labels: Record<ResearchContextReadinessRow["id"], string> = {
     instrument: "当前标的",
     watchlist: "自选状态",
+    calendar: "交易日历",
     klines: "K线数据",
     cache: "本地缓存",
     refresh: "刷新证据",
@@ -6941,6 +6952,15 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
       .replace("refresh quality incomplete", "刷新质量不完整")
       .replace("source requires review", "来源需复核")
       .replace("refresh requires review", "刷新需复核");
+  }
+  if (row.id === "calendar") {
+    return row.detail
+      .replace("next close", "下一次收盘")
+      .replace("next open", "下一次开盘")
+      .replace("continuous trading", "连续交易")
+      .replace("no scheduled event", "无计划事件")
+      .replace("Static session template only; exchange holiday calendar is not configured.", "仅静态时段模板；未配置交易所节假日历。")
+      .replace("static-session-template", "静态时段模板");
   }
   return row.detail
     .replace("Draft not saved", "草稿未保存")

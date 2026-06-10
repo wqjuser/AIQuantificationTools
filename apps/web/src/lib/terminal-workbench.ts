@@ -2275,6 +2275,23 @@ export interface ResearchRunDataQuality {
   rows: number;
 }
 
+export type ResearchContextMarketCalendarStatus = "open" | "closed" | "break" | "always_open" | "unknown";
+
+export interface ResearchContextMarketCalendar {
+  market: Market;
+  timezone: string;
+  status: ResearchContextMarketCalendarStatus;
+  isOpen: boolean;
+  session: string;
+  asOf: string;
+  tradingDay: string;
+  nextOpen: string | null;
+  nextClose: string | null;
+  detail: string;
+  warnings: string[];
+  source: string;
+}
+
 export type ResearchContextReadinessStatus = "ready" | "review" | "blocked";
 
 export interface ResearchContextReadinessCacheContext {
@@ -2300,6 +2317,7 @@ export interface ResearchContextReadinessInput {
   watchlist?: {
     hasUnsavedChanges: boolean;
   } | null;
+  marketCalendar?: ResearchContextMarketCalendar | null;
   cacheContext?: ResearchContextReadinessCacheContext | null;
   watchlistRefreshRuns?: WatchlistCacheRefreshRunSnapshot[] | null;
   note?: ResearchContextReadinessNoteInput | null;
@@ -2313,7 +2331,7 @@ export type ResearchContextReadinessAction =
   | "save-workspace";
 
 export interface ResearchContextReadinessRow {
-  id: "instrument" | "watchlist" | "klines" | "cache" | "refresh" | "note" | "workspace";
+  id: "instrument" | "watchlist" | "calendar" | "klines" | "cache" | "refresh" | "note" | "workspace";
   label: string;
   value: string;
   detail: string;
@@ -2462,6 +2480,7 @@ export interface ResearchRunDataSnapshot {
   hash: string;
   bars: ResearchRunDataSnapshotBar[];
   preparationEvidence?: ResearchRunDataPreparationEvidence;
+  marketCalendar?: ResearchContextMarketCalendar;
 }
 
 export interface ResearchRunStrategyCondition {
@@ -6516,6 +6535,10 @@ export function buildResearchContextReadinessRows(
     }
   ];
 
+  if (input.marketCalendar) {
+    rows.push(buildMarketCalendarReadinessRow(input.marketCalendar));
+  }
+
   if (input.watchlist) {
     rows.push(buildWatchlistReadinessRow(input.workspace, input.watchlist.hasUnsavedChanges));
   }
@@ -6559,6 +6582,32 @@ export function buildResearchContextReadinessRows(
   );
 
   return rows;
+}
+
+function buildMarketCalendarReadinessRow(calendar: ResearchContextMarketCalendar): ResearchContextReadinessRow {
+  const warnings = calendar.warnings.filter((warning) => warning.trim());
+  const isReady = (calendar.status === "open" || calendar.status === "always_open") && warnings.length === 0;
+  return {
+    id: "calendar",
+    label: "Market calendar",
+    value: `${calendar.status} · ${calendar.session}`,
+    detail: `${calendar.timezone} · ${marketCalendarNextEventDetail(calendar)} · ${warnings[0] ?? calendar.source}`,
+    status: isReady ? "ready" : "review",
+    tone: isReady ? "positive" : "warning"
+  };
+}
+
+function marketCalendarNextEventDetail(calendar: ResearchContextMarketCalendar): string {
+  if (calendar.nextClose) {
+    return `next close ${calendar.nextClose}`;
+  }
+  if (calendar.nextOpen) {
+    return `next open ${calendar.nextOpen}`;
+  }
+  if (calendar.status === "always_open") {
+    return "continuous trading";
+  }
+  return "no scheduled event";
 }
 
 function buildRefreshEvidenceReadinessRow(

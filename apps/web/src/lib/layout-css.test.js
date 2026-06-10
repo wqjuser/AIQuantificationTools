@@ -225,10 +225,13 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workspace-gate-preflight-hint")).toContain("grid-column: 1 / -1;");
   });
 
-  test("renders a compact Stage 1 research context readiness checklist", () => {
+  test("renders a compact Stage 1 research context readiness checklist with calendar readiness", () => {
+    const readinessBuilderSource = sourceBetween("const researchContextReadinessRows = buildResearchContextReadinessRows({", "});");
+
     expect(appSource).toContain("buildResearchContextReadinessRows");
     expect(appSource).toContain("function ResearchContextReadinessPanel");
     expect(appSource).toContain("<ResearchContextReadinessPanel");
+    expect(readinessBuilderSource).toContain("marketCalendar: marketCalendarState.calendar");
     expect(appSource).toContain('className="research-context-checklist"');
     expect(appSource).toContain('className={`research-context-row ${row.tone}`}');
     expect(appSource).toContain("onRefreshCache={refreshSelectedMarketCache}");

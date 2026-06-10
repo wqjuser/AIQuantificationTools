@@ -7357,6 +7357,39 @@ class QuantCoreContractTest(unittest.TestCase):
             payload["backtestEquityCurve"][-1]["timestamp"],
         )
 
+    def test_terminal_research_run_records_market_calendar_snapshot(self):
+        from quant_core.cache import MarketDataCache
+        from quant_core.research import run_terminal_research
+        from quant_core.runs import ResearchRunStore, research_run_audit_to_payload
+        from quant_core.terminal import terminal_workspace_to_payload
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            workspace = run_terminal_research(
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                cache=MarketDataCache(f"{tmp}/market.sqlite"),
+                run_store=store,
+                data_limit=120,
+            )
+            audit = store.get(workspace.research_run.run_id)
+
+        self.assertIsNotNone(audit)
+        workspace_payload = terminal_workspace_to_payload(workspace)
+        immediate_calendar = workspace_payload["researchRun"]["dataSnapshot"]["marketCalendar"]
+        persisted_calendar = research_run_audit_to_payload(audit, include_data_snapshot=True)["dataSnapshot"]["marketCalendar"]
+
+        self.assertEqual(immediate_calendar["market"], "ashare")
+        self.assertEqual(immediate_calendar["timezone"], "Asia/Shanghai")
+        self.assertEqual(immediate_calendar["source"], "static-session-template")
+        self.assertIn(immediate_calendar["status"], ["open", "closed", "break"])
+        self.assertIsInstance(immediate_calendar["isOpen"], bool)
+        self.assertIsInstance(immediate_calendar["warnings"], list)
+        self.assertEqual(persisted_calendar["market"], immediate_calendar["market"])
+        self.assertEqual(persisted_calendar["source"], "static-session-template")
+        self.assertEqual(persisted_calendar["asOf"], immediate_calendar["asOf"])
+
     def test_terminal_research_uses_sqlite_cache_when_adapter_unavailable(self):
         from quant_core.cache import MarketDataCache
         from quant_core.domain import OHLCVBar

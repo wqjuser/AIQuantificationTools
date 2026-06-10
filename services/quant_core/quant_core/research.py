@@ -27,6 +27,7 @@ from quant_core.domain import (
     Timeframe,
 )
 from quant_core.market_klines import bar_to_payload
+from quant_core.market_calendar import build_market_calendar_status
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.terminal import (
     BacktestAssumptions,
@@ -96,6 +97,13 @@ def run_terminal_research(
     backtest_trade_rows = _backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash)
     backtest_equity_curve = _backtest_equity_curve_rows(backtest)
     backtest_diagnostics = _backtest_diagnostics(backtest, data_rows=quality.rows)
+    market_calendar = build_market_calendar_status(market, at=created_at)
+    data_snapshot = _data_snapshot_payload(
+        bars,
+        quality,
+        preparation_evidence=data_preparation_evidence,
+        market_calendar=market_calendar,
+    )
     audit = ResearchRunAudit(
         run_id=run_id,
         created_at=created_at,
@@ -110,7 +118,7 @@ def run_terminal_research(
         execution_mode="paper_only",
         ai_report=asdict(report),
         data_quality=_data_quality_payload(quality),
-        data_snapshot=_data_snapshot_payload(bars, quality, preparation_evidence=data_preparation_evidence),
+        data_snapshot=data_snapshot,
         strategy_config=strategy_config_to_payload(strategy),
         backtest_assumptions={
             "initialCash": backtest_engine.initial_cash,
@@ -161,7 +169,7 @@ def run_terminal_research(
             data_rows=quality.rows,
             execution_mode="paper_only",
             data_quality=_data_quality_payload(quality),
-            data_snapshot=_data_snapshot_payload(bars, quality, preparation_evidence=data_preparation_evidence),
+            data_snapshot=data_snapshot,
             research_note=research_note or None,
             strategy_config=strategy_config_to_payload(strategy),
         ),
@@ -216,6 +224,7 @@ def _data_snapshot_payload(
     quality: DataQuality,
     *,
     preparation_evidence: dict[str, Any] | None = None,
+    market_calendar: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     payload_bars = [bar_to_payload(bar) for bar in bars]
     snapshot: dict[str, object] = {
@@ -230,6 +239,8 @@ def _data_snapshot_payload(
     }
     if preparation_evidence:
         snapshot["preparationEvidence"] = dict(preparation_evidence)
+    if market_calendar:
+        snapshot["marketCalendar"] = dict(market_calendar)
     return snapshot
 
 

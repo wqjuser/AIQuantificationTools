@@ -1183,7 +1183,42 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
     preparation_evidence = _normalize_data_preparation_evidence(snapshot.get("preparationEvidence"))
     if preparation_evidence:
         normalized["preparationEvidence"] = preparation_evidence
+    market_calendar = _normalize_market_calendar_snapshot(snapshot.get("marketCalendar"))
+    if market_calendar:
+        normalized["marketCalendar"] = market_calendar
     return normalized
+
+
+def _normalize_market_calendar_snapshot(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    market = str(value.get("market") or "").strip()
+    timezone = str(value.get("timezone") or "").strip()
+    status = str(value.get("status") or "").strip()
+    session = str(value.get("session") or "").strip()
+    as_of = str(value.get("asOf") or "").strip()
+    trading_day = str(value.get("tradingDay") or "").strip()
+    detail = str(value.get("detail") or "").strip()
+    source = str(value.get("source") or "").strip()
+    if not market or not timezone or not status or not session or not as_of or not trading_day or not source:
+        return None
+    warnings = value.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    return {
+        "market": market,
+        "timezone": timezone,
+        "status": status,
+        "isOpen": bool(value.get("isOpen")),
+        "session": session,
+        "asOf": as_of,
+        "tradingDay": trading_day,
+        "nextOpen": _nullable_string(value.get("nextOpen")),
+        "nextClose": _nullable_string(value.get("nextClose")),
+        "detail": detail,
+        "warnings": [str(warning) for warning in warnings],
+        "source": source,
+    }
 
 
 def _normalize_data_preparation_evidence(value: Any) -> dict[str, Any] | None:
