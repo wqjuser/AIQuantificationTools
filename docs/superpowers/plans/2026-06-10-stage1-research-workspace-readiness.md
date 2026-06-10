@@ -19,7 +19,7 @@ Make research workspace persistence part of the Stage 1 research context checkli
 - [x] GREEN: Wire the readiness action to the existing Save Workspace API path.
 - [x] DOCS: Update product planning docs with the new Stage 1 capability.
 - [x] VERIFY: Run targeted tests, build, Docker/browser smoke if the frontend changes are visible.
-- [ ] SHIP: Commit and push through proxy.
+- [x] SHIP: Commit and push through proxy.
 
 ## Verification
 
@@ -40,3 +40,4 @@ docker compose up --build -d
 - `docker compose up --build -d` rebuilt the web/API images and left the stack healthy on `http://127.0.0.1:5173/`.
 - Browser smoke on `/?workspace=research` verified the checklist row shows `工作区状态`, switches to `未保存更改` after changing the timeframe to `5m`, saves from the row-level `保存工作区` action, returns to `已保存`, and console error count is 0.
 - Core state after browser save was `crypto BTC/USDT 5m research`.
+- Shipped to `origin/codex/p0-product-workspaces` with `HTTP_PROXY` and `HTTPS_PROXY` set to `http://127.0.0.1:7890`.
