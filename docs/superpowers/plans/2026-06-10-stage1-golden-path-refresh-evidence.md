@@ -118,7 +118,7 @@ docker compose up --build -d
 npm run docker:smoke
 ```
 
-- [ ] **Step 3: Commit and push**
+- [x] **Step 3: Commit and push**
 
 Use:
 
@@ -136,3 +136,4 @@ $env:HTTP_PROXY='http://127.0.0.1:7890'; $env:HTTPS_PROXY='http://127.0.0.1:7890
 - 2026-06-10: Added frontend translation guard coverage and Chinese translations for missing, ready, and review refresh-evidence details.
 - 2026-06-10: Updated the product plan to describe Golden Path refresh-evidence semantics.
 - 2026-06-10: Verified Golden Path tests, related frontend suites, production build, full repository tests, Docker rebuild, Docker smoke, browser smoke, and container Golden Path API detail for `cache-refresh-f10efd7401b7`.
+- 2026-06-10: Marked this Stage 1 slice shipped after commit and proxy push preparation.
