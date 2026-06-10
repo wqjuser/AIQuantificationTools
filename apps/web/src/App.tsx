@@ -3811,6 +3811,10 @@ export function App() {
         void refreshSelectedMarketCache();
         return;
       }
+      if (actionId === "refresh-watchlist-cache") {
+        void refreshWatchlistMarketCache();
+        return;
+      }
       if (actionId === "run-pipeline") {
         void runPipeline();
         return;
@@ -3840,6 +3844,7 @@ export function App() {
     },
     [
       refreshSelectedMarketCache,
+      refreshWatchlistMarketCache,
       runActiveWorkflowAction,
       runAiWorkbenchAction,
       runPipeline,
@@ -3872,6 +3877,9 @@ export function App() {
       if (actionId === "refresh-data") {
         return Boolean(refreshingCacheKey);
       }
+      if (actionId === "refresh-watchlist-cache") {
+        return isRefreshingWatchlistCache || Boolean(refreshingCacheKey);
+      }
       if (actionId === "run-pipeline") {
         return !researchPipelinePreflight.canRun;
       }
@@ -3882,6 +3890,7 @@ export function App() {
     },
     [
       isRefreshing,
+      isRefreshingWatchlistCache,
       isRunning,
       isSubmittingPaperExecution,
       refreshingCacheKey,
@@ -4879,6 +4888,7 @@ function goldenPathActionLabel(i18n: AppI18n, action: NonNullable<GoldenPathStat
   return (
     {
       "refresh-data": "刷新行情",
+      "refresh-watchlist-cache": "刷新自选缓存",
       "run-pipeline": "运行流水线",
       "run-ai-review": "运行 AI 评审",
       "fix-paper-handoff": "修复执行交接",
@@ -4898,6 +4908,7 @@ function goldenPathRunbookActionLabel(i18n: AppI18n, item: GoldenPathRunbookPrev
   return (
     {
       "Refresh market data": "刷新行情",
+      "Refresh watchlist cache": "刷新自选缓存",
       "Run research pipeline": "运行流水线",
       "Run AI review": "运行 AI 评审",
       "Fix paper handoff": "修复交接",

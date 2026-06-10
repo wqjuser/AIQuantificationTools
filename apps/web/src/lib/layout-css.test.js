@@ -204,6 +204,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("activeWorkspaceContext");
     expect(appSource).toContain("runWorkspaceContextAction");
     expect(appSource).toContain("runGoldenPathActionById");
+    expect(appSource).toContain('if (actionId === "refresh-watchlist-cache")');
+    expect(appSource).toContain("void refreshWatchlistMarketCache();");
+    expect(appSource).toContain("isRefreshingWatchlistCache || Boolean(refreshingCacheKey)");
     expect(overviewSource).toContain('className={`workspace-gate-summary ${activeWorkspaceContext.status}`}');
     expect(overviewSource).toContain("goldenPathWorkspaceContextLabel");
     expect(overviewSource).toContain("goldenPathWorkspaceContextDetail");

@@ -6111,15 +6111,18 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(status["status"], "review")
         self.assertEqual(status["currentStepId"], "market-data")
-        self.assertEqual(status["nextAction"]["id"], "refresh-data")
+        self.assertEqual(status["nextAction"]["id"], "refresh-watchlist-cache")
+        self.assertEqual(status["nextAction"]["targetWorkspace"], "market")
         self.assertEqual(status["nextAction"]["reason"], expected_detail)
         self.assertEqual(status["steps"][0]["status"], "review")
         self.assertEqual(status["steps"][0]["detail"], expected_detail)
         runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertEqual(runbook_by_step["market-data"]["actionId"], "refresh-watchlist-cache")
         self.assertEqual(runbook_by_step["market-data"]["blocker"], expected_detail)
         workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
         self.assertEqual(workspaces["market"]["status"], "needs_run")
         self.assertEqual(workspaces["market"]["reason"], expected_detail)
+        self.assertEqual(workspaces["market"]["actionId"], "refresh-watchlist-cache")
 
     def test_golden_path_status_passes_with_matching_refresh_evidence(self):
         from quant_core.golden_path import build_golden_path_status

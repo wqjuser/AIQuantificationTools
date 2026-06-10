@@ -171,7 +171,7 @@ def _market_data_step(
             symbol=symbol,
             timeframe=timeframe,
         ),
-        "refresh-data" if refresh_needs_review else None,
+        "refresh-watchlist-cache" if refresh_needs_review else None,
     )
 
 
@@ -387,6 +387,12 @@ def _next_action(current_step: GoldenPathPayload | None) -> GoldenPathPayload | 
         "refresh-data": {
             "id": "refresh-data",
             "label": "Refresh market data",
+            "targetWorkspace": "market",
+            "reason": current_step["detail"],
+        },
+        "refresh-watchlist-cache": {
+            "id": "refresh-watchlist-cache",
+            "label": "Refresh watchlist cache",
             "targetWorkspace": "market",
             "reason": current_step["detail"],
         },
