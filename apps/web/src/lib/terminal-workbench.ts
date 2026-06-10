@@ -2162,6 +2162,7 @@ export interface ResearchContextReadinessRow {
   status: ResearchContextReadinessStatus;
   tone: "positive" | "warning" | "risk" | "neutral";
   action?: ResearchContextReadinessAction;
+  evidenceRunId?: string;
 }
 
 export interface ResearchContextEvidenceRow {
@@ -6325,7 +6326,8 @@ function buildRefreshEvidenceReadinessRow(
       detail: `Run watchlist cache refresh for ${context} before relying on this context.`,
       status: "review",
       tone: "warning",
-      action: "refresh-watchlist-cache"
+      action: "refresh-watchlist-cache",
+      evidenceRunId: undefined
     };
   }
 
@@ -6352,7 +6354,8 @@ function buildRefreshEvidenceReadinessRow(
         )}`,
     status: isReady ? "ready" : "review",
     tone: isReady ? "positive" : "warning",
-    action: isReady ? undefined : "refresh-watchlist-cache"
+    action: isReady ? undefined : "refresh-watchlist-cache",
+    evidenceRunId: matching.run.runId
   };
 }
 

@@ -3515,6 +3515,14 @@ export function App() {
     [activeWorkAreaId, workspace]
   );
 
+  const inspectRefreshEvidenceRun = useCallback(
+    (runId: string) => {
+      setWatchlistCacheRefreshRunSelection(runId);
+      selectProductWorkArea("market");
+    },
+    [selectProductWorkArea, setWatchlistCacheRefreshRunSelection]
+  );
+
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -4272,6 +4280,7 @@ export function App() {
           isSavingWorkspace={isSavingResearchWorkspace}
           onRefreshCache={refreshSelectedMarketCache}
           onRefreshWatchlistCache={refreshWatchlistMarketCache}
+          onInspectRefreshEvidence={inspectRefreshEvidenceRun}
           onSaveNote={saveCurrentResearchNote}
           onSaveWatchlist={saveCurrentWatchlist}
           onSaveWorkspace={saveCurrentResearchWorkspace}
@@ -6082,6 +6091,7 @@ function ResearchContextReadinessPanel({
   isSavingWorkspace = false,
   onRefreshCache,
   onRefreshWatchlistCache,
+  onInspectRefreshEvidence,
   onSaveNote,
   onSaveWatchlist,
   onSaveWorkspace,
@@ -6097,6 +6107,7 @@ function ResearchContextReadinessPanel({
   isSavingWorkspace?: boolean;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
+  onInspectRefreshEvidence?: (runId: string) => void;
   onSaveNote?: () => void;
   onSaveWatchlist?: () => void;
   onSaveWorkspace?: () => void;
@@ -6116,6 +6127,7 @@ function ResearchContextReadinessPanel({
       <div className="research-context-checklist">
         {rows.map((row, index) => {
           const action = row.action;
+          const refreshEvidenceRunId = row.id === "refresh" ? row.evidenceRunId : undefined;
           return (
             <article className={`research-context-row ${row.tone}`} key={row.id}>
               <span className="research-context-index">{index + 1}</span>
@@ -6128,6 +6140,11 @@ function ResearchContextReadinessPanel({
               </div>
               <div className="research-context-actions">
                 <em>{researchContextReadinessStatusLabel(i18n, row.status)}</em>
+                {refreshEvidenceRunId ? (
+                  <button onClick={() => onInspectRefreshEvidence?.(refreshEvidenceRunId)} type="button">
+                    {i18n.locale === "zh-CN" ? "查看明细" : "Details"}
+                  </button>
+                ) : null}
                 {action ? (
                   <button
                     disabled={isResearchContextActionDisabled(

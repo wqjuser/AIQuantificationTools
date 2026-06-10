@@ -511,6 +511,7 @@ describe("terminal workbench model", () => {
       detail: "2026-06-10T06:00:00+00:00 · tencent · 240 rows cached",
       status: "ready",
       tone: "positive",
+      evidenceRunId: "cache-refresh-ready",
       action: undefined
     });
   });
@@ -557,6 +558,7 @@ describe("terminal workbench model", () => {
       detail: "Run watchlist cache refresh for ASHARE · 600000 · 1d before relying on this context.",
       status: "review",
       tone: "warning",
+      evidenceRunId: undefined,
       action: "refresh-watchlist-cache"
     });
     expect(buildResearchPipelinePreflight(rows)).toMatchObject({
