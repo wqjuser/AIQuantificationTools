@@ -3904,7 +3904,10 @@ export function App() {
     if (!activeWorkspaceContext?.actionId) {
       return;
     }
-    runGoldenPathActionById(activeWorkspaceContext.actionId, activeWorkspaceContext.workspaceId);
+    runGoldenPathActionById(
+      activeWorkspaceContext.actionId,
+      activeWorkspaceContext.actionTargetWorkspaceId ?? activeWorkspaceContext.workspaceId
+    );
   }, [activeWorkspaceContext, runGoldenPathActionById]);
 
   const isGoldenPathActionDisabledById = useCallback(
@@ -13742,7 +13745,7 @@ function GoldenPathRunbookPanel({
                   </button>
                   <button
                     disabled={isRunbookActionDisabled}
-                    onClick={() => onRunAction(item.actionId, item.workspaceId)}
+                    onClick={() => onRunAction(item.actionId, item.targetWorkspace ?? item.workspaceId)}
                     type="button"
                   >
                     {auditRunbookActionLabel(i18n, item)}

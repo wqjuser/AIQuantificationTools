@@ -541,6 +541,7 @@ def _runbook_item(step: GoldenPathPayload, current_step: GoldenPathPayload | Non
         "blocker": None if is_passed else step["detail"],
         "actionId": action.get("id") if isinstance(action, dict) else None,
         "actionLabel": action.get("label") if isinstance(action, dict) else None,
+        "targetWorkspace": action.get("targetWorkspace") if isinstance(action, dict) else None,
     }
 
 

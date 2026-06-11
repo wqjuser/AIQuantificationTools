@@ -1324,7 +1324,48 @@ describe("terminal workbench model", () => {
       primaryStepLabel: "Backtest report",
       detail: "Run the research pipeline to refresh the report.",
       actionId: "run-pipeline",
-      actionLabel: "Run research pipeline"
+      actionLabel: "Run research pipeline",
+      actionTargetWorkspaceId: "backtest"
+    });
+  });
+
+  test("builds selected product work-area context from golden path runbook action targets", () => {
+    const context = buildGoldenPathWorkspaceContext(
+      {
+        workspaces: [
+          {
+            id: "market",
+            label: "Market",
+            status: "needs_run",
+            current: true,
+            stepIds: ["market-data"],
+            reason: "Market calendar review requires Research confirmation.",
+            actionId: "run-pipeline"
+          }
+        ],
+        runbook: [
+          {
+            stepId: "market-data",
+            label: "Market data",
+            workspaceId: "market",
+            status: "review",
+            current: true,
+            passed: false,
+            detail: "Market calendar review requires Research confirmation.",
+            blocker: "Market calendar review requires Research confirmation.",
+            actionId: "run-pipeline",
+            actionLabel: "Run research pipeline",
+            targetWorkspace: "research"
+          }
+        ] as any
+      },
+      "market"
+    );
+
+    expect(context).toMatchObject({
+      workspaceId: "market",
+      actionId: "run-pipeline",
+      actionTargetWorkspaceId: "research"
     });
   });
 

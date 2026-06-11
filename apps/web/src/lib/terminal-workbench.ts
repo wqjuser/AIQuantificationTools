@@ -105,6 +105,7 @@ export interface GoldenPathRunbookSourceItem {
   blocker: string | null;
   actionId: string | null;
   actionLabel: string | null;
+  targetWorkspace?: string | null;
 }
 
 export interface GoldenPathRunbookSource {
@@ -148,6 +149,7 @@ export interface GoldenPathWorkspaceContext {
   detail: string;
   actionId: string | null;
   actionLabel: string | null;
+  actionTargetWorkspaceId: string | null;
 }
 
 export interface QuantLoopNavigationTarget {
@@ -3110,6 +3112,8 @@ export function buildGoldenPathWorkspaceContext(
     runbookItems.find((item) => !item.passed) ??
     runbookItems[0] ??
     null;
+  const actionId = primaryItem?.actionId ?? workspaceContext.actionId;
+  const actionTargetWorkspaceId = primaryItem?.targetWorkspace ?? (actionId ? workspaceContext.id : null);
 
   return {
     workspaceId: workspaceContext.id,
@@ -3122,8 +3126,9 @@ export function buildGoldenPathWorkspaceContext(
     primaryStepId: primaryItem?.stepId ?? null,
     primaryStepLabel: primaryItem?.label ?? null,
     detail: primaryItem?.blocker ?? primaryItem?.detail ?? workspaceContext.reason,
-    actionId: primaryItem?.actionId ?? workspaceContext.actionId,
-    actionLabel: primaryItem?.actionLabel ?? null
+    actionId,
+    actionLabel: primaryItem?.actionLabel ?? null,
+    actionTargetWorkspaceId
   };
 }
 

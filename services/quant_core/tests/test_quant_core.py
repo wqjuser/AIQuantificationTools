@@ -6337,6 +6337,7 @@ class QuantCoreContractTest(unittest.TestCase):
         runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
         self.assertEqual(len(status["runbook"]), 6)
         self.assertEqual(runbook_by_step["market-data"]["actionId"], "run-pipeline")
+        self.assertEqual(runbook_by_step["market-data"]["targetWorkspace"], "research")
         self.assertEqual(runbook_by_step["market-data"]["blocker"], expected_detail)
         workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
         self.assertEqual(workspaces["market"]["status"], "needs_run")

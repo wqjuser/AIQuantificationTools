@@ -1390,6 +1390,7 @@ export interface GoldenPathRunbookItem {
   blocker: string | null;
   actionId: string | null;
   actionLabel: string | null;
+  targetWorkspace: string | null;
 }
 
 export interface GoldenPathStatus {
@@ -7231,7 +7232,8 @@ function isGoldenPathRunbookItem(value: unknown): value is GoldenPathRunbookItem
     typeof item.detail === "string" &&
     (item.blocker === null || typeof item.blocker === "string") &&
     (item.actionId === null || typeof item.actionId === "string") &&
-    (item.actionLabel === null || typeof item.actionLabel === "string")
+    (item.actionLabel === null || typeof item.actionLabel === "string") &&
+    (item.targetWorkspace === undefined || item.targetWorkspace === null || typeof item.targetWorkspace === "string")
   );
 }
 
