@@ -1529,6 +1529,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             ]
             latest_run = context_runs[0] if context_runs else None
             paper_executions = self.paper_execution_store.list_by_run(latest_run.run_id, limit=20) if latest_run else []
+            try:
+                market_calendar = None if latest_run else build_market_calendar_status(market)
+            except ValueError:
+                market_calendar = None
             self._send_json(
                 {
                     "goldenPath": build_golden_path_status(
@@ -1539,6 +1543,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         runs=context_runs,
                         paper_executions=paper_executions,
                         watchlist_refreshes=self.watchlist_cache_refresh_store.list_recent(limit=10),
+                        market_calendar=market_calendar,
                     )
                 }
             )

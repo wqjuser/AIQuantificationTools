@@ -18,6 +18,7 @@ def build_golden_path_status(
     runs: list[Any],
     paper_executions: list[PaperExecutionRecord],
     watchlist_refreshes: list[Any] | None = None,
+    market_calendar: dict[str, Any] | None = None,
 ) -> GoldenPathPayload:
     context_runs = _matching_runs(runs, market=market, symbol=symbol, timeframe=timeframe)
     latest_run = context_runs[0] if context_runs else None
@@ -36,6 +37,7 @@ def build_golden_path_status(
         market=market,
         symbol=symbol,
         timeframe=timeframe,
+        market_calendar=market_calendar,
     )
     research_step = _research_run_step(latest_run)
     backtest_step = _backtest_report_step(latest_run)
@@ -130,6 +132,7 @@ def _market_data_step(
     market: str = "",
     symbol: str = "",
     timeframe: str = "",
+    market_calendar: dict[str, Any] | None = None,
 ) -> GoldenPathPayload:
     if not cache_context:
         return _step(
@@ -159,19 +162,25 @@ def _market_data_step(
         )
     refresh_ready = _refresh_evidence_is_ready(refresh_evidence)
     refresh_needs_review = refresh_evidence_supplied and not refresh_ready
+    calendar_review = None if refresh_needs_review else _market_calendar_review_detail(market_calendar)
+    status = "review" if refresh_needs_review or calendar_review else "passed"
+    action_id = "refresh-watchlist-cache" if refresh_needs_review else "run-pipeline" if calendar_review else None
+    detail = _fresh_market_data_detail(
+        row_count,
+        refresh_evidence,
+        refresh_evidence_supplied=refresh_evidence_supplied,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    if calendar_review:
+        detail = f"{detail} Market calendar review: {calendar_review}"
     return _step(
         "market-data",
         "Market data",
-        "review" if refresh_needs_review else "passed",
-        _fresh_market_data_detail(
-            row_count,
-            refresh_evidence,
-            refresh_evidence_supplied=refresh_evidence_supplied,
-            market=market,
-            symbol=symbol,
-            timeframe=timeframe,
-        ),
-        "refresh-watchlist-cache" if refresh_needs_review else None,
+        status,
+        detail,
+        action_id,
     )
 
 
@@ -230,6 +239,33 @@ def _refresh_evidence_review_reason(refresh_evidence: dict[str, Any]) -> str | N
     if source in {"demo-fallback", "unknown"}:
         return "source requires review"
     return None
+
+
+def _market_calendar_review_detail(market_calendar: dict[str, Any] | None) -> str | None:
+    if not isinstance(market_calendar, dict):
+        return None
+    warnings = [str(warning).strip() for warning in (_field(market_calendar, "warnings") or []) if str(warning).strip()]
+    status = str(_field(market_calendar, "status") or "unknown").strip()
+    if status in {"open", "always_open"} and not warnings:
+        return None
+    session = str(_field(market_calendar, "session") or "unknown").strip()
+    reason = warnings[0] if warnings else str(_field(market_calendar, "source") or "calendar status requires review")
+    return f"{status}/{session} · {_market_calendar_next_event_detail(market_calendar)} · {reason}"
+
+
+def _market_calendar_next_event_detail(market_calendar: dict[str, Any]) -> str:
+    status = str(_field(market_calendar, "status") or "unknown").strip()
+    next_open = _field(market_calendar, "nextOpen")
+    next_close = _field(market_calendar, "nextClose")
+    if status in {"break", "closed"} and next_open:
+        return f"next open {next_open}"
+    if next_close:
+        return f"next close {next_close}"
+    if next_open:
+        return f"next open {next_open}"
+    if status == "always_open":
+        return "continuous trading"
+    return "no scheduled event"
 
 
 def _research_run_step(latest_run: Any | None) -> GoldenPathPayload:

@@ -6264,6 +6264,85 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspaces["market"]["status"], "ready")
         self.assertEqual(workspaces["research"]["actionId"], "run-pipeline")
 
+    def test_golden_path_status_marks_market_calendar_review_after_fresh_data(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[],
+            paper_executions=[],
+            watchlist_refreshes=[
+                {
+                    "runId": "cache-refresh-ready",
+                    "createdAt": "2026-06-10T06:00:00+00:00",
+                    "items": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "name": "浦发银行",
+                            "timeframe": "1d",
+                            "status": "refreshed",
+                            "upsertedRows": 240,
+                            "quality": {"source": "tencent", "isComplete": True, "warnings": [], "rows": 240},
+                            "error": None,
+                        }
+                    ],
+                }
+            ],
+            market_calendar={
+                "market": "ashare",
+                "timezone": "Asia/Shanghai",
+                "status": "break",
+                "isOpen": False,
+                "session": "lunch_break",
+                "asOf": "2026-06-11T12:00:00+08:00",
+                "tradingDay": "2026-06-11",
+                "nextOpen": "2026-06-11T13:00:00+08:00",
+                "nextClose": "2026-06-11T15:00:00+08:00",
+                "detail": "A-share lunch break.",
+                "warnings": ["Static session template only; exchange holiday calendar is not configured."],
+                "source": "static-session-template",
+            },
+        )
+
+        expected_detail = (
+            "500 fresh cached K-line rows are available. Matching watchlist cache refresh evidence "
+            "cache-refresh-ready confirms 240 rows from tencent. Market calendar review: "
+            "break/lunch_break · next open 2026-06-11T13:00:00+08:00 · "
+            "Static session template only; exchange holiday calendar is not configured."
+        )
+        self.assertEqual(status["status"], "review")
+        self.assertEqual(status["currentStepId"], "market-data")
+        self.assertEqual(status["nextAction"]["id"], "run-pipeline")
+        self.assertEqual(status["nextAction"]["targetWorkspace"], "research")
+        self.assertEqual(status["nextAction"]["reason"], expected_detail)
+        self.assertEqual(status["steps"][0]["status"], "review")
+        self.assertEqual(status["steps"][0]["detail"], expected_detail)
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertEqual(len(status["runbook"]), 6)
+        self.assertEqual(runbook_by_step["market-data"]["actionId"], "run-pipeline")
+        self.assertEqual(runbook_by_step["market-data"]["blocker"], expected_detail)
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "needs_run")
+        self.assertEqual(workspaces["market"]["actionId"], "run-pipeline")
+        self.assertEqual(workspaces["market"]["reason"], expected_detail)
+
     def test_golden_path_status_advances_to_paper_execution_after_audited_ai_run(self):
         from quant_core.golden_path import build_golden_path_status
         from quant_core.runs import ResearchRunAudit
@@ -6591,12 +6670,17 @@ class QuantCoreContractTest(unittest.TestCase):
                 server.server_close()
 
         self.assertEqual(response.status, 200)
-        self.assertEqual(payload["goldenPath"]["currentStepId"], "research-run")
-        self.assertEqual(payload["goldenPath"]["steps"][0]["status"], "passed")
-        self.assertEqual(
-            payload["goldenPath"]["steps"][0]["detail"],
+        self.assertEqual(payload["goldenPath"]["status"], "review")
+        self.assertEqual(payload["goldenPath"]["currentStepId"], "market-data")
+        self.assertEqual(payload["goldenPath"]["nextAction"]["id"], "run-pipeline")
+        self.assertEqual(payload["goldenPath"]["nextAction"]["targetWorkspace"], "research")
+        self.assertEqual(payload["goldenPath"]["steps"][0]["status"], "review")
+        self.assertIn(
             "1 fresh cached K-line rows are available. Matching watchlist cache refresh evidence cache-refresh-api-ready confirms 240 rows from tencent.",
+            payload["goldenPath"]["steps"][0]["detail"],
         )
+        self.assertIn("Market calendar review:", payload["goldenPath"]["steps"][0]["detail"])
+        self.assertIn("Static session template only", payload["goldenPath"]["steps"][0]["detail"])
 
     def test_research_run_paper_execution_api_returns_404_for_missing_run(self):
         import json
