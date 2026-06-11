@@ -4692,6 +4692,155 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("legacy-audit-secret", serialized)
         self.assertNotIn("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>", serialized)
 
+    def test_audit_signing_key_controlled_restart_evidence_requires_ready_apply_event(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            audit_event_store = AuditEventStore(f"{tmp}/audit-events.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = audit_event_store
+            TestHandler.audit_signing_secret = "active-audit-secret"
+            TestHandler.audit_signing_key_id = "active-audit-key"
+            TestHandler.audit_signer_name = "Active Audit Key"
+            TestHandler.audit_chain_id = "audit-chain-active"
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                plan_body = json.dumps(
+                    {
+                        "proposedKeyId": "next-audit-key",
+                        "proposedSigner": "Next Audit Key",
+                        "proposedChainId": "audit-chain-next",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-plan",
+                    body=plan_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(plan_body))},
+                )
+                plan_response = connection.getresponse()
+                plan_payload = json.loads(plan_response.read().decode("utf-8"))
+
+                apply_body = json.dumps(
+                    {
+                        "rotationPlan": plan_payload["rotationPlan"],
+                        "confirmations": {
+                            "legacySecretStored": True,
+                            "newSecretMaterialStored": True,
+                            "operatorReviewedPlan": True,
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-apply",
+                    body=apply_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(apply_body))},
+                )
+                apply_response = connection.getresponse()
+                apply_payload = json.loads(apply_response.read().decode("utf-8"))
+                rotation_apply = apply_payload["rotationApply"]
+                apply_event_id = "audit-signing-key-rotation-apply-next-audit-key-test"
+                audit_event_store.record(
+                    {
+                        "schemaVersion": 1,
+                        "eventId": apply_event_id,
+                        "eventType": "audit_signing_key_rotation_apply",
+                        "runId": "audit-signing-key-rotation",
+                        "createdAt": rotation_apply["generatedAt"],
+                        "stage": "ready_for_restart",
+                        "source": "unit-test",
+                        "summary": "Audit signing key rotation apply ready for next-audit-key",
+                        "detail": "active-audit-key -> next-audit-key · manual_secret_store · ready for restart",
+                        "metadata": {
+                            **rotation_apply,
+                            "status": "ready_for_restart",
+                        },
+                    }
+                )
+
+                blocked_body = json.dumps({"applyEventId": apply_event_id, "confirmations": {}}).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-restart-evidence",
+                    body=blocked_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(blocked_body))},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                ready_body = json.dumps(
+                    {
+                        "applyEventId": apply_event_id,
+                        "operator": "audit-operator",
+                        "confirmations": {
+                            "restartWindowExecuted": True,
+                            "rollbackPlanConfirmed": True,
+                            "postRestartValidationPassed": True,
+                            "operatorReviewedRestartLogs": True,
+                        },
+                        "metadata": {"ticket": "CHG-42", "apiKey": "must-not-leak"},
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-restart-evidence",
+                    body=ready_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(ready_body))},
+                )
+                ready_response = connection.getresponse()
+                ready_payload = json.loads(ready_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/audit/events?eventType=audit_signing_key_controlled_restart_evidence&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(plan_response.status, 200)
+        self.assertEqual(apply_response.status, 200)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["restartEvidence"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["restartEvidence"]["blockedReasons"],
+            [
+                "restart_window_not_confirmed",
+                "rollback_plan_not_confirmed",
+                "post_restart_validation_not_confirmed",
+                "restart_logs_not_confirmed",
+            ],
+        )
+        self.assertEqual(ready_response.status, 201)
+        self.assertEqual(ready_payload["restartEvidence"]["status"], "evidence_recorded")
+        self.assertEqual(ready_payload["restartEvidence"]["applyEventId"], apply_event_id)
+        self.assertEqual(ready_payload["restartEvidence"]["proposedActiveKeyId"], "next-audit-key")
+        self.assertFalse(ready_payload["restartEvidence"]["liveTradingAllowed"])
+        self.assertTrue(ready_payload["restartEvidence"]["paperOnly"])
+        self.assertEqual(ready_payload["restartEvidence"]["metadata"]["ticket"], "CHG-42")
+        self.assertEqual(ready_payload["restartEvidence"]["metadata"]["apiKey"], "[redacted]")
+        self.assertEqual(ready_payload["auditEvent"]["eventType"], "audit_signing_key_controlled_restart_evidence")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["pagination"]["total"], 2)
+        serialized = json.dumps([blocked_payload, ready_payload, history_payload])
+        self.assertNotIn("active-audit-secret", serialized)
+        self.assertNotIn("must-not-leak", serialized)
+
     def test_promotion_candidate_tracks_paper_to_live_readiness(self):
         from quant_core.execution import build_promotion_candidate, create_paper_execution_from_audit
         from quant_core.runs import ResearchRunAudit

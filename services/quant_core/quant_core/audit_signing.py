@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from quant_core.audit_events import AuditEventRecord, audit_event_record_to_payload
 
@@ -61,6 +62,25 @@ class AuditSigningKey:
             "activatedAt": self.activated_at,
             "retiredAt": self.retired_at,
         }
+
+
+@dataclass(frozen=True)
+class AuditSigningKeyControlledRestartEvidence:
+    evidence_id: str
+    apply_event_id: str
+    current_active_key_id: str
+    current_active_key_fingerprint: str
+    proposed_active_key_id: str
+    proposed_signer: str
+    proposed_chain_id: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    evidence_mode: str
+    restart_required: bool
+    required_confirmations: list[dict[str, str]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
 
 
 class AuditSigningKeyRegistry:
@@ -512,6 +532,198 @@ def audit_signing_key_rotation_apply_to_payload(
     }
 
 
+def audit_signing_key_controlled_restart_evidence_to_payload(
+    apply_event: AuditEventRecord,
+    *,
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | None = None,
+    evidence_id: str | None = None,
+) -> dict[str, Any]:
+    result = build_audit_signing_key_controlled_restart_evidence(
+        apply_event,
+        confirmations=confirmations,
+        operator=operator,
+        metadata=metadata,
+        recorded_at=recorded_at,
+        evidence_id=evidence_id,
+    )
+    return _audit_signing_key_controlled_restart_evidence_payload(result)
+
+
+def build_audit_signing_key_controlled_restart_evidence(
+    apply_event: AuditEventRecord,
+    *,
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | None = None,
+    evidence_id: str | None = None,
+) -> AuditSigningKeyControlledRestartEvidence:
+    if apply_event.event_type != "audit_signing_key_rotation_apply":
+        raise ValueError("audit_signing_key_rotation_apply_event_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+    apply_metadata = apply_event.metadata if isinstance(apply_event.metadata, dict) else {}
+    current_key_id = _payload_text(apply_metadata, "currentActiveKeyId")
+    current_fingerprint = _payload_text(apply_metadata, "currentActiveKeyFingerprint")
+    proposed_key_id = _payload_text(apply_metadata, "proposedActiveKeyId")
+    proposed_signer = _payload_text(apply_metadata, "proposedSigner")
+    proposed_chain_id = _payload_text(apply_metadata, "proposedChainId")
+    if not current_key_id:
+        raise ValueError("audit_signing_key_rotation_apply_current_key_required")
+    if not proposed_key_id:
+        raise ValueError("audit_signing_key_rotation_apply_proposed_key_required")
+
+    blocked_reasons: list[str] = []
+    required_confirmations: list[dict[str, str]] = []
+    for confirmation_id, payload_key, label, blocked_reason in _audit_signing_key_controlled_restart_confirmation_specs():
+        confirmed = _payload_bool(confirmations, payload_key)
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if _payload_text(apply_metadata, "status") != "ready_for_restart":
+        blocked_reasons.append("rotation_apply_not_ready_for_restart")
+    restart_required = bool(apply_metadata.get("restartRequired", True))
+    if not restart_required:
+        blocked_reasons.append("controlled_restart_not_required")
+
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    normalized_operator = str(operator or "local-operator").strip() or "local-operator"
+    return AuditSigningKeyControlledRestartEvidence(
+        evidence_id=str(evidence_id or f"audit-signing-key-controlled-restart-{proposed_key_id}-{uuid4()}"),
+        apply_event_id=apply_event.event_id,
+        current_active_key_id=current_key_id,
+        current_active_key_fingerprint=current_fingerprint,
+        proposed_active_key_id=proposed_key_id,
+        proposed_signer=proposed_signer,
+        proposed_chain_id=proposed_chain_id,
+        status="blocked" if unique_blocked_reasons else "evidence_recorded",
+        operator=normalized_operator,
+        recorded_at=(recorded_at or datetime.now(timezone.utc)).astimezone(timezone.utc),
+        evidence_mode="manual_controlled_restart",
+        restart_required=restart_required,
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_sensitive_fields(metadata or {}),
+    )
+
+
+def audit_signing_key_controlled_restart_evidence_to_audit_event_payload(
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_id = _payload_text(evidence, "evidenceId")
+    if not evidence_id:
+        raise ValueError("audit_signing_key_controlled_restart_evidence_id_required")
+    created_at = _parse_report_generated_at(_payload_text(evidence, "recordedAt"))
+    blocked_reasons = _payload_string_list(evidence.get("blockedReasons"))
+    required_confirmations = evidence.get("requiredConfirmations") if isinstance(evidence.get("requiredConfirmations"), list) else []
+    confirmed_ids = [
+        _payload_text(item, "id")
+        for item in required_confirmations
+        if isinstance(item, dict) and _payload_text(item, "id") and _payload_text(item, "status") == "confirmed"
+    ]
+    required_ids = [
+        _payload_text(item, "id")
+        for item in required_confirmations
+        if isinstance(item, dict) and _payload_text(item, "id")
+    ]
+    return {
+        "schemaVersion": 1,
+        "eventId": evidence_id,
+        "eventType": "audit_signing_key_controlled_restart_evidence",
+        "runId": "audit-signing-key-rotation",
+        "createdAt": created_at.isoformat(),
+        "stage": _payload_text(evidence, "status") or "blocked",
+        "source": "audit-signing-key-ledger",
+        "summary": f"Audit signing key controlled restart evidence recorded for {_payload_text(evidence, 'proposedActiveKeyId')}.",
+        "detail": "Controlled restart evidence records operator confirmations only; signing secrets and live trading remain outside this API.",
+        "metadata": _redact_sensitive_fields(
+            {
+                "evidenceId": evidence_id,
+                "applyEventId": _payload_text(evidence, "applyEventId"),
+                "currentActiveKeyId": _payload_text(evidence, "currentActiveKeyId"),
+                "currentActiveKeyFingerprint": _payload_text(evidence, "currentActiveKeyFingerprint"),
+                "proposedActiveKeyId": _payload_text(evidence, "proposedActiveKeyId"),
+                "proposedSigner": _payload_text(evidence, "proposedSigner"),
+                "proposedChainId": _payload_text(evidence, "proposedChainId"),
+                "status": _payload_text(evidence, "status") or "blocked",
+                "operator": _payload_text(evidence, "operator") or "local-operator",
+                "evidenceMode": _payload_text(evidence, "evidenceMode") or "manual_controlled_restart",
+                "restartRequired": bool(evidence.get("restartRequired", True)),
+                "blockedReasons": blocked_reasons,
+                "requiredConfirmationIds": required_ids,
+                "confirmedConfirmationIds": confirmed_ids,
+                "metadata": evidence.get("metadata") if isinstance(evidence.get("metadata"), dict) else {},
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def _audit_signing_key_controlled_restart_evidence_payload(
+    result: AuditSigningKeyControlledRestartEvidence,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "evidenceId": result.evidence_id,
+        "applyEventId": result.apply_event_id,
+        "currentActiveKeyId": result.current_active_key_id,
+        "currentActiveKeyFingerprint": result.current_active_key_fingerprint,
+        "proposedActiveKeyId": result.proposed_active_key_id,
+        "proposedSigner": result.proposed_signer,
+        "proposedChainId": result.proposed_chain_id,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "evidenceMode": result.evidence_mode,
+        "restartRequired": result.restart_required,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def _audit_signing_key_controlled_restart_confirmation_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "restart-window-executed",
+            "restartWindowExecuted",
+            "Controlled restart window was executed",
+            "restart_window_not_confirmed",
+        ),
+        (
+            "rollback-plan-confirmed",
+            "rollbackPlanConfirmed",
+            "Rollback plan is available and confirmed",
+            "rollback_plan_not_confirmed",
+        ),
+        (
+            "post-restart-validation-passed",
+            "postRestartValidationPassed",
+            "Post-restart validation passed",
+            "post_restart_validation_not_confirmed",
+        ),
+        (
+            "operator-reviewed-restart-logs",
+            "operatorReviewedRestartLogs",
+            "Operator reviewed restart logs and signing key status",
+            "restart_logs_not_confirmed",
+        ),
+    ]
+
+
 def _required_metadata_text(record: AuditEventRecord, key: str) -> str:
     value = record.metadata.get(key)
     text = value.strip() if isinstance(value, str) else ""
@@ -598,6 +810,21 @@ def _payload_optional_text(item: dict[str, Any], key: str) -> str | None:
 
 def _payload_string_list(value: Any) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def _redact_sensitive_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized_key = str(key).replace("_", "").replace("-", "").lower()
+            if any(token in normalized_key for token in ("secret", "token", "apikey", "privatekey", "password")):
+                redacted[str(key)] = "[redacted]"
+            else:
+                redacted[str(key)] = _redact_sensitive_fields(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive_fields(item) for item in value]
+    return value
 
 
 def _raise_if_rotation_plan_leaks_secret(registry: AuditSigningKeyRegistry, rotation_plan: dict[str, Any]) -> None:

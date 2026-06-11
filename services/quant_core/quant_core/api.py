@@ -13,6 +13,8 @@ from quant_core.audit_events import AuditEventStore, audit_event_record_to_paylo
 from quant_core.audit_signing import (
     AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON,
     AuditReportSigner,
+    audit_signing_key_controlled_restart_evidence_to_audit_event_payload,
+    audit_signing_key_controlled_restart_evidence_to_payload,
     audit_report_verification_to_payload,
     audit_signing_key_rotation_apply_to_payload,
     audit_signing_key_registry_to_payload,
@@ -895,6 +897,37 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {"rotationApply": rotation_apply},
                 status=409 if rotation_apply["status"] == "blocked" else 200,
+            )
+            return
+        if parsed.path == "/api/audit/signing-keys/rotation-restart-evidence":
+            payload = self._read_json_body()
+            apply_event_id = str(payload.get("applyEventId") or "").strip()
+            apply_event = self.audit_event_store.get(apply_event_id)
+            if not apply_event:
+                self._send_json({"error": "audit_signing_key_rotation_apply_event_not_found", "applyEventId": apply_event_id}, status=404)
+                return
+            try:
+                restart_evidence = audit_signing_key_controlled_restart_evidence_to_payload(
+                    apply_event,
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                audit_event = self.audit_event_store.record(
+                    audit_signing_key_controlled_restart_evidence_to_audit_event_payload(restart_evidence)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_audit_signing_key_controlled_restart_evidence", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json(
+                {
+                    "restartEvidence": restart_evidence,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if restart_evidence["status"] == "blocked" else 201,
             )
             return
         if parsed.path == "/api/audit/reports/sign":
