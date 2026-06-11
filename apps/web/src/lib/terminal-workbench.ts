@@ -540,6 +540,7 @@ export type AiReviewAuditTimelineItemKind =
   | "current-evidence"
   | "strategy-revision-evidence"
   | "committee-rounds-evidence"
+  | "decision-log-evidence"
   | "data-snapshot-evidence"
   | "data-preparation-evidence"
   | "market-calendar-evidence"
@@ -3823,6 +3824,7 @@ export function buildAiReviewAuditTimelineItems({
   currentRunId,
   currentStrategyRevision,
   dataSnapshot = null,
+  decisionCount = 0,
   dossier,
   marketCalendar = null,
   preparationEvidence = null,
@@ -3833,6 +3835,7 @@ export function buildAiReviewAuditTimelineItems({
   currentRunId: string | null;
   currentStrategyRevision: string;
   dataSnapshot?: ResearchRunDataSnapshot | null;
+  decisionCount?: number;
   dossier: AiReviewDossier;
   marketCalendar?: ResearchContextMarketCalendar | null;
   preparationEvidence?: ResearchRunDataPreparationEvidence | null;
@@ -3874,6 +3877,24 @@ export function buildAiReviewAuditTimelineItems({
           targetWorkspaceId: "ai-review" as const,
           targetRecordId: null,
           actionLabel: "Open committee rounds",
+          status: "passed" as const,
+          tone: "ai" as const
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
+  const decisionLogItem =
+    currentRunId && decisionCount > 0
+      ? ({
+          id: `decision-log:${decisionCount}`,
+          kind: "decision-log-evidence" as const,
+          label: "Decision log",
+          value: `${decisionCount} entries`,
+          detail: `AI review decision log locked for ${currentRunReference}`,
+          reference: String(decisionCount),
+          exportAnchor: `decision-log:${decisionCount}`,
+          createdAt: null,
+          targetWorkspaceId: "ai-review" as const,
+          targetRecordId: null,
+          actionLabel: "Open decision log",
           status: "passed" as const,
           tone: "ai" as const
         } satisfies AiReviewAuditTimelineItem)
@@ -3969,6 +3990,7 @@ export function buildAiReviewAuditTimelineItems({
     },
     ...(strategyItem ? [strategyItem] : []),
     ...(committeeItem ? [committeeItem] : []),
+    ...(decisionLogItem ? [decisionLogItem] : []),
     ...(snapshotItem ? [snapshotItem] : []),
     ...(preparationItem ? [preparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
@@ -6637,6 +6659,9 @@ function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   }
   if (item.kind === "committee-rounds-evidence") {
     return "aiReviewRuns[].record.rounds";
+  }
+  if (item.kind === "decision-log-evidence") {
+    return "aiReviewRuns[].record.decisionLog";
   }
   if (item.kind === "data-snapshot-evidence") {
     return "researchRun.dataSnapshot.hash";

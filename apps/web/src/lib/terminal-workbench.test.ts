@@ -3256,6 +3256,93 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("adds decision log evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-decision-log-timeline",
+      createdAt: "2026-06-11T05:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-decision-log-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 7.4,
+        max_drawdown_pct: 2.9,
+        win_rate_pct: 57,
+        trade_count: 8
+      },
+      decisions: [
+        { agent: "Technical", message: "Trend evidence is locked.", tone: "positive" },
+        { agent: "Risk", message: "Paper-only boundary remains active.", tone: "warning" }
+      ],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-decision-log-timeline",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const decisionCount = currentRecord!.summary.decisionCount;
+    expect(decisionCount).toBeGreaterThan(0);
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      decisionCount,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      roundCount: currentRecord!.summary.roundCount
+    });
+    const decisionItem = timelineItems.find((item) => item.kind === "decision-log-evidence");
+
+    expect(decisionItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: `decision-log:${decisionCount}`,
+      kind: "decision-log-evidence",
+      label: "Decision log",
+      reference: String(decisionCount),
+      exportAnchor: `decision-log:${decisionCount}`,
+      status: "passed",
+      tone: "ai",
+      targetWorkspaceId: "ai-review",
+      targetRecordId: null,
+      actionLabel: "Open decision log"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: `timeline:${decisionCount}`,
+          group: "timeline",
+          anchor: `decision-log:${decisionCount}`,
+          reference: String(decisionCount),
+          exportPath: "aiReviewRuns[].record.decisionLog"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, `decision-log:${decisionCount}`).map((row) => row.anchor)).toContain(
+      `decision-log:${decisionCount}`
+    );
+  });
+
   test("adds market calendar evidence to the AI review audit timeline and evidence index", () => {
     const marketCalendar = {
       market: "ashare",
