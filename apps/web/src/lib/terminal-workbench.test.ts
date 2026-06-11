@@ -3173,6 +3173,89 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("adds committee rounds evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-committee-timeline",
+      createdAt: "2026-06-11T04:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-committee-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Committee evidence is locked.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-committee-timeline",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const roundCount = currentRecord!.summary.roundCount;
+    expect(roundCount).toBeGreaterThan(0);
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      roundCount
+    });
+    const committeeItem = timelineItems.find((item) => item.kind === "committee-rounds-evidence");
+
+    expect(committeeItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: `committee:${roundCount}-rounds`,
+      kind: "committee-rounds-evidence",
+      label: "Committee rounds",
+      reference: String(roundCount),
+      exportAnchor: `committee:${roundCount}-rounds`,
+      status: "passed",
+      tone: "ai",
+      targetWorkspaceId: "ai-review",
+      targetRecordId: null,
+      actionLabel: "Open committee rounds"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: `timeline:${roundCount}`,
+          group: "timeline",
+          anchor: `committee:${roundCount}-rounds`,
+          reference: String(roundCount),
+          exportPath: "aiReviewRuns[].record.rounds"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, `${roundCount}-rounds`).map((row) => row.anchor)).toContain(
+      `committee:${roundCount}-rounds`
+    );
+  });
+
   test("adds market calendar evidence to the AI review audit timeline and evidence index", () => {
     const marketCalendar = {
       market: "ashare",

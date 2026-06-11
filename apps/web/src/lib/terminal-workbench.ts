@@ -539,6 +539,7 @@ export interface AiReviewRecordDriftRow {
 export type AiReviewAuditTimelineItemKind =
   | "current-evidence"
   | "strategy-revision-evidence"
+  | "committee-rounds-evidence"
   | "data-snapshot-evidence"
   | "data-preparation-evidence"
   | "market-calendar-evidence"
@@ -3826,6 +3827,7 @@ export function buildAiReviewAuditTimelineItems({
   marketCalendar = null,
   preparationEvidence = null,
   records,
+  roundCount = 0,
   riskApproval
 }: {
   currentRunId: string | null;
@@ -3835,6 +3837,7 @@ export function buildAiReviewAuditTimelineItems({
   marketCalendar?: ResearchContextMarketCalendar | null;
   preparationEvidence?: ResearchRunDataPreparationEvidence | null;
   records: AiReviewRunRecord[];
+  roundCount?: number;
   riskApproval: RiskApprovalSummary;
 }): AiReviewAuditTimelineItem[] {
   const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
@@ -3855,6 +3858,24 @@ export function buildAiReviewAuditTimelineItems({
           actionLabel: "Open strategy revision",
           status: "passed" as const,
           tone: "positive" as const
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
+  const committeeItem =
+    currentRunId && roundCount > 0
+      ? ({
+          id: `committee:${roundCount}-rounds`,
+          kind: "committee-rounds-evidence" as const,
+          label: "Committee rounds",
+          value: `${roundCount} rounds`,
+          detail: `TradingAgents committee rounds locked for ${currentRunReference}`,
+          reference: String(roundCount),
+          exportAnchor: `committee:${roundCount}-rounds`,
+          createdAt: null,
+          targetWorkspaceId: "ai-review" as const,
+          targetRecordId: null,
+          actionLabel: "Open committee rounds",
+          status: "passed" as const,
+          tone: "ai" as const
         } satisfies AiReviewAuditTimelineItem)
       : null;
   const snapshotItem =
@@ -3947,6 +3968,7 @@ export function buildAiReviewAuditTimelineItems({
       tone: currentEvidenceReady ? "ai" : "risk"
     },
     ...(strategyItem ? [strategyItem] : []),
+    ...(committeeItem ? [committeeItem] : []),
     ...(snapshotItem ? [snapshotItem] : []),
     ...(preparationItem ? [preparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
@@ -6612,6 +6634,9 @@ function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   }
   if (item.kind === "strategy-revision-evidence") {
     return "researchRun.strategyConfig.revision";
+  }
+  if (item.kind === "committee-rounds-evidence") {
+    return "aiReviewRuns[].record.rounds";
   }
   if (item.kind === "data-snapshot-evidence") {
     return "researchRun.dataSnapshot.hash";
