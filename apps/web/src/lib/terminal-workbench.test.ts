@@ -7153,6 +7153,56 @@ describe("terminal workbench model", () => {
       },
       {
         schemaVersion: 1,
+        eventId: "audit-signing-key-runtime-reload-plan-next-audit-key-42",
+        eventType: "audit_signing_key_runtime_reload_plan",
+        runId: "audit-signing-key-rotation",
+        createdAt: "2026-06-04T10:39:00+00:00",
+        stage: "audit-signing-key-runtime-reload-plan",
+        source: "audit-signing-key-ledger",
+        summary: "Audit signing key runtime reload plan recorded for next-audit-key.",
+        detail: "Runtime reload plan records orchestration evidence only.",
+        metadata: {
+          backend: "local-secret-store",
+          bindingId: "audit-signing-key-environment-binding-next-audit-key-42",
+          bindingMode: "container_env_reference",
+          blockedReasons: [],
+          confirmedConfirmationIds: [
+            "maintenance-window-approved",
+            "health-baseline-captured",
+            "config-diff-reviewed",
+            "post-reload-smoke-plan-documented",
+            "rollback-owner-assigned"
+          ],
+          currentActiveKeyFingerprint: "h".repeat(16),
+          currentActiveKeyId: "active-audit-key",
+          liveTradingAllowed: false,
+          maintenanceWindowId: "audit-window-1",
+          manifestPath: "local-secret-store://audit-signing/next-audit-key",
+          materializationId: "audit-signing-key-secret-materialization-next-audit-key-42",
+          operator: "audit-operator",
+          paperOnly: true,
+          planEventId: "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
+          proposedActiveKeyId: "next-audit-key",
+          proposedChainId: "audit-chain-next",
+          proposedSigner: "Next Audit Key",
+          reloadMode: "manual_container_reload_plan",
+          requiredConfirmationIds: [
+            "maintenance-window-approved",
+            "health-baseline-captured",
+            "config-diff-reviewed",
+            "post-reload-smoke-plan-documented",
+            "rollback-owner-assigned"
+          ],
+          requiredEnvVars: [
+            "AIQT_AUDIT_SIGNING_KEY_ID",
+            "AIQT_AUDIT_SIGNING_SECRET",
+            "AIQT_AUDIT_SIGNING_KEYS_JSON"
+          ],
+          status: "plan_recorded"
+        }
+      },
+      {
+        schemaVersion: 1,
         eventId: "audit-report-ignore",
         eventType: "audit_evidence_report",
         runId: "run-audit",
@@ -7173,7 +7223,8 @@ describe("terminal workbench model", () => {
       "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c:blocked:apply:risk",
       "audit-signing-key-controlled-restart-next-audit-key-42:evidence_recorded:restart:positive",
       "audit-signing-key-secret-materialization-next-audit-key-42:manifest_recorded:manifest:positive",
-      "audit-signing-key-environment-binding-next-audit-key-42:binding_recorded:binding:positive"
+      "audit-signing-key-environment-binding-next-audit-key-42:binding_recorded:binding:positive",
+      "audit-signing-key-runtime-reload-plan-next-audit-key-42:plan_recorded:reload:positive"
     ]);
     expect(rows[0]).toEqual(
       expect.objectContaining({
@@ -7254,12 +7305,29 @@ describe("terminal workbench model", () => {
         templateShortHash: "binding"
       })
     );
+    expect(rows[6]).toEqual(
+      expect.objectContaining({
+        applyEventId: "audit-signing-key-environment-binding-next-audit-key-42",
+        applyMode: "manual_container_reload_plan",
+        confirmedConfirmationCount: 5,
+        currentKeyFingerprint: "h".repeat(16),
+        environmentUpdateCount: 3,
+        eventKind: "runtime_reload_plan",
+        liveTradingAllowed: false,
+        operator: "audit-operator",
+        paperOnly: true,
+        proposedKeyId: "next-audit-key",
+        statusLabel: "Runtime reload plan recorded",
+        templateShortHash: "reload"
+      })
+    );
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "next-audit-key").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
       "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c",
       "audit-signing-key-controlled-restart-next-audit-key-42",
       "audit-signing-key-secret-materialization-next-audit-key-42",
-      "audit-signing-key-environment-binding-next-audit-key-42"
+      "audit-signing-key-environment-binding-next-audit-key-42",
+      "audit-signing-key-runtime-reload-plan-next-audit-key-42"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "blocked").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-blocked",
@@ -7278,10 +7346,17 @@ describe("terminal workbench model", () => {
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "runtime-env-mapping-verified").map((row) => row.id)).toEqual([
       "audit-signing-key-environment-binding-next-audit-key-42"
     ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "maintenance-window-approved").map((row) => row.id)).toEqual([
+      "audit-signing-key-runtime-reload-plan-next-audit-key-42"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "manual_container_reload_plan").map((row) => row.id)).toEqual([
+      "audit-signing-key-runtime-reload-plan-next-audit-key-42"
+    ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "audit-operator").map((row) => row.id)).toEqual([
       "audit-signing-key-controlled-restart-next-audit-key-42",
       "audit-signing-key-secret-materialization-next-audit-key-42",
-      "audit-signing-key-environment-binding-next-audit-key-42"
+      "audit-signing-key-environment-binding-next-audit-key-42",
+      "audit-signing-key-runtime-reload-plan-next-audit-key-42"
     ]);
     expect(JSON.stringify(rows)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
     expect(JSON.stringify(rows)).not.toContain("local-dev-audit-secret");

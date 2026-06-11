@@ -36,6 +36,8 @@ import {
   recordAuditSigningKeySecretMaterialization,
   loadAuditSigningKeyEnvironmentBindings,
   recordAuditSigningKeyEnvironmentBinding,
+  loadAuditSigningKeyRuntimeReloadPlans,
+  recordAuditSigningKeyRuntimeReloadPlan,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -101,6 +103,8 @@ import {
   AuditSigningKeySecretMaterializationResult,
   AuditSigningKeyEnvironmentBinding,
   AuditSigningKeyEnvironmentBindingResult,
+  AuditSigningKeyRuntimeReloadPlan,
+  AuditSigningKeyRuntimeReloadPlanResult,
   AuditSigningKeyRotationApply,
   AuditSigningKeyRotationApplyResult,
   AuditSigningKeyRotationPlan,
@@ -447,6 +451,9 @@ const initialAuditSigningKeySecretMaterializationState: AuditSigningKeySecretMat
 const initialAuditSigningKeyEnvironmentBindingState: AuditSigningKeyEnvironmentBindingResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRuntimeReloadPlanState: AuditSigningKeyRuntimeReloadPlanResult = {
+  source: "fallback"
+};
 const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerStatus = {
   detail: "",
   state: "idle"
@@ -549,6 +556,22 @@ const initialAuditSigningKeyEnvironmentBindingConfirmations: AuditSigningKeyEnvi
   configReloadPlanDocumented: false,
   noRawSecretInPayload: false,
   rollbackSnapshotRecorded: false
+};
+
+interface AuditSigningKeyRuntimeReloadPlanConfirmations {
+  maintenanceWindowApproved: boolean;
+  healthBaselineCaptured: boolean;
+  configDiffReviewed: boolean;
+  postReloadSmokePlanDocumented: boolean;
+  rollbackOwnerAssigned: boolean;
+}
+
+const initialAuditSigningKeyRuntimeReloadPlanConfirmations: AuditSigningKeyRuntimeReloadPlanConfirmations = {
+  maintenanceWindowApproved: false,
+  healthBaselineCaptured: false,
+  configDiffReviewed: false,
+  postReloadSmokePlanDocumented: false,
+  rollbackOwnerAssigned: false
 };
 
 const workflowIcons: Record<string, typeof BarChart3> = {
@@ -863,6 +886,10 @@ export function App() {
     useState<AuditSigningKeyEnvironmentBindingResult>(initialAuditSigningKeyEnvironmentBindingState);
   const [auditSigningKeyEnvironmentBindingConfirmations, setAuditSigningKeyEnvironmentBindingConfirmations] =
     useState<AuditSigningKeyEnvironmentBindingConfirmations>(initialAuditSigningKeyEnvironmentBindingConfirmations);
+  const [auditSigningKeyRuntimeReloadPlan, setAuditSigningKeyRuntimeReloadPlan] =
+    useState<AuditSigningKeyRuntimeReloadPlanResult>(initialAuditSigningKeyRuntimeReloadPlanState);
+  const [auditSigningKeyRuntimeReloadPlanConfirmations, setAuditSigningKeyRuntimeReloadPlanConfirmations] =
+    useState<AuditSigningKeyRuntimeReloadPlanConfirmations>(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
   const [auditSigningKeyRotationPlanEventId, setAuditSigningKeyRotationPlanEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationApplyEventId, setAuditSigningKeyRotationApplyEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
@@ -972,6 +999,8 @@ export function App() {
   const [isRecordingAuditSigningKeySecretMaterialization, setIsRecordingAuditSigningKeySecretMaterialization] =
     useState(false);
   const [isRecordingAuditSigningKeyEnvironmentBinding, setIsRecordingAuditSigningKeyEnvironmentBinding] =
+    useState(false);
+  const [isRecordingAuditSigningKeyRuntimeReloadPlan, setIsRecordingAuditSigningKeyRuntimeReloadPlan] =
     useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
@@ -1369,7 +1398,9 @@ export function App() {
       secretMaterializationEventHistory,
       secretMaterializationHistory,
       environmentBindingEventHistory,
-      environmentBindingHistory
+      environmentBindingHistory,
+      runtimeReloadPlanEventHistory,
+      runtimeReloadPlanHistory
     ] = await Promise.all([
       loadAuditEvents(quantCoreBaseUrl, {
         eventType: "audit_signing_key_rotation_plan",
@@ -1407,6 +1438,17 @@ export function App() {
         "",
         undefined,
         AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
+      ),
+      loadAuditEvents(quantCoreBaseUrl, {
+        eventType: "audit_signing_key_runtime_reload_plan",
+        limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+        offset: 0
+      }),
+      loadAuditSigningKeyRuntimeReloadPlans(
+        quantCoreBaseUrl,
+        "",
+        undefined,
+        AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
       )
     ]);
     if (
@@ -1414,14 +1456,16 @@ export function App() {
       rotationApplyHistory.source === "core" ||
       controlledRestartHistory.source === "core" ||
       secretMaterializationEventHistory.source === "core" ||
-      environmentBindingEventHistory.source === "core"
+      environmentBindingEventHistory.source === "core" ||
+      runtimeReloadPlanEventHistory.source === "core"
     ) {
       const rotationEvents = [
         ...(rotationPlanHistory.source === "core" ? rotationPlanHistory.events : []),
         ...(rotationApplyHistory.source === "core" ? rotationApplyHistory.events : []),
         ...(controlledRestartHistory.source === "core" ? controlledRestartHistory.events : []),
         ...(secretMaterializationEventHistory.source === "core" ? secretMaterializationEventHistory.events : []),
-        ...(environmentBindingEventHistory.source === "core" ? environmentBindingEventHistory.events : [])
+        ...(environmentBindingEventHistory.source === "core" ? environmentBindingEventHistory.events : []),
+        ...(runtimeReloadPlanEventHistory.source === "core" ? runtimeReloadPlanEventHistory.events : [])
       ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
       setAuditSigningKeyRotationEvents(
         rotationEvents
@@ -1436,6 +1480,12 @@ export function App() {
     if (environmentBindingHistory.source === "core") {
       setAuditSigningKeyEnvironmentBinding({
         environmentBinding: environmentBindingHistory.environmentBindings[0],
+        source: "core"
+      });
+    }
+    if (runtimeReloadPlanHistory.source === "core") {
+      setAuditSigningKeyRuntimeReloadPlan({
+        runtimeReloadPlan: runtimeReloadPlanHistory.runtimeReloadPlans[0],
         source: "core"
       });
     }
@@ -1717,6 +1767,13 @@ export function App() {
     []
   );
 
+  const updateAuditSigningKeyRuntimeReloadPlanConfirmation = useCallback(
+    (field: keyof AuditSigningKeyRuntimeReloadPlanConfirmations, value: boolean) => {
+      setAuditSigningKeyRuntimeReloadPlanConfirmations((current) => ({ ...current, [field]: value }));
+    },
+    []
+  );
+
   const prepareAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
     const activeKey = auditSigningKeyRegistry.registry?.keys.find(
       (key) => key.keyId === auditSigningKeyRegistry.registry?.activeKeyId
@@ -1734,6 +1791,8 @@ export function App() {
     setAuditSigningKeySecretMaterializationConfirmations(initialAuditSigningKeySecretMaterializationConfirmations);
     setAuditSigningKeyEnvironmentBinding(initialAuditSigningKeyEnvironmentBindingState);
     setAuditSigningKeyEnvironmentBindingConfirmations(initialAuditSigningKeyEnvironmentBindingConfirmations);
+    setAuditSigningKeyRuntimeReloadPlan(initialAuditSigningKeyRuntimeReloadPlanState);
+    setAuditSigningKeyRuntimeReloadPlanConfirmations(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
     setAuditSigningKeyRotationPlanEventId(null);
     setAuditSigningKeyRotationApplyEventId(null);
     setAuditSigningKeyRotationLedgerStatus({ detail: "", state: "saving" });
@@ -1779,6 +1838,8 @@ export function App() {
     setIsRecordingAuditSigningKeySecretMaterialization(true);
     setAuditSigningKeyEnvironmentBinding(initialAuditSigningKeyEnvironmentBindingState);
     setAuditSigningKeyEnvironmentBindingConfirmations(initialAuditSigningKeyEnvironmentBindingConfirmations);
+    setAuditSigningKeyRuntimeReloadPlan(initialAuditSigningKeyRuntimeReloadPlanState);
+    setAuditSigningKeyRuntimeReloadPlanConfirmations(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
     try {
       const result = await recordAuditSigningKeySecretMaterialization(quantCoreBaseUrl, {
         backend: "local-secret-store",
@@ -1815,6 +1876,8 @@ export function App() {
       return;
     }
     setIsRecordingAuditSigningKeyEnvironmentBinding(true);
+    setAuditSigningKeyRuntimeReloadPlan(initialAuditSigningKeyRuntimeReloadPlanState);
+    setAuditSigningKeyRuntimeReloadPlanConfirmations(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
     try {
       const result = await recordAuditSigningKeyEnvironmentBinding(quantCoreBaseUrl, {
         bindingMode: "container_env_reference",
@@ -1836,6 +1899,41 @@ export function App() {
   }, [
     auditSigningKeyEnvironmentBindingConfirmations,
     auditSigningKeySecretMaterialization.secretMaterialization,
+    quantCoreBaseUrl
+  ]);
+
+  const recordAuditSigningKeyRuntimeReloadPlanForAudit = useCallback(async () => {
+    const binding = auditSigningKeyEnvironmentBinding.environmentBinding;
+    if (!binding?.bindingId) {
+      setAuditSigningKeyRuntimeReloadPlan({
+        source: "fallback",
+        error: "Audit signing key environment binding is required before runtime reload plan can be recorded"
+      });
+      return;
+    }
+    setIsRecordingAuditSigningKeyRuntimeReloadPlan(true);
+    try {
+      const result = await recordAuditSigningKeyRuntimeReloadPlan(quantCoreBaseUrl, {
+        bindingId: binding.bindingId,
+        confirmations: auditSigningKeyRuntimeReloadPlanConfirmations,
+        maintenanceWindowId: `audit-window-${binding.proposedActiveKeyId || "next-key"}`,
+        metadata: {
+          proposedKeyId: binding.proposedActiveKeyId,
+          source: "audit-signing-key-registry-panel"
+        },
+        operator: "local-operator",
+        reloadMode: "manual_container_reload_plan"
+      });
+      setAuditSigningKeyRuntimeReloadPlan(result);
+      if (result.auditEvent) {
+        setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, result.auditEvent!));
+      }
+    } finally {
+      setIsRecordingAuditSigningKeyRuntimeReloadPlan(false);
+    }
+  }, [
+    auditSigningKeyEnvironmentBinding.environmentBinding,
+    auditSigningKeyRuntimeReloadPlanConfirmations,
     quantCoreBaseUrl
   ]);
 
@@ -4609,6 +4707,7 @@ export function App() {
             isApplyingRotation={isApplyingAuditSigningKeyRotationPlan}
             isPreparingRotation={isPreparingAuditSigningKeyRotationPlan}
             isRecordingEnvironmentBinding={isRecordingAuditSigningKeyEnvironmentBinding}
+            isRecordingRuntimeReloadPlan={isRecordingAuditSigningKeyRuntimeReloadPlan}
             isRecordingRestartEvidence={isRecordingAuditSigningKeyRestartEvidence}
             isRecordingSecretMaterialization={isRecordingAuditSigningKeySecretMaterialization}
             environmentBinding={auditSigningKeyEnvironmentBinding.environmentBinding}
@@ -4620,8 +4719,10 @@ export function App() {
             onEnvironmentBindingConfirmationChange={updateAuditSigningKeyEnvironmentBindingConfirmation}
             onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
             onRecordEnvironmentBinding={recordAuditSigningKeyEnvironmentBindingForAudit}
+            onRecordRuntimeReloadPlan={recordAuditSigningKeyRuntimeReloadPlanForAudit}
             onRecordRestartEvidence={recordAuditSigningKeyRestartEvidenceForAudit}
             onRecordSecretMaterialization={recordAuditSigningKeySecretMaterializationForAudit}
+            onRuntimeReloadPlanConfirmationChange={updateAuditSigningKeyRuntimeReloadPlanConfirmation}
             onRestartEvidenceConfirmationChange={updateAuditSigningKeyRestartEvidenceConfirmation}
             onSecretMaterializationConfirmationChange={updateAuditSigningKeySecretMaterializationConfirmation}
             registry={auditSigningKeyRegistry.registry}
@@ -4641,6 +4742,10 @@ export function App() {
             rotationHistoryState={isLoadingAuditSigningKeyRotationEvents ? "loading" : "ready"}
             rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}
             rotationPlan={auditSigningKeyRotationPlan.rotationPlan}
+            runtimeReloadPlan={auditSigningKeyRuntimeReloadPlan.runtimeReloadPlan}
+            runtimeReloadPlanBindingId={auditSigningKeyEnvironmentBinding.environmentBinding?.bindingId ?? null}
+            runtimeReloadPlanConfirmations={auditSigningKeyRuntimeReloadPlanConfirmations}
+            runtimeReloadPlanError={auditSigningKeyRuntimeReloadPlan.error}
             source={auditSigningKeyRegistry.source}
           />
           <ResearchRunImportDiffPanel
@@ -8752,6 +8857,7 @@ function AuditSigningKeyRegistryPanel({
   i18n,
   isApplyingRotation,
   isRecordingEnvironmentBinding,
+  isRecordingRuntimeReloadPlan,
   isPreparingRotation,
   isRecordingRestartEvidence,
   isRecordingSecretMaterialization,
@@ -8760,8 +8866,10 @@ function AuditSigningKeyRegistryPanel({
   onEnvironmentBindingConfirmationChange,
   onPrepareRotation,
   onRecordEnvironmentBinding,
+  onRecordRuntimeReloadPlan,
   onRecordRestartEvidence,
   onRecordSecretMaterialization,
+  onRuntimeReloadPlanConfirmationChange,
   onRestartEvidenceConfirmationChange,
   onSecretMaterializationConfirmationChange,
   registry,
@@ -8781,6 +8889,10 @@ function AuditSigningKeyRegistryPanel({
   rotationHistoryState,
   rotationLedgerStatus,
   rotationPlan,
+  runtimeReloadPlan,
+  runtimeReloadPlanBindingId,
+  runtimeReloadPlanConfirmations,
+  runtimeReloadPlanError,
   source
 }: {
   className?: string;
@@ -8792,6 +8904,7 @@ function AuditSigningKeyRegistryPanel({
   i18n: AppI18n;
   isApplyingRotation: boolean;
   isRecordingEnvironmentBinding: boolean;
+  isRecordingRuntimeReloadPlan: boolean;
   isPreparingRotation: boolean;
   isRecordingRestartEvidence: boolean;
   isRecordingSecretMaterialization: boolean;
@@ -8803,8 +8916,13 @@ function AuditSigningKeyRegistryPanel({
   ) => void;
   onPrepareRotation: () => void;
   onRecordEnvironmentBinding: () => void;
+  onRecordRuntimeReloadPlan: () => void;
   onRecordRestartEvidence: () => void;
   onRecordSecretMaterialization: () => void;
+  onRuntimeReloadPlanConfirmationChange: (
+    field: keyof AuditSigningKeyRuntimeReloadPlanConfirmations,
+    value: boolean
+  ) => void;
   onRestartEvidenceConfirmationChange: (field: keyof AuditSigningKeyRestartEvidenceConfirmations, value: boolean) => void;
   onSecretMaterializationConfirmationChange: (
     field: keyof AuditSigningKeySecretMaterializationConfirmations,
@@ -8827,6 +8945,10 @@ function AuditSigningKeyRegistryPanel({
   rotationHistoryState: "loading" | "ready";
   rotationLedgerStatus: AuditSigningKeyRotationLedgerStatus;
   rotationPlan?: AuditSigningKeyRotationPlan;
+  runtimeReloadPlan?: AuditSigningKeyRuntimeReloadPlan;
+  runtimeReloadPlanBindingId: string | null;
+  runtimeReloadPlanConfirmations: AuditSigningKeyRuntimeReloadPlanConfirmations;
+  runtimeReloadPlanError?: string;
   source: AuditSigningKeyRegistryResult["source"];
 }) {
   const activeKey = registry?.keys.find((key) => key.keyId === registry.activeKeyId) ?? registry?.keys[0] ?? null;
@@ -9152,6 +9274,100 @@ function AuditSigningKeyRegistryPanel({
                 </div>
               ) : null}
               {environmentBindingError ? <p className="audit-signing-key-error">{environmentBindingError}</p> : null}
+            </div>
+            <div className="audit-signing-key-runtime-reload-plan audit-signing-key-environment-binding">
+              <div className="audit-signing-key-rotation-apply-head">
+                <span>{i18n.locale === "zh-CN" ? "运行时重载计划" : "Runtime reload plan"}</span>
+                <strong>
+                  {i18n.locale === "zh-CN"
+                    ? "只记录计划，不重启容器"
+                    : "Record plan only, no container restart"}
+                </strong>
+              </div>
+              <div className="audit-signing-key-rotation-apply-checks">
+                <label>
+                  <input
+                    checked={runtimeReloadPlanConfirmations.maintenanceWindowApproved}
+                    onChange={(event) =>
+                      onRuntimeReloadPlanConfirmationChange(
+                        "maintenanceWindowApproved",
+                        event.currentTarget.checked
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "维护窗口已批准" : "Maintenance window approved"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={runtimeReloadPlanConfirmations.healthBaselineCaptured}
+                    onChange={(event) =>
+                      onRuntimeReloadPlanConfirmationChange("healthBaselineCaptured", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "重载前健康基线已捕获" : "Pre-reload health baseline captured"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={runtimeReloadPlanConfirmations.configDiffReviewed}
+                    onChange={(event) =>
+                      onRuntimeReloadPlanConfirmationChange("configDiffReviewed", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "配置 diff 已复核" : "Configuration diff reviewed"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={runtimeReloadPlanConfirmations.postReloadSmokePlanDocumented}
+                    onChange={(event) =>
+                      onRuntimeReloadPlanConfirmationChange(
+                        "postReloadSmokePlanDocumented",
+                        event.currentTarget.checked
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "重载后 smoke 计划已记录" : "Post-reload smoke plan documented"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={runtimeReloadPlanConfirmations.rollbackOwnerAssigned}
+                    onChange={(event) =>
+                      onRuntimeReloadPlanConfirmationChange("rollbackOwnerAssigned", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "回滚负责人已指定" : "Rollback owner assigned"}</span>
+                </label>
+              </div>
+              <button
+                className="compact-action"
+                disabled={isRecordingRuntimeReloadPlan || !runtimeReloadPlanBindingId}
+                onClick={onRecordRuntimeReloadPlan}
+                type="button"
+              >
+                {isRecordingRuntimeReloadPlan ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+                {i18n.locale === "zh-CN" ? "记录重载计划" : "Record reload plan"}
+              </button>
+              {runtimeReloadPlan ? (
+                <div className={`audit-signing-key-rotation-apply-result ${runtimeReloadPlan.status}`}>
+                  <span>{auditSigningKeyRuntimeReloadPlanStatusLabel(i18n, runtimeReloadPlan.status)}</span>
+                  <strong>{runtimeReloadPlan.proposedActiveKeyId || "n/a"}</strong>
+                  <small>
+                    {runtimeReloadPlan.blockedReasons.length
+                      ? runtimeReloadPlan.blockedReasons
+                          .map((reason) => auditSigningKeyRuntimeReloadPlanReasonLabel(i18n, reason))
+                          .join(" / ")
+                      : i18n.locale === "zh-CN"
+                        ? "重载计划已入账，仍不执行重启"
+                        : "Reload plan recorded; restart is still manual"}
+                  </small>
+                  <em>{runtimeReloadPlan.liveTradingAllowed ? "live=true" : "live=false / paper-only"}</em>
+                </div>
+              ) : null}
+              {runtimeReloadPlanError ? <p className="audit-signing-key-error">{runtimeReloadPlanError}</p> : null}
             </div>
             <div className="audit-signing-key-rotation-apply">
               <div className="audit-signing-key-rotation-apply-head">
@@ -10590,7 +10806,9 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
       "Secret materialization blocked": "物化清单阻断",
       "Secret materialization recorded": "物化清单已记录",
       "Environment binding blocked": "环境绑定阻断",
-      "Environment binding recorded": "环境绑定已记录"
+      "Environment binding recorded": "环境绑定已记录",
+      "Runtime reload plan blocked": "运行时重载计划阻断",
+      "Runtime reload plan recorded": "运行时重载计划已记录"
     }[statusLabel] ?? statusLabel
   );
 }
@@ -10696,6 +10914,32 @@ function auditSigningKeyEnvironmentBindingReasonLabel(i18n: AppI18n, reason: str
       environment_binding_raw_secret_boundary_not_confirmed: "raw secret 边界未确认",
       environment_binding_rollback_snapshot_missing: "回滚快照缺失",
       environment_binding_runtime_env_mapping_missing: "运行环境映射未核验"
+    }[reason] ?? reason
+  );
+}
+
+function auditSigningKeyRuntimeReloadPlanStatusLabel(
+  i18n: AppI18n,
+  status: AuditSigningKeyRuntimeReloadPlan["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status === "blocked" ? "Reload plan blocked" : "Reload plan recorded";
+  }
+  return status === "blocked" ? "重载计划阻断" : "重载计划已记录";
+}
+
+function auditSigningKeyRuntimeReloadPlanReasonLabel(i18n: AppI18n, reason: string): string {
+  if (i18n.locale === "en-US") {
+    return reason.replaceAll("_", " ");
+  }
+  return (
+    {
+      runtime_reload_config_diff_missing: "配置 diff 未复核",
+      runtime_reload_environment_binding_not_recorded: "环境绑定未记录",
+      runtime_reload_health_baseline_missing: "健康基线未捕获",
+      runtime_reload_maintenance_window_missing: "维护窗口未批准",
+      runtime_reload_rollback_owner_missing: "回滚负责人未指定",
+      runtime_reload_smoke_plan_missing: "重载后 smoke 计划缺失"
     }[reason] ?? reason
   );
 }
