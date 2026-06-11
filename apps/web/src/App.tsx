@@ -1280,7 +1280,7 @@ export function App() {
 
   const refreshAuditSigningKeyRotationEvents = useCallback(async () => {
     setIsLoadingAuditSigningKeyRotationEvents(true);
-    const [rotationPlanHistory, rotationApplyHistory] = await Promise.all([
+    const [rotationPlanHistory, rotationApplyHistory, controlledRestartHistory] = await Promise.all([
       loadAuditEvents(quantCoreBaseUrl, {
         eventType: "audit_signing_key_rotation_plan",
         limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
@@ -1290,12 +1290,22 @@ export function App() {
         eventType: "audit_signing_key_rotation_apply",
         limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
         offset: 0
+      }),
+      loadAuditEvents(quantCoreBaseUrl, {
+        eventType: "audit_signing_key_controlled_restart_evidence",
+        limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+        offset: 0
       })
     ]);
-    if (rotationPlanHistory.source === "core" || rotationApplyHistory.source === "core") {
+    if (
+      rotationPlanHistory.source === "core" ||
+      rotationApplyHistory.source === "core" ||
+      controlledRestartHistory.source === "core"
+    ) {
       const rotationEvents = [
         ...(rotationPlanHistory.source === "core" ? rotationPlanHistory.events : []),
-        ...(rotationApplyHistory.source === "core" ? rotationApplyHistory.events : [])
+        ...(rotationApplyHistory.source === "core" ? rotationApplyHistory.events : []),
+        ...(controlledRestartHistory.source === "core" ? controlledRestartHistory.events : [])
       ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
       setAuditSigningKeyRotationEvents(
         rotationEvents
@@ -8582,16 +8592,16 @@ function AuditSigningKeyRegistryPanel({
               <article className={`audit-signing-key-rotation-history-row ${row.tone}`} key={row.id}>
                 <span>{auditSigningKeyRotationLedgerRowStatusLabel(i18n, row.statusLabel)}</span>
                 <strong>{row.proposedKeyId || "n/a"}</strong>
-                <em>{row.eventKind === "apply" ? row.applyMode || "apply" : row.templateShortHash}</em>
+                <em>{row.eventKind === "plan" ? row.templateShortHash : row.applyMode || row.eventKind}</em>
                 <small>{row.blockedReasonLabel}</small>
                 <b>
-                  {row.eventKind === "apply"
+                  {row.eventKind === "plan"
                     ? i18n.locale === "zh-CN"
-                      ? `${row.confirmedConfirmationCount}/${row.stepCount} 确认`
-                      : `${row.confirmedConfirmationCount}/${row.stepCount} checks`
-                    : i18n.locale === "zh-CN"
                       ? `${row.environmentUpdateCount} 变量 / ${row.stepCount} 步`
-                      : `${row.environmentUpdateCount} vars / ${row.stepCount} steps`}
+                      : `${row.environmentUpdateCount} vars / ${row.stepCount} steps`
+                    : i18n.locale === "zh-CN"
+                      ? `${row.confirmedConfirmationCount}/${row.stepCount} 确认`
+                      : `${row.confirmedConfirmationCount}/${row.stepCount} checks`}
                 </b>
               </article>
             ))
@@ -9998,7 +10008,9 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
       "Rotation plan blocked": "轮换计划阻断",
       "Rotation plan prepared": "轮换计划已准备",
       "Rotation apply blocked": "应用预检阻断",
-      "Rotation apply ready": "应用预检就绪"
+      "Rotation apply ready": "应用预检就绪",
+      "Controlled restart evidence blocked": "受控重启证据阻断",
+      "Controlled restart evidence recorded": "受控重启证据已记录"
     }[statusLabel] ?? statusLabel
   );
 }

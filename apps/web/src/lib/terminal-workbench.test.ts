@@ -7026,6 +7026,44 @@ describe("terminal workbench model", () => {
       },
       {
         schemaVersion: 1,
+        eventId: "audit-signing-key-controlled-restart-next-audit-key-42",
+        eventType: "audit_signing_key_controlled_restart_evidence",
+        runId: "audit-signing-key-rotation",
+        createdAt: "2026-06-04T10:38:00+00:00",
+        stage: "evidence_recorded",
+        source: "audit-signing-key-ledger",
+        summary: "Audit signing key controlled restart evidence recorded for next-audit-key.",
+        detail: "Controlled restart evidence records operator confirmations only.",
+        metadata: {
+          applyEventId: "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c",
+          blockedReasons: [],
+          confirmedConfirmationIds: [
+            "restart-window-executed",
+            "rollback-plan-confirmed",
+            "post-restart-validation-passed",
+            "operator-reviewed-restart-logs"
+          ],
+          currentActiveKeyFingerprint: "e".repeat(16),
+          currentActiveKeyId: "active-audit-key",
+          evidenceMode: "manual_controlled_restart",
+          liveTradingAllowed: false,
+          operator: "audit-operator",
+          paperOnly: true,
+          proposedActiveKeyId: "next-audit-key",
+          proposedChainId: "audit-chain-next",
+          proposedSigner: "Next Audit Key",
+          requiredConfirmationIds: [
+            "restart-window-executed",
+            "rollback-plan-confirmed",
+            "post-restart-validation-passed",
+            "operator-reviewed-restart-logs"
+          ],
+          restartRequired: true,
+          status: "evidence_recorded"
+        }
+      },
+      {
+        schemaVersion: 1,
         eventId: "audit-report-ignore",
         eventType: "audit_evidence_report",
         runId: "run-audit",
@@ -7043,7 +7081,8 @@ describe("terminal workbench model", () => {
     expect(rows.map((row) => `${row.id}:${row.status}:${row.templateShortHash}:${row.tone}`)).toEqual([
       "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c:prepared:bbbbbbbbbbbb:warning",
       "audit-signing-key-rotation-blocked:blocked:invalid:risk",
-      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c:blocked:apply:risk"
+      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c:blocked:apply:risk",
+      "audit-signing-key-controlled-restart-next-audit-key-42:evidence_recorded:restart:positive"
     ]);
     expect(rows[0]).toEqual(
       expect.objectContaining({
@@ -7079,9 +7118,25 @@ describe("terminal workbench model", () => {
         templateShortHash: "apply"
       })
     );
+    expect(rows[3]).toEqual(
+      expect.objectContaining({
+        applyEventId: "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c",
+        applyMode: "manual_controlled_restart",
+        confirmedConfirmationCount: 4,
+        currentKeyFingerprint: "e".repeat(16),
+        eventKind: "restart",
+        liveTradingAllowed: false,
+        operator: "audit-operator",
+        paperOnly: true,
+        proposedKeyId: "next-audit-key",
+        statusLabel: "Controlled restart evidence recorded",
+        templateShortHash: "restart"
+      })
+    );
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "next-audit-key").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
-      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c"
+      "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c",
+      "audit-signing-key-controlled-restart-next-audit-key-42"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "blocked").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-blocked",
@@ -7089,6 +7144,12 @@ describe("terminal workbench model", () => {
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "operator-reviewed-plan").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "restart-window-executed").map((row) => row.id)).toEqual([
+      "audit-signing-key-controlled-restart-next-audit-key-42"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "audit-operator").map((row) => row.id)).toEqual([
+      "audit-signing-key-controlled-restart-next-audit-key-42"
     ]);
     expect(JSON.stringify(rows)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
     expect(JSON.stringify(rows)).not.toContain("local-dev-audit-secret");
