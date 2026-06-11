@@ -1344,8 +1344,13 @@ export interface AuditEvidenceReportLedgerSummary {
   verified: number;
 }
 
-export type AuditSigningKeyRotationLedgerEventKind = "plan" | "apply" | "restart";
-export type AuditSigningKeyRotationLedgerStatus = "prepared" | "blocked" | "ready_for_restart" | "evidence_recorded";
+export type AuditSigningKeyRotationLedgerEventKind = "plan" | "apply" | "restart" | "materialization";
+export type AuditSigningKeyRotationLedgerStatus =
+  | "prepared"
+  | "blocked"
+  | "ready_for_restart"
+  | "evidence_recorded"
+  | "manifest_recorded";
 
 export interface AuditSigningKeyRotationLedgerRow {
   id: string;
@@ -1364,6 +1369,7 @@ export interface AuditSigningKeyRotationLedgerRow {
   missingConfirmationIds: string[];
   operator: string;
   paperOnly: boolean;
+  planEventId: string;
   proposedChainId: string;
   proposedKeyId: string;
   proposedSigner: string;
@@ -6213,16 +6219,20 @@ export function buildAuditSigningKeyRotationLedgerRows(
       (event) =>
         event.eventType === "audit_signing_key_rotation_plan" ||
         event.eventType === "audit_signing_key_rotation_apply" ||
-        event.eventType === "audit_signing_key_controlled_restart_evidence"
+        event.eventType === "audit_signing_key_controlled_restart_evidence" ||
+        event.eventType === "audit_signing_key_secret_materialization"
     )
     .map((event) => {
       const blockedReasons = auditReportLedgerMetadataStringList(event.metadata, "blockedReasons");
       const isApplyEvent = event.eventType === "audit_signing_key_rotation_apply";
       const isRestartEvent = event.eventType === "audit_signing_key_controlled_restart_evidence";
+      const isMaterializationEvent = event.eventType === "audit_signing_key_secret_materialization";
       const statusMetadata = auditReportLedgerMetadataText(event.metadata, "status");
       const status: AuditSigningKeyRotationLedgerStatus =
         event.stage === "blocked" || statusMetadata === "blocked" || blockedReasons.length > 0
           ? "blocked"
+          : isMaterializationEvent
+            ? "manifest_recorded"
           : isRestartEvent
             ? "evidence_recorded"
             : isApplyEvent
@@ -6230,19 +6240,23 @@ export function buildAuditSigningKeyRotationLedgerRows(
             : "prepared";
       const templateSha256 = auditReportLedgerMetadataText(event.metadata, "legacyRegistryTemplateSha256");
       const isTemplateHashReady = /^[a-f0-9]{64}$/iu.test(templateSha256);
-      const environmentUpdateNames = auditReportLedgerMetadataStringList(event.metadata, "environmentUpdateNames");
+      const environmentUpdateNames = isMaterializationEvent
+        ? auditReportLedgerMetadataStringList(event.metadata, "requiredEnvVars")
+        : auditReportLedgerMetadataStringList(event.metadata, "environmentUpdateNames");
       const secretPlaceholderNames = auditReportLedgerMetadataStringList(event.metadata, "secretPlaceholderNames");
       const stepIds = auditReportLedgerMetadataStringList(event.metadata, "stepIds");
       const confirmedConfirmationIds = auditReportLedgerMetadataStringList(event.metadata, "confirmedConfirmationIds");
       const requiredConfirmationIds = auditReportLedgerMetadataStringList(event.metadata, "requiredConfirmationIds");
-      const missingConfirmationIds = isRestartEvent
+      const missingConfirmationIds = isRestartEvent || isMaterializationEvent
         ? requiredConfirmationIds.filter((confirmationId) => !confirmedConfirmationIds.includes(confirmationId))
         : auditReportLedgerMetadataStringList(event.metadata, "missingConfirmationIds");
-      const isConfirmationEvent = isApplyEvent || isRestartEvent;
+      const isConfirmationEvent = isApplyEvent || isRestartEvent || isMaterializationEvent;
       return {
         id: event.eventId,
         applyEventId: auditReportLedgerMetadataText(event.metadata, "applyEventId"),
-        applyMode: isRestartEvent
+        applyMode: isMaterializationEvent
+          ? auditReportLedgerMetadataText(event.metadata, "materializationMode")
+          : isRestartEvent
           ? auditReportLedgerMetadataText(event.metadata, "evidenceMode")
           : auditReportLedgerMetadataText(event.metadata, "applyMode"),
         createdAt: event.createdAt,
@@ -6256,12 +6270,13 @@ export function buildAuditSigningKeyRotationLedgerRows(
           : auditReportLedgerMetadataText(event.metadata, "currentKeyId"),
         detail: event.detail,
         environmentUpdateCount: environmentUpdateNames.length,
-        eventKind: isRestartEvent ? "restart" : isApplyEvent ? "apply" : "plan",
+        eventKind: isMaterializationEvent ? "materialization" : isRestartEvent ? "restart" : isApplyEvent ? "apply" : "plan",
         liveTradingAllowed: auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed"),
         missingConfirmationCount: missingConfirmationIds.length,
         missingConfirmationIds,
         operator: auditReportLedgerMetadataText(event.metadata, "operator"),
         paperOnly: auditReportLedgerMetadataBoolean(event.metadata, "paperOnly"),
+        planEventId: auditReportLedgerMetadataText(event.metadata, "planEventId"),
         proposedChainId: auditReportLedgerMetadataText(event.metadata, "proposedChainId"),
         proposedKeyId: isConfirmationEvent
           ? auditReportLedgerMetadataText(event.metadata, "proposedActiveKeyId")
@@ -6278,6 +6293,10 @@ export function buildAuditSigningKeyRotationLedgerRows(
           ? status === "blocked"
             ? "Controlled restart evidence blocked"
             : "Controlled restart evidence recorded"
+          : isMaterializationEvent
+          ? status === "blocked"
+            ? "Secret materialization blocked"
+            : "Secret materialization recorded"
           : isApplyEvent
           ? status === "blocked"
             ? "Rotation apply blocked"
@@ -6286,12 +6305,20 @@ export function buildAuditSigningKeyRotationLedgerRows(
             ? "Rotation plan blocked"
             : "Rotation plan prepared",
         templateSha256,
-        templateShortHash: isRestartEvent ? "restart" : isApplyEvent ? "apply" : isTemplateHashReady ? templateSha256.slice(0, 12) : "invalid",
+        templateShortHash: isMaterializationEvent
+          ? "manifest"
+          : isRestartEvent
+          ? "restart"
+          : isApplyEvent
+          ? "apply"
+          : isTemplateHashReady
+          ? templateSha256.slice(0, 12)
+          : "invalid",
         blockedReasons,
         blockedReasonLabel: blockedReasons.length ? blockedReasons.join(" / ") : "none",
         tone: status === "blocked" || (!isConfirmationEvent && !isTemplateHashReady)
           ? "risk"
-          : status === "ready_for_restart" || status === "evidence_recorded"
+          : status === "ready_for_restart" || status === "evidence_recorded" || status === "manifest_recorded"
             ? "positive"
             : "warning"
       };
@@ -6322,6 +6349,7 @@ export function filterAuditSigningKeyRotationLedgerRows(
       row.applyEventId,
       row.applyMode,
       row.operator,
+      row.planEventId,
       row.templateSha256,
       row.templateShortHash,
       row.blockedReasonLabel,

@@ -32,6 +32,8 @@ import {
   applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
   recordAuditSigningKeyControlledRestartEvidence,
+  loadAuditSigningKeySecretMaterializations,
+  recordAuditSigningKeySecretMaterialization,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -93,6 +95,8 @@ import {
   AuditSigningKeyRegistryResult,
   AuditSigningKeyControlledRestartEvidence,
   AuditSigningKeyControlledRestartEvidenceResult,
+  AuditSigningKeySecretMaterialization,
+  AuditSigningKeySecretMaterializationResult,
   AuditSigningKeyRotationApply,
   AuditSigningKeyRotationApplyResult,
   AuditSigningKeyRotationPlan,
@@ -433,6 +437,9 @@ const initialAuditSigningKeyRotationApplyState: AuditSigningKeyRotationApplyResu
 const initialAuditSigningKeyRestartEvidenceState: AuditSigningKeyControlledRestartEvidenceResult = {
   source: "fallback"
 };
+const initialAuditSigningKeySecretMaterializationState: AuditSigningKeySecretMaterializationResult = {
+  source: "fallback"
+};
 const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerStatus = {
   detail: "",
   state: "idle"
@@ -507,6 +514,20 @@ const initialAuditSigningKeyRestartEvidenceConfirmations: AuditSigningKeyRestart
   rollbackPlanConfirmed: false,
   postRestartValidationPassed: false,
   operatorReviewedRestartLogs: false
+};
+
+interface AuditSigningKeySecretMaterializationConfirmations {
+  localSecretStoreWriteVerified: boolean;
+  noRawSecretInPayload: boolean;
+  envBindingPlanDocumented: boolean;
+  rollbackPlanDocumented: boolean;
+}
+
+const initialAuditSigningKeySecretMaterializationConfirmations: AuditSigningKeySecretMaterializationConfirmations = {
+  localSecretStoreWriteVerified: false,
+  noRawSecretInPayload: false,
+  envBindingPlanDocumented: false,
+  rollbackPlanDocumented: false
 };
 
 const workflowIcons: Record<string, typeof BarChart3> = {
@@ -812,6 +833,12 @@ export function App() {
     useState<AuditSigningKeyControlledRestartEvidenceResult>(initialAuditSigningKeyRestartEvidenceState);
   const [auditSigningKeyRestartEvidenceConfirmations, setAuditSigningKeyRestartEvidenceConfirmations] =
     useState<AuditSigningKeyRestartEvidenceConfirmations>(initialAuditSigningKeyRestartEvidenceConfirmations);
+  const [auditSigningKeySecretMaterialization, setAuditSigningKeySecretMaterialization] =
+    useState<AuditSigningKeySecretMaterializationResult>(initialAuditSigningKeySecretMaterializationState);
+  const [auditSigningKeySecretMaterializationConfirmations, setAuditSigningKeySecretMaterializationConfirmations] = useState<AuditSigningKeySecretMaterializationConfirmations>(
+    initialAuditSigningKeySecretMaterializationConfirmations
+  );
+  const [auditSigningKeyRotationPlanEventId, setAuditSigningKeyRotationPlanEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationApplyEventId, setAuditSigningKeyRotationApplyEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
@@ -917,6 +944,8 @@ export function App() {
   const [isApplyingAuditSigningKeyRotationPlan, setIsApplyingAuditSigningKeyRotationPlan] = useState(false);
   const [isPreparingAuditSigningKeyRotationPlan, setIsPreparingAuditSigningKeyRotationPlan] = useState(false);
   const [isRecordingAuditSigningKeyRestartEvidence, setIsRecordingAuditSigningKeyRestartEvidence] = useState(false);
+  const [isRecordingAuditSigningKeySecretMaterialization, setIsRecordingAuditSigningKeySecretMaterialization] =
+    useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
   const [revokingAuditReportEventId, setRevokingAuditReportEventId] = useState<string | null>(null);
@@ -1306,7 +1335,7 @@ export function App() {
 
   const refreshAuditSigningKeyRotationEvents = useCallback(async () => {
     setIsLoadingAuditSigningKeyRotationEvents(true);
-    const [rotationPlanHistory, rotationApplyHistory, controlledRestartHistory] = await Promise.all([
+    const [rotationPlanHistory, rotationApplyHistory, controlledRestartHistory, secretMaterializationEventHistory, secretMaterializationHistory] = await Promise.all([
       loadAuditEvents(quantCoreBaseUrl, {
         eventType: "audit_signing_key_rotation_plan",
         limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
@@ -1321,21 +1350,40 @@ export function App() {
         eventType: "audit_signing_key_controlled_restart_evidence",
         limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
         offset: 0
-      })
+      }),
+      loadAuditEvents(quantCoreBaseUrl, {
+        eventType: "audit_signing_key_secret_materialization",
+        limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+        offset: 0
+      }),
+      loadAuditSigningKeySecretMaterializations(
+        quantCoreBaseUrl,
+        "",
+        undefined,
+        AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
+      )
     ]);
     if (
       rotationPlanHistory.source === "core" ||
       rotationApplyHistory.source === "core" ||
-      controlledRestartHistory.source === "core"
+      controlledRestartHistory.source === "core" ||
+      secretMaterializationEventHistory.source === "core"
     ) {
       const rotationEvents = [
         ...(rotationPlanHistory.source === "core" ? rotationPlanHistory.events : []),
         ...(rotationApplyHistory.source === "core" ? rotationApplyHistory.events : []),
-        ...(controlledRestartHistory.source === "core" ? controlledRestartHistory.events : [])
+        ...(controlledRestartHistory.source === "core" ? controlledRestartHistory.events : []),
+        ...(secretMaterializationEventHistory.source === "core" ? secretMaterializationEventHistory.events : [])
       ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
       setAuditSigningKeyRotationEvents(
         rotationEvents
       );
+    }
+    if (secretMaterializationHistory.source === "core") {
+      setAuditSigningKeySecretMaterialization({
+        secretMaterialization: secretMaterializationHistory.secretMaterializations[0],
+        source: "core"
+      });
     }
     setIsLoadingAuditSigningKeyRotationEvents(false);
     return rotationPlanHistory;
@@ -1601,6 +1649,13 @@ export function App() {
     []
   );
 
+  const updateAuditSigningKeySecretMaterializationConfirmation = useCallback(
+    (field: keyof AuditSigningKeySecretMaterializationConfirmations, value: boolean) => {
+      setAuditSigningKeySecretMaterializationConfirmations((current) => ({ ...current, [field]: value }));
+    },
+    []
+  );
+
   const prepareAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
     const activeKey = auditSigningKeyRegistry.registry?.keys.find(
       (key) => key.keyId === auditSigningKeyRegistry.registry?.activeKeyId
@@ -1614,6 +1669,9 @@ export function App() {
     setAuditSigningKeyRotationApplyConfirmations(initialAuditSigningKeyRotationApplyConfirmations);
     setAuditSigningKeyRestartEvidence(initialAuditSigningKeyRestartEvidenceState);
     setAuditSigningKeyRestartEvidenceConfirmations(initialAuditSigningKeyRestartEvidenceConfirmations);
+    setAuditSigningKeySecretMaterialization(initialAuditSigningKeySecretMaterializationState);
+    setAuditSigningKeySecretMaterializationConfirmations(initialAuditSigningKeySecretMaterializationConfirmations);
+    setAuditSigningKeyRotationPlanEventId(null);
     setAuditSigningKeyRotationApplyEventId(null);
     setAuditSigningKeyRotationLedgerStatus({ detail: "", state: "saving" });
     try {
@@ -1632,6 +1690,7 @@ export function App() {
             : { detail: ledgerResult.error ?? "Audit event save failed", state: "failed" }
         );
         if (ledgerResult.event) {
+          setAuditSigningKeyRotationPlanEventId(ledgerResult.event.eventId);
           setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, ledgerResult.event!));
         }
       } else {
@@ -1644,6 +1703,42 @@ export function App() {
       setIsPreparingAuditSigningKeyRotationPlan(false);
     }
   }, [auditSigningKeyRegistry.registry]);
+
+  const recordAuditSigningKeySecretMaterializationForAudit = useCallback(async () => {
+    if (!auditSigningKeyRotationPlan.rotationPlan || !auditSigningKeyRotationPlanEventId) {
+      setAuditSigningKeySecretMaterialization({
+        source: "fallback",
+        error: "Audit signing key rotation plan event id is required before secret materialization can be recorded"
+      });
+      return;
+    }
+    const proposedKeyId = auditSigningKeyRotationPlan.rotationPlan.proposedActiveKey.keyId;
+    setIsRecordingAuditSigningKeySecretMaterialization(true);
+    try {
+      const result = await recordAuditSigningKeySecretMaterialization(quantCoreBaseUrl, {
+        backend: "local-secret-store",
+        confirmations: auditSigningKeySecretMaterializationConfirmations,
+        manifestPath: `local-secret-store://audit-signing/${proposedKeyId}`,
+        metadata: {
+          proposedKeyId,
+          source: "audit-signing-key-registry-panel"
+        },
+        operator: "local-operator",
+        planEventId: auditSigningKeyRotationPlanEventId
+      });
+      setAuditSigningKeySecretMaterialization(result);
+      if (result.auditEvent) {
+        setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, result.auditEvent!));
+      }
+    } finally {
+      setIsRecordingAuditSigningKeySecretMaterialization(false);
+    }
+  }, [
+    auditSigningKeyRotationPlan.rotationPlan,
+    auditSigningKeyRotationPlanEventId,
+    auditSigningKeySecretMaterializationConfirmations,
+    quantCoreBaseUrl
+  ]);
 
   const applyAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
     if (!auditSigningKeyRotationPlan.rotationPlan) {
@@ -4415,16 +4510,23 @@ export function App() {
             isApplyingRotation={isApplyingAuditSigningKeyRotationPlan}
             isPreparingRotation={isPreparingAuditSigningKeyRotationPlan}
             isRecordingRestartEvidence={isRecordingAuditSigningKeyRestartEvidence}
+            isRecordingSecretMaterialization={isRecordingAuditSigningKeySecretMaterialization}
             onApplyConfirmationChange={updateAuditSigningKeyRotationApplyConfirmation}
             onApplyRotation={applyAuditSigningKeyRotationPlanForAudit}
             onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
             onRecordRestartEvidence={recordAuditSigningKeyRestartEvidenceForAudit}
+            onRecordSecretMaterialization={recordAuditSigningKeySecretMaterializationForAudit}
             onRestartEvidenceConfirmationChange={updateAuditSigningKeyRestartEvidenceConfirmation}
+            onSecretMaterializationConfirmationChange={updateAuditSigningKeySecretMaterializationConfirmation}
             registry={auditSigningKeyRegistry.registry}
             restartEvidence={auditSigningKeyRestartEvidence.restartEvidence}
             restartEvidenceApplyEventId={auditSigningKeyRotationApplyEventId}
             restartEvidenceConfirmations={auditSigningKeyRestartEvidenceConfirmations}
             restartEvidenceError={auditSigningKeyRestartEvidence.error}
+            secretMaterialization={auditSigningKeySecretMaterialization.secretMaterialization}
+            secretMaterializationConfirmations={auditSigningKeySecretMaterializationConfirmations}
+            secretMaterializationError={auditSigningKeySecretMaterialization.error}
+            secretMaterializationPlanEventId={auditSigningKeyRotationPlanEventId}
             rotationApply={auditSigningKeyRotationApply.rotationApply}
             rotationApplyConfirmations={auditSigningKeyRotationApplyConfirmations}
             rotationApplyError={auditSigningKeyRotationApply.error}
@@ -8541,16 +8643,23 @@ function AuditSigningKeyRegistryPanel({
   isApplyingRotation,
   isPreparingRotation,
   isRecordingRestartEvidence,
+  isRecordingSecretMaterialization,
   onApplyConfirmationChange,
   onApplyRotation,
   onPrepareRotation,
   onRecordRestartEvidence,
+  onRecordSecretMaterialization,
   onRestartEvidenceConfirmationChange,
+  onSecretMaterializationConfirmationChange,
   registry,
   restartEvidence,
   restartEvidenceApplyEventId,
   restartEvidenceConfirmations,
   restartEvidenceError,
+  secretMaterialization,
+  secretMaterializationConfirmations,
+  secretMaterializationError,
+  secretMaterializationPlanEventId,
   rotationApply,
   rotationApplyConfirmations,
   rotationApplyError,
@@ -8567,16 +8676,26 @@ function AuditSigningKeyRegistryPanel({
   isApplyingRotation: boolean;
   isPreparingRotation: boolean;
   isRecordingRestartEvidence: boolean;
+  isRecordingSecretMaterialization: boolean;
   onApplyConfirmationChange: (field: keyof AuditSigningKeyRotationApplyConfirmations, value: boolean) => void;
   onApplyRotation: () => void;
   onPrepareRotation: () => void;
   onRecordRestartEvidence: () => void;
+  onRecordSecretMaterialization: () => void;
   onRestartEvidenceConfirmationChange: (field: keyof AuditSigningKeyRestartEvidenceConfirmations, value: boolean) => void;
+  onSecretMaterializationConfirmationChange: (
+    field: keyof AuditSigningKeySecretMaterializationConfirmations,
+    value: boolean
+  ) => void;
   registry?: AuditSigningKeyRegistry;
   restartEvidence?: AuditSigningKeyControlledRestartEvidence;
   restartEvidenceApplyEventId: string | null;
   restartEvidenceConfirmations: AuditSigningKeyRestartEvidenceConfirmations;
   restartEvidenceError?: string;
+  secretMaterialization?: AuditSigningKeySecretMaterialization;
+  secretMaterializationConfirmations: AuditSigningKeySecretMaterializationConfirmations;
+  secretMaterializationError?: string;
+  secretMaterializationPlanEventId: string | null;
   rotationApply?: AuditSigningKeyRotationApply;
   rotationApplyConfirmations: AuditSigningKeyRotationApplyConfirmations;
   rotationApplyError?: string;
@@ -8743,6 +8862,87 @@ function AuditSigningKeyRegistryPanel({
               ))}
             </div>
             <pre>{rotationPlan.legacyRegistryTemplate}</pre>
+            <div className="audit-signing-key-secret-materialization">
+              <div className="audit-signing-key-rotation-apply-head">
+                <span>{i18n.locale === "zh-CN" ? "Secret-store 物化清单" : "Secret-store materialization"}</span>
+                <strong>
+                  {i18n.locale === "zh-CN"
+                    ? "只记录本地清单，不传 secret"
+                    : "Record local manifest only, no secret"}
+                </strong>
+              </div>
+              <div className="audit-signing-key-rotation-apply-checks">
+                <label>
+                  <input
+                    checked={secretMaterializationConfirmations.localSecretStoreWriteVerified}
+                    onChange={(event) =>
+                      onSecretMaterializationConfirmationChange(
+                        "localSecretStoreWriteVerified",
+                        event.currentTarget.checked
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "本地 secret-store 写入已核验" : "Local secret-store write verified"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={secretMaterializationConfirmations.noRawSecretInPayload}
+                    onChange={(event) =>
+                      onSecretMaterializationConfirmationChange("noRawSecretInPayload", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "payload 不含 raw secret" : "Payload contains no raw secret"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={secretMaterializationConfirmations.envBindingPlanDocumented}
+                    onChange={(event) =>
+                      onSecretMaterializationConfirmationChange("envBindingPlanDocumented", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "环境绑定计划已记录" : "Environment binding plan documented"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={secretMaterializationConfirmations.rollbackPlanDocumented}
+                    onChange={(event) =>
+                      onSecretMaterializationConfirmationChange("rollbackPlanDocumented", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "回滚计划已记录" : "Rollback plan documented"}</span>
+                </label>
+              </div>
+              <button
+                className="compact-action"
+                disabled={isRecordingSecretMaterialization || !secretMaterializationPlanEventId}
+                onClick={onRecordSecretMaterialization}
+                type="button"
+              >
+                {isRecordingSecretMaterialization ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+                {i18n.locale === "zh-CN" ? "记录物化清单" : "Record materialization"}
+              </button>
+              {secretMaterialization ? (
+                <div className={`audit-signing-key-rotation-apply-result ${secretMaterialization.status}`}>
+                  <span>{auditSigningKeySecretMaterializationStatusLabel(i18n, secretMaterialization.status)}</span>
+                  <strong>{secretMaterialization.proposedActiveKeyId || "n/a"}</strong>
+                  <small>
+                    {secretMaterialization.blockedReasons.length
+                      ? secretMaterialization.blockedReasons
+                          .map((reason) => auditSigningKeySecretMaterializationReasonLabel(i18n, reason))
+                          .join(" / ")
+                      : i18n.locale === "zh-CN"
+                        ? "清单已入账，实盘仍保持阻断"
+                        : "Manifest recorded; live remains blocked"}
+                  </small>
+                  <em>{secretMaterialization.liveTradingAllowed ? "live=true" : "live=false / paper-only"}</em>
+                </div>
+              ) : null}
+              {secretMaterializationError ? <p className="audit-signing-key-error">{secretMaterializationError}</p> : null}
+            </div>
             <div className="audit-signing-key-rotation-apply">
               <div className="audit-signing-key-rotation-apply-head">
                 <span>{i18n.locale === "zh-CN" ? "应用预检" : "Apply preflight"}</span>
@@ -10176,7 +10376,9 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
       "Rotation apply blocked": "应用预检阻断",
       "Rotation apply ready": "应用预检就绪",
       "Controlled restart evidence blocked": "受控重启证据阻断",
-      "Controlled restart evidence recorded": "受控重启证据已记录"
+      "Controlled restart evidence recorded": "受控重启证据已记录",
+      "Secret materialization blocked": "物化清单阻断",
+      "Secret materialization recorded": "物化清单已记录"
     }[statusLabel] ?? statusLabel
   );
 }
@@ -10231,6 +10433,31 @@ function auditSigningKeyRestartEvidenceReasonLabel(i18n: AppI18n, reason: string
       restart_window_not_confirmed: "重启窗口未确认",
       rollback_plan_not_confirmed: "回滚计划未确认",
       post_restart_validation_not_confirmed: "重启后验收未确认"
+    }[reason] ?? reason
+  );
+}
+
+function auditSigningKeySecretMaterializationStatusLabel(
+  i18n: AppI18n,
+  status: AuditSigningKeySecretMaterialization["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status === "blocked" ? "Materialization blocked" : "Manifest recorded";
+  }
+  return status === "blocked" ? "物化阻断" : "清单已记录";
+}
+
+function auditSigningKeySecretMaterializationReasonLabel(i18n: AppI18n, reason: string): string {
+  if (i18n.locale === "en-US") {
+    return reason.replaceAll("_", " ");
+  }
+  return (
+    {
+      secret_materialization_env_binding_plan_missing: "环境绑定计划缺失",
+      secret_materialization_local_store_not_verified: "本地 secret-store 未核验",
+      secret_materialization_plan_not_prepared: "轮换计划未准备",
+      secret_materialization_raw_secret_boundary_not_confirmed: "raw secret 边界未确认",
+      secret_materialization_rollback_plan_missing: "回滚计划缺失"
     }[reason] ?? reason
   );
 }
