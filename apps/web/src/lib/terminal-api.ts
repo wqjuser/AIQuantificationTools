@@ -622,6 +622,65 @@ export interface AuditSigningKeySecretMaterializationHistoryResult {
   error?: string;
 }
 
+export type AuditSigningKeyEnvironmentBindingStatus = "blocked" | "binding_recorded";
+export type AuditSigningKeyEnvironmentBindingConfirmationStatus = "confirmed" | "missing";
+
+export interface AuditSigningKeyEnvironmentBindingConfirmation {
+  id: string;
+  label: string;
+  status: AuditSigningKeyEnvironmentBindingConfirmationStatus;
+}
+
+export interface AuditSigningKeyEnvironmentBinding {
+  schemaVersion: 1;
+  bindingId: string;
+  materializationId: string;
+  planEventId: string;
+  currentActiveKeyId: string;
+  currentActiveKeyFingerprint: string;
+  proposedActiveKeyId: string;
+  proposedSigner: string;
+  proposedChainId: string;
+  status: AuditSigningKeyEnvironmentBindingStatus;
+  operator: string;
+  recordedAt: string;
+  bindingMode: "container_env_reference";
+  backend: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: AuditSigningKeyEnvironmentBindingConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface AuditSigningKeyEnvironmentBindingRequest {
+  materializationId: string;
+  operator?: string;
+  bindingMode?: "container_env_reference";
+  confirmations?: {
+    runtimeEnvMappingVerified?: boolean;
+    configReloadPlanDocumented?: boolean;
+    noRawSecretInPayload?: boolean;
+    rollbackSnapshotRecorded?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface AuditSigningKeyEnvironmentBindingResult {
+  environmentBinding?: AuditSigningKeyEnvironmentBinding;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AuditSigningKeyEnvironmentBindingHistoryResult {
+  environmentBindings: AuditSigningKeyEnvironmentBinding[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -2235,6 +2294,24 @@ export function buildAuditSigningKeySecretMaterializationHistoryUrl(
   params: { proposedKeyId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys/secret-materializations", (url) => {
+    if (params.proposedKeyId?.trim()) {
+      url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildAuditSigningKeyEnvironmentBindingUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/environment-bindings");
+}
+
+export function buildAuditSigningKeyEnvironmentBindingHistoryUrl(
+  baseUrl: string,
+  params: { proposedKeyId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/environment-bindings", (url) => {
     if (params.proposedKeyId?.trim()) {
       url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
     }
@@ -4195,6 +4272,80 @@ export async function loadAuditSigningKeySecretMaterializations(
   }
 }
 
+export async function recordAuditSigningKeyEnvironmentBinding(
+  baseUrl: string,
+  request: AuditSigningKeyEnvironmentBindingRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyEnvironmentBindingResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeyEnvironmentBindingUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        materializationId: request.materializationId,
+        operator: request.operator ?? "local-operator",
+        bindingMode: request.bindingMode ?? "container_env_reference",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isAuditSigningKeyEnvironmentBindingPayload(payload)) {
+      return {
+        environmentBinding: payload.environmentBinding,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid audit signing key environment binding contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key environment binding error"
+    };
+  }
+}
+
+export async function loadAuditSigningKeyEnvironmentBindings(
+  baseUrl: string,
+  proposedKeyId = "",
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<AuditSigningKeyEnvironmentBindingHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildAuditSigningKeyEnvironmentBindingHistoryUrl(baseUrl, { proposedKeyId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeyEnvironmentBindingHistoryPayload(payload)) {
+      throw new Error("Invalid audit signing key environment binding history contract");
+    }
+    return {
+      environmentBindings: payload.environmentBindings,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      environmentBindings: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key environment binding history error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -6108,6 +6259,85 @@ function isAuditSigningKeySecretMaterializationStatus(
   value: unknown
 ): value is AuditSigningKeySecretMaterializationStatus {
   return value === "blocked" || value === "manifest_recorded";
+}
+
+function isAuditSigningKeyEnvironmentBindingPayload(
+  value: unknown
+): value is { environmentBinding: AuditSigningKeyEnvironmentBinding; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { environmentBinding?: unknown; auditEvent?: unknown };
+  return (
+    isAuditSigningKeyEnvironmentBinding(payload.environmentBinding) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isAuditSigningKeyEnvironmentBindingHistoryPayload(
+  value: unknown
+): value is { environmentBindings: AuditSigningKeyEnvironmentBinding[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { environmentBindings?: unknown };
+  return Array.isArray(payload.environmentBindings) && payload.environmentBindings.every(isAuditSigningKeyEnvironmentBinding);
+}
+
+function isAuditSigningKeyEnvironmentBinding(
+  value: unknown
+): value is AuditSigningKeyEnvironmentBinding {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const binding = value as Partial<AuditSigningKeyEnvironmentBinding>;
+  return (
+    binding.schemaVersion === 1 &&
+    typeof binding.bindingId === "string" &&
+    typeof binding.materializationId === "string" &&
+    typeof binding.planEventId === "string" &&
+    typeof binding.currentActiveKeyId === "string" &&
+    typeof binding.currentActiveKeyFingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(binding.currentActiveKeyFingerprint) &&
+    typeof binding.proposedActiveKeyId === "string" &&
+    typeof binding.proposedSigner === "string" &&
+    typeof binding.proposedChainId === "string" &&
+    isAuditSigningKeyEnvironmentBindingStatus(binding.status) &&
+    typeof binding.operator === "string" &&
+    typeof binding.recordedAt === "string" &&
+    binding.bindingMode === "container_env_reference" &&
+    typeof binding.backend === "string" &&
+    typeof binding.manifestPath === "string" &&
+    Array.isArray(binding.requiredEnvVars) &&
+    binding.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(binding.requiredConfirmations) &&
+    binding.requiredConfirmations.every(isAuditSigningKeyEnvironmentBindingConfirmation) &&
+    Array.isArray(binding.blockedReasons) &&
+    binding.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(binding.metadata) &&
+    binding.liveTradingAllowed === false &&
+    binding.paperOnly === true
+  );
+}
+
+function isAuditSigningKeyEnvironmentBindingConfirmation(
+  value: unknown
+): value is AuditSigningKeyEnvironmentBindingConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<AuditSigningKeyEnvironmentBindingConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isAuditSigningKeyEnvironmentBindingStatus(
+  value: unknown
+): value is AuditSigningKeyEnvironmentBindingStatus {
+  return value === "blocked" || value === "binding_recorded";
 }
 
 function containsDisallowedSecretField(value: unknown): boolean {

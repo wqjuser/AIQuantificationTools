@@ -105,6 +105,28 @@ class AuditSigningKeySecretMaterialization:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class AuditSigningKeyEnvironmentBinding:
+    binding_id: str
+    materialization_id: str
+    plan_event_id: str
+    current_active_key_id: str
+    current_active_key_fingerprint: str
+    proposed_active_key_id: str
+    proposed_signer: str
+    proposed_chain_id: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    binding_mode: str
+    backend: str
+    manifest_path: str
+    required_env_vars: list[str]
+    required_confirmations: list[dict[str, str]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+
+
 class AuditSigningKeyRegistry:
     def __init__(self, keys: list[AuditSigningKey]) -> None:
         if not keys:
@@ -1051,6 +1073,315 @@ def _audit_signing_key_secret_materialization_confirmation_specs() -> list[tuple
             "rollbackPlanDocumented",
             "Rollback plan is documented",
             "secret_materialization_rollback_plan_missing",
+        ),
+    ]
+
+
+def build_audit_signing_key_environment_binding(
+    materialization: dict[str, Any],
+    *,
+    binding_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | None = None,
+    binding_id: str | None = None,
+) -> AuditSigningKeyEnvironmentBinding:
+    if not isinstance(materialization, dict):
+        raise ValueError("audit_signing_key_secret_materialization_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    materialization_id = str(materialization.get("materializationId") or "").strip()
+    plan_event_id = str(materialization.get("planEventId") or "").strip()
+    current_key_id = str(materialization.get("currentActiveKeyId") or "").strip()
+    current_fingerprint = str(materialization.get("currentActiveKeyFingerprint") or "").strip()
+    proposed_key_id = str(materialization.get("proposedActiveKeyId") or "").strip()
+    proposed_signer = str(materialization.get("proposedSigner") or "").strip()
+    proposed_chain_id = str(materialization.get("proposedChainId") or "").strip()
+    backend = str(materialization.get("backend") or "").strip()
+    manifest_path = str(materialization.get("manifestPath") or "").strip()
+    normalized_binding_mode = str(binding_mode or "container_env_reference").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in materialization.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not materialization_id:
+        raise ValueError("audit_signing_key_environment_binding_materialization_id_required")
+    if not plan_event_id:
+        raise ValueError("audit_signing_key_environment_binding_plan_event_id_required")
+    if not current_key_id:
+        raise ValueError("audit_signing_key_environment_binding_current_key_required")
+    if not current_fingerprint:
+        raise ValueError("audit_signing_key_environment_binding_current_fingerprint_required")
+    if not proposed_key_id:
+        raise ValueError("audit_signing_key_environment_binding_proposed_key_required")
+    if not backend:
+        raise ValueError("audit_signing_key_environment_binding_backend_required")
+    if not manifest_path:
+        raise ValueError("audit_signing_key_environment_binding_manifest_path_required")
+    if not normalized_binding_mode:
+        raise ValueError("audit_signing_key_environment_binding_mode_required")
+    if not required_env_vars:
+        raise ValueError("audit_signing_key_environment_binding_required_env_vars_required")
+
+    blocked_reasons: list[str] = []
+    required_confirmations: list[dict[str, str]] = []
+    for confirmation_id, payload_key, label, blocked_reason in _audit_signing_key_environment_binding_confirmation_specs():
+        confirmed = _payload_bool(confirmations, payload_key)
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(materialization.get("status") or "") != "manifest_recorded":
+        blocked_reasons.append("environment_binding_materialization_not_recorded")
+
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    normalized_operator = str(operator or "local-operator").strip() or "local-operator"
+    return AuditSigningKeyEnvironmentBinding(
+        binding_id=str(binding_id or f"audit-signing-key-environment-binding-{proposed_key_id}-{uuid4()}"),
+        materialization_id=materialization_id,
+        plan_event_id=plan_event_id,
+        current_active_key_id=current_key_id,
+        current_active_key_fingerprint=current_fingerprint,
+        proposed_active_key_id=proposed_key_id,
+        proposed_signer=proposed_signer,
+        proposed_chain_id=proposed_chain_id,
+        status="blocked" if unique_blocked_reasons else "binding_recorded",
+        operator=normalized_operator,
+        recorded_at=(recorded_at or datetime.now(timezone.utc)).astimezone(timezone.utc),
+        binding_mode=normalized_binding_mode,
+        backend=backend,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_sensitive_fields(metadata or {}),
+    )
+
+
+def audit_signing_key_environment_binding_to_payload(
+    materialization: dict[str, Any],
+    *,
+    binding_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | None = None,
+    binding_id: str | None = None,
+) -> dict[str, Any]:
+    result = build_audit_signing_key_environment_binding(
+        materialization,
+        binding_mode=binding_mode,
+        confirmations=confirmations,
+        operator=operator,
+        metadata=metadata,
+        recorded_at=recorded_at,
+        binding_id=binding_id,
+    )
+    return _audit_signing_key_environment_binding_payload(result)
+
+
+def audit_signing_key_environment_binding_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "audit_signing_key_environment_binding":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    binding_id = str(metadata.get("bindingId") or getattr(event, "event_id", "")).strip()
+    materialization_id = str(metadata.get("materializationId") or "").strip()
+    plan_event_id = str(metadata.get("planEventId") or "").strip()
+    current_key_id = str(metadata.get("currentActiveKeyId") or "").strip()
+    current_fingerprint = str(metadata.get("currentActiveKeyFingerprint") or "").strip()
+    proposed_key_id = str(metadata.get("proposedActiveKeyId") or "").strip()
+    proposed_signer = str(metadata.get("proposedSigner") or "").strip()
+    proposed_chain_id = str(metadata.get("proposedChainId") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    operator = str(metadata.get("operator") or "local-operator").strip() or "local-operator"
+    binding_mode = str(metadata.get("bindingMode") or "container_env_reference").strip()
+    backend = str(metadata.get("backend") or "").strip()
+    manifest_path = str(metadata.get("manifestPath") or "").strip()
+    required_env_vars = _payload_string_list(metadata.get("requiredEnvVars"))
+    if (
+        not binding_id
+        or not materialization_id
+        or not plan_event_id
+        or not current_key_id
+        or not current_fingerprint
+        or not proposed_key_id
+        or not binding_mode
+        or not backend
+        or not manifest_path
+        or not required_env_vars
+    ):
+        return None
+    if status not in {"blocked", "binding_recorded"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations: list[dict[str, str]] = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _audit_signing_key_environment_binding_confirmation_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    return {
+        "schemaVersion": 1,
+        "bindingId": binding_id,
+        "materializationId": materialization_id,
+        "planEventId": plan_event_id,
+        "currentActiveKeyId": current_key_id,
+        "currentActiveKeyFingerprint": current_fingerprint,
+        "proposedActiveKeyId": proposed_key_id,
+        "proposedSigner": proposed_signer,
+        "proposedChainId": proposed_chain_id,
+        "status": status,
+        "operator": operator,
+        "recordedAt": recorded_at_value,
+        "bindingMode": binding_mode,
+        "backend": backend,
+        "manifestPath": manifest_path,
+        "requiredEnvVars": required_env_vars,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": _payload_string_list(metadata.get("blockedReasons")),
+        "metadata": _redact_sensitive_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def audit_signing_key_environment_binding_to_audit_event_payload(binding: dict[str, Any]) -> dict[str, Any]:
+    binding_id = _payload_text(binding, "bindingId")
+    if not binding_id:
+        raise ValueError("audit_signing_key_environment_binding_id_required")
+    created_at = _parse_report_generated_at(_payload_text(binding, "recordedAt"))
+    required_confirmations = (
+        binding.get("requiredConfirmations") if isinstance(binding.get("requiredConfirmations"), list) else []
+    )
+    required_ids = [
+        _payload_text(item, "id")
+        for item in required_confirmations
+        if isinstance(item, dict) and _payload_text(item, "id")
+    ]
+    confirmed_ids = [
+        _payload_text(item, "id")
+        for item in required_confirmations
+        if isinstance(item, dict) and _payload_text(item, "id") and _payload_text(item, "status") == "confirmed"
+    ]
+    proposed_key_id = _payload_text(binding, "proposedActiveKeyId")
+    return {
+        "schemaVersion": 1,
+        "eventId": binding_id,
+        "eventType": "audit_signing_key_environment_binding",
+        "runId": "audit-signing-key-rotation",
+        "createdAt": created_at.isoformat(),
+        "stage": "audit-signing-key-environment-binding",
+        "source": "audit-signing-key-ledger",
+        "summary": f"Audit signing key environment binding recorded for {proposed_key_id}.",
+        "detail": "Environment binding records redacted runtime mapping evidence only; no environment variables are written and live trading remains blocked.",
+        "metadata": _redact_sensitive_fields(
+            {
+                "bindingId": binding_id,
+                "materializationId": _payload_text(binding, "materializationId"),
+                "planEventId": _payload_text(binding, "planEventId"),
+                "currentActiveKeyId": _payload_text(binding, "currentActiveKeyId"),
+                "currentActiveKeyFingerprint": _payload_text(binding, "currentActiveKeyFingerprint"),
+                "proposedActiveKeyId": proposed_key_id,
+                "proposedSigner": _payload_text(binding, "proposedSigner"),
+                "proposedChainId": _payload_text(binding, "proposedChainId"),
+                "status": _payload_text(binding, "status") or "blocked",
+                "operator": _payload_text(binding, "operator") or "local-operator",
+                "bindingMode": _payload_text(binding, "bindingMode") or "container_env_reference",
+                "backend": _payload_text(binding, "backend"),
+                "manifestPath": _payload_text(binding, "manifestPath"),
+                "requiredEnvVars": _payload_string_list(binding.get("requiredEnvVars")),
+                "blockedReasons": _payload_string_list(binding.get("blockedReasons")),
+                "requiredConfirmationIds": required_ids,
+                "confirmedConfirmationIds": confirmed_ids,
+                "metadata": binding.get("metadata") if isinstance(binding.get("metadata"), dict) else {},
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def _audit_signing_key_environment_binding_payload(result: AuditSigningKeyEnvironmentBinding) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "planEventId": result.plan_event_id,
+        "currentActiveKeyId": result.current_active_key_id,
+        "currentActiveKeyFingerprint": result.current_active_key_fingerprint,
+        "proposedActiveKeyId": result.proposed_active_key_id,
+        "proposedSigner": result.proposed_signer,
+        "proposedChainId": result.proposed_chain_id,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "bindingMode": result.binding_mode,
+        "backend": result.backend,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": result.required_env_vars,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def _audit_signing_key_environment_binding_confirmation_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "runtime-env-mapping-verified",
+            "runtimeEnvMappingVerified",
+            "Runtime environment mapping was verified",
+            "environment_binding_runtime_env_mapping_missing",
+        ),
+        (
+            "config-reload-plan-documented",
+            "configReloadPlanDocumented",
+            "Config reload plan is documented",
+            "environment_binding_config_reload_plan_missing",
+        ),
+        (
+            "no-raw-secret-in-payload",
+            "noRawSecretInPayload",
+            "No raw secret is present in this payload",
+            "environment_binding_raw_secret_boundary_not_confirmed",
+        ),
+        (
+            "rollback-snapshot-recorded",
+            "rollbackSnapshotRecorded",
+            "Rollback snapshot is recorded",
+            "environment_binding_rollback_snapshot_missing",
         ),
     ]
 

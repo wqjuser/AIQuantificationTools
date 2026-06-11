@@ -15,6 +15,9 @@ from quant_core.audit_signing import (
     AuditReportSigner,
     audit_signing_key_controlled_restart_evidence_to_audit_event_payload,
     audit_signing_key_controlled_restart_evidence_to_payload,
+    audit_signing_key_environment_binding_payload_from_audit_event,
+    audit_signing_key_environment_binding_to_audit_event_payload,
+    audit_signing_key_environment_binding_to_payload,
     audit_signing_key_secret_materialization_payload_from_audit_event,
     audit_signing_key_secret_materialization_to_audit_event_payload,
     audit_signing_key_secret_materialization_to_payload,
@@ -966,6 +969,49 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if secret_materialization["status"] == "blocked" else 201,
             )
             return
+        if parsed.path == "/api/audit/signing-keys/environment-bindings":
+            payload = self._read_json_body()
+            materialization_id = str(payload.get("materializationId") or "").strip()
+            materialization_event = self.audit_event_store.get(materialization_id)
+            materialization = (
+                audit_signing_key_secret_materialization_payload_from_audit_event(materialization_event)
+                if materialization_event
+                else None
+            )
+            if not materialization:
+                self._send_json(
+                    {
+                        "error": "audit_signing_key_secret_materialization_not_found",
+                        "materializationId": materialization_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                environment_binding = audit_signing_key_environment_binding_to_payload(
+                    materialization,
+                    binding_mode=str(payload.get("bindingMode") or "container_env_reference"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                audit_event = self.audit_event_store.record(
+                    audit_signing_key_environment_binding_to_audit_event_payload(environment_binding)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_audit_signing_key_environment_binding", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json(
+                {
+                    "environmentBinding": environment_binding,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if environment_binding["status"] == "blocked" else 201,
+            )
+            return
         if parsed.path == "/api/audit/reports/sign":
             payload = self._read_json_body()
             event_id = str(payload.get("eventId") or "").strip()
@@ -1603,6 +1649,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(materializations) >= limit:
                     break
             self._send_json({"secretMaterializations": materializations})
+            return
+        if parsed.path == "/api/audit/signing-keys/environment-bindings":
+            query = parse_qs(parsed.query)
+            proposed_key_id = query.get("proposedKeyId", [""])[0].strip()
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            binding_events = self.audit_event_store.list_recent(
+                event_type="audit_signing_key_environment_binding",
+                limit=50,
+                query=proposed_key_id,
+            )
+            environment_bindings = []
+            for event in binding_events:
+                payload = audit_signing_key_environment_binding_payload_from_audit_event(event)
+                if payload and (not proposed_key_id or payload.get("proposedActiveKeyId") == proposed_key_id):
+                    environment_bindings.append(payload)
+                if len(environment_bindings) >= limit:
+                    break
+            self._send_json({"environmentBindings": environment_bindings})
             return
         if parsed.path == "/api/golden-path/status":
             query = parse_qs(parsed.query)
