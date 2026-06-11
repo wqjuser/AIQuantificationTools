@@ -314,6 +314,8 @@ def _report_event_type_for_artifact_kind(artifact_kind: str) -> str:
         return "audit_evidence_report"
     if artifact_kind == "aiqt.backtestReport":
         return "backtest_report"
+    if artifact_kind == "aiqt.portfolioReport":
+        return "portfolio_report"
     raise ValueError("audit_report_artifact_kind_required")
 
 
