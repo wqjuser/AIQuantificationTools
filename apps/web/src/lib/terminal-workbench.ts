@@ -541,6 +541,7 @@ export type AiReviewAuditTimelineItemKind =
   | "strategy-revision-evidence"
   | "committee-rounds-evidence"
   | "decision-log-evidence"
+  | "ai-boundary-evidence"
   | "data-snapshot-evidence"
   | "data-preparation-evidence"
   | "market-calendar-evidence"
@@ -3821,6 +3822,7 @@ export function filterAiReviewRecordDriftRows(
 }
 
 export function buildAiReviewAuditTimelineItems({
+  aiBoundary = "",
   currentRunId,
   currentStrategyRevision,
   dataSnapshot = null,
@@ -3832,6 +3834,7 @@ export function buildAiReviewAuditTimelineItems({
   roundCount = 0,
   riskApproval
 }: {
+  aiBoundary?: string;
   currentRunId: string | null;
   currentStrategyRevision: string;
   dataSnapshot?: ResearchRunDataSnapshot | null;
@@ -3897,6 +3900,25 @@ export function buildAiReviewAuditTimelineItems({
           actionLabel: "Open decision log",
           status: "passed" as const,
           tone: "ai" as const
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
+  const normalizedAiBoundary = aiBoundary.trim();
+  const aiBoundaryItem =
+    currentRunId && normalizedAiBoundary
+      ? ({
+          id: "boundary:evidence-explanation-only",
+          kind: "ai-boundary-evidence" as const,
+          label: "AI boundary",
+          value: "Evidence explanation only",
+          detail: normalizedAiBoundary,
+          reference: "Evidence explanation only",
+          exportAnchor: "boundary:evidence-explanation-only",
+          createdAt: null,
+          targetWorkspaceId: "ai-review" as const,
+          targetRecordId: null,
+          actionLabel: "Open AI boundary",
+          status: "blocked" as const,
+          tone: "risk" as const
         } satisfies AiReviewAuditTimelineItem)
       : null;
   const snapshotItem =
@@ -3991,6 +4013,7 @@ export function buildAiReviewAuditTimelineItems({
     ...(strategyItem ? [strategyItem] : []),
     ...(committeeItem ? [committeeItem] : []),
     ...(decisionLogItem ? [decisionLogItem] : []),
+    ...(aiBoundaryItem ? [aiBoundaryItem] : []),
     ...(snapshotItem ? [snapshotItem] : []),
     ...(preparationItem ? [preparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
@@ -6662,6 +6685,9 @@ function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   }
   if (item.kind === "decision-log-evidence") {
     return "aiReviewRuns[].record.decisionLog";
+  }
+  if (item.kind === "ai-boundary-evidence") {
+    return "aiReviewRuns[].record.boundary";
   }
   if (item.kind === "data-snapshot-evidence") {
     return "researchRun.dataSnapshot.hash";

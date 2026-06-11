@@ -9153,6 +9153,7 @@ function AiReviewAuditTrailPanel({
     roundCount
   });
   const timelineItems = buildAiReviewAuditTimelineItems({
+    aiBoundary: currentRecord?.boundary ?? "",
     currentRunId,
     currentStrategyRevision,
     dataSnapshot,
@@ -9249,6 +9250,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
         "strategy-revision-evidence": "Strategy revision",
         "committee-rounds-evidence": "Committee rounds",
         "decision-log-evidence": "Decision log",
+        "ai-boundary-evidence": "AI boundary",
         "data-snapshot-evidence": "Data snapshot",
         "data-preparation-evidence": "Data preparation",
         "market-calendar-evidence": "Market calendar",
@@ -9263,6 +9265,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
       "strategy-revision-evidence": "策略版本",
       "committee-rounds-evidence": "委员会轮次",
       "decision-log-evidence": "决策日志",
+      "ai-boundary-evidence": "AI 边界",
       "data-snapshot-evidence": "数据快照",
       "data-preparation-evidence": "数据准备",
       "market-calendar-evidence": "交易日历",

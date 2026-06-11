@@ -3343,6 +3343,92 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("adds AI boundary evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-boundary-timeline",
+      createdAt: "2026-06-11T06:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-boundary-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 6.8,
+        max_drawdown_pct: 2.4,
+        win_rate_pct: 54,
+        trade_count: 7
+      },
+      decisions: [
+        { agent: "Risk", message: "Explanation-only boundary remains locked.", tone: "warning" }
+      ],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-boundary-timeline",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    expect(currentRecord!.boundary).toContain("Evidence explanation only");
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      aiBoundary: currentRecord!.boundary,
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      decisionCount: currentRecord!.summary.decisionCount,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      roundCount: currentRecord!.summary.roundCount
+    });
+    const boundaryItem = timelineItems.find((item) => item.kind === "ai-boundary-evidence");
+
+    expect(boundaryItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: "boundary:evidence-explanation-only",
+      kind: "ai-boundary-evidence",
+      label: "AI boundary",
+      reference: "Evidence explanation only",
+      exportAnchor: "boundary:evidence-explanation-only",
+      status: "blocked",
+      tone: "risk",
+      targetWorkspaceId: "ai-review",
+      targetRecordId: null,
+      actionLabel: "Open AI boundary"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: "timeline:Evidence explanation only",
+          group: "timeline",
+          anchor: "boundary:evidence-explanation-only",
+          reference: "Evidence explanation only",
+          exportPath: "aiReviewRuns[].record.boundary"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "boundary:evidence").map((row) => row.anchor)).toContain(
+      "boundary:evidence-explanation-only"
+    );
+  });
+
   test("adds market calendar evidence to the AI review audit timeline and evidence index", () => {
     const marketCalendar = {
       market: "ashare",
