@@ -9154,6 +9154,7 @@ function AiReviewAuditTrailPanel({
   });
   const timelineItems = buildAiReviewAuditTimelineItems({
     aiBoundary: currentRecord?.boundary ?? "",
+    citationCount: dossier.citations.length,
     currentRunId,
     currentStrategyRevision,
     dataSnapshot,
@@ -9247,6 +9248,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
     return (
       {
         "current-evidence": "Current evidence",
+        "citation-bundle-evidence": "Citation bundle",
         "strategy-revision-evidence": "Strategy revision",
         "committee-rounds-evidence": "Committee rounds",
         "decision-log-evidence": "Decision log",
@@ -9262,6 +9264,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
   return (
     {
       "current-evidence": "当前证据",
+      "citation-bundle-evidence": "引用证据",
       "strategy-revision-evidence": "策略版本",
       "committee-rounds-evidence": "委员会轮次",
       "decision-log-evidence": "决策日志",

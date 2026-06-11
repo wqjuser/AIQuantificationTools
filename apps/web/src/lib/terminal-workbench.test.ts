@@ -3429,6 +3429,92 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("adds citation bundle evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-citation-bundle-timeline",
+      createdAt: "2026-06-11T07:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-citation-bundle-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 7.1,
+        max_drawdown_pct: 2.7,
+        win_rate_pct: 56,
+        trade_count: 8
+      },
+      decisions: [{ agent: "Technical", message: "Citation bundle is locked.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-citation-bundle-timeline",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const citationCount = currentRecord!.summary.citationCount;
+    expect(citationCount).toBeGreaterThan(0);
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      aiBoundary: currentRecord!.boundary,
+      citationCount,
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      decisionCount: currentRecord!.summary.decisionCount,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      roundCount: currentRecord!.summary.roundCount
+    });
+    const citationBundleItem = timelineItems.find((item) => item.kind === "citation-bundle-evidence");
+
+    expect(citationBundleItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: `citations:${citationCount}`,
+      kind: "citation-bundle-evidence",
+      label: "Citation bundle",
+      reference: String(citationCount),
+      exportAnchor: `citations:${citationCount}`,
+      status: "passed",
+      tone: "ai",
+      targetWorkspaceId: "ai-review",
+      targetRecordId: null,
+      actionLabel: "Open citations"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: `timeline:${citationCount}`,
+          group: "timeline",
+          anchor: `citations:${citationCount}`,
+          reference: String(citationCount),
+          exportPath: "aiReviewRuns[].record.citations"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, `citations:${citationCount}`).map((row) => row.anchor)).toContain(
+      `citations:${citationCount}`
+    );
+  });
+
   test("adds market calendar evidence to the AI review audit timeline and evidence index", () => {
     const marketCalendar = {
       market: "ashare",

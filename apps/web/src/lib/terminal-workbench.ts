@@ -538,6 +538,7 @@ export interface AiReviewRecordDriftRow {
 
 export type AiReviewAuditTimelineItemKind =
   | "current-evidence"
+  | "citation-bundle-evidence"
   | "strategy-revision-evidence"
   | "committee-rounds-evidence"
   | "decision-log-evidence"
@@ -3823,6 +3824,7 @@ export function filterAiReviewRecordDriftRows(
 
 export function buildAiReviewAuditTimelineItems({
   aiBoundary = "",
+  citationCount = 0,
   currentRunId,
   currentStrategyRevision,
   dataSnapshot = null,
@@ -3835,6 +3837,7 @@ export function buildAiReviewAuditTimelineItems({
   riskApproval
 }: {
   aiBoundary?: string;
+  citationCount?: number;
   currentRunId: string | null;
   currentStrategyRevision: string;
   dataSnapshot?: ResearchRunDataSnapshot | null;
@@ -3848,6 +3851,24 @@ export function buildAiReviewAuditTimelineItems({
 }): AiReviewAuditTimelineItem[] {
   const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
   const currentRunReference = currentRunId ?? "pending-audit-run";
+  const citationBundleItem =
+    currentRunId && citationCount > 0
+      ? ({
+          id: `citations:${citationCount}`,
+          kind: "citation-bundle-evidence" as const,
+          label: "Citation bundle",
+          value: `${citationCount} citations`,
+          detail: `AI review citations locked for ${currentRunReference}`,
+          reference: String(citationCount),
+          exportAnchor: `citations:${citationCount}`,
+          createdAt: null,
+          targetWorkspaceId: "ai-review" as const,
+          targetRecordId: null,
+          actionLabel: "Open citations",
+          status: "passed" as const,
+          tone: "ai" as const
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
   const strategyItem =
     currentRunId && currentStrategyRevision.trim() && currentStrategyRevision !== "draft"
       ? ({
@@ -4010,6 +4031,7 @@ export function buildAiReviewAuditTimelineItems({
       status: currentEvidenceReady ? "passed" : "blocked",
       tone: currentEvidenceReady ? "ai" : "risk"
     },
+    ...(citationBundleItem ? [citationBundleItem] : []),
     ...(strategyItem ? [strategyItem] : []),
     ...(committeeItem ? [committeeItem] : []),
     ...(decisionLogItem ? [decisionLogItem] : []),
@@ -6676,6 +6698,9 @@ function researchRunImportRecoveryHint(
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   if (item.kind === "current-evidence") {
     return "researchRun.runId";
+  }
+  if (item.kind === "citation-bundle-evidence") {
+    return "aiReviewRuns[].record.citations";
   }
   if (item.kind === "strategy-revision-evidence") {
     return "researchRun.strategyConfig.revision";
