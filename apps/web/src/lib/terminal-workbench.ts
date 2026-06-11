@@ -538,6 +538,7 @@ export interface AiReviewRecordDriftRow {
 
 export type AiReviewAuditTimelineItemKind =
   | "current-evidence"
+  | "data-snapshot-evidence"
   | "data-preparation-evidence"
   | "market-calendar-evidence"
   | "saved-review"
@@ -3819,6 +3820,7 @@ export function filterAiReviewRecordDriftRows(
 export function buildAiReviewAuditTimelineItems({
   currentRunId,
   currentStrategyRevision,
+  dataSnapshot = null,
   dossier,
   marketCalendar = null,
   preparationEvidence = null,
@@ -3827,6 +3829,7 @@ export function buildAiReviewAuditTimelineItems({
 }: {
   currentRunId: string | null;
   currentStrategyRevision: string;
+  dataSnapshot?: ResearchRunDataSnapshot | null;
   dossier: AiReviewDossier;
   marketCalendar?: ResearchContextMarketCalendar | null;
   preparationEvidence?: ResearchRunDataPreparationEvidence | null;
@@ -3835,6 +3838,25 @@ export function buildAiReviewAuditTimelineItems({
 }): AiReviewAuditTimelineItem[] {
   const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
   const currentRunReference = currentRunId ?? "pending-audit-run";
+  const snapshotItem =
+    dataSnapshot?.hash && Number.isFinite(dataSnapshot.rows) && dataSnapshot.rows > 0
+      ? ({
+          id: `snapshot:${dataSnapshot.hash}`,
+          kind: "data-snapshot-evidence" as const,
+          label: "Data snapshot",
+          value: `${dataSnapshot.rows} rows · ${dataSnapshot.source}`,
+          detail: `${dataSnapshot.source} · ${dataSnapshot.hash} · ${formatWarningCount(dataSnapshot.warnings.length)}`,
+          reference: dataSnapshot.hash,
+          exportAnchor: `data:${dataSnapshot.hash}`,
+          createdAt: dataSnapshot.end,
+          targetWorkspaceId: "backtest" as const,
+          targetRecordId: null,
+          actionLabel: "Open data snapshot",
+          status:
+            dataSnapshot.isComplete && dataSnapshot.warnings.length === 0 ? ("passed" as const) : ("review" as const),
+          tone: dataSnapshot.isComplete && dataSnapshot.warnings.length === 0 ? ("positive" as const) : ("warning" as const)
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
   const preparationItem = preparationEvidence
     ? ({
         id: `preparation:${preparationEvidence.runId}`,
@@ -3905,6 +3927,7 @@ export function buildAiReviewAuditTimelineItems({
       status: currentEvidenceReady ? "passed" : "blocked",
       tone: currentEvidenceReady ? "ai" : "risk"
     },
+    ...(snapshotItem ? [snapshotItem] : []),
     ...(preparationItem ? [preparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
     ...savedRecordItems,
@@ -6566,6 +6589,9 @@ function researchRunImportRecoveryHint(
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   if (item.kind === "current-evidence") {
     return "researchRun.runId";
+  }
+  if (item.kind === "data-snapshot-evidence") {
+    return "researchRun.dataSnapshot.hash";
   }
   if (item.kind === "data-preparation-evidence") {
     return "researchRun.dataSnapshot.preparationEvidence";

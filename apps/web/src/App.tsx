@@ -306,6 +306,7 @@ import {
   ResearchContextMarketCalendar,
   ResearchContextReadinessRow,
   ResearchRunDataPreparationEvidence,
+  ResearchRunDataSnapshot,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
@@ -4392,6 +4393,7 @@ export function App() {
           <AiReviewAuditTrailPanel
             className="workflow-ai-audit-panel"
             currentRecord={currentAiReviewRunRecord}
+            dataSnapshot={workspace.researchRun?.dataSnapshot ?? null}
             marketCalendar={workspace.researchRun?.dataSnapshot?.marketCalendar ?? null}
             preparationEvidence={workspace.researchRun?.dataSnapshot?.preparationEvidence ?? null}
             currentRunId={workspace.researchRun?.runId ?? null}
@@ -9100,6 +9102,7 @@ function AiReviewAuditTrailPanel({
   currentRecord,
   currentRunId,
   currentStrategyRevision,
+  dataSnapshot,
   dossier,
   historyPagination,
   historyQuery,
@@ -9120,6 +9123,7 @@ function AiReviewAuditTrailPanel({
   currentRecord: AiReviewRunRecord | null;
   currentRunId: string | null;
   currentStrategyRevision: string;
+  dataSnapshot: ResearchRunDataSnapshot | null;
   dossier: AiReviewDossier;
   historyPagination: AiReviewRunHistoryPagination | null;
   historyQuery: string;
@@ -9151,6 +9155,7 @@ function AiReviewAuditTrailPanel({
   const timelineItems = buildAiReviewAuditTimelineItems({
     currentRunId,
     currentStrategyRevision,
+    dataSnapshot,
     dossier,
     marketCalendar,
     preparationEvidence,
@@ -9239,6 +9244,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
     return (
       {
         "current-evidence": "Current evidence",
+        "data-snapshot-evidence": "Data snapshot",
         "data-preparation-evidence": "Data preparation",
         "market-calendar-evidence": "Market calendar",
         "saved-review": "Saved review",
@@ -9249,6 +9255,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
   return (
     {
       "current-evidence": "当前证据",
+      "data-snapshot-evidence": "数据快照",
       "data-preparation-evidence": "数据准备",
       "market-calendar-evidence": "交易日历",
       "saved-review": "保存评审",

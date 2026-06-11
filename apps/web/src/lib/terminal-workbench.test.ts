@@ -3358,6 +3358,88 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("adds data snapshot evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-snapshot-timeline",
+      createdAt: "2026-06-11T04:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-snapshot-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Snapshot hash is locked.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-timeline-hash",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const dataSnapshot = workspace.researchRun?.dataSnapshot ?? null;
+    expect(dataSnapshot).not.toBeNull();
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      dataSnapshot
+    });
+    const snapshotItem = timelineItems.find((item) => item.kind === "data-snapshot-evidence");
+
+    expect(snapshotItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: "snapshot:snapshot-timeline-hash",
+      kind: "data-snapshot-evidence",
+      label: "Data snapshot",
+      reference: "snapshot-timeline-hash",
+      exportAnchor: "data:snapshot-timeline-hash",
+      status: "passed",
+      tone: "positive",
+      targetWorkspaceId: "backtest",
+      actionLabel: "Open data snapshot"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: "timeline:snapshot-timeline-hash",
+          group: "timeline",
+          anchor: "data:snapshot-timeline-hash",
+          reference: "snapshot-timeline-hash",
+          exportPath: "researchRun.dataSnapshot.hash"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "snapshot-timeline-hash").map((row) => row.anchor)).toContain(
+      "data:snapshot-timeline-hash"
+    );
+  });
+
   test("builds a searchable AI review export evidence index", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-ai-index",
