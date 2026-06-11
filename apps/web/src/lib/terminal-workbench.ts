@@ -538,6 +538,7 @@ export interface AiReviewRecordDriftRow {
 
 export type AiReviewAuditTimelineItemKind =
   | "current-evidence"
+  | "strategy-revision-evidence"
   | "data-snapshot-evidence"
   | "data-preparation-evidence"
   | "market-calendar-evidence"
@@ -3838,6 +3839,24 @@ export function buildAiReviewAuditTimelineItems({
 }): AiReviewAuditTimelineItem[] {
   const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
   const currentRunReference = currentRunId ?? "pending-audit-run";
+  const strategyItem =
+    currentRunId && currentStrategyRevision.trim() && currentStrategyRevision !== "draft"
+      ? ({
+          id: `strategy:${currentStrategyRevision}`,
+          kind: "strategy-revision-evidence" as const,
+          label: "Strategy revision",
+          value: currentStrategyRevision,
+          detail: `Audited strategy revision · ${currentStrategyRevision}`,
+          reference: currentStrategyRevision,
+          exportAnchor: `strategy:${currentStrategyRevision}`,
+          createdAt: null,
+          targetWorkspaceId: "strategy" as const,
+          targetRecordId: null,
+          actionLabel: "Open strategy revision",
+          status: "passed" as const,
+          tone: "positive" as const
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
   const snapshotItem =
     dataSnapshot?.hash && Number.isFinite(dataSnapshot.rows) && dataSnapshot.rows > 0
       ? ({
@@ -3927,6 +3946,7 @@ export function buildAiReviewAuditTimelineItems({
       status: currentEvidenceReady ? "passed" : "blocked",
       tone: currentEvidenceReady ? "ai" : "risk"
     },
+    ...(strategyItem ? [strategyItem] : []),
     ...(snapshotItem ? [snapshotItem] : []),
     ...(preparationItem ? [preparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
@@ -6589,6 +6609,9 @@ function researchRunImportRecoveryHint(
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   if (item.kind === "current-evidence") {
     return "researchRun.runId";
+  }
+  if (item.kind === "strategy-revision-evidence") {
+    return "researchRun.strategyConfig.revision";
   }
   if (item.kind === "data-snapshot-evidence") {
     return "researchRun.dataSnapshot.hash";

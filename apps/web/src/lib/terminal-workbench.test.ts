@@ -3126,6 +3126,7 @@ describe("terminal workbench model", () => {
 
     expect(items.map((item) => item.id)).toEqual([
       "current:run-ai-timeline",
+      "strategy:rev-ai-timeline",
       "saved:ai-review:run-ai-timeline:rev-ai-timeline",
       "saved:ai-review:run-ai-timeline:rev-old",
       "risk:paper_ready"
@@ -3141,6 +3142,16 @@ describe("terminal workbench model", () => {
       actionLabel: "Open backtest evidence"
     });
     expect(items[1]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      kind: "strategy-revision-evidence",
+      reference: "rev-ai-timeline",
+      exportAnchor: "strategy:rev-ai-timeline",
+      status: "passed",
+      tone: "positive",
+      targetWorkspaceId: "strategy",
+      targetRecordId: null,
+      actionLabel: "Open strategy revision"
+    });
+    expect(items[2]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
       kind: "saved-review",
       reference: "ai-review:run-ai-timeline:rev-ai-timeline",
       exportAnchor: "aiReviewRun:ai-review:run-ai-timeline:rev-ai-timeline",
@@ -3150,7 +3161,7 @@ describe("terminal workbench model", () => {
       targetRecordId: "ai-review:run-ai-timeline:rev-ai-timeline",
       actionLabel: "Compare saved review"
     });
-    expect(items[3]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+    expect(items[4]).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
       kind: "risk-approval",
       reference: "risk:paper_ready",
       exportAnchor: "riskApproval:paper_ready",
@@ -3437,6 +3448,85 @@ describe("terminal workbench model", () => {
     );
     expect(filterAiReviewExportEvidenceIndexRows(rows, "snapshot-timeline-hash").map((row) => row.anchor)).toContain(
       "data:snapshot-timeline-hash"
+    );
+  });
+
+  test("adds strategy revision evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-strategy-timeline",
+      createdAt: "2026-06-11T04:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-strategy-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Strategy revision is locked.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-strategy-timeline",
+        bars: []
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      }
+    });
+    const strategyItem = timelineItems.find((item) => item.kind === "strategy-revision-evidence");
+
+    expect(strategyItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: "strategy:rev-strategy-timeline",
+      kind: "strategy-revision-evidence",
+      label: "Strategy revision",
+      reference: "rev-strategy-timeline",
+      exportAnchor: "strategy:rev-strategy-timeline",
+      status: "passed",
+      tone: "positive",
+      targetWorkspaceId: "strategy",
+      actionLabel: "Open strategy revision"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: "timeline:rev-strategy-timeline",
+          group: "timeline",
+          anchor: "strategy:rev-strategy-timeline",
+          reference: "rev-strategy-timeline",
+          exportPath: "researchRun.strategyConfig.revision"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "rev-strategy-timeline").map((row) => row.anchor)).toContain(
+      "strategy:rev-strategy-timeline"
     );
   });
 

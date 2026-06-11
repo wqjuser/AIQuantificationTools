@@ -9244,6 +9244,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
     return (
       {
         "current-evidence": "Current evidence",
+        "strategy-revision-evidence": "Strategy revision",
         "data-snapshot-evidence": "Data snapshot",
         "data-preparation-evidence": "Data preparation",
         "market-calendar-evidence": "Market calendar",
@@ -9255,6 +9256,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
   return (
     {
       "current-evidence": "当前证据",
+      "strategy-revision-evidence": "策略版本",
       "data-snapshot-evidence": "数据快照",
       "data-preparation-evidence": "数据准备",
       "market-calendar-evidence": "交易日历",
