@@ -18,6 +18,9 @@ from quant_core.audit_signing import (
     audit_signing_key_environment_binding_payload_from_audit_event,
     audit_signing_key_environment_binding_to_audit_event_payload,
     audit_signing_key_environment_binding_to_payload,
+    audit_signing_key_runtime_reload_plan_payload_from_audit_event,
+    audit_signing_key_runtime_reload_plan_to_audit_event_payload,
+    audit_signing_key_runtime_reload_plan_to_payload,
     audit_signing_key_secret_materialization_payload_from_audit_event,
     audit_signing_key_secret_materialization_to_audit_event_payload,
     audit_signing_key_secret_materialization_to_payload,
@@ -1012,6 +1015,50 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if environment_binding["status"] == "blocked" else 201,
             )
             return
+        if parsed.path == "/api/audit/signing-keys/runtime-reload-plans":
+            payload = self._read_json_body()
+            binding_id = str(payload.get("bindingId") or "").strip()
+            binding_event = self.audit_event_store.get(binding_id)
+            environment_binding = (
+                audit_signing_key_environment_binding_payload_from_audit_event(binding_event)
+                if binding_event
+                else None
+            )
+            if not environment_binding:
+                self._send_json(
+                    {
+                        "error": "audit_signing_key_environment_binding_not_found",
+                        "bindingId": binding_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                runtime_reload_plan = audit_signing_key_runtime_reload_plan_to_payload(
+                    environment_binding,
+                    reload_mode=str(payload.get("reloadMode") or "manual_container_reload_plan"),
+                    maintenance_window_id=str(payload.get("maintenanceWindowId") or ""),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                audit_event = self.audit_event_store.record(
+                    audit_signing_key_runtime_reload_plan_to_audit_event_payload(runtime_reload_plan)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_audit_signing_key_runtime_reload_plan", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json(
+                {
+                    "runtimeReloadPlan": runtime_reload_plan,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if runtime_reload_plan["status"] == "blocked" else 201,
+            )
+            return
         if parsed.path == "/api/audit/reports/sign":
             payload = self._read_json_body()
             event_id = str(payload.get("eventId") or "").strip()
@@ -1667,6 +1714,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(environment_bindings) >= limit:
                     break
             self._send_json({"environmentBindings": environment_bindings})
+            return
+        if parsed.path == "/api/audit/signing-keys/runtime-reload-plans":
+            query = parse_qs(parsed.query)
+            proposed_key_id = query.get("proposedKeyId", [""])[0].strip()
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            plan_events = self.audit_event_store.list_recent(
+                event_type="audit_signing_key_runtime_reload_plan",
+                limit=50,
+                query=proposed_key_id,
+            )
+            runtime_reload_plans = []
+            for event in plan_events:
+                payload = audit_signing_key_runtime_reload_plan_payload_from_audit_event(event)
+                if payload and (not proposed_key_id or payload.get("proposedActiveKeyId") == proposed_key_id):
+                    runtime_reload_plans.append(payload)
+                if len(runtime_reload_plans) >= limit:
+                    break
+            self._send_json({"runtimeReloadPlans": runtime_reload_plans})
             return
         if parsed.path == "/api/golden-path/status":
             query = parse_qs(parsed.query)

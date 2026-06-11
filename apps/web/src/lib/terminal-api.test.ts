@@ -34,6 +34,8 @@ import {
   buildAuditSigningKeysUrl,
   buildAuditSigningKeyEnvironmentBindingHistoryUrl,
   buildAuditSigningKeyEnvironmentBindingUrl,
+  buildAuditSigningKeyRuntimeReloadPlanHistoryUrl,
+  buildAuditSigningKeyRuntimeReloadPlanUrl,
   buildAuditSigningKeySecretMaterializationHistoryUrl,
   buildAuditSigningKeySecretMaterializationUrl,
   buildAuditSigningKeyRotationApplyUrl,
@@ -120,11 +122,13 @@ import {
   loadAuditEvents,
   loadAuditSigningKeys,
   loadAuditSigningKeyEnvironmentBindings,
+  loadAuditSigningKeyRuntimeReloadPlans,
   loadAuditSigningKeySecretMaterializations,
   applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
   recordAuditSigningKeySecretMaterialization,
   recordAuditSigningKeyEnvironmentBinding,
+  recordAuditSigningKeyRuntimeReloadPlan,
   recordAuditSigningKeyControlledRestartEvidence,
   signAuditReportEvent,
   verifyAuditReportEvent,
@@ -4389,6 +4393,191 @@ describe("terminal workspace API client", () => {
     expect(result.environmentBindings).toHaveLength(1);
     expect(result.environmentBindings[0].status).toBe("binding_recorded");
     expect(result.environmentBindings[0].liveTradingAllowed).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("active-audit-secret");
+  });
+
+  test("records an audit signing key runtime reload plan without executing reloads", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          runtimeReloadPlan: {
+            schemaVersion: 1,
+            planId: "audit-signing-key-runtime-reload-plan-next-audit-key",
+            bindingId: "audit-signing-key-environment-binding-next-audit-key",
+            materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+            planEventId: "audit-signing-key-rotation-next-audit-key-test",
+            currentActiveKeyId: "active-audit-key",
+            currentActiveKeyFingerprint: "a".repeat(16),
+            proposedActiveKeyId: "next-audit-key",
+            proposedSigner: "Next Audit Key",
+            proposedChainId: "audit-chain-next",
+            status: "plan_recorded",
+            operator: "audit-operator",
+            recordedAt: "2026-06-04T11:00:00+00:00",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "audit-window-1",
+            bindingMode: "container_env_reference",
+            backend: "local-secret-store",
+            manifestPath: "local-secret-store://audit-signing/next-audit-key",
+            requiredEnvVars: [
+              "AIQT_AUDIT_SIGNING_KEY_ID",
+              "AIQT_AUDIT_SIGNER_NAME",
+              "AIQT_AUDIT_CHAIN_ID",
+              "AIQT_AUDIT_SIGNING_SECRET",
+              "AIQT_AUDIT_SIGNING_KEYS_JSON"
+            ],
+            requiredConfirmations: [
+              { id: "maintenance-window-approved", label: "Maintenance window is approved", status: "confirmed" },
+              { id: "health-baseline-captured", label: "Pre-reload health baseline was captured", status: "confirmed" },
+              { id: "config-diff-reviewed", label: "Configuration diff was reviewed", status: "confirmed" },
+              { id: "post-reload-smoke-plan-documented", label: "Post-reload smoke plan is documented", status: "confirmed" },
+              { id: "rollback-owner-assigned", label: "Rollback trigger owner is assigned", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { apiKey: "[redacted]" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "audit-signing-key-runtime-reload-plan-next-audit-key",
+            eventType: "audit_signing_key_runtime_reload_plan",
+            runId: "audit-signing-key-rotation",
+            createdAt: "2026-06-04T11:00:00+00:00",
+            stage: "audit-signing-key-runtime-reload-plan",
+            source: "audit-signing-key-ledger",
+            summary: "Audit signing key runtime reload plan recorded.",
+            detail: "Runtime reload plan is paper-only.",
+            metadata: {
+              bindingId: "audit-signing-key-environment-binding-next-audit-key",
+              planId: "audit-signing-key-runtime-reload-plan-next-audit-key",
+              status: "plan_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildAuditSigningKeyRuntimeReloadPlanUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/runtime-reload-plans"
+    );
+
+    const result = await recordAuditSigningKeyRuntimeReloadPlan(
+      "/",
+      {
+        bindingId: "audit-signing-key-environment-binding-next-audit-key",
+        confirmations: {
+          configDiffReviewed: true,
+          healthBaselineCaptured: true,
+          maintenanceWindowApproved: true,
+          postReloadSmokePlanDocumented: true,
+          rollbackOwnerAssigned: true
+        },
+        maintenanceWindowId: "audit-window-1",
+        metadata: { source: "audit-panel" },
+        operator: "audit-operator",
+        reloadMode: "manual_container_reload_plan"
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/audit/signing-keys/runtime-reload-plans"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      bindingId: "audit-signing-key-environment-binding-next-audit-key",
+      confirmations: {
+        configDiffReviewed: true,
+        healthBaselineCaptured: true,
+        maintenanceWindowApproved: true,
+        postReloadSmokePlanDocumented: true,
+        rollbackOwnerAssigned: true
+      },
+      maintenanceWindowId: "audit-window-1",
+      metadata: { source: "audit-panel" },
+      operator: "audit-operator",
+      reloadMode: "manual_container_reload_plan"
+    });
+    expect(result.source).toBe("core");
+    expect(result.runtimeReloadPlan?.status).toBe("plan_recorded");
+    expect(result.runtimeReloadPlan?.proposedActiveKeyId).toBe("next-audit-key");
+    expect(result.runtimeReloadPlan?.metadata.apiKey).toBe("[redacted]");
+    expect(result.runtimeReloadPlan?.liveTradingAllowed).toBe(false);
+    expect(result.runtimeReloadPlan?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("audit_signing_key_runtime_reload_plan");
+    expect(JSON.stringify(result)).not.toContain("active-audit-secret");
+  });
+
+  test("loads audit signing key runtime reload plan history from the local core", async () => {
+    const calls: string[] = [];
+    const result = await loadAuditSigningKeyRuntimeReloadPlans(
+      "http://127.0.0.1:8765/",
+      "next-audit-key",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            runtimeReloadPlans: [
+              {
+                schemaVersion: 1,
+                planId: "audit-signing-key-runtime-reload-plan-next-audit-key",
+                bindingId: "audit-signing-key-environment-binding-next-audit-key",
+                materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+                planEventId: "audit-signing-key-rotation-next-audit-key-test",
+                currentActiveKeyId: "active-audit-key",
+                currentActiveKeyFingerprint: "a".repeat(16),
+                proposedActiveKeyId: "next-audit-key",
+                proposedSigner: "Next Audit Key",
+                proposedChainId: "audit-chain-next",
+                status: "plan_recorded",
+                operator: "audit-operator",
+                recordedAt: "2026-06-04T11:00:00+00:00",
+                reloadMode: "manual_container_reload_plan",
+                maintenanceWindowId: "audit-window-1",
+                bindingMode: "container_env_reference",
+                backend: "local-secret-store",
+                manifestPath: "local-secret-store://audit-signing/next-audit-key",
+                requiredEnvVars: ["AIQT_AUDIT_SIGNING_SECRET"],
+                requiredConfirmations: [
+                  { id: "maintenance-window-approved", label: "Maintenance window is approved", status: "confirmed" },
+                  { id: "health-baseline-captured", label: "Pre-reload health baseline was captured", status: "confirmed" },
+                  { id: "config-diff-reviewed", label: "Configuration diff was reviewed", status: "confirmed" },
+                  { id: "post-reload-smoke-plan-documented", label: "Post-reload smoke plan is documented", status: "confirmed" },
+                  { id: "rollback-owner-assigned", label: "Rollback trigger owner is assigned", status: "confirmed" }
+                ],
+                blockedReasons: [],
+                metadata: { apiKey: "[redacted]" },
+                liveTradingAllowed: false,
+                paperOnly: true
+              }
+            ]
+          })
+        };
+      },
+      5
+    );
+
+    expect(buildAuditSigningKeyRuntimeReloadPlanHistoryUrl("http://127.0.0.1:8765/", {
+      limit: 5,
+      proposedKeyId: "next-audit-key"
+    })).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/runtime-reload-plans?proposedKeyId=next-audit-key&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/audit/signing-keys/runtime-reload-plans?proposedKeyId=next-audit-key&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.runtimeReloadPlans).toHaveLength(1);
+    expect(result.runtimeReloadPlans[0].status).toBe("plan_recorded");
+    expect(result.runtimeReloadPlans[0].liveTradingAllowed).toBe(false);
     expect(JSON.stringify(result)).not.toContain("active-audit-secret");
   });
 

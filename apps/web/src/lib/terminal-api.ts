@@ -681,6 +681,70 @@ export interface AuditSigningKeyEnvironmentBindingHistoryResult {
   error?: string;
 }
 
+export type AuditSigningKeyRuntimeReloadPlanStatus = "blocked" | "plan_recorded";
+export type AuditSigningKeyRuntimeReloadPlanConfirmationStatus = "confirmed" | "missing";
+
+export interface AuditSigningKeyRuntimeReloadPlanConfirmation {
+  id: string;
+  label: string;
+  status: AuditSigningKeyRuntimeReloadPlanConfirmationStatus;
+}
+
+export interface AuditSigningKeyRuntimeReloadPlan {
+  schemaVersion: 1;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  planEventId: string;
+  currentActiveKeyId: string;
+  currentActiveKeyFingerprint: string;
+  proposedActiveKeyId: string;
+  proposedSigner: string;
+  proposedChainId: string;
+  status: AuditSigningKeyRuntimeReloadPlanStatus;
+  operator: string;
+  recordedAt: string;
+  reloadMode: "manual_container_reload_plan";
+  maintenanceWindowId: string;
+  bindingMode: "container_env_reference";
+  backend: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: AuditSigningKeyRuntimeReloadPlanConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface AuditSigningKeyRuntimeReloadPlanRequest {
+  bindingId: string;
+  operator?: string;
+  reloadMode?: "manual_container_reload_plan";
+  maintenanceWindowId: string;
+  confirmations?: {
+    maintenanceWindowApproved?: boolean;
+    healthBaselineCaptured?: boolean;
+    configDiffReviewed?: boolean;
+    postReloadSmokePlanDocumented?: boolean;
+    rollbackOwnerAssigned?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface AuditSigningKeyRuntimeReloadPlanResult {
+  runtimeReloadPlan?: AuditSigningKeyRuntimeReloadPlan;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AuditSigningKeyRuntimeReloadPlanHistoryResult {
+  runtimeReloadPlans: AuditSigningKeyRuntimeReloadPlan[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -2312,6 +2376,24 @@ export function buildAuditSigningKeyEnvironmentBindingHistoryUrl(
   params: { proposedKeyId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys/environment-bindings", (url) => {
+    if (params.proposedKeyId?.trim()) {
+      url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildAuditSigningKeyRuntimeReloadPlanUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/runtime-reload-plans");
+}
+
+export function buildAuditSigningKeyRuntimeReloadPlanHistoryUrl(
+  baseUrl: string,
+  params: { proposedKeyId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/runtime-reload-plans", (url) => {
     if (params.proposedKeyId?.trim()) {
       url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
     }
@@ -4346,6 +4428,81 @@ export async function loadAuditSigningKeyEnvironmentBindings(
   }
 }
 
+export async function recordAuditSigningKeyRuntimeReloadPlan(
+  baseUrl: string,
+  request: AuditSigningKeyRuntimeReloadPlanRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyRuntimeReloadPlanResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeyRuntimeReloadPlanUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bindingId: request.bindingId,
+        operator: request.operator ?? "local-operator",
+        reloadMode: request.reloadMode ?? "manual_container_reload_plan",
+        maintenanceWindowId: request.maintenanceWindowId,
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isAuditSigningKeyRuntimeReloadPlanPayload(payload)) {
+      return {
+        runtimeReloadPlan: payload.runtimeReloadPlan,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid audit signing key runtime reload plan contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key runtime reload plan error"
+    };
+  }
+}
+
+export async function loadAuditSigningKeyRuntimeReloadPlans(
+  baseUrl: string,
+  proposedKeyId = "",
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<AuditSigningKeyRuntimeReloadPlanHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildAuditSigningKeyRuntimeReloadPlanHistoryUrl(baseUrl, { proposedKeyId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeyRuntimeReloadPlanHistoryPayload(payload)) {
+      throw new Error("Invalid audit signing key runtime reload plan history contract");
+    }
+    return {
+      runtimeReloadPlans: payload.runtimeReloadPlans,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      runtimeReloadPlans: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key runtime reload plan history error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -6338,6 +6495,88 @@ function isAuditSigningKeyEnvironmentBindingStatus(
   value: unknown
 ): value is AuditSigningKeyEnvironmentBindingStatus {
   return value === "blocked" || value === "binding_recorded";
+}
+
+function isAuditSigningKeyRuntimeReloadPlanPayload(
+  value: unknown
+): value is { runtimeReloadPlan: AuditSigningKeyRuntimeReloadPlan; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { runtimeReloadPlan?: unknown; auditEvent?: unknown };
+  return (
+    isAuditSigningKeyRuntimeReloadPlan(payload.runtimeReloadPlan) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isAuditSigningKeyRuntimeReloadPlanHistoryPayload(
+  value: unknown
+): value is { runtimeReloadPlans: AuditSigningKeyRuntimeReloadPlan[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { runtimeReloadPlans?: unknown };
+  return Array.isArray(payload.runtimeReloadPlans) && payload.runtimeReloadPlans.every(isAuditSigningKeyRuntimeReloadPlan);
+}
+
+function isAuditSigningKeyRuntimeReloadPlan(
+  value: unknown
+): value is AuditSigningKeyRuntimeReloadPlan {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const plan = value as Partial<AuditSigningKeyRuntimeReloadPlan>;
+  return (
+    plan.schemaVersion === 1 &&
+    typeof plan.planId === "string" &&
+    typeof plan.bindingId === "string" &&
+    typeof plan.materializationId === "string" &&
+    typeof plan.planEventId === "string" &&
+    typeof plan.currentActiveKeyId === "string" &&
+    typeof plan.currentActiveKeyFingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(plan.currentActiveKeyFingerprint) &&
+    typeof plan.proposedActiveKeyId === "string" &&
+    typeof plan.proposedSigner === "string" &&
+    typeof plan.proposedChainId === "string" &&
+    isAuditSigningKeyRuntimeReloadPlanStatus(plan.status) &&
+    typeof plan.operator === "string" &&
+    typeof plan.recordedAt === "string" &&
+    plan.reloadMode === "manual_container_reload_plan" &&
+    typeof plan.maintenanceWindowId === "string" &&
+    plan.bindingMode === "container_env_reference" &&
+    typeof plan.backend === "string" &&
+    typeof plan.manifestPath === "string" &&
+    Array.isArray(plan.requiredEnvVars) &&
+    plan.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(plan.requiredConfirmations) &&
+    plan.requiredConfirmations.every(isAuditSigningKeyRuntimeReloadPlanConfirmation) &&
+    Array.isArray(plan.blockedReasons) &&
+    plan.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(plan.metadata) &&
+    plan.liveTradingAllowed === false &&
+    plan.paperOnly === true
+  );
+}
+
+function isAuditSigningKeyRuntimeReloadPlanConfirmation(
+  value: unknown
+): value is AuditSigningKeyRuntimeReloadPlanConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<AuditSigningKeyRuntimeReloadPlanConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isAuditSigningKeyRuntimeReloadPlanStatus(
+  value: unknown
+): value is AuditSigningKeyRuntimeReloadPlanStatus {
+  return value === "blocked" || value === "plan_recorded";
 }
 
 function containsDisallowedSecretField(value: unknown): boolean {
