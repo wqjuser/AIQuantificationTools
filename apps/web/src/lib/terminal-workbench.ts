@@ -1344,13 +1344,19 @@ export interface AuditEvidenceReportLedgerSummary {
   verified: number;
 }
 
-export type AuditSigningKeyRotationLedgerEventKind = "plan" | "apply" | "restart" | "materialization";
+export type AuditSigningKeyRotationLedgerEventKind =
+  | "plan"
+  | "apply"
+  | "restart"
+  | "materialization"
+  | "environment_binding";
 export type AuditSigningKeyRotationLedgerStatus =
   | "prepared"
   | "blocked"
   | "ready_for_restart"
   | "evidence_recorded"
-  | "manifest_recorded";
+  | "manifest_recorded"
+  | "binding_recorded";
 
 export interface AuditSigningKeyRotationLedgerRow {
   id: string;
@@ -6220,17 +6226,21 @@ export function buildAuditSigningKeyRotationLedgerRows(
         event.eventType === "audit_signing_key_rotation_plan" ||
         event.eventType === "audit_signing_key_rotation_apply" ||
         event.eventType === "audit_signing_key_controlled_restart_evidence" ||
-        event.eventType === "audit_signing_key_secret_materialization"
+        event.eventType === "audit_signing_key_secret_materialization" ||
+        event.eventType === "audit_signing_key_environment_binding"
     )
     .map((event) => {
       const blockedReasons = auditReportLedgerMetadataStringList(event.metadata, "blockedReasons");
       const isApplyEvent = event.eventType === "audit_signing_key_rotation_apply";
       const isRestartEvent = event.eventType === "audit_signing_key_controlled_restart_evidence";
       const isMaterializationEvent = event.eventType === "audit_signing_key_secret_materialization";
+      const isEnvironmentBindingEvent = event.eventType === "audit_signing_key_environment_binding";
       const statusMetadata = auditReportLedgerMetadataText(event.metadata, "status");
       const status: AuditSigningKeyRotationLedgerStatus =
         event.stage === "blocked" || statusMetadata === "blocked" || blockedReasons.length > 0
           ? "blocked"
+          : isEnvironmentBindingEvent
+            ? "binding_recorded"
           : isMaterializationEvent
             ? "manifest_recorded"
           : isRestartEvent
@@ -6240,21 +6250,23 @@ export function buildAuditSigningKeyRotationLedgerRows(
             : "prepared";
       const templateSha256 = auditReportLedgerMetadataText(event.metadata, "legacyRegistryTemplateSha256");
       const isTemplateHashReady = /^[a-f0-9]{64}$/iu.test(templateSha256);
-      const environmentUpdateNames = isMaterializationEvent
+      const environmentUpdateNames = isMaterializationEvent || isEnvironmentBindingEvent
         ? auditReportLedgerMetadataStringList(event.metadata, "requiredEnvVars")
         : auditReportLedgerMetadataStringList(event.metadata, "environmentUpdateNames");
       const secretPlaceholderNames = auditReportLedgerMetadataStringList(event.metadata, "secretPlaceholderNames");
       const stepIds = auditReportLedgerMetadataStringList(event.metadata, "stepIds");
       const confirmedConfirmationIds = auditReportLedgerMetadataStringList(event.metadata, "confirmedConfirmationIds");
       const requiredConfirmationIds = auditReportLedgerMetadataStringList(event.metadata, "requiredConfirmationIds");
-      const missingConfirmationIds = isRestartEvent || isMaterializationEvent
+      const missingConfirmationIds = isRestartEvent || isMaterializationEvent || isEnvironmentBindingEvent
         ? requiredConfirmationIds.filter((confirmationId) => !confirmedConfirmationIds.includes(confirmationId))
         : auditReportLedgerMetadataStringList(event.metadata, "missingConfirmationIds");
-      const isConfirmationEvent = isApplyEvent || isRestartEvent || isMaterializationEvent;
+      const isConfirmationEvent = isApplyEvent || isRestartEvent || isMaterializationEvent || isEnvironmentBindingEvent;
       return {
         id: event.eventId,
         applyEventId: auditReportLedgerMetadataText(event.metadata, "applyEventId"),
-        applyMode: isMaterializationEvent
+        applyMode: isEnvironmentBindingEvent
+          ? auditReportLedgerMetadataText(event.metadata, "bindingMode")
+          : isMaterializationEvent
           ? auditReportLedgerMetadataText(event.metadata, "materializationMode")
           : isRestartEvent
           ? auditReportLedgerMetadataText(event.metadata, "evidenceMode")
@@ -6270,7 +6282,15 @@ export function buildAuditSigningKeyRotationLedgerRows(
           : auditReportLedgerMetadataText(event.metadata, "currentKeyId"),
         detail: event.detail,
         environmentUpdateCount: environmentUpdateNames.length,
-        eventKind: isMaterializationEvent ? "materialization" : isRestartEvent ? "restart" : isApplyEvent ? "apply" : "plan",
+        eventKind: isEnvironmentBindingEvent
+          ? "environment_binding"
+          : isMaterializationEvent
+          ? "materialization"
+          : isRestartEvent
+          ? "restart"
+          : isApplyEvent
+          ? "apply"
+          : "plan",
         liveTradingAllowed: auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed"),
         missingConfirmationCount: missingConfirmationIds.length,
         missingConfirmationIds,
@@ -6289,7 +6309,11 @@ export function buildAuditSigningKeyRotationLedgerRows(
         secretPlaceholderCount: secretPlaceholderNames.length,
         stepCount: isConfirmationEvent ? confirmedConfirmationIds.length + missingConfirmationIds.length : stepIds.length,
         status,
-        statusLabel: isRestartEvent
+        statusLabel: isEnvironmentBindingEvent
+          ? status === "blocked"
+            ? "Environment binding blocked"
+            : "Environment binding recorded"
+          : isRestartEvent
           ? status === "blocked"
             ? "Controlled restart evidence blocked"
             : "Controlled restart evidence recorded"
@@ -6305,7 +6329,9 @@ export function buildAuditSigningKeyRotationLedgerRows(
             ? "Rotation plan blocked"
             : "Rotation plan prepared",
         templateSha256,
-        templateShortHash: isMaterializationEvent
+        templateShortHash: isEnvironmentBindingEvent
+          ? "binding"
+          : isMaterializationEvent
           ? "manifest"
           : isRestartEvent
           ? "restart"
@@ -6318,7 +6344,10 @@ export function buildAuditSigningKeyRotationLedgerRows(
         blockedReasonLabel: blockedReasons.length ? blockedReasons.join(" / ") : "none",
         tone: status === "blocked" || (!isConfirmationEvent && !isTemplateHashReady)
           ? "risk"
-          : status === "ready_for_restart" || status === "evidence_recorded" || status === "manifest_recorded"
+          : status === "ready_for_restart" ||
+              status === "evidence_recorded" ||
+              status === "manifest_recorded" ||
+              status === "binding_recorded"
             ? "positive"
             : "warning"
       };

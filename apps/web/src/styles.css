@@ -2253,6 +2253,16 @@ em {
   padding: 8px;
 }
 
+.audit-signing-key-environment-binding {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 7px;
+  background: rgba(14, 165, 233, 0.06);
+  padding: 8px;
+}
+
 .audit-signing-key-rotation-apply-head {
   display: flex;
   gap: 8px;
@@ -2338,6 +2348,10 @@ em {
   border-left-color: #4cc9ad;
 }
 
+.audit-signing-key-rotation-apply-result.binding_recorded {
+  border-left-color: #4cc9ad;
+}
+
 .audit-signing-key-rotation-apply-result > span,
 .audit-signing-key-rotation-apply-result > strong,
 .audit-signing-key-rotation-apply-result > small,
@@ -2363,6 +2377,10 @@ em {
 }
 
 .audit-signing-key-rotation-apply-result.manifest_recorded > span {
+  color: #83e6ce;
+}
+
+.audit-signing-key-rotation-apply-result.binding_recorded > span {
   color: #83e6ce;
 }
 
