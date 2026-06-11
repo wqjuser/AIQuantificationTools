@@ -3162,6 +3162,101 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("adds market calendar evidence to the AI review audit timeline and evidence index", () => {
+    const marketCalendar = {
+      market: "ashare",
+      timezone: "Asia/Shanghai",
+      status: "break",
+      isOpen: false,
+      session: "lunch_break",
+      asOf: "2026-06-11T12:00:00+08:00",
+      tradingDay: "2026-06-11",
+      nextOpen: "2026-06-11T13:00:00+08:00",
+      nextClose: "2026-06-11T15:00:00+08:00",
+      detail: "A-share lunch break",
+      warnings: ["Static session template only; exchange holiday calendar is not configured."],
+      source: "static-session-template"
+    } satisfies ResearchContextMarketCalendar;
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-calendar-timeline",
+      createdAt: "2026-06-11T04:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-calendar-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Calendar evidence requires review.", tone: "warning" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 2,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-calendar-timeline",
+        bars: [],
+        marketCalendar
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      marketCalendar
+    });
+    const calendarItem = timelineItems.find((item) => item.kind === "market-calendar-evidence");
+
+    expect(calendarItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: "calendar:ashare:2026-06-11",
+      kind: "market-calendar-evidence",
+      label: "Market calendar",
+      reference: "ashare 2026-06-11 break/lunch_break",
+      exportAnchor: "marketCalendar:ashare:2026-06-11",
+      status: "review",
+      tone: "warning",
+      targetWorkspaceId: "backtest",
+      actionLabel: "Open calendar evidence"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: "timeline:ashare 2026-06-11 break/lunch_break",
+          group: "timeline",
+          anchor: "marketCalendar:ashare:2026-06-11",
+          reference: "ashare 2026-06-11 break/lunch_break",
+          exportPath: "researchRun.dataSnapshot.marketCalendar"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "marketCalendar").map((row) => row.anchor)).toContain(
+      "marketCalendar:ashare:2026-06-11"
+    );
+  });
+
   test("builds a searchable AI review export evidence index", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-ai-index",

@@ -303,6 +303,7 @@ import {
   ResearchContextUrlState,
   ResearchPipelinePreflight,
   ResearchContextEvidenceRow,
+  ResearchContextMarketCalendar,
   ResearchContextReadinessRow,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
@@ -4390,6 +4391,7 @@ export function App() {
           <AiReviewAuditTrailPanel
             className="workflow-ai-audit-panel"
             currentRecord={currentAiReviewRunRecord}
+            marketCalendar={workspace.researchRun?.dataSnapshot?.marketCalendar ?? null}
             currentRunId={workspace.researchRun?.runId ?? null}
             currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}
             dossier={aiReviewDossier}
@@ -9102,6 +9104,7 @@ function AiReviewAuditTrailPanel({
   i18n,
   isLoadingHistory,
   liveExecutionBlocked,
+  marketCalendar,
   onHistoryQueryChange,
   onNextHistoryPage,
   onPreviousHistoryPage,
@@ -9120,6 +9123,7 @@ function AiReviewAuditTrailPanel({
   i18n: AppI18n;
   isLoadingHistory: boolean;
   liveExecutionBlocked: boolean;
+  marketCalendar: ResearchContextMarketCalendar | null;
   onHistoryQueryChange: (query: string) => void;
   onNextHistoryPage: () => void;
   onPreviousHistoryPage: () => void;
@@ -9144,6 +9148,7 @@ function AiReviewAuditTrailPanel({
     currentRunId,
     currentStrategyRevision,
     dossier,
+    marketCalendar,
     records: records.map((record) => record.record),
     riskApproval
   });
@@ -9229,6 +9234,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
     return (
       {
         "current-evidence": "Current evidence",
+        "market-calendar-evidence": "Market calendar",
         "saved-review": "Saved review",
         "risk-approval": "Risk approval"
       } satisfies Record<AiReviewAuditTimelineItem["kind"], string>
@@ -9237,6 +9243,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
   return (
     {
       "current-evidence": "当前证据",
+      "market-calendar-evidence": "交易日历",
       "saved-review": "保存评审",
       "risk-approval": "风控审批"
     } satisfies Record<AiReviewAuditTimelineItem["kind"], string>

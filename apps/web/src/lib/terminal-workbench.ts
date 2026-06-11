@@ -536,7 +536,11 @@ export interface AiReviewRecordDriftRow {
   driftReasons: AiReviewRecordDriftReason[];
 }
 
-export type AiReviewAuditTimelineItemKind = "current-evidence" | "saved-review" | "risk-approval";
+export type AiReviewAuditTimelineItemKind =
+  | "current-evidence"
+  | "market-calendar-evidence"
+  | "saved-review"
+  | "risk-approval";
 
 export interface AiReviewAuditTimelineItem {
   id: string;
@@ -3815,17 +3819,36 @@ export function buildAiReviewAuditTimelineItems({
   currentRunId,
   currentStrategyRevision,
   dossier,
+  marketCalendar = null,
   records,
   riskApproval
 }: {
   currentRunId: string | null;
   currentStrategyRevision: string;
   dossier: AiReviewDossier;
+  marketCalendar?: ResearchContextMarketCalendar | null;
   records: AiReviewRunRecord[];
   riskApproval: RiskApprovalSummary;
 }): AiReviewAuditTimelineItem[] {
   const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
   const currentRunReference = currentRunId ?? "pending-audit-run";
+  const calendarItem = marketCalendar
+    ? ({
+        id: `calendar:${marketCalendar.market}:${marketCalendar.tradingDay}`,
+        kind: "market-calendar-evidence" as const,
+        label: "Market calendar",
+        value: `${marketCalendar.status} · ${marketCalendar.session}`,
+        detail: formatMarketCalendarEvidenceDetail(marketCalendar),
+        reference: `${marketCalendar.market} ${marketCalendar.tradingDay} ${marketCalendar.status}/${marketCalendar.session}`,
+        exportAnchor: `marketCalendar:${marketCalendar.market}:${marketCalendar.tradingDay}`,
+        createdAt: marketCalendar.asOf,
+        targetWorkspaceId: "backtest" as const,
+        targetRecordId: null,
+        actionLabel: "Open calendar evidence",
+        status: marketCalendarEvidenceTone(marketCalendar) === "positive" ? ("passed" as const) : ("review" as const),
+        tone: marketCalendarEvidenceTone(marketCalendar)
+      } satisfies AiReviewAuditTimelineItem)
+    : null;
   const savedRecordItems = [...records]
     .sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt))
     .map((record) => ({
@@ -3862,6 +3885,7 @@ export function buildAiReviewAuditTimelineItems({
       status: currentEvidenceReady ? "passed" : "blocked",
       tone: currentEvidenceReady ? "ai" : "risk"
     },
+    ...(calendarItem ? [calendarItem] : []),
     ...savedRecordItems,
     {
       id: `risk:${riskApproval.status}`,
@@ -6521,6 +6545,9 @@ function researchRunImportRecoveryHint(
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   if (item.kind === "current-evidence") {
     return "researchRun.runId";
+  }
+  if (item.kind === "market-calendar-evidence") {
+    return "researchRun.dataSnapshot.marketCalendar";
   }
   if (item.kind === "saved-review") {
     return "aiReviewRuns[].record";
