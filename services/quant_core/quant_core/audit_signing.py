@@ -152,6 +152,33 @@ class AuditSigningKeyRuntimeReloadPlan:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class AuditSigningKeyRuntimeReloadExecution:
+    execution_id: str
+    plan_id: str
+    binding_id: str
+    materialization_id: str
+    plan_event_id: str
+    current_active_key_id: str
+    current_active_key_fingerprint: str
+    proposed_active_key_id: str
+    proposed_signer: str
+    proposed_chain_id: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    execution_mode: str
+    reload_mode: str
+    maintenance_window_id: str
+    binding_mode: str
+    backend: str
+    manifest_path: str
+    required_env_vars: list[str]
+    required_confirmations: list[dict[str, str]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+
+
 class AuditSigningKeyRegistry:
     def __init__(self, keys: list[AuditSigningKey]) -> None:
         if not keys:
@@ -1754,6 +1781,377 @@ def _audit_signing_key_runtime_reload_plan_confirmation_specs() -> list[tuple[st
             "rollbackOwnerAssigned",
             "Rollback trigger owner is assigned",
             "runtime_reload_rollback_owner_missing",
+        ),
+    ]
+
+
+def build_audit_signing_key_runtime_reload_execution(
+    runtime_reload_plan: dict[str, Any],
+    *,
+    execution_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    execution_id: str | None = None,
+) -> AuditSigningKeyRuntimeReloadExecution:
+    if not isinstance(runtime_reload_plan, dict):
+        raise ValueError("audit_signing_key_runtime_reload_plan_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    plan_id = str(runtime_reload_plan.get("planId") or "").strip()
+    binding_id = str(runtime_reload_plan.get("bindingId") or "").strip()
+    materialization_id = str(runtime_reload_plan.get("materializationId") or "").strip()
+    plan_event_id = str(runtime_reload_plan.get("planEventId") or "").strip()
+    current_key_id = str(runtime_reload_plan.get("currentActiveKeyId") or "").strip()
+    current_fingerprint = str(runtime_reload_plan.get("currentActiveKeyFingerprint") or "").strip()
+    proposed_key_id = str(runtime_reload_plan.get("proposedActiveKeyId") or "").strip()
+    proposed_signer = str(runtime_reload_plan.get("proposedSigner") or "").strip()
+    proposed_chain_id = str(runtime_reload_plan.get("proposedChainId") or "").strip()
+    normalized_execution_mode = str(execution_mode or "manual_controlled_reload_evidence").strip()
+    reload_mode = str(runtime_reload_plan.get("reloadMode") or "").strip()
+    maintenance_window_id = str(runtime_reload_plan.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(runtime_reload_plan.get("bindingMode") or "").strip()
+    backend = str(runtime_reload_plan.get("backend") or "").strip()
+    manifest_path = str(runtime_reload_plan.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in runtime_reload_plan.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not plan_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_plan_id_required")
+    if not binding_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_binding_id_required")
+    if not materialization_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_materialization_id_required")
+    if not plan_event_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_plan_event_id_required")
+    if not current_key_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_current_key_required")
+    if not current_fingerprint:
+        raise ValueError("audit_signing_key_runtime_reload_execution_current_fingerprint_required")
+    if not proposed_key_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_proposed_key_required")
+    if not normalized_execution_mode:
+        raise ValueError("audit_signing_key_runtime_reload_execution_mode_required")
+    if not reload_mode:
+        raise ValueError("audit_signing_key_runtime_reload_execution_reload_mode_required")
+    if not maintenance_window_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_window_required")
+    if not binding_mode:
+        raise ValueError("audit_signing_key_runtime_reload_execution_binding_mode_required")
+    if not backend:
+        raise ValueError("audit_signing_key_runtime_reload_execution_backend_required")
+    if not manifest_path:
+        raise ValueError("audit_signing_key_runtime_reload_execution_manifest_path_required")
+    if not required_env_vars:
+        raise ValueError("audit_signing_key_runtime_reload_execution_required_env_vars_required")
+
+    blocked_reasons: list[str] = []
+    required_confirmations: list[dict[str, str]] = []
+    for confirmation_id, payload_key, label, blocked_reason in _audit_signing_key_runtime_reload_execution_confirmation_specs():
+        confirmed = _payload_bool(confirmations, payload_key)
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(runtime_reload_plan.get("status") or "") != "plan_recorded":
+        blocked_reasons.append("runtime_reload_execution_plan_not_recorded")
+
+    if isinstance(recorded_at, datetime):
+        recorded = recorded_at.astimezone(timezone.utc)
+    elif isinstance(recorded_at, str) and recorded_at.strip():
+        recorded = _parse_report_generated_at(recorded_at)
+    else:
+        recorded = datetime.now(timezone.utc)
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    normalized_operator = str(operator or "local-operator").strip() or "local-operator"
+    return AuditSigningKeyRuntimeReloadExecution(
+        execution_id=str(execution_id or f"audit-signing-key-runtime-reload-execution-{proposed_key_id}-{uuid4()}"),
+        plan_id=plan_id,
+        binding_id=binding_id,
+        materialization_id=materialization_id,
+        plan_event_id=plan_event_id,
+        current_active_key_id=current_key_id,
+        current_active_key_fingerprint=current_fingerprint,
+        proposed_active_key_id=proposed_key_id,
+        proposed_signer=proposed_signer,
+        proposed_chain_id=proposed_chain_id,
+        status="blocked" if unique_blocked_reasons else "execution_recorded",
+        operator=normalized_operator,
+        recorded_at=recorded,
+        execution_mode=normalized_execution_mode,
+        reload_mode=reload_mode,
+        maintenance_window_id=maintenance_window_id,
+        binding_mode=binding_mode,
+        backend=backend,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_sensitive_fields(metadata or {}),
+    )
+
+
+def audit_signing_key_runtime_reload_execution_to_payload(
+    runtime_reload_plan: dict[str, Any],
+    *,
+    execution_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    execution_id: str | None = None,
+) -> dict[str, Any]:
+    result = build_audit_signing_key_runtime_reload_execution(
+        runtime_reload_plan,
+        execution_mode=execution_mode,
+        confirmations=confirmations,
+        operator=operator,
+        metadata=metadata,
+        recorded_at=recorded_at,
+        execution_id=execution_id,
+    )
+    return _audit_signing_key_runtime_reload_execution_payload(result)
+
+
+def audit_signing_key_runtime_reload_execution_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "audit_signing_key_runtime_reload_execution":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    execution_id = str(metadata.get("executionId") or getattr(event, "event_id", "")).strip()
+    plan_id = str(metadata.get("planId") or "").strip()
+    binding_id = str(metadata.get("bindingId") or "").strip()
+    materialization_id = str(metadata.get("materializationId") or "").strip()
+    plan_event_id = str(metadata.get("planEventId") or "").strip()
+    current_key_id = str(metadata.get("currentActiveKeyId") or "").strip()
+    current_fingerprint = str(metadata.get("currentActiveKeyFingerprint") or "").strip()
+    proposed_key_id = str(metadata.get("proposedActiveKeyId") or "").strip()
+    proposed_signer = str(metadata.get("proposedSigner") or "").strip()
+    proposed_chain_id = str(metadata.get("proposedChainId") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    operator = str(metadata.get("operator") or "local-operator").strip() or "local-operator"
+    execution_mode = str(metadata.get("executionMode") or "").strip()
+    reload_mode = str(metadata.get("reloadMode") or "").strip()
+    maintenance_window_id = str(metadata.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(metadata.get("bindingMode") or "").strip()
+    backend = str(metadata.get("backend") or "").strip()
+    manifest_path = str(metadata.get("manifestPath") or "").strip()
+    required_env_vars = _payload_string_list(metadata.get("requiredEnvVars"))
+    if (
+        not execution_id
+        or not plan_id
+        or not binding_id
+        or not materialization_id
+        or not plan_event_id
+        or not current_key_id
+        or not current_fingerprint
+        or not proposed_key_id
+        or not execution_mode
+        or not reload_mode
+        or not maintenance_window_id
+        or not binding_mode
+        or not backend
+        or not manifest_path
+        or not required_env_vars
+    ):
+        return None
+    if status not in {"blocked", "execution_recorded"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations: list[dict[str, str]] = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _audit_signing_key_runtime_reload_execution_confirmation_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    return {
+        "schemaVersion": 1,
+        "executionId": execution_id,
+        "planId": plan_id,
+        "bindingId": binding_id,
+        "materializationId": materialization_id,
+        "planEventId": plan_event_id,
+        "currentActiveKeyId": current_key_id,
+        "currentActiveKeyFingerprint": current_fingerprint,
+        "proposedActiveKeyId": proposed_key_id,
+        "proposedSigner": proposed_signer,
+        "proposedChainId": proposed_chain_id,
+        "status": status,
+        "operator": operator,
+        "recordedAt": recorded_at_value,
+        "executionMode": execution_mode,
+        "reloadMode": reload_mode,
+        "maintenanceWindowId": maintenance_window_id,
+        "bindingMode": binding_mode,
+        "backend": backend,
+        "manifestPath": manifest_path,
+        "requiredEnvVars": required_env_vars,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": _payload_string_list(metadata.get("blockedReasons")),
+        "metadata": _redact_sensitive_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def audit_signing_key_runtime_reload_execution_to_audit_event_payload(execution: dict[str, Any]) -> dict[str, Any]:
+    execution_id = _payload_text(execution, "executionId")
+    if not execution_id:
+        raise ValueError("audit_signing_key_runtime_reload_execution_id_required")
+    created_at = _parse_report_generated_at(_payload_text(execution, "recordedAt"))
+    required_confirmations = (
+        execution.get("requiredConfirmations") if isinstance(execution.get("requiredConfirmations"), list) else []
+    )
+    required_ids = [
+        _payload_text(item, "id")
+        for item in required_confirmations
+        if isinstance(item, dict) and _payload_text(item, "id")
+    ]
+    confirmed_ids = [
+        _payload_text(item, "id")
+        for item in required_confirmations
+        if isinstance(item, dict) and _payload_text(item, "id") and _payload_text(item, "status") == "confirmed"
+    ]
+    proposed_key_id = _payload_text(execution, "proposedActiveKeyId")
+    status = _payload_text(execution, "status") or "blocked"
+    status_label = "blocked" if status == "blocked" else "recorded"
+    return {
+        "schemaVersion": 1,
+        "eventId": execution_id,
+        "eventType": "audit_signing_key_runtime_reload_execution",
+        "runId": "audit-signing-key-rotation",
+        "createdAt": created_at.isoformat(),
+        "stage": "audit-signing-key-runtime-reload-execution",
+        "source": "audit-signing-key-ledger",
+        "summary": f"Audit signing key runtime reload execution {status_label} for {proposed_key_id}.",
+        "detail": "Runtime reload execution stores operator evidence only; no restart is executed by this API and live trading remains blocked.",
+        "metadata": _redact_sensitive_fields(
+            {
+                "executionId": execution_id,
+                "planId": _payload_text(execution, "planId"),
+                "bindingId": _payload_text(execution, "bindingId"),
+                "materializationId": _payload_text(execution, "materializationId"),
+                "planEventId": _payload_text(execution, "planEventId"),
+                "currentActiveKeyId": _payload_text(execution, "currentActiveKeyId"),
+                "currentActiveKeyFingerprint": _payload_text(execution, "currentActiveKeyFingerprint"),
+                "proposedActiveKeyId": proposed_key_id,
+                "proposedSigner": _payload_text(execution, "proposedSigner"),
+                "proposedChainId": _payload_text(execution, "proposedChainId"),
+                "status": status,
+                "operator": _payload_text(execution, "operator") or "local-operator",
+                "recordedAt": created_at.isoformat(),
+                "executionMode": _payload_text(execution, "executionMode") or "manual_controlled_reload_evidence",
+                "reloadMode": _payload_text(execution, "reloadMode") or "manual_container_reload_plan",
+                "maintenanceWindowId": _payload_text(execution, "maintenanceWindowId"),
+                "bindingMode": _payload_text(execution, "bindingMode") or "container_env_reference",
+                "backend": _payload_text(execution, "backend"),
+                "manifestPath": _payload_text(execution, "manifestPath"),
+                "requiredEnvVars": _payload_string_list(execution.get("requiredEnvVars")),
+                "blockedReasons": _payload_string_list(execution.get("blockedReasons")),
+                "requiredConfirmationIds": required_ids,
+                "confirmedConfirmationIds": confirmed_ids,
+                "metadata": execution.get("metadata") if isinstance(execution.get("metadata"), dict) else {},
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def _audit_signing_key_runtime_reload_execution_payload(
+    result: AuditSigningKeyRuntimeReloadExecution,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "executionId": result.execution_id,
+        "planId": result.plan_id,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "planEventId": result.plan_event_id,
+        "currentActiveKeyId": result.current_active_key_id,
+        "currentActiveKeyFingerprint": result.current_active_key_fingerprint,
+        "proposedActiveKeyId": result.proposed_active_key_id,
+        "proposedSigner": result.proposed_signer,
+        "proposedChainId": result.proposed_chain_id,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "executionMode": result.execution_mode,
+        "reloadMode": result.reload_mode,
+        "maintenanceWindowId": result.maintenance_window_id,
+        "bindingMode": result.binding_mode,
+        "backend": result.backend,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": result.required_env_vars,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def _audit_signing_key_runtime_reload_execution_confirmation_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "pre-reload-health-verified",
+            "preReloadHealthVerified",
+            "Pre-reload health is verified",
+            "runtime_reload_execution_pre_health_missing",
+        ),
+        (
+            "reload-action-recorded",
+            "reloadActionRecorded",
+            "Reload action is recorded",
+            "runtime_reload_execution_action_record_missing",
+        ),
+        (
+            "post-reload-smoke-passed",
+            "postReloadSmokePassed",
+            "Post-reload smoke passed",
+            "runtime_reload_execution_post_smoke_missing",
+        ),
+        (
+            "rollback-readiness-confirmed",
+            "rollbackReadinessConfirmed",
+            "Rollback readiness is confirmed",
+            "runtime_reload_execution_rollback_readiness_missing",
+        ),
+        (
+            "operator-confirmed-live-blocked",
+            "operatorConfirmedLiveBlocked",
+            "Operator confirmed live routing remains blocked",
+            "runtime_reload_execution_live_block_boundary_missing",
         ),
     ]
 

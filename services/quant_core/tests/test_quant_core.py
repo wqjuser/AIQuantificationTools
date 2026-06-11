@@ -5187,6 +5187,237 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("reload-api-key-should-not-leak", serialized)
         self.assertNotIn("reload-private-key-should-not-leak", serialized)
 
+    def test_audit_signing_key_runtime_reload_execution_records_evidence_without_restarting(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            TestHandler.audit_signing_secret = "active-audit-secret"
+            TestHandler.audit_signing_key_id = "active-audit-key"
+            TestHandler.audit_signer_name = "Active Audit Key"
+            TestHandler.audit_chain_id = "audit-chain-active"
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                body = json.dumps(payload).encode("utf-8")
+                connection.request(
+                    "POST",
+                    path,
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                plan_response, plan_payload = post_json(
+                    "/api/audit/signing-keys/rotation-plan",
+                    {
+                        "proposedKeyId": "next-audit-key",
+                        "proposedSigner": "Next Audit Key",
+                        "proposedChainId": "audit-chain-next",
+                    },
+                )
+                rotation_plan = plan_payload["rotationPlan"]
+                plan_event_id = "audit-signing-key-rotation-next-audit-key-reload-execution-test"
+                TestHandler.audit_event_store.record(
+                    {
+                        "schemaVersion": 1,
+                        "eventId": plan_event_id,
+                        "eventType": "audit_signing_key_rotation_plan",
+                        "runId": "audit-signing-key-rotation",
+                        "createdAt": rotation_plan["generatedAt"],
+                        "stage": "prepared",
+                        "source": "unit-test",
+                        "summary": "Audit signing key rotation plan prepared for next-audit-key",
+                        "detail": "active-audit-key -> next-audit-key",
+                        "metadata": {
+                            "currentKeyId": rotation_plan["currentActiveKey"]["keyId"],
+                            "currentKeyFingerprint": rotation_plan["currentActiveKey"]["fingerprint"],
+                            "proposedKeyId": rotation_plan["proposedActiveKey"]["keyId"],
+                            "proposedSigner": rotation_plan["proposedActiveKey"]["signer"],
+                            "proposedChainId": rotation_plan["proposedActiveKey"]["chainId"],
+                            "requiresRestart": rotation_plan["requiresRestart"],
+                            "environmentUpdateNames": [
+                                item["name"] for item in rotation_plan["environmentUpdates"]
+                            ],
+                            "secretPlaceholderNames": [
+                                item["name"]
+                                for item in rotation_plan["environmentUpdates"]
+                                if item["sensitivity"] == "secret"
+                            ],
+                            "blockedReasons": [],
+                        },
+                    }
+                )
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/audit/signing-keys/secret-materializations",
+                    {
+                        "planEventId": plan_event_id,
+                        "operator": "audit-operator",
+                        "backend": "local-secret-store",
+                        "manifestPath": "local-secret-store://audit-signing/next-audit-key",
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                    },
+                )
+                materialization_id = materialization_payload["secretMaterialization"]["materializationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/audit/signing-keys/environment-bindings",
+                    {
+                        "materializationId": materialization_id,
+                        "operator": "audit-operator",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                    },
+                )
+                binding_id = binding_payload["environmentBinding"]["bindingId"]
+
+                reload_plan_response, reload_plan_payload = post_json(
+                    "/api/audit/signing-keys/runtime-reload-plans",
+                    {
+                        "bindingId": binding_id,
+                        "operator": "audit-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "audit-window-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {"source": "audit-panel"},
+                    },
+                )
+                reload_plan_id = reload_plan_payload["runtimeReloadPlan"]["planId"]
+
+                missing_plan_response, missing_plan_payload = post_json(
+                    "/api/audit/signing-keys/runtime-reload-executions",
+                    {
+                        "planId": "missing-audit-runtime-reload-plan",
+                        "operator": "audit-operator",
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/audit/signing-keys/runtime-reload-executions",
+                    {
+                        "planId": reload_plan_id,
+                        "operator": "audit-operator",
+                        "executionMode": "manual_controlled_reload_evidence",
+                        "confirmations": {},
+                        "metadata": {"token": "blocked-reload-execution-token-should-not-leak"},
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/audit/signing-keys/runtime-reload-executions",
+                    {
+                        "planId": reload_plan_id,
+                        "operator": "audit-operator",
+                        "executionMode": "manual_controlled_reload_evidence",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {
+                            "source": "audit-panel",
+                            "apiKey": "reload-execution-api-key-should-not-leak",
+                            "privateKey": "reload-execution-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request(
+                    "GET",
+                    "/api/audit/signing-keys/runtime-reload-executions?proposedKeyId=next-audit-key&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "missing": missing_plan_payload,
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(plan_response.status, 200)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(reload_plan_response.status, 201)
+        self.assertEqual(missing_plan_response.status, 404)
+        self.assertEqual(missing_plan_payload["error"], "audit_signing_key_runtime_reload_plan_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["runtimeReloadExecution"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["runtimeReloadExecution"]["blockedReasons"],
+            [
+                "runtime_reload_execution_pre_health_missing",
+                "runtime_reload_execution_action_record_missing",
+                "runtime_reload_execution_post_smoke_missing",
+                "runtime_reload_execution_rollback_readiness_missing",
+                "runtime_reload_execution_live_block_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["status"], "execution_recorded")
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["planId"], reload_plan_id)
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["bindingId"], binding_id)
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["proposedActiveKeyId"], "next-audit-key")
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["executionMode"], "manual_controlled_reload_evidence")
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["reloadMode"], "manual_container_reload_plan")
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["maintenanceWindowId"], "audit-window-1")
+        self.assertIn("AIQT_AUDIT_SIGNING_SECRET", recorded_payload["runtimeReloadExecution"]["requiredEnvVars"])
+        self.assertFalse(recorded_payload["runtimeReloadExecution"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["runtimeReloadExecution"]["paperOnly"])
+        self.assertEqual(recorded_payload["runtimeReloadExecution"]["metadata"]["apiKey"], "[redacted]")
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "audit_signing_key_runtime_reload_execution")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["runtimeReloadExecutions"]), 2)
+        self.assertEqual(history_payload["runtimeReloadExecutions"][0]["status"], "execution_recorded")
+        self.assertEqual(history_payload["runtimeReloadExecutions"][1]["status"], "blocked")
+        self.assertNotIn("active-audit-secret", serialized)
+        self.assertNotIn("blocked-reload-execution-token-should-not-leak", serialized)
+        self.assertNotIn("reload-execution-api-key-should-not-leak", serialized)
+        self.assertNotIn("reload-execution-private-key-should-not-leak", serialized)
+
     def test_audit_signing_key_rotation_apply_preflight_requires_confirmations_without_leaking_secret(self):
         import json
         from http.client import HTTPConnection
