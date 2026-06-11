@@ -15,6 +15,9 @@ from quant_core.audit_signing import (
     AuditReportSigner,
     audit_signing_key_controlled_restart_evidence_to_audit_event_payload,
     audit_signing_key_controlled_restart_evidence_to_payload,
+    audit_signing_key_secret_materialization_payload_from_audit_event,
+    audit_signing_key_secret_materialization_to_audit_event_payload,
+    audit_signing_key_secret_materialization_to_payload,
     audit_report_verification_to_payload,
     audit_signing_key_rotation_apply_to_payload,
     audit_signing_key_registry_to_payload,
@@ -930,6 +933,39 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if restart_evidence["status"] == "blocked" else 201,
             )
             return
+        if parsed.path == "/api/audit/signing-keys/secret-materializations":
+            payload = self._read_json_body()
+            plan_event_id = str(payload.get("planEventId") or "").strip()
+            plan_event = self.audit_event_store.get(plan_event_id)
+            if not plan_event:
+                self._send_json({"error": "audit_signing_key_rotation_plan_event_not_found", "planEventId": plan_event_id}, status=404)
+                return
+            try:
+                secret_materialization = audit_signing_key_secret_materialization_to_payload(
+                    plan_event,
+                    backend=str(payload.get("backend") or ""),
+                    manifest_path=str(payload.get("manifestPath") or ""),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                audit_event = self.audit_event_store.record(
+                    audit_signing_key_secret_materialization_to_audit_event_payload(secret_materialization)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_audit_signing_key_secret_materialization", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json(
+                {
+                    "secretMaterialization": secret_materialization,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if secret_materialization["status"] == "blocked" else 201,
+            )
+            return
         if parsed.path == "/api/audit/reports/sign":
             payload = self._read_json_body()
             event_id = str(payload.get("eventId") or "").strip()
@@ -1549,6 +1585,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_audit_signing_key_registry", "detail": str(error)}, status=400)
                 return
             self._send_json({"registry": audit_signing_key_registry_to_payload(registry)})
+            return
+        if parsed.path == "/api/audit/signing-keys/secret-materializations":
+            query = parse_qs(parsed.query)
+            proposed_key_id = query.get("proposedKeyId", [""])[0].strip()
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            materialization_events = self.audit_event_store.list_recent(
+                event_type="audit_signing_key_secret_materialization",
+                limit=50,
+                query=proposed_key_id,
+            )
+            materializations = []
+            for event in materialization_events:
+                payload = audit_signing_key_secret_materialization_payload_from_audit_event(event)
+                if payload and (not proposed_key_id or payload.get("proposedActiveKeyId") == proposed_key_id):
+                    materializations.append(payload)
+                if len(materializations) >= limit:
+                    break
+            self._send_json({"secretMaterializations": materializations})
             return
         if parsed.path == "/api/golden-path/status":
             query = parse_qs(parsed.query)

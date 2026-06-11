@@ -32,6 +32,8 @@ import {
   buildAuditReportVerifyPackageUrl,
   buildAuditReportRevokeUrl,
   buildAuditSigningKeysUrl,
+  buildAuditSigningKeySecretMaterializationHistoryUrl,
+  buildAuditSigningKeySecretMaterializationUrl,
   buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
   buildAuditSigningKeyRotationRestartEvidenceUrl,
@@ -115,8 +117,10 @@ import {
   saveAuditEvent,
   loadAuditEvents,
   loadAuditSigningKeys,
+  loadAuditSigningKeySecretMaterializations,
   applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
+  recordAuditSigningKeySecretMaterialization,
   recordAuditSigningKeyControlledRestartEvidence,
   signAuditReportEvent,
   verifyAuditReportEvent,
@@ -4031,6 +4035,183 @@ describe("terminal workspace API client", () => {
     expect(result.restartEvidence?.liveTradingAllowed).toBe(false);
     expect(result.restartEvidence?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("audit_signing_key_controlled_restart_evidence");
+    expect(JSON.stringify(result)).not.toContain("active-audit-secret");
+  });
+
+  test("records audit signing key secret materialization manifests without raw secrets", async () => {
+    const calls: Array<{ body: unknown; method: string; url: string }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+        method: init?.method ?? "GET",
+        url
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          secretMaterialization: {
+            schemaVersion: 1,
+            materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+            planEventId: "audit-signing-key-rotation-next-audit-key-test",
+            currentActiveKeyId: "active-audit-key",
+            currentActiveKeyFingerprint: "a".repeat(16),
+            proposedActiveKeyId: "next-audit-key",
+            proposedSigner: "Next Audit Key",
+            proposedChainId: "audit-chain-next",
+            status: "manifest_recorded",
+            operator: "audit-operator",
+            recordedAt: "2026-06-04T10:40:00+00:00",
+            materializationMode: "local_secret_store_manifest",
+            backend: "local-secret-store",
+            manifestPath: "local-secret-store://audit-signing/next-audit-key",
+            requiredEnvVars: [
+              "AIQT_AUDIT_SIGNING_KEY_ID",
+              "AIQT_AUDIT_SIGNING_SECRET",
+              "AIQT_AUDIT_SIGNING_KEYS_JSON"
+            ],
+            secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET", "AIQT_AUDIT_SIGNING_KEYS_JSON"],
+            requiredConfirmations: [
+              { id: "local-secret-store-write-verified", label: "Local secret-store write was verified", status: "confirmed" },
+              { id: "raw-secret-boundary-confirmed", label: "No raw secret is present in this payload", status: "confirmed" },
+              { id: "env-binding-plan-documented", label: "Environment binding plan is documented", status: "confirmed" },
+              { id: "rollback-plan-documented", label: "Rollback plan is documented", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { fingerprint: "sha256:next-audit-key", apiKey: "[redacted]" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "audit-signing-key-secret-materialization-next-audit-key",
+            eventType: "audit_signing_key_secret_materialization",
+            runId: "audit-signing-key-rotation",
+            createdAt: "2026-06-04T10:40:00+00:00",
+            stage: "audit-signing-key-secret-materialization",
+            source: "audit-signing-key-ledger",
+            summary: "Audit signing key secret materialization manifest recorded.",
+            detail: "Secret materialization is paper-only.",
+            metadata: {
+              materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+              planEventId: "audit-signing-key-rotation-next-audit-key-test",
+              status: "manifest_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildAuditSigningKeySecretMaterializationUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/secret-materializations"
+    );
+
+    const result = await recordAuditSigningKeySecretMaterialization(
+      "/",
+      {
+        backend: "local-secret-store",
+        confirmations: {
+          localSecretStoreWriteVerified: true,
+          noRawSecretInPayload: true,
+          envBindingPlanDocumented: true,
+          rollbackPlanDocumented: true
+        },
+        manifestPath: "local-secret-store://audit-signing/next-audit-key",
+        metadata: { fingerprint: "sha256:next-audit-key" },
+        operator: "audit-operator",
+        planEventId: "audit-signing-key-rotation-next-audit-key-test"
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/audit/signing-keys/secret-materializations"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      backend: "local-secret-store",
+      confirmations: {
+        localSecretStoreWriteVerified: true,
+        noRawSecretInPayload: true,
+        envBindingPlanDocumented: true,
+        rollbackPlanDocumented: true
+      },
+      manifestPath: "local-secret-store://audit-signing/next-audit-key",
+      metadata: { fingerprint: "sha256:next-audit-key" },
+      operator: "audit-operator",
+      planEventId: "audit-signing-key-rotation-next-audit-key-test"
+    });
+    expect(result.source).toBe("core");
+    expect(result.secretMaterialization?.status).toBe("manifest_recorded");
+    expect(result.secretMaterialization?.proposedActiveKeyId).toBe("next-audit-key");
+    expect(result.secretMaterialization?.metadata.apiKey).toBe("[redacted]");
+    expect(result.secretMaterialization?.liveTradingAllowed).toBe(false);
+    expect(result.secretMaterialization?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("audit_signing_key_secret_materialization");
+    expect(JSON.stringify(result)).not.toContain("active-audit-secret");
+  });
+
+  test("loads audit signing key secret materialization history from the local core", async () => {
+    const calls: string[] = [];
+    const result = await loadAuditSigningKeySecretMaterializations(
+      "http://127.0.0.1:8765/",
+      "next-audit-key",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            secretMaterializations: [
+              {
+                schemaVersion: 1,
+                materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+                planEventId: "audit-signing-key-rotation-next-audit-key-test",
+                currentActiveKeyId: "active-audit-key",
+                currentActiveKeyFingerprint: "a".repeat(16),
+                proposedActiveKeyId: "next-audit-key",
+                proposedSigner: "Next Audit Key",
+                proposedChainId: "audit-chain-next",
+                status: "manifest_recorded",
+                operator: "audit-operator",
+                recordedAt: "2026-06-04T10:40:00+00:00",
+                materializationMode: "local_secret_store_manifest",
+                backend: "local-secret-store",
+                manifestPath: "local-secret-store://audit-signing/next-audit-key",
+                requiredEnvVars: ["AIQT_AUDIT_SIGNING_SECRET"],
+                secretPlaceholderNames: ["AIQT_AUDIT_SIGNING_SECRET"],
+                requiredConfirmations: [
+                  { id: "local-secret-store-write-verified", label: "Local secret-store write was verified", status: "confirmed" },
+                  { id: "raw-secret-boundary-confirmed", label: "No raw secret is present in this payload", status: "confirmed" },
+                  { id: "env-binding-plan-documented", label: "Environment binding plan is documented", status: "confirmed" },
+                  { id: "rollback-plan-documented", label: "Rollback plan is documented", status: "confirmed" }
+                ],
+                blockedReasons: [],
+                metadata: { apiKey: "[redacted]" },
+                liveTradingAllowed: false,
+                paperOnly: true
+              }
+            ]
+          })
+        };
+      },
+      5
+    );
+
+    expect(buildAuditSigningKeySecretMaterializationHistoryUrl("http://127.0.0.1:8765/", {
+      limit: 5,
+      proposedKeyId: "next-audit-key"
+    })).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/secret-materializations?proposedKeyId=next-audit-key&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/audit/signing-keys/secret-materializations?proposedKeyId=next-audit-key&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.secretMaterializations).toHaveLength(1);
+    expect(result.secretMaterializations[0].status).toBe("manifest_recorded");
+    expect(result.secretMaterializations[0].liveTradingAllowed).toBe(false);
     expect(JSON.stringify(result)).not.toContain("active-audit-secret");
   });
 

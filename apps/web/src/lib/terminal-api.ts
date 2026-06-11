@@ -562,6 +562,66 @@ export interface AuditSigningKeyControlledRestartEvidenceResult {
   error?: string;
 }
 
+export type AuditSigningKeySecretMaterializationStatus = "blocked" | "manifest_recorded";
+export type AuditSigningKeySecretMaterializationConfirmationStatus = "confirmed" | "missing";
+
+export interface AuditSigningKeySecretMaterializationConfirmation {
+  id: string;
+  label: string;
+  status: AuditSigningKeySecretMaterializationConfirmationStatus;
+}
+
+export interface AuditSigningKeySecretMaterialization {
+  schemaVersion: 1;
+  materializationId: string;
+  planEventId: string;
+  currentActiveKeyId: string;
+  currentActiveKeyFingerprint: string;
+  proposedActiveKeyId: string;
+  proposedSigner: string;
+  proposedChainId: string;
+  status: AuditSigningKeySecretMaterializationStatus;
+  operator: string;
+  recordedAt: string;
+  materializationMode: "local_secret_store_manifest";
+  backend: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  secretPlaceholderNames: string[];
+  requiredConfirmations: AuditSigningKeySecretMaterializationConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface AuditSigningKeySecretMaterializationRequest {
+  planEventId: string;
+  operator?: string;
+  backend: string;
+  manifestPath: string;
+  confirmations?: {
+    localSecretStoreWriteVerified?: boolean;
+    noRawSecretInPayload?: boolean;
+    envBindingPlanDocumented?: boolean;
+    rollbackPlanDocumented?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface AuditSigningKeySecretMaterializationResult {
+  secretMaterialization?: AuditSigningKeySecretMaterialization;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AuditSigningKeySecretMaterializationHistoryResult {
+  secretMaterializations: AuditSigningKeySecretMaterialization[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -2164,6 +2224,24 @@ export function buildAuditSigningKeyRotationApplyUrl(baseUrl: string): string {
 
 export function buildAuditSigningKeyRotationRestartEvidenceUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-restart-evidence");
+}
+
+export function buildAuditSigningKeySecretMaterializationUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/secret-materializations");
+}
+
+export function buildAuditSigningKeySecretMaterializationHistoryUrl(
+  baseUrl: string,
+  params: { proposedKeyId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/secret-materializations", (url) => {
+    if (params.proposedKeyId?.trim()) {
+      url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
 }
 
 export function buildStrategiesUrl(
@@ -4042,6 +4120,81 @@ export async function recordAuditSigningKeyControlledRestartEvidence(
   }
 }
 
+export async function recordAuditSigningKeySecretMaterialization(
+  baseUrl: string,
+  request: AuditSigningKeySecretMaterializationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeySecretMaterializationResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeySecretMaterializationUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        planEventId: request.planEventId,
+        operator: request.operator ?? "local-operator",
+        backend: request.backend,
+        manifestPath: request.manifestPath,
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isAuditSigningKeySecretMaterializationPayload(payload)) {
+      return {
+        secretMaterialization: payload.secretMaterialization,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid audit signing key secret materialization contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key secret materialization error"
+    };
+  }
+}
+
+export async function loadAuditSigningKeySecretMaterializations(
+  baseUrl: string,
+  proposedKeyId = "",
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<AuditSigningKeySecretMaterializationHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildAuditSigningKeySecretMaterializationHistoryUrl(baseUrl, { proposedKeyId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeySecretMaterializationHistoryPayload(payload)) {
+      throw new Error("Invalid audit signing key secret materialization history contract");
+    }
+    return {
+      secretMaterializations: payload.secretMaterializations,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      secretMaterializations: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key secret materialization history error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -5872,6 +6025,89 @@ function isAuditSigningKeyControlledRestartEvidenceStatus(
   value: unknown
 ): value is AuditSigningKeyControlledRestartEvidenceStatus {
   return value === "blocked" || value === "evidence_recorded";
+}
+
+function isAuditSigningKeySecretMaterializationPayload(
+  value: unknown
+): value is { secretMaterialization: AuditSigningKeySecretMaterialization; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { secretMaterialization?: unknown; auditEvent?: unknown };
+  return (
+    isAuditSigningKeySecretMaterialization(payload.secretMaterialization) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isAuditSigningKeySecretMaterializationHistoryPayload(
+  value: unknown
+): value is { secretMaterializations: AuditSigningKeySecretMaterialization[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { secretMaterializations?: unknown };
+  return (
+    Array.isArray(payload.secretMaterializations) &&
+    payload.secretMaterializations.every(isAuditSigningKeySecretMaterialization)
+  );
+}
+
+function isAuditSigningKeySecretMaterialization(
+  value: unknown
+): value is AuditSigningKeySecretMaterialization {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const materialization = value as Partial<AuditSigningKeySecretMaterialization>;
+  return (
+    materialization.schemaVersion === 1 &&
+    typeof materialization.materializationId === "string" &&
+    typeof materialization.planEventId === "string" &&
+    typeof materialization.currentActiveKeyId === "string" &&
+    typeof materialization.currentActiveKeyFingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(materialization.currentActiveKeyFingerprint) &&
+    typeof materialization.proposedActiveKeyId === "string" &&
+    typeof materialization.proposedSigner === "string" &&
+    typeof materialization.proposedChainId === "string" &&
+    isAuditSigningKeySecretMaterializationStatus(materialization.status) &&
+    typeof materialization.operator === "string" &&
+    typeof materialization.recordedAt === "string" &&
+    materialization.materializationMode === "local_secret_store_manifest" &&
+    typeof materialization.backend === "string" &&
+    typeof materialization.manifestPath === "string" &&
+    Array.isArray(materialization.requiredEnvVars) &&
+    materialization.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(materialization.secretPlaceholderNames) &&
+    materialization.secretPlaceholderNames.every((name) => typeof name === "string") &&
+    Array.isArray(materialization.requiredConfirmations) &&
+    materialization.requiredConfirmations.every(isAuditSigningKeySecretMaterializationConfirmation) &&
+    Array.isArray(materialization.blockedReasons) &&
+    materialization.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(materialization.metadata) &&
+    materialization.liveTradingAllowed === false &&
+    materialization.paperOnly === true
+  );
+}
+
+function isAuditSigningKeySecretMaterializationConfirmation(
+  value: unknown
+): value is AuditSigningKeySecretMaterializationConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<AuditSigningKeySecretMaterializationConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isAuditSigningKeySecretMaterializationStatus(
+  value: unknown
+): value is AuditSigningKeySecretMaterializationStatus {
+  return value === "blocked" || value === "manifest_recorded";
 }
 
 function containsDisallowedSecretField(value: unknown): boolean {

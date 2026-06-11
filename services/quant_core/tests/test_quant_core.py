@@ -4580,6 +4580,181 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("active-audit-secret", json.dumps(payload))
         self.assertNotIn("legacy-audit-secret", json.dumps(payload))
 
+    def test_audit_signing_key_secret_materialization_records_manifest_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            TestHandler.audit_signing_secret = "active-audit-secret"
+            TestHandler.audit_signing_key_id = "active-audit-key"
+            TestHandler.audit_signer_name = "Active Audit Key"
+            TestHandler.audit_chain_id = "audit-chain-active"
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                plan_body = json.dumps(
+                    {
+                        "proposedKeyId": "next-audit-key",
+                        "proposedSigner": "Next Audit Key",
+                        "proposedChainId": "audit-chain-next",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/rotation-plan",
+                    body=plan_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(plan_body))},
+                )
+                plan_response = connection.getresponse()
+                plan_payload = json.loads(plan_response.read().decode("utf-8"))
+                rotation_plan = plan_payload["rotationPlan"]
+                plan_event_id = "audit-signing-key-rotation-next-audit-key-test"
+                TestHandler.audit_event_store.record(
+                    {
+                        "schemaVersion": 1,
+                        "eventId": plan_event_id,
+                        "eventType": "audit_signing_key_rotation_plan",
+                        "runId": "audit-signing-key-rotation",
+                        "createdAt": rotation_plan["generatedAt"],
+                        "stage": "prepared",
+                        "source": "unit-test",
+                        "summary": "Audit signing key rotation plan prepared for next-audit-key",
+                        "detail": "active-audit-key -> next-audit-key",
+                        "metadata": {
+                            "currentKeyId": rotation_plan["currentActiveKey"]["keyId"],
+                            "currentKeyFingerprint": rotation_plan["currentActiveKey"]["fingerprint"],
+                            "proposedKeyId": rotation_plan["proposedActiveKey"]["keyId"],
+                            "proposedSigner": rotation_plan["proposedActiveKey"]["signer"],
+                            "proposedChainId": rotation_plan["proposedActiveKey"]["chainId"],
+                            "requiresRestart": rotation_plan["requiresRestart"],
+                            "environmentUpdateNames": [
+                                item["name"] for item in rotation_plan["environmentUpdates"]
+                            ],
+                            "secretPlaceholderNames": [
+                                item["name"]
+                                for item in rotation_plan["environmentUpdates"]
+                                if item["sensitivity"] == "secret"
+                            ],
+                            "blockedReasons": [],
+                        },
+                    }
+                )
+
+                blocked_request = {
+                    "planEventId": plan_event_id,
+                    "operator": "audit-operator",
+                    "backend": "local-secret-store",
+                    "manifestPath": "local-secret-store://audit-signing/next-audit-key",
+                    "confirmations": {},
+                    "metadata": {
+                        "source": "audit-panel",
+                        "secret": "blocked-secret-should-not-leak",
+                    },
+                }
+                blocked_body = json.dumps(blocked_request).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/secret-materializations",
+                    body=blocked_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(blocked_body))},
+                )
+                blocked_response = connection.getresponse()
+                blocked_payload = json.loads(blocked_response.read().decode("utf-8"))
+
+                recorded_request = {
+                    **blocked_request,
+                    "confirmations": {
+                        "localSecretStoreWriteVerified": True,
+                        "noRawSecretInPayload": True,
+                        "envBindingPlanDocumented": True,
+                        "rollbackPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "audit-panel",
+                        "fingerprint": "sha256:next-audit-key",
+                        "apiKey": "recorded-api-key-should-not-leak",
+                        "privateKey": "recorded-private-key-should-not-leak",
+                    },
+                }
+                recorded_body = json.dumps(recorded_request).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/audit/signing-keys/secret-materializations",
+                    body=recorded_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(recorded_body))},
+                )
+                recorded_response = connection.getresponse()
+                recorded_payload = json.loads(recorded_response.read().decode("utf-8"))
+
+                connection.request(
+                    "GET",
+                    "/api/audit/signing-keys/secret-materializations?proposedKeyId=next-audit-key&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(plan_response.status, 200)
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["secretMaterialization"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["secretMaterialization"]["blockedReasons"],
+            [
+                "secret_materialization_local_store_not_verified",
+                "secret_materialization_raw_secret_boundary_not_confirmed",
+                "secret_materialization_env_binding_plan_missing",
+                "secret_materialization_rollback_plan_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["secretMaterialization"]["status"], "manifest_recorded")
+        self.assertEqual(recorded_payload["secretMaterialization"]["planEventId"], plan_event_id)
+        self.assertEqual(recorded_payload["secretMaterialization"]["proposedActiveKeyId"], "next-audit-key")
+        self.assertEqual(recorded_payload["secretMaterialization"]["backend"], "local-secret-store")
+        self.assertEqual(
+            recorded_payload["secretMaterialization"]["manifestPath"],
+            "local-secret-store://audit-signing/next-audit-key",
+        )
+        self.assertIn("AIQT_AUDIT_SIGNING_SECRET", recorded_payload["secretMaterialization"]["requiredEnvVars"])
+        self.assertIn("AIQT_AUDIT_SIGNING_KEYS_JSON", recorded_payload["secretMaterialization"]["secretPlaceholderNames"])
+        self.assertFalse(recorded_payload["secretMaterialization"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["secretMaterialization"]["paperOnly"])
+        self.assertEqual(recorded_payload["secretMaterialization"]["metadata"]["apiKey"], "[redacted]")
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "audit_signing_key_secret_materialization")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["secretMaterializations"]), 2)
+        self.assertEqual(history_payload["secretMaterializations"][0]["status"], "manifest_recorded")
+        self.assertEqual(history_payload["secretMaterializations"][1]["status"], "blocked")
+        self.assertNotIn("active-audit-secret", serialized)
+        self.assertNotIn("blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("recorded-api-key-should-not-leak", serialized)
+        self.assertNotIn("recorded-private-key-should-not-leak", serialized)
+
     def test_audit_signing_key_rotation_apply_preflight_requires_confirmations_without_leaking_secret(self):
         import json
         from http.client import HTTPConnection
