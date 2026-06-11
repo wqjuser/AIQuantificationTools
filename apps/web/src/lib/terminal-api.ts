@@ -513,6 +513,55 @@ export interface AuditSigningKeyRotationApplyResult {
   error?: string;
 }
 
+export type AuditSigningKeyControlledRestartEvidenceStatus = "blocked" | "evidence_recorded";
+export type AuditSigningKeyControlledRestartEvidenceConfirmationStatus = "confirmed" | "missing";
+
+export interface AuditSigningKeyControlledRestartEvidenceConfirmation {
+  id: string;
+  label: string;
+  status: AuditSigningKeyControlledRestartEvidenceConfirmationStatus;
+}
+
+export interface AuditSigningKeyControlledRestartEvidence {
+  schemaVersion: 1;
+  evidenceId: string;
+  applyEventId: string;
+  currentActiveKeyId: string;
+  currentActiveKeyFingerprint: string;
+  proposedActiveKeyId: string;
+  proposedSigner: string;
+  proposedChainId: string;
+  status: AuditSigningKeyControlledRestartEvidenceStatus;
+  operator: string;
+  recordedAt: string;
+  evidenceMode: "manual_controlled_restart";
+  restartRequired: boolean;
+  requiredConfirmations: AuditSigningKeyControlledRestartEvidenceConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface AuditSigningKeyControlledRestartEvidenceRequest {
+  applyEventId: string;
+  operator?: string;
+  confirmations?: {
+    restartWindowExecuted?: boolean;
+    rollbackPlanConfirmed?: boolean;
+    postRestartValidationPassed?: boolean;
+    operatorReviewedRestartLogs?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface AuditSigningKeyControlledRestartEvidenceResult {
+  restartEvidence?: AuditSigningKeyControlledRestartEvidence;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -2111,6 +2160,10 @@ export function buildAuditSigningKeyRotationPlanUrl(baseUrl: string): string {
 
 export function buildAuditSigningKeyRotationApplyUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-apply");
+}
+
+export function buildAuditSigningKeyRotationRestartEvidenceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-restart-evidence");
 }
 
 export function buildStrategiesUrl(
@@ -3946,6 +3999,49 @@ export async function applyAuditSigningKeyRotationPlan(
   }
 }
 
+export async function recordAuditSigningKeyControlledRestartEvidence(
+  baseUrl: string,
+  request: AuditSigningKeyControlledRestartEvidenceRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyControlledRestartEvidenceResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeyRotationRestartEvidenceUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        applyEventId: request.applyEventId,
+        operator: request.operator ?? "local-operator",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isAuditSigningKeyControlledRestartEvidencePayload(payload)) {
+      return {
+        restartEvidence: payload.restartEvidence,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid audit signing key controlled restart evidence contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key controlled restart evidence error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -5711,6 +5807,71 @@ function isAuditSigningKeyRotationApplyConfirmation(
     typeof confirmation.label === "string" &&
     (confirmation.status === "confirmed" || confirmation.status === "missing")
   );
+}
+
+function isAuditSigningKeyControlledRestartEvidencePayload(
+  value: unknown
+): value is { restartEvidence: AuditSigningKeyControlledRestartEvidence; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { restartEvidence?: unknown; auditEvent?: unknown };
+  return (
+    isAuditSigningKeyControlledRestartEvidence(payload.restartEvidence) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isAuditSigningKeyControlledRestartEvidence(
+  value: unknown
+): value is AuditSigningKeyControlledRestartEvidence {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const evidence = value as Partial<AuditSigningKeyControlledRestartEvidence>;
+  return (
+    evidence.schemaVersion === 1 &&
+    typeof evidence.evidenceId === "string" &&
+    typeof evidence.applyEventId === "string" &&
+    typeof evidence.currentActiveKeyId === "string" &&
+    typeof evidence.currentActiveKeyFingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(evidence.currentActiveKeyFingerprint) &&
+    typeof evidence.proposedActiveKeyId === "string" &&
+    typeof evidence.proposedSigner === "string" &&
+    typeof evidence.proposedChainId === "string" &&
+    isAuditSigningKeyControlledRestartEvidenceStatus(evidence.status) &&
+    typeof evidence.operator === "string" &&
+    typeof evidence.recordedAt === "string" &&
+    evidence.evidenceMode === "manual_controlled_restart" &&
+    typeof evidence.restartRequired === "boolean" &&
+    Array.isArray(evidence.requiredConfirmations) &&
+    evidence.requiredConfirmations.every(isAuditSigningKeyControlledRestartEvidenceConfirmation) &&
+    Array.isArray(evidence.blockedReasons) &&
+    evidence.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(evidence.metadata) &&
+    evidence.liveTradingAllowed === false &&
+    evidence.paperOnly === true
+  );
+}
+
+function isAuditSigningKeyControlledRestartEvidenceConfirmation(
+  value: unknown
+): value is AuditSigningKeyControlledRestartEvidenceConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<AuditSigningKeyControlledRestartEvidenceConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isAuditSigningKeyControlledRestartEvidenceStatus(
+  value: unknown
+): value is AuditSigningKeyControlledRestartEvidenceStatus {
+  return value === "blocked" || value === "evidence_recorded";
 }
 
 function containsDisallowedSecretField(value: unknown): boolean {

@@ -34,6 +34,7 @@ import {
   buildAuditSigningKeysUrl,
   buildAuditSigningKeyRotationApplyUrl,
   buildAuditSigningKeyRotationPlanUrl,
+  buildAuditSigningKeyRotationRestartEvidenceUrl,
   buildCacheRefreshUrl,
   buildWatchlistCacheRefreshUrl,
   buildExecutionAdapterCertificationApplyUrl,
@@ -116,6 +117,7 @@ import {
   loadAuditSigningKeys,
   applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
+  recordAuditSigningKeyControlledRestartEvidence,
   signAuditReportEvent,
   verifyAuditReportEvent,
   verifyResearchRunExportReportSignature,
@@ -3911,6 +3913,125 @@ describe("terminal workspace API client", () => {
 
     expect(result.source).toBe("fallback");
     expect(result.error).toBe("Invalid audit signing key rotation apply contract");
+  });
+
+  test("records audit signing key controlled restart evidence without enabling live signing", async () => {
+    const calls: Array<{ body: unknown; method: string; url: string }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+        method: init?.method ?? "GET",
+        url
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          restartEvidence: {
+            schemaVersion: 1,
+            evidenceId: "audit-signing-key-controlled-restart-next-audit-key",
+            applyEventId: "audit-signing-key-rotation-apply-next-audit-key-test",
+            currentActiveKeyId: "active-audit-key",
+            currentActiveKeyFingerprint: "a".repeat(16),
+            proposedActiveKeyId: "next-audit-key",
+            proposedSigner: "Next Audit Key",
+            proposedChainId: "audit-chain-next",
+            status: "evidence_recorded",
+            operator: "audit-operator",
+            recordedAt: "2026-06-04T10:45:00+00:00",
+            evidenceMode: "manual_controlled_restart",
+            restartRequired: true,
+            requiredConfirmations: [
+              {
+                id: "restart-window-executed",
+                label: "Controlled restart window was executed",
+                status: "confirmed"
+              },
+              {
+                id: "rollback-plan-confirmed",
+                label: "Rollback plan is available and confirmed",
+                status: "confirmed"
+              },
+              {
+                id: "post-restart-validation-passed",
+                label: "Post-restart validation passed",
+                status: "confirmed"
+              },
+              {
+                id: "operator-reviewed-restart-logs",
+                label: "Operator reviewed restart logs and audit signing status",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { ticket: "CHG-42", apiKey: "[redacted]" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "audit-signing-key-controlled-restart-next-audit-key",
+            eventType: "audit_signing_key_controlled_restart_evidence",
+            runId: "audit-signing-key-rotation",
+            createdAt: "2026-06-04T10:45:00+00:00",
+            stage: "audit-signing-key-controlled-restart",
+            source: "audit-signing-key-ledger",
+            summary: "Audit signing key controlled restart evidence recorded.",
+            detail: "Controlled restart evidence is paper-only.",
+            metadata: {
+              evidenceId: "audit-signing-key-controlled-restart-next-audit-key",
+              applyEventId: "audit-signing-key-rotation-apply-next-audit-key-test",
+              status: "evidence_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildAuditSigningKeyRotationRestartEvidenceUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/rotation-restart-evidence"
+    );
+
+    const result = await recordAuditSigningKeyControlledRestartEvidence(
+      "/",
+      {
+        applyEventId: "audit-signing-key-rotation-apply-next-audit-key-test",
+        operator: "audit-operator",
+        confirmations: {
+          restartWindowExecuted: true,
+          rollbackPlanConfirmed: true,
+          postRestartValidationPassed: true,
+          operatorReviewedRestartLogs: true
+        },
+        metadata: { ticket: "CHG-42" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/audit/signing-keys/rotation-restart-evidence"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      applyEventId: "audit-signing-key-rotation-apply-next-audit-key-test",
+      operator: "audit-operator",
+      confirmations: {
+        restartWindowExecuted: true,
+        rollbackPlanConfirmed: true,
+        postRestartValidationPassed: true,
+        operatorReviewedRestartLogs: true
+      },
+      metadata: { ticket: "CHG-42" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.restartEvidence?.status).toBe("evidence_recorded");
+    expect(result.restartEvidence?.applyEventId).toBe("audit-signing-key-rotation-apply-next-audit-key-test");
+    expect(result.restartEvidence?.metadata.apiKey).toBe("[redacted]");
+    expect(result.restartEvidence?.liveTradingAllowed).toBe(false);
+    expect(result.restartEvidence?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("audit_signing_key_controlled_restart_evidence");
+    expect(JSON.stringify(result)).not.toContain("active-audit-secret");
   });
 
   test("refreshes a market cache context and returns updated settings", async () => {

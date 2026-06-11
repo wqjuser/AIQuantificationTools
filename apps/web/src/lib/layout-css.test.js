@@ -733,6 +733,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("loadAuditSigningKeys");
     expect(appSource).toContain("prepareAuditSigningKeyRotationPlan");
     expect(appSource).toContain("applyAuditSigningKeyRotationPlan");
+    expect(appSource).toContain("recordAuditSigningKeyControlledRestartEvidence");
     expect(appSource).toContain("buildAuditSigningKeyRotationPlanAuditEvent");
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
@@ -748,6 +749,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const [auditSigningKeyRotationPlan, setAuditSigningKeyRotationPlan]");
     expect(appSource).toContain("const [auditSigningKeyRotationApply, setAuditSigningKeyRotationApply]");
     expect(appSource).toContain("const [auditSigningKeyRotationApplyConfirmations, setAuditSigningKeyRotationApplyConfirmations]");
+    expect(appSource).toContain("const [auditSigningKeyRestartEvidence, setAuditSigningKeyRestartEvidence]");
+    expect(appSource).toContain("const [auditSigningKeyRestartEvidenceConfirmations, setAuditSigningKeyRestartEvidenceConfirmations]");
     expect(appSource).toContain("const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus]");
     expect(appSource).toContain("const refreshAuditEvidenceReportEvents = useCallback");
     expect(appSource).toContain("const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows");
@@ -776,10 +779,14 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("rotationPlan={auditSigningKeyRotationPlan.rotationPlan}");
     expect(auditWorkspaceSource).toContain("rotationApply={auditSigningKeyRotationApply.rotationApply}");
     expect(auditWorkspaceSource).toContain("rotationApplyConfirmations={auditSigningKeyRotationApplyConfirmations}");
+    expect(auditWorkspaceSource).toContain("restartEvidence={auditSigningKeyRestartEvidence.restartEvidence}");
+    expect(auditWorkspaceSource).toContain("restartEvidenceConfirmations={auditSigningKeyRestartEvidenceConfirmations}");
     expect(auditWorkspaceSource).toContain("rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}");
     expect(auditWorkspaceSource).toContain("rotationHistoryRows={auditSigningKeyRotationLedgerRows}");
     expect(auditWorkspaceSource).toContain("onApplyRotation={applyAuditSigningKeyRotationPlanForAudit}");
     expect(auditWorkspaceSource).toContain("onApplyConfirmationChange={updateAuditSigningKeyRotationApplyConfirmation}");
+    expect(auditWorkspaceSource).toContain("onRecordRestartEvidence={recordAuditSigningKeyRestartEvidenceForAudit}");
+    expect(auditWorkspaceSource).toContain("onRestartEvidenceConfirmationChange={updateAuditSigningKeyRestartEvidenceConfirmation}");
     expect(auditWorkspaceSource).toContain("source={auditSigningKeyRegistry.source}");
     expect(auditWorkspaceSource).toContain("error={auditSigningKeyRegistry.error}");
     expect(auditWorkspaceSource).toContain("onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}");
@@ -822,6 +829,13 @@ describe("terminal layout css", () => {
     expect(signingKeyPanelSource).toContain("audit-signing-key-rotation-apply");
     expect(signingKeyPanelSource).toContain("rotationApplyConfirmations");
     expect(signingKeyPanelSource).toContain("onApplyRotation");
+    expect(signingKeyPanelSource).toContain("audit-signing-key-restart-evidence");
+    expect(signingKeyPanelSource).toContain("restartEvidenceConfirmations");
+    expect(signingKeyPanelSource).toContain("onRecordRestartEvidence");
+    expect(signingKeyPanelSource).toContain("restartWindowExecuted");
+    expect(signingKeyPanelSource).toContain("rollbackPlanConfirmed");
+    expect(signingKeyPanelSource).toContain("postRestartValidationPassed");
+    expect(signingKeyPanelSource).toContain("operatorReviewedRestartLogs");
     expect(signingKeyPanelSource).toContain("rotationLedgerStatus");
     expect(signingKeyPanelSource).toContain("onPrepareRotation");
     expect(appSource).toContain('"Verified signature": "签名已验证"');

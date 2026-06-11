@@ -31,6 +31,7 @@ import {
   loadAuditSigningKeys,
   applyAuditSigningKeyRotationPlan,
   prepareAuditSigningKeyRotationPlan,
+  recordAuditSigningKeyControlledRestartEvidence,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -90,6 +91,8 @@ import {
   AuditEventHistoryPagination,
   AuditSigningKeyRegistry,
   AuditSigningKeyRegistryResult,
+  AuditSigningKeyControlledRestartEvidence,
+  AuditSigningKeyControlledRestartEvidenceResult,
   AuditSigningKeyRotationApply,
   AuditSigningKeyRotationApplyResult,
   AuditSigningKeyRotationPlan,
@@ -427,6 +430,9 @@ const initialAuditSigningKeyRotationPlanState: AuditSigningKeyRotationPlanResult
 const initialAuditSigningKeyRotationApplyState: AuditSigningKeyRotationApplyResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRestartEvidenceState: AuditSigningKeyControlledRestartEvidenceResult = {
+  source: "fallback"
+};
 const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerStatus = {
   detail: "",
   state: "idle"
@@ -487,6 +493,20 @@ const initialAuditSigningKeyRotationApplyConfirmations: AuditSigningKeyRotationA
   legacySecretStored: false,
   newSecretMaterialStored: false,
   operatorReviewedPlan: false
+};
+
+interface AuditSigningKeyRestartEvidenceConfirmations {
+  restartWindowExecuted: boolean;
+  rollbackPlanConfirmed: boolean;
+  postRestartValidationPassed: boolean;
+  operatorReviewedRestartLogs: boolean;
+}
+
+const initialAuditSigningKeyRestartEvidenceConfirmations: AuditSigningKeyRestartEvidenceConfirmations = {
+  restartWindowExecuted: false,
+  rollbackPlanConfirmed: false,
+  postRestartValidationPassed: false,
+  operatorReviewedRestartLogs: false
 };
 
 const workflowIcons: Record<string, typeof BarChart3> = {
@@ -788,6 +808,11 @@ export function App() {
     useState<AuditSigningKeyRotationApplyResult>(initialAuditSigningKeyRotationApplyState);
   const [auditSigningKeyRotationApplyConfirmations, setAuditSigningKeyRotationApplyConfirmations] =
     useState<AuditSigningKeyRotationApplyConfirmations>(initialAuditSigningKeyRotationApplyConfirmations);
+  const [auditSigningKeyRestartEvidence, setAuditSigningKeyRestartEvidence] =
+    useState<AuditSigningKeyControlledRestartEvidenceResult>(initialAuditSigningKeyRestartEvidenceState);
+  const [auditSigningKeyRestartEvidenceConfirmations, setAuditSigningKeyRestartEvidenceConfirmations] =
+    useState<AuditSigningKeyRestartEvidenceConfirmations>(initialAuditSigningKeyRestartEvidenceConfirmations);
+  const [auditSigningKeyRotationApplyEventId, setAuditSigningKeyRotationApplyEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
@@ -891,6 +916,7 @@ export function App() {
   const [isLoadingResearchRunImportAudit, setIsLoadingResearchRunImportAudit] = useState(false);
   const [isApplyingAuditSigningKeyRotationPlan, setIsApplyingAuditSigningKeyRotationPlan] = useState(false);
   const [isPreparingAuditSigningKeyRotationPlan, setIsPreparingAuditSigningKeyRotationPlan] = useState(false);
+  const [isRecordingAuditSigningKeyRestartEvidence, setIsRecordingAuditSigningKeyRestartEvidence] = useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
   const [revokingAuditReportEventId, setRevokingAuditReportEventId] = useState<string | null>(null);
@@ -1568,6 +1594,13 @@ export function App() {
     []
   );
 
+  const updateAuditSigningKeyRestartEvidenceConfirmation = useCallback(
+    (field: keyof AuditSigningKeyRestartEvidenceConfirmations, value: boolean) => {
+      setAuditSigningKeyRestartEvidenceConfirmations((current) => ({ ...current, [field]: value }));
+    },
+    []
+  );
+
   const prepareAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
     const activeKey = auditSigningKeyRegistry.registry?.keys.find(
       (key) => key.keyId === auditSigningKeyRegistry.registry?.activeKeyId
@@ -1579,6 +1612,9 @@ export function App() {
     setIsPreparingAuditSigningKeyRotationPlan(true);
     setAuditSigningKeyRotationApply(initialAuditSigningKeyRotationApplyState);
     setAuditSigningKeyRotationApplyConfirmations(initialAuditSigningKeyRotationApplyConfirmations);
+    setAuditSigningKeyRestartEvidence(initialAuditSigningKeyRestartEvidenceState);
+    setAuditSigningKeyRestartEvidenceConfirmations(initialAuditSigningKeyRestartEvidenceConfirmations);
+    setAuditSigningKeyRotationApplyEventId(null);
     setAuditSigningKeyRotationLedgerStatus({ detail: "", state: "saving" });
     try {
       const result = await prepareAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
@@ -1614,6 +1650,9 @@ export function App() {
       return;
     }
     setIsApplyingAuditSigningKeyRotationPlan(true);
+    setAuditSigningKeyRestartEvidence(initialAuditSigningKeyRestartEvidenceState);
+    setAuditSigningKeyRestartEvidenceConfirmations(initialAuditSigningKeyRestartEvidenceConfirmations);
+    setAuditSigningKeyRotationApplyEventId(null);
     try {
       const result = await applyAuditSigningKeyRotationPlan(quantCoreBaseUrl, {
         confirmations: auditSigningKeyRotationApplyConfirmations,
@@ -1631,6 +1670,7 @@ export function App() {
             statusLabel: "Audit signing key rotation apply ledger save failed"
           }));
         } else if (ledgerResult.event) {
+          setAuditSigningKeyRotationApplyEventId(ledgerResult.event.eventId);
           setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, ledgerResult.event!));
         }
       }
@@ -1638,6 +1678,31 @@ export function App() {
       setIsApplyingAuditSigningKeyRotationPlan(false);
     }
   }, [auditSigningKeyRotationApplyConfirmations, auditSigningKeyRotationPlan.rotationPlan, quantCoreBaseUrl]);
+
+  const recordAuditSigningKeyRestartEvidenceForAudit = useCallback(async () => {
+    if (!auditSigningKeyRotationApplyEventId) {
+      setAuditSigningKeyRestartEvidence({
+        source: "fallback",
+        error: "Audit signing key rotation apply event id is required before restart evidence can be recorded"
+      });
+      return;
+    }
+    setIsRecordingAuditSigningKeyRestartEvidence(true);
+    try {
+      const result = await recordAuditSigningKeyControlledRestartEvidence(quantCoreBaseUrl, {
+        applyEventId: auditSigningKeyRotationApplyEventId,
+        confirmations: auditSigningKeyRestartEvidenceConfirmations,
+        metadata: { source: "audit-signing-key-registry-panel" },
+        operator: "local-operator"
+      });
+      setAuditSigningKeyRestartEvidence(result);
+      if (result.auditEvent) {
+        setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, result.auditEvent!));
+      }
+    } finally {
+      setIsRecordingAuditSigningKeyRestartEvidence(false);
+    }
+  }, [auditSigningKeyRestartEvidenceConfirmations, auditSigningKeyRotationApplyEventId, quantCoreBaseUrl]);
 
   const refreshGoldenPathStatus = useCallback(async () => {
     setGoldenPathState(
@@ -4349,10 +4414,17 @@ export function App() {
             i18n={i18n}
             isApplyingRotation={isApplyingAuditSigningKeyRotationPlan}
             isPreparingRotation={isPreparingAuditSigningKeyRotationPlan}
+            isRecordingRestartEvidence={isRecordingAuditSigningKeyRestartEvidence}
             onApplyConfirmationChange={updateAuditSigningKeyRotationApplyConfirmation}
             onApplyRotation={applyAuditSigningKeyRotationPlanForAudit}
             onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}
+            onRecordRestartEvidence={recordAuditSigningKeyRestartEvidenceForAudit}
+            onRestartEvidenceConfirmationChange={updateAuditSigningKeyRestartEvidenceConfirmation}
             registry={auditSigningKeyRegistry.registry}
+            restartEvidence={auditSigningKeyRestartEvidence.restartEvidence}
+            restartEvidenceApplyEventId={auditSigningKeyRotationApplyEventId}
+            restartEvidenceConfirmations={auditSigningKeyRestartEvidenceConfirmations}
+            restartEvidenceError={auditSigningKeyRestartEvidence.error}
             rotationApply={auditSigningKeyRotationApply.rotationApply}
             rotationApplyConfirmations={auditSigningKeyRotationApplyConfirmations}
             rotationApplyError={auditSigningKeyRotationApply.error}
@@ -8468,10 +8540,17 @@ function AuditSigningKeyRegistryPanel({
   i18n,
   isApplyingRotation,
   isPreparingRotation,
+  isRecordingRestartEvidence,
   onApplyConfirmationChange,
   onApplyRotation,
   onPrepareRotation,
+  onRecordRestartEvidence,
+  onRestartEvidenceConfirmationChange,
   registry,
+  restartEvidence,
+  restartEvidenceApplyEventId,
+  restartEvidenceConfirmations,
+  restartEvidenceError,
   rotationApply,
   rotationApplyConfirmations,
   rotationApplyError,
@@ -8487,10 +8566,17 @@ function AuditSigningKeyRegistryPanel({
   i18n: AppI18n;
   isApplyingRotation: boolean;
   isPreparingRotation: boolean;
+  isRecordingRestartEvidence: boolean;
   onApplyConfirmationChange: (field: keyof AuditSigningKeyRotationApplyConfirmations, value: boolean) => void;
   onApplyRotation: () => void;
   onPrepareRotation: () => void;
+  onRecordRestartEvidence: () => void;
+  onRestartEvidenceConfirmationChange: (field: keyof AuditSigningKeyRestartEvidenceConfirmations, value: boolean) => void;
   registry?: AuditSigningKeyRegistry;
+  restartEvidence?: AuditSigningKeyControlledRestartEvidence;
+  restartEvidenceApplyEventId: string | null;
+  restartEvidenceConfirmations: AuditSigningKeyRestartEvidenceConfirmations;
+  restartEvidenceError?: string;
   rotationApply?: AuditSigningKeyRotationApply;
   rotationApplyConfirmations: AuditSigningKeyRotationApplyConfirmations;
   rotationApplyError?: string;
@@ -8708,6 +8794,86 @@ function AuditSigningKeyRegistryPanel({
                       ? `${rotationApply.secretPlaceholderNames.length} 个本地 secret 项`
                       : `${rotationApply.secretPlaceholderNames.length} local secret items`}
                   </em>
+                </div>
+              ) : null}
+              {rotationApply?.status === "ready_for_restart" || restartEvidence ? (
+                <div className="audit-signing-key-restart-evidence">
+                  <div className="audit-signing-key-rotation-apply-head">
+                    <span>{i18n.locale === "zh-CN" ? "受控重启证据" : "Controlled restart evidence"}</span>
+                    <strong>
+                      {i18n.locale === "zh-CN"
+                        ? "记录证据，仍不放行 live"
+                        : "Record evidence, live remains blocked"}
+                    </strong>
+                  </div>
+                  <div className="audit-signing-key-rotation-apply-checks">
+                    <label>
+                      <input
+                        checked={restartEvidenceConfirmations.restartWindowExecuted}
+                        onChange={(event) =>
+                          onRestartEvidenceConfirmationChange("restartWindowExecuted", event.currentTarget.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? "受控重启窗口已执行" : "Restart window executed"}</span>
+                    </label>
+                    <label>
+                      <input
+                        checked={restartEvidenceConfirmations.rollbackPlanConfirmed}
+                        onChange={(event) =>
+                          onRestartEvidenceConfirmationChange("rollbackPlanConfirmed", event.currentTarget.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? "回滚计划已确认" : "Rollback plan confirmed"}</span>
+                    </label>
+                    <label>
+                      <input
+                        checked={restartEvidenceConfirmations.postRestartValidationPassed}
+                        onChange={(event) =>
+                          onRestartEvidenceConfirmationChange("postRestartValidationPassed", event.currentTarget.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? "重启后验收已通过" : "Post-restart validation passed"}</span>
+                    </label>
+                    <label>
+                      <input
+                        checked={restartEvidenceConfirmations.operatorReviewedRestartLogs}
+                        onChange={(event) =>
+                          onRestartEvidenceConfirmationChange("operatorReviewedRestartLogs", event.currentTarget.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? "操作员已复核重启日志" : "Operator reviewed restart logs"}</span>
+                    </label>
+                  </div>
+                  <button
+                    className="compact-action"
+                    disabled={isRecordingRestartEvidence || !restartEvidenceApplyEventId}
+                    onClick={onRecordRestartEvidence}
+                    type="button"
+                  >
+                    {isRecordingRestartEvidence ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+                    {i18n.locale === "zh-CN" ? "记录重启证据" : "Record restart evidence"}
+                  </button>
+                  {restartEvidence ? (
+                    <div className={`audit-signing-key-rotation-apply-result ${restartEvidence.status}`}>
+                      <span>{auditSigningKeyRestartEvidenceStatusLabel(i18n, restartEvidence.status)}</span>
+                      <strong>{restartEvidence.proposedActiveKeyId || "n/a"}</strong>
+                      <small>
+                        {restartEvidence.blockedReasons.length
+                          ? restartEvidence.blockedReasons
+                              .map((reason) => auditSigningKeyRestartEvidenceReasonLabel(i18n, reason))
+                              .join(" / ")
+                          : i18n.locale === "zh-CN"
+                            ? "证据已入账，实盘仍保持阻断"
+                            : "Evidence recorded; live remains blocked"}
+                      </small>
+                      <em>{restartEvidence.liveTradingAllowed ? "live=true" : "live=false / paper-only"}</em>
+                    </div>
+                  ) : null}
+                  {restartEvidenceError ? <p className="audit-signing-key-error">{restartEvidenceError}</p> : null}
                 </div>
               ) : null}
             </div>
@@ -10039,6 +10205,32 @@ function auditSigningKeyRotationApplyReasonLabel(i18n: AppI18n, reason: string):
       proposed_key_already_exists_in_registry: "拟启用 key 已在注册表",
       proposed_key_matches_current_active_key: "拟启用 key 与当前 key 相同",
       proposed_key_required: "缺少拟启用 key"
+    }[reason] ?? reason
+  );
+}
+
+function auditSigningKeyRestartEvidenceStatusLabel(
+  i18n: AppI18n,
+  status: AuditSigningKeyControlledRestartEvidence["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status === "blocked" ? "Evidence blocked" : "Evidence recorded";
+  }
+  return status === "blocked" ? "证据阻断" : "证据已记录";
+}
+
+function auditSigningKeyRestartEvidenceReasonLabel(i18n: AppI18n, reason: string): string {
+  if (i18n.locale === "en-US") {
+    return reason.replaceAll("_", " ");
+  }
+  return (
+    {
+      controlled_restart_not_required: "无需受控重启",
+      ready_apply_event_required: "缺少就绪的应用预检事件",
+      restart_logs_not_confirmed: "重启日志未复核",
+      restart_window_not_confirmed: "重启窗口未确认",
+      rollback_plan_not_confirmed: "回滚计划未确认",
+      post_restart_validation_not_confirmed: "重启后验收未确认"
     }[reason] ?? reason
   );
 }
