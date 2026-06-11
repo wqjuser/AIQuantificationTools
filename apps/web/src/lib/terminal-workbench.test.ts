@@ -3257,6 +3257,107 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("adds data preparation evidence to the AI review audit timeline and evidence index", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-preparation-timeline",
+      createdAt: "2026-06-11T04:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend demo",
+      strategyRevision: "rev-preparation-timeline",
+      dataRows: 240,
+      metrics: {
+        total_return_pct: 8.2,
+        max_drawdown_pct: 3.1,
+        win_rate_pct: 55,
+        trade_count: 9
+      },
+      decisions: [{ agent: "Technical", message: "Prepared cache evidence is locked.", tone: "positive" }],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 240,
+        start: "2026-06-10T08:00:00+00:00",
+        end: "2026-06-11T08:00:00+00:00",
+        hash: "snapshot-preparation-timeline",
+        bars: [],
+        preparationEvidence: {
+          kind: "watchlist_cache_refresh",
+          runId: "cache-refresh-timeline",
+          createdAt: "2026-06-11T03:50:00+00:00",
+          market: "ashare",
+          symbol: "600000",
+          name: "浦发银行",
+          timeframe: "1d",
+          status: "refreshed",
+          requestedLimit: 240,
+          upsertedRows: 240,
+          quality: {
+            source: "tencent",
+            isComplete: true,
+            warnings: [],
+            rows: 240
+          },
+          error: null
+        }
+      }
+    });
+    const currentRecord = buildAiReviewRunRecord(workspace);
+    expect(currentRecord).not.toBeNull();
+    const preparationEvidence = workspace.researchRun?.dataSnapshot?.preparationEvidence ?? null;
+    expect(preparationEvidence).not.toBeNull();
+
+    const timelineItems = buildAiReviewAuditTimelineItems({
+      currentRunId: currentRecord!.runId,
+      currentStrategyRevision: currentRecord!.strategyRevision,
+      dossier: buildAiReviewDossier(workspace),
+      records: [],
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk review blocked",
+        summary: "No execution handoff without review.",
+        gates: []
+      },
+      preparationEvidence
+    });
+    const preparationItem = timelineItems.find((item) => item.kind === "data-preparation-evidence");
+
+    expect(preparationItem).toMatchObject<Partial<AiReviewAuditTimelineItem>>({
+      id: "preparation:cache-refresh-timeline",
+      kind: "data-preparation-evidence",
+      label: "Data preparation",
+      reference: "cache-refresh-timeline",
+      exportAnchor: "preparationEvidence:cache-refresh-timeline",
+      status: "passed",
+      tone: "positive",
+      targetWorkspaceId: "backtest",
+      actionLabel: "Open preparation evidence"
+    });
+
+    const rows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: currentRecord!,
+      records: [],
+      timelineItems
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining<AiReviewExportEvidenceIndexRow>([
+        expect.objectContaining({
+          id: "timeline:cache-refresh-timeline",
+          group: "timeline",
+          anchor: "preparationEvidence:cache-refresh-timeline",
+          reference: "cache-refresh-timeline",
+          exportPath: "researchRun.dataSnapshot.preparationEvidence"
+        })
+      ])
+    );
+    expect(filterAiReviewExportEvidenceIndexRows(rows, "cache-refresh-timeline").map((row) => row.anchor)).toContain(
+      "preparationEvidence:cache-refresh-timeline"
+    );
+  });
+
   test("builds a searchable AI review export evidence index", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-ai-index",

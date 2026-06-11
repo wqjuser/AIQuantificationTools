@@ -305,6 +305,7 @@ import {
   ResearchContextEvidenceRow,
   ResearchContextMarketCalendar,
   ResearchContextReadinessRow,
+  ResearchRunDataPreparationEvidence,
   ResearchRunAudit,
   ResearchRunExportBrowserRow,
   ResearchRunExportIndexRow,
@@ -4392,6 +4393,7 @@ export function App() {
             className="workflow-ai-audit-panel"
             currentRecord={currentAiReviewRunRecord}
             marketCalendar={workspace.researchRun?.dataSnapshot?.marketCalendar ?? null}
+            preparationEvidence={workspace.researchRun?.dataSnapshot?.preparationEvidence ?? null}
             currentRunId={workspace.researchRun?.runId ?? null}
             currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}
             dossier={aiReviewDossier}
@@ -9105,6 +9107,7 @@ function AiReviewAuditTrailPanel({
   isLoadingHistory,
   liveExecutionBlocked,
   marketCalendar,
+  preparationEvidence,
   onHistoryQueryChange,
   onNextHistoryPage,
   onPreviousHistoryPage,
@@ -9124,6 +9127,7 @@ function AiReviewAuditTrailPanel({
   isLoadingHistory: boolean;
   liveExecutionBlocked: boolean;
   marketCalendar: ResearchContextMarketCalendar | null;
+  preparationEvidence: ResearchRunDataPreparationEvidence | null;
   onHistoryQueryChange: (query: string) => void;
   onNextHistoryPage: () => void;
   onPreviousHistoryPage: () => void;
@@ -9149,6 +9153,7 @@ function AiReviewAuditTrailPanel({
     currentStrategyRevision,
     dossier,
     marketCalendar,
+    preparationEvidence,
     records: records.map((record) => record.record),
     riskApproval
   });
@@ -9234,6 +9239,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
     return (
       {
         "current-evidence": "Current evidence",
+        "data-preparation-evidence": "Data preparation",
         "market-calendar-evidence": "Market calendar",
         "saved-review": "Saved review",
         "risk-approval": "Risk approval"
@@ -9243,6 +9249,7 @@ function auditTimelineKindLabel(i18n: AppI18n, kind: AiReviewAuditTimelineItem["
   return (
     {
       "current-evidence": "当前证据",
+      "data-preparation-evidence": "数据准备",
       "market-calendar-evidence": "交易日历",
       "saved-review": "保存评审",
       "risk-approval": "风控审批"

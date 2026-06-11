@@ -538,6 +538,7 @@ export interface AiReviewRecordDriftRow {
 
 export type AiReviewAuditTimelineItemKind =
   | "current-evidence"
+  | "data-preparation-evidence"
   | "market-calendar-evidence"
   | "saved-review"
   | "risk-approval";
@@ -3820,6 +3821,7 @@ export function buildAiReviewAuditTimelineItems({
   currentStrategyRevision,
   dossier,
   marketCalendar = null,
+  preparationEvidence = null,
   records,
   riskApproval
 }: {
@@ -3827,11 +3829,29 @@ export function buildAiReviewAuditTimelineItems({
   currentStrategyRevision: string;
   dossier: AiReviewDossier;
   marketCalendar?: ResearchContextMarketCalendar | null;
+  preparationEvidence?: ResearchRunDataPreparationEvidence | null;
   records: AiReviewRunRecord[];
   riskApproval: RiskApprovalSummary;
 }): AiReviewAuditTimelineItem[] {
   const currentEvidenceReady = Boolean(currentRunId) && dossier.status === "ready";
   const currentRunReference = currentRunId ?? "pending-audit-run";
+  const preparationItem = preparationEvidence
+    ? ({
+        id: `preparation:${preparationEvidence.runId}`,
+        kind: "data-preparation-evidence" as const,
+        label: "Data preparation",
+        value: `${preparationEvidence.upsertedRows} rows · ${preparationEvidence.quality.source}`,
+        detail: formatPreparationEvidenceDetail(preparationEvidence),
+        reference: preparationEvidence.runId,
+        exportAnchor: `preparationEvidence:${preparationEvidence.runId}`,
+        createdAt: preparationEvidence.createdAt,
+        targetWorkspaceId: "backtest" as const,
+        targetRecordId: null,
+        actionLabel: "Open preparation evidence",
+        status: preparationEvidence.quality.isComplete ? ("passed" as const) : ("review" as const),
+        tone: preparationEvidence.quality.isComplete ? ("positive" as const) : ("warning" as const)
+      } satisfies AiReviewAuditTimelineItem)
+    : null;
   const calendarItem = marketCalendar
     ? ({
         id: `calendar:${marketCalendar.market}:${marketCalendar.tradingDay}`,
@@ -3885,6 +3905,7 @@ export function buildAiReviewAuditTimelineItems({
       status: currentEvidenceReady ? "passed" : "blocked",
       tone: currentEvidenceReady ? "ai" : "risk"
     },
+    ...(preparationItem ? [preparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
     ...savedRecordItems,
     {
@@ -6545,6 +6566,9 @@ function researchRunImportRecoveryHint(
 function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   if (item.kind === "current-evidence") {
     return "researchRun.runId";
+  }
+  if (item.kind === "data-preparation-evidence") {
+    return "researchRun.dataSnapshot.preparationEvidence";
   }
   if (item.kind === "market-calendar-evidence") {
     return "researchRun.dataSnapshot.marketCalendar";
