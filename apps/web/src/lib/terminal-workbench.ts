@@ -7156,7 +7156,8 @@ export function buildAuditEvidenceReportLedgerSummary(
   rows: AuditEvidenceReportLedgerRow[]
 ): AuditEvidenceReportLedgerSummary {
   const signingEligibleRows = rows.filter((row) => row.reportKind !== "p0_readiness_report");
-  const ready = rows.filter((row) => row.status === "ready").length;
+  const readyRows = rows.filter((row) => row.status === "ready");
+  const ready = readyRows.length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
   const unsigned = signingEligibleRows.filter((row) => row.signatureStatus === "unsigned").length;
   const signed = signingEligibleRows.filter((row) => row.signatureStatus === "signed").length;
@@ -7169,6 +7170,12 @@ export function buildAuditEvidenceReportLedgerSummary(
   const signingAttention = signingInvalid + revoked;
   const auditAidRows = rows.filter((row) => row.reportKind === "p0_readiness_report");
   const latestAuditAidRow = auditAidRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
+  const latestReadyRow = readyRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
     if (!latest) {
       return row;
     }
@@ -7199,7 +7206,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidPreflightLabel: latestAuditAidRow?.paperPreflightLabel ?? "",
     latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
-    latestHash: rows.find((row) => row.status === "ready")?.contentSha256 ?? "",
+    latestHash: latestReadyRow?.contentSha256 ?? "",
     ready,
     revoked,
     signed,

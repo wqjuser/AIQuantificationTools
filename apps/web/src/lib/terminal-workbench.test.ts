@@ -7507,6 +7507,51 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("selects the newest ready report hash for the audit ledger summary", () => {
+    const olderHash = "1".repeat(64);
+    const newerHash = "2".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-run-old-1111111111111111",
+        eventType: "audit_evidence_report",
+        runId: "run-old",
+        createdAt: "2026-06-10T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Older audit evidence report",
+        detail: "run-old-audit-evidence-report.md",
+        metadata: {
+          contentSha256: olderHash,
+          fileName: "run-old-audit-evidence-report.md"
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-run-new-2222222222222222",
+        eventType: "audit_evidence_report",
+        runId: "run-new",
+        createdAt: "2026-06-12T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Newer audit evidence report",
+        detail: "run-new-audit-evidence-report.md",
+        metadata: {
+          contentSha256: newerHash,
+          fileName: "run-new-audit-evidence-report.md"
+        }
+      }
+    ]);
+
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        latestHash: newerHash,
+        ready: 2,
+        total: 2
+      })
+    );
+  });
+
   test("promotes backtest report ledger rows when signature chain metadata is present", () => {
     const backtestHash = "e".repeat(64);
     const rows = buildAuditEvidenceReportLedgerRows([
