@@ -207,6 +207,7 @@ import {
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
+  buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -309,6 +310,7 @@ import {
   ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
+  P0PlatformReadinessSummary,
   PaperPositionRow,
   PaperExecutionSummaryTile,
   PaperTradingRow,
@@ -1292,6 +1294,7 @@ export function App() {
   const goldenPathCurrentStep = goldenPath?.steps.find((step) => step.id === goldenPath.currentStepId);
   const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
   const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
+  const p0PlatformReadinessSummary = buildP0PlatformReadinessSummary(goldenPath);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -5321,6 +5324,20 @@ export function App() {
                   <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
                 </div>
               ) : null}
+              <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
+                <div>
+                  <span>{i18n.locale === "zh-CN" ? "P0 可用性" : "P0 Readiness"}</span>
+                  <strong>{p0PlatformReadinessHeadline(i18n, p0PlatformReadinessSummary)}</strong>
+                  <small>{p0PlatformReadinessDetail(i18n, p0PlatformReadinessSummary)}</small>
+                </div>
+                <em>{p0PlatformReadinessSummary.progressPct}%</em>
+                <div className="p0-readiness-meter">
+                  <span style={{ width: `${p0PlatformReadinessSummary.progressPct}%` }} />
+                </div>
+                <small className="p0-readiness-boundary">
+                  {p0PlatformReadinessLiveBoundary(i18n, p0PlatformReadinessSummary)}
+                </small>
+              </div>
               {activeWorkspaceContext ? (
                 <div className={`workspace-gate-summary ${activeWorkspaceContext.status}`}>
                   <span>{goldenPathWorkspaceContextLabel(i18n, activeWorkspaceContext)}</span>
@@ -5557,6 +5574,54 @@ function goldenPathStatusLabel(i18n: AppI18n, status: GoldenPathStatus["status"]
 function goldenPathProgressLabel(i18n: AppI18n, goldenPath: GoldenPathStatus): string {
   const progress = `${goldenPath.summary.passedSteps}/${goldenPath.summary.totalSteps}`;
   return `${goldenPathStatusLabel(i18n, goldenPath.status)} · ${i18n.locale === "en-US" ? progress : `${progress}步`}`;
+}
+
+function p0PlatformReadinessHeadline(i18n: AppI18n, summary: P0PlatformReadinessSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      blocked: "黄金路径阻断",
+      live_ready: "实盘链路已就绪",
+      paper_ready: "模拟链路已可用",
+      review: "黄金路径待复核",
+      unknown: "等待可用性证据"
+    } satisfies Record<P0PlatformReadinessSummary["state"], string>
+  )[summary.state];
+}
+
+function p0PlatformReadinessDetail(i18n: AppI18n, summary: P0PlatformReadinessSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "unknown") {
+    return "黄金路径状态尚未加载。";
+  }
+  const progress = `${summary.passedSteps}/${summary.totalSteps} 个 P0 步骤通过`;
+  if (summary.state === "paper_ready") {
+    return `${progress} · 模拟研究链路已可用 · 实盘仍阻断`;
+  }
+  if (summary.state === "live_ready") {
+    return `${progress} · 实盘闸门显示已就绪`;
+  }
+  const gap = summary.currentGap
+    ? goldenPathStepLabel(i18n, summary.currentGap.stepId, summary.currentGap.label)
+    : "证据";
+  return `${progress} · 当前缺口：${gap}`;
+}
+
+function p0PlatformReadinessLiveBoundary(i18n: AppI18n, summary: P0PlatformReadinessSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.liveBoundary.detail;
+  }
+  if (summary.liveBoundary.liveTradingAllowed) {
+    return "黄金路径显示实盘闸门打开；路由资金前仍需人工确认。";
+  }
+  if (summary.state === "unknown") {
+    return "加载黄金路径后再评估执行边界。";
+  }
+  return "P0 可用于审计研究、评审和模拟执行；实盘交易保持阻断。";
 }
 
 function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {

@@ -180,6 +180,23 @@ describe("terminal layout css", () => {
     expect(cssBlock(".golden-path-runbook-item")).toContain("cursor: pointer;");
   });
 
+  test("renders P0 platform readiness as a compact product gap summary", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildP0PlatformReadinessSummary(goldenPath)");
+    expect(appSource).toContain("p0PlatformReadinessSummary");
+    expect(overviewSource).toContain('className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}');
+    expect(overviewSource).toContain("p0PlatformReadinessHeadline");
+    expect(overviewSource).toContain("p0PlatformReadinessDetail");
+    expect(overviewSource).toContain("p0PlatformReadinessLiveBoundary");
+    expect(overviewSource).toContain('className="p0-readiness-meter"');
+    expect(overviewSource).toContain('style={{ width: `${p0PlatformReadinessSummary.progressPct}%` }}');
+    expect(cssBlock(".p0-readiness-summary")).toContain("display: grid;");
+    expect(cssBlock(".p0-readiness-summary")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".p0-readiness-meter")).toContain("height: 5px;");
+    expect(cssBlock(".p0-readiness-meter span")).toContain("transition: width 0.2s ease;");
+  });
+
   test("translates golden path cache readiness guidance for audited research", () => {
     expect(appSource).toContain("translateGoldenPathDetail");
     expect(appSource).toContain("fresh cached K-line rows are available for audited research");

@@ -55,6 +55,7 @@ import {
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
+  buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -1372,6 +1373,168 @@ describe("terminal workbench model", () => {
 
   test("returns no work-area context when the golden path has no matching workspace", () => {
     expect(buildGoldenPathWorkspaceContext({ workspaces: [], runbook: [] }, "execution")).toBeNull();
+  });
+
+  test("builds a P0 platform readiness summary from golden path evidence", () => {
+    const summary = buildP0PlatformReadinessSummary({
+      status: "blocked",
+      summary: {
+        totalSteps: 5,
+        passedSteps: 2,
+        reviewSteps: 1,
+        blockedSteps: 2,
+        currentStepLabel: "Backtest report",
+        nextActionId: "run-pipeline",
+        liveTradingAllowed: false
+      },
+      nextAction: {
+        id: "run-pipeline",
+        label: "Run research pipeline",
+        targetWorkspace: "research",
+        reason: "Refresh audited backtest evidence."
+      },
+      runbook: [
+        {
+          stepId: "market-data",
+          label: "Market data",
+          workspaceId: "market",
+          status: "passed",
+          current: false,
+          passed: true,
+          detail: "Fresh cache exists.",
+          blocker: null,
+          actionId: null,
+          actionLabel: null,
+          targetWorkspace: null
+        },
+        {
+          stepId: "research-run",
+          label: "Audited research run",
+          workspaceId: "research",
+          status: "passed",
+          current: false,
+          passed: true,
+          detail: "Audit run is available.",
+          blocker: null,
+          actionId: null,
+          actionLabel: null,
+          targetWorkspace: null
+        },
+        {
+          stepId: "backtest-report",
+          label: "Backtest report",
+          workspaceId: "backtest",
+          status: "review",
+          current: true,
+          passed: false,
+          detail: "Refresh audited backtest evidence.",
+          blocker: "Refresh audited backtest evidence.",
+          actionId: "run-pipeline",
+          actionLabel: "Run research pipeline",
+          targetWorkspace: "research"
+        },
+        {
+          stepId: "ai-review",
+          label: "AI review",
+          workspaceId: "ai-review",
+          status: "blocked",
+          current: false,
+          passed: false,
+          detail: "AI waits for backtest.",
+          blocker: "AI waits for backtest.",
+          actionId: "run-ai-review",
+          actionLabel: "Run AI review",
+          targetWorkspace: "ai-review"
+        },
+        {
+          stepId: "paper-execution",
+          label: "Paper execution",
+          workspaceId: "execution",
+          status: "blocked",
+          current: false,
+          passed: false,
+          detail: "Paper execution waits for AI review.",
+          blocker: "Paper execution waits for AI review.",
+          actionId: "submit-paper-order",
+          actionLabel: "Submit paper order",
+          targetWorkspace: "execution"
+        }
+      ]
+    });
+
+    expect(summary).toMatchObject({
+      state: "blocked",
+      headline: "P0 golden path blocked",
+      detail: "2/5 P0 steps passed · current gap: Backtest report",
+      progressPct: 40,
+      passedSteps: 2,
+      totalSteps: 5,
+      openStepCount: 3,
+      currentGap: {
+        stepId: "backtest-report",
+        label: "Backtest report",
+        workspaceId: "backtest",
+        status: "review",
+        detail: "Refresh audited backtest evidence.",
+        actionId: "run-pipeline",
+        actionLabel: "Run research pipeline",
+        targetWorkspaceId: "research"
+      },
+      liveBoundary: {
+        liveTradingAllowed: false,
+        label: "Paper-only boundary",
+        detail: "P0 can be usable for audited research, review, and simulation while live trading remains blocked."
+      }
+    });
+  });
+
+  test("marks P0 paper ready when all golden path steps pass but live remains blocked", () => {
+    const summary = buildP0PlatformReadinessSummary({
+      status: "ready",
+      summary: {
+        totalSteps: 7,
+        passedSteps: 7,
+        reviewSteps: 0,
+        blockedSteps: 0,
+        currentStepLabel: null,
+        nextActionId: null,
+        liveTradingAllowed: false
+      },
+      nextAction: null,
+      runbook: []
+    });
+
+    expect(summary).toMatchObject({
+      state: "paper_ready",
+      headline: "P0 paper workflow ready",
+      detail: "7/7 P0 steps passed · paper workflow ready · live trading remains blocked",
+      progressPct: 100,
+      currentGap: null,
+      liveBoundary: {
+        liveTradingAllowed: false,
+        label: "Paper-only boundary"
+      }
+    });
+  });
+
+  test("returns an unknown P0 readiness summary without golden path evidence", () => {
+    expect(buildP0PlatformReadinessSummary(null)).toEqual({
+      state: "unknown",
+      headline: "Waiting for P0 readiness evidence",
+      detail: "Golden path status is not loaded yet.",
+      progressPct: 0,
+      passedSteps: 0,
+      totalSteps: 0,
+      reviewSteps: 0,
+      blockedSteps: 0,
+      openStepCount: 0,
+      currentGap: null,
+      liveBoundary: {
+        liveTradingAllowed: false,
+        label: "Unknown live boundary",
+        detail: "Load golden path status before evaluating execution readiness."
+      }
+    });
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {

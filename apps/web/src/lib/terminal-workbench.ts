@@ -152,6 +152,56 @@ export interface GoldenPathWorkspaceContext {
   actionTargetWorkspaceId: string | null;
 }
 
+export type P0PlatformReadinessState = "unknown" | "blocked" | "review" | "paper_ready" | "live_ready";
+
+export interface P0PlatformReadinessSource extends GoldenPathRunbookSource {
+  status?: "ready" | "review" | "blocked";
+  nextAction?: {
+    id: string;
+    label: string;
+    targetWorkspace: string;
+    reason: string;
+  } | null;
+  summary?: {
+    totalSteps: number;
+    passedSteps: number;
+    reviewSteps: number;
+    blockedSteps: number;
+    currentStepLabel: string | null;
+    nextActionId: string | null;
+    liveTradingAllowed: boolean;
+  };
+}
+
+export interface P0PlatformReadinessGap {
+  stepId: string;
+  label: string;
+  workspaceId: string;
+  status: GoldenPathRunbookStatus;
+  detail: string;
+  actionId: string | null;
+  actionLabel: string | null;
+  targetWorkspaceId: string | null;
+}
+
+export interface P0PlatformReadinessSummary {
+  state: P0PlatformReadinessState;
+  headline: string;
+  detail: string;
+  progressPct: number;
+  passedSteps: number;
+  totalSteps: number;
+  reviewSteps: number;
+  blockedSteps: number;
+  openStepCount: number;
+  currentGap: P0PlatformReadinessGap | null;
+  liveBoundary: {
+    liveTradingAllowed: boolean;
+    label: string;
+    detail: string;
+  };
+}
+
 export interface QuantLoopNavigationTarget {
   moduleId: string;
   workflowStageId: string;
@@ -3198,6 +3248,157 @@ export function buildGoldenPathWorkspaceContext(
     actionLabel: primaryItem?.actionLabel ?? null,
     actionTargetWorkspaceId
   };
+}
+
+export function buildP0PlatformReadinessSummary(
+  goldenPath: P0PlatformReadinessSource | null | undefined
+): P0PlatformReadinessSummary {
+  if (!goldenPath || !Array.isArray(goldenPath.runbook)) {
+    return {
+      state: "unknown",
+      headline: "Waiting for P0 readiness evidence",
+      detail: "Golden path status is not loaded yet.",
+      progressPct: 0,
+      passedSteps: 0,
+      totalSteps: 0,
+      reviewSteps: 0,
+      blockedSteps: 0,
+      openStepCount: 0,
+      currentGap: null,
+      liveBoundary: {
+        liveTradingAllowed: false,
+        label: "Unknown live boundary",
+        detail: "Load golden path status before evaluating execution readiness."
+      }
+    };
+  }
+
+  const runbook = goldenPath.runbook;
+  const totalSteps = Math.max(goldenPath.summary?.totalSteps ?? runbook.length, 0);
+  const passedSteps = Math.max(
+    goldenPath.summary?.passedSteps ?? runbook.filter((item) => item.passed).length,
+    0
+  );
+  const reviewSteps = Math.max(
+    goldenPath.summary?.reviewSteps ?? runbook.filter((item) => !item.passed && item.status === "review").length,
+    0
+  );
+  const blockedSteps = Math.max(
+    goldenPath.summary?.blockedSteps ?? runbook.filter((item) => !item.passed && item.status === "blocked").length,
+    0
+  );
+  const openStepCount = Math.max(totalSteps - passedSteps, reviewSteps + blockedSteps);
+  const progressPct = totalSteps > 0 ? Math.round((Math.min(passedSteps, totalSteps) / totalSteps) * 100) : 0;
+  const currentGapItem =
+    runbook.find((item) => item.current && !item.passed) ?? runbook.find((item) => !item.passed) ?? null;
+  const currentGap: P0PlatformReadinessGap | null = currentGapItem
+    ? {
+        stepId: currentGapItem.stepId,
+        label: currentGapItem.label,
+        workspaceId: currentGapItem.workspaceId,
+        status: currentGapItem.status,
+        detail: currentGapItem.blocker ?? currentGapItem.detail,
+        actionId: currentGapItem.actionId,
+        actionLabel: currentGapItem.actionLabel,
+        targetWorkspaceId: currentGapItem.targetWorkspace ?? goldenPath.nextAction?.targetWorkspace ?? currentGapItem.workspaceId
+      }
+    : null;
+  const liveTradingAllowed = Boolean(goldenPath.summary?.liveTradingAllowed);
+  const state = resolveP0PlatformReadinessState({
+    blockedSteps,
+    goldenPathStatus: goldenPath.status,
+    liveTradingAllowed,
+    reviewSteps,
+    totalSteps,
+    passedSteps
+  });
+  const headline = p0PlatformReadinessHeadline(state);
+  const detail = p0PlatformReadinessDetail(state, {
+    currentGap,
+    passedSteps,
+    totalSteps
+  });
+
+  return {
+    state,
+    headline,
+    detail,
+    progressPct,
+    passedSteps,
+    totalSteps,
+    reviewSteps,
+    blockedSteps,
+    openStepCount,
+    currentGap,
+    liveBoundary: liveTradingAllowed
+      ? {
+          liveTradingAllowed,
+          label: "Live boundary open",
+          detail: "Golden path status marks live trading gates open; require explicit operator confirmation before routing capital."
+        }
+      : {
+          liveTradingAllowed,
+          label: "Paper-only boundary",
+          detail: "P0 can be usable for audited research, review, and simulation while live trading remains blocked."
+        }
+  };
+}
+
+function resolveP0PlatformReadinessState(input: {
+  blockedSteps: number;
+  goldenPathStatus?: P0PlatformReadinessSource["status"];
+  liveTradingAllowed: boolean;
+  reviewSteps: number;
+  totalSteps: number;
+  passedSteps: number;
+}): P0PlatformReadinessState {
+  if (input.totalSteps <= 0) {
+    return "unknown";
+  }
+  if (input.passedSteps >= input.totalSteps && input.blockedSteps === 0 && input.reviewSteps === 0) {
+    return input.liveTradingAllowed ? "live_ready" : "paper_ready";
+  }
+  if (input.blockedSteps > 0 || input.goldenPathStatus === "blocked") {
+    return "blocked";
+  }
+  if (input.reviewSteps > 0 || input.goldenPathStatus === "review") {
+    return "review";
+  }
+  return "blocked";
+}
+
+function p0PlatformReadinessHeadline(state: P0PlatformReadinessState): string {
+  return (
+    {
+      blocked: "P0 golden path blocked",
+      live_ready: "P0 live workflow ready",
+      paper_ready: "P0 paper workflow ready",
+      review: "P0 golden path needs review",
+      unknown: "Waiting for P0 readiness evidence"
+    } satisfies Record<P0PlatformReadinessState, string>
+  )[state];
+}
+
+function p0PlatformReadinessDetail(
+  state: P0PlatformReadinessState,
+  context: {
+    currentGap: P0PlatformReadinessGap | null;
+    passedSteps: number;
+    totalSteps: number;
+  }
+): string {
+  if (state === "unknown") {
+    return "Golden path status is not loaded yet.";
+  }
+  const progress = `${context.passedSteps}/${context.totalSteps} P0 steps passed`;
+  if (state === "paper_ready") {
+    return `${progress} · paper workflow ready · live trading remains blocked`;
+  }
+  if (state === "live_ready") {
+    return `${progress} · live gates reported ready`;
+  }
+  const gap = context.currentGap?.label ?? "Evidence";
+  return `${progress} · current gap: ${gap}`;
 }
 
 export function resolveProductWorkAreaSelection(
