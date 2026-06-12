@@ -5,6 +5,7 @@ import {
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
+  buildP0PaperExecutionPreflight,
   buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
   buildPortfolioBacktestReportMarkdown,
@@ -7269,11 +7270,57 @@ describe("terminal workspace API client", () => {
       statusLabel: "Golden Path audit run loaded"
     });
     const evidenceLink = buildP0PlatformActionOutcomeEvidenceLink(outcome);
+    const paperPreflight = buildP0PaperExecutionPreflight({
+      goldenPath: {
+        currentStepId: "paper-execution",
+        latestRunId: "run-p0-readiness",
+        nextAction: {
+          id: "submit-paper-order",
+          label: "Submit paper order",
+          targetWorkspace: "execution",
+          reason: "Paper order is ready."
+        },
+        summary: { liveTradingAllowed: false }
+      },
+      paperExecution: null,
+      researchBinding: {
+        status: "matched",
+        canUseRun: true,
+        runId: "run-p0-readiness",
+        selectedContext: "ASHARE · 600000 · 1d",
+        runContext: "ASHARE · 600000 · 1d",
+        detail: "Audited run run-p0-readiness matches the selected research context."
+      },
+      riskApproval: {
+        status: "paper_ready",
+        headline: "Paper execution approved",
+        summary: "All paper execution risk checks are approved.",
+        gates: [
+          {
+            id: "audited-run",
+            label: "Audited run",
+            value: "run-p0-readiness",
+            detail: "risk gate ready",
+            status: "passed",
+            tone: "positive"
+          },
+          {
+            id: "execution-route",
+            label: "Human reviewed",
+            value: "confirmed",
+            detail: "operator confirmed",
+            status: "passed",
+            tone: "positive"
+          }
+        ]
+      }
+    });
     const markdown = buildP0PlatformReadinessReportMarkdown({
       backlogItems,
       evidenceLink,
       generatedAt: "2026-06-12T10:00:00.000Z",
       outcome,
+      paperPreflight,
       summary
     });
 
@@ -7283,6 +7330,7 @@ describe("terminal workspace API client", () => {
       generatedAt: "2026-06-12T10:00:00.000Z",
       markdown,
       outcome,
+      paperPreflight,
       summary
     });
 
@@ -7314,6 +7362,14 @@ describe("terminal workspace API client", () => {
         latestEvidenceLink: "workspace=audit&runId=run-p0-readiness&exportPath=manifest%3Arun-p0-readiness",
         backlogCount: 2,
         firstBacklogStepId: "backtest-report",
+        paperPreflightActionId: "submit-paper-order",
+        paperPreflightActionLabel: "Submit paper order",
+        paperPreflightGateBlockedCount: 0,
+        paperPreflightGatePassedCount: 2,
+        paperPreflightGateReviewCount: 2,
+        paperPreflightGateTotal: 4,
+        paperPreflightLiveBoundary: "paper only",
+        paperPreflightState: "ready",
         liveTradingAllowed: false,
         liveBoundary: "Paper-only boundary",
         boundary: "P0 readiness audit aid only; no live trading authorization or investment advice"

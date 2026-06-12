@@ -307,6 +307,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("backlogItems: p0PlatformBacklogItems");
     expect(appSource).toContain("evidenceLink: p0ActionOutcomeEvidenceLink");
     expect(appSource).toContain("outcome: p0PlatformActionOutcome");
+    expect(appSource).toContain("paperPreflight: p0PaperExecutionPreflight");
     expect(appSource).toContain("summary: p0PlatformReadinessSummary");
     expect(appSource).toContain("const copyP0ReadinessReport = useCallback(");
     expect(appSource).toContain("navigator.clipboard.writeText(p0PlatformReadinessReportMarkdown)");
@@ -316,6 +317,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("p0-readiness-report.md");
     expect(appSource).toContain("const saveP0ReadinessReport = useCallback(");
     expect(appSource).toContain("await buildP0PlatformReadinessReportAuditEvent({");
+    expect(appSource).toContain("paperPreflight: p0PaperExecutionPreflight");
     expect(appSource).toContain("await saveAuditEvent(quantCoreBaseUrl, auditEvent)");
     expect(appSource).toContain("setAuditEvidenceReportEvents((current) =>");
     expect(appSource).toContain("P0 readiness report saved to audit ledger");

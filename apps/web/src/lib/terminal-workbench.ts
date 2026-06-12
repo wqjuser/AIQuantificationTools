@@ -307,6 +307,7 @@ export interface P0PlatformReadinessReportInput {
   backlogItems: readonly P0PlatformBacklogItem[];
   outcome: P0PlatformActionOutcome;
   evidenceLink?: P0PlatformActionOutcomeEvidenceLink | null;
+  paperPreflight?: P0PaperExecutionPreflight | null;
   generatedAt?: string;
 }
 
@@ -3851,6 +3852,7 @@ export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadines
   const evidenceLink = input.evidenceLink?.search?.trim()
     ? `- Evidence link: ${input.evidenceLink.search.trim()}`
     : "- Evidence link: not available yet";
+  const paperPreflightLines = buildP0PaperExecutionPreflightReportLines(input.paperPreflight);
 
   return [
     "# P0 Platform Readiness Report",
@@ -3875,9 +3877,33 @@ export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadines
     `- Evidence: ${input.outcome.label} - ${p0ReportText(input.outcome.detail)}`,
     `- Next step: ${p0ReportText(input.outcome.nextStep)}`,
     evidenceLink,
+    ...paperPreflightLines,
     "",
     "This report is an audit aid only. It does not authorize live trading or provide investment advice."
   ].join("\n");
+}
+
+function buildP0PaperExecutionPreflightReportLines(
+  preflight: P0PaperExecutionPreflight | null | undefined
+): string[] {
+  if (!preflight) {
+    return [];
+  }
+  const primaryAction = preflight.primaryActionId
+    ? `${preflight.primaryActionLabel} (${preflight.primaryActionId} -> ${preflight.primaryActionTargetWorkspaceId})`
+    : `${preflight.primaryActionLabel} (review -> ${preflight.primaryActionTargetWorkspaceId})`;
+  return [
+    "",
+    "## Paper Execution Preflight",
+    "",
+    `- State: ${preflight.state}`,
+    `- Primary action: ${p0ReportText(primaryAction)}`,
+    "",
+    ...preflight.gates.map(
+      (gate, index) =>
+        `${index + 1}. ${gate.label} [${gate.status}] - ${p0ReportText(gate.value)} - ${p0ReportText(gate.detail)}`
+    )
+  ];
 }
 
 function p0PlatformBacklogPriority(item: GoldenPathRunbookSourceItem): P0PlatformBacklogPriority {

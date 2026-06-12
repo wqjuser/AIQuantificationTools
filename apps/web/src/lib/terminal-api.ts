@@ -19,6 +19,7 @@ import {
   type P0PlatformActionOutcome,
   type P0PlatformActionOutcomeEvidenceLink,
   type P0PlatformBacklogItem,
+  type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
   type ResearchRunDataPreparationEvidence,
   type StrategyReadinessGate,
@@ -3528,6 +3529,7 @@ export async function buildP0PlatformReadinessReportAuditEvent({
   generatedAt = new Date().toISOString(),
   markdown,
   outcome,
+  paperPreflight = null,
   summary
 }: {
   backlogItems: readonly P0PlatformBacklogItem[];
@@ -3535,6 +3537,7 @@ export async function buildP0PlatformReadinessReportAuditEvent({
   generatedAt?: string;
   markdown: string;
   outcome: P0PlatformActionOutcome;
+  paperPreflight?: P0PaperExecutionPreflight | null;
   summary: P0PlatformReadinessSummary;
 }): Promise<AuditEventRecord> {
   const contentSha256 = await sha256TextHex(markdown);
@@ -3544,6 +3547,8 @@ export async function buildP0PlatformReadinessReportAuditEvent({
   const fileName = `${safeRunId}-p0-readiness-report.md`;
   const currentGap = summary.currentGap;
   const firstBacklogItem = backlogItems[0] ?? null;
+  const paperPreflightGates = paperPreflight?.gates ?? [];
+  const paperPreflightLiveBoundary = paperPreflightGates.find((gate) => gate.id === "live-boundary");
 
   return {
     schemaVersion: 1,
@@ -3578,6 +3583,14 @@ export async function buildP0PlatformReadinessReportAuditEvent({
       latestEvidenceLink: evidenceLink?.search ?? "",
       backlogCount: backlogItems.length,
       firstBacklogStepId: firstBacklogItem?.stepId ?? "",
+      paperPreflightState: paperPreflight?.state ?? "",
+      paperPreflightActionId: paperPreflight?.primaryActionId ?? "",
+      paperPreflightActionLabel: paperPreflight?.primaryActionLabel ?? "",
+      paperPreflightGateTotal: paperPreflightGates.length,
+      paperPreflightGatePassedCount: paperPreflightGates.filter((gate) => gate.status === "passed").length,
+      paperPreflightGateReviewCount: paperPreflightGates.filter((gate) => gate.status === "review").length,
+      paperPreflightGateBlockedCount: paperPreflightGates.filter((gate) => gate.status === "blocked").length,
+      paperPreflightLiveBoundary: paperPreflightLiveBoundary?.value ?? "",
       liveTradingAllowed: summary.liveBoundary.liveTradingAllowed,
       liveBoundary: summary.liveBoundary.label,
       boundary: "P0 readiness audit aid only; no live trading authorization or investment advice"

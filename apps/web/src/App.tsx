@@ -1423,12 +1423,14 @@ export function App() {
         backlogItems: p0PlatformBacklogItems,
         evidenceLink: p0ActionOutcomeEvidenceLink,
         outcome: p0PlatformActionOutcome,
+        paperPreflight: p0PaperExecutionPreflight,
         summary: p0PlatformReadinessSummary
       }),
     [
       p0ActionOutcomeEvidenceLink,
       p0PlatformActionOutcome,
       p0PlatformBacklogItems,
+      p0PaperExecutionPreflight,
       p0PlatformReadinessSummary
     ]
   );
@@ -4716,6 +4718,7 @@ export function App() {
         evidenceLink: p0ActionOutcomeEvidenceLink,
         markdown: p0PlatformReadinessReportMarkdown,
         outcome: p0PlatformActionOutcome,
+        paperPreflight: p0PaperExecutionPreflight,
         summary: p0PlatformReadinessSummary
       });
       const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
@@ -4743,6 +4746,7 @@ export function App() {
     p0ActionOutcomeEvidenceLink,
     p0PlatformActionOutcome,
     p0PlatformBacklogItems,
+    p0PaperExecutionPreflight,
     p0PlatformReadinessReportMarkdown,
     p0PlatformReadinessSummary,
     quantCoreBaseUrl

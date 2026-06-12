@@ -2082,11 +2082,57 @@ describe("terminal workbench model", () => {
       paperExecution: null,
       statusLabel: "Golden Path audit run loaded for paper execution"
     });
+    const paperPreflight = buildP0PaperExecutionPreflight({
+      goldenPath: {
+        currentStepId: "paper-execution",
+        latestRunId: "run-audited-002",
+        nextAction: {
+          id: "submit-paper-order",
+          label: "Submit paper order",
+          targetWorkspace: "execution",
+          reason: "Paper order is ready."
+        },
+        summary: { liveTradingAllowed: false }
+      },
+      paperExecution: null,
+      researchBinding: {
+        status: "matched",
+        canUseRun: true,
+        runId: "run-audited-002",
+        selectedContext: "ASHARE · 600000 · 1d",
+        runContext: "ASHARE · 600000 · 1d",
+        detail: "Audited run run-audited-002 matches the selected research context."
+      },
+      riskApproval: {
+        status: "paper_ready",
+        headline: "Paper execution approved",
+        summary: "All paper execution risk checks are approved.",
+        gates: [
+          {
+            id: "audited-run",
+            label: "Audited run",
+            value: "run-audited-002",
+            detail: "risk gate ready",
+            status: "passed",
+            tone: "positive"
+          },
+          {
+            id: "execution-route",
+            label: "Human reviewed",
+            value: "confirmed",
+            detail: "operator confirmed",
+            status: "passed",
+            tone: "positive"
+          }
+        ],
+      }
+    });
     const markdown = buildP0PlatformReadinessReportMarkdown({
       backlogItems: buildP0PlatformBacklogItems(goldenPath, 3),
       evidenceLink: buildP0PlatformActionOutcomeEvidenceLink(outcome),
       generatedAt: "2026-06-12T08:00:00.000Z",
       outcome,
+      paperPreflight,
       summary: buildP0PlatformReadinessSummary(goldenPath)
     });
 
@@ -2102,6 +2148,13 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("## Latest Evidence");
     expect(markdown).toContain("- Evidence: Audited run available - run-audited-002 · Golden Path audit run loaded for paper execution");
     expect(markdown).toContain("- Evidence link: workspace=audit&runId=run-audited-002&exportPath=manifest%3Arun-audited-002");
+    expect(markdown).toContain("## Paper Execution Preflight");
+    expect(markdown).toContain("- State: ready");
+    expect(markdown).toContain("- Primary action: Submit paper order (submit-paper-order -> execution)");
+    expect(markdown).toContain("1. Audited run [passed] - run-audited-002 - Audited run run-audited-002 matches the selected research context.");
+    expect(markdown).toContain("2. Risk approval [passed] - Paper execution approved - All paper execution risk checks are approved.");
+    expect(markdown).toContain("3. Paper execution [review] - ready to submit - Paper order can be submitted after the operator confirms this paper-only route.");
+    expect(markdown).toContain("4. Live boundary [review] - paper only - Paper route can stage; live routing still requires explicit gate approval.");
     expect(markdown).toContain("This report is an audit aid only. It does not authorize live trading or provide investment advice.");
   });
 
