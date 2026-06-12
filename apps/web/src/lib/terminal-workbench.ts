@@ -252,6 +252,14 @@ export interface P0PlatformActionOutcomeEvidenceLink {
   targetWorkspaceId: ProductWorkAreaId;
 }
 
+export interface P0PlatformReadinessReportInput {
+  summary: P0PlatformReadinessSummary;
+  backlogItems: readonly P0PlatformBacklogItem[];
+  outcome: P0PlatformActionOutcome;
+  evidenceLink?: P0PlatformActionOutcomeEvidenceLink | null;
+  generatedAt?: string;
+}
+
 export interface QuantLoopNavigationTarget {
   moduleId: string;
   workflowStageId: string;
@@ -3572,6 +3580,48 @@ export function buildP0PlatformActionOutcomeEvidenceLink(
   return null;
 }
 
+export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadinessReportInput): string {
+  const generatedAt = input.generatedAt?.trim() || new Date().toISOString();
+  const currentGap = input.summary.currentGap;
+  const backlogLines = input.backlogItems.length
+    ? input.backlogItems.map((item, index) => {
+        const action = item.actionLabel?.trim() || "No direct action";
+        const workspace = item.targetWorkspaceId || item.workspaceId;
+        return `${index + 1}. [${item.priority}] ${item.label} (${item.status}) - ${p0ReportText(item.detail)} Action: ${action}. Workspace: ${workspace}.`;
+      })
+    : ["No open P0 gaps in the current Golden Path status."];
+  const evidenceLink = input.evidenceLink?.search?.trim()
+    ? `- Evidence link: ${input.evidenceLink.search.trim()}`
+    : "- Evidence link: not available yet";
+
+  return [
+    "# P0 Platform Readiness Report",
+    "",
+    `- Generated at: ${generatedAt}`,
+    `- State: ${input.summary.headline}`,
+    `- Progress: ${input.summary.passedSteps}/${input.summary.totalSteps} steps passed (${input.summary.progressPct}%)`,
+    `- Open gaps: ${input.summary.openStepCount}`,
+    `- Review steps: ${input.summary.reviewSteps}`,
+    `- Blocked steps: ${input.summary.blockedSteps}`,
+    currentGap
+      ? `- Current gap: ${currentGap.label} - ${p0ReportText(currentGap.detail)}`
+      : "- Current gap: none",
+    `- Live boundary: ${input.summary.liveBoundary.label} - ${p0ReportText(input.summary.liveBoundary.detail)}`,
+    "",
+    "## Open P0 Gaps",
+    "",
+    ...backlogLines,
+    "",
+    "## Latest Evidence",
+    "",
+    `- Evidence: ${input.outcome.label} - ${p0ReportText(input.outcome.detail)}`,
+    `- Next step: ${p0ReportText(input.outcome.nextStep)}`,
+    evidenceLink,
+    "",
+    "This report is an audit aid only. It does not authorize live trading or provide investment advice."
+  ].join("\n");
+}
+
 function p0PlatformBacklogPriority(item: GoldenPathRunbookSourceItem): P0PlatformBacklogPriority {
   if (item.current) {
     return "current";
@@ -3644,6 +3694,10 @@ function p0PlatformReadinessDetail(
   }
   const gap = context.currentGap?.label ?? "Evidence";
   return `${progress} · current gap: ${gap}`;
+}
+
+function p0ReportText(value: string | null | undefined): string {
+  return value?.trim() || "n/a";
 }
 
 export function resolveProductWorkAreaSelection(

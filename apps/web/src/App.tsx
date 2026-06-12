@@ -214,6 +214,7 @@ import {
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
+  buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
@@ -1134,6 +1135,7 @@ export function App() {
   const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId] = useState<string | null>(null);
+  const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
@@ -1405,10 +1407,29 @@ export function App() {
     statusLabel
   });
   const p0ActionOutcomeEvidenceLink = buildP0PlatformActionOutcomeEvidenceLink(p0PlatformActionOutcome);
+  const p0PlatformReadinessReportMarkdown = useMemo(
+    () =>
+      buildP0PlatformReadinessReportMarkdown({
+        backlogItems: p0PlatformBacklogItems,
+        evidenceLink: p0ActionOutcomeEvidenceLink,
+        outcome: p0PlatformActionOutcome,
+        summary: p0PlatformReadinessSummary
+      }),
+    [
+      p0ActionOutcomeEvidenceLink,
+      p0PlatformActionOutcome,
+      p0PlatformBacklogItems,
+      p0PlatformReadinessSummary
+    ]
+  );
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
   }, [klinesState]);
+
+  useEffect(() => {
+    setCopiedP0ReadinessReport(false);
+  }, [p0PlatformReadinessReportMarkdown]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -4573,6 +4594,43 @@ export function App() {
     }));
   }, []);
 
+  const copyP0ReadinessReport = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P0 readiness report copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(p0PlatformReadinessReportMarkdown);
+    setCopiedP0ReadinessReport(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P0 readiness report copied",
+      error: undefined
+    }));
+  }, [p0PlatformReadinessReportMarkdown]);
+
+  const downloadP0ReadinessReport = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([p0PlatformReadinessReportMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "p0-readiness-report.md";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P0 readiness report download ready",
+      error: undefined
+    }));
+  }, [p0PlatformReadinessReportMarkdown]);
+
   const openP0ActionOutcomeEvidence = useCallback(
     (outcome: P0PlatformActionOutcome) => {
       if (!outcome.evidenceId) {
@@ -5797,6 +5855,22 @@ export function App() {
                     >
                       {i18n.locale === "zh-CN" ? "查看证据" : "Evidence"}
                     </button>
+                    <div className="p0-readiness-report-actions">
+                      <button onClick={() => void copyP0ReadinessReport()} type="button">
+                        <Copy size={11} />
+                        {copiedP0ReadinessReport
+                          ? i18n.locale === "zh-CN"
+                            ? "报告已复制"
+                            : "Report copied"
+                          : i18n.locale === "zh-CN"
+                            ? "复制报告"
+                            : "Copy report"}
+                      </button>
+                      <button onClick={downloadP0ReadinessReport} type="button">
+                        <Download size={11} />
+                        {i18n.locale === "zh-CN" ? "下载报告" : "Download report"}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {paperExecutionDeepLinkStatus ? (

@@ -1147,6 +1147,13 @@ em {
   gap: 4px;
 }
 
+.p0-readiness-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
 .p0-action-outcome button {
   border: 1px solid #266c60;
   border-radius: 5px;
@@ -1156,6 +1163,13 @@ em {
   font-size: 10px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.p0-readiness-report-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
 }
 
 .p0-action-outcome button:disabled {

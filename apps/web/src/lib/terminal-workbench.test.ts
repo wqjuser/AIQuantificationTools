@@ -59,6 +59,7 @@ import {
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
+  buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
@@ -1840,6 +1841,98 @@ describe("terminal workbench model", () => {
         nextStep: "Start with market data"
       })
     ).toBeNull();
+  });
+
+  test("builds a portable P0 readiness report from the product gap summary", () => {
+    const goldenPath: NonNullable<Parameters<typeof buildP0PlatformReadinessSummary>[0]> = {
+      status: "blocked",
+      summary: {
+        totalSteps: 5,
+        passedSteps: 2,
+        reviewSteps: 1,
+        blockedSteps: 2,
+        currentStepLabel: "Backtest report",
+        nextActionId: "run-pipeline",
+        liveTradingAllowed: false
+      },
+      nextAction: {
+        id: "run-pipeline",
+        label: "Run research pipeline",
+        targetWorkspace: "research",
+        reason: "Refresh audited backtest evidence."
+      },
+      runbook: [
+        {
+          stepId: "market-data",
+          label: "Market data",
+          workspaceId: "market",
+          status: "passed",
+          current: false,
+          passed: true,
+          detail: "Fresh cache exists.",
+          blocker: null,
+          actionId: null,
+          actionLabel: null,
+          targetWorkspace: null
+        },
+        {
+          stepId: "backtest-report",
+          label: "Backtest report",
+          workspaceId: "backtest",
+          status: "review",
+          current: true,
+          passed: false,
+          detail: "Refresh audited backtest evidence.",
+          blocker: "Refresh audited backtest evidence.",
+          actionId: "run-pipeline",
+          actionLabel: "Run research pipeline",
+          targetWorkspace: "research"
+        },
+        {
+          stepId: "ai-review",
+          label: "AI review",
+          workspaceId: "ai-review",
+          status: "blocked",
+          current: false,
+          passed: false,
+          detail: "AI waits for backtest.",
+          blocker: "AI waits for backtest.",
+          actionId: "run-ai-review",
+          actionLabel: "Run AI review",
+          targetWorkspace: "ai-review"
+        }
+      ]
+    };
+    const outcome = buildP0PlatformActionOutcome({
+      goldenPath: {
+        latestRunId: "run-audited-002",
+        status: "review",
+        summary: { liveTradingAllowed: false }
+      },
+      paperExecution: null,
+      statusLabel: "Golden Path audit run loaded for paper execution"
+    });
+    const markdown = buildP0PlatformReadinessReportMarkdown({
+      backlogItems: buildP0PlatformBacklogItems(goldenPath, 3),
+      evidenceLink: buildP0PlatformActionOutcomeEvidenceLink(outcome),
+      generatedAt: "2026-06-12T08:00:00.000Z",
+      outcome,
+      summary: buildP0PlatformReadinessSummary(goldenPath)
+    });
+
+    expect(markdown).toContain("# P0 Platform Readiness Report");
+    expect(markdown).toContain("- Generated at: 2026-06-12T08:00:00.000Z");
+    expect(markdown).toContain("- State: P0 golden path blocked");
+    expect(markdown).toContain("- Progress: 2/5 steps passed (40%)");
+    expect(markdown).toContain("- Current gap: Backtest report - Refresh audited backtest evidence.");
+    expect(markdown).toContain("- Live boundary: Paper-only boundary - P0 can be usable for audited research, review, and simulation while live trading remains blocked.");
+    expect(markdown).toContain("## Open P0 Gaps");
+    expect(markdown).toContain("1. [current] Backtest report (review) - Refresh audited backtest evidence. Action: Run research pipeline. Workspace: research.");
+    expect(markdown).toContain("2. [blocked] AI review (blocked) - AI waits for backtest. Action: Run AI review. Workspace: ai-review.");
+    expect(markdown).toContain("## Latest Evidence");
+    expect(markdown).toContain("- Evidence: Audited run available - run-audited-002 · Golden Path audit run loaded for paper execution");
+    expect(markdown).toContain("- Evidence link: workspace=audit&runId=run-audited-002&exportPath=manifest%3Arun-audited-002");
+    expect(markdown).toContain("This report is an audit aid only. It does not authorize live trading or provide investment advice.");
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {

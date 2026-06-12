@@ -266,6 +266,31 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-action-outcome button")).toContain("cursor: pointer;");
   });
 
+  test("renders copy and download actions for the P0 readiness report", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildP0PlatformReadinessReportMarkdown");
+    expect(appSource).toContain("const [copiedP0ReadinessReport, setCopiedP0ReadinessReport]");
+    expect(appSource).toContain("const p0PlatformReadinessReportMarkdown = useMemo(");
+    expect(appSource).toContain("buildP0PlatformReadinessReportMarkdown({");
+    expect(appSource).toContain("backlogItems: p0PlatformBacklogItems");
+    expect(appSource).toContain("evidenceLink: p0ActionOutcomeEvidenceLink");
+    expect(appSource).toContain("outcome: p0PlatformActionOutcome");
+    expect(appSource).toContain("summary: p0PlatformReadinessSummary");
+    expect(appSource).toContain("const copyP0ReadinessReport = useCallback(");
+    expect(appSource).toContain("navigator.clipboard.writeText(p0PlatformReadinessReportMarkdown)");
+    expect(appSource).toContain("setCopiedP0ReadinessReport(true)");
+    expect(appSource).toContain("const downloadP0ReadinessReport = useCallback(");
+    expect(appSource).toContain("new Blob([p0PlatformReadinessReportMarkdown], { type: \"text/markdown;charset=utf-8\" })");
+    expect(appSource).toContain("p0-readiness-report.md");
+    expect(overviewSource).toContain('className="p0-readiness-report-actions"');
+    expect(overviewSource).toContain("copyP0ReadinessReport");
+    expect(overviewSource).toContain("downloadP0ReadinessReport");
+    expect(cssBlock(".p0-readiness-report-actions")).toContain("display: flex;");
+    expect(cssBlock(".p0-readiness-report-actions")).toContain("gap: 4px;");
+    expect(cssBlock(".p0-readiness-report-actions button")).toContain("cursor: pointer;");
+  });
+
   test("copies P0 action outcome evidence links without changing the evidence open path", () => {
     const copyHandlerSource = sourceBetween("const copyP0ActionOutcomeEvidenceLink = useCallback(", "const openP0ActionOutcomeEvidence = useCallback(");
 
