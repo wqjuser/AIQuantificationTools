@@ -5350,18 +5350,34 @@ export function App() {
                         : productWorkAreaIds.includes(item.workspaceId as ProductWorkAreaId)
                           ? (item.workspaceId as ProductWorkAreaId)
                           : "research";
+                      const isP0BacklogActionDisabled = !item.actionId || isGoldenPathActionDisabledById(item.actionId);
                       return (
-                        <button
-                          className={`p0-readiness-backlog-item ${item.priority}`}
+                        <article
+                          className={`p0-readiness-backlog-row ${item.priority}`}
                           key={item.stepId}
-                          onClick={() => selectProductWorkArea(targetWorkspaceId)}
-                          type="button"
                         >
                           <span>{item.rank}</span>
-                          <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
+                          <div>
+                            <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
+                            <small>{p0PlatformBacklogDetail(i18n, item)}</small>
+                          </div>
                           <em>{p0PlatformBacklogPriorityLabel(i18n, item)}</em>
-                          <small>{p0PlatformBacklogDetail(i18n, item)}</small>
-                        </button>
+                          <button
+                            className="p0-readiness-backlog-open"
+                            onClick={() => selectProductWorkArea(targetWorkspaceId)}
+                            type="button"
+                          >
+                            {i18n.locale === "zh-CN" ? "工作区" : "Open"}
+                          </button>
+                          <button
+                            className="p0-readiness-backlog-action"
+                            disabled={isP0BacklogActionDisabled}
+                            onClick={() => runGoldenPathActionById(item.actionId, item.targetWorkspaceId ?? item.workspaceId)}
+                            type="button"
+                          >
+                            {p0PlatformBacklogActionButtonLabel(i18n, item)}
+                          </button>
+                        </article>
                       );
                     })}
                   </div>
@@ -5680,6 +5696,21 @@ function p0PlatformBacklogDetail(i18n: AppI18n, item: P0PlatformBacklogItem): st
     : "";
   const detail = translateGoldenPathDetail(i18n, item.detail);
   return action ? `${action} · ${detail}` : detail;
+}
+
+function p0PlatformBacklogActionButtonLabel(i18n: AppI18n, item: P0PlatformBacklogItem): string {
+  if (!item.actionLabel) {
+    return i18n.locale === "zh-CN" ? "查看" : "View";
+  }
+  return goldenPathRunbookActionLabel(i18n, {
+    actionLabel: item.actionLabel,
+    current: item.priority === "current",
+    detail: item.detail,
+    label: item.label,
+    status: item.status,
+    stepId: item.stepId,
+    workspaceId: item.workspaceId
+  });
 }
 
 function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {

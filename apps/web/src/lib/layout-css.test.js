@@ -208,8 +208,24 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("selectProductWorkArea");
     expect(overviewSource).toContain("targetWorkspaceId");
     expect(cssBlock(".p0-readiness-backlog")).toContain("display: grid;");
-    expect(cssBlock(".p0-readiness-backlog-item")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
-    expect(cssBlock(".p0-readiness-backlog-item")).toContain("cursor: pointer;");
+    expect(cssBlock(".p0-readiness-backlog-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto;");
+    expect(cssBlock(".p0-readiness-backlog-open,\n.p0-readiness-backlog-action")).toContain("cursor: pointer;");
+  });
+
+  test("renders P0 readiness backlog rows with separate gated actions", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(overviewSource).toContain('className={`p0-readiness-backlog-row ${item.priority}`}');
+    expect(overviewSource).toContain('className="p0-readiness-backlog-open"');
+    expect(overviewSource).toContain("selectProductWorkArea(targetWorkspaceId)");
+    expect(overviewSource).toContain("const isP0BacklogActionDisabled = !item.actionId || isGoldenPathActionDisabledById(item.actionId);");
+    expect(overviewSource).toContain('className="p0-readiness-backlog-action"');
+    expect(overviewSource).toContain("disabled={isP0BacklogActionDisabled}");
+    expect(overviewSource).toContain("runGoldenPathActionById(item.actionId, item.targetWorkspaceId ?? item.workspaceId)");
+    expect(cssBlock(".p0-readiness-backlog-row")).toContain("display: grid;");
+    expect(cssBlock(".p0-readiness-backlog-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto;");
+    expect(cssBlock(".p0-readiness-backlog-open,\n.p0-readiness-backlog-action")).toContain("cursor: pointer;");
+    expect(cssBlock(".p0-readiness-backlog-action:disabled")).toContain("cursor: not-allowed;");
   });
 
   test("translates golden path cache readiness guidance for audited research", () => {

@@ -1110,9 +1110,10 @@ em {
   gap: 4px;
 }
 
-.p0-readiness-backlog-item {
+.p0-readiness-backlog-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
   gap: 2px 6px;
   min-width: 0;
   width: 100%;
@@ -1120,13 +1121,12 @@ em {
   border-radius: 6px;
   background: #121c2a;
   color: #a8b7c7;
-  cursor: pointer;
   font: inherit;
   padding: 4px 6px;
   text-align: left;
 }
 
-.p0-readiness-backlog-item > span {
+.p0-readiness-backlog-row > span {
   display: grid;
   place-items: center;
   width: 16px;
@@ -1138,7 +1138,12 @@ em {
   font-weight: 900;
 }
 
-.p0-readiness-backlog-item strong {
+.p0-readiness-backlog-row > div {
+  min-width: 0;
+}
+
+.p0-readiness-backlog-row strong {
+  display: block;
   overflow: hidden;
   color: #dce6ee;
   font-size: 10px;
@@ -1146,7 +1151,7 @@ em {
   white-space: nowrap;
 }
 
-.p0-readiness-backlog-item em {
+.p0-readiness-backlog-row em {
   color: #71dfc5;
   font-size: 9px;
   font-style: normal;
@@ -1154,30 +1159,60 @@ em {
   white-space: nowrap;
 }
 
-.p0-readiness-backlog-item small {
-  grid-column: 2 / -1;
+.p0-readiness-backlog-row small {
+  display: block;
   overflow: hidden;
   color: #8fa0b2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.p0-readiness-backlog-item.blocked em {
+.p0-readiness-backlog-row.blocked em {
   color: #ffb35c;
 }
 
-.p0-readiness-backlog-item.review em {
+.p0-readiness-backlog-row.review em {
   color: #e8be62;
 }
 
-.p0-readiness-backlog-item:hover {
+.p0-readiness-backlog-row:hover {
   border-color: #2b6f62;
   background: #142235;
 }
 
-.p0-readiness-backlog-item:focus-visible {
+.p0-readiness-backlog-open,
+.p0-readiness-backlog-action {
+  border: 1px solid #2a3d56;
+  border-radius: 5px;
+  background: #172336;
+  color: #cbd7e2;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+.p0-readiness-backlog-action {
+  border-color: #266c60;
+  color: #71dfc5;
+}
+
+.p0-readiness-backlog-open:hover,
+.p0-readiness-backlog-action:not(:disabled):hover {
+  border-color: #35aa95;
+  background: #102d34;
+}
+
+.p0-readiness-backlog-open:focus-visible,
+.p0-readiness-backlog-action:focus-visible {
   outline: 2px solid #71dfc5;
   outline-offset: 2px;
+}
+
+.p0-readiness-backlog-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .p0-readiness-summary.blocked {
