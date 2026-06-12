@@ -228,6 +228,21 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-readiness-backlog-action:disabled")).toContain("cursor: not-allowed;");
   });
 
+  test("renders compact P0 backlog action hints for disabled or preflighted rows", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(overviewSource).toContain("const p0BacklogActionHint = p0PlatformBacklogActionHint(");
+    expect(overviewSource).toContain("isP0BacklogActionDisabled");
+    expect(overviewSource).toContain("researchPipelinePreflight");
+    expect(overviewSource).toContain('className={`p0-readiness-backlog-hint ${researchPipelinePreflight.status}`}');
+    expect(overviewSource).toContain("{p0BacklogActionHint}");
+    expect(appSource).toContain("function p0PlatformBacklogActionHint(");
+    expect(appSource).toContain("goldenPathActionPreflightHint(i18n, item.actionId, preflight)");
+    expect(appSource).toContain('item.actionId === "submit-paper-order"');
+    expect(cssBlock(".p0-readiness-backlog-hint")).toContain("grid-column: 2 / -1;");
+    expect(cssBlock(".p0-readiness-backlog-hint")).toContain("color: #8fa0b2;");
+  });
+
   test("translates golden path cache readiness guidance for audited research", () => {
     expect(appSource).toContain("translateGoldenPathDetail");
     expect(appSource).toContain("fresh cached K-line rows are available for audited research");

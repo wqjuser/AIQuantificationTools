@@ -1215,6 +1215,23 @@ em {
   opacity: 0.45;
 }
 
+.p0-readiness-backlog-hint {
+  grid-column: 2 / -1;
+  overflow: hidden;
+  color: #8fa0b2;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p0-readiness-backlog-hint.blocked {
+  color: #ffb35c;
+}
+
+.p0-readiness-backlog-hint.review {
+  color: #e8be62;
+}
+
 .p0-readiness-summary.blocked {
   border-color: #553535;
 }

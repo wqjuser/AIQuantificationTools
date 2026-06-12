@@ -5351,6 +5351,12 @@ export function App() {
                           ? (item.workspaceId as ProductWorkAreaId)
                           : "research";
                       const isP0BacklogActionDisabled = !item.actionId || isGoldenPathActionDisabledById(item.actionId);
+                      const p0BacklogActionHint = p0PlatformBacklogActionHint(
+                        i18n,
+                        item,
+                        isP0BacklogActionDisabled,
+                        researchPipelinePreflight
+                      );
                       return (
                         <article
                           className={`p0-readiness-backlog-row ${item.priority}`}
@@ -5377,6 +5383,11 @@ export function App() {
                           >
                             {p0PlatformBacklogActionButtonLabel(i18n, item)}
                           </button>
+                          {p0BacklogActionHint ? (
+                            <small className={`p0-readiness-backlog-hint ${researchPipelinePreflight.status}`}>
+                              {p0BacklogActionHint}
+                            </small>
+                          ) : null}
                         </article>
                       );
                     })}
@@ -5711,6 +5722,33 @@ function p0PlatformBacklogActionButtonLabel(i18n: AppI18n, item: P0PlatformBackl
     stepId: item.stepId,
     workspaceId: item.workspaceId
   });
+}
+
+function p0PlatformBacklogActionHint(
+  i18n: AppI18n,
+  item: P0PlatformBacklogItem,
+  isActionDisabled: boolean,
+  preflight: ResearchPipelinePreflight
+): string | null {
+  const preflightHint = goldenPathActionPreflightHint(i18n, item.actionId, preflight);
+  if (preflightHint) {
+    return preflightHint;
+  }
+  if (!isActionDisabled) {
+    return null;
+  }
+  if (!item.actionId) {
+    return i18n.locale === "zh-CN" ? "该缺口目前只能先进入工作区复核。" : "Open the workspace to review this gap first.";
+  }
+  if (item.actionId === "submit-paper-order") {
+    return i18n.locale === "zh-CN"
+      ? "需要匹配当前上下文的审计运行、AI 证据和模拟执行闸门。"
+      : "Requires a matching audited run, AI evidence, and paper execution gates.";
+  }
+  if (item.actionId === "refresh-data" || item.actionId === "refresh-watchlist-cache") {
+    return i18n.locale === "zh-CN" ? "行情缓存刷新正在占用数据通道。" : "Market cache refresh is already using the data lane.";
+  }
+  return i18n.locale === "zh-CN" ? "等待当前任务完成后再执行。" : "Wait for the current task to finish before running this action.";
 }
 
 function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {
