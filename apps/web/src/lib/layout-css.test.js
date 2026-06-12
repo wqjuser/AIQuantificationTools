@@ -254,10 +254,24 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("p0PlatformActionOutcomeLabel");
     expect(overviewSource).toContain("p0PlatformActionOutcomeDetail");
     expect(overviewSource).toContain("p0PlatformActionOutcomeNextStep");
-    expect(overviewSource).toContain("selectProductWorkArea(p0PlatformActionOutcome.targetWorkspaceId)");
+    expect(overviewSource).toContain("openP0ActionOutcomeEvidence(p0PlatformActionOutcome)");
     expect(cssBlock(".p0-action-outcome")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".p0-action-outcome")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".p0-action-outcome button")).toContain("cursor: pointer;");
+  });
+
+  test("opens P0 action outcomes by replaying audited run evidence before showing Audit", () => {
+    const outcomeHandlerSource = sourceBetween("const openP0ActionOutcomeEvidence = useCallback(", "const runGoldenPathActionById = useCallback(");
+
+    expect(outcomeHandlerSource).toContain('outcome.state === "audit_run"');
+    expect(outcomeHandlerSource).toContain('outcome.state === "live_ready"');
+    expect(outcomeHandlerSource).toContain("const evidenceId = outcome.evidenceId;");
+    expect(outcomeHandlerSource).toContain("const historyRun = runHistory.find((run) => run.runId === evidenceId);");
+    expect(outcomeHandlerSource).toContain("await replayRun(historyRun);");
+    expect(outcomeHandlerSource).toContain("loadResearchRunDetail(quantCoreBaseUrl, evidenceId)");
+    expect(outcomeHandlerSource).toContain("await replayRun(detail.run);");
+    expect(outcomeHandlerSource).toContain("setResearchRunExportBrowserQuery(evidenceId);");
+    expect(outcomeHandlerSource).toContain('setActiveWorkAreaId("execution");');
   });
 
   test("lets the Golden Path paper action rebind the latest audited run before submission", () => {

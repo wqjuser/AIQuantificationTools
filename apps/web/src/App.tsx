@@ -4276,6 +4276,61 @@ export function App() {
     [activeWorkAreaId, workspace]
   );
 
+  const openP0ActionOutcomeEvidence = useCallback(
+    (outcome: P0PlatformActionOutcome) => {
+      if (!outcome.evidenceId) {
+        selectProductWorkArea(outcome.targetWorkspaceId);
+        return;
+      }
+
+      const evidenceId = outcome.evidenceId;
+
+      if (outcome.state === "paper_execution") {
+        setActiveWorkAreaId("execution");
+        setActiveLoopStepId("paper");
+        setActiveWorkflowStageId("execution");
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Paper execution evidence selected",
+          error: undefined
+        }));
+        return;
+      }
+
+      if (outcome.state === "audit_run" || outcome.state === "live_ready") {
+        setResearchRunExportBrowserQuery(evidenceId);
+        setResearchRunImportDiffQuery(evidenceId);
+        setResearchRunImportAuditQuery(evidenceId);
+        void (async () => {
+          const historyRun = runHistory.find((run) => run.runId === evidenceId);
+          if (historyRun) {
+            await replayRun(historyRun);
+            return;
+          }
+
+          const detail = await loadResearchRunDetail(quantCoreBaseUrl, evidenceId);
+          if (detail.run) {
+            await replayRun(detail.run);
+            return;
+          }
+
+          setActiveWorkAreaId("audit");
+          setActiveLoopStepId("backtest");
+          setActiveWorkflowStageId("execution");
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "P0 evidence replay failed",
+            error: detail.error ?? `P0 evidence run ${evidenceId} was not found`
+          }));
+        })();
+        return;
+      }
+
+      selectProductWorkArea(outcome.targetWorkspaceId);
+    },
+    [quantCoreBaseUrl, replayRun, runHistory, selectProductWorkArea]
+  );
+
   const inspectRefreshEvidenceRun = useCallback(
     (runId: string) => {
       setWatchlistCacheRefreshRunSelection(runId);
@@ -5421,7 +5476,7 @@ export function App() {
                   </div>
                   <button
                     disabled={!p0PlatformActionOutcome.evidenceId}
-                    onClick={() => selectProductWorkArea(p0PlatformActionOutcome.targetWorkspaceId)}
+                    onClick={() => openP0ActionOutcomeEvidence(p0PlatformActionOutcome)}
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "查看证据" : "Evidence"}
