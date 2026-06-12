@@ -7434,6 +7434,9 @@ describe("terminal workbench model", () => {
         artifactKind: "aiqt.p0ReadinessReport",
         contentSha256: p0Hash,
         deepLinkStatus: "p0-readiness-report",
+        evidenceLinkSearch: "workspace=audit&runId=run-a1&exportPath=manifest%3Arun-a1",
+        evidenceLinkStatus: "audit_run",
+        evidenceTargetWorkspaceId: "audit",
         fileName: "run-a1-p0-readiness-report.md",
         focusQuery: "blocked 57% AI review run-a1",
         importDiffBlocked: 0,
@@ -7449,6 +7452,9 @@ describe("terminal workbench model", () => {
       })
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, "p0_readiness_report ai-review").map((row) => row.id)).toEqual([
+      "p0-readiness-report-run-a1-9999999999999999"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "manifest:run-a1 audit_run").map((row) => row.id)).toEqual([
       "p0-readiness-report-run-a1-9999999999999999"
     ]);
   });

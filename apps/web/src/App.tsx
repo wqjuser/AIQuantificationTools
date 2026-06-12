@@ -4573,6 +4573,52 @@ export function App() {
     [activeWorkAreaId, workspace]
   );
 
+  const openAuditReportLedgerEvidenceLink = useCallback(
+    (search: string) => {
+      const params = new URLSearchParams(search);
+      const targetWorkspace = params.get("workspace");
+      const targetWorkspaceId =
+        targetWorkspace && productWorkAreaIds.includes(targetWorkspace as ProductWorkAreaId)
+          ? (targetWorkspace as ProductWorkAreaId)
+          : null;
+      const runId = params.get("runId");
+      const exportPath = params.get("exportPath") ?? (runId ? `manifest:${runId}` : "");
+      const paperExecutionId = params.get("paperExecution");
+
+      if (!targetWorkspaceId) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Audit report evidence link failed",
+          error: "The report evidence link does not target a known workspace."
+        }));
+        return;
+      }
+
+      selectProductWorkArea(targetWorkspaceId);
+      if (targetWorkspaceId === "audit" && runId) {
+        void loadImportAuditEvidenceDeepLink({
+          auditEventId: null,
+          exportPath,
+          focusQuery: runId,
+          runId
+        });
+        return;
+      }
+
+      if (targetWorkspaceId === "execution" && runId && paperExecutionId) {
+        void loadPaperExecutionDeepLink({ executionId: paperExecutionId, runId });
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit report evidence workspace opened",
+        error: undefined
+      }));
+    },
+    [loadImportAuditEvidenceDeepLink, loadPaperExecutionDeepLink, selectProductWorkArea]
+  );
+
   const copyP0ActionOutcomeEvidenceLink = useCallback(async (outcome: P0PlatformActionOutcome) => {
     const link = buildP0PlatformActionOutcomeEvidenceLink(outcome);
     if (!link || !navigator.clipboard?.writeText) {
@@ -5432,6 +5478,7 @@ export function App() {
             i18n={i18n}
             isLoading={isLoadingAuditEvidenceReportEvents}
             onNextPage={nextAuditEvidenceReportPage}
+            onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}
             onPreviousPage={previousAuditEvidenceReportPage}
             onQueryChange={updateAuditEvidenceReportQuery}
             onRevokeReport={revokeAuditEvidenceReportEvent}
@@ -9836,6 +9883,7 @@ function AuditEvidenceReportLedgerPanel({
   i18n,
   isLoading,
   onNextPage,
+  onOpenEvidenceLink,
   onPreviousPage,
   onQueryChange,
   onRevokeReport,
@@ -9852,6 +9900,7 @@ function AuditEvidenceReportLedgerPanel({
   i18n: AppI18n;
   isLoading: boolean;
   onNextPage: () => void;
+  onOpenEvidenceLink: (search: string) => void;
   onPreviousPage: () => void;
   onQueryChange: (query: string) => void;
   onRevokeReport: (eventId: string) => void;
@@ -9970,6 +10019,11 @@ function AuditEvidenceReportLedgerPanel({
                     {researchImportAuditTimeLabel(row.signatureSignedAt || row.signatureVerifiedAt || row.createdAt)}
                   </time>
                   <span className="audit-report-ledger-actions">
+                    {row.evidenceLinkSearch ? (
+                      <button onClick={() => onOpenEvidenceLink(row.evidenceLinkSearch)} type="button">
+                        {i18n.locale === "zh-CN" ? "打开证据" : "Open evidence"}
+                      </button>
+                    ) : null}
                     <button
                       disabled={
                         signingEventId === row.id ||

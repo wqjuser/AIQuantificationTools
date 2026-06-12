@@ -27,7 +27,7 @@ Make the P0 readiness report auditable without turning it into a live-trading ap
 - [x] Run production build.
 - [x] Run root verification and Docker smoke.
 - [x] Browser smoke on `http://127.0.0.1:5173`.
-- [ ] Commit and push with proxy.
+- [x] Commit and push with proxy.
 
 ## Validation Notes
 

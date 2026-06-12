@@ -1412,6 +1412,9 @@ export interface AuditEvidenceReportLedgerRow {
   contentSha256: string;
   shortHash: string;
   focusQuery: string;
+  evidenceLinkSearch: string;
+  evidenceLinkStatus: string;
+  evidenceTargetWorkspaceId: ProductWorkAreaId | null;
   packageMatched: number;
   packageTotal: number;
   importDiffBlocked: number;
@@ -6556,6 +6559,34 @@ export function filterResearchRunImportAuditEvents(
   });
 }
 
+function auditReportLedgerEvidenceTargetWorkspaceId(search: string): ProductWorkAreaId | null {
+  if (!search.trim()) {
+    return null;
+  }
+  const workspaceMatch = search.match(/(?:^|[?&])workspace=([^&]+)/u);
+  const workspaceId = workspaceMatch ? decodeURIComponent(workspaceMatch[1].replace(/\+/gu, " ")) : "";
+  const allowedWorkspaces: readonly ProductWorkAreaId[] = [
+    "market",
+    "research",
+    "strategy",
+    "backtest",
+    "ai-review",
+    "portfolio",
+    "execution",
+    "audit",
+    "settings"
+  ];
+  return allowedWorkspaces.includes(workspaceId as ProductWorkAreaId) ? (workspaceId as ProductWorkAreaId) : null;
+}
+
+function auditReportLedgerDecodedSearchText(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/gu, " "));
+  } catch {
+    return value;
+  }
+}
+
 export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
@@ -6656,6 +6687,14 @@ export function buildAuditEvidenceReportLedgerRows(
               .filter(Boolean)
               .join(" ")
           : "";
+      const evidenceLinkSearch =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "latestEvidenceLink")
+          : "";
+      const evidenceLinkStatus =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "latestEvidenceState")
+          : "";
       return {
         id: event.eventId,
         artifactKind,
@@ -6665,6 +6704,9 @@ export function buildAuditEvidenceReportLedgerRows(
         contentSha256,
         shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
         focusQuery,
+        evidenceLinkSearch,
+        evidenceLinkStatus,
+        evidenceTargetWorkspaceId: auditReportLedgerEvidenceTargetWorkspaceId(evidenceLinkSearch),
         packageMatched:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "passedSteps")
@@ -6775,6 +6817,10 @@ export function filterAuditEvidenceReportLedgerRows(
       row.contentSha256,
       row.shortHash,
       row.focusQuery,
+      row.evidenceLinkSearch,
+      auditReportLedgerDecodedSearchText(row.evidenceLinkSearch),
+      row.evidenceLinkStatus,
+      row.evidenceTargetWorkspaceId ?? "",
       row.deepLinkStatus,
       row.status,
       row.statusLabel,
