@@ -207,6 +207,7 @@ import {
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
+  buildP0PlatformActionOutcome,
   buildP0PlatformBacklogItems,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
@@ -311,6 +312,7 @@ import {
   ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
+  P0PlatformActionOutcome,
   P0PlatformBacklogItem,
   P0PlatformReadinessSummary,
   PaperPositionRow,
@@ -1298,6 +1300,11 @@ export function App() {
   const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
   const p0PlatformReadinessSummary = buildP0PlatformReadinessSummary(goldenPath);
   const p0PlatformBacklogItems = buildP0PlatformBacklogItems(goldenPath);
+  const p0PlatformActionOutcome = buildP0PlatformActionOutcome({
+    goldenPath,
+    paperExecution: paperExecutionRecord,
+    statusLabel
+  });
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -5405,6 +5412,21 @@ export function App() {
                 <small className="p0-readiness-boundary">
                   {p0PlatformReadinessLiveBoundary(i18n, p0PlatformReadinessSummary)}
                 </small>
+                <div className={`p0-action-outcome ${p0PlatformActionOutcome.tone}`}>
+                  <div>
+                    <span>{i18n.locale === "zh-CN" ? "最近证据" : "Latest outcome"}</span>
+                    <strong>{p0PlatformActionOutcomeLabel(i18n, p0PlatformActionOutcome)}</strong>
+                    <small>{p0PlatformActionOutcomeDetail(i18n, p0PlatformActionOutcome)}</small>
+                    <small>{p0PlatformActionOutcomeNextStep(i18n, p0PlatformActionOutcome)}</small>
+                  </div>
+                  <button
+                    disabled={!p0PlatformActionOutcome.evidenceId}
+                    onClick={() => selectProductWorkArea(p0PlatformActionOutcome.targetWorkspaceId)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "查看证据" : "Evidence"}
+                  </button>
+                </div>
                 {p0PlatformBacklogItems.length ? (
                   <div className="p0-readiness-backlog">
                     {p0PlatformBacklogItems.map((item) => {
@@ -5743,6 +5765,50 @@ function p0PlatformReadinessLiveBoundary(i18n: AppI18n, summary: P0PlatformReadi
     return "加载黄金路径后再评估执行边界。";
   }
   return "P0 可用于审计研究、评审和模拟执行；实盘交易保持阻断。";
+}
+
+function p0PlatformActionOutcomeLabel(i18n: AppI18n, outcome: P0PlatformActionOutcome): string {
+  if (i18n.locale === "en-US") {
+    return outcome.label;
+  }
+  return (
+    {
+      "Waiting for P0 action evidence": "等待 P0 动作证据",
+      "Audited run available": "审计运行可用",
+      "Audited run live gate open": "审计运行实盘闸门已开",
+      "Paper execution recorded": "模拟执行已入账"
+    }[outcome.label] ?? outcome.label
+  );
+}
+
+function p0PlatformActionOutcomeDetail(i18n: AppI18n, outcome: P0PlatformActionOutcome): string {
+  if (i18n.locale === "en-US") {
+    return outcome.detail;
+  }
+  return outcome.detail
+    .replace("Golden Path audit run loaded for paper execution", "已为模拟执行加载黄金路径审计运行")
+    .replace("Run an audited pipeline to create traceable P0 evidence.", "运行审计流水线后生成可追踪 P0 证据。")
+    .replace("orders", "笔委托")
+    .replace("order", "笔委托")
+    .replace("gates passed", "个闸门通过");
+}
+
+function p0PlatformActionOutcomeNextStep(i18n: AppI18n, outcome: P0PlatformActionOutcome): string {
+  if (i18n.locale === "en-US") {
+    return outcome.nextStep;
+  }
+  return (
+    {
+      "Review the execution handoff and promotion gates; live trading remains blocked.":
+        "继续复核执行交接和晋级闸门；实盘仍保持阻断。",
+      "Continue with AI review or paper execution from the P0 backlog.":
+        "继续从 P0 待办运行 AI 评审或模拟执行。",
+      "Require explicit operator confirmation before any live routing.":
+        "任何实盘路由前都必须再次人工确认。",
+      "Start with market data refresh and an audited research pipeline.":
+        "先刷新行情数据并运行审计研究流水线。"
+    }[outcome.nextStep] ?? outcome.nextStep
+  );
 }
 
 function p0PlatformBacklogPriorityLabel(i18n: AppI18n, item: P0PlatformBacklogItem): string {

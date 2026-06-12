@@ -55,6 +55,7 @@ import {
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
+  buildP0PlatformActionOutcome,
   buildP0PlatformBacklogItems,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
@@ -1699,6 +1700,87 @@ describe("terminal workbench model", () => {
         ]
       })
     ).toEqual([]);
+  });
+
+  test("builds a P0 action outcome from the latest paper execution evidence", () => {
+    const outcome = buildP0PlatformActionOutcome({
+      goldenPath: {
+        latestRunId: "run-audited-001",
+        status: "ready",
+        summary: {
+          liveTradingAllowed: false
+        }
+      },
+      paperExecution: {
+        executionId: "paper-exec-001",
+        runId: "run-audited-001",
+        mode: "paper",
+        orders: [
+          {
+            orderId: "order-1",
+            symbol: "600000",
+            side: "buy",
+            quantity: 2100,
+            price: 9.21,
+            status: "filled",
+            reason: "SMA audit handoff",
+            timestamp: "2026-06-12T06:00:00.000Z"
+          }
+        ],
+        gates: [
+          { id: "adapter", label: "Adapter certified", passed: true, reason: "paper adapter" },
+          { id: "risk", label: "Risk approved", passed: true, reason: "paper-only" },
+          { id: "operator", label: "Operator confirmed", passed: false, reason: "live blocked" }
+        ]
+      },
+      statusLabel: "Paper execution recorded"
+    } as any);
+
+    expect(outcome).toEqual({
+      state: "paper_execution",
+      label: "Paper execution recorded",
+      detail: "paper-exec-001 · 1 order · 2/3 gates passed",
+      evidenceId: "paper-exec-001",
+      targetWorkspaceId: "execution",
+      tone: "positive",
+      nextStep: "Review the execution handoff and promotion gates; live trading remains blocked."
+    });
+  });
+
+  test("builds a P0 action outcome from the latest audited run when paper evidence is not ready", () => {
+    expect(
+      buildP0PlatformActionOutcome({
+        goldenPath: {
+          latestRunId: "run-audited-002",
+          status: "review",
+          summary: {
+            liveTradingAllowed: false
+          }
+        },
+        paperExecution: null,
+        statusLabel: "Golden Path audit run loaded for paper execution"
+      } as any)
+    ).toEqual({
+      state: "audit_run",
+      label: "Audited run available",
+      detail: "run-audited-002 · Golden Path audit run loaded for paper execution",
+      evidenceId: "run-audited-002",
+      targetWorkspaceId: "audit",
+      tone: "ai",
+      nextStep: "Continue with AI review or paper execution from the P0 backlog."
+    });
+
+    expect(
+      buildP0PlatformActionOutcome({
+        goldenPath: null,
+        paperExecution: null,
+        statusLabel: ""
+      })
+    ).toMatchObject({
+      state: "waiting",
+      targetWorkspaceId: "research",
+      tone: "warning"
+    });
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {

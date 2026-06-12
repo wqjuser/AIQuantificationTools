@@ -243,6 +243,23 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-readiness-backlog-hint")).toContain("color: #8fa0b2;");
   });
 
+  test("renders the latest P0 action outcome beside the readiness backlog", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildP0PlatformActionOutcome({");
+    expect(appSource).toContain("goldenPath");
+    expect(appSource).toContain("paperExecution: paperExecutionRecord");
+    expect(appSource).toContain("statusLabel");
+    expect(overviewSource).toContain('className={`p0-action-outcome ${p0PlatformActionOutcome.tone}`}');
+    expect(overviewSource).toContain("p0PlatformActionOutcomeLabel");
+    expect(overviewSource).toContain("p0PlatformActionOutcomeDetail");
+    expect(overviewSource).toContain("p0PlatformActionOutcomeNextStep");
+    expect(overviewSource).toContain("selectProductWorkArea(p0PlatformActionOutcome.targetWorkspaceId)");
+    expect(cssBlock(".p0-action-outcome")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".p0-action-outcome")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".p0-action-outcome button")).toContain("cursor: pointer;");
+  });
+
   test("lets the Golden Path paper action rebind the latest audited run before submission", () => {
     const actionHandlerSource = sourceBetween("const runGoldenPathActionById = useCallback(", "const runGoldenPathAction = useCallback(");
     const disabledHandlerSource = sourceBetween("const isGoldenPathActionDisabledById = useCallback(", "const goldenPathActionId = goldenPath?.nextAction?.id;");

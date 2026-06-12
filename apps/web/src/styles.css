@@ -1104,6 +1104,70 @@ em {
   color: #8fa0b2;
 }
 
+.p0-action-outcome {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #244158;
+  border-radius: 6px;
+  background: #0f1b2a;
+}
+
+.p0-action-outcome > div {
+  min-width: 0;
+}
+
+.p0-action-outcome span {
+  color: #8fa0b2;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.p0-action-outcome strong,
+.p0-action-outcome small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p0-action-outcome strong {
+  color: #dce6ee;
+  font-size: 10px;
+}
+
+.p0-action-outcome button {
+  border: 1px solid #266c60;
+  border-radius: 5px;
+  background: #102d34;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.p0-action-outcome button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.p0-action-outcome.positive {
+  border-color: #2b6f62;
+}
+
+.p0-action-outcome.warning {
+  border-color: #6b562c;
+}
+
+.p0-action-outcome.ai {
+  border-color: #4b4386;
+}
+
 .p0-readiness-backlog {
   display: grid;
   grid-column: 1 / -1;

@@ -209,6 +209,41 @@ export interface P0PlatformReadinessSummary {
   };
 }
 
+export type P0PlatformActionOutcomeState = "waiting" | "audit_run" | "paper_execution" | "live_ready";
+export type P0PlatformActionOutcomeTone = "positive" | "warning" | "ai";
+
+export interface P0PlatformActionOutcomePaperExecution {
+  executionId: string;
+  runId: string;
+  mode: string;
+  orders?: readonly unknown[];
+  gates?: readonly {
+    passed: boolean;
+  }[];
+}
+
+export interface P0PlatformActionOutcomeSource {
+  goldenPath?: {
+    latestRunId?: string | null;
+    status?: P0PlatformReadinessSource["status"];
+    summary?: {
+      liveTradingAllowed?: boolean;
+    };
+  } | null;
+  paperExecution?: P0PlatformActionOutcomePaperExecution | null;
+  statusLabel?: string | null;
+}
+
+export interface P0PlatformActionOutcome {
+  state: P0PlatformActionOutcomeState;
+  label: string;
+  detail: string;
+  evidenceId: string | null;
+  targetWorkspaceId: ProductWorkAreaId;
+  tone: P0PlatformActionOutcomeTone;
+  nextStep: string;
+}
+
 export interface QuantLoopNavigationTarget {
   moduleId: string;
   workflowStageId: string;
@@ -3375,6 +3410,56 @@ export function buildP0PlatformBacklogItems(
     .sort((left, right) => p0PlatformBacklogPriorityRank(left.priority) - p0PlatformBacklogPriorityRank(right.priority))
     .slice(0, limit)
     .map((item, index) => ({ ...item, rank: index + 1 }));
+}
+
+export function buildP0PlatformActionOutcome(
+  source: P0PlatformActionOutcomeSource | null | undefined
+): P0PlatformActionOutcome {
+  const statusLabel = source?.statusLabel?.trim() ?? "";
+  const paperExecution = source?.paperExecution;
+  if (paperExecution?.executionId) {
+    const orderCount = paperExecution.orders?.length ?? 0;
+    const gateCount = paperExecution.gates?.length ?? 0;
+    const passedGateCount = paperExecution.gates?.filter((gate) => gate.passed).length ?? 0;
+    return {
+      state: "paper_execution",
+      label: "Paper execution recorded",
+      detail: [
+        paperExecution.executionId,
+        `${orderCount} ${orderCount === 1 ? "order" : "orders"}`,
+        `${passedGateCount}/${gateCount} gates passed`
+      ].join(" · "),
+      evidenceId: paperExecution.executionId,
+      targetWorkspaceId: "execution",
+      tone: "positive",
+      nextStep: "Review the execution handoff and promotion gates; live trading remains blocked."
+    };
+  }
+
+  const latestRunId = source?.goldenPath?.latestRunId?.trim() ?? "";
+  if (latestRunId) {
+    return {
+      state: source?.goldenPath?.summary?.liveTradingAllowed ? "live_ready" : "audit_run",
+      label: source?.goldenPath?.summary?.liveTradingAllowed ? "Audited run live gate open" : "Audited run available",
+      detail: statusLabel ? `${latestRunId} · ${statusLabel}` : latestRunId,
+      evidenceId: latestRunId,
+      targetWorkspaceId: "audit",
+      tone: "ai",
+      nextStep: source?.goldenPath?.summary?.liveTradingAllowed
+        ? "Require explicit operator confirmation before any live routing."
+        : "Continue with AI review or paper execution from the P0 backlog."
+    };
+  }
+
+  return {
+    state: "waiting",
+    label: "Waiting for P0 action evidence",
+    detail: statusLabel || "Run an audited pipeline to create traceable P0 evidence.",
+    evidenceId: null,
+    targetWorkspaceId: "research",
+    tone: "warning",
+    nextStep: "Start with market data refresh and an audited research pipeline."
+  };
 }
 
 function p0PlatformBacklogPriority(item: GoldenPathRunbookSourceItem): P0PlatformBacklogPriority {
