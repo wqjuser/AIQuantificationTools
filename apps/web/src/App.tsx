@@ -9970,6 +9970,11 @@ function AuditEvidenceReportLedgerPanel({
               <span title={summary.latestAuditAidEvidenceLink || summary.latestAuditAidEvidenceLabel}>
                 {i18n.locale === "zh-CN" ? "最新辅助" : "Latest aid"}{" "}
                 <strong>{summary.latestAuditAidRunId}</strong>
+                {summary.latestAuditAidEvidenceLink ? (
+                  <button onClick={() => onOpenEvidenceLink(summary.latestAuditAidEvidenceLink)} type="button">
+                    {i18n.locale === "zh-CN" ? "打开最新辅助" : "Open latest aid"}
+                  </button>
+                ) : null}
               </span>
             ) : null}
             <span>
