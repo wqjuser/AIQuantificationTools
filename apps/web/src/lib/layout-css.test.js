@@ -243,6 +243,26 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-readiness-backlog-hint")).toContain("color: #8fa0b2;");
   });
 
+  test("lets the Golden Path paper action rebind the latest audited run before submission", () => {
+    const actionHandlerSource = sourceBetween("const runGoldenPathActionById = useCallback(", "const runGoldenPathAction = useCallback(");
+    const disabledHandlerSource = sourceBetween("const isGoldenPathActionDisabledById = useCallback(", "const goldenPathActionId = goldenPath?.nextAction?.id;");
+
+    expect(appSource).toContain("const ensureGoldenPathLatestRunBound = useCallback(");
+    expect(appSource).toContain("goldenPath?.latestRunId");
+    expect(appSource).toContain("loadResearchRunDetail(quantCoreBaseUrl, latestRunId)");
+    expect(appSource).toContain("await replayRun(detail.run)");
+    expect(actionHandlerSource).toContain('if (actionId === "submit-paper-order")');
+    expect(actionHandlerSource).toContain("void (async () => {");
+    expect(actionHandlerSource).toContain("const runWasAlreadyBound = researchRunContextBinding.canUseRun;");
+    expect(actionHandlerSource).toContain("const runIsBound = await ensureGoldenPathLatestRunBound();");
+    expect(actionHandlerSource).toContain("if (runWasAlreadyBound && runIsBound)");
+    expect(disabledHandlerSource).toContain("const canRebindGoldenPathRun = Boolean(goldenPath?.latestRunId) && !researchRunContextBinding.canUseRun;");
+    expect(disabledHandlerSource).toContain("return (");
+    expect(disabledHandlerSource).toContain("isSubmittingPaperExecution ||");
+    expect(disabledHandlerSource).toContain("(!canRebindGoldenPathRun &&");
+    expect(disabledHandlerSource).toContain('riskApprovalSummary.status === "blocked"');
+  });
+
   test("translates golden path cache readiness guidance for audited research", () => {
     expect(appSource).toContain("translateGoldenPathDetail");
     expect(appSource).toContain("fresh cached K-line rows are available for audited research");
@@ -1565,11 +1585,13 @@ describe("terminal layout css", () => {
     expect(cssBlock(".execution-tile.warning")).toContain("border-left-color: #e8be62;");
   });
 
-  test("gates paper execution actions by current audit context binding", () => {
+  test("gates paper execution actions by audit binding with Golden Path rebind recovery", () => {
     expect(appSource).toContain("buildResearchRunContextBinding");
     expect(appSource).toContain("const researchRunContextBinding = buildResearchRunContextBinding(workspace)");
     expect(appSource).toContain("const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null");
-    expect(appSource).toContain("return isSubmittingPaperExecution || !researchRunContextBinding.canUseRun");
+    expect(appSource).toContain("const canRebindGoldenPathRun = Boolean(goldenPath?.latestRunId) && !researchRunContextBinding.canUseRun;");
+    expect(appSource).toContain("!canRebindGoldenPathRun &&");
+    expect(appSource).toContain('riskApprovalSummary.status === "blocked"');
     expect(appSource).not.toContain("return isSubmittingPaperExecution || !workspace.researchRun?.runId");
   });
 

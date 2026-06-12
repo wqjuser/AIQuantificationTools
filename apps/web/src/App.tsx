@@ -2978,6 +2978,56 @@ export function App() {
     [replayRun, runHistory]
   );
 
+  const ensureGoldenPathLatestRunBound = useCallback(async (): Promise<boolean> => {
+    if (researchRunContextBinding.canUseRun) {
+      return true;
+    }
+    const latestRunId = goldenPath?.latestRunId;
+    if (!latestRunId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Golden Path audit run not loaded",
+        error: "Golden Path did not return a latest audited run id for paper execution."
+      }));
+      return false;
+    }
+
+    const historyRun = runHistory.find((run) => run.runId === latestRunId);
+    if (historyRun) {
+      await replayRun(historyRun);
+      setActiveWorkAreaId("execution");
+      setActiveLoopStepId("paper");
+      setActiveWorkflowStageId("execution");
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Golden Path audit run loaded for paper execution",
+        error: undefined
+      }));
+      return true;
+    }
+
+    const detail = await loadResearchRunDetail(quantCoreBaseUrl, latestRunId);
+    if (detail.run) {
+      await replayRun(detail.run);
+      setActiveWorkAreaId("execution");
+      setActiveLoopStepId("paper");
+      setActiveWorkflowStageId("execution");
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Golden Path audit run loaded for paper execution",
+        error: undefined
+      }));
+      return true;
+    }
+
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Golden Path audit run replay failed",
+      error: detail.error ?? `Golden Path latest run ${latestRunId} was not found`
+    }));
+    return false;
+  }, [goldenPath?.latestRunId, quantCoreBaseUrl, replayRun, researchRunContextBinding.canUseRun, runHistory]);
+
   const undoResearchRunImportEvent = useCallback(
     async (undoToken: string, expectedRunId: string) => {
       const eventToUndo = researchRunImportAuditEvents.find(
@@ -4454,7 +4504,13 @@ export function App() {
         return;
       }
       if (actionId === "submit-paper-order") {
-        void submitPaperExecution();
+        void (async () => {
+          const runWasAlreadyBound = researchRunContextBinding.canUseRun;
+          const runIsBound = await ensureGoldenPathLatestRunBound();
+          if (runWasAlreadyBound && runIsBound) {
+            void submitPaperExecution();
+          }
+        })();
         return;
       }
       if (actionId === "fix-paper-handoff") {
@@ -4472,6 +4528,8 @@ export function App() {
     [
       refreshSelectedMarketCache,
       refreshWatchlistMarketCache,
+      ensureGoldenPathLatestRunBound,
+      researchRunContextBinding.canUseRun,
       runActiveWorkflowAction,
       runAiWorkbenchAction,
       runPipeline,
@@ -4514,18 +4572,25 @@ export function App() {
         return !researchPipelinePreflight.canRun;
       }
       if (actionId === "submit-paper-order") {
-        return isSubmittingPaperExecution || !researchRunContextBinding.canUseRun;
+        const canRebindGoldenPathRun = Boolean(goldenPath?.latestRunId) && !researchRunContextBinding.canUseRun;
+        return (
+          isSubmittingPaperExecution ||
+          (!canRebindGoldenPathRun &&
+            (!researchRunContextBinding.canUseRun || riskApprovalSummary.status === "blocked"))
+        );
       }
       return false;
     },
     [
+      goldenPath?.latestRunId,
       isRefreshing,
       isRefreshingWatchlistCache,
       isRunning,
       isSubmittingPaperExecution,
       refreshingCacheKey,
       researchPipelinePreflight.canRun,
-      researchRunContextBinding.canUseRun
+      researchRunContextBinding.canUseRun,
+      riskApprovalSummary.status
     ]
   );
 
