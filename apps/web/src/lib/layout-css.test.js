@@ -266,6 +266,29 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-action-outcome button")).toContain("cursor: pointer;");
   });
 
+  test("renders the P0 paper execution preflight inside the current task card", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildP0PaperExecutionPreflight({");
+    expect(appSource).toContain("goldenPath");
+    expect(appSource).toContain("paperExecution: activePaperExecutionRecord");
+    expect(appSource).toContain("researchBinding: researchRunContextBinding");
+    expect(appSource).toContain("riskApproval: riskApprovalSummary");
+    expect(overviewSource).toContain('className={`p0-paper-preflight ${p0PaperExecutionPreflight.state}`}');
+    expect(overviewSource).toContain("p0PaperExecutionPreflightHeadline");
+    expect(overviewSource).toContain("p0PaperExecutionPreflightDetail");
+    expect(overviewSource).toContain("p0PaperExecutionPreflight.primaryActionLabel");
+    expect(overviewSource).toContain("p0PaperExecutionPreflight.gates.map");
+    expect(overviewSource).toContain("p0PaperExecutionPreflightGateLabel");
+    expect(overviewSource).toContain("p0PaperExecutionPreflightGateDetail");
+    expect(cssBlock(".p0-paper-preflight")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".p0-paper-preflight")).toContain("display: grid;");
+    expect(cssBlock(".p0-paper-preflight-gates")).toContain("display: grid;");
+    expect(cssBlock(".p0-paper-preflight-gate")).toContain("border-left: 3px solid");
+    expect(cssBlock(".p0-paper-preflight-gate.passed")).toContain("border-left-color: #4cc9ad;");
+    expect(cssBlock(".p0-paper-preflight-gate.blocked")).toContain("border-left-color: #ff7f6d;");
+  });
+
   test("renders copy and download actions for the P0 readiness report", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 

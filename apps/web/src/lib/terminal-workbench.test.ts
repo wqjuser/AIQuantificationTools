@@ -59,6 +59,7 @@ import {
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
+  buildP0PaperExecutionPreflight,
   buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
@@ -1787,6 +1788,169 @@ describe("terminal workbench model", () => {
       runId: null,
       targetWorkspaceId: "research",
       tone: "warning"
+    });
+  });
+
+  test("builds a P0 paper execution preflight that can rebind the latest audited run", () => {
+    const preflight = buildP0PaperExecutionPreflight({
+      goldenPath: {
+        latestRunId: "run-audited-002",
+        currentStepId: "paper-execution",
+        nextAction: {
+          id: "submit-paper-order",
+          label: "Submit paper order",
+          targetWorkspace: "execution",
+          reason: "Audited AI evidence is ready, but no filled paper execution is bound."
+        },
+        summary: {
+          liveTradingAllowed: false
+        }
+      },
+      paperExecution: null,
+      researchBinding: {
+        status: "missing",
+        canUseRun: false,
+        runId: null,
+        selectedContext: "ASHARE · 600000 · 1d",
+        runContext: null,
+        detail: "Run Pipeline to bind a matching audited research run."
+      },
+      riskApproval: {
+        status: "blocked",
+        headline: "Risk approval blocked",
+        summary: "Bind an audited run before paper or live execution.",
+        gates: []
+      }
+    });
+
+    expect(preflight).toEqual({
+      state: "blocked",
+      headline: "Bind latest audited run",
+      detail: "Golden Path has run-audited-002 ready; load it before submitting a paper order.",
+      primaryActionLabel: "Load latest audited run",
+      canSubmitPaperOrder: false,
+      canRebindLatestRun: true,
+      targetWorkspaceId: "execution",
+      gates: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: "run-audited-002",
+          detail: "Latest Golden Path run can be rebound into the current workspace.",
+          status: "review",
+          tone: "warning"
+        },
+        {
+          id: "risk-approval",
+          label: "Risk approval",
+          value: "Risk approval blocked",
+          detail: "Bind an audited run before paper or live execution.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "paper-execution",
+          label: "Paper execution",
+          value: "not recorded",
+          detail: "Paper order has not been submitted for the latest audited run.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "live-boundary",
+          label: "Live boundary",
+          value: "paper only",
+          detail: "Live routing remains blocked while paper execution is prepared.",
+          status: "review",
+          tone: "warning"
+        }
+      ]
+    });
+  });
+
+  test("builds a P0 paper execution preflight for ready and recorded states", () => {
+    const readyPreflight = buildP0PaperExecutionPreflight({
+      goldenPath: {
+        latestRunId: "run-risk-ready",
+        currentStepId: "paper-execution",
+        summary: {
+          liveTradingAllowed: false
+        }
+      },
+      paperExecution: null,
+      researchBinding: {
+        status: "matched",
+        canUseRun: true,
+        runId: "run-risk-ready",
+        selectedContext: "ASHARE · 600000 · 1d",
+        runContext: "ASHARE · 600000 · 1d",
+        detail: "Audited run run-risk-ready matches the selected research context."
+      },
+      riskApproval: {
+        status: "paper_ready",
+        headline: "Paper execution approved",
+        summary: "Audited run run-risk-ready can stage paper orders; live trading remains blocked until 3 gates pass.",
+        gates: [
+          {
+            id: "audited-run",
+            label: "Audited run",
+            value: "run-risk-ready",
+            detail: "240 1d bars · paper_only",
+            status: "passed",
+            tone: "positive"
+          }
+        ]
+      }
+    });
+
+    expect(readyPreflight).toMatchObject({
+      state: "ready",
+      headline: "Paper order ready",
+      primaryActionLabel: "Submit paper order",
+      canSubmitPaperOrder: true,
+      canRebindLatestRun: false,
+      targetWorkspaceId: "execution"
+    });
+    expect(readyPreflight.gates.map((gate) => `${gate.id}:${gate.status}`)).toEqual([
+      "audited-run:passed",
+      "risk-approval:passed",
+      "paper-execution:review",
+      "live-boundary:review"
+    ]);
+
+    const recordedPreflight = buildP0PaperExecutionPreflight({
+      goldenPath: {
+        latestRunId: "run-risk-ready",
+        currentStepId: "live-gate",
+        summary: {
+          liveTradingAllowed: false
+        }
+      },
+      paperExecution: {
+        executionId: "paper-exec-001",
+        runId: "run-risk-ready",
+        mode: "paper",
+        orders: [{ orderId: "order-1" }],
+        gates: [{ passed: true }, { passed: true }, { passed: false }]
+      },
+      researchBinding: readyPreflight.gates[0] ? {
+        status: "matched",
+        canUseRun: true,
+        runId: "run-risk-ready",
+        selectedContext: "ASHARE · 600000 · 1d",
+        runContext: "ASHARE · 600000 · 1d",
+        detail: "Audited run run-risk-ready matches the selected research context."
+      } : null,
+      riskApproval: null
+    });
+
+    expect(recordedPreflight).toMatchObject({
+      state: "recorded",
+      headline: "Paper execution recorded",
+      detail: "paper-exec-001 · 1 order · 2/3 gates passed",
+      primaryActionLabel: "Review paper execution",
+      canSubmitPaperOrder: false,
+      canRebindLatestRun: false
     });
   });
 

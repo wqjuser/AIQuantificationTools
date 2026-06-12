@@ -212,6 +212,7 @@ import {
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
+  buildP0PaperExecutionPreflight,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
@@ -322,6 +323,7 @@ import {
   GoldenPathRunbookPreviewItem,
   P0PlatformActionOutcome,
   P0PlatformBacklogItem,
+  P0PaperExecutionPreflightGate,
   P0PlatformReadinessSummary,
   PaperPositionRow,
   PaperExecutionSummaryTile,
@@ -1403,6 +1405,12 @@ export function App() {
   const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
   const p0PlatformReadinessSummary = buildP0PlatformReadinessSummary(goldenPath);
   const p0PlatformBacklogItems = buildP0PlatformBacklogItems(goldenPath);
+  const p0PaperExecutionPreflight = buildP0PaperExecutionPreflight({
+    goldenPath,
+    paperExecution: activePaperExecutionRecord,
+    researchBinding: researchRunContextBinding,
+    riskApproval: riskApprovalSummary
+  });
   const p0PlatformActionOutcome = buildP0PlatformActionOutcome({
     goldenPath,
     paperExecution: paperExecutionRecord,
@@ -5988,6 +5996,25 @@ export function App() {
                     </div>
                   </div>
                 </div>
+                <div className={`p0-paper-preflight ${p0PaperExecutionPreflight.state}`}>
+                  <div className="p0-paper-preflight-head">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "模拟执行预检" : "Paper execution preflight"}</span>
+                      <strong>{p0PaperExecutionPreflightHeadline(i18n, p0PaperExecutionPreflight)}</strong>
+                      <small>{p0PaperExecutionPreflightDetail(i18n, p0PaperExecutionPreflight)}</small>
+                    </div>
+                    <em>{p0PaperExecutionPreflightActionLabel(i18n, p0PaperExecutionPreflight.primaryActionLabel)}</em>
+                  </div>
+                  <div className="p0-paper-preflight-gates">
+                    {p0PaperExecutionPreflight.gates.map((gate) => (
+                      <article className={`p0-paper-preflight-gate ${gate.status}`} key={gate.id}>
+                        <span>{p0PaperExecutionPreflightGateLabel(i18n, gate)}</span>
+                        <strong>{p0PaperExecutionPreflightGateValue(i18n, gate)}</strong>
+                        <small>{p0PaperExecutionPreflightGateDetail(i18n, gate)}</small>
+                      </article>
+                    ))}
+                  </div>
+                </div>
                 {paperExecutionDeepLinkStatus ? (
                   <div className={`p0-paper-deep-link ${paperExecutionDeepLinkStatus.status}`}>
                     <div>
@@ -6382,6 +6409,104 @@ function p0PlatformActionOutcomeNextStep(i18n: AppI18n, outcome: P0PlatformActio
         "先刷新行情数据并运行审计研究流水线。"
     }[outcome.nextStep] ?? outcome.nextStep
   );
+}
+
+function p0PaperExecutionPreflightHeadline(
+  i18n: AppI18n,
+  preflight: ReturnType<typeof buildP0PaperExecutionPreflight>
+): string {
+  if (i18n.locale === "en-US") {
+    return preflight.headline;
+  }
+  return (
+    {
+      "Audited run required": "需要审计运行",
+      "Bind latest audited run": "绑定最新审计运行",
+      "Paper execution recorded": "模拟执行已入账",
+      "Paper order ready": "模拟委托可提交",
+      "Risk approval required": "需要风控审批"
+    }[preflight.headline] ?? preflight.headline
+  );
+}
+
+function p0PaperExecutionPreflightDetail(
+  i18n: AppI18n,
+  preflight: ReturnType<typeof buildP0PaperExecutionPreflight>
+): string {
+  if (i18n.locale === "en-US") {
+    return preflight.detail;
+  }
+  return preflight.detail
+    .replace(/^Golden Path has (.+) ready; load it before submitting a paper order\.$/u, "黄金路径已有 $1；先加载该运行再提交模拟委托。")
+    .replace("Run an audited pipeline before submitting a paper order.", "提交模拟委托前先运行审计流水线。")
+    .replace(/^Audited run (.+) can stage paper orders; live trading remains blocked until (\d+) gates pass\.$/u, "审计运行 $1 可创建模拟委托；实盘仍需 $2 个闸门通过。")
+    .replace("orders", "笔委托")
+    .replace("order", "笔委托")
+    .replace("gates passed", "个闸门通过");
+}
+
+function p0PaperExecutionPreflightActionLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return (
+    {
+      "Load latest audited run": "加载最新审计运行",
+      "Review paper execution": "复核模拟执行",
+      "Review risk gates": "复核风控闸门",
+      "Run audited pipeline": "运行审计流水线",
+      "Submit paper order": "提交模拟委托"
+    }[label] ?? label
+  );
+}
+
+function p0PaperExecutionPreflightGateLabel(i18n: AppI18n, gate: P0PaperExecutionPreflightGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.label;
+  }
+  return (
+    {
+      "audited-run": "审计运行",
+      "live-boundary": "实盘边界",
+      "paper-execution": "模拟执行",
+      "risk-approval": "风控审批"
+    }[gate.id] ?? gate.label
+  );
+}
+
+function p0PaperExecutionPreflightGateValue(i18n: AppI18n, gate: P0PaperExecutionPreflightGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.value;
+  }
+  return gate.value
+    .replace("missing", "缺失")
+    .replace("not recorded", "未入账")
+    .replace("ready to submit", "可提交")
+    .replace("paper only", "仅模拟盘")
+    .replace("live gate open", "实盘闸门已开")
+    .replace("Risk approval blocked", "风控审批阻断")
+    .replace("Paper execution approved", "模拟执行已批准")
+    .replace("execution gates", "个执行闸门");
+}
+
+function p0PaperExecutionPreflightGateDetail(i18n: AppI18n, gate: P0PaperExecutionPreflightGate): string {
+  if (i18n.locale === "en-US") {
+    return gate.detail;
+  }
+  return gate.detail
+    .replace("Latest Golden Path run can be rebound into the current workspace.", "最新黄金路径运行可重新绑定到当前工作区。")
+    .replace("No matching audited run is bound to the current workspace.", "当前工作区尚未绑定匹配的审计运行。")
+    .replace("Bind an audited run before paper or live execution.", "先绑定审计运行，再进入模拟或实盘执行。")
+    .replace("Paper order has not been submitted for the latest audited run.", "最新审计运行尚未提交模拟委托。")
+    .replace("Live routing remains blocked while paper execution is prepared.", "准备模拟执行期间，实盘路由保持阻断。")
+    .replace("Paper execution is linked to an audited research run.", "模拟执行已绑定审计研究运行。")
+    .replace("Paper execution captured its execution gate evidence.", "模拟执行已捕获执行闸门证据。")
+    .replace("Paper order can be submitted after the operator confirms this paper-only route.", "操作者确认仅模拟盘路径后即可提交模拟委托。")
+    .replace("Paper route can stage; live routing still requires explicit gate approval.", "模拟通道可创建委托；实盘仍需显式闸门审批。")
+    .replace("Paper execution remains paper-only unless live gates are explicitly opened.", "除非显式打开实盘闸门，否则模拟执行保持 paper-only。")
+    .replace("Golden Path reports live gates open; require explicit human confirmation before routing capital.", "黄金路径显示实盘闸门打开；路由资金前仍需人工确认。")
+    .replace("orders recorded in paper mode.", "笔委托已在模拟盘入账。")
+    .replace("order recorded in paper mode.", "笔委托已在模拟盘入账。");
 }
 
 function paperExecutionDeepLinkStatusLabel(

@@ -252,6 +252,54 @@ export interface P0PlatformActionOutcomeEvidenceLink {
   targetWorkspaceId: ProductWorkAreaId;
 }
 
+export type P0PaperExecutionPreflightState = "blocked" | "ready" | "recorded";
+export type P0PaperExecutionPreflightGateStatus = "passed" | "blocked" | "review";
+export type P0PaperExecutionPreflightGateTone = "positive" | "warning" | "risk";
+export type P0PaperExecutionPreflightGateId =
+  | "audited-run"
+  | "risk-approval"
+  | "paper-execution"
+  | "live-boundary";
+
+export interface P0PaperExecutionPreflightGate {
+  id: P0PaperExecutionPreflightGateId;
+  label: string;
+  value: string;
+  detail: string;
+  status: P0PaperExecutionPreflightGateStatus;
+  tone: P0PaperExecutionPreflightGateTone;
+}
+
+export interface P0PaperExecutionPreflightSource {
+  goldenPath?: {
+    latestRunId?: string | null;
+    currentStepId?: string | null;
+    nextAction?: {
+      id?: string | null;
+      label?: string | null;
+      targetWorkspace?: string | null;
+      reason?: string | null;
+    } | null;
+    summary?: {
+      liveTradingAllowed?: boolean;
+    } | null;
+  } | null;
+  paperExecution?: P0PlatformActionOutcomePaperExecution | null;
+  researchBinding?: ResearchRunContextBinding | null;
+  riskApproval?: RiskApprovalSummary | null;
+}
+
+export interface P0PaperExecutionPreflight {
+  state: P0PaperExecutionPreflightState;
+  headline: string;
+  detail: string;
+  primaryActionLabel: string;
+  canSubmitPaperOrder: boolean;
+  canRebindLatestRun: boolean;
+  targetWorkspaceId: ProductWorkAreaId;
+  gates: P0PaperExecutionPreflightGate[];
+}
+
 export interface P0PlatformReadinessReportInput {
   summary: P0PlatformReadinessSummary;
   backlogItems: readonly P0PlatformBacklogItem[];
@@ -3552,6 +3600,149 @@ export function buildP0PlatformActionOutcome(
   };
 }
 
+export function buildP0PaperExecutionPreflight(
+  source: P0PaperExecutionPreflightSource | null | undefined
+): P0PaperExecutionPreflight {
+  const paperExecution = source?.paperExecution;
+  const latestRunId = source?.goldenPath?.latestRunId?.trim() ?? "";
+  const binding = source?.researchBinding ?? null;
+  const riskApproval = source?.riskApproval ?? null;
+  const liveTradingAllowed = Boolean(source?.goldenPath?.summary?.liveTradingAllowed);
+  const targetWorkspaceId: ProductWorkAreaId = "execution";
+
+  if (paperExecution?.executionId) {
+    const orderCount = paperExecution.orders?.length ?? 0;
+    const gateCount = paperExecution.gates?.length ?? 0;
+    const passedGateCount = paperExecution.gates?.filter((gate) => gate.passed).length ?? 0;
+    const detail = [
+      paperExecution.executionId,
+      `${orderCount} ${orderCount === 1 ? "order" : "orders"}`,
+      `${passedGateCount}/${gateCount} gates passed`
+    ].join(" · ");
+
+    return {
+      state: "recorded",
+      headline: "Paper execution recorded",
+      detail,
+      primaryActionLabel: "Review paper execution",
+      canSubmitPaperOrder: false,
+      canRebindLatestRun: false,
+      targetWorkspaceId,
+      gates: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: paperExecution.runId || latestRunId || "bound",
+          detail: "Paper execution is linked to an audited research run.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "risk-approval",
+          label: "Risk approval",
+          value: `${passedGateCount}/${gateCount} execution gates`,
+          detail: "Paper execution captured its execution gate evidence.",
+          status: gateCount > 0 && passedGateCount === gateCount ? "passed" : "review",
+          tone: gateCount > 0 && passedGateCount === gateCount ? "positive" : "warning"
+        },
+        {
+          id: "paper-execution",
+          label: "Paper execution",
+          value: paperExecution.executionId,
+          detail: `${orderCount} ${orderCount === 1 ? "order" : "orders"} recorded in paper mode.`,
+          status: "passed",
+          tone: "positive"
+        },
+        buildP0PaperExecutionLiveBoundaryGate(liveTradingAllowed, "Paper execution remains paper-only unless live gates are explicitly opened.")
+      ]
+    };
+  }
+
+  const canUseBoundRun = Boolean(binding?.canUseRun);
+  const canRebindLatestRun = Boolean(latestRunId) && !canUseBoundRun;
+  const riskHeadline = riskApproval?.headline?.trim() || "Risk approval blocked";
+  const riskSummary = riskApproval?.summary?.trim() || "Bind an audited run before paper or live execution.";
+  const riskIsReady = riskApproval?.status === "paper_ready" || riskApproval?.status === "live_ready";
+
+  if (!canUseBoundRun) {
+    return {
+      state: "blocked",
+      headline: canRebindLatestRun ? "Bind latest audited run" : "Audited run required",
+      detail: canRebindLatestRun
+        ? `Golden Path has ${latestRunId} ready; load it before submitting a paper order.`
+        : binding?.detail || "Run an audited pipeline before submitting a paper order.",
+      primaryActionLabel: canRebindLatestRun ? "Load latest audited run" : "Run audited pipeline",
+      canSubmitPaperOrder: false,
+      canRebindLatestRun,
+      targetWorkspaceId,
+      gates: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: latestRunId || binding?.runId || "missing",
+          detail: canRebindLatestRun
+            ? "Latest Golden Path run can be rebound into the current workspace."
+            : binding?.detail || "No matching audited run is bound to the current workspace.",
+          status: canRebindLatestRun ? "review" : "blocked",
+          tone: canRebindLatestRun ? "warning" : "risk"
+        },
+        buildP0PaperExecutionRiskGate(riskApproval, riskHeadline, riskSummary, false),
+        buildP0PaperExecutionGate("blocked"),
+        buildP0PaperExecutionLiveBoundaryGate(liveTradingAllowed, "Live routing remains blocked while paper execution is prepared.")
+      ]
+    };
+  }
+
+  if (!riskIsReady) {
+    const firstBlockedGate = riskApproval?.gates.find((gate) => gate.status === "blocked");
+    return {
+      state: "blocked",
+      headline: "Risk approval required",
+      detail: firstBlockedGate?.detail || riskSummary,
+      primaryActionLabel: "Review risk gates",
+      canSubmitPaperOrder: false,
+      canRebindLatestRun: false,
+      targetWorkspaceId,
+      gates: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: binding?.runId || latestRunId || "bound",
+          detail: binding?.detail || "Matching audited run is bound to the current workspace.",
+          status: "passed",
+          tone: "positive"
+        },
+        buildP0PaperExecutionRiskGate(riskApproval, riskHeadline, riskSummary, false),
+        buildP0PaperExecutionGate("blocked"),
+        buildP0PaperExecutionLiveBoundaryGate(liveTradingAllowed, "Live routing remains blocked while risk gates are reviewed.")
+      ]
+    };
+  }
+
+  return {
+    state: "ready",
+    headline: "Paper order ready",
+    detail: riskSummary,
+    primaryActionLabel: "Submit paper order",
+    canSubmitPaperOrder: true,
+    canRebindLatestRun: false,
+    targetWorkspaceId,
+    gates: [
+      {
+        id: "audited-run",
+        label: "Audited run",
+        value: binding?.runId || latestRunId || "bound",
+        detail: binding?.detail || "Matching audited run is bound to the current workspace.",
+        status: "passed",
+        tone: "positive"
+      },
+      buildP0PaperExecutionRiskGate(riskApproval, riskHeadline, riskSummary, true),
+      buildP0PaperExecutionGate("review"),
+      buildP0PaperExecutionLiveBoundaryGate(liveTradingAllowed, "Paper route can stage; live routing still requires explicit gate approval.")
+    ]
+  };
+}
+
 export function buildP0PlatformActionOutcomeEvidenceLink(
   outcome: P0PlatformActionOutcome | null | undefined
 ): P0PlatformActionOutcomeEvidenceLink | null {
@@ -3589,6 +3780,52 @@ export function buildP0PlatformActionOutcomeEvidenceLink(
   }
 
   return null;
+}
+
+function buildP0PaperExecutionRiskGate(
+  riskApproval: RiskApprovalSummary | null,
+  fallbackHeadline: string,
+  fallbackSummary: string,
+  ready: boolean
+): P0PaperExecutionPreflightGate {
+  return {
+    id: "risk-approval",
+    label: "Risk approval",
+    value: riskApproval?.headline || fallbackHeadline,
+    detail: riskApproval?.summary || fallbackSummary,
+    status: ready ? "passed" : "blocked",
+    tone: ready ? "positive" : "risk"
+  };
+}
+
+function buildP0PaperExecutionGate(status: "blocked" | "review"): P0PaperExecutionPreflightGate {
+  return {
+    id: "paper-execution",
+    label: "Paper execution",
+    value: status === "review" ? "ready to submit" : "not recorded",
+    detail:
+      status === "review"
+        ? "Paper order can be submitted after the operator confirms this paper-only route."
+        : "Paper order has not been submitted for the latest audited run.",
+    status,
+    tone: status === "review" ? "warning" : "risk"
+  };
+}
+
+function buildP0PaperExecutionLiveBoundaryGate(
+  liveTradingAllowed: boolean,
+  detail: string
+): P0PaperExecutionPreflightGate {
+  return {
+    id: "live-boundary",
+    label: "Live boundary",
+    value: liveTradingAllowed ? "live gate open" : "paper only",
+    detail: liveTradingAllowed
+      ? "Golden Path reports live gates open; require explicit human confirmation before routing capital."
+      : detail,
+    status: liveTradingAllowed ? "passed" : "review",
+    tone: liveTradingAllowed ? "positive" : "warning"
+  };
 }
 
 export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadinessReportInput): string {
