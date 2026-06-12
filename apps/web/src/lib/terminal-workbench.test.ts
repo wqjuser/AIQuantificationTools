@@ -14,6 +14,7 @@ import {
   buildAuditEvidenceSummary,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
+  buildAuditSigningKeyRotationChainSummary,
   buildAuditSigningKeyRotationLedgerRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
@@ -7515,6 +7516,40 @@ describe("terminal workbench model", () => {
       "audit-signing-key-runtime-reload-execution-next-audit-key-42",
       "audit-signing-key-rotation-acceptance-next-audit-key-42"
     ]);
+    expect(buildAuditSigningKeyRotationChainSummary(rows)).toEqual(
+      expect.objectContaining({
+        blockedCount: 0,
+        completedCount: 6,
+        detail: "6/6 evidence stages recorded · live remains blocked",
+        headline: "Rotation chain accepted",
+        missingCount: 0,
+        nextStageId: null,
+        proposedKeyId: "next-audit-key",
+        state: "complete",
+        totalCount: 6
+      })
+    );
+    expect(buildAuditSigningKeyRotationChainSummary(rows).stages.map((stage) => `${stage.id}:${stage.status}`)).toEqual([
+      "rotation_plan:complete",
+      "secret_materialization:complete",
+      "environment_binding:complete",
+      "runtime_reload_plan:complete",
+      "runtime_reload_execution:complete",
+      "rotation_acceptance:complete"
+    ]);
+    expect(
+      buildAuditSigningKeyRotationChainSummary(rows.filter((row) => row.eventKind !== "rotation_acceptance"))
+    ).toEqual(
+      expect.objectContaining({
+        completedCount: 5,
+        detail: "5/6 evidence stages recorded · next: Final acceptance gate",
+        headline: "Rotation chain in progress",
+        missingCount: 1,
+        nextStageId: "rotation_acceptance",
+        proposedKeyId: "next-audit-key",
+        state: "in_progress"
+      })
+    );
     expect(JSON.stringify(rows)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
     expect(JSON.stringify(rows)).not.toContain("local-dev-audit-secret");
   });

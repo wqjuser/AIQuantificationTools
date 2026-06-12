@@ -179,6 +179,7 @@ import {
   buildAuditEvidenceSummary,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
+  buildAuditSigningKeyRotationChainSummary,
   buildAuditSigningKeyRotationLedgerRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
@@ -277,6 +278,7 @@ import {
   AiReviewRunRecord,
   AuditEvidenceSummary,
   AuditEvidenceReportLedgerRow,
+  AuditSigningKeyRotationChainSummary,
   AuditSigningKeyRotationLedgerRow,
   Market,
   AgentCommitteeRound,
@@ -1177,7 +1179,14 @@ export function App() {
   const auditSigningKeyRotationLedgerRows = filterAuditSigningKeyRotationLedgerRows(
     buildAuditSigningKeyRotationLedgerRows(auditSigningKeyRotationEvents),
     ""
-  ).slice(0, AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE);
+  );
+  const auditSigningKeyRotationChainSummary = buildAuditSigningKeyRotationChainSummary(
+    auditSigningKeyRotationLedgerRows
+  );
+  const auditSigningKeyRotationHistoryRows = auditSigningKeyRotationLedgerRows.slice(
+    0,
+    AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
+  );
   const researchRunImportDiffRows = buildResearchRunImportDiffRows({
     aiReviewRecords: activeAiReviewRunRecords,
     exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage,
@@ -4952,7 +4961,8 @@ export function App() {
             rotationAcceptanceConfirmations={auditSigningKeyRotationAcceptanceConfirmations}
             rotationAcceptanceError={auditSigningKeyRotationAcceptance.error}
             rotationAcceptanceExecutionId={auditSigningKeyRuntimeReloadExecution.runtimeReloadExecution?.executionId ?? null}
-            rotationHistoryRows={auditSigningKeyRotationLedgerRows}
+            rotationChainSummary={auditSigningKeyRotationChainSummary}
+            rotationHistoryRows={auditSigningKeyRotationHistoryRows}
             rotationHistoryState={isLoadingAuditSigningKeyRotationEvents ? "loading" : "ready"}
             rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}
             rotationPlan={auditSigningKeyRotationPlan.rotationPlan}
@@ -9113,6 +9123,7 @@ function AuditSigningKeyRegistryPanel({
   rotationAcceptanceConfirmations,
   rotationAcceptanceError,
   rotationAcceptanceExecutionId,
+  rotationChainSummary,
   rotationHistoryRows,
   rotationHistoryState,
   rotationLedgerStatus,
@@ -9189,6 +9200,7 @@ function AuditSigningKeyRegistryPanel({
   rotationAcceptanceConfirmations: AuditSigningKeyRotationAcceptanceConfirmations;
   rotationAcceptanceError?: string;
   rotationAcceptanceExecutionId: string | null;
+  rotationChainSummary: AuditSigningKeyRotationChainSummary;
   rotationHistoryRows: AuditSigningKeyRotationLedgerRow[];
   rotationHistoryState: "loading" | "ready";
   rotationLedgerStatus: AuditSigningKeyRotationLedgerStatus;
@@ -9277,6 +9289,23 @@ function AuditSigningKeyRegistryPanel({
               <b>{statusCopy}</b>
             </article>
           )}
+        </div>
+        <div className={`audit-signing-key-rotation-chain ${rotationChainSummary.state}`}>
+          <div className="audit-signing-key-rotation-chain-head">
+            <span>{i18n.locale === "zh-CN" ? "轮换证据链" : "Rotation evidence chain"}</span>
+            <strong>{auditSigningKeyRotationChainHeadline(i18n, rotationChainSummary)}</strong>
+            <p>{auditSigningKeyRotationChainDetail(i18n, rotationChainSummary)}</p>
+          </div>
+          <div className="audit-signing-key-rotation-chain-stages">
+            {rotationChainSummary.stages.map((stage) => (
+              <article className={`audit-signing-key-rotation-chain-stage ${stage.status}`} key={stage.id}>
+                <span>{auditSigningKeyRotationChainStageStatusLabel(i18n, stage.status)}</span>
+                <strong>{auditSigningKeyRotationChainStageLabel(i18n, stage.id, stage.label)}</strong>
+                <small>{stage.rowId || (i18n.locale === "zh-CN" ? "等待证据入账" : "Awaiting evidence")}</small>
+                <b>{stage.createdAt ? formatChartDate(stage.createdAt) : "n/a"}</b>
+              </article>
+            ))}
+          </div>
         </div>
         <div className="audit-signing-key-rotation-history">
           <div className="audit-signing-key-rotation-history-head">
@@ -11269,6 +11298,86 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
       "Rotation acceptance recorded": "最终验收已记录"
     }[statusLabel] ?? statusLabel
   );
+}
+
+function auditSigningKeyRotationChainHeadline(
+  i18n: AppI18n,
+  summary: AuditSigningKeyRotationChainSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      blocked: "证据链阻断",
+      complete: "证据链已验收",
+      empty: "暂无证据链",
+      in_progress: "证据链推进中"
+    } satisfies Record<AuditSigningKeyRotationChainSummary["state"], string>
+  )[summary.state];
+}
+
+function auditSigningKeyRotationChainDetail(
+  i18n: AppI18n,
+  summary: AuditSigningKeyRotationChainSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "empty") {
+    return "尚无签名 Key 轮换证据";
+  }
+  const progress = `${summary.completedCount}/${summary.totalCount} 个证据阶段已入账`;
+  if (summary.state === "complete") {
+    return `${progress} · 实盘仍保持阻断`;
+  }
+  const nextStage = summary.stages.find((stage) => stage.id === summary.nextStageId);
+  if (summary.state === "blocked") {
+    return `${progress} · 阻断：${nextStage ? auditSigningKeyRotationChainStageLabel(i18n, nextStage.id, nextStage.label) : "证据"}`;
+  }
+  return `${progress} · 下一步：${nextStage ? auditSigningKeyRotationChainStageLabel(i18n, nextStage.id, nextStage.label) : "证据"}`;
+}
+
+function auditSigningKeyRotationChainStageLabel(
+  i18n: AppI18n,
+  stageId: AuditSigningKeyRotationChainSummary["stages"][number]["id"],
+  fallback: string
+): string {
+  if (i18n.locale === "en-US") {
+    return fallback;
+  }
+  return (
+    {
+      environment_binding: "环境绑定",
+      rotation_acceptance: "最终验收闸门",
+      rotation_plan: "轮换计划",
+      runtime_reload_execution: "重载执行证据",
+      runtime_reload_plan: "运行时重载计划",
+      secret_materialization: "Secret 物化清单"
+    } satisfies Record<AuditSigningKeyRotationChainSummary["stages"][number]["id"], string>
+  )[stageId];
+}
+
+function auditSigningKeyRotationChainStageStatusLabel(
+  i18n: AppI18n,
+  status: AuditSigningKeyRotationChainSummary["stages"][number]["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        blocked: "Blocked",
+        complete: "Complete",
+        missing: "Missing"
+      } satisfies Record<typeof status, string>
+    )[status];
+  }
+  return (
+    {
+      blocked: "阻断",
+      complete: "完成",
+      missing: "缺失"
+    } satisfies Record<typeof status, string>
+  )[status];
 }
 
 function auditSigningKeyRotationApplyStatusLabel(

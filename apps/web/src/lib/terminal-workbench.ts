@@ -1400,6 +1400,39 @@ export interface AuditSigningKeyRotationLedgerRow {
   tone: "warning" | "risk" | "positive";
 }
 
+export type AuditSigningKeyRotationChainStageId =
+  | "rotation_plan"
+  | "secret_materialization"
+  | "environment_binding"
+  | "runtime_reload_plan"
+  | "runtime_reload_execution"
+  | "rotation_acceptance";
+export type AuditSigningKeyRotationChainState = "empty" | "in_progress" | "blocked" | "complete";
+export type AuditSigningKeyRotationChainStageStatus = "missing" | "blocked" | "complete";
+
+export interface AuditSigningKeyRotationChainStage {
+  id: AuditSigningKeyRotationChainStageId;
+  label: string;
+  rowId: string;
+  status: AuditSigningKeyRotationChainStageStatus;
+  statusLabel: string;
+  createdAt: string;
+  detail: string;
+}
+
+export interface AuditSigningKeyRotationChainSummary {
+  blockedCount: number;
+  completedCount: number;
+  detail: string;
+  headline: string;
+  missingCount: number;
+  nextStageId: AuditSigningKeyRotationChainStageId | null;
+  proposedKeyId: string;
+  stages: AuditSigningKeyRotationChainStage[];
+  state: AuditSigningKeyRotationChainState;
+  totalCount: number;
+}
+
 export interface WorkflowNode {
   id: string;
   label: string;
@@ -6464,6 +6497,111 @@ export function filterAuditSigningKeyRotationLedgerRows(
     );
     return searchableText.includes(normalizedQuery) || searchableTokens.some((token) => token === normalizedQuery);
   });
+}
+
+const auditSigningKeyRotationChainStageSpecs: Array<{
+  id: AuditSigningKeyRotationChainStageId;
+  eventKind: AuditSigningKeyRotationLedgerEventKind;
+  label: string;
+}> = [
+  { id: "rotation_plan", eventKind: "plan", label: "Rotation plan" },
+  { id: "secret_materialization", eventKind: "materialization", label: "Secret materialization" },
+  { id: "environment_binding", eventKind: "environment_binding", label: "Environment binding" },
+  { id: "runtime_reload_plan", eventKind: "runtime_reload_plan", label: "Runtime reload plan" },
+  { id: "runtime_reload_execution", eventKind: "runtime_reload_execution", label: "Runtime reload execution" },
+  { id: "rotation_acceptance", eventKind: "rotation_acceptance", label: "Final acceptance gate" }
+];
+
+export function buildAuditSigningKeyRotationChainSummary(
+  rows: AuditSigningKeyRotationLedgerRow[]
+): AuditSigningKeyRotationChainSummary {
+  const proposedKeyId = resolveLatestAuditSigningKeyRotationChainKey(rows);
+  const scopedRows = proposedKeyId ? rows.filter((row) => row.proposedKeyId === proposedKeyId) : [];
+  const stages = auditSigningKeyRotationChainStageSpecs.map<AuditSigningKeyRotationChainStage>((stage) => {
+    const row = latestAuditSigningKeyRotationRowByKind(scopedRows, stage.eventKind);
+    if (!row) {
+      return {
+        id: stage.id,
+        label: stage.label,
+        rowId: "",
+        status: "missing",
+        statusLabel: "Missing",
+        createdAt: "",
+        detail: "Awaiting evidence"
+      };
+    }
+    const status: AuditSigningKeyRotationChainStageStatus = row.status === "blocked" ? "blocked" : "complete";
+    return {
+      id: stage.id,
+      label: stage.label,
+      rowId: row.id,
+      status,
+      statusLabel: row.statusLabel,
+      createdAt: row.createdAt,
+      detail: row.blockedReasonLabel === "none" ? row.applyMode || row.templateShortHash || row.eventKind : row.blockedReasonLabel
+    };
+  });
+  const totalCount = stages.length;
+  const completedCount = stages.filter((stage) => stage.status === "complete").length;
+  const blockedCount = stages.filter((stage) => stage.status === "blocked").length;
+  const missingCount = stages.filter((stage) => stage.status === "missing").length;
+  const nextStage = stages.find((stage) => stage.status !== "complete") ?? null;
+  const state: AuditSigningKeyRotationChainState =
+    !proposedKeyId || !rows.length
+      ? "empty"
+      : blockedCount > 0
+        ? "blocked"
+        : completedCount === totalCount
+          ? "complete"
+          : "in_progress";
+  const headline =
+    state === "complete"
+      ? "Rotation chain accepted"
+      : state === "blocked"
+        ? "Rotation chain blocked"
+        : state === "in_progress"
+          ? "Rotation chain in progress"
+          : "No rotation chain";
+  const detail =
+    state === "empty"
+      ? "No signing key rotation evidence yet"
+      : state === "blocked"
+        ? `${completedCount}/${totalCount} evidence stages recorded · blocked: ${nextStage?.label ?? "Evidence"}`
+        : state === "complete"
+          ? `${completedCount}/${totalCount} evidence stages recorded · live remains blocked`
+          : `${completedCount}/${totalCount} evidence stages recorded · next: ${nextStage?.label ?? "Evidence"}`;
+
+  return {
+    blockedCount,
+    completedCount,
+    detail,
+    headline,
+    missingCount,
+    nextStageId: nextStage?.id ?? null,
+    proposedKeyId,
+    stages,
+    state,
+    totalCount
+  };
+}
+
+function resolveLatestAuditSigningKeyRotationChainKey(rows: AuditSigningKeyRotationLedgerRow[]): string {
+  const rankedRows = [...rows]
+    .filter((row) => row.proposedKeyId)
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  const acceptedRow = rankedRows.find((row) => row.eventKind === "rotation_acceptance" && row.status === "acceptance_recorded");
+  return acceptedRow?.proposedKeyId ?? rankedRows[0]?.proposedKeyId ?? "";
+}
+
+function latestAuditSigningKeyRotationRowByKind(
+  rows: AuditSigningKeyRotationLedgerRow[],
+  eventKind: AuditSigningKeyRotationLedgerEventKind
+): AuditSigningKeyRotationLedgerRow | null {
+  return (
+    [...rows]
+      .filter((row) => row.eventKind === eventKind)
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null
+  );
 }
 
 function auditReportLedgerMetadataText(metadata: Record<string, unknown>, key: string): string {
