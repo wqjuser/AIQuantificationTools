@@ -40,6 +40,8 @@ import {
   recordAuditSigningKeyRuntimeReloadPlan,
   loadAuditSigningKeyRuntimeReloadExecutions,
   recordAuditSigningKeyRuntimeReloadExecution,
+  loadAuditSigningKeyRotationAcceptances,
+  recordAuditSigningKeyRotationAcceptance,
   loadResearchRunAiReviews,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -109,6 +111,8 @@ import {
   AuditSigningKeyRuntimeReloadPlanResult,
   AuditSigningKeyRuntimeReloadExecution,
   AuditSigningKeyRuntimeReloadExecutionResult,
+  AuditSigningKeyRotationAcceptance,
+  AuditSigningKeyRotationAcceptanceResult,
   AuditSigningKeyRotationApply,
   AuditSigningKeyRotationApplyResult,
   AuditSigningKeyRotationPlan,
@@ -461,6 +465,9 @@ const initialAuditSigningKeyRuntimeReloadPlanState: AuditSigningKeyRuntimeReload
 const initialAuditSigningKeyRuntimeReloadExecutionState: AuditSigningKeyRuntimeReloadExecutionResult = {
   source: "fallback"
 };
+const initialAuditSigningKeyRotationAcceptanceState: AuditSigningKeyRotationAcceptanceResult = {
+  source: "fallback"
+};
 const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerStatus = {
   detail: "",
   state: "idle"
@@ -595,6 +602,22 @@ const initialAuditSigningKeyRuntimeReloadExecutionConfirmations: AuditSigningKey
   postReloadSmokePassed: false,
   rollbackReadinessConfirmed: false,
   operatorConfirmedLiveBlocked: false
+};
+
+interface AuditSigningKeyRotationAcceptanceConfirmations {
+  executionEvidenceReviewed: boolean;
+  signatureProbeVerified: boolean;
+  legacyVerificationConfirmed: boolean;
+  rollbackWindowStillOpen: boolean;
+  operatorConfirmedActivationBlocked: boolean;
+}
+
+const initialAuditSigningKeyRotationAcceptanceConfirmations: AuditSigningKeyRotationAcceptanceConfirmations = {
+  executionEvidenceReviewed: false,
+  signatureProbeVerified: false,
+  legacyVerificationConfirmed: false,
+  rollbackWindowStillOpen: false,
+  operatorConfirmedActivationBlocked: false
 };
 
 const workflowIcons: Record<string, typeof BarChart3> = {
@@ -919,6 +942,12 @@ export function App() {
     useState<AuditSigningKeyRuntimeReloadExecutionConfirmations>(
       initialAuditSigningKeyRuntimeReloadExecutionConfirmations
     );
+  const [auditSigningKeyRotationAcceptance, setAuditSigningKeyRotationAcceptance] =
+    useState<AuditSigningKeyRotationAcceptanceResult>(initialAuditSigningKeyRotationAcceptanceState);
+  const [auditSigningKeyRotationAcceptanceConfirmations, setAuditSigningKeyRotationAcceptanceConfirmations] =
+    useState<AuditSigningKeyRotationAcceptanceConfirmations>(
+      initialAuditSigningKeyRotationAcceptanceConfirmations
+    );
   const [auditSigningKeyRotationPlanEventId, setAuditSigningKeyRotationPlanEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationApplyEventId, setAuditSigningKeyRotationApplyEventId] = useState<string | null>(null);
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
@@ -1032,6 +1061,8 @@ export function App() {
   const [isRecordingAuditSigningKeyRuntimeReloadPlan, setIsRecordingAuditSigningKeyRuntimeReloadPlan] =
     useState(false);
   const [isRecordingAuditSigningKeyRuntimeReloadExecution, setIsRecordingAuditSigningKeyRuntimeReloadExecution] =
+    useState(false);
+  const [isRecordingAuditSigningKeyRotationAcceptance, setIsRecordingAuditSigningKeyRotationAcceptance] =
     useState(false);
   const [signingAuditReportEventId, setSigningAuditReportEventId] = useState<string | null>(null);
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
@@ -1433,7 +1464,9 @@ export function App() {
       runtimeReloadPlanEventHistory,
       runtimeReloadPlanHistory,
       runtimeReloadExecutionEventHistory,
-      runtimeReloadExecutionHistory
+      runtimeReloadExecutionHistory,
+      rotationAcceptanceEventHistory,
+      rotationAcceptanceHistory
     ] = await Promise.all([
       loadAuditEvents(quantCoreBaseUrl, {
         eventType: "audit_signing_key_rotation_plan",
@@ -1493,6 +1526,17 @@ export function App() {
         "",
         undefined,
         AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
+      ),
+      loadAuditEvents(quantCoreBaseUrl, {
+        eventType: "audit_signing_key_rotation_acceptance",
+        limit: AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE,
+        offset: 0
+      }),
+      loadAuditSigningKeyRotationAcceptances(
+        quantCoreBaseUrl,
+        "",
+        undefined,
+        AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
       )
     ]);
     if (
@@ -1502,7 +1546,8 @@ export function App() {
       secretMaterializationEventHistory.source === "core" ||
       environmentBindingEventHistory.source === "core" ||
       runtimeReloadPlanEventHistory.source === "core" ||
-      runtimeReloadExecutionEventHistory.source === "core"
+      runtimeReloadExecutionEventHistory.source === "core" ||
+      rotationAcceptanceEventHistory.source === "core"
     ) {
       const rotationEvents = [
         ...(rotationPlanHistory.source === "core" ? rotationPlanHistory.events : []),
@@ -1511,7 +1556,8 @@ export function App() {
         ...(secretMaterializationEventHistory.source === "core" ? secretMaterializationEventHistory.events : []),
         ...(environmentBindingEventHistory.source === "core" ? environmentBindingEventHistory.events : []),
         ...(runtimeReloadPlanEventHistory.source === "core" ? runtimeReloadPlanEventHistory.events : []),
-        ...(runtimeReloadExecutionEventHistory.source === "core" ? runtimeReloadExecutionEventHistory.events : [])
+        ...(runtimeReloadExecutionEventHistory.source === "core" ? runtimeReloadExecutionEventHistory.events : []),
+        ...(rotationAcceptanceEventHistory.source === "core" ? rotationAcceptanceEventHistory.events : [])
       ].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
       setAuditSigningKeyRotationEvents(
         rotationEvents
@@ -1538,6 +1584,12 @@ export function App() {
     if (runtimeReloadExecutionHistory.source === "core") {
       setAuditSigningKeyRuntimeReloadExecution({
         runtimeReloadExecution: runtimeReloadExecutionHistory.runtimeReloadExecutions[0],
+        source: "core"
+      });
+    }
+    if (rotationAcceptanceHistory.source === "core") {
+      setAuditSigningKeyRotationAcceptance({
+        rotationAcceptance: rotationAcceptanceHistory.rotationAcceptances[0],
         source: "core"
       });
     }
@@ -1833,6 +1885,13 @@ export function App() {
     []
   );
 
+  const updateAuditSigningKeyRotationAcceptanceConfirmation = useCallback(
+    (field: keyof AuditSigningKeyRotationAcceptanceConfirmations, value: boolean) => {
+      setAuditSigningKeyRotationAcceptanceConfirmations((current) => ({ ...current, [field]: value }));
+    },
+    []
+  );
+
   const prepareAuditSigningKeyRotationPlanForAudit = useCallback(async () => {
     const activeKey = auditSigningKeyRegistry.registry?.keys.find(
       (key) => key.keyId === auditSigningKeyRegistry.registry?.activeKeyId
@@ -1854,6 +1913,8 @@ export function App() {
     setAuditSigningKeyRuntimeReloadPlanConfirmations(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
     setAuditSigningKeyRuntimeReloadExecution(initialAuditSigningKeyRuntimeReloadExecutionState);
     setAuditSigningKeyRuntimeReloadExecutionConfirmations(initialAuditSigningKeyRuntimeReloadExecutionConfirmations);
+    setAuditSigningKeyRotationAcceptance(initialAuditSigningKeyRotationAcceptanceState);
+    setAuditSigningKeyRotationAcceptanceConfirmations(initialAuditSigningKeyRotationAcceptanceConfirmations);
     setAuditSigningKeyRotationPlanEventId(null);
     setAuditSigningKeyRotationApplyEventId(null);
     setAuditSigningKeyRotationLedgerStatus({ detail: "", state: "saving" });
@@ -1903,6 +1964,8 @@ export function App() {
     setAuditSigningKeyRuntimeReloadPlanConfirmations(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
     setAuditSigningKeyRuntimeReloadExecution(initialAuditSigningKeyRuntimeReloadExecutionState);
     setAuditSigningKeyRuntimeReloadExecutionConfirmations(initialAuditSigningKeyRuntimeReloadExecutionConfirmations);
+    setAuditSigningKeyRotationAcceptance(initialAuditSigningKeyRotationAcceptanceState);
+    setAuditSigningKeyRotationAcceptanceConfirmations(initialAuditSigningKeyRotationAcceptanceConfirmations);
     try {
       const result = await recordAuditSigningKeySecretMaterialization(quantCoreBaseUrl, {
         backend: "local-secret-store",
@@ -1943,6 +2006,8 @@ export function App() {
     setAuditSigningKeyRuntimeReloadPlanConfirmations(initialAuditSigningKeyRuntimeReloadPlanConfirmations);
     setAuditSigningKeyRuntimeReloadExecution(initialAuditSigningKeyRuntimeReloadExecutionState);
     setAuditSigningKeyRuntimeReloadExecutionConfirmations(initialAuditSigningKeyRuntimeReloadExecutionConfirmations);
+    setAuditSigningKeyRotationAcceptance(initialAuditSigningKeyRotationAcceptanceState);
+    setAuditSigningKeyRotationAcceptanceConfirmations(initialAuditSigningKeyRotationAcceptanceConfirmations);
     try {
       const result = await recordAuditSigningKeyEnvironmentBinding(quantCoreBaseUrl, {
         bindingMode: "container_env_reference",
@@ -1979,6 +2044,8 @@ export function App() {
     setIsRecordingAuditSigningKeyRuntimeReloadPlan(true);
     setAuditSigningKeyRuntimeReloadExecution(initialAuditSigningKeyRuntimeReloadExecutionState);
     setAuditSigningKeyRuntimeReloadExecutionConfirmations(initialAuditSigningKeyRuntimeReloadExecutionConfirmations);
+    setAuditSigningKeyRotationAcceptance(initialAuditSigningKeyRotationAcceptanceState);
+    setAuditSigningKeyRotationAcceptanceConfirmations(initialAuditSigningKeyRotationAcceptanceConfirmations);
     try {
       const result = await recordAuditSigningKeyRuntimeReloadPlan(quantCoreBaseUrl, {
         bindingId: binding.bindingId,
@@ -2014,6 +2081,8 @@ export function App() {
       return;
     }
     setIsRecordingAuditSigningKeyRuntimeReloadExecution(true);
+    setAuditSigningKeyRotationAcceptance(initialAuditSigningKeyRotationAcceptanceState);
+    setAuditSigningKeyRotationAcceptanceConfirmations(initialAuditSigningKeyRotationAcceptanceConfirmations);
     try {
       const result = await recordAuditSigningKeyRuntimeReloadExecution(quantCoreBaseUrl, {
         confirmations: auditSigningKeyRuntimeReloadExecutionConfirmations,
@@ -2035,6 +2104,40 @@ export function App() {
   }, [
     auditSigningKeyRuntimeReloadExecutionConfirmations,
     auditSigningKeyRuntimeReloadPlan.runtimeReloadPlan,
+    quantCoreBaseUrl
+  ]);
+
+  const recordAuditSigningKeyRotationAcceptanceForAudit = useCallback(async () => {
+    const runtimeReloadExecution = auditSigningKeyRuntimeReloadExecution.runtimeReloadExecution;
+    if (!runtimeReloadExecution?.executionId) {
+      setAuditSigningKeyRotationAcceptance({
+        source: "fallback",
+        error: "Audit signing key runtime reload execution evidence is required before final acceptance can be recorded"
+      });
+      return;
+    }
+    setIsRecordingAuditSigningKeyRotationAcceptance(true);
+    try {
+      const result = await recordAuditSigningKeyRotationAcceptance(quantCoreBaseUrl, {
+        acceptanceMode: "manual_rotation_acceptance",
+        confirmations: auditSigningKeyRotationAcceptanceConfirmations,
+        executionId: runtimeReloadExecution.executionId,
+        metadata: {
+          proposedKeyId: runtimeReloadExecution.proposedActiveKeyId,
+          source: "audit-signing-key-registry-panel"
+        },
+        operator: "local-operator"
+      });
+      setAuditSigningKeyRotationAcceptance(result);
+      if (result.auditEvent) {
+        setAuditSigningKeyRotationEvents((current) => mergeAuditEvidenceReportEvent(current, result.auditEvent!));
+      }
+    } finally {
+      setIsRecordingAuditSigningKeyRotationAcceptance(false);
+    }
+  }, [
+    auditSigningKeyRotationAcceptanceConfirmations,
+    auditSigningKeyRuntimeReloadExecution.runtimeReloadExecution,
     quantCoreBaseUrl
   ]);
 
@@ -4810,6 +4913,7 @@ export function App() {
             isRecordingEnvironmentBinding={isRecordingAuditSigningKeyEnvironmentBinding}
             isRecordingRuntimeReloadPlan={isRecordingAuditSigningKeyRuntimeReloadPlan}
             isRecordingRuntimeReloadExecution={isRecordingAuditSigningKeyRuntimeReloadExecution}
+            isRecordingRotationAcceptance={isRecordingAuditSigningKeyRotationAcceptance}
             isRecordingRestartEvidence={isRecordingAuditSigningKeyRestartEvidence}
             isRecordingSecretMaterialization={isRecordingAuditSigningKeySecretMaterialization}
             environmentBinding={auditSigningKeyEnvironmentBinding.environmentBinding}
@@ -4823,8 +4927,10 @@ export function App() {
             onRecordEnvironmentBinding={recordAuditSigningKeyEnvironmentBindingForAudit}
             onRecordRuntimeReloadPlan={recordAuditSigningKeyRuntimeReloadPlanForAudit}
             onRecordRuntimeReloadExecution={recordAuditSigningKeyRuntimeReloadExecutionForAudit}
+            onRecordRotationAcceptance={recordAuditSigningKeyRotationAcceptanceForAudit}
             onRecordRestartEvidence={recordAuditSigningKeyRestartEvidenceForAudit}
             onRecordSecretMaterialization={recordAuditSigningKeySecretMaterializationForAudit}
+            onRotationAcceptanceConfirmationChange={updateAuditSigningKeyRotationAcceptanceConfirmation}
             onRuntimeReloadExecutionConfirmationChange={updateAuditSigningKeyRuntimeReloadExecutionConfirmation}
             onRuntimeReloadPlanConfirmationChange={updateAuditSigningKeyRuntimeReloadPlanConfirmation}
             onRestartEvidenceConfirmationChange={updateAuditSigningKeyRestartEvidenceConfirmation}
@@ -4842,6 +4948,10 @@ export function App() {
             rotationApplyConfirmations={auditSigningKeyRotationApplyConfirmations}
             rotationApplyError={auditSigningKeyRotationApply.error}
             rotationError={auditSigningKeyRotationPlan.error}
+            rotationAcceptance={auditSigningKeyRotationAcceptance.rotationAcceptance}
+            rotationAcceptanceConfirmations={auditSigningKeyRotationAcceptanceConfirmations}
+            rotationAcceptanceError={auditSigningKeyRotationAcceptance.error}
+            rotationAcceptanceExecutionId={auditSigningKeyRuntimeReloadExecution.runtimeReloadExecution?.executionId ?? null}
             rotationHistoryRows={auditSigningKeyRotationLedgerRows}
             rotationHistoryState={isLoadingAuditSigningKeyRotationEvents ? "loading" : "ready"}
             rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}
@@ -8967,6 +9077,7 @@ function AuditSigningKeyRegistryPanel({
   isRecordingEnvironmentBinding,
   isRecordingRuntimeReloadExecution,
   isRecordingRuntimeReloadPlan,
+  isRecordingRotationAcceptance,
   isPreparingRotation,
   isRecordingRestartEvidence,
   isRecordingSecretMaterialization,
@@ -8977,8 +9088,10 @@ function AuditSigningKeyRegistryPanel({
   onRecordEnvironmentBinding,
   onRecordRuntimeReloadExecution,
   onRecordRuntimeReloadPlan,
+  onRecordRotationAcceptance,
   onRecordRestartEvidence,
   onRecordSecretMaterialization,
+  onRotationAcceptanceConfirmationChange,
   onRuntimeReloadExecutionConfirmationChange,
   onRuntimeReloadPlanConfirmationChange,
   onRestartEvidenceConfirmationChange,
@@ -8996,6 +9109,10 @@ function AuditSigningKeyRegistryPanel({
   rotationApplyConfirmations,
   rotationApplyError,
   rotationError,
+  rotationAcceptance,
+  rotationAcceptanceConfirmations,
+  rotationAcceptanceError,
+  rotationAcceptanceExecutionId,
   rotationHistoryRows,
   rotationHistoryState,
   rotationLedgerStatus,
@@ -9021,6 +9138,7 @@ function AuditSigningKeyRegistryPanel({
   isRecordingEnvironmentBinding: boolean;
   isRecordingRuntimeReloadExecution: boolean;
   isRecordingRuntimeReloadPlan: boolean;
+  isRecordingRotationAcceptance: boolean;
   isPreparingRotation: boolean;
   isRecordingRestartEvidence: boolean;
   isRecordingSecretMaterialization: boolean;
@@ -9034,8 +9152,13 @@ function AuditSigningKeyRegistryPanel({
   onRecordEnvironmentBinding: () => void;
   onRecordRuntimeReloadExecution: () => void;
   onRecordRuntimeReloadPlan: () => void;
+  onRecordRotationAcceptance: () => void;
   onRecordRestartEvidence: () => void;
   onRecordSecretMaterialization: () => void;
+  onRotationAcceptanceConfirmationChange: (
+    field: keyof AuditSigningKeyRotationAcceptanceConfirmations,
+    value: boolean
+  ) => void;
   onRuntimeReloadExecutionConfirmationChange: (
     field: keyof AuditSigningKeyRuntimeReloadExecutionConfirmations,
     value: boolean
@@ -9062,6 +9185,10 @@ function AuditSigningKeyRegistryPanel({
   rotationApplyConfirmations: AuditSigningKeyRotationApplyConfirmations;
   rotationApplyError?: string;
   rotationError?: string;
+  rotationAcceptance?: AuditSigningKeyRotationAcceptance;
+  rotationAcceptanceConfirmations: AuditSigningKeyRotationAcceptanceConfirmations;
+  rotationAcceptanceError?: string;
+  rotationAcceptanceExecutionId: string | null;
   rotationHistoryRows: AuditSigningKeyRotationLedgerRow[];
   rotationHistoryState: "loading" | "ready";
   rotationLedgerStatus: AuditSigningKeyRotationLedgerStatus;
@@ -9591,6 +9718,109 @@ function AuditSigningKeyRegistryPanel({
               ) : null}
               {runtimeReloadExecutionError ? (
                 <p className="audit-signing-key-error">{runtimeReloadExecutionError}</p>
+              ) : null}
+            </div>
+            <div className="audit-signing-key-rotation-acceptance audit-signing-key-environment-binding">
+              <div className="audit-signing-key-rotation-apply-head">
+                <span>{i18n.locale === "zh-CN" ? "最终验收闸门" : "Final acceptance gate"}</span>
+                <strong>
+                  {i18n.locale === "zh-CN"
+                    ? "只记录人工验收，不启用新 key"
+                    : "Record acceptance only, no key activation"}
+                </strong>
+              </div>
+              <div className="audit-signing-key-rotation-apply-checks">
+                <label>
+                  <input
+                    checked={rotationAcceptanceConfirmations.executionEvidenceReviewed}
+                    onChange={(event) =>
+                      onRotationAcceptanceConfirmationChange(
+                        "executionEvidenceReviewed",
+                        event.currentTarget.checked
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "执行证据已复核" : "Execution evidence reviewed"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={rotationAcceptanceConfirmations.signatureProbeVerified}
+                    onChange={(event) =>
+                      onRotationAcceptanceConfirmationChange("signatureProbeVerified", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "签名探针已验证" : "Signature probe verified"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={rotationAcceptanceConfirmations.legacyVerificationConfirmed}
+                    onChange={(event) =>
+                      onRotationAcceptanceConfirmationChange(
+                        "legacyVerificationConfirmed",
+                        event.currentTarget.checked
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "历史报告验签已确认" : "Legacy verification confirmed"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={rotationAcceptanceConfirmations.rollbackWindowStillOpen}
+                    onChange={(event) =>
+                      onRotationAcceptanceConfirmationChange("rollbackWindowStillOpen", event.currentTarget.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>{i18n.locale === "zh-CN" ? "回滚窗口仍开放" : "Rollback window still open"}</span>
+                </label>
+                <label>
+                  <input
+                    checked={rotationAcceptanceConfirmations.operatorConfirmedActivationBlocked}
+                    onChange={(event) =>
+                      onRotationAcceptanceConfirmationChange(
+                        "operatorConfirmedActivationBlocked",
+                        event.currentTarget.checked
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    {i18n.locale === "zh-CN"
+                      ? "操作员确认新 key 仍阻断"
+                      : "Operator confirmed activation remains blocked"}
+                  </span>
+                </label>
+              </div>
+              <button
+                className="compact-action"
+                disabled={isRecordingRotationAcceptance || !rotationAcceptanceExecutionId}
+                onClick={onRecordRotationAcceptance}
+                type="button"
+              >
+                {isRecordingRotationAcceptance ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+                {i18n.locale === "zh-CN" ? "记录最终验收" : "Record acceptance"}
+              </button>
+              {rotationAcceptance ? (
+                <div className={`audit-signing-key-rotation-apply-result ${rotationAcceptance.status}`}>
+                  <span>{auditSigningKeyRotationAcceptanceStatusLabel(i18n, rotationAcceptance.status)}</span>
+                  <strong>{rotationAcceptance.proposedActiveKeyId || "n/a"}</strong>
+                  <small>
+                    {rotationAcceptance.blockedReasons.length
+                      ? rotationAcceptance.blockedReasons
+                          .map((reason) => auditSigningKeyRotationAcceptanceReasonLabel(i18n, reason))
+                          .join(" / ")
+                      : i18n.locale === "zh-CN"
+                        ? "最终验收已入账，新 key 仍未启用"
+                        : "Acceptance recorded; new key remains inactive"}
+                  </small>
+                  <em>{rotationAcceptance.liveTradingAllowed ? "live=true" : "live=false / paper-only"}</em>
+                </div>
+              ) : null}
+              {rotationAcceptanceError ? (
+                <p className="audit-signing-key-error">{rotationAcceptanceError}</p>
               ) : null}
             </div>
             <div className="audit-signing-key-rotation-apply">
@@ -11034,7 +11264,9 @@ function auditSigningKeyRotationLedgerRowStatusLabel(i18n: AppI18n, statusLabel:
       "Runtime reload plan blocked": "运行时重载计划阻断",
       "Runtime reload plan recorded": "运行时重载计划已记录",
       "Runtime reload execution blocked": "运行时重载执行阻断",
-      "Runtime reload execution recorded": "运行时重载执行已记录"
+      "Runtime reload execution recorded": "运行时重载执行已记录",
+      "Rotation acceptance blocked": "最终验收阻断",
+      "Rotation acceptance recorded": "最终验收已记录"
     }[statusLabel] ?? statusLabel
   );
 }
@@ -11192,6 +11424,32 @@ function auditSigningKeyRuntimeReloadExecutionReasonLabel(i18n: AppI18n, reason:
       runtime_reload_execution_post_smoke_missing: "重载后 smoke 缺失",
       runtime_reload_execution_pre_health_missing: "重载前健康复核缺失",
       runtime_reload_execution_rollback_readiness_missing: "回滚就绪确认缺失"
+    }[reason] ?? reason
+  );
+}
+
+function auditSigningKeyRotationAcceptanceStatusLabel(
+  i18n: AppI18n,
+  status: AuditSigningKeyRotationAcceptance["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status === "blocked" ? "Acceptance blocked" : "Acceptance recorded";
+  }
+  return status === "blocked" ? "最终验收阻断" : "最终验收已记录";
+}
+
+function auditSigningKeyRotationAcceptanceReasonLabel(i18n: AppI18n, reason: string): string {
+  if (i18n.locale === "en-US") {
+    return reason.replaceAll("_", " ");
+  }
+  return (
+    {
+      rotation_acceptance_activation_boundary_missing: "新 key 激活阻断边界未确认",
+      rotation_acceptance_execution_evidence_not_reviewed: "执行证据未复核",
+      rotation_acceptance_legacy_verification_missing: "历史报告验签未确认",
+      rotation_acceptance_rollback_window_missing: "回滚窗口未确认",
+      rotation_acceptance_signature_probe_missing: "签名探针缺失",
+      runtime_reload_execution_not_recorded: "运行时重载执行证据未入账"
     }[reason] ?? reason
   );
 }

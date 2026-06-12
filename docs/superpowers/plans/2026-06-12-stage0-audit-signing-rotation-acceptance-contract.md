@@ -53,6 +53,22 @@
 - [x] Update the product plan with the acceptance contract and ledger support.
 - [x] Run backend focused test, frontend API focused test, workbench focused test, full tests, build, Docker smoke, and `git diff --check`.
 
+### Task 5: Audit Panel UI Integration
+
+**Files:**
+- Modify: `apps/web/src/App.tsx`
+- Modify: `apps/web/src/lib/layout-css.test.js`
+- Modify: `apps/web/src/styles.css`
+- Modify: `docs/product-plan.md`
+- Modify: this plan document
+
+- [x] Add RED layout contract coverage for the Audit signing key final acceptance gate.
+- [x] Refresh `audit_signing_key_rotation_acceptance` audit events and typed history with the rest of the signing key rotation ledger.
+- [x] Add App state for acceptance result, five manual confirmations, and recording state.
+- [x] Add the final acceptance gate to `AuditSigningKeyRegistryPanel` with explicit checkboxes, a disabled-until-execution record button, result card, and paper-only/live-blocked copy.
+- [x] Add status/reason labels and compact CSS for the acceptance result.
+
 **Progress:**
 - 2026-06-12: Implemented backend/API acceptance contract, frontend typed client, and workbench history-row support through RED/GREEN focused tests. Audit panel action/UI is intentionally left as the next slice.
 - 2026-06-12: Passed focused backend/API/workbench tests, root `npm test`, production build, Docker smoke on `http://127.0.0.1:5173`, and `git diff --check`.
+- 2026-06-12: Added Audit signing key registry UI integration for the final acceptance gate. The focused layout contract test was first observed failing on missing App/UI wiring, then passed after the state, refresh, props, panel controls, and CSS were added.
