@@ -810,6 +810,70 @@ export interface AuditSigningKeyRuntimeReloadExecutionHistoryResult {
   error?: string;
 }
 
+export type AuditSigningKeyRotationAcceptanceStatus = "blocked" | "acceptance_recorded";
+export type AuditSigningKeyRotationAcceptanceConfirmationStatus = "confirmed" | "missing";
+
+export interface AuditSigningKeyRotationAcceptanceConfirmation {
+  id: string;
+  label: string;
+  status: AuditSigningKeyRotationAcceptanceConfirmationStatus;
+}
+
+export interface AuditSigningKeyRotationAcceptance {
+  schemaVersion: 1;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  planEventId: string;
+  currentActiveKeyId: string;
+  currentActiveKeyFingerprint: string;
+  proposedActiveKeyId: string;
+  proposedSigner: string;
+  proposedChainId: string;
+  status: AuditSigningKeyRotationAcceptanceStatus;
+  operator: string;
+  recordedAt: string;
+  acceptanceMode: "manual_rotation_acceptance";
+  executionMode: "manual_controlled_reload_evidence";
+  reloadMode: "manual_container_reload_plan";
+  maintenanceWindowId: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: AuditSigningKeyRotationAcceptanceConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface AuditSigningKeyRotationAcceptanceRequest {
+  executionId: string;
+  operator?: string;
+  acceptanceMode?: "manual_rotation_acceptance";
+  confirmations?: {
+    executionEvidenceReviewed?: boolean;
+    signatureProbeVerified?: boolean;
+    legacyVerificationConfirmed?: boolean;
+    rollbackWindowStillOpen?: boolean;
+    operatorConfirmedActivationBlocked?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface AuditSigningKeyRotationAcceptanceResult {
+  rotationAcceptance?: AuditSigningKeyRotationAcceptance;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AuditSigningKeyRotationAcceptanceHistoryResult {
+  rotationAcceptances: AuditSigningKeyRotationAcceptance[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface AuditEventHistoryPagination {
   limit: number;
   offset: number;
@@ -2477,6 +2541,24 @@ export function buildAuditSigningKeyRuntimeReloadExecutionHistoryUrl(
   params: { proposedKeyId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/audit/signing-keys/runtime-reload-executions", (url) => {
+    if (params.proposedKeyId?.trim()) {
+      url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildAuditSigningKeyRotationAcceptanceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-acceptances");
+}
+
+export function buildAuditSigningKeyRotationAcceptanceHistoryUrl(
+  baseUrl: string,
+  params: { proposedKeyId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/audit/signing-keys/rotation-acceptances", (url) => {
     if (params.proposedKeyId?.trim()) {
       url.searchParams.set("proposedKeyId", params.proposedKeyId.trim());
     }
@@ -4660,6 +4742,80 @@ export async function loadAuditSigningKeyRuntimeReloadExecutions(
   }
 }
 
+export async function recordAuditSigningKeyRotationAcceptance(
+  baseUrl: string,
+  request: AuditSigningKeyRotationAcceptanceRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuditSigningKeyRotationAcceptanceResult> {
+  try {
+    const response = await fetcher(buildAuditSigningKeyRotationAcceptanceUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        executionId: request.executionId,
+        operator: request.operator ?? "local-operator",
+        acceptanceMode: request.acceptanceMode ?? "manual_rotation_acceptance",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isAuditSigningKeyRotationAcceptancePayload(payload)) {
+      return {
+        rotationAcceptance: payload.rotationAcceptance,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid audit signing key rotation acceptance contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key rotation acceptance error"
+    };
+  }
+}
+
+export async function loadAuditSigningKeyRotationAcceptances(
+  baseUrl: string,
+  proposedKeyId = "",
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<AuditSigningKeyRotationAcceptanceHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildAuditSigningKeyRotationAcceptanceHistoryUrl(baseUrl, { proposedKeyId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isAuditSigningKeyRotationAcceptanceHistoryPayload(payload)) {
+      throw new Error("Invalid audit signing key rotation acceptance history contract");
+    }
+    return {
+      rotationAcceptances: payload.rotationAcceptances,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      rotationAcceptances: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown audit signing key rotation acceptance history error"
+    };
+  }
+}
+
 export async function loadPlatformSettings(
   baseUrl: string,
   fetcher: WorkspaceFetcher = defaultFetcher
@@ -6821,6 +6977,90 @@ function isAuditSigningKeyRuntimeReloadExecutionStatus(
   value: unknown
 ): value is AuditSigningKeyRuntimeReloadExecutionStatus {
   return value === "blocked" || value === "execution_recorded";
+}
+
+function isAuditSigningKeyRotationAcceptancePayload(
+  value: unknown
+): value is { rotationAcceptance: AuditSigningKeyRotationAcceptance; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { rotationAcceptance?: unknown; auditEvent?: unknown };
+  return (
+    isAuditSigningKeyRotationAcceptance(payload.rotationAcceptance) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isAuditSigningKeyRotationAcceptanceHistoryPayload(
+  value: unknown
+): value is { rotationAcceptances: AuditSigningKeyRotationAcceptance[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { rotationAcceptances?: unknown };
+  return (
+    Array.isArray(payload.rotationAcceptances) &&
+    payload.rotationAcceptances.every(isAuditSigningKeyRotationAcceptance)
+  );
+}
+
+function isAuditSigningKeyRotationAcceptance(value: unknown): value is AuditSigningKeyRotationAcceptance {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const acceptance = value as Partial<AuditSigningKeyRotationAcceptance>;
+  return (
+    acceptance.schemaVersion === 1 &&
+    typeof acceptance.acceptanceId === "string" &&
+    typeof acceptance.executionId === "string" &&
+    typeof acceptance.planId === "string" &&
+    typeof acceptance.bindingId === "string" &&
+    typeof acceptance.materializationId === "string" &&
+    typeof acceptance.planEventId === "string" &&
+    typeof acceptance.currentActiveKeyId === "string" &&
+    typeof acceptance.currentActiveKeyFingerprint === "string" &&
+    /^[a-f0-9]{16}$/.test(acceptance.currentActiveKeyFingerprint) &&
+    typeof acceptance.proposedActiveKeyId === "string" &&
+    typeof acceptance.proposedSigner === "string" &&
+    typeof acceptance.proposedChainId === "string" &&
+    isAuditSigningKeyRotationAcceptanceStatus(acceptance.status) &&
+    typeof acceptance.operator === "string" &&
+    typeof acceptance.recordedAt === "string" &&
+    acceptance.acceptanceMode === "manual_rotation_acceptance" &&
+    acceptance.executionMode === "manual_controlled_reload_evidence" &&
+    acceptance.reloadMode === "manual_container_reload_plan" &&
+    typeof acceptance.maintenanceWindowId === "string" &&
+    Array.isArray(acceptance.requiredEnvVars) &&
+    acceptance.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(acceptance.requiredConfirmations) &&
+    acceptance.requiredConfirmations.every(isAuditSigningKeyRotationAcceptanceConfirmation) &&
+    Array.isArray(acceptance.blockedReasons) &&
+    acceptance.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(acceptance.metadata) &&
+    acceptance.liveTradingAllowed === false &&
+    acceptance.paperOnly === true
+  );
+}
+
+function isAuditSigningKeyRotationAcceptanceConfirmation(
+  value: unknown
+): value is AuditSigningKeyRotationAcceptanceConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<AuditSigningKeyRotationAcceptanceConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isAuditSigningKeyRotationAcceptanceStatus(
+  value: unknown
+): value is AuditSigningKeyRotationAcceptanceStatus {
+  return value === "blocked" || value === "acceptance_recorded";
 }
 
 function containsDisallowedSecretField(value: unknown): boolean {

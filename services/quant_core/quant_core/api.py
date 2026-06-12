@@ -18,6 +18,9 @@ from quant_core.audit_signing import (
     audit_signing_key_environment_binding_payload_from_audit_event,
     audit_signing_key_environment_binding_to_audit_event_payload,
     audit_signing_key_environment_binding_to_payload,
+    audit_signing_key_rotation_acceptance_payload_from_audit_event,
+    audit_signing_key_rotation_acceptance_to_audit_event_payload,
+    audit_signing_key_rotation_acceptance_to_payload,
     audit_signing_key_runtime_reload_execution_payload_from_audit_event,
     audit_signing_key_runtime_reload_execution_to_audit_event_payload,
     audit_signing_key_runtime_reload_execution_to_payload,
@@ -1105,6 +1108,49 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if runtime_reload_execution["status"] == "blocked" else 201,
             )
             return
+        if parsed.path == "/api/audit/signing-keys/rotation-acceptances":
+            payload = self._read_json_body()
+            execution_id = str(payload.get("executionId") or "").strip()
+            execution_event = self.audit_event_store.get(execution_id)
+            runtime_reload_execution = (
+                audit_signing_key_runtime_reload_execution_payload_from_audit_event(execution_event)
+                if execution_event
+                else None
+            )
+            if not runtime_reload_execution:
+                self._send_json(
+                    {
+                        "error": "audit_signing_key_runtime_reload_execution_not_found",
+                        "executionId": execution_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                rotation_acceptance = audit_signing_key_rotation_acceptance_to_payload(
+                    runtime_reload_execution,
+                    acceptance_mode=str(payload.get("acceptanceMode") or "manual_rotation_acceptance"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                audit_event = self.audit_event_store.record(
+                    audit_signing_key_rotation_acceptance_to_audit_event_payload(rotation_acceptance)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_audit_signing_key_rotation_acceptance", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json(
+                {
+                    "rotationAcceptance": rotation_acceptance,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if rotation_acceptance["status"] == "blocked" else 201,
+            )
+            return
         if parsed.path == "/api/audit/reports/sign":
             payload = self._read_json_body()
             event_id = str(payload.get("eventId") or "").strip()
@@ -1796,6 +1842,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(runtime_reload_executions) >= limit:
                     break
             self._send_json({"runtimeReloadExecutions": runtime_reload_executions})
+            return
+        if parsed.path == "/api/audit/signing-keys/rotation-acceptances":
+            query = parse_qs(parsed.query)
+            proposed_key_id = query.get("proposedKeyId", [""])[0].strip()
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            acceptance_events = self.audit_event_store.list_recent(
+                event_type="audit_signing_key_rotation_acceptance",
+                limit=50,
+                query=proposed_key_id,
+            )
+            rotation_acceptances = []
+            for event in acceptance_events:
+                payload = audit_signing_key_rotation_acceptance_payload_from_audit_event(event)
+                if payload and (not proposed_key_id or payload.get("proposedActiveKeyId") == proposed_key_id):
+                    rotation_acceptances.append(payload)
+                if len(rotation_acceptances) >= limit:
+                    break
+            self._send_json({"rotationAcceptances": rotation_acceptances})
             return
         if parsed.path == "/api/golden-path/status":
             query = parse_qs(parsed.query)

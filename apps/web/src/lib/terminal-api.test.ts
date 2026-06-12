@@ -36,6 +36,8 @@ import {
   buildAuditSigningKeyEnvironmentBindingUrl,
   buildAuditSigningKeyRuntimeReloadExecutionHistoryUrl,
   buildAuditSigningKeyRuntimeReloadExecutionUrl,
+  buildAuditSigningKeyRotationAcceptanceHistoryUrl,
+  buildAuditSigningKeyRotationAcceptanceUrl,
   buildAuditSigningKeyRuntimeReloadPlanHistoryUrl,
   buildAuditSigningKeyRuntimeReloadPlanUrl,
   buildAuditSigningKeySecretMaterializationHistoryUrl,
@@ -124,6 +126,7 @@ import {
   loadAuditEvents,
   loadAuditSigningKeys,
   loadAuditSigningKeyEnvironmentBindings,
+  loadAuditSigningKeyRotationAcceptances,
   loadAuditSigningKeyRuntimeReloadExecutions,
   loadAuditSigningKeyRuntimeReloadPlans,
   loadAuditSigningKeySecretMaterializations,
@@ -131,6 +134,7 @@ import {
   prepareAuditSigningKeyRotationPlan,
   recordAuditSigningKeySecretMaterialization,
   recordAuditSigningKeyEnvironmentBinding,
+  recordAuditSigningKeyRotationAcceptance,
   recordAuditSigningKeyRuntimeReloadExecution,
   recordAuditSigningKeyRuntimeReloadPlan,
   recordAuditSigningKeyControlledRestartEvidence,
@@ -4784,6 +4788,217 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.runtimeReloadExecutions).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("reload-execution-token-should-not-leak");
+  });
+
+  test("records an audit signing key rotation acceptance without activating keys", async () => {
+    const calls: Array<{ method?: string; url: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        method: init?.method,
+        url,
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          rotationAcceptance: {
+            schemaVersion: 1,
+            acceptanceId: "audit-signing-key-rotation-acceptance-next-audit-key",
+            executionId: "audit-signing-key-runtime-reload-execution-next-audit-key",
+            planId: "audit-signing-key-runtime-reload-plan-next-audit-key",
+            bindingId: "audit-signing-key-environment-binding-next-audit-key",
+            materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+            planEventId: "audit-signing-key-rotation-next-audit-key-test",
+            currentActiveKeyId: "active-audit-key",
+            currentActiveKeyFingerprint: "a".repeat(16),
+            proposedActiveKeyId: "next-audit-key",
+            proposedSigner: "Next Audit Key",
+            proposedChainId: "audit-chain-next",
+            status: "acceptance_recorded",
+            operator: "audit-operator",
+            recordedAt: "2026-06-04T11:10:00+00:00",
+            acceptanceMode: "manual_rotation_acceptance",
+            executionMode: "manual_controlled_reload_evidence",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "audit-window-1",
+            requiredEnvVars: ["AIQT_AUDIT_SIGNING_SECRET", "AIQT_AUDIT_SIGNING_KEYS_JSON"],
+            requiredConfirmations: [
+              {
+                id: "execution-evidence-reviewed",
+                label: "Runtime reload execution evidence was reviewed",
+                status: "confirmed"
+              },
+              { id: "signature-probe-verified", label: "Post-reload signing probe was verified", status: "confirmed" },
+              {
+                id: "legacy-verification-confirmed",
+                label: "Legacy report verification was confirmed",
+                status: "confirmed"
+              },
+              { id: "rollback-window-still-open", label: "Rollback window remains open", status: "confirmed" },
+              {
+                id: "operator-confirmed-activation-blocked",
+                label: "Operator confirmed activation and live routing remain blocked",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { privateKey: "[redacted]", source: "audit-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "audit-signing-key-rotation-acceptance-next-audit-key",
+            eventType: "audit_signing_key_rotation_acceptance",
+            runId: "audit-signing-key-rotation",
+            createdAt: "2026-06-04T11:10:00+00:00",
+            stage: "audit-signing-key-rotation-acceptance",
+            source: "audit-signing-key-ledger",
+            summary: "Audit signing key rotation acceptance recorded.",
+            detail: "Rotation acceptance evidence is paper-only.",
+            metadata: {
+              acceptanceId: "audit-signing-key-rotation-acceptance-next-audit-key",
+              status: "acceptance_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildAuditSigningKeyRotationAcceptanceUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/rotation-acceptances"
+    );
+
+    const result = await recordAuditSigningKeyRotationAcceptance(
+      "/",
+      {
+        executionId: "audit-signing-key-runtime-reload-execution-next-audit-key",
+        operator: "audit-operator",
+        acceptanceMode: "manual_rotation_acceptance",
+        confirmations: {
+          executionEvidenceReviewed: true,
+          signatureProbeVerified: true,
+          legacyVerificationConfirmed: true,
+          rollbackWindowStillOpen: true,
+          operatorConfirmedActivationBlocked: true
+        },
+        metadata: { source: "audit-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/audit/signing-keys/rotation-acceptances"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      executionId: "audit-signing-key-runtime-reload-execution-next-audit-key",
+      operator: "audit-operator",
+      acceptanceMode: "manual_rotation_acceptance",
+      confirmations: {
+        executionEvidenceReviewed: true,
+        signatureProbeVerified: true,
+        legacyVerificationConfirmed: true,
+        rollbackWindowStillOpen: true,
+        operatorConfirmedActivationBlocked: true
+      },
+      metadata: { source: "audit-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.rotationAcceptance?.status).toBe("acceptance_recorded");
+    expect(result.rotationAcceptance?.proposedActiveKeyId).toBe("next-audit-key");
+    expect(result.rotationAcceptance?.liveTradingAllowed).toBe(false);
+    expect(result.rotationAcceptance?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("audit_signing_key_rotation_acceptance");
+    expect(JSON.stringify(result)).not.toContain("active-audit-secret");
+  });
+
+  test("loads audit signing key rotation acceptance history from the local core", async () => {
+    const acceptance = {
+      schemaVersion: 1,
+      acceptanceId: "audit-signing-key-rotation-acceptance-next-audit-key",
+      executionId: "audit-signing-key-runtime-reload-execution-next-audit-key",
+      planId: "audit-signing-key-runtime-reload-plan-next-audit-key",
+      bindingId: "audit-signing-key-environment-binding-next-audit-key",
+      materializationId: "audit-signing-key-secret-materialization-next-audit-key",
+      planEventId: "audit-signing-key-rotation-next-audit-key-test",
+      currentActiveKeyId: "active-audit-key",
+      currentActiveKeyFingerprint: "a".repeat(16),
+      proposedActiveKeyId: "next-audit-key",
+      proposedSigner: "Next Audit Key",
+      proposedChainId: "audit-chain-next",
+      status: "acceptance_recorded",
+      operator: "audit-operator",
+      recordedAt: "2026-06-04T11:10:00+00:00",
+      acceptanceMode: "manual_rotation_acceptance",
+      executionMode: "manual_controlled_reload_evidence",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "audit-window-1",
+      requiredEnvVars: ["AIQT_AUDIT_SIGNING_SECRET"],
+      requiredConfirmations: [
+        {
+          id: "execution-evidence-reviewed",
+          label: "Runtime reload execution evidence was reviewed",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "audit-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const calls: string[] = [];
+    const result = await loadAuditSigningKeyRotationAcceptances(
+      "http://127.0.0.1:8765/",
+      "next-audit-key",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ rotationAcceptances: [acceptance] })
+        };
+      },
+      5
+    );
+
+    expect(buildAuditSigningKeyRotationAcceptanceHistoryUrl("http://127.0.0.1:8765/", {
+      limit: 5,
+      proposedKeyId: "next-audit-key"
+    })).toBe(
+      "http://127.0.0.1:8765/api/audit/signing-keys/rotation-acceptances?proposedKeyId=next-audit-key&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/audit/signing-keys/rotation-acceptances?proposedKeyId=next-audit-key&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.rotationAcceptances).toHaveLength(1);
+    expect(result.rotationAcceptances[0].status).toBe("acceptance_recorded");
+    expect(result.rotationAcceptances[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadAuditSigningKeyRotationAcceptances(
+      "http://127.0.0.1:8765/",
+      "next-audit-key",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          rotationAcceptances: [
+            {
+              ...acceptance,
+              metadata: { token: "rotation-acceptance-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.rotationAcceptances).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("rotation-acceptance-token-should-not-leak");
   });
 
   test("refreshes a market cache context and returns updated settings", async () => {

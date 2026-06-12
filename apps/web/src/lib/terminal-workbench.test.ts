@@ -7255,6 +7255,58 @@ describe("terminal workbench model", () => {
       },
       {
         schemaVersion: 1,
+        eventId: "audit-signing-key-rotation-acceptance-next-audit-key-42",
+        eventType: "audit_signing_key_rotation_acceptance",
+        runId: "audit-signing-key-rotation",
+        createdAt: "2026-06-04T10:42:00+00:00",
+        stage: "audit-signing-key-rotation-acceptance",
+        source: "audit-signing-key-ledger",
+        summary: "Audit signing key rotation acceptance recorded for next-audit-key.",
+        detail: "Rotation acceptance stores final operator gate evidence only.",
+        metadata: {
+          acceptanceId: "audit-signing-key-rotation-acceptance-next-audit-key-42",
+          acceptanceMode: "manual_rotation_acceptance",
+          blockedReasons: [],
+          bindingId: "audit-signing-key-environment-binding-next-audit-key-42",
+          confirmedConfirmationIds: [
+            "execution-evidence-reviewed",
+            "signature-probe-verified",
+            "legacy-verification-confirmed",
+            "rollback-window-still-open",
+            "operator-confirmed-activation-blocked"
+          ],
+          currentActiveKeyFingerprint: "j".repeat(16),
+          currentActiveKeyId: "active-audit-key",
+          executionId: "audit-signing-key-runtime-reload-execution-next-audit-key-42",
+          executionMode: "manual_controlled_reload_evidence",
+          liveTradingAllowed: false,
+          maintenanceWindowId: "audit-window-1",
+          materializationId: "audit-signing-key-secret-materialization-next-audit-key-42",
+          operator: "audit-operator",
+          paperOnly: true,
+          planEventId: "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
+          planId: "audit-signing-key-runtime-reload-plan-next-audit-key-42",
+          proposedActiveKeyId: "next-audit-key",
+          proposedChainId: "audit-chain-next",
+          proposedSigner: "Next Audit Key",
+          reloadMode: "manual_container_reload_plan",
+          requiredConfirmationIds: [
+            "execution-evidence-reviewed",
+            "signature-probe-verified",
+            "legacy-verification-confirmed",
+            "rollback-window-still-open",
+            "operator-confirmed-activation-blocked"
+          ],
+          requiredEnvVars: [
+            "AIQT_AUDIT_SIGNING_KEY_ID",
+            "AIQT_AUDIT_SIGNING_SECRET",
+            "AIQT_AUDIT_SIGNING_KEYS_JSON"
+          ],
+          status: "acceptance_recorded"
+        }
+      },
+      {
+        schemaVersion: 1,
         eventId: "audit-report-ignore",
         eventType: "audit_evidence_report",
         runId: "run-audit",
@@ -7277,7 +7329,8 @@ describe("terminal workbench model", () => {
       "audit-signing-key-secret-materialization-next-audit-key-42:manifest_recorded:manifest:positive",
       "audit-signing-key-environment-binding-next-audit-key-42:binding_recorded:binding:positive",
       "audit-signing-key-runtime-reload-plan-next-audit-key-42:plan_recorded:reload:positive",
-      "audit-signing-key-runtime-reload-execution-next-audit-key-42:execution_recorded:execution:positive"
+      "audit-signing-key-runtime-reload-execution-next-audit-key-42:execution_recorded:execution:positive",
+      "audit-signing-key-rotation-acceptance-next-audit-key-42:acceptance_recorded:acceptance:positive"
     ]);
     expect(rows[0]).toEqual(
       expect.objectContaining({
@@ -7390,6 +7443,22 @@ describe("terminal workbench model", () => {
         templateShortHash: "execution"
       })
     );
+    expect(rows[8]).toEqual(
+      expect.objectContaining({
+        applyEventId: "audit-signing-key-runtime-reload-execution-next-audit-key-42",
+        applyMode: "manual_rotation_acceptance",
+        confirmedConfirmationCount: 5,
+        currentKeyFingerprint: "j".repeat(16),
+        environmentUpdateCount: 3,
+        eventKind: "rotation_acceptance",
+        liveTradingAllowed: false,
+        operator: "audit-operator",
+        paperOnly: true,
+        proposedKeyId: "next-audit-key",
+        statusLabel: "Rotation acceptance recorded",
+        templateShortHash: "acceptance"
+      })
+    );
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "next-audit-key").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-next-audit-key-9b1bb415ca4c",
       "audit-signing-key-rotation-apply-next-audit-key-0f7c5d5c5d5c",
@@ -7397,7 +7466,8 @@ describe("terminal workbench model", () => {
       "audit-signing-key-secret-materialization-next-audit-key-42",
       "audit-signing-key-environment-binding-next-audit-key-42",
       "audit-signing-key-runtime-reload-plan-next-audit-key-42",
-      "audit-signing-key-runtime-reload-execution-next-audit-key-42"
+      "audit-signing-key-runtime-reload-execution-next-audit-key-42",
+      "audit-signing-key-rotation-acceptance-next-audit-key-42"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "blocked").map((row) => row.id)).toEqual([
       "audit-signing-key-rotation-blocked",
@@ -7421,20 +7491,29 @@ describe("terminal workbench model", () => {
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "manual_container_reload_plan").map((row) => row.id)).toEqual([
       "audit-signing-key-runtime-reload-plan-next-audit-key-42",
-      "audit-signing-key-runtime-reload-execution-next-audit-key-42"
+      "audit-signing-key-runtime-reload-execution-next-audit-key-42",
+      "audit-signing-key-rotation-acceptance-next-audit-key-42"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "reload-action-recorded").map((row) => row.id)).toEqual([
       "audit-signing-key-runtime-reload-execution-next-audit-key-42"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "manual_controlled_reload_evidence").map((row) => row.id)).toEqual([
-      "audit-signing-key-runtime-reload-execution-next-audit-key-42"
+      "audit-signing-key-runtime-reload-execution-next-audit-key-42",
+      "audit-signing-key-rotation-acceptance-next-audit-key-42"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "manual_rotation_acceptance").map((row) => row.id)).toEqual([
+      "audit-signing-key-rotation-acceptance-next-audit-key-42"
+    ]);
+    expect(filterAuditSigningKeyRotationLedgerRows(rows, "signature-probe-verified").map((row) => row.id)).toEqual([
+      "audit-signing-key-rotation-acceptance-next-audit-key-42"
     ]);
     expect(filterAuditSigningKeyRotationLedgerRows(rows, "audit-operator").map((row) => row.id)).toEqual([
       "audit-signing-key-controlled-restart-next-audit-key-42",
       "audit-signing-key-secret-materialization-next-audit-key-42",
       "audit-signing-key-environment-binding-next-audit-key-42",
       "audit-signing-key-runtime-reload-plan-next-audit-key-42",
-      "audit-signing-key-runtime-reload-execution-next-audit-key-42"
+      "audit-signing-key-runtime-reload-execution-next-audit-key-42",
+      "audit-signing-key-rotation-acceptance-next-audit-key-42"
     ]);
     expect(JSON.stringify(rows)).not.toContain("<copy-current-AIQT_AUDIT_SIGNING_SECRET-locally>");
     expect(JSON.stringify(rows)).not.toContain("local-dev-audit-secret");
