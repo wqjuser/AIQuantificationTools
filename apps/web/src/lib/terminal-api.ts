@@ -1700,6 +1700,70 @@ export interface ExecutionAdapterRuntimeReloadExecutionHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterRuntimeReloadAcceptanceStatus = "blocked" | "acceptance_recorded";
+export type ExecutionAdapterRuntimeReloadAcceptanceConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterRuntimeReloadAcceptanceConfirmationStatus;
+}
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceResult {
+  schemaVersion: 1;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRuntimeReloadAcceptanceStatus;
+  operator: string;
+  recordedAt: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterRuntimeReloadAcceptanceConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceRequest {
+  adapterId: string;
+  executionId: string;
+  operator?: string;
+  acceptanceMode?: string;
+  confirmations?: {
+    executionEvidenceReviewed?: boolean;
+    postReloadHealthVerified?: boolean;
+    adapterHandshakeVerified?: boolean;
+    killSwitchStillEnabled?: boolean;
+    operatorConfirmedLiveBlocked?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceRecordResult {
+  adapterRuntimeReloadAcceptance?: ExecutionAdapterRuntimeReloadAcceptanceResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceHistoryResult {
+  adapterRuntimeReloadAcceptances: ExecutionAdapterRuntimeReloadAcceptanceResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -2690,6 +2754,10 @@ export function buildExecutionAdapterRuntimeReloadExecutionUrl(baseUrl: string):
   return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-executions");
 }
 
+export function buildExecutionAdapterRuntimeReloadAcceptanceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-acceptances");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -2793,6 +2861,20 @@ export function buildExecutionAdapterRuntimeReloadExecutionHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-executions", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterRuntimeReloadAcceptanceHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-runtime-reload-acceptances", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -5271,6 +5353,51 @@ export async function recordExecutionAdapterRuntimeReloadExecution(
   }
 }
 
+export async function recordExecutionAdapterRuntimeReloadAcceptance(
+  baseUrl: string,
+  request: ExecutionAdapterRuntimeReloadAcceptanceRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterRuntimeReloadAcceptanceRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRuntimeReloadAcceptanceUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        executionId: request.executionId,
+        operator: request.operator ?? "local-operator",
+        acceptanceMode: request.acceptanceMode ?? "manual_runtime_reload_acceptance",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterRuntimeReloadAcceptanceRecordPayload(payload)) {
+      return {
+        adapterRuntimeReloadAcceptance: payload.adapterRuntimeReloadAcceptance,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter runtime reload acceptance contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload acceptance error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -5521,6 +5648,34 @@ export async function loadExecutionAdapterRuntimeReloadExecutions(
       adapterRuntimeReloadExecutions: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload execution history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterRuntimeReloadAcceptances(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterRuntimeReloadAcceptanceHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterRuntimeReloadAcceptanceHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterRuntimeReloadAcceptanceHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter runtime reload acceptance history contract");
+    }
+    return {
+      adapterRuntimeReloadAcceptances: payload.adapterRuntimeReloadAcceptances,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterRuntimeReloadAcceptances: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter runtime reload acceptance history error"
     };
   }
 }
@@ -7877,6 +8032,22 @@ function isExecutionAdapterRuntimeReloadExecutionRecordPayload(
   );
 }
 
+function isExecutionAdapterRuntimeReloadAcceptanceRecordPayload(
+  value: unknown
+): value is {
+  adapterRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterRuntimeReloadAcceptance?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterRuntimeReloadAcceptanceResult(payload.adapterRuntimeReloadAcceptance) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -7991,6 +8162,19 @@ function isExecutionAdapterRuntimeReloadExecutionHistoryPayload(
   return (
     Array.isArray(payload.adapterRuntimeReloadExecutions) &&
     payload.adapterRuntimeReloadExecutions.every(isExecutionAdapterRuntimeReloadExecutionResult)
+  );
+}
+
+function isExecutionAdapterRuntimeReloadAcceptanceHistoryPayload(
+  value: unknown
+): value is { adapterRuntimeReloadAcceptances: ExecutionAdapterRuntimeReloadAcceptanceResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterRuntimeReloadAcceptances?: unknown };
+  return (
+    Array.isArray(payload.adapterRuntimeReloadAcceptances) &&
+    payload.adapterRuntimeReloadAcceptances.every(isExecutionAdapterRuntimeReloadAcceptanceResult)
   );
 }
 
@@ -8246,6 +8430,44 @@ function isExecutionAdapterRuntimeReloadExecutionResult(
   );
 }
 
+function isExecutionAdapterRuntimeReloadAcceptanceResult(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadAcceptanceResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterRuntimeReloadAcceptanceResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterRuntimeReloadAcceptanceStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterRuntimeReloadAcceptanceConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -8411,6 +8633,20 @@ function isExecutionAdapterRuntimeReloadExecutionConfirmation(
   );
 }
 
+function isExecutionAdapterRuntimeReloadAcceptanceConfirmation(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadAcceptanceConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterRuntimeReloadAcceptanceConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -8459,6 +8695,12 @@ function isExecutionAdapterRuntimeReloadExecutionStatus(
   value: unknown
 ): value is ExecutionAdapterRuntimeReloadExecutionStatus {
   return value === "blocked" || value === "execution_recorded";
+}
+
+function isExecutionAdapterRuntimeReloadAcceptanceStatus(
+  value: unknown
+): value is ExecutionAdapterRuntimeReloadAcceptanceStatus {
+  return value === "blocked" || value === "acceptance_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
