@@ -7387,6 +7387,72 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("includes P0 readiness report events in the audit report ledger", () => {
+    const p0Hash = "9".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p0-readiness-report-run-a1-9999999999999999",
+        eventType: "p0_readiness_report",
+        runId: "run-a1",
+        createdAt: "2026-06-12T10:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "P0 readiness report generated",
+        detail: "run-a1-p0-readiness-report.md · sha256 999999999999 · 4/7 steps · current gap AI review",
+        metadata: {
+          artifactKind: "aiqt.p0ReadinessReport",
+          backlogCount: 3,
+          blockedSteps: 2,
+          boundary: "P0 readiness audit aid only; no live trading authorization or investment advice",
+          contentSha256: p0Hash,
+          contentSha256Algorithm: "sha256",
+          currentGapLabel: "AI review",
+          currentGapStatus: "review",
+          currentGapStepId: "ai-review",
+          fileName: "run-a1-p0-readiness-report.md",
+          firstBacklogStepId: "ai-review",
+          format: "text/markdown",
+          latestEvidenceId: "run-a1",
+          latestEvidenceLink: "workspace=audit&runId=run-a1&exportPath=manifest%3Arun-a1",
+          latestEvidenceState: "audit_run",
+          liveBoundary: "Paper-only boundary",
+          liveTradingAllowed: false,
+          openStepCount: 3,
+          passedSteps: 4,
+          progressPct: 57,
+          reviewSteps: 1,
+          state: "blocked",
+          totalSteps: 7
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.p0ReadinessReport",
+        contentSha256: p0Hash,
+        deepLinkStatus: "p0-readiness-report",
+        fileName: "run-a1-p0-readiness-report.md",
+        focusQuery: "blocked 57% AI review run-a1",
+        importDiffBlocked: 0,
+        importDiffTotal: 0,
+        packageMatched: 4,
+        packageTotal: 7,
+        reportKind: "p0_readiness_report",
+        runId: "run-a1",
+        signatureLabel: "Unsigned report hash",
+        signatureStatus: "unsigned",
+        statusLabel: "P0 readiness report hash recorded",
+        tone: "ai"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "p0_readiness_report ai-review").map((row) => row.id)).toEqual([
+      "p0-readiness-report-run-a1-9999999999999999"
+    ]);
+  });
+
   test("promotes audit report ledger rows when signature chain metadata is present", () => {
     const verifiedHash = "b".repeat(64);
     const signedHash = "c".repeat(64);

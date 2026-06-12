@@ -16,6 +16,10 @@ import {
   type AiReviewRunRecord,
   type AuditEvidenceSummary,
   type BacktestAssumptions,
+  type P0PlatformActionOutcome,
+  type P0PlatformActionOutcomeEvidenceLink,
+  type P0PlatformBacklogItem,
+  type P0PlatformReadinessSummary,
   type ResearchRunDataPreparationEvidence,
   type StrategyReadinessGate,
   type StrategySnapshot
@@ -3514,6 +3518,69 @@ export function buildAuditEvidenceReportAuditEvent(
       importVerificationLatestReason: latestImportVerification?.latestReason ?? "",
       deepLinkStatus: summary.deepLinkStatus,
       deepLinkError: summary.deepLinkError
+    }
+  };
+}
+
+export async function buildP0PlatformReadinessReportAuditEvent({
+  backlogItems,
+  evidenceLink = null,
+  generatedAt = new Date().toISOString(),
+  markdown,
+  outcome,
+  summary
+}: {
+  backlogItems: readonly P0PlatformBacklogItem[];
+  evidenceLink?: P0PlatformActionOutcomeEvidenceLink | null;
+  generatedAt?: string;
+  markdown: string;
+  outcome: P0PlatformActionOutcome;
+  summary: P0PlatformReadinessSummary;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const runId = outcome.runId?.trim() || outcome.evidenceId?.trim() || "p0-readiness";
+  const safeRunId = sanitizeDownloadFileName(runId);
+  const fileName = `${safeRunId}-p0-readiness-report.md`;
+  const currentGap = summary.currentGap;
+  const firstBacklogItem = backlogItems[0] ?? null;
+
+  return {
+    schemaVersion: 1,
+    eventId: `p0-readiness-report-${safeRunId}-${shortHash}`,
+    eventType: "p0_readiness_report",
+    runId,
+    createdAt: generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: "P0 readiness report generated",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${summary.passedSteps}/${
+      summary.totalSteps
+    } steps · current gap ${currentGap?.label ?? "none"}`,
+    metadata: {
+      artifactKind: "aiqt.p0ReadinessReport",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state: summary.state,
+      progressPct: summary.progressPct,
+      passedSteps: summary.passedSteps,
+      totalSteps: summary.totalSteps,
+      reviewSteps: summary.reviewSteps,
+      blockedSteps: summary.blockedSteps,
+      openStepCount: summary.openStepCount,
+      currentGapStepId: currentGap?.stepId ?? "",
+      currentGapLabel: currentGap?.label ?? "",
+      currentGapStatus: currentGap?.status ?? "",
+      latestEvidenceState: outcome.state,
+      latestEvidenceId: outcome.evidenceId ?? outcome.runId ?? "",
+      latestEvidenceLink: evidenceLink?.search ?? "",
+      backlogCount: backlogItems.length,
+      firstBacklogStepId: firstBacklogItem?.stepId ?? "",
+      liveTradingAllowed: summary.liveBoundary.liveTradingAllowed,
+      liveBoundary: summary.liveBoundary.label,
+      boundary: "P0 readiness audit aid only; no live trading authorization or investment advice"
     }
   };
 }

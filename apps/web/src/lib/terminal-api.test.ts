@@ -2,6 +2,11 @@ import { describe, expect, test } from "vitest";
 import {
   type AiReviewRunRecord,
   buildBacktestReportMarkdown,
+  buildP0PlatformActionOutcome,
+  buildP0PlatformActionOutcomeEvidenceLink,
+  buildP0PlatformBacklogItems,
+  buildP0PlatformReadinessReportMarkdown,
+  buildP0PlatformReadinessSummary,
   buildPortfolioBacktestReportMarkdown,
   buildTerminalWorkspace,
   workspaceFromResearchRunAudit,
@@ -151,6 +156,7 @@ import {
   withResearchRunExportAuditEvidenceArtifacts,
   buildBacktestReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
+  buildP0PlatformReadinessReportAuditEvent,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
@@ -7202,6 +7208,123 @@ describe("terminal workspace API client", () => {
     expect(event.eventId).toBe(`audit-report-run-preview-${auditReport.contentSha256.hash.slice(0, 16)}`);
     expect(event.detail).toContain("run-preview-audit-evidence-report.md");
     expect(event.detail).toContain(auditReport.contentSha256.hash.slice(0, 12));
+  });
+
+  test("builds a ledger audit event when a P0 readiness report is generated", async () => {
+    const goldenPath = {
+      status: "blocked",
+      summary: {
+        totalSteps: 5,
+        passedSteps: 2,
+        reviewSteps: 1,
+        blockedSteps: 2,
+        currentStepLabel: "Backtest report",
+        nextActionId: "run-pipeline",
+        liveTradingAllowed: false
+      },
+      nextAction: {
+        id: "run-pipeline",
+        label: "Run research pipeline",
+        targetWorkspace: "research",
+        reason: "Refresh audited backtest evidence."
+      },
+      runbook: [
+        {
+          stepId: "backtest-report",
+          label: "Backtest report",
+          workspaceId: "backtest",
+          status: "review",
+          current: true,
+          passed: false,
+          detail: "Refresh audited backtest evidence.",
+          blocker: "Refresh audited backtest evidence.",
+          actionId: "run-pipeline",
+          actionLabel: "Run research pipeline",
+          targetWorkspace: "research"
+        },
+        {
+          stepId: "ai-review",
+          label: "AI review",
+          workspaceId: "ai-review",
+          status: "blocked",
+          current: false,
+          passed: false,
+          detail: "AI waits for backtest.",
+          blocker: "AI waits for backtest.",
+          actionId: "run-ai-review",
+          actionLabel: "Run AI review",
+          targetWorkspace: "ai-review"
+        }
+      ]
+    } satisfies Parameters<typeof buildP0PlatformReadinessSummary>[0];
+    const summary = buildP0PlatformReadinessSummary(goldenPath);
+    const backlogItems = buildP0PlatformBacklogItems(goldenPath, 3);
+    const outcome = buildP0PlatformActionOutcome({
+      goldenPath: {
+        latestRunId: "run-p0-readiness",
+        status: "review",
+        summary: { liveTradingAllowed: false }
+      },
+      paperExecution: null,
+      statusLabel: "Golden Path audit run loaded"
+    });
+    const evidenceLink = buildP0PlatformActionOutcomeEvidenceLink(outcome);
+    const markdown = buildP0PlatformReadinessReportMarkdown({
+      backlogItems,
+      evidenceLink,
+      generatedAt: "2026-06-12T10:00:00.000Z",
+      outcome,
+      summary
+    });
+
+    const event = await buildP0PlatformReadinessReportAuditEvent({
+      backlogItems,
+      evidenceLink,
+      generatedAt: "2026-06-12T10:00:00.000Z",
+      markdown,
+      outcome,
+      summary
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "p0_readiness_report",
+      runId: "run-p0-readiness",
+      createdAt: "2026-06-12T10:00:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: "P0 readiness report generated",
+      metadata: {
+        artifactKind: "aiqt.p0ReadinessReport",
+        fileName: "run-p0-readiness-p0-readiness-report.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "blocked",
+        progressPct: 40,
+        passedSteps: 2,
+        totalSteps: 5,
+        reviewSteps: 1,
+        blockedSteps: 2,
+        openStepCount: 3,
+        currentGapStepId: "backtest-report",
+        currentGapLabel: "Backtest report",
+        currentGapStatus: "review",
+        latestEvidenceState: "audit_run",
+        latestEvidenceId: "run-p0-readiness",
+        latestEvidenceLink: "workspace=audit&runId=run-p0-readiness&exportPath=manifest%3Arun-p0-readiness",
+        backlogCount: 2,
+        firstBacklogStepId: "backtest-report",
+        liveTradingAllowed: false,
+        liveBoundary: "Paper-only boundary",
+        boundary: "P0 readiness audit aid only; no live trading authorization or investment advice"
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(`p0-readiness-report-run-p0-readiness-${String(event.metadata.contentSha256).slice(0, 16)}`);
+    expect(event.detail).toContain("run-p0-readiness-p0-readiness-report.md");
+    expect(event.detail).toContain("2/5 steps");
+    expect(event.detail).not.toContain(markdown);
   });
 
   test("builds a ledger audit event when a backtest markdown report is exported", async () => {

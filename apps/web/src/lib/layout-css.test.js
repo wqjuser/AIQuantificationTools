@@ -270,7 +270,9 @@ describe("terminal layout css", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 
     expect(appSource).toContain("buildP0PlatformReadinessReportMarkdown");
+    expect(appSource).toContain("buildP0PlatformReadinessReportAuditEvent");
     expect(appSource).toContain("const [copiedP0ReadinessReport, setCopiedP0ReadinessReport]");
+    expect(appSource).toContain("const [savingP0ReadinessReport, setSavingP0ReadinessReport]");
     expect(appSource).toContain("const p0PlatformReadinessReportMarkdown = useMemo(");
     expect(appSource).toContain("buildP0PlatformReadinessReportMarkdown({");
     expect(appSource).toContain("backlogItems: p0PlatformBacklogItems");
@@ -283,9 +285,16 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const downloadP0ReadinessReport = useCallback(");
     expect(appSource).toContain("new Blob([p0PlatformReadinessReportMarkdown], { type: \"text/markdown;charset=utf-8\" })");
     expect(appSource).toContain("p0-readiness-report.md");
+    expect(appSource).toContain("const saveP0ReadinessReport = useCallback(");
+    expect(appSource).toContain("await buildP0PlatformReadinessReportAuditEvent({");
+    expect(appSource).toContain("await saveAuditEvent(quantCoreBaseUrl, auditEvent)");
+    expect(appSource).toContain("setAuditEvidenceReportEvents((current) =>");
+    expect(appSource).toContain("P0 readiness report saved to audit ledger");
     expect(overviewSource).toContain('className="p0-readiness-report-actions"');
     expect(overviewSource).toContain("copyP0ReadinessReport");
     expect(overviewSource).toContain("downloadP0ReadinessReport");
+    expect(overviewSource).toContain("saveP0ReadinessReport");
+    expect(overviewSource).toContain("savingP0ReadinessReport");
     expect(cssBlock(".p0-readiness-report-actions")).toContain("display: flex;");
     expect(cssBlock(".p0-readiness-report-actions")).toContain("gap: 4px;");
     expect(cssBlock(".p0-readiness-report-actions button")).toContain("cursor: pointer;");
@@ -908,7 +917,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationPlanAuditEvent");
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
-    expect(appSource).toContain('eventType: "audit_evidence_report,backtest_report,portfolio_report"');
+    expect(appSource).toContain('eventType: "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");

@@ -1433,7 +1433,8 @@ export interface AuditEvidenceReportLedgerRow {
   signatureLabel: string;
   signatureVerifiedAt: string;
   detail: string;
-  reportKind: "audit_evidence_report" | "backtest_report" | "portfolio_report";
+  reportKind: "audit_evidence_report" | "backtest_report" | "portfolio_report" | "p0_readiness_report";
+  searchText: string;
   tone: "ai" | "positive" | "risk";
 }
 
@@ -6563,11 +6564,14 @@ export function buildAuditEvidenceReportLedgerRows(
       (event) =>
         event.eventType === "audit_evidence_report" ||
         event.eventType === "backtest_report" ||
-        event.eventType === "portfolio_report"
+        event.eventType === "portfolio_report" ||
+        event.eventType === "p0_readiness_report"
     )
     .map((event) => {
       const reportKind: AuditEvidenceReportLedgerRow["reportKind"] =
-        event.eventType === "portfolio_report"
+        event.eventType === "p0_readiness_report"
+          ? "p0_readiness_report"
+          : event.eventType === "portfolio_report"
           ? "portfolio_report"
           : event.eventType === "backtest_report"
             ? "backtest_report"
@@ -6575,20 +6579,35 @@ export function buildAuditEvidenceReportLedgerRows(
       const contentSha256 = auditReportLedgerMetadataText(event.metadata, "contentSha256");
       const artifactKind =
         auditReportLedgerMetadataText(event.metadata, "artifactKind") ||
-        (reportKind === "portfolio_report"
+        (reportKind === "p0_readiness_report"
+          ? "aiqt.p0ReadinessReport"
+          : reportKind === "portfolio_report"
           ? "aiqt.portfolioReport"
           : reportKind === "backtest_report"
             ? "aiqt.backtestReport"
             : "aiqt.auditReport");
       const fileName =
         auditReportLedgerMetadataText(event.metadata, "fileName") ||
-        (reportKind === "portfolio_report"
+        (reportKind === "p0_readiness_report"
+          ? "p0-readiness-report.md"
+          : reportKind === "portfolio_report"
           ? "portfolio-report.md"
           : reportKind === "backtest_report"
             ? "backtest-report.md"
             : "audit-evidence-report.md");
       const focusQuery =
-        reportKind === "portfolio_report"
+        reportKind === "p0_readiness_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "state"),
+              auditReportLedgerMetadataNumber(event.metadata, "progressPct")
+                ? `${auditReportLedgerMetadataNumber(event.metadata, "progressPct")}%`
+                : "",
+              auditReportLedgerMetadataText(event.metadata, "currentGapLabel"),
+              auditReportLedgerMetadataText(event.metadata, "latestEvidenceId")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "portfolio_report"
           ? [
               auditReportLedgerMetadataText(event.metadata, "market"),
               auditReportLedgerMetadataText(event.metadata, "timeframe"),
@@ -6612,13 +6631,31 @@ export function buildAuditEvidenceReportLedgerRows(
       const signatureStatus = status === "ready" ? auditReportLedgerSignatureStatus(signature) : "invalid";
       const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
       const importVerificationVerified =
-        reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importVerificationVerified");
+        reportKind === "backtest_report" || reportKind === "p0_readiness_report"
+          ? 0
+          : auditReportLedgerMetadataNumber(event.metadata, "importVerificationVerified");
       const importVerificationInvalid =
-        reportKind === "backtest_report" ? 0 : auditReportLedgerMetadataNumber(event.metadata, "importVerificationInvalid");
+        reportKind === "backtest_report" || reportKind === "p0_readiness_report"
+          ? 0
+          : auditReportLedgerMetadataNumber(event.metadata, "importVerificationInvalid");
       const importVerificationDetail =
-        reportKind === "backtest_report"
+        reportKind === "backtest_report" || reportKind === "p0_readiness_report"
           ? ""
           : auditReportLedgerImportVerificationDetail(event.metadata, importVerificationVerified, importVerificationInvalid);
+      const p0SearchText =
+        reportKind === "p0_readiness_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "currentGapStepId"),
+              auditReportLedgerMetadataText(event.metadata, "currentGapStatus"),
+              auditReportLedgerMetadataText(event.metadata, "firstBacklogStepId"),
+              auditReportLedgerMetadataText(event.metadata, "latestEvidenceState"),
+              auditReportLedgerMetadataText(event.metadata, "latestEvidenceLink"),
+              auditReportLedgerMetadataText(event.metadata, "liveBoundary"),
+              auditReportLedgerMetadataText(event.metadata, "boundary")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       return {
         id: event.eventId,
         artifactKind,
@@ -6629,30 +6666,36 @@ export function buildAuditEvidenceReportLedgerRows(
         shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
         focusQuery,
         packageMatched:
-          reportKind === "portfolio_report"
+          reportKind === "p0_readiness_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "passedSteps")
+            : reportKind === "portfolio_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "legCount")
             : reportKind === "backtest_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "runComparisonRows")
             : auditReportLedgerMetadataNumber(event.metadata, "packageMatched"),
         packageTotal:
-          reportKind === "portfolio_report"
+          reportKind === "p0_readiness_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps")
+            : reportKind === "portfolio_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "equityRows")
             : reportKind === "backtest_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "dataRows")
             : auditReportLedgerMetadataNumber(event.metadata, "packageTotal"),
         importDiffBlocked:
-          reportKind === "backtest_report" || reportKind === "portfolio_report"
+          reportKind === "backtest_report" || reportKind === "portfolio_report" || reportKind === "p0_readiness_report"
             ? 0
             : auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
         importDiffTotal:
-          reportKind === "backtest_report" || reportKind === "portfolio_report"
+          reportKind === "backtest_report" || reportKind === "portfolio_report" || reportKind === "p0_readiness_report"
             ? 0
             : auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
         importVerificationDetail,
         importVerificationInvalid,
         importVerificationVerified,
         deepLinkStatus:
-          reportKind === "portfolio_report"
+          reportKind === "p0_readiness_report"
+            ? "p0-readiness-report"
+            : reportKind === "portfolio_report"
             ? "portfolio-report"
             : reportKind === "backtest_report"
             ? "backtest-report"
@@ -6660,7 +6703,9 @@ export function buildAuditEvidenceReportLedgerRows(
         status,
         statusLabel:
           status === "ready"
-            ? reportKind === "portfolio_report"
+            ? reportKind === "p0_readiness_report"
+              ? "P0 readiness report hash recorded"
+              : reportKind === "portfolio_report"
               ? "Portfolio report hash recorded"
               : reportKind === "backtest_report"
               ? "Backtest report hash recorded"
@@ -6678,6 +6723,7 @@ export function buildAuditEvidenceReportLedgerRows(
         signatureVerifiedAt: auditReportLedgerMetadataText(signature, "verifiedAt"),
         detail: event.detail,
         reportKind,
+        searchText: p0SearchText,
         tone: auditReportLedgerSignatureTone(signatureStatus)
       };
     });
@@ -6743,6 +6789,7 @@ export function filterAuditEvidenceReportLedgerRows(
       row.signatureLabel,
       row.signatureVerifiedAt,
       row.importVerificationDetail,
+      row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),
       row.detail,

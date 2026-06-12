@@ -84,6 +84,7 @@ import {
   normalizeResearchRunExportPackagePayload,
   buildAuditEvidenceReportAuditEvent,
   buildBacktestReportAuditEvent,
+  buildP0PlatformReadinessReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
@@ -1136,6 +1137,7 @@ export function App() {
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId] = useState<string | null>(null);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
+  const [savingP0ReadinessReport, setSavingP0ReadinessReport] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
@@ -1576,7 +1578,7 @@ export function App() {
     auditEvidenceReportRequestIdRef.current = requestId;
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
-      eventType: "audit_evidence_report,backtest_report,portfolio_report",
+      eventType: "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -4631,6 +4633,46 @@ export function App() {
     }));
   }, [p0PlatformReadinessReportMarkdown]);
 
+  const saveP0ReadinessReport = useCallback(async () => {
+    setSavingP0ReadinessReport(true);
+    try {
+      const auditEvent = await buildP0PlatformReadinessReportAuditEvent({
+        backlogItems: p0PlatformBacklogItems,
+        evidenceLink: p0ActionOutcomeEvidenceLink,
+        markdown: p0PlatformReadinessReportMarkdown,
+        outcome: p0PlatformActionOutcome,
+        summary: p0PlatformReadinessSummary
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "P0 readiness report saved to audit ledger",
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P0 readiness report ledger save failed",
+        error: result.error ?? "P0 readiness report ledger save failed"
+      }));
+    } finally {
+      setSavingP0ReadinessReport(false);
+    }
+  }, [
+    p0ActionOutcomeEvidenceLink,
+    p0PlatformActionOutcome,
+    p0PlatformBacklogItems,
+    p0PlatformReadinessReportMarkdown,
+    p0PlatformReadinessSummary,
+    quantCoreBaseUrl
+  ]);
+
   const openP0ActionOutcomeEvidence = useCallback(
     (outcome: P0PlatformActionOutcome) => {
       if (!outcome.evidenceId) {
@@ -5869,6 +5911,10 @@ export function App() {
                       <button onClick={downloadP0ReadinessReport} type="button">
                         <Download size={11} />
                         {i18n.locale === "zh-CN" ? "下载报告" : "Download report"}
+                      </button>
+                      <button disabled={savingP0ReadinessReport} onClick={() => void saveP0ReadinessReport()} type="button">
+                        {savingP0ReadinessReport ? <RefreshCw className="spin" size={11} /> : <ShieldCheck size={11} />}
+                        {i18n.locale === "zh-CN" ? "入账报告" : "Save report"}
                       </button>
                     </div>
                   </div>
@@ -9931,6 +9977,7 @@ function AuditEvidenceReportLedgerPanel({
                         revokingEventId === row.id ||
                         row.status === "invalid" ||
                         row.importVerificationInvalid > 0 ||
+                        row.reportKind === "p0_readiness_report" ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onSignReport(row.id)}
@@ -9943,6 +9990,7 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
+                        row.reportKind === "p0_readiness_report" ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "revoked"
                       }
@@ -9964,6 +10012,7 @@ function AuditEvidenceReportLedgerPanel({
                         revokingEventId === row.id ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "invalid" ||
+                        row.reportKind === "p0_readiness_report" ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onRevokeReport(row.id)}
@@ -10005,6 +10054,11 @@ function AuditEvidenceReportLedgerPanel({
 }
 
 function auditReportLedgerSigningPolicyDetail(i18n: AppI18n, row: AuditEvidenceReportLedgerRow): string {
+  if (row.reportKind === "p0_readiness_report") {
+    return i18n.locale === "zh-CN"
+      ? "P0 就绪报告只作为审计辅助材料入账，不进入签名链或实盘授权"
+      : "P0 readiness reports are audit aids only; they do not enter the signing chain or live authorization";
+  }
   if (row.importVerificationInvalid <= 0) {
     return "";
   }
