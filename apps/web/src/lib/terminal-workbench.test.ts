@@ -7647,6 +7647,14 @@ describe("terminal workbench model", () => {
           liveBoundary: "Paper-only boundary",
           liveTradingAllowed: false,
           openStepCount: 3,
+          paperPreflightActionId: "submit-paper-order",
+          paperPreflightActionLabel: "Submit paper order",
+          paperPreflightGateBlockedCount: 0,
+          paperPreflightGatePassedCount: 2,
+          paperPreflightGateReviewCount: 2,
+          paperPreflightGateTotal: 4,
+          paperPreflightLiveBoundary: "paper only",
+          paperPreflightState: "ready",
           passedSteps: 4,
           progressPct: 57,
           reviewSteps: 1,
@@ -7673,6 +7681,15 @@ describe("terminal workbench model", () => {
         importDiffTotal: 0,
         packageMatched: 4,
         packageTotal: 7,
+        paperPreflightActionId: "submit-paper-order",
+        paperPreflightActionLabel: "Submit paper order",
+        paperPreflightGateBlockedCount: 0,
+        paperPreflightGatePassedCount: 2,
+        paperPreflightGateReviewCount: 2,
+        paperPreflightGateTotal: 4,
+        paperPreflightLabel: "Paper preflight ready · Submit paper order · gates 2/2/0 · paper only",
+        paperPreflightLiveBoundary: "paper only",
+        paperPreflightState: "ready",
         reportKind: "p0_readiness_report",
         runId: "run-a1",
         signatureLabel: "Unsigned report hash",
@@ -7685,6 +7702,9 @@ describe("terminal workbench model", () => {
       "p0-readiness-report-run-a1-9999999999999999"
     ]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "manifest:run-a1 audit_run").map((row) => row.id)).toEqual([
+      "p0-readiness-report-run-a1-9999999999999999"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "paper preflight ready submit-paper-order").map((row) => row.id)).toEqual([
       "p0-readiness-report-run-a1-9999999999999999"
     ]);
   });

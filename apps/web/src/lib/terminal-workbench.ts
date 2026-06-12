@@ -1475,6 +1475,15 @@ export interface AuditEvidenceReportLedgerRow {
   importVerificationDetail: string;
   importVerificationInvalid: number;
   importVerificationVerified: number;
+  paperPreflightActionId: string;
+  paperPreflightActionLabel: string;
+  paperPreflightGateBlockedCount: number;
+  paperPreflightGatePassedCount: number;
+  paperPreflightGateReviewCount: number;
+  paperPreflightGateTotal: number;
+  paperPreflightLabel: string;
+  paperPreflightLiveBoundary: string;
+  paperPreflightState: string;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
   statusLabel: string;
@@ -6969,6 +6978,31 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "backtest_report" || reportKind === "p0_readiness_report"
           ? ""
           : auditReportLedgerImportVerificationDetail(event.metadata, importVerificationVerified, importVerificationInvalid);
+      const paperPreflightState =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "paperPreflightState") : "";
+      const paperPreflightActionId =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "paperPreflightActionId") : "";
+      const paperPreflightActionLabel =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "paperPreflightActionLabel") : "";
+      const paperPreflightGateTotal =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "paperPreflightGateTotal") : 0;
+      const paperPreflightGatePassedCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "paperPreflightGatePassedCount") : 0;
+      const paperPreflightGateReviewCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "paperPreflightGateReviewCount") : 0;
+      const paperPreflightGateBlockedCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "paperPreflightGateBlockedCount") : 0;
+      const paperPreflightLiveBoundary =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "paperPreflightLiveBoundary") : "";
+      const paperPreflightLabel = auditReportLedgerPaperPreflightLabel({
+        actionLabel: paperPreflightActionLabel,
+        blocked: paperPreflightGateBlockedCount,
+        liveBoundary: paperPreflightLiveBoundary,
+        passed: paperPreflightGatePassedCount,
+        review: paperPreflightGateReviewCount,
+        state: paperPreflightState,
+        total: paperPreflightGateTotal
+      });
       const p0SearchText =
         reportKind === "p0_readiness_report"
           ? [
@@ -6978,6 +7012,11 @@ export function buildAuditEvidenceReportLedgerRows(
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceState"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceLink"),
               auditReportLedgerMetadataText(event.metadata, "liveBoundary"),
+              paperPreflightState,
+              paperPreflightActionId,
+              paperPreflightActionLabel,
+              paperPreflightLabel,
+              paperPreflightLiveBoundary,
               auditReportLedgerMetadataText(event.metadata, "boundary")
             ]
               .filter(Boolean)
@@ -7034,6 +7073,15 @@ export function buildAuditEvidenceReportLedgerRows(
         importVerificationDetail,
         importVerificationInvalid,
         importVerificationVerified,
+        paperPreflightActionId,
+        paperPreflightActionLabel,
+        paperPreflightGateBlockedCount,
+        paperPreflightGatePassedCount,
+        paperPreflightGateReviewCount,
+        paperPreflightGateTotal,
+        paperPreflightLabel,
+        paperPreflightLiveBoundary,
+        paperPreflightState,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
             ? "p0-readiness-report"
@@ -7069,6 +7117,34 @@ export function buildAuditEvidenceReportLedgerRows(
         tone: auditReportLedgerSignatureTone(signatureStatus)
       };
     });
+}
+
+function auditReportLedgerPaperPreflightLabel({
+  actionLabel,
+  blocked,
+  liveBoundary,
+  passed,
+  review,
+  state,
+  total
+}: {
+  actionLabel: string;
+  blocked: number;
+  liveBoundary: string;
+  passed: number;
+  review: number;
+  state: string;
+  total: number;
+}): string {
+  if (!state && total <= 0) {
+    return "";
+  }
+  const action = actionLabel || "No direct action";
+  const gateLabel = total > 0 ? `gates ${passed}/${review}/${blocked}` : "gates n/a";
+  return ["Paper preflight", state || "unknown", "·", action, "·", gateLabel, liveBoundary ? `· ${liveBoundary}` : ""]
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 export function buildAuditEvidenceReportLedgerSummary(

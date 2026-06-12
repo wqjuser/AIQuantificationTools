@@ -10191,6 +10191,14 @@ function AuditEvidenceReportLedgerPanel({
                       {row.evidenceLinkLabel}
                     </span>
                   ) : null}
+                  {row.paperPreflightLabel ? (
+                    <span
+                      className="audit-report-ledger-preflight"
+                      title={row.paperPreflightActionId || row.paperPreflightState}
+                    >
+                      {row.paperPreflightLabel}
+                    </span>
+                  ) : null}
                 </p>
                 <em>
                   {row.packageMatched}/{row.packageTotal} · {row.importDiffBlocked}/{row.importDiffTotal}

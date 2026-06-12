@@ -1088,6 +1088,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.evidenceLinkSearch");
     expect(reportLedgerPanelSource).toContain("row.evidenceLinkLabel");
     expect(reportLedgerPanelSource).toContain("row.evidenceLinkDecodedSearch");
+    expect(reportLedgerPanelSource).toContain("row.paperPreflightLabel");
+    expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-preflight"');
     expect(reportLedgerPanelSource).toContain("onOpenEvidenceLink(row.evidenceLinkSearch)");
     expect(reportLedgerPanelSource).toContain("onCopyEvidenceLink(row.evidenceLinkSearch)");
     expect(reportLedgerPanelSource).toContain("打开证据");
@@ -1177,6 +1179,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-pagination")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-actions")).toContain("display: flex;");
+    expect(cssBlock(".audit-report-ledger-preflight")).toContain("border: 1px solid #266c60;");
     expect(cssBlock(".audit-report-ledger-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(170px, 0.5fr) minmax(0, 1fr) minmax(132px, 0.34fr) auto;"
     );
