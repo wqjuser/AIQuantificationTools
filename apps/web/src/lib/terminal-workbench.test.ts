@@ -7770,6 +7770,86 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("selects the newest P0 readiness audit aid for the ledger summary", () => {
+    const olderHash = "6".repeat(64);
+    const newerHash = "7".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p0-readiness-report-run-old-6666666666666666",
+        eventType: "p0_readiness_report",
+        runId: "run-old",
+        createdAt: "2026-06-12T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Older P0 readiness report generated",
+        detail: "run-old-p0-readiness-report.md",
+        metadata: {
+          artifactKind: "aiqt.p0ReadinessReport",
+          contentSha256: olderHash,
+          fileName: "run-old-p0-readiness-report.md",
+          latestEvidenceId: "run-old",
+          latestEvidenceLink: "workspace=audit&runId=run-old&exportPath=manifest%3Arun-old",
+          latestEvidenceState: "audit_run",
+          paperPreflightActionId: "review-risk-gates",
+          paperPreflightActionLabel: "Review risk gates",
+          paperPreflightGateBlockedCount: 2,
+          paperPreflightGatePassedCount: 1,
+          paperPreflightGateReviewCount: 1,
+          paperPreflightGateTotal: 4,
+          paperPreflightLiveBoundary: "paper only",
+          paperPreflightState: "blocked",
+          passedSteps: 3,
+          state: "blocked",
+          totalSteps: 7
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p0-readiness-report-run-new-7777777777777777",
+        eventType: "p0_readiness_report",
+        runId: "run-new",
+        createdAt: "2026-06-12T12:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Newer P0 readiness report generated",
+        detail: "run-new-p0-readiness-report.md",
+        metadata: {
+          artifactKind: "aiqt.p0ReadinessReport",
+          contentSha256: newerHash,
+          fileName: "run-new-p0-readiness-report.md",
+          latestEvidenceId: "run-new",
+          latestEvidenceLink: "workspace=audit&runId=run-new&exportPath=manifest%3Arun-new",
+          latestEvidenceState: "audit_run",
+          paperPreflightActionId: "submit-paper-order",
+          paperPreflightActionLabel: "Submit paper order",
+          paperPreflightGateBlockedCount: 0,
+          paperPreflightGatePassedCount: 3,
+          paperPreflightGateReviewCount: 1,
+          paperPreflightGateTotal: 4,
+          paperPreflightLiveBoundary: "paper only",
+          paperPreflightState: "ready",
+          passedSteps: 5,
+          state: "review",
+          totalSteps: 7
+        }
+      }
+    ]);
+
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        auditAid: 2,
+        latestAuditAidEvidenceLink: "workspace=audit&runId=run-new&exportPath=manifest:run-new",
+        latestAuditAidPreflightActionId: "submit-paper-order",
+        latestAuditAidPreflightActionLabel: "Submit paper order",
+        latestAuditAidPreflightAttention: 1,
+        latestAuditAidPreflightLabel: "Paper preflight ready · Submit paper order · gates 3/1/0 · paper only",
+        latestAuditAidPreflightState: "ready",
+        latestAuditAidRunId: "run-new"
+      })
+    );
+  });
+
   test("promotes audit report ledger rows when signature chain metadata is present", () => {
     const verifiedHash = "b".repeat(64);
     const signedHash = "c".repeat(64);

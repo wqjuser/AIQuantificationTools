@@ -7167,10 +7167,16 @@ export function buildAuditEvidenceReportLedgerSummary(
   const importVerificationInvalid = rows.reduce((total, row) => total + row.importVerificationInvalid, 0);
   const attention = invalid + revoked;
   const signingAttention = signingInvalid + revoked;
-  const latestAuditAidRow = rows.find((row) => row.reportKind === "p0_readiness_report");
+  const auditAidRows = rows.filter((row) => row.reportKind === "p0_readiness_report");
+  const latestAuditAidRow = auditAidRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
   return {
     attention,
-    auditAid: rows.filter((row) => row.reportKind === "p0_readiness_report").length,
+    auditAid: auditAidRows.length,
     chainStatus:
       signingEligibleRows.length === 0
         ? "empty"
