@@ -1634,6 +1634,39 @@ describe("terminal layout css", () => {
     expect(cssBlock(".execution-tile.warning")).toContain("border-left-color: #e8be62;");
   });
 
+  test("restores paper execution context from a copied P0 execution evidence link", () => {
+    const paperDeepLinkSource = sourceBetween("function resolveInitialPaperExecutionDeepLink()", "function resolveInitialWatchlistCacheRefreshRunId()");
+    const loadPaperDeepLinkSource = sourceBetween("const loadPaperExecutionDeepLink = useCallback(", "const replayRun = useCallback(");
+
+    expect(appSource).toContain("interface InitialPaperExecutionDeepLink");
+    expect(appSource).toContain("type PaperExecutionDeepLinkStatus = InitialPaperExecutionDeepLink");
+    expect(appSource).toContain("function resolveInitialPaperExecutionDeepLink(): InitialPaperExecutionDeepLink | null");
+    expect(appSource).toContain('if (params.get("paperExecution")?.trim())');
+    expect(paperDeepLinkSource).toContain('const executionId = params.get("paperExecution")?.trim();');
+    expect(paperDeepLinkSource).toContain('const runId = params.get("runId")?.trim();');
+    expect(paperDeepLinkSource).toContain("return { executionId, runId };");
+    expect(appSource).toContain("const initialPaperExecutionDeepLink = resolveInitialPaperExecutionDeepLink();");
+    expect(appSource).toContain("const initialPaperExecutionDeepLinkRef = useRef(initialPaperExecutionDeepLink);");
+    expect(appSource).toContain("const [paperExecutionDeepLinkStatus, setPaperExecutionDeepLinkStatus]");
+    expect(loadPaperDeepLinkSource).toContain("const detail = await loadResearchRunDetail(quantCoreBaseUrl, deepLink.runId);");
+    expect(loadPaperDeepLinkSource).toContain('setPaperExecutionDeepLinkStatus({ ...deepLink, status: "loading", error: null });');
+    expect(loadPaperDeepLinkSource).toContain("loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId)");
+    expect(loadPaperDeepLinkSource).toContain("loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId)");
+    expect(loadPaperDeepLinkSource).toContain("paperHistory.execution?.executionId !== deepLink.executionId");
+    expect(loadPaperDeepLinkSource).toContain('setPaperExecutionDeepLinkStatus({ ...deepLink, status: "failed", error: message });');
+    expect(loadPaperDeepLinkSource).toContain('setPaperExecutionDeepLinkStatus({ ...deepLink, status: "loaded", error: null });');
+    expect(loadPaperDeepLinkSource).toContain('setActiveWorkAreaId("execution");');
+    expect(loadPaperDeepLinkSource).toContain('setActiveLoopStepId("paper");');
+    expect(loadPaperDeepLinkSource).toContain("workspaceFromResearchRunAudit(current.workspace, auditedRun)");
+    expect(appSource).toContain('className={`p0-paper-deep-link ${paperExecutionDeepLinkStatus.status}`}');
+    expect(appSource).toContain("paperExecutionDeepLinkStatusLabel(i18n, paperExecutionDeepLinkStatus.status)");
+    expect(styles).toContain(".p0-paper-deep-link");
+    expect(styles).toContain(".p0-paper-deep-link.failed");
+    expect(appSource).toContain("const deepLink = initialPaperExecutionDeepLinkRef.current;");
+    expect(appSource).toContain("initialPaperExecutionDeepLinkRef.current = null;");
+    expect(appSource).toContain("void loadPaperExecutionDeepLink(deepLink);");
+  });
+
   test("gates paper execution actions by audit binding with Golden Path rebind recovery", () => {
     expect(appSource).toContain("buildResearchRunContextBinding");
     expect(appSource).toContain("const researchRunContextBinding = buildResearchRunContextBinding(workspace)");

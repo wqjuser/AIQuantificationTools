@@ -1175,6 +1175,51 @@ em {
   border-color: #4b4386;
 }
 
+.p0-paper-deep-link {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #244158;
+  border-radius: 6px;
+  background: #0b1624;
+}
+
+.p0-paper-deep-link > div {
+  min-width: 0;
+}
+
+.p0-paper-deep-link span,
+.p0-paper-deep-link strong,
+.p0-paper-deep-link small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p0-paper-deep-link span {
+  color: #8fa0b2;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.p0-paper-deep-link strong {
+  color: #dce6ee;
+  font-size: 10px;
+}
+
+.p0-paper-deep-link.loaded {
+  border-color: #2b6f62;
+}
+
+.p0-paper-deep-link.failed {
+  border-color: #7a382f;
+}
+
+.p0-paper-deep-link.loading {
+  border-color: #4b4386;
+}
+
 .p0-readiness-backlog {
   display: grid;
   grid-column: 1 / -1;

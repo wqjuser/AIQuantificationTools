@@ -46,8 +46,25 @@
 - [x] Run focused P0 model/layout tests.
 - [x] Run production build, full tests, Docker smoke, browser smoke, and `git diff --check`.
 
+### Task 4: Paper Execution Deep-Link Restore
+
+**Files:**
+- Modify: `apps/web/src/App.tsx`
+- Modify: `apps/web/src/lib/layout-css.test.js`
+- Modify: `docs/product-plan.md`
+- Modify: this plan document
+
+- [x] Add RED layout/source coverage that App parses `paperExecution` + `runId` from the URL.
+- [x] Add RED layout/source coverage that App loads the run detail, latest paper execution, and promotion state for that deep link.
+- [x] Implement `resolveInitialPaperExecutionDeepLink` and an App mount effect that restores the audited run, paper execution, and Execution workspace focus.
+- [x] Keep mismatch/missing execution blocked with a visible error; do not create orders or mutate backend state.
+- [x] Update product plan and run focused tests, build, full tests, Docker/browser smoke, and `git diff --check`.
+
 **Progress:**
 - 2026-06-12: Planned a Stage 0 slice to make P0 latest outcome evidence portable through copyable Audit/Execution links.
 - 2026-06-12: Verified RED model failures for missing run id/link helper, implemented `buildP0PlatformActionOutcomeEvidenceLink`, and passed focused P0 outcome model tests.
 - 2026-06-12: Verified RED layout failures for missing copy action wiring, then added the current-task copy link button, clipboard handler, and compact button-group CSS; focused P0 outcome layout tests passed.
 - 2026-06-12: Verified focused P0 outcome model/layout tests, production build, full `npm test`, Docker smoke on port 5173, browser smoke on a clean Research workspace with no console errors, and `git diff --check`.
+- 2026-06-12: Started Task 4 to make copied `workspace=execution&paperExecution=...&runId=...` links restore the paper execution context on page load.
+- 2026-06-12: Verified RED coverage for paper execution deep links, implemented App URL parsing/loading, guarded missing or mismatched execution ids with a visible error, and updated the product plan.
+- 2026-06-12: Added a visible P0 paper execution deep-link status row, then verified focused P0 evidence tests, production build, full `npm test`, Docker smoke on port 5173, browser smoke for a missing paper execution deep link with no console errors, and `git diff --check`.

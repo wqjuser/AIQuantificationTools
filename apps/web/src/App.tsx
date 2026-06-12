@@ -512,7 +512,17 @@ interface InitialImportAuditEvidenceDeepLink {
   runId: string;
 }
 
+interface InitialPaperExecutionDeepLink {
+  executionId: string;
+  runId: string;
+}
+
 type ImportAuditEvidenceDeepLinkStatus = InitialImportAuditEvidenceDeepLink & {
+  error: string | null;
+  status: "idle" | "loading" | "loaded" | "failed";
+};
+
+type PaperExecutionDeepLinkStatus = InitialPaperExecutionDeepLink & {
   error: string | null;
   status: "idle" | "loading" | "loaded" | "failed";
 };
@@ -716,6 +726,9 @@ function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidence
     return null;
   }
   const params = new URLSearchParams(window.location.search);
+  if (params.get("paperExecution")?.trim()) {
+    return null;
+  }
   const runId = params.get("runId")?.trim();
   if (!runId) {
     return null;
@@ -727,6 +740,19 @@ function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidence
     focusQuery: researchRunImportAuditEvidenceAnchorQuery(runId, exportPath),
     runId
   };
+}
+
+function resolveInitialPaperExecutionDeepLink(): InitialPaperExecutionDeepLink | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const executionId = params.get("paperExecution")?.trim();
+  const runId = params.get("runId")?.trim();
+  if (!executionId || !runId) {
+    return null;
+  }
+  return { executionId, runId };
 }
 
 function resolveInitialWatchlistCacheRefreshRunId(): string | null {
@@ -1031,6 +1057,7 @@ export function App() {
     fileName: string;
   } | null>(null);
   const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();
+  const initialPaperExecutionDeepLink = resolveInitialPaperExecutionDeepLink();
   const [auditEvidenceReportEvents, setAuditEvidenceReportEvents] = useState<AuditEventRecord[]>([]);
   const [auditSigningKeyRotationEvents, setAuditSigningKeyRotationEvents] = useState<AuditEventRecord[]>([]);
   const [auditEvidenceReportPagination, setAuditEvidenceReportPagination] =
@@ -1050,6 +1077,10 @@ export function App() {
   const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
     useState<ImportAuditEvidenceDeepLinkStatus | null>(
       initialImportAuditEvidenceDeepLink ? { ...initialImportAuditEvidenceDeepLink, status: "idle", error: null } : null
+    );
+  const [paperExecutionDeepLinkStatus, setPaperExecutionDeepLinkStatus] =
+    useState<PaperExecutionDeepLinkStatus | null>(
+      initialPaperExecutionDeepLink ? { ...initialPaperExecutionDeepLink, status: "idle", error: null } : null
     );
   const [researchRunExportBrowserQuery, setResearchRunExportBrowserQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");
   const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");
@@ -1089,6 +1120,7 @@ export function App() {
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
   const initialImportAuditEvidenceDeepLinkRef = useRef(initialImportAuditEvidenceDeepLink);
+  const initialPaperExecutionDeepLinkRef = useRef(initialPaperExecutionDeepLink);
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
@@ -2911,6 +2943,105 @@ export function App() {
     refreshStrategyLibrary,
     workspace
   ]);
+
+  const loadPaperExecutionDeepLink = useCallback(
+    async (deepLink: InitialPaperExecutionDeepLink) => {
+      const replayVersion = manualSelectionVersionRef.current + 1;
+      manualSelectionVersionRef.current = replayVersion;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
+      setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
+      resetAiReviewHistoryState();
+      setPaperExecutionDeepLinkStatus({ ...deepLink, status: "loading", error: null });
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Paper execution deep link loading",
+        error: undefined
+      }));
+
+      const detail = await loadResearchRunDetail(quantCoreBaseUrl, deepLink.runId);
+      if (manualSelectionVersionRef.current !== replayVersion) {
+        return;
+      }
+      if (!detail.run) {
+        const message = detail.error ?? `Paper execution run ${deepLink.runId} was not found`;
+        setPaperExecutionDeepLinkStatus({ ...deepLink, status: "failed", error: message });
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Paper execution deep link failed",
+          error: message
+        }));
+        setActiveWorkAreaId("execution");
+        setActiveLoopStepId("paper");
+        setActiveWorkflowStageId("execution");
+        return;
+      }
+
+      const auditedRun = detail.run;
+      const auditedKlines = marketKlinesFromResearchRunAudit(auditedRun);
+      setWorkspaceState((current) => ({
+        workspace: workspaceFromResearchRunAudit(current.workspace, auditedRun),
+        source: "core",
+        statusLabel: "Paper execution deep link run loaded",
+        error: undefined
+      }));
+      if (auditedKlines) {
+        setKlinesState(auditedKlines);
+      }
+
+      const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
+        loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId),
+        loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId),
+        refreshAiReviewRunHistory(auditedRun.runId, { offset: 0, query: "" })
+      ]);
+      if (manualSelectionVersionRef.current !== replayVersion) {
+        return;
+      }
+
+      if (paperHistory.execution?.executionId !== deepLink.executionId) {
+        const message =
+          paperHistory.error ?? `Paper execution ${deepLink.executionId} was not found for ${auditedRun.runId}`;
+        setPaperExecutionDeepLinkStatus({ ...deepLink, status: "failed", error: message });
+        setPromotionCandidateRecord(promotionHistory.promotion ?? null);
+        setAiReviewRunRecords(aiReviewHistory.aiReviews);
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Paper execution deep link failed",
+          error: message
+        }));
+        setActiveWorkAreaId("execution");
+        setActiveLoopStepId("paper");
+        setActiveWorkflowStageId("execution");
+        setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
+        return;
+      }
+
+      setPaperExecutionRecord(paperHistory.execution);
+      setPaperExecutionDeepLinkStatus({ ...deepLink, status: "loaded", error: null });
+      setPromotionCandidateRecord(promotionHistory.promotion ?? null);
+      setAiReviewRunRecords(aiReviewHistory.aiReviews);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Paper execution deep link loaded",
+        error: undefined
+      }));
+      setActiveWorkAreaId("execution");
+      setActiveLoopStepId("paper");
+      setActiveWorkflowStageId("execution");
+      setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
+    },
+    [refreshAiReviewRunHistory, resetAiReviewHistoryState]
+  );
+
+  useEffect(() => {
+    const deepLink = initialPaperExecutionDeepLinkRef.current;
+    if (!deepLink) {
+      return;
+    }
+    initialPaperExecutionDeepLinkRef.current = null;
+    void loadPaperExecutionDeepLink(deepLink);
+  }, [loadPaperExecutionDeepLink]);
 
   const replayRun = useCallback(
     async (run: ResearchRunAudit) => {
@@ -5521,6 +5652,18 @@ export function App() {
                     </button>
                   </div>
                 </div>
+                {paperExecutionDeepLinkStatus ? (
+                  <div className={`p0-paper-deep-link ${paperExecutionDeepLinkStatus.status}`}>
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "模拟执行深链" : "Paper execution link"}</span>
+                      <strong>{paperExecutionDeepLinkStatusLabel(i18n, paperExecutionDeepLinkStatus.status)}</strong>
+                      <small>
+                        {paperExecutionDeepLinkStatus.runId} · {paperExecutionDeepLinkStatus.executionId}
+                      </small>
+                      {paperExecutionDeepLinkStatus.error ? <small>{paperExecutionDeepLinkStatus.error}</small> : null}
+                    </div>
+                  </div>
+                ) : null}
                 {p0PlatformBacklogItems.length ? (
                   <div className="p0-readiness-backlog">
                     {p0PlatformBacklogItems.map((item) => {
@@ -5902,6 +6045,30 @@ function p0PlatformActionOutcomeNextStep(i18n: AppI18n, outcome: P0PlatformActio
       "Start with market data refresh and an audited research pipeline.":
         "先刷新行情数据并运行审计研究流水线。"
     }[outcome.nextStep] ?? outcome.nextStep
+  );
+}
+
+function paperExecutionDeepLinkStatusLabel(
+  i18n: AppI18n,
+  status: PaperExecutionDeepLinkStatus["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        failed: "Failed",
+        idle: "Ready to load",
+        loaded: "Loaded",
+        loading: "Loading"
+      }[status] ?? status
+    );
+  }
+  return (
+    {
+      failed: "加载失败",
+      idle: "等待加载",
+      loaded: "已恢复",
+      loading: "加载中"
+    }[status] ?? status
   );
 }
 
