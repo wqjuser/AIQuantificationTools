@@ -1029,6 +1029,9 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("打开最新辅助");
     expect(reportLedgerPanelSource).toContain("Open latest aid");
     expect(reportLedgerPanelSource).toContain("onOpenEvidenceLink(summary.latestAuditAidEvidenceLink)");
+    expect(reportLedgerPanelSource).toContain("复制最新辅助");
+    expect(reportLedgerPanelSource).toContain("Copy latest aid");
+    expect(reportLedgerPanelSource).toContain("onCopyEvidenceLink(summary.latestAuditAidEvidenceLink)");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-pagination");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-row");
     expect(reportLedgerPanelSource).toContain("row.shortHash");

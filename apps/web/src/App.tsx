@@ -9975,6 +9975,11 @@ function AuditEvidenceReportLedgerPanel({
                     {i18n.locale === "zh-CN" ? "打开最新辅助" : "Open latest aid"}
                   </button>
                 ) : null}
+                {summary.latestAuditAidEvidenceLink ? (
+                  <button onClick={() => onCopyEvidenceLink(summary.latestAuditAidEvidenceLink)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制最新辅助" : "Copy latest aid"}
+                  </button>
+                ) : null}
               </span>
             ) : null}
             <span>
