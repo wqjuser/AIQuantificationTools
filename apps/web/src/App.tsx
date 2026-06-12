@@ -207,6 +207,7 @@ import {
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
+  buildP0PlatformBacklogItems,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
@@ -310,6 +311,7 @@ import {
   ExecutionAdapterLedgerRow,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
+  P0PlatformBacklogItem,
   P0PlatformReadinessSummary,
   PaperPositionRow,
   PaperExecutionSummaryTile,
@@ -1295,6 +1297,7 @@ export function App() {
   const goldenPathRunbookPreview = buildGoldenPathRunbookPreview(goldenPath);
   const activeWorkspaceContext = buildGoldenPathWorkspaceContext(goldenPath, activeWorkAreaId);
   const p0PlatformReadinessSummary = buildP0PlatformReadinessSummary(goldenPath);
+  const p0PlatformBacklogItems = buildP0PlatformBacklogItems(goldenPath);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -5337,6 +5340,32 @@ export function App() {
                 <small className="p0-readiness-boundary">
                   {p0PlatformReadinessLiveBoundary(i18n, p0PlatformReadinessSummary)}
                 </small>
+                {p0PlatformBacklogItems.length ? (
+                  <div className="p0-readiness-backlog">
+                    {p0PlatformBacklogItems.map((item) => {
+                      const targetWorkspaceId = productWorkAreaIds.includes(
+                        item.targetWorkspaceId as ProductWorkAreaId
+                      )
+                        ? (item.targetWorkspaceId as ProductWorkAreaId)
+                        : productWorkAreaIds.includes(item.workspaceId as ProductWorkAreaId)
+                          ? (item.workspaceId as ProductWorkAreaId)
+                          : "research";
+                      return (
+                        <button
+                          className={`p0-readiness-backlog-item ${item.priority}`}
+                          key={item.stepId}
+                          onClick={() => selectProductWorkArea(targetWorkspaceId)}
+                          type="button"
+                        >
+                          <span>{item.rank}</span>
+                          <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
+                          <em>{p0PlatformBacklogPriorityLabel(i18n, item)}</em>
+                          <small>{p0PlatformBacklogDetail(i18n, item)}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
               {activeWorkspaceContext ? (
                 <div className={`workspace-gate-summary ${activeWorkspaceContext.status}`}>
@@ -5622,6 +5651,35 @@ function p0PlatformReadinessLiveBoundary(i18n: AppI18n, summary: P0PlatformReadi
     return "加载黄金路径后再评估执行边界。";
   }
   return "P0 可用于审计研究、评审和模拟执行；实盘交易保持阻断。";
+}
+
+function p0PlatformBacklogPriorityLabel(i18n: AppI18n, item: P0PlatformBacklogItem): string {
+  if (i18n.locale === "en-US") {
+    if (item.priority === "current") {
+      return "Current";
+    }
+    return item.priority === "blocked" ? "Blocked" : "Review";
+  }
+  if (item.priority === "current") {
+    return "当前";
+  }
+  return item.priority === "blocked" ? "阻断" : "复核";
+}
+
+function p0PlatformBacklogDetail(i18n: AppI18n, item: P0PlatformBacklogItem): string {
+  const action = item.actionLabel
+    ? goldenPathRunbookActionLabel(i18n, {
+        actionLabel: item.actionLabel,
+        current: item.priority === "current",
+        detail: item.detail,
+        label: item.label,
+        status: item.status,
+        stepId: item.stepId,
+        workspaceId: item.workspaceId
+      })
+    : "";
+  const detail = translateGoldenPathDetail(i18n, item.detail);
+  return action ? `${action} · ${detail}` : detail;
 }
 
 function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {

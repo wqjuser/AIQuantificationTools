@@ -197,6 +197,21 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-readiness-meter span")).toContain("transition: width 0.2s ease;");
   });
 
+  test("renders P0 readiness backlog items as actionable workspace shortcuts", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildP0PlatformBacklogItems(goldenPath)");
+    expect(appSource).toContain("p0PlatformBacklogItems");
+    expect(overviewSource).toContain('className="p0-readiness-backlog"');
+    expect(overviewSource).toContain("p0PlatformBacklogItems.map");
+    expect(overviewSource).toContain("p0PlatformBacklogPriorityLabel");
+    expect(overviewSource).toContain("selectProductWorkArea");
+    expect(overviewSource).toContain("targetWorkspaceId");
+    expect(cssBlock(".p0-readiness-backlog")).toContain("display: grid;");
+    expect(cssBlock(".p0-readiness-backlog-item")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
+    expect(cssBlock(".p0-readiness-backlog-item")).toContain("cursor: pointer;");
+  });
+
   test("translates golden path cache readiness guidance for audited research", () => {
     expect(appSource).toContain("translateGoldenPathDetail");
     expect(appSource).toContain("fresh cached K-line rows are available for audited research");

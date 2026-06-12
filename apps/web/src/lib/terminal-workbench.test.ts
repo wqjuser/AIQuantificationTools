@@ -55,6 +55,7 @@ import {
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
+  buildP0PlatformBacklogItems,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
@@ -1535,6 +1536,169 @@ describe("terminal workbench model", () => {
         detail: "Load golden path status before evaluating execution readiness."
       }
     });
+  });
+
+  test("builds prioritized P0 backlog items from open golden path runbook gaps", () => {
+    const items = buildP0PlatformBacklogItems(
+      {
+        status: "blocked",
+        summary: {
+          totalSteps: 6,
+          passedSteps: 2,
+          reviewSteps: 1,
+          blockedSteps: 3,
+          currentStepLabel: "AI review",
+          nextActionId: "run-ai-review",
+          liveTradingAllowed: false
+        },
+        nextAction: {
+          id: "run-ai-review",
+          label: "Run AI review",
+          targetWorkspace: "ai-review",
+          reason: "AI review waits for the audited report."
+        },
+        runbook: [
+          {
+            stepId: "market-data",
+            label: "Market data",
+            workspaceId: "market",
+            status: "passed",
+            current: false,
+            passed: true,
+            detail: "Fresh cache exists.",
+            blocker: null,
+            actionId: null,
+            actionLabel: null,
+            targetWorkspace: null
+          },
+          {
+            stepId: "backtest-report",
+            label: "Backtest report",
+            workspaceId: "backtest",
+            status: "blocked",
+            current: false,
+            passed: false,
+            detail: "Backtest waits for refreshed audit evidence.",
+            blocker: "Backtest waits for refreshed audit evidence.",
+            actionId: "run-pipeline",
+            actionLabel: "Run research pipeline",
+            targetWorkspace: "research"
+          },
+          {
+            stepId: "ai-review",
+            label: "AI review",
+            workspaceId: "ai-review",
+            status: "review",
+            current: true,
+            passed: false,
+            detail: "AI review waits for the audited report.",
+            blocker: null,
+            actionId: "run-ai-review",
+            actionLabel: "Run AI review",
+            targetWorkspace: null
+          },
+          {
+            stepId: "paper-execution",
+            label: "Paper execution",
+            workspaceId: "execution",
+            status: "blocked",
+            current: false,
+            passed: false,
+            detail: "Paper execution waits for AI review.",
+            blocker: "Paper execution waits for AI review.",
+            actionId: "submit-paper-order",
+            actionLabel: "Submit paper order",
+            targetWorkspace: "execution"
+          },
+          {
+            stepId: "live-gate",
+            label: "Live gate",
+            workspaceId: "settings",
+            status: "blocked",
+            current: false,
+            passed: false,
+            detail: "Live trading remains blocked.",
+            blocker: "Live trading remains blocked.",
+            actionId: "certify-live-adapter",
+            actionLabel: "Certify live adapter",
+            targetWorkspace: "settings"
+          }
+        ]
+      },
+      3
+    );
+
+    expect(items).toEqual([
+      {
+        actionId: "run-ai-review",
+        actionLabel: "Run AI review",
+        detail: "AI review waits for the audited report.",
+        label: "AI review",
+        priority: "current",
+        rank: 1,
+        status: "review",
+        stepId: "ai-review",
+        targetWorkspaceId: "ai-review",
+        workspaceId: "ai-review"
+      },
+      {
+        actionId: "run-pipeline",
+        actionLabel: "Run research pipeline",
+        detail: "Backtest waits for refreshed audit evidence.",
+        label: "Backtest report",
+        priority: "blocked",
+        rank: 2,
+        status: "blocked",
+        stepId: "backtest-report",
+        targetWorkspaceId: "research",
+        workspaceId: "backtest"
+      },
+      {
+        actionId: "submit-paper-order",
+        actionLabel: "Submit paper order",
+        detail: "Paper execution waits for AI review.",
+        label: "Paper execution",
+        priority: "blocked",
+        rank: 3,
+        status: "blocked",
+        stepId: "paper-execution",
+        targetWorkspaceId: "execution",
+        workspaceId: "execution"
+      }
+    ]);
+  });
+
+  test("returns no P0 backlog items when the golden path has no open gaps", () => {
+    expect(
+      buildP0PlatformBacklogItems({
+        status: "ready",
+        summary: {
+          totalSteps: 2,
+          passedSteps: 2,
+          reviewSteps: 0,
+          blockedSteps: 0,
+          currentStepLabel: null,
+          nextActionId: null,
+          liveTradingAllowed: false
+        },
+        nextAction: null,
+        runbook: [
+          {
+            stepId: "market-data",
+            label: "Market data",
+            workspaceId: "market",
+            status: "passed",
+            current: false,
+            passed: true,
+            detail: "Fresh cache exists.",
+            blocker: null,
+            actionId: null,
+            actionLabel: null,
+            targetWorkspace: null
+          }
+        ]
+      })
+    ).toEqual([]);
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {

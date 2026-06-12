@@ -184,6 +184,13 @@ export interface P0PlatformReadinessGap {
   targetWorkspaceId: string | null;
 }
 
+export type P0PlatformBacklogPriority = "current" | "blocked" | "review";
+
+export interface P0PlatformBacklogItem extends P0PlatformReadinessGap {
+  priority: P0PlatformBacklogPriority;
+  rank: number;
+}
+
 export interface P0PlatformReadinessSummary {
   state: P0PlatformReadinessState;
   headline: string;
@@ -3342,6 +3349,49 @@ export function buildP0PlatformReadinessSummary(
           detail: "P0 can be usable for audited research, review, and simulation while live trading remains blocked."
         }
   };
+}
+
+export function buildP0PlatformBacklogItems(
+  goldenPath: P0PlatformReadinessSource | null | undefined,
+  limit = 3
+): P0PlatformBacklogItem[] {
+  if (!goldenPath || !Array.isArray(goldenPath.runbook) || limit <= 0) {
+    return [];
+  }
+  return goldenPath.runbook
+    .filter((item) => !item.passed)
+    .map((item, index) => ({
+      actionId: item.actionId,
+      actionLabel: item.actionLabel,
+      detail: item.blocker ?? item.detail,
+      label: item.label,
+      priority: p0PlatformBacklogPriority(item),
+      rank: index + 1,
+      status: item.status,
+      stepId: item.stepId,
+      targetWorkspaceId: item.targetWorkspace ?? goldenPath.nextAction?.targetWorkspace ?? item.workspaceId,
+      workspaceId: item.workspaceId
+    }))
+    .sort((left, right) => p0PlatformBacklogPriorityRank(left.priority) - p0PlatformBacklogPriorityRank(right.priority))
+    .slice(0, limit)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
+}
+
+function p0PlatformBacklogPriority(item: GoldenPathRunbookSourceItem): P0PlatformBacklogPriority {
+  if (item.current) {
+    return "current";
+  }
+  return item.status === "review" ? "review" : "blocked";
+}
+
+function p0PlatformBacklogPriorityRank(priority: P0PlatformBacklogPriority): number {
+  return (
+    {
+      current: 0,
+      blocked: 1,
+      review: 2
+    } satisfies Record<P0PlatformBacklogPriority, number>
+  )[priority];
 }
 
 function resolveP0PlatformReadinessState(input: {
