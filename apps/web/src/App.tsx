@@ -9966,6 +9966,12 @@ function AuditEvidenceReportLedgerPanel({
             <span>
               {i18n.locale === "zh-CN" ? "审计辅助" : "Audit aids"} <strong>{summary.auditAid}</strong>
             </span>
+            {summary.latestAuditAidRunId ? (
+              <span title={summary.latestAuditAidEvidenceLink || summary.latestAuditAidEvidenceLabel}>
+                {i18n.locale === "zh-CN" ? "最新辅助" : "Latest aid"}{" "}
+                <strong>{summary.latestAuditAidRunId}</strong>
+              </span>
+            ) : null}
             <span>
               {i18n.locale === "zh-CN" ? "未签名" : "Unsigned"} <strong>{summary.unsigned}</strong>
             </span>

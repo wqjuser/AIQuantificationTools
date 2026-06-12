@@ -1450,6 +1450,9 @@ export interface AuditEvidenceReportLedgerSummary {
   importVerificationInvalid: number;
   importVerificationVerified: number;
   invalid: number;
+  latestAuditAidEvidenceLabel: string;
+  latestAuditAidEvidenceLink: string;
+  latestAuditAidRunId: string;
   latestHash: string;
   ready: number;
   revoked: number;
@@ -6810,6 +6813,7 @@ export function buildAuditEvidenceReportLedgerSummary(
   const importVerificationInvalid = rows.reduce((total, row) => total + row.importVerificationInvalid, 0);
   const attention = invalid + revoked;
   const signingAttention = signingInvalid + revoked;
+  const latestAuditAidRow = rows.find((row) => row.reportKind === "p0_readiness_report");
   return {
     attention,
     auditAid: rows.filter((row) => row.reportKind === "p0_readiness_report").length,
@@ -6824,6 +6828,10 @@ export function buildAuditEvidenceReportLedgerSummary(
     importVerificationInvalid,
     importVerificationVerified,
     invalid,
+    latestAuditAidEvidenceLabel: latestAuditAidRow?.evidenceLinkLabel || latestAuditAidRow?.focusQuery || "",
+    latestAuditAidEvidenceLink:
+      latestAuditAidRow?.evidenceLinkDecodedSearch || latestAuditAidRow?.evidenceLinkSearch || "",
+    latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
     latestHash: rows.find((row) => row.status === "ready")?.contentSha256 ?? "",
     ready,
     revoked,
