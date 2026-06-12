@@ -1852,6 +1852,46 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".promotion-runtime-reload-acceptance-evidence-row");
   });
 
+  test("renders runtime reload acceptance recording controls in platform settings", () => {
+    expect(appSource).toContain("recordExecutionAdapterRuntimeReloadAcceptance,");
+    expect(appSource).toContain("interface ExecutionAdapterRuntimeReloadAcceptanceConfirmations");
+    expect(appSource).toContain(
+      "const [adapterRuntimeReloadAcceptanceConfirmations, setAdapterRuntimeReloadAcceptanceConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterRuntimeReloadAcceptanceId, setRecordingAdapterRuntimeReloadAcceptanceId]"
+    );
+    expect(appSource).toContain("const updateAdapterRuntimeReloadAcceptanceConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterRuntimeReloadAcceptance = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterRuntimeReloadAcceptance(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterRuntimeReloadAcceptances((current) => ["
+    );
+    expect(appSource).toContain(
+      "runtimeReloadAcceptanceConfirmations={adapterRuntimeReloadAcceptanceConfirmations}"
+    );
+    expect(appSource).toContain(
+      "recordingRuntimeReloadAcceptanceId={recordingAdapterRuntimeReloadAcceptanceId}"
+    );
+    expect(appSource).toContain("runtimeReloadExecutionRows={executionAdapterRuntimeReloadExecutionRows}");
+    expect(appSource).toContain("runtimeReloadAcceptanceRows={executionAdapterRuntimeReloadAcceptanceRows}");
+    expect(appSource).toContain("onRecordRuntimeReloadAcceptance={recordAdapterRuntimeReloadAcceptance}");
+    expect(appSource).toContain(
+      "onRuntimeReloadAcceptanceConfirmationChange={updateAdapterRuntimeReloadAcceptanceConfirmation}"
+    );
+    expect(appSource).toContain("runtimeReloadAcceptanceConfirmations: Record<string, ExecutionAdapterRuntimeReloadAcceptanceConfirmations>");
+    expect(appSource).toContain("runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[]");
+    expect(appSource).toContain("runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[]");
+    expect(appSource).toContain('className="adapter-runtime-reload-acceptance-list"');
+    expect(appSource).toContain('className={`adapter-runtime-reload-acceptance-row');
+    expect(appSource).toContain('className={`adapter-runtime-reload-acceptance-confirmation');
+    expect(appSource).toContain("adapterRuntimeReloadAcceptanceStatusLabel(i18n, acceptance.statusLabel)");
+    expect(appSource).toContain("adapterRuntimeReloadAcceptanceConfirmationSummary(i18n, acceptance.confirmationSummary)");
+    expect(styles).toContain(".adapter-runtime-reload-acceptance-list");
+    expect(styles).toContain(".adapter-runtime-reload-acceptance-row");
+    expect(styles).toContain(".adapter-runtime-reload-acceptance-confirmation");
+  });
+
   test("renders platform settings from local-core status when available", () => {
     expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
     expect(appSource).toContain("settingsStatus.settings");

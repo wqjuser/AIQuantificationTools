@@ -70,6 +70,7 @@ import {
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterCertifications,
+  recordExecutionAdapterRuntimeReloadAcceptance,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
   runPortfolioBacktest,
@@ -643,6 +644,55 @@ const initialAuditSigningKeyRotationAcceptanceConfirmations: AuditSigningKeyRota
   operatorConfirmedActivationBlocked: false
 };
 
+interface ExecutionAdapterRuntimeReloadAcceptanceConfirmations {
+  executionEvidenceReviewed: boolean;
+  postReloadHealthVerified: boolean;
+  adapterHandshakeVerified: boolean;
+  killSwitchStillEnabled: boolean;
+  operatorConfirmedLiveBlocked: boolean;
+}
+
+const createDefaultExecutionAdapterRuntimeReloadAcceptanceConfirmations =
+  (): ExecutionAdapterRuntimeReloadAcceptanceConfirmations => ({
+    executionEvidenceReviewed: false,
+    postReloadHealthVerified: false,
+    adapterHandshakeVerified: false,
+    killSwitchStillEnabled: false,
+    operatorConfirmedLiveBlocked: false
+  });
+
+const executionAdapterRuntimeReloadAcceptanceConfirmationRows: Array<{
+  key: keyof ExecutionAdapterRuntimeReloadAcceptanceConfirmations;
+  labelEn: string;
+  labelZh: string;
+}> = [
+  {
+    key: "executionEvidenceReviewed",
+    labelEn: "Execution evidence reviewed",
+    labelZh: "执行证据已复核"
+  },
+  {
+    key: "postReloadHealthVerified",
+    labelEn: "Post-reload health verified",
+    labelZh: "重载后健康已验证"
+  },
+  {
+    key: "adapterHandshakeVerified",
+    labelEn: "Adapter handshake verified",
+    labelZh: "适配器握手已验证"
+  },
+  {
+    key: "killSwitchStillEnabled",
+    labelEn: "Kill switch still enabled",
+    labelZh: "急停仍启用"
+  },
+  {
+    key: "operatorConfirmedLiveBlocked",
+    labelEn: "Operator confirmed live remains blocked",
+    labelZh: "操作员确认实盘仍阻断"
+  }
+];
+
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
@@ -951,6 +1001,9 @@ export function App() {
   const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
     Record<string, ExecutionAdapterCertificationApplyConfirmations>
   >({});
+  const [adapterRuntimeReloadAcceptanceConfirmations, setAdapterRuntimeReloadAcceptanceConfirmations] = useState<
+    Record<string, ExecutionAdapterRuntimeReloadAcceptanceConfirmations>
+  >({});
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
   );
@@ -1049,6 +1102,8 @@ export function App() {
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [recordingAdapterCertificationId, setRecordingAdapterCertificationId] = useState<string | null>(null);
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
+  const [recordingAdapterRuntimeReloadAcceptanceId, setRecordingAdapterRuntimeReloadAcceptanceId] =
+    useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
   const [selectedWatchlistCacheRefreshRunId, setSelectedWatchlistCacheRefreshRunId] = useState<string | null>(
@@ -1907,6 +1962,78 @@ export function App() {
       }
     },
     [adapterCertificationApplyConfirmations]
+  );
+
+  const updateAdapterRuntimeReloadAcceptanceConfirmation = useCallback(
+    (
+      executionId: string,
+      key: keyof ExecutionAdapterRuntimeReloadAcceptanceConfirmations,
+      checked: boolean
+    ) => {
+      setAdapterRuntimeReloadAcceptanceConfirmations((current) => ({
+        ...current,
+        [executionId]: {
+          ...createDefaultExecutionAdapterRuntimeReloadAcceptanceConfirmations(),
+          ...(current[executionId] ?? {}),
+          [key]: checked
+        }
+      }));
+    },
+    []
+  );
+
+  const recordAdapterRuntimeReloadAcceptance = useCallback(
+    async (row: ExecutionAdapterRuntimeReloadExecutionRow) => {
+      const confirmations =
+        adapterRuntimeReloadAcceptanceConfirmations[row.id] ??
+        createDefaultExecutionAdapterRuntimeReloadAcceptanceConfirmations();
+      setRecordingAdapterRuntimeReloadAcceptanceId(row.id);
+      try {
+        const result = await recordExecutionAdapterRuntimeReloadAcceptance(quantCoreBaseUrl, {
+          acceptanceMode: "manual_runtime_reload_acceptance",
+          adapterId: row.adapterId,
+          confirmations,
+          executionId: row.id,
+          metadata: {
+            bindingId: row.bindingId,
+            materializationId: row.materializationId,
+            planId: row.planId,
+            source: "settings-panel"
+          },
+          operator: "settings-panel"
+        });
+        if (result.adapterRuntimeReloadAcceptance) {
+          setExecutionAdapterRuntimeReloadAcceptances((current) => [
+            result.adapterRuntimeReloadAcceptance!,
+            ...current.filter(
+              (currentRow) =>
+                currentRow.acceptanceId !== result.adapterRuntimeReloadAcceptance!.acceptanceId
+            )
+          ]);
+        }
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: result.error,
+            statusLabel: "Runtime reload acceptance recording failed"
+          }));
+        } else {
+          const status = result.adapterRuntimeReloadAcceptance?.status ?? "blocked";
+          setWorkspaceState((current) => ({
+            ...current,
+            error: undefined,
+            statusLabel:
+              status === "acceptance_recorded"
+                ? `Runtime reload acceptance recorded · ${row.adapterId}`
+                : `Runtime reload acceptance blocked · ${row.adapterId}`
+          }));
+          await refreshSettingsStatus();
+        }
+      } finally {
+        setRecordingAdapterRuntimeReloadAcceptanceId(null);
+      }
+    },
+    [adapterRuntimeReloadAcceptanceConfirmations, refreshSettingsStatus]
   );
 
   const refreshAuditSigningKeys = useCallback(async () => {
@@ -5358,9 +5485,15 @@ export function App() {
             onApplyAdapterCertification={applyAdapterCertificationPreflight}
             onApplyConfirmationChange={updateAdapterCertificationApplyConfirmation}
             onRecordAdapterCertification={recordAdapterCertificationEvidence}
+            onRecordRuntimeReloadAcceptance={recordAdapterRuntimeReloadAcceptance}
             onRefreshContext={refreshCacheContext}
+            onRuntimeReloadAcceptanceConfirmationChange={updateAdapterRuntimeReloadAcceptanceConfirmation}
             recordingAdapterCertificationId={recordingAdapterCertificationId}
+            recordingRuntimeReloadAcceptanceId={recordingAdapterRuntimeReloadAcceptanceId}
             refreshingCacheKey={refreshingCacheKey}
+            runtimeReloadAcceptanceConfirmations={adapterRuntimeReloadAcceptanceConfirmations}
+            runtimeReloadAcceptanceRows={executionAdapterRuntimeReloadAcceptanceRows}
+            runtimeReloadExecutionRows={executionAdapterRuntimeReloadExecutionRows}
             settings={settingsStatus.settings}
             state={klinesState}
             workspace={workspace}
@@ -8299,9 +8432,15 @@ function PlatformSettingsPanel({
   onApplyAdapterCertification,
   onApplyConfirmationChange,
   onRecordAdapterCertification,
+  onRecordRuntimeReloadAcceptance,
   onRefreshContext,
+  onRuntimeReloadAcceptanceConfirmationChange,
   recordingAdapterCertificationId,
+  recordingRuntimeReloadAcceptanceId,
   refreshingCacheKey,
+  runtimeReloadAcceptanceConfirmations,
+  runtimeReloadAcceptanceRows,
+  runtimeReloadExecutionRows,
   settings,
   state,
   workspace
@@ -8321,9 +8460,19 @@ function PlatformSettingsPanel({
     checked: boolean
   ) => void;
   onRecordAdapterCertification?: (adapter: PlatformSettingsStatus["executionAdapters"][number]) => void;
+  onRecordRuntimeReloadAcceptance?: (row: ExecutionAdapterRuntimeReloadExecutionRow) => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
+  onRuntimeReloadAcceptanceConfirmationChange?: (
+    executionId: string,
+    key: keyof ExecutionAdapterRuntimeReloadAcceptanceConfirmations,
+    checked: boolean
+  ) => void;
   recordingAdapterCertificationId?: string | null;
+  recordingRuntimeReloadAcceptanceId?: string | null;
   refreshingCacheKey?: string | null;
+  runtimeReloadAcceptanceConfirmations: Record<string, ExecutionAdapterRuntimeReloadAcceptanceConfirmations>;
+  runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[];
+  runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[];
   settings?: PlatformSettingsStatus;
   state: MarketKlinesResult;
   workspace: TerminalWorkspace;
@@ -8572,6 +8721,97 @@ function PlatformSettingsPanel({
           ))}
         </div>
       ) : null}
+      <div className="adapter-runtime-reload-acceptance-list">
+        <div className="paper-blotter-title">
+          <span>{i18n.locale === "zh-CN" ? "运行时重载最终验收" : "Runtime reload final acceptance"}</span>
+          <strong>{runtimeReloadExecutionRows.length}</strong>
+        </div>
+        {runtimeReloadExecutionRows.length ? (
+          runtimeReloadExecutionRows.slice(0, 4).map((row) => {
+            const confirmations =
+              runtimeReloadAcceptanceConfirmations[row.id] ??
+              createDefaultExecutionAdapterRuntimeReloadAcceptanceConfirmations();
+            const acceptance = runtimeReloadAcceptanceRows.find(
+              (item) => item.adapterId === row.adapterId && item.executionId === row.id
+            );
+            return (
+              <article className={`adapter-runtime-reload-acceptance-row ${acceptance?.tone ?? row.tone}`} key={row.id}>
+                <div>
+                  <strong>
+                    {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                    {adapterRuntimeReloadExecutionStatusLabel(i18n, row.statusLabel)}
+                  </strong>
+                  <span>{formatChartDate(row.timestamp)}</span>
+                </div>
+                <p>
+                  {adapterRuntimeReloadExecutionConfirmationSummary(i18n, row.confirmationSummary)} ·{" "}
+                  {adapterCertificationBoundaryLabel(i18n, row.boundary)}
+                </p>
+                <div className="adapter-runtime-reload-acceptance-confirmations">
+                  {executionAdapterRuntimeReloadAcceptanceConfirmationRows.map((confirmation) => (
+                    <label
+                      className={`adapter-runtime-reload-acceptance-confirmation ${
+                        confirmations[confirmation.key] ? "positive" : "warning"
+                      }`}
+                      key={`${row.id}-${confirmation.key}`}
+                    >
+                      <input
+                        checked={confirmations[confirmation.key]}
+                        onChange={(event) =>
+                          onRuntimeReloadAcceptanceConfirmationChange?.(
+                            row.id,
+                            confirmation.key,
+                            event.currentTarget.checked
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? confirmation.labelZh : confirmation.labelEn}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  className="adapter-certification-apply-button"
+                  disabled={recordingRuntimeReloadAcceptanceId === row.id || !onRecordRuntimeReloadAcceptance}
+                  onClick={() => onRecordRuntimeReloadAcceptance?.(row)}
+                  type="button"
+                >
+                  <ShieldCheck size={13} />
+                  {recordingRuntimeReloadAcceptanceId === row.id
+                    ? i18n.locale === "zh-CN"
+                      ? "验收中"
+                      : "Recording"
+                    : i18n.locale === "zh-CN"
+                      ? "记录最终验收"
+                      : "Record acceptance"}
+                </button>
+                {acceptance ? (
+                  <div className={`adapter-runtime-reload-acceptance-result ${acceptance.tone}`}>
+                    <strong>{adapterRuntimeReloadAcceptanceStatusLabel(i18n, acceptance.statusLabel)}</strong>
+                    <span>
+                      {adapterRuntimeReloadAcceptanceConfirmationSummary(i18n, acceptance.confirmationSummary)} ·{" "}
+                      {adapterCertificationBoundaryLabel(i18n, acceptance.boundary)}
+                    </span>
+                    <em>{acceptance.auditEventId}</em>
+                  </div>
+                ) : (
+                  <em>
+                    {i18n.locale === "zh-CN"
+                      ? "等待录入最终验收；录入后仍保持实盘阻断。"
+                      : "Waiting for final acceptance; live routing stays blocked after recording."}
+                  </em>
+                )}
+              </article>
+            );
+          })
+        ) : (
+          <p className="empty-state">
+            {i18n.locale === "zh-CN"
+              ? "等待运行时重载执行证据；记录执行证据后才能录入最终验收。"
+              : "Waiting for runtime reload execution evidence before final acceptance can be recorded."}
+          </p>
+        )}
+      </div>
       {cacheStatus ? (
         <div className={`settings-cache-row ${cacheRowTone}`}>
           <span>{i18n.locale === "zh-CN" ? "本地缓存" : "Local cache"}</span>

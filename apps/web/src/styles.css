@@ -5301,6 +5301,118 @@ em {
   opacity: 0.62;
 }
 
+.adapter-runtime-reload-acceptance-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.adapter-runtime-reload-acceptance-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.adapter-runtime-reload-acceptance-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.adapter-runtime-reload-acceptance-row.warning {
+  border-left-color: #e8be62;
+}
+
+.adapter-runtime-reload-acceptance-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-runtime-reload-acceptance-row > div:first-child {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.adapter-runtime-reload-acceptance-row strong,
+.adapter-runtime-reload-acceptance-row span,
+.adapter-runtime-reload-acceptance-row p,
+.adapter-runtime-reload-acceptance-row em {
+  min-width: 0;
+}
+
+.adapter-runtime-reload-acceptance-row strong {
+  color: #e8f0f8;
+  font-size: 13px;
+}
+
+.adapter-runtime-reload-acceptance-row span,
+.adapter-runtime-reload-acceptance-row em {
+  color: #9fb0c3;
+  font-size: 12px;
+}
+
+.adapter-runtime-reload-acceptance-row p {
+  color: #c9d7e7;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 7px 0 0;
+}
+
+.adapter-runtime-reload-acceptance-row em {
+  display: block;
+  font-style: normal;
+  margin-top: 5px;
+}
+
+.adapter-runtime-reload-acceptance-confirmations {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.adapter-runtime-reload-acceptance-confirmation {
+  align-items: center;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #0d1724;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.adapter-runtime-reload-acceptance-confirmation.positive {
+  border-color: #2e6b5d;
+  background: #0d211f;
+}
+
+.adapter-runtime-reload-acceptance-confirmation input {
+  accent-color: #4cc9ad;
+  flex: 0 0 auto;
+}
+
+.adapter-runtime-reload-acceptance-confirmation span {
+  overflow-wrap: anywhere;
+}
+
+.adapter-runtime-reload-acceptance-result {
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.adapter-runtime-reload-acceptance-result.positive {
+  border-color: #2e6b5d;
+  background: #0d211f;
+}
+
 .settings-cache-row .settings-cache-stats {
   color: #7ee4d2;
   font-weight: 900;
