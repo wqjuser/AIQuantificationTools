@@ -922,6 +922,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
     expect(appSource).toContain("const openAuditReportLedgerEvidenceLink = useCallback");
+    expect(appSource).toContain("const copyAuditReportLedgerEvidenceLink = useCallback");
     expect(appSource).toContain("const [auditSigningKeyRotationEvents, setAuditSigningKeyRotationEvents]");
     expect(appSource).toContain("const [signingAuditReportEventId, setSigningAuditReportEventId]");
     expect(appSource).toContain("const [verifyingAuditReportEventId, setVerifyingAuditReportEventId]");
@@ -967,6 +968,7 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("isLoading={isLoadingAuditEvidenceReportEvents}");
     expect(auditWorkspaceSource).toContain("onQueryChange={updateAuditEvidenceReportQuery}");
     expect(auditWorkspaceSource).toContain("onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}");
+    expect(auditWorkspaceSource).toContain("onCopyEvidenceLink={copyAuditReportLedgerEvidenceLink}");
     expect(auditWorkspaceSource).toContain("onPreviousPage={previousAuditEvidenceReportPage}");
     expect(auditWorkspaceSource).toContain("onNextPage={nextAuditEvidenceReportPage}");
     expect(auditWorkspaceSource).toContain("onSignReport={signAuditEvidenceReportEvent}");
@@ -1039,9 +1041,14 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onVerifyReport(row.id)");
     expect(reportLedgerPanelSource).toContain("onRevokeReport(row.id)");
     expect(reportLedgerPanelSource).toContain("row.evidenceLinkSearch");
+    expect(reportLedgerPanelSource).toContain("row.evidenceLinkLabel");
+    expect(reportLedgerPanelSource).toContain("row.evidenceLinkDecodedSearch");
     expect(reportLedgerPanelSource).toContain("onOpenEvidenceLink(row.evidenceLinkSearch)");
+    expect(reportLedgerPanelSource).toContain("onCopyEvidenceLink(row.evidenceLinkSearch)");
     expect(reportLedgerPanelSource).toContain("打开证据");
     expect(reportLedgerPanelSource).toContain("Open evidence");
+    expect(reportLedgerPanelSource).toContain("复制证据链接");
+    expect(reportLedgerPanelSource).toContain("Copy evidence link");
     expect(reportLedgerPanelSource).toContain("signingEventId === row.id");
     expect(reportLedgerPanelSource).toContain("verifyingEventId === row.id");
     expect(reportLedgerPanelSource).toContain("revokingEventId === row.id");

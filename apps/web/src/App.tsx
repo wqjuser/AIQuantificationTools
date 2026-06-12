@@ -4619,6 +4619,27 @@ export function App() {
     [loadImportAuditEvidenceDeepLink, loadPaperExecutionDeepLink, selectProductWorkArea]
   );
 
+  const copyAuditReportLedgerEvidenceLink = useCallback(async (search: string) => {
+    if (!search || !navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Audit report evidence link copy failed",
+        error: "Clipboard is unavailable or the report does not have an evidence link."
+      }));
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.search = `?${search}`;
+    url.hash = "";
+    await navigator.clipboard.writeText(url.toString());
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Audit report evidence link copied",
+      error: undefined
+    }));
+  }, []);
+
   const copyP0ActionOutcomeEvidenceLink = useCallback(async (outcome: P0PlatformActionOutcome) => {
     const link = buildP0PlatformActionOutcomeEvidenceLink(outcome);
     if (!link || !navigator.clipboard?.writeText) {
@@ -5478,6 +5499,7 @@ export function App() {
             i18n={i18n}
             isLoading={isLoadingAuditEvidenceReportEvents}
             onNextPage={nextAuditEvidenceReportPage}
+            onCopyEvidenceLink={copyAuditReportLedgerEvidenceLink}
             onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}
             onPreviousPage={previousAuditEvidenceReportPage}
             onQueryChange={updateAuditEvidenceReportQuery}
@@ -9883,6 +9905,7 @@ function AuditEvidenceReportLedgerPanel({
   i18n,
   isLoading,
   onNextPage,
+  onCopyEvidenceLink,
   onOpenEvidenceLink,
   onPreviousPage,
   onQueryChange,
@@ -9900,6 +9923,7 @@ function AuditEvidenceReportLedgerPanel({
   i18n: AppI18n;
   isLoading: boolean;
   onNextPage: () => void;
+  onCopyEvidenceLink: (search: string) => void;
   onOpenEvidenceLink: (search: string) => void;
   onPreviousPage: () => void;
   onQueryChange: (query: string) => void;
@@ -9994,6 +10018,11 @@ function AuditEvidenceReportLedgerPanel({
                       ? `${row.reportKind} · ${row.focusQuery || "focus:none"}`
                       : row.focusQuery || "focus:none"}
                   </em>
+                  {row.evidenceLinkLabel ? (
+                    <span className="audit-report-ledger-evidence" title={row.evidenceLinkDecodedSearch}>
+                      {row.evidenceLinkLabel}
+                    </span>
+                  ) : null}
                 </p>
                 <em>
                   {row.packageMatched}/{row.packageTotal} · {row.importDiffBlocked}/{row.importDiffTotal}
@@ -10022,6 +10051,11 @@ function AuditEvidenceReportLedgerPanel({
                     {row.evidenceLinkSearch ? (
                       <button onClick={() => onOpenEvidenceLink(row.evidenceLinkSearch)} type="button">
                         {i18n.locale === "zh-CN" ? "打开证据" : "Open evidence"}
+                      </button>
+                    ) : null}
+                    {row.evidenceLinkSearch ? (
+                      <button onClick={() => onCopyEvidenceLink(row.evidenceLinkSearch)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制证据链接" : "Copy evidence link"}
                       </button>
                     ) : null}
                     <button

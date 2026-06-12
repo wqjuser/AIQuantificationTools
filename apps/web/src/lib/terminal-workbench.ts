@@ -1412,6 +1412,8 @@ export interface AuditEvidenceReportLedgerRow {
   contentSha256: string;
   shortHash: string;
   focusQuery: string;
+  evidenceLinkDecodedSearch: string;
+  evidenceLinkLabel: string;
   evidenceLinkSearch: string;
   evidenceLinkStatus: string;
   evidenceTargetWorkspaceId: ProductWorkAreaId | null;
@@ -6587,6 +6589,22 @@ function auditReportLedgerDecodedSearchText(value: string): string {
   }
 }
 
+function auditReportLedgerEvidenceLinkLabel(
+  workspaceId: ProductWorkAreaId | null,
+  status: string
+): string {
+  if (!workspaceId) {
+    return "";
+  }
+  const workspaceLabel =
+    workspaceId === "audit"
+      ? "Audit evidence"
+      : workspaceId === "execution"
+        ? "Execution evidence"
+        : `${workspaceId} evidence`;
+  return status ? `${workspaceLabel} · ${status}` : workspaceLabel;
+}
+
 export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
@@ -6695,6 +6713,8 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p0_readiness_report"
           ? auditReportLedgerMetadataText(event.metadata, "latestEvidenceState")
           : "";
+      const evidenceTargetWorkspaceId = auditReportLedgerEvidenceTargetWorkspaceId(evidenceLinkSearch);
+      const evidenceLinkDecodedSearch = auditReportLedgerDecodedSearchText(evidenceLinkSearch);
       return {
         id: event.eventId,
         artifactKind,
@@ -6704,9 +6724,11 @@ export function buildAuditEvidenceReportLedgerRows(
         contentSha256,
         shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
         focusQuery,
+        evidenceLinkDecodedSearch,
+        evidenceLinkLabel: auditReportLedgerEvidenceLinkLabel(evidenceTargetWorkspaceId, evidenceLinkStatus),
         evidenceLinkSearch,
         evidenceLinkStatus,
-        evidenceTargetWorkspaceId: auditReportLedgerEvidenceTargetWorkspaceId(evidenceLinkSearch),
+        evidenceTargetWorkspaceId,
         packageMatched:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "passedSteps")
@@ -6817,8 +6839,9 @@ export function filterAuditEvidenceReportLedgerRows(
       row.contentSha256,
       row.shortHash,
       row.focusQuery,
+      row.evidenceLinkDecodedSearch,
+      row.evidenceLinkLabel,
       row.evidenceLinkSearch,
-      auditReportLedgerDecodedSearchText(row.evidenceLinkSearch),
       row.evidenceLinkStatus,
       row.evidenceTargetWorkspaceId ?? "",
       row.deepLinkStatus,

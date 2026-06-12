@@ -7434,6 +7434,8 @@ describe("terminal workbench model", () => {
         artifactKind: "aiqt.p0ReadinessReport",
         contentSha256: p0Hash,
         deepLinkStatus: "p0-readiness-report",
+        evidenceLinkDecodedSearch: "workspace=audit&runId=run-a1&exportPath=manifest:run-a1",
+        evidenceLinkLabel: "Audit evidence · audit_run",
         evidenceLinkSearch: "workspace=audit&runId=run-a1&exportPath=manifest%3Arun-a1",
         evidenceLinkStatus: "audit_run",
         evidenceTargetWorkspaceId: "audit",
