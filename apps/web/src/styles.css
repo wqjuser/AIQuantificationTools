@@ -2263,6 +2263,13 @@ em {
   padding: 8px;
 }
 
+.audit-signing-key-runtime-reload-execution {
+  display: grid;
+  gap: 7px;
+  border-color: rgba(52, 211, 153, 0.22);
+  background: rgba(52, 211, 153, 0.06);
+}
+
 .audit-signing-key-rotation-apply-head {
   display: flex;
   gap: 8px;
@@ -2352,6 +2359,10 @@ em {
   border-left-color: #4cc9ad;
 }
 
+.audit-signing-key-rotation-apply-result.execution_recorded {
+  border-left-color: #4cc9ad;
+}
+
 .audit-signing-key-rotation-apply-result > span,
 .audit-signing-key-rotation-apply-result > strong,
 .audit-signing-key-rotation-apply-result > small,
@@ -2381,6 +2392,10 @@ em {
 }
 
 .audit-signing-key-rotation-apply-result.binding_recorded > span {
+  color: #83e6ce;
+}
+
+.audit-signing-key-rotation-apply-result.execution_recorded > span {
   color: #83e6ce;
 }
 

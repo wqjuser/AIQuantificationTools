@@ -738,6 +738,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("loadAuditSigningKeySecretMaterializations");
     expect(appSource).toContain("recordAuditSigningKeyEnvironmentBinding");
     expect(appSource).toContain("loadAuditSigningKeyEnvironmentBindings");
+    expect(appSource).toContain("recordAuditSigningKeyRuntimeReloadExecution");
+    expect(appSource).toContain("loadAuditSigningKeyRuntimeReloadExecutions");
     expect(appSource).toContain("buildAuditSigningKeyRotationPlanAuditEvent");
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
@@ -759,6 +761,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const [auditSigningKeySecretMaterializationConfirmations, setAuditSigningKeySecretMaterializationConfirmations]");
     expect(appSource).toContain("const [auditSigningKeyEnvironmentBinding, setAuditSigningKeyEnvironmentBinding]");
     expect(appSource).toContain("const [auditSigningKeyEnvironmentBindingConfirmations, setAuditSigningKeyEnvironmentBindingConfirmations]");
+    expect(appSource).toContain("const [auditSigningKeyRuntimeReloadExecution, setAuditSigningKeyRuntimeReloadExecution]");
+    expect(appSource).toContain("const [auditSigningKeyRuntimeReloadExecutionConfirmations, setAuditSigningKeyRuntimeReloadExecutionConfirmations]");
     expect(appSource).toContain("const [auditSigningKeyRotationPlanEventId, setAuditSigningKeyRotationPlanEventId]");
     expect(appSource).toContain("const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus]");
     expect(appSource).toContain("const refreshAuditEvidenceReportEvents = useCallback");
@@ -770,7 +774,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const revokeAuditEvidenceReportEvent = useCallback");
     expect(appSource).toContain("setAuditEvidenceReportEvents((current) => mergeAuditEvidenceReportEvent(current, result.event!))");
     expect(appSource).toContain('eventType: "audit_signing_key_environment_binding"');
+    expect(appSource).toContain('eventType: "audit_signing_key_runtime_reload_execution"');
     expect(appSource).toContain("const recordAuditSigningKeyEnvironmentBindingForAudit = useCallback");
+    expect(appSource).toContain("const recordAuditSigningKeyRuntimeReloadExecutionForAudit = useCallback");
     expect(auditWorkspaceSource).toContain("<AuditEvidenceReportLedgerPanel");
     expect(auditWorkspaceSource).toContain("<AuditSigningKeyRegistryPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-report-ledger-panel"');
@@ -798,6 +804,9 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("environmentBinding={auditSigningKeyEnvironmentBinding.environmentBinding}");
     expect(auditWorkspaceSource).toContain("environmentBindingConfirmations={auditSigningKeyEnvironmentBindingConfirmations}");
     expect(auditWorkspaceSource).toContain("environmentBindingMaterializationId={auditSigningKeySecretMaterialization.secretMaterialization?.materializationId ?? null}");
+    expect(auditWorkspaceSource).toContain("runtimeReloadExecution={auditSigningKeyRuntimeReloadExecution.runtimeReloadExecution}");
+    expect(auditWorkspaceSource).toContain("runtimeReloadExecutionConfirmations={auditSigningKeyRuntimeReloadExecutionConfirmations}");
+    expect(auditWorkspaceSource).toContain("runtimeReloadExecutionPlanId={auditSigningKeyRuntimeReloadPlan.runtimeReloadPlan?.planId ?? null}");
     expect(auditWorkspaceSource).toContain("rotationLedgerStatus={auditSigningKeyRotationLedgerStatus}");
     expect(auditWorkspaceSource).toContain("rotationHistoryRows={auditSigningKeyRotationLedgerRows}");
     expect(auditWorkspaceSource).toContain("onApplyRotation={applyAuditSigningKeyRotationPlanForAudit}");
@@ -808,6 +817,8 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onSecretMaterializationConfirmationChange={updateAuditSigningKeySecretMaterializationConfirmation}");
     expect(auditWorkspaceSource).toContain("onRecordEnvironmentBinding={recordAuditSigningKeyEnvironmentBindingForAudit}");
     expect(auditWorkspaceSource).toContain("onEnvironmentBindingConfirmationChange={updateAuditSigningKeyEnvironmentBindingConfirmation}");
+    expect(auditWorkspaceSource).toContain("onRecordRuntimeReloadExecution={recordAuditSigningKeyRuntimeReloadExecutionForAudit}");
+    expect(auditWorkspaceSource).toContain("onRuntimeReloadExecutionConfirmationChange={updateAuditSigningKeyRuntimeReloadExecutionConfirmation}");
     expect(auditWorkspaceSource).toContain("source={auditSigningKeyRegistry.source}");
     expect(auditWorkspaceSource).toContain("error={auditSigningKeyRegistry.error}");
     expect(auditWorkspaceSource).toContain("onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}");
@@ -871,6 +882,15 @@ describe("terminal layout css", () => {
     expect(signingKeyPanelSource).toContain("configReloadPlanDocumented");
     expect(signingKeyPanelSource).toContain("rollbackSnapshotRecorded");
     expect(signingKeyPanelSource).toContain("auditSigningKeyEnvironmentBindingStatusLabel");
+    expect(signingKeyPanelSource).toContain("audit-signing-key-runtime-reload-execution");
+    expect(signingKeyPanelSource).toContain("runtimeReloadExecutionConfirmations");
+    expect(signingKeyPanelSource).toContain("onRecordRuntimeReloadExecution");
+    expect(signingKeyPanelSource).toContain("preReloadHealthVerified");
+    expect(signingKeyPanelSource).toContain("reloadActionRecorded");
+    expect(signingKeyPanelSource).toContain("postReloadSmokePassed");
+    expect(signingKeyPanelSource).toContain("rollbackReadinessConfirmed");
+    expect(signingKeyPanelSource).toContain("operatorConfirmedLiveBlocked");
+    expect(signingKeyPanelSource).toContain("auditSigningKeyRuntimeReloadExecutionStatusLabel");
     expect(signingKeyPanelSource).toContain("rotationLedgerStatus");
     expect(signingKeyPanelSource).toContain("onPrepareRotation");
     expect(appSource).toContain('"Verified signature": "签名已验证"');
@@ -886,6 +906,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-signing-key-rotation-apply")).toContain("display: grid;");
     expect(cssBlock(".audit-signing-key-secret-materialization")).toContain("display: grid;");
     expect(cssBlock(".audit-signing-key-environment-binding")).toContain("display: grid;");
+    expect(cssBlock(".audit-signing-key-runtime-reload-execution")).toContain("display: grid;");
     expect(cssBlock(".audit-signing-key-rotation-apply-checks")).toContain("display: grid;");
     expect(cssBlock(".audit-signing-key-rotation-apply-result")).toContain("display: grid;");
     expect(cssBlock(".audit-signing-key-env-row")).toContain("display: grid;");
