@@ -1445,6 +1445,7 @@ export interface AuditEvidenceReportLedgerRow {
 
 export interface AuditEvidenceReportLedgerSummary {
   attention: number;
+  auditAid: number;
   chainStatus: "empty" | "unsigned" | "verified" | "attention";
   importVerificationInvalid: number;
   importVerificationVerified: number;
@@ -1453,6 +1454,7 @@ export interface AuditEvidenceReportLedgerSummary {
   ready: number;
   revoked: number;
   signed: number;
+  signingEligible: number;
   total: number;
   unsigned: number;
   verified: number;
@@ -6796,18 +6798,29 @@ export function buildAuditEvidenceReportLedgerRows(
 export function buildAuditEvidenceReportLedgerSummary(
   rows: AuditEvidenceReportLedgerRow[]
 ): AuditEvidenceReportLedgerSummary {
+  const signingEligibleRows = rows.filter((row) => row.reportKind !== "p0_readiness_report");
   const ready = rows.filter((row) => row.status === "ready").length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
-  const unsigned = rows.filter((row) => row.signatureStatus === "unsigned").length;
-  const signed = rows.filter((row) => row.signatureStatus === "signed").length;
-  const verified = rows.filter((row) => row.signatureStatus === "verified").length;
-  const revoked = rows.filter((row) => row.signatureStatus === "revoked").length;
+  const unsigned = signingEligibleRows.filter((row) => row.signatureStatus === "unsigned").length;
+  const signed = signingEligibleRows.filter((row) => row.signatureStatus === "signed").length;
+  const verified = signingEligibleRows.filter((row) => row.signatureStatus === "verified").length;
+  const revoked = signingEligibleRows.filter((row) => row.signatureStatus === "revoked").length;
+  const signingInvalid = signingEligibleRows.filter((row) => row.status === "invalid").length;
   const importVerificationVerified = rows.reduce((total, row) => total + row.importVerificationVerified, 0);
   const importVerificationInvalid = rows.reduce((total, row) => total + row.importVerificationInvalid, 0);
   const attention = invalid + revoked;
+  const signingAttention = signingInvalid + revoked;
   return {
     attention,
-    chainStatus: rows.length === 0 ? "empty" : attention > 0 ? "attention" : unsigned > 0 ? "unsigned" : "verified",
+    auditAid: rows.filter((row) => row.reportKind === "p0_readiness_report").length,
+    chainStatus:
+      signingEligibleRows.length === 0
+        ? "empty"
+        : signingAttention > 0
+          ? "attention"
+          : unsigned > 0
+            ? "unsigned"
+            : "verified",
     importVerificationInvalid,
     importVerificationVerified,
     invalid,
@@ -6815,6 +6828,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     ready,
     revoked,
     signed,
+    signingEligible: signingEligibleRows.length,
     total: rows.length,
     unsigned,
     verified

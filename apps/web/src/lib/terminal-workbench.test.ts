@@ -7194,6 +7194,7 @@ describe("terminal workbench model", () => {
     );
     expect(summary).toEqual({
       attention: 1,
+      auditAid: 0,
       chainStatus: "attention",
       invalid: 1,
       importVerificationInvalid: 0,
@@ -7202,6 +7203,7 @@ describe("terminal workbench model", () => {
       ready: 1,
       revoked: 0,
       signed: 0,
+      signingEligible: 2,
       total: 2,
       unsigned: 1,
       verified: 0
@@ -7461,6 +7463,46 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("keeps P0 readiness report audit aids out of signing-chain summary counts", () => {
+    const p0Hash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p0-readiness-report-run-a2-8888888888888888",
+        eventType: "p0_readiness_report",
+        runId: "run-a2",
+        createdAt: "2026-06-12T11:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "P0 readiness report generated",
+        detail: "run-a2-p0-readiness-report.md",
+        metadata: {
+          artifactKind: "aiqt.p0ReadinessReport",
+          contentSha256: p0Hash,
+          fileName: "run-a2-p0-readiness-report.md",
+          latestEvidenceId: "run-a2",
+          latestEvidenceLink: "workspace=audit&runId=run-a2&exportPath=manifest%3Arun-a2",
+          latestEvidenceState: "audit_run",
+          passedSteps: 5,
+          state: "review",
+          totalSteps: 7
+        }
+      }
+    ]);
+
+    expect(rows[0]?.signatureStatus).toBe("unsigned");
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        auditAid: 1,
+        chainStatus: "empty",
+        signingEligible: 0,
+        total: 1,
+        unsigned: 0,
+        verified: 0
+      })
+    );
+  });
+
   test("promotes audit report ledger rows when signature chain metadata is present", () => {
     const verifiedHash = "b".repeat(64);
     const signedHash = "c".repeat(64);
@@ -7562,6 +7604,7 @@ describe("terminal workbench model", () => {
         chainStatus: "attention",
         revoked: 1,
         signed: 1,
+        signingEligible: 3,
         total: 3,
         unsigned: 0,
         verified: 1

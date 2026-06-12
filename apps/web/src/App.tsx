@@ -9961,6 +9961,12 @@ function AuditEvidenceReportLedgerPanel({
               {i18n.locale === "zh-CN" ? "已记录" : "Recorded"} <strong>{summary.ready}</strong>
             </span>
             <span>
+              {i18n.locale === "zh-CN" ? "需签名" : "Signing chain"} <strong>{summary.signingEligible}</strong>
+            </span>
+            <span>
+              {i18n.locale === "zh-CN" ? "审计辅助" : "Audit aids"} <strong>{summary.auditAid}</strong>
+            </span>
+            <span>
               {i18n.locale === "zh-CN" ? "未签名" : "Unsigned"} <strong>{summary.unsigned}</strong>
             </span>
             <span>

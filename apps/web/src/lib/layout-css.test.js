@@ -1018,6 +1018,10 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("buildAuditEvidenceReportLedgerSummary(rows)");
     expect(reportLedgerPanelSource).toContain("filterAuditEvidenceReportLedgerRows(rows, query)");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-summary");
+    expect(reportLedgerPanelSource).toContain("summary.signingEligible");
+    expect(reportLedgerPanelSource).toContain("summary.auditAid");
+    expect(reportLedgerPanelSource).toContain("需签名");
+    expect(reportLedgerPanelSource).toContain("Audit aids");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-pagination");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-row");
     expect(reportLedgerPanelSource).toContain("row.shortHash");
