@@ -278,11 +278,17 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("p0PaperExecutionPreflightHeadline");
     expect(overviewSource).toContain("p0PaperExecutionPreflightDetail");
     expect(overviewSource).toContain("p0PaperExecutionPreflight.primaryActionLabel");
+    expect(overviewSource).toContain("p0PaperExecutionPreflight.primaryActionId");
+    expect(overviewSource).toContain("runGoldenPathActionById(");
+    expect(overviewSource).toContain("p0PaperExecutionPreflight.primaryActionTargetWorkspaceId");
+    expect(overviewSource).toContain("selectProductWorkArea(p0PaperExecutionPreflight.primaryActionTargetWorkspaceId)");
     expect(overviewSource).toContain("p0PaperExecutionPreflight.gates.map");
     expect(overviewSource).toContain("p0PaperExecutionPreflightGateLabel");
     expect(overviewSource).toContain("p0PaperExecutionPreflightGateDetail");
     expect(cssBlock(".p0-paper-preflight")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".p0-paper-preflight")).toContain("display: grid;");
+    expect(cssBlock(".p0-paper-preflight-action")).toContain("cursor: pointer;");
+    expect(cssBlock(".p0-paper-preflight-action:disabled")).toContain("cursor: not-allowed;");
     expect(cssBlock(".p0-paper-preflight-gates")).toContain("display: grid;");
     expect(cssBlock(".p0-paper-preflight-gate")).toContain("border-left: 3px solid");
     expect(cssBlock(".p0-paper-preflight-gate.passed")).toContain("border-left-color: #4cc9ad;");

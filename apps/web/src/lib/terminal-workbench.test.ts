@@ -1828,6 +1828,8 @@ describe("terminal workbench model", () => {
       headline: "Bind latest audited run",
       detail: "Golden Path has run-audited-002 ready; load it before submitting a paper order.",
       primaryActionLabel: "Load latest audited run",
+      primaryActionId: "submit-paper-order",
+      primaryActionTargetWorkspaceId: "execution",
       canSubmitPaperOrder: false,
       canRebindLatestRun: true,
       targetWorkspaceId: "execution",
@@ -1907,6 +1909,8 @@ describe("terminal workbench model", () => {
       state: "ready",
       headline: "Paper order ready",
       primaryActionLabel: "Submit paper order",
+      primaryActionId: "submit-paper-order",
+      primaryActionTargetWorkspaceId: "execution",
       canSubmitPaperOrder: true,
       canRebindLatestRun: false,
       targetWorkspaceId: "execution"
@@ -1949,6 +1953,8 @@ describe("terminal workbench model", () => {
       headline: "Paper execution recorded",
       detail: "paper-exec-001 · 1 order · 2/3 gates passed",
       primaryActionLabel: "Review paper execution",
+      primaryActionId: null,
+      primaryActionTargetWorkspaceId: "execution",
       canSubmitPaperOrder: false,
       canRebindLatestRun: false
     });

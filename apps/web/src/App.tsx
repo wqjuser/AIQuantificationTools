@@ -6003,7 +6003,24 @@ export function App() {
                       <strong>{p0PaperExecutionPreflightHeadline(i18n, p0PaperExecutionPreflight)}</strong>
                       <small>{p0PaperExecutionPreflightDetail(i18n, p0PaperExecutionPreflight)}</small>
                     </div>
-                    <em>{p0PaperExecutionPreflightActionLabel(i18n, p0PaperExecutionPreflight.primaryActionLabel)}</em>
+                    <button
+                      className="p0-paper-preflight-action"
+                      disabled={
+                        Boolean(p0PaperExecutionPreflight.primaryActionId) &&
+                        isGoldenPathActionDisabledById(p0PaperExecutionPreflight.primaryActionId)
+                      }
+                      onClick={() =>
+                        p0PaperExecutionPreflight.primaryActionId
+                          ? runGoldenPathActionById(
+                              p0PaperExecutionPreflight.primaryActionId,
+                              p0PaperExecutionPreflight.primaryActionTargetWorkspaceId
+                            )
+                          : selectProductWorkArea(p0PaperExecutionPreflight.primaryActionTargetWorkspaceId)
+                      }
+                      type="button"
+                    >
+                      {p0PaperExecutionPreflightActionLabel(i18n, p0PaperExecutionPreflight.primaryActionLabel)}
+                    </button>
                   </div>
                   <div className="p0-paper-preflight-gates">
                     {p0PaperExecutionPreflight.gates.map((gate) => (

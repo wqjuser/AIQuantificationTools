@@ -294,6 +294,8 @@ export interface P0PaperExecutionPreflight {
   headline: string;
   detail: string;
   primaryActionLabel: string;
+  primaryActionId: string | null;
+  primaryActionTargetWorkspaceId: ProductWorkAreaId;
   canSubmitPaperOrder: boolean;
   canRebindLatestRun: boolean;
   targetWorkspaceId: ProductWorkAreaId;
@@ -3625,6 +3627,8 @@ export function buildP0PaperExecutionPreflight(
       headline: "Paper execution recorded",
       detail,
       primaryActionLabel: "Review paper execution",
+      primaryActionId: null,
+      primaryActionTargetWorkspaceId: targetWorkspaceId,
       canSubmitPaperOrder: false,
       canRebindLatestRun: false,
       targetWorkspaceId,
@@ -3672,6 +3676,8 @@ export function buildP0PaperExecutionPreflight(
         ? `Golden Path has ${latestRunId} ready; load it before submitting a paper order.`
         : binding?.detail || "Run an audited pipeline before submitting a paper order.",
       primaryActionLabel: canRebindLatestRun ? "Load latest audited run" : "Run audited pipeline",
+      primaryActionId: canRebindLatestRun ? "submit-paper-order" : "run-pipeline",
+      primaryActionTargetWorkspaceId: canRebindLatestRun ? targetWorkspaceId : "research",
       canSubmitPaperOrder: false,
       canRebindLatestRun,
       targetWorkspaceId,
@@ -3700,6 +3706,8 @@ export function buildP0PaperExecutionPreflight(
       headline: "Risk approval required",
       detail: firstBlockedGate?.detail || riskSummary,
       primaryActionLabel: "Review risk gates",
+      primaryActionId: null,
+      primaryActionTargetWorkspaceId: targetWorkspaceId,
       canSubmitPaperOrder: false,
       canRebindLatestRun: false,
       targetWorkspaceId,
@@ -3724,6 +3732,8 @@ export function buildP0PaperExecutionPreflight(
     headline: "Paper order ready",
     detail: riskSummary,
     primaryActionLabel: "Submit paper order",
+    primaryActionId: "submit-paper-order",
+    primaryActionTargetWorkspaceId: targetWorkspaceId,
     canSubmitPaperOrder: true,
     canRebindLatestRun: false,
     targetWorkspaceId,

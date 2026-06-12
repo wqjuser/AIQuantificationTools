@@ -1232,15 +1232,21 @@ em {
   font-size: 10px;
 }
 
-.p0-paper-preflight-head em {
+.p0-paper-preflight-action {
   border: 1px solid #266c60;
   border-radius: 999px;
+  background: #12332e;
   color: #71dfc5;
+  cursor: pointer;
   font-size: 9px;
-  font-style: normal;
   font-weight: 900;
   padding: 2px 7px;
   white-space: nowrap;
+}
+
+.p0-paper-preflight-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .p0-paper-preflight-gates {
