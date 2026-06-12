@@ -10126,6 +10126,15 @@ function AuditEvidenceReportLedgerPanel({
                     {i18n.locale === "zh-CN" ? "复制最新辅助" : "Copy latest aid"}
                   </button>
                 ) : null}
+                {summary.latestAuditAidPreflightLabel ? (
+                  <span
+                    className="audit-report-ledger-preflight"
+                    title={summary.latestAuditAidPreflightActionId || summary.latestAuditAidPreflightState}
+                  >
+                    {i18n.locale === "zh-CN" ? "最新预检" : "Latest preflight"} ·{" "}
+                    {summary.latestAuditAidPreflightLabel}
+                  </span>
+                ) : null}
               </span>
             ) : null}
             <span>

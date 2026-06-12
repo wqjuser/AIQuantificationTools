@@ -1512,6 +1512,9 @@ export interface AuditEvidenceReportLedgerSummary {
   invalid: number;
   latestAuditAidEvidenceLabel: string;
   latestAuditAidEvidenceLink: string;
+  latestAuditAidPreflightActionId: string;
+  latestAuditAidPreflightLabel: string;
+  latestAuditAidPreflightState: string;
   latestAuditAidRunId: string;
   latestHash: string;
   ready: number;
@@ -7180,6 +7183,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidEvidenceLabel: latestAuditAidRow?.evidenceLinkLabel || latestAuditAidRow?.focusQuery || "",
     latestAuditAidEvidenceLink:
       latestAuditAidRow?.evidenceLinkDecodedSearch || latestAuditAidRow?.evidenceLinkSearch || "",
+    latestAuditAidPreflightActionId: latestAuditAidRow?.paperPreflightActionId ?? "",
+    latestAuditAidPreflightLabel: latestAuditAidRow?.paperPreflightLabel ?? "",
+    latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
     latestHash: rows.find((row) => row.status === "ready")?.contentSha256 ?? "",
     ready,
