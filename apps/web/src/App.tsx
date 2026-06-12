@@ -208,6 +208,7 @@ import {
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
   buildP0PlatformActionOutcome,
+  buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
@@ -1043,6 +1044,7 @@ export function App() {
   const [researchRunImportAuditOffset, setResearchRunImportAuditOffset] = useState(0);
   const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
+  const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId] = useState<string | null>(null);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
@@ -1305,6 +1307,7 @@ export function App() {
     paperExecution: paperExecutionRecord,
     statusLabel
   });
+  const p0ActionOutcomeEvidenceLink = buildP0PlatformActionOutcomeEvidenceLink(p0PlatformActionOutcome);
 
   useEffect(() => {
     klinesStateRef.current = klinesState;
@@ -4276,6 +4279,29 @@ export function App() {
     [activeWorkAreaId, workspace]
   );
 
+  const copyP0ActionOutcomeEvidenceLink = useCallback(async (outcome: P0PlatformActionOutcome) => {
+    const link = buildP0PlatformActionOutcomeEvidenceLink(outcome);
+    if (!link || !navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P0 evidence link copy failed",
+        error: "Clipboard is unavailable or no P0 evidence link exists"
+      }));
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.search = `?${link.search}`;
+    url.hash = "";
+    await navigator.clipboard.writeText(url.toString());
+    setCopiedP0ActionOutcomeEvidenceId(link.evidenceId);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: `${link.label} copied`,
+      error: undefined
+    }));
+  }, []);
+
   const openP0ActionOutcomeEvidence = useCallback(
     (outcome: P0PlatformActionOutcome) => {
       if (!outcome.evidenceId) {
@@ -5474,13 +5500,26 @@ export function App() {
                     <small>{p0PlatformActionOutcomeDetail(i18n, p0PlatformActionOutcome)}</small>
                     <small>{p0PlatformActionOutcomeNextStep(i18n, p0PlatformActionOutcome)}</small>
                   </div>
-                  <button
-                    disabled={!p0PlatformActionOutcome.evidenceId}
-                    onClick={() => openP0ActionOutcomeEvidence(p0PlatformActionOutcome)}
-                    type="button"
-                  >
-                    {i18n.locale === "zh-CN" ? "查看证据" : "Evidence"}
-                  </button>
+                  <div className="p0-action-outcome-actions">
+                    {p0ActionOutcomeEvidenceLink ? (
+                      <button onClick={() => void copyP0ActionOutcomeEvidenceLink(p0PlatformActionOutcome)} type="button">
+                        {copiedP0ActionOutcomeEvidenceId === p0ActionOutcomeEvidenceLink.evidenceId
+                          ? i18n.locale === "zh-CN"
+                            ? "已复制"
+                            : "Copied"
+                          : i18n.locale === "zh-CN"
+                            ? "复制链接"
+                            : "Copy link"}
+                      </button>
+                    ) : null}
+                    <button
+                      disabled={!p0PlatformActionOutcome.evidenceId}
+                      onClick={() => openP0ActionOutcomeEvidence(p0PlatformActionOutcome)}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "查看证据" : "Evidence"}
+                    </button>
+                  </div>
                 </div>
                 {p0PlatformBacklogItems.length ? (
                   <div className="p0-readiness-backlog">

@@ -247,17 +247,35 @@ describe("terminal layout css", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 
     expect(appSource).toContain("buildP0PlatformActionOutcome({");
+    expect(appSource).toContain("buildP0PlatformActionOutcomeEvidenceLink(p0PlatformActionOutcome)");
     expect(appSource).toContain("goldenPath");
     expect(appSource).toContain("paperExecution: paperExecutionRecord");
     expect(appSource).toContain("statusLabel");
+    expect(appSource).toContain("const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId]");
     expect(overviewSource).toContain('className={`p0-action-outcome ${p0PlatformActionOutcome.tone}`}');
     expect(overviewSource).toContain("p0PlatformActionOutcomeLabel");
     expect(overviewSource).toContain("p0PlatformActionOutcomeDetail");
     expect(overviewSource).toContain("p0PlatformActionOutcomeNextStep");
+    expect(overviewSource).toContain('className="p0-action-outcome-actions"');
+    expect(overviewSource).toContain("copyP0ActionOutcomeEvidenceLink(p0PlatformActionOutcome)");
     expect(overviewSource).toContain("openP0ActionOutcomeEvidence(p0PlatformActionOutcome)");
     expect(cssBlock(".p0-action-outcome")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".p0-action-outcome")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".p0-action-outcome-actions")).toContain("display: flex;");
+    expect(cssBlock(".p0-action-outcome-actions")).toContain("gap: 4px;");
     expect(cssBlock(".p0-action-outcome button")).toContain("cursor: pointer;");
+  });
+
+  test("copies P0 action outcome evidence links without changing the evidence open path", () => {
+    const copyHandlerSource = sourceBetween("const copyP0ActionOutcomeEvidenceLink = useCallback(", "const openP0ActionOutcomeEvidence = useCallback(");
+
+    expect(copyHandlerSource).toContain("buildP0PlatformActionOutcomeEvidenceLink(outcome)");
+    expect(copyHandlerSource).toContain("const url = new URL(window.location.href);");
+    expect(copyHandlerSource).toContain("url.search = `?${link.search}`;");
+    expect(copyHandlerSource).toContain("url.hash = \"\";");
+    expect(copyHandlerSource).toContain("await navigator.clipboard.writeText(url.toString());");
+    expect(copyHandlerSource).toContain("setCopiedP0ActionOutcomeEvidenceId(link.evidenceId);");
+    expect(copyHandlerSource).toContain("setWorkspaceState((current) => ({");
   });
 
   test("opens P0 action outcomes by replaying audited run evidence before showing Audit", () => {

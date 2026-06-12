@@ -239,9 +239,17 @@ export interface P0PlatformActionOutcome {
   label: string;
   detail: string;
   evidenceId: string | null;
+  runId: string | null;
   targetWorkspaceId: ProductWorkAreaId;
   tone: P0PlatformActionOutcomeTone;
   nextStep: string;
+}
+
+export interface P0PlatformActionOutcomeEvidenceLink {
+  evidenceId: string;
+  label: string;
+  search: string;
+  targetWorkspaceId: ProductWorkAreaId;
 }
 
 export interface QuantLoopNavigationTarget {
@@ -3430,6 +3438,7 @@ export function buildP0PlatformActionOutcome(
         `${passedGateCount}/${gateCount} gates passed`
       ].join(" · "),
       evidenceId: paperExecution.executionId,
+      runId: paperExecution.runId || null,
       targetWorkspaceId: "execution",
       tone: "positive",
       nextStep: "Review the execution handoff and promotion gates; live trading remains blocked."
@@ -3443,6 +3452,7 @@ export function buildP0PlatformActionOutcome(
       label: source?.goldenPath?.summary?.liveTradingAllowed ? "Audited run live gate open" : "Audited run available",
       detail: statusLabel ? `${latestRunId} · ${statusLabel}` : latestRunId,
       evidenceId: latestRunId,
+      runId: latestRunId,
       targetWorkspaceId: "audit",
       tone: "ai",
       nextStep: source?.goldenPath?.summary?.liveTradingAllowed
@@ -3456,10 +3466,50 @@ export function buildP0PlatformActionOutcome(
     label: "Waiting for P0 action evidence",
     detail: statusLabel || "Run an audited pipeline to create traceable P0 evidence.",
     evidenceId: null,
+    runId: null,
     targetWorkspaceId: "research",
     tone: "warning",
     nextStep: "Start with market data refresh and an audited research pipeline."
   };
+}
+
+export function buildP0PlatformActionOutcomeEvidenceLink(
+  outcome: P0PlatformActionOutcome | null | undefined
+): P0PlatformActionOutcomeEvidenceLink | null {
+  const evidenceId = outcome?.evidenceId?.trim() ?? "";
+  if (!outcome || !evidenceId) {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams();
+  if (outcome.state === "paper_execution") {
+    searchParams.set("workspace", "execution");
+    searchParams.set("paperExecution", evidenceId);
+    if (outcome.runId?.trim()) {
+      searchParams.set("runId", outcome.runId.trim());
+    }
+    return {
+      evidenceId,
+      label: "Paper execution evidence link",
+      search: searchParams.toString(),
+      targetWorkspaceId: "execution"
+    };
+  }
+
+  if (outcome.state === "audit_run" || outcome.state === "live_ready") {
+    const runId = outcome.runId?.trim() || evidenceId;
+    searchParams.set("workspace", "audit");
+    searchParams.set("runId", runId);
+    searchParams.set("exportPath", `manifest:${runId}`);
+    return {
+      evidenceId,
+      label: "Audit evidence link",
+      search: searchParams.toString(),
+      targetWorkspaceId: "audit"
+    };
+  }
+
+  return null;
 }
 
 function p0PlatformBacklogPriority(item: GoldenPathRunbookSourceItem): P0PlatformBacklogPriority {

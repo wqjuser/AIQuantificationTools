@@ -56,6 +56,7 @@ import {
   buildInstrumentFromSymbol,
   buildModuleNewsEvents,
   buildP0PlatformActionOutcome,
+  buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
   buildP0PlatformReadinessSummary,
   buildPaperExecutionSummaryTiles,
@@ -1741,6 +1742,7 @@ describe("terminal workbench model", () => {
       label: "Paper execution recorded",
       detail: "paper-exec-001 · 1 order · 2/3 gates passed",
       evidenceId: "paper-exec-001",
+      runId: "run-audited-001",
       targetWorkspaceId: "execution",
       tone: "positive",
       nextStep: "Review the execution handoff and promotion gates; live trading remains blocked."
@@ -1765,6 +1767,7 @@ describe("terminal workbench model", () => {
       label: "Audited run available",
       detail: "run-audited-002 · Golden Path audit run loaded for paper execution",
       evidenceId: "run-audited-002",
+      runId: "run-audited-002",
       targetWorkspaceId: "audit",
       tone: "ai",
       nextStep: "Continue with AI review or paper execution from the P0 backlog."
@@ -1778,9 +1781,64 @@ describe("terminal workbench model", () => {
       })
     ).toMatchObject({
       state: "waiting",
+      evidenceId: null,
+      runId: null,
       targetWorkspaceId: "research",
       tone: "warning"
     });
+  });
+
+  test("builds portable P0 outcome evidence links for audit and paper evidence", () => {
+    expect(
+      buildP0PlatformActionOutcomeEvidenceLink({
+        state: "audit_run",
+        label: "Audited run available",
+        detail: "run-audited-002",
+        evidenceId: "run-audited-002",
+        runId: "run-audited-002",
+        targetWorkspaceId: "audit",
+        tone: "ai",
+        nextStep: "Continue with AI review"
+      })
+    ).toEqual({
+      evidenceId: "run-audited-002",
+      label: "Audit evidence link",
+      search: "workspace=audit&runId=run-audited-002&exportPath=manifest%3Arun-audited-002",
+      targetWorkspaceId: "audit"
+    });
+
+    expect(
+      buildP0PlatformActionOutcomeEvidenceLink({
+        state: "paper_execution",
+        label: "Paper execution recorded",
+        detail: "paper-exec-001",
+        evidenceId: "paper-exec-001",
+        runId: "run-audited-001",
+        targetWorkspaceId: "execution",
+        tone: "positive",
+        nextStep: "Review execution"
+      })
+    ).toEqual({
+      evidenceId: "paper-exec-001",
+      label: "Paper execution evidence link",
+      search: "workspace=execution&paperExecution=paper-exec-001&runId=run-audited-001",
+      targetWorkspaceId: "execution"
+    });
+  });
+
+  test("does not build a P0 outcome evidence link while evidence is still waiting", () => {
+    expect(
+      buildP0PlatformActionOutcomeEvidenceLink({
+        state: "waiting",
+        label: "Waiting for P0 action evidence",
+        detail: "Run a pipeline first",
+        evidenceId: null,
+        runId: null,
+        targetWorkspaceId: "research",
+        tone: "warning",
+        nextStep: "Start with market data"
+      })
+    ).toBeNull();
   });
 
   test("builds a structured SMA strategy draft from the editable snapshot", () => {

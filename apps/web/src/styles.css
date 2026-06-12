@@ -1140,6 +1140,13 @@ em {
   font-size: 10px;
 }
 
+.p0-action-outcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
 .p0-action-outcome button {
   border: 1px solid #266c60;
   border-radius: 5px;
