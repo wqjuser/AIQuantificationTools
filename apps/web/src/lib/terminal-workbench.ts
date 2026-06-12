@@ -1513,6 +1513,7 @@ export interface AuditEvidenceReportLedgerSummary {
   latestAuditAidEvidenceLabel: string;
   latestAuditAidEvidenceLink: string;
   latestAuditAidPreflightActionId: string;
+  latestAuditAidPreflightAttention: number;
   latestAuditAidPreflightLabel: string;
   latestAuditAidPreflightState: string;
   latestAuditAidRunId: string;
@@ -7184,6 +7185,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidEvidenceLink:
       latestAuditAidRow?.evidenceLinkDecodedSearch || latestAuditAidRow?.evidenceLinkSearch || "",
     latestAuditAidPreflightActionId: latestAuditAidRow?.paperPreflightActionId ?? "",
+    latestAuditAidPreflightAttention: latestAuditAidRow
+      ? latestAuditAidRow.paperPreflightGateReviewCount + latestAuditAidRow.paperPreflightGateBlockedCount
+      : 0,
     latestAuditAidPreflightLabel: latestAuditAidRow?.paperPreflightLabel ?? "",
     latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",

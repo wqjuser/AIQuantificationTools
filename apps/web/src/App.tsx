@@ -10135,6 +10135,12 @@ function AuditEvidenceReportLedgerPanel({
                     {summary.latestAuditAidPreflightLabel}
                   </span>
                 ) : null}
+                {summary.latestAuditAidPreflightAttention > 0 ? (
+                  <span title={summary.latestAuditAidPreflightLabel}>
+                    {i18n.locale === "zh-CN" ? "预检关注" : "Preflight attention"}{" "}
+                    <strong>{summary.latestAuditAidPreflightAttention}</strong>
+                  </span>
+                ) : null}
               </span>
             ) : null}
             <span>
