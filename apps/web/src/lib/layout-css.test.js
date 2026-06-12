@@ -1744,7 +1744,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
     );
     expect(appSource).toContain("adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}");
     expect(appSource).toContain("adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[]");
@@ -1763,7 +1763,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretReferenceRows(executionAdapterSecretReferences)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
     );
     expect(appSource).toContain("adapterSecretReferenceRows={executionAdapterSecretReferenceRows}");
     expect(appSource).toContain("adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[]");
@@ -1782,7 +1782,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretMaterializationRows(executionAdapterSecretMaterializations)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
     );
     expect(appSource).toContain("adapterSecretMaterializationRows={executionAdapterSecretMaterializationRows}");
     expect(appSource).toContain("adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[]");
@@ -1794,10 +1794,11 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".promotion-secret-materialization-evidence-row");
   });
 
-  test("renders environment binding, runtime reload plan, and runtime reload execution history in promotion queue", () => {
+  test("renders environment binding, runtime reload plan, runtime reload execution, and acceptance history in promotion queue", () => {
     expect(appSource).toContain("loadExecutionAdapterEnvironmentBindings(quantCoreBaseUrl");
     expect(appSource).toContain("loadExecutionAdapterRuntimeReloadPlans(quantCoreBaseUrl");
     expect(appSource).toContain("loadExecutionAdapterRuntimeReloadExecutions(quantCoreBaseUrl");
+    expect(appSource).toContain("loadExecutionAdapterRuntimeReloadAcceptances(quantCoreBaseUrl");
     expect(appSource).toContain(
       "setExecutionAdapterEnvironmentBindings(environmentBindingResults.flatMap((result) => result.adapterEnvironmentBindings))"
     );
@@ -1807,35 +1808,48 @@ describe("terminal layout css", () => {
     expect(appSource).toContain(
       "setExecutionAdapterRuntimeReloadExecutions(runtimeReloadExecutionResults.flatMap((result) => result.adapterRuntimeReloadExecutions))"
     );
+    expect(appSource).toContain(
+      "setExecutionAdapterRuntimeReloadAcceptances(runtimeReloadAcceptanceResults.flatMap((result) => result.adapterRuntimeReloadAcceptances))"
+    );
     expect(appSource).toContain("buildExecutionAdapterEnvironmentBindingRows(executionAdapterEnvironmentBindings)");
     expect(appSource).toContain("buildExecutionAdapterRuntimeReloadPlanRows(executionAdapterRuntimeReloadPlans)");
     expect(appSource).toContain("const executionAdapterRuntimeReloadExecutionRows = buildExecutionAdapterRuntimeReloadExecutionRows(");
     expect(appSource).toContain("executionAdapterRuntimeReloadExecutions");
+    expect(appSource).toContain("const executionAdapterRuntimeReloadAcceptanceRows = buildExecutionAdapterRuntimeReloadAcceptanceRows(");
+    expect(appSource).toContain("executionAdapterRuntimeReloadAcceptances");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
     );
     expect(appSource).toContain("adapterEnvironmentBindingRows={executionAdapterEnvironmentBindingRows}");
     expect(appSource).toContain("adapterRuntimeReloadPlanRows={executionAdapterRuntimeReloadPlanRows}");
     expect(appSource).toContain("adapterRuntimeReloadExecutionRows={executionAdapterRuntimeReloadExecutionRows}");
+    expect(appSource).toContain("adapterRuntimeReloadAcceptanceRows={executionAdapterRuntimeReloadAcceptanceRows}");
     expect(appSource).toContain("adapterEnvironmentBindingRows: ExecutionAdapterEnvironmentBindingRow[]");
     expect(appSource).toContain("adapterRuntimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[]");
     expect(appSource).toContain("adapterRuntimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[]");
+    expect(appSource).toContain("adapterRuntimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[]");
     expect(appSource).toContain('className="promotion-environment-binding-evidence"');
     expect(appSource).toContain('className={`promotion-environment-binding-evidence-row');
     expect(appSource).toContain('className="promotion-runtime-reload-plan-evidence"');
     expect(appSource).toContain('className={`promotion-runtime-reload-plan-evidence-row');
     expect(appSource).toContain('className="promotion-runtime-reload-execution-evidence"');
     expect(appSource).toContain('className={`promotion-runtime-reload-execution-evidence-row');
+    expect(appSource).toContain('className="promotion-runtime-reload-acceptance-evidence"');
+    expect(appSource).toContain('className={`promotion-runtime-reload-acceptance-evidence-row');
     expect(appSource).toContain("adapterEnvironmentBindingStatusLabel(i18n, row.statusLabel)");
     expect(appSource).toContain("adapterRuntimeReloadPlanStatusLabel(i18n, row.statusLabel)");
     expect(appSource).toContain("adapterRuntimeReloadExecutionStatusLabel(i18n, row.statusLabel)");
     expect(appSource).toContain("adapterRuntimeReloadExecutionConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(appSource).toContain("adapterRuntimeReloadAcceptanceStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterRuntimeReloadAcceptanceConfirmationSummary(i18n, row.confirmationSummary)");
     expect(styles).toContain(".promotion-environment-binding-evidence");
     expect(styles).toContain(".promotion-environment-binding-evidence-row");
     expect(styles).toContain(".promotion-runtime-reload-plan-evidence");
     expect(styles).toContain(".promotion-runtime-reload-plan-evidence-row");
     expect(styles).toContain(".promotion-runtime-reload-execution-evidence");
     expect(styles).toContain(".promotion-runtime-reload-execution-evidence-row");
+    expect(styles).toContain(".promotion-runtime-reload-acceptance-evidence");
+    expect(styles).toContain(".promotion-runtime-reload-acceptance-evidence-row");
   });
 
   test("renders platform settings from local-core status when available", () => {

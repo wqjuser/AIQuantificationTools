@@ -2363,6 +2363,66 @@ export interface ExecutionAdapterRuntimeReloadExecutionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterRuntimeReloadAcceptanceStatus = "blocked" | "acceptance_recorded";
+export type ExecutionAdapterRuntimeReloadAcceptanceConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceSnapshot {
+  schemaVersion: 1;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterRuntimeReloadAcceptanceStatus;
+  operator: string;
+  recordedAt: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterRuntimeReloadAcceptanceConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterRuntimeReloadAcceptanceRow {
+  id: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterRuntimeReloadAcceptanceStatus;
+  statusLabel: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -9898,6 +9958,44 @@ export function buildExecutionAdapterRuntimeReloadExecutionRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterRuntimeReloadAcceptanceRows(
+  acceptances: ExecutionAdapterRuntimeReloadAcceptanceSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterRuntimeReloadAcceptanceRow[] {
+  return (acceptances ?? [])
+    .map((row) => ({
+      id: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterRuntimeReloadAcceptanceStatusLabel(row.status),
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterRuntimeReloadAcceptanceConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.acceptanceId,
+      tone: executionAdapterRuntimeReloadAcceptanceTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -10124,6 +10222,36 @@ function latestPromotionRuntimeReloadExecutionRow(
   );
 }
 
+function latestPromotionRuntimeReloadAcceptanceRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterRuntimeReloadAcceptanceRow[],
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null
+): ExecutionAdapterRuntimeReloadAcceptanceRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -10135,6 +10263,7 @@ function buildPromotionAdapterCertificationStage(
   latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
   latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
   latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -10153,6 +10282,9 @@ function buildPromotionAdapterCertificationStage(
   const runtimeReloadExecutionDetail = latestRuntimeReloadExecution
     ? `Latest runtime reload execution ${latestRuntimeReloadExecution.auditEventId}: ${latestRuntimeReloadExecution.statusLabel} · ${latestRuntimeReloadExecution.confirmationSummary} · ${latestRuntimeReloadExecution.blockerSummary} · ${latestRuntimeReloadExecution.executionMode} · ${latestRuntimeReloadExecution.reloadMode} · ${latestRuntimeReloadExecution.maintenanceWindowId} · ${latestRuntimeReloadExecution.boundary}. ${promotionRuntimeReloadExecutionNextStep(latestRuntimeReloadExecution)}`
     : "";
+  const runtimeReloadAcceptanceDetail = latestRuntimeReloadAcceptance
+    ? `Latest runtime reload acceptance ${latestRuntimeReloadAcceptance.auditEventId}: ${latestRuntimeReloadAcceptance.statusLabel} · ${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.blockerSummary} · ${latestRuntimeReloadAcceptance.acceptanceMode} · ${latestRuntimeReloadAcceptance.executionMode} · ${latestRuntimeReloadAcceptance.reloadMode} · ${latestRuntimeReloadAcceptance.maintenanceWindowId} · ${latestRuntimeReloadAcceptance.boundary}. ${promotionRuntimeReloadAcceptanceNextStep(latestRuntimeReloadAcceptance)}`
+    : "";
   if (!latestCertification) {
     const liveAdapterDetail = liveAdapterCertified
       ? "A certified live adapter is available for the selected market."
@@ -10168,14 +10300,16 @@ function buildPromotionAdapterCertificationStage(
         secretMaterializationDetail,
         environmentBindingDetail,
         runtimeReloadPlanDetail,
-        runtimeReloadExecutionDetail
+        runtimeReloadExecutionDetail,
+        runtimeReloadAcceptanceDetail
       ]
         .filter(Boolean)
         .join(" "),
       status: liveAdapterCertified ? "passed" : "blocked",
       tone: liveAdapterCertified
         ? "positive"
-        : latestRuntimeReloadExecution?.status === "execution_recorded" ||
+        : latestRuntimeReloadAcceptance?.status === "acceptance_recorded" ||
+            latestRuntimeReloadExecution?.status === "execution_recorded" ||
             latestRuntimeReloadPlan?.status === "plan_recorded" ||
             latestEnvironmentBinding?.status === "binding_recorded" ||
             latestSecretMaterialization?.status === "manifest_recorded" ||
@@ -10202,13 +10336,14 @@ function buildPromotionAdapterCertificationStage(
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
     detail: [
       secretReferenceDetail,
       secretMaterializationDetail,
       environmentBindingDetail,
       runtimeReloadPlanDetail,
       runtimeReloadExecutionDetail,
+      runtimeReloadAcceptanceDetail,
       certificationDetail,
       applyDetail,
       restartEvidenceDetail,
@@ -10220,7 +10355,8 @@ function buildPromotionAdapterCertificationStage(
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
-      : latestRuntimeReloadExecution?.status === "execution_recorded" ||
+      : latestRuntimeReloadAcceptance?.status === "acceptance_recorded" ||
+          latestRuntimeReloadExecution?.status === "execution_recorded" ||
           latestRuntimeReloadPlan?.status === "plan_recorded" ||
           latestEnvironmentBinding?.status === "binding_recorded" ||
           latestSecretMaterialization?.status === "manifest_recorded" ||
@@ -10283,6 +10419,13 @@ function promotionRuntimeReloadExecutionNextStep(execution: ExecutionAdapterRunt
   return "Resolve runtime reload execution blockers before post-reload acceptance.";
 }
 
+function promotionRuntimeReloadAcceptanceNextStep(acceptance: ExecutionAdapterRuntimeReloadAcceptanceRow): string {
+  if (acceptance.status === "acceptance_recorded") {
+    return "Runtime reload acceptance is recorded; live routing remains blocked until real adapter orchestration and human confirmation pass.";
+  }
+  return "Resolve runtime reload acceptance blockers before real adapter orchestration.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -10295,7 +10438,8 @@ export function buildPromotionReadiness(
   secretMaterializationRows: ExecutionAdapterSecretMaterializationRow[] = [],
   environmentBindingRows: ExecutionAdapterEnvironmentBindingRow[] = [],
   runtimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[] = [],
-  runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[] = []
+  runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[] = [],
+  runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -10344,6 +10488,14 @@ export function buildPromotionReadiness(
     latestSecretMaterialization,
     latestEnvironmentBinding,
     latestRuntimeReloadPlan
+  );
+  const latestRuntimeReloadAcceptance = latestPromotionRuntimeReloadAcceptanceRow(
+    workspace,
+    runtimeReloadAcceptanceRows,
+    latestSecretMaterialization,
+    latestEnvironmentBinding,
+    latestRuntimeReloadPlan,
+    latestRuntimeReloadExecution
   );
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
@@ -10417,6 +10569,7 @@ export function buildPromotionReadiness(
     latestEnvironmentBinding,
     latestRuntimeReloadPlan,
     latestRuntimeReloadExecution,
+    latestRuntimeReloadAcceptance,
     liveAdapterCertified,
     adapterGatePassed
   );
@@ -12218,6 +12371,31 @@ function executionAdapterRuntimeReloadExecutionStatusLabel(
 
 function executionAdapterRuntimeReloadExecutionConfirmationSummary(
   confirmations: ExecutionAdapterRuntimeReloadExecutionSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterRuntimeReloadAcceptanceTone(
+  status: ExecutionAdapterRuntimeReloadAcceptanceStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "acceptance_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterRuntimeReloadAcceptanceStatusLabel(
+  status: ExecutionAdapterRuntimeReloadAcceptanceStatus
+): string {
+  return (
+    {
+      acceptance_recorded: "Acceptance recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterRuntimeReloadAcceptanceStatus, string>
+  )[status];
+}
+
+function executionAdapterRuntimeReloadAcceptanceConfirmationSummary(
+  confirmations: ExecutionAdapterRuntimeReloadAcceptanceSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;

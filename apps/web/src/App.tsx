@@ -66,6 +66,7 @@ import {
   loadExecutionAdapterEnvironmentBindings,
   loadExecutionAdapterSecretMaterializations,
   loadExecutionAdapterSecretReferences,
+  loadExecutionAdapterRuntimeReloadAcceptances,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterCertifications,
@@ -127,6 +128,7 @@ import {
   ExecutionAdapterEnvironmentBindingResult,
   ExecutionAdapterSecretMaterializationResult,
   ExecutionAdapterSecretReferenceResult,
+  ExecutionAdapterRuntimeReloadAcceptanceResult,
   ExecutionAdapterRuntimeReloadExecutionResult,
   ExecutionAdapterRuntimeReloadPlanResult,
   ExecutionAdapterLedgerResult,
@@ -200,6 +202,7 @@ import {
   buildExecutionAdapterEnvironmentBindingRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
+  buildExecutionAdapterRuntimeReloadAcceptanceRows,
   buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterCertificationRows,
@@ -307,6 +310,7 @@ import {
   ExecutionAdapterEnvironmentBindingRow,
   ExecutionAdapterSecretMaterializationRow,
   ExecutionAdapterSecretReferenceRow,
+  ExecutionAdapterRuntimeReloadAcceptanceRow,
   ExecutionAdapterRuntimeReloadExecutionRow,
   ExecutionAdapterRuntimeReloadPlanRow,
   ExecutionAdapterCertificationRow,
@@ -941,6 +945,9 @@ export function App() {
   const [executionAdapterRuntimeReloadExecutions, setExecutionAdapterRuntimeReloadExecutions] = useState<
     ExecutionAdapterRuntimeReloadExecutionResult[]
   >([]);
+  const [executionAdapterRuntimeReloadAcceptances, setExecutionAdapterRuntimeReloadAcceptances] = useState<
+    ExecutionAdapterRuntimeReloadAcceptanceResult[]
+  >([]);
   const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
     Record<string, ExecutionAdapterCertificationApplyConfirmations>
   >({});
@@ -1189,6 +1196,9 @@ export function App() {
   const executionAdapterRuntimeReloadExecutionRows = buildExecutionAdapterRuntimeReloadExecutionRows(
     executionAdapterRuntimeReloadExecutions
   );
+  const executionAdapterRuntimeReloadAcceptanceRows = buildExecutionAdapterRuntimeReloadAcceptanceRows(
+    executionAdapterRuntimeReloadAcceptances
+  );
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -1265,7 +1275,7 @@ export function App() {
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
     activePromotionCandidateRecord ??
-    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows);
+    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows);
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
   const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
     (context) =>
@@ -1766,7 +1776,8 @@ export function App() {
       materializationResults,
       environmentBindingResults,
       runtimeReloadPlanResults,
-      runtimeReloadExecutionResults
+      runtimeReloadExecutionResults,
+      runtimeReloadAcceptanceResults
     ] = await Promise.all([
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5))),
@@ -1776,7 +1787,8 @@ export function App() {
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterSecretMaterializations(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterEnvironmentBindings(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadPlans(quantCoreBaseUrl, row.id, undefined, 5))),
-      Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadExecutions(quantCoreBaseUrl, row.id, undefined, 5)))
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadExecutions(quantCoreBaseUrl, row.id, undefined, 5))),
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadAcceptances(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
     setWatchlistCacheRefreshHistory(watchlistRefreshHistory.watchlistRefreshes);
@@ -1790,6 +1802,7 @@ export function App() {
     setExecutionAdapterEnvironmentBindings(environmentBindingResults.flatMap((result) => result.adapterEnvironmentBindings));
     setExecutionAdapterRuntimeReloadPlans(runtimeReloadPlanResults.flatMap((result) => result.adapterRuntimeReloadPlans));
     setExecutionAdapterRuntimeReloadExecutions(runtimeReloadExecutionResults.flatMap((result) => result.adapterRuntimeReloadExecutions));
+    setExecutionAdapterRuntimeReloadAcceptances(runtimeReloadAcceptanceResults.flatMap((result) => result.adapterRuntimeReloadAcceptances));
   }, []);
 
   const recordAdapterCertificationEvidence = useCallback(
@@ -5128,6 +5141,7 @@ export function App() {
             adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}
             adapterEnvironmentBindingRows={executionAdapterEnvironmentBindingRows}
             adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}
+            adapterRuntimeReloadAcceptanceRows={executionAdapterRuntimeReloadAcceptanceRows}
             adapterRuntimeReloadExecutionRows={executionAdapterRuntimeReloadExecutionRows}
             adapterRuntimeReloadPlanRows={executionAdapterRuntimeReloadPlanRows}
             adapterSecretMaterializationRows={executionAdapterSecretMaterializationRows}
@@ -13540,6 +13554,7 @@ function PromotionQueuePanel({
   adapterControlledRestartEvidenceRows,
   adapterEnvironmentBindingRows,
   adapterRestartAcceptanceRows,
+  adapterRuntimeReloadAcceptanceRows,
   adapterRuntimeReloadExecutionRows,
   adapterRuntimeReloadPlanRows,
   adapterSecretMaterializationRows,
@@ -13553,6 +13568,7 @@ function PromotionQueuePanel({
   adapterControlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[];
   adapterEnvironmentBindingRows: ExecutionAdapterEnvironmentBindingRow[];
   adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[];
+  adapterRuntimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[];
   adapterRuntimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[];
   adapterRuntimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[];
   adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[];
@@ -13569,6 +13585,7 @@ function PromotionQueuePanel({
   const recentEnvironmentBindingRows = adapterEnvironmentBindingRows.slice(0, 3);
   const recentRuntimeReloadPlanRows = adapterRuntimeReloadPlanRows.slice(0, 3);
   const recentRuntimeReloadExecutionRows = adapterRuntimeReloadExecutionRows.slice(0, 3);
+  const recentRuntimeReloadAcceptanceRows = adapterRuntimeReloadAcceptanceRows.slice(0, 3);
   const recentSecretReferenceRows = adapterSecretReferenceRows.slice(0, 3);
   const recentSecretMaterializationRows = adapterSecretMaterializationRows.slice(0, 3);
   return (
@@ -13698,6 +13715,27 @@ function PromotionQueuePanel({
                 <p>{adapterRuntimeReloadExecutionConfirmationSummary(i18n, row.confirmationSummary)}</p>
                 <em>
                   {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.executionMode)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.reloadMode)} · {row.maintenanceWindowId} ·{" "}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentRuntimeReloadAcceptanceRows.length ? (
+          <div className="promotion-runtime-reload-acceptance-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近运行时重载最终验收" : "Recent runtime reload acceptance evidence"}</span>
+            {recentRuntimeReloadAcceptanceRows.map((row) => (
+              <article className={`promotion-runtime-reload-acceptance-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterRuntimeReloadAcceptanceStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterRuntimeReloadAcceptanceConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.acceptanceMode)} ·{" "}
                   {adapterCertificationApplyModeLabel(i18n, row.executionMode)} ·{" "}
                   {adapterCertificationApplyModeLabel(i18n, row.reloadMode)} · {row.maintenanceWindowId} ·{" "}
                   {row.auditEventId}
@@ -15433,6 +15471,18 @@ function adapterRuntimeReloadExecutionStatusLabel(i18n: AppI18n, statusLabel: st
   );
 }
 
+function adapterRuntimeReloadAcceptanceStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Blocked: "阻断",
+      "Acceptance recorded": "最终验收已记录"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
 function adapterCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
   if (i18n.locale === "en-US") {
     return boundary;
@@ -15490,6 +15540,10 @@ function adapterRuntimeReloadExecutionConfirmationSummary(i18n: AppI18n, summary
   return adapterCertificationApplyConfirmationSummary(i18n, summary);
 }
 
+function adapterRuntimeReloadAcceptanceConfirmationSummary(i18n: AppI18n, summary: string): string {
+  return adapterCertificationApplyConfirmationSummary(i18n, summary);
+}
+
 function adapterCertificationApplyBlockerSummary(i18n: AppI18n, summary: string): string {
   if (i18n.locale === "en-US") {
     return summary;
@@ -15512,7 +15566,8 @@ function adapterCertificationApplyModeLabel(i18n: AppI18n, mode: string): string
       manual_post_restart_acceptance: "重启后验收",
       local_runtime_env: "本地运行时环境绑定",
       manual_runtime_reload: "人工运行时重载",
-      manual_controlled_reload: "人工受控重载执行"
+      manual_controlled_reload: "人工受控重载执行",
+      manual_runtime_reload_acceptance: "人工运行时重载最终验收"
     }[mode] ?? mode.replaceAll("_", " ")
   );
 }
