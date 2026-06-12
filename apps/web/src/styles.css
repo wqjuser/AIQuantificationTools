@@ -1419,17 +1419,22 @@ em {
   color: #e8be62;
 }
 
-.audit-runbook-preflight-hint {
+.audit-runbook-action-hint {
   display: block;
   grid-column: 2 / -1;
   margin-top: 2px;
   overflow: hidden;
-  color: #e8be62;
+  color: #8fa0b2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.audit-runbook-preflight-hint.blocked {
+.audit-runbook-action-hint.review {
+  color: #e8be62;
+}
+
+.audit-runbook-action-hint.blocked,
+.audit-runbook-action-hint.current {
   color: #ffad9f;
 }
 

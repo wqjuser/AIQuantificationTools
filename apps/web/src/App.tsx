@@ -5751,6 +5751,30 @@ function p0PlatformBacklogActionHint(
   return i18n.locale === "zh-CN" ? "等待当前任务完成后再执行。" : "Wait for the current task to finish before running this action.";
 }
 
+function goldenPathRunbookActionHint(
+  i18n: AppI18n,
+  item: GoldenPathStatus["runbook"][number],
+  isActionDisabled: boolean,
+  preflight: ResearchPipelinePreflight
+): string | null {
+  const preflightHint = goldenPathActionPreflightHint(i18n, item.actionId, preflight);
+  if (preflightHint) {
+    return preflightHint;
+  }
+  if (!isActionDisabled || item.passed || !item.actionId) {
+    return null;
+  }
+  if (item.actionId === "submit-paper-order") {
+    return i18n.locale === "zh-CN"
+      ? "需要匹配当前上下文的审计运行、AI 证据和模拟执行闸门。"
+      : "Requires a matching audited run, AI evidence, and paper execution gates.";
+  }
+  if (item.actionId === "refresh-data" || item.actionId === "refresh-watchlist-cache") {
+    return i18n.locale === "zh-CN" ? "行情缓存刷新正在占用数据通道。" : "Market cache refresh is already using the data lane.";
+  }
+  return i18n.locale === "zh-CN" ? "等待当前任务完成后再执行。" : "Wait for the current task to finish before running this action.";
+}
+
 function goldenPathStepLabel(i18n: AppI18n, stepId: string, fallback: string): string {
   if (i18n.locale === "en-US") {
     return fallback;
@@ -15483,7 +15507,8 @@ function GoldenPathRunbookPanel({
               : null;
             const canRunAction = Boolean(item.actionId) && !item.passed;
             const isRunbookActionDisabled = !canRunAction || isActionDisabled(item.actionId);
-            const actionHint = goldenPathActionPreflightHint(i18n, item.actionId, preflight);
+            const actionHint = goldenPathRunbookActionHint(i18n, item, isRunbookActionDisabled, preflight);
+            const actionHintTone = item.actionId === "run-pipeline" ? preflight.status : item.status;
             return (
               <article
                 className={`audit-runbook-row ${item.status} ${item.current ? "current" : ""}`}
@@ -15494,7 +15519,7 @@ function GoldenPathRunbookPanel({
                   <strong>{goldenPathStepLabel(i18n, item.stepId, item.label)}</strong>
                   <small>{auditRunbookDetail(i18n, item)}</small>
                   {actionHint ? (
-                    <small className={`audit-runbook-preflight-hint ${preflight.status}`}>{actionHint}</small>
+                    <small className={`audit-runbook-action-hint ${actionHintTone}`}>{actionHint}</small>
                   ) : null}
                 </div>
                 <em>{auditRunbookStatusLabel(i18n, item)}</em>

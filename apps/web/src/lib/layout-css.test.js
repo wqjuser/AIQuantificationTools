@@ -318,8 +318,10 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onRunAction={runGoldenPathActionById}");
     expect(auditWorkspaceSource).toContain("isActionDisabled={isGoldenPathActionDisabledById}");
     expect(appSource).toContain("const isRunbookActionDisabled = !canRunAction || isActionDisabled(item.actionId);");
-    expect(appSource).toContain("const actionHint = goldenPathActionPreflightHint(i18n, item.actionId, preflight);");
-    expect(appSource).toContain('className={`audit-runbook-preflight-hint ${preflight.status}`}');
+    expect(appSource).toContain("const actionHint = goldenPathRunbookActionHint(");
+    expect(appSource).toContain("isRunbookActionDisabled");
+    expect(appSource).toContain("preflight");
+    expect(appSource).toContain('className={`audit-runbook-action-hint ${actionHintTone}`}');
     expect(appSource).toContain("disabled={isRunbookActionDisabled}");
     expect(appSource).toContain("isGoldenPathActionDisabledById(goldenPathActionId)");
     expect(appSource).toContain("isGoldenPathActionDisabledById(workspaceContextActionId)");
@@ -328,7 +330,10 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-runbook-list")).toContain("display: grid;");
     expect(cssBlock(".audit-runbook-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto;");
     expect(cssBlock(".audit-runbook-actions")).toContain("display: flex;");
-    expect(cssBlock(".audit-runbook-preflight-hint")).toContain("grid-column: 2 / -1;");
+    expect(cssBlock(".audit-runbook-action-hint")).toContain("grid-column: 2 / -1;");
+    expect(cssBlock(".audit-runbook-action-hint")).toContain("color: #8fa0b2;");
+    expect(appSource).toContain("function goldenPathRunbookActionHint(");
+    expect(appSource).toContain("goldenPathActionPreflightHint(i18n, item.actionId, preflight)");
     expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"'])).toBe(true);
   });
