@@ -1053,6 +1053,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.auditAid");
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidRunId");
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidEvidenceLink");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightActionLabel");
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightAttention");
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightLabel");
     expect(reportLedgerPanelSource).toContain("需签名");
@@ -1061,6 +1062,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Latest aid");
     expect(reportLedgerPanelSource).toContain("最新预检");
     expect(reportLedgerPanelSource).toContain("Latest preflight");
+    expect(reportLedgerPanelSource).toContain("下一步");
+    expect(reportLedgerPanelSource).toContain("Next action");
     expect(reportLedgerPanelSource).toContain("预检关注");
     expect(reportLedgerPanelSource).toContain("Preflight attention");
     expect(reportLedgerPanelSource).toContain("打开最新辅助");
