@@ -1058,8 +1058,12 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightLabel");
     expect(reportLedgerPanelSource).toContain("summary.latestReportLabel");
     expect(reportLedgerPanelSource).toContain("summary.latestReportKind");
+    expect(reportLedgerPanelSource).toContain("summary.latestReportQuery");
+    expect(reportLedgerPanelSource).toContain("onQueryChange(summary.latestReportQuery)");
     expect(reportLedgerPanelSource).toContain("需签名");
     expect(reportLedgerPanelSource).toContain("Audit aids");
+    expect(reportLedgerPanelSource).toContain("定位最新");
+    expect(reportLedgerPanelSource).toContain("Focus latest");
     expect(reportLedgerPanelSource).toContain("最新辅助");
     expect(reportLedgerPanelSource).toContain("Latest aid");
     expect(reportLedgerPanelSource).toContain("最新预检");

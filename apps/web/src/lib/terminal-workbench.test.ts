@@ -7433,6 +7433,8 @@ describe("terminal workbench model", () => {
       latestHash: reportHash,
       latestReportKind: "audit_evidence_report",
       latestReportLabel: "Audit evidence report",
+      latestReportQuery:
+        "audit_evidence_report run-a1f3a5369574 aaaaaaaaaaaa run-a1f3a5369574-audit-evidence-report.md",
       ready: 1,
       revoked: 0,
       signed: 0,
@@ -7549,12 +7551,18 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
         latestHash: newerHash,
+        latestReportQuery: "backtest_report run-new 222222222222 run-new-backtest-report.md",
         latestReportKind: "backtest_report",
         latestReportLabel: "Backtest report",
         ready: 2,
         total: 2
       })
     );
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, buildAuditEvidenceReportLedgerSummary(rows).latestReportQuery).map(
+        (row) => row.id
+      )
+    ).toEqual(["audit-report-run-new-2222222222222222"]);
   });
 
   test("promotes backtest report ledger rows when signature chain metadata is present", () => {

@@ -1521,6 +1521,7 @@ export interface AuditEvidenceReportLedgerSummary {
   latestHash: string;
   latestReportKind: AuditEvidenceReportLedgerRow["reportKind"] | "";
   latestReportLabel: string;
+  latestReportQuery: string;
   ready: number;
   revoked: number;
   signed: number;
@@ -6911,6 +6912,13 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
   )[kind];
 }
 
+function auditReportLedgerLatestReportQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  if (!row) {
+    return "";
+  }
+  return [row.reportKind, row.runId, row.shortHash, row.fileName].filter(Boolean).join(" ");
+}
+
 export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
@@ -7223,6 +7231,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestHash: latestReadyRow?.contentSha256 ?? "",
     latestReportKind: latestReadyRow?.reportKind ?? "",
     latestReportLabel: auditReportLedgerReportKindLabel(latestReadyRow?.reportKind ?? ""),
+    latestReportQuery: auditReportLedgerLatestReportQuery(latestReadyRow),
     ready,
     revoked,
     signed,

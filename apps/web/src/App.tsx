@@ -10177,6 +10177,11 @@ function AuditEvidenceReportLedgerPanel({
                 </small>
               ) : null}{" "}
               <strong>{summary.latestHash ? summary.latestHash.slice(0, 12) : "n/a"}</strong>
+              {summary.latestReportQuery ? (
+                <button onClick={() => onQueryChange(summary.latestReportQuery)} type="button">
+                  {i18n.locale === "zh-CN" ? "定位最新" : "Focus latest"}
+                </button>
+              ) : null}
             </span>
           </div>
           <input
