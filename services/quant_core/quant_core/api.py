@@ -78,6 +78,7 @@ from quant_core.execution import (
     build_execution_adapter_human_confirmation,
     build_execution_adapter_orchestration_dry_run,
     build_execution_adapter_orchestration_execution,
+    build_execution_adapter_production_route_review,
     build_execution_adapter_restart_acceptance,
     build_execution_adapter_runtime_reload_acceptance,
     build_execution_adapter_runtime_reload_execution,
@@ -110,6 +111,9 @@ from quant_core.execution import (
     execution_adapter_orchestration_execution_payload_from_audit_event,
     execution_adapter_orchestration_execution_to_audit_event_payload,
     execution_adapter_orchestration_execution_to_payload,
+    execution_adapter_production_route_review_payload_from_audit_event,
+    execution_adapter_production_route_review_to_audit_event_payload,
+    execution_adapter_production_route_review_to_payload,
     execution_adapter_restart_acceptance_payload_from_audit_event,
     execution_adapter_restart_acceptance_to_audit_event_payload,
     execution_adapter_restart_acceptance_to_payload,
@@ -924,6 +928,49 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if sandbox_probe_review.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-production-route-reviews":
+            payload = self._read_json_body()
+            sandbox_probe_review_id = str(payload.get("sandboxProbeReviewId") or "").strip()
+            sandbox_probe_review_event = self.audit_event_store.get(sandbox_probe_review_id)
+            sandbox_probe_review = (
+                execution_adapter_sandbox_probe_review_payload_from_audit_event(sandbox_probe_review_event)
+                if sandbox_probe_review_event
+                else None
+            )
+            if not sandbox_probe_review:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_sandbox_probe_review_not_found",
+                        "sandboxProbeReviewId": sandbox_probe_review_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                production_route_review = build_execution_adapter_production_route_review(
+                    sandbox_probe_review,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    review_mode=str(payload.get("reviewMode") or "manual_production_route_review"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_production_route_review", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_production_route_review_to_audit_event_payload(production_route_review)
+            )
+            self._send_json(
+                {
+                    "adapterProductionRouteReview": execution_adapter_production_route_review_to_payload(
+                        production_route_review
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if production_route_review.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -2047,6 +2094,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(sandbox_probe_reviews) >= limit:
                     break
             self._send_json({"adapterSandboxProbeReviews": sandbox_probe_reviews})
+            return
+        if parsed.path == "/api/execution/adapter-production-route-reviews":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_production_route_review_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            production_route_review_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_production_route_review",
+                limit=50,
+                query=adapter_id,
+            )
+            production_route_reviews = []
+            for event in production_route_review_events:
+                payload = execution_adapter_production_route_review_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    production_route_reviews.append(payload)
+                if len(production_route_reviews) >= limit:
+                    break
+            self._send_json({"adapterProductionRouteReviews": production_route_reviews})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

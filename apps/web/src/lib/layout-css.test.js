@@ -2361,6 +2361,57 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-sandbox-probe-review-confirmation");
   });
 
+  test("renders adapter production route review history and recording controls", () => {
+    expect(appSource).toContain("loadExecutionAdapterProductionRouteReviews(quantCoreBaseUrl");
+    expect(appSource).toContain("recordExecutionAdapterProductionRouteReview,");
+    expect(appSource).toContain(
+      "setExecutionAdapterProductionRouteReviews("
+    );
+    expect(appSource).toContain("const executionAdapterProductionRouteReviewRows = buildExecutionAdapterProductionRouteReviewRows(");
+    expect(appSource).toContain("executionAdapterProductionRouteReviews");
+    expect(appSource).toContain("adapterProductionRouteReviewRows={executionAdapterProductionRouteReviewRows}");
+    expect(appSource).toContain("adapterProductionRouteReviewRows: ExecutionAdapterProductionRouteReviewRow[]");
+    expect(appSource).toContain('className="promotion-production-route-review-evidence"');
+    expect(appSource).toContain('className={`promotion-production-route-review-evidence-row');
+    expect(appSource).toContain('className="promotion-production-route-review-empty"');
+    expect(appSource).toContain("等待生产路由策略复核");
+    expect(appSource).toContain("adapterProductionRouteReviewStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterProductionRouteReviewConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(appSource).toContain("interface ExecutionAdapterProductionRouteReviewConfirmations");
+    expect(appSource).toContain(
+      "const [adapterProductionRouteReviewConfirmations, setAdapterProductionRouteReviewConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterProductionRouteReviewId, setRecordingAdapterProductionRouteReviewId]"
+    );
+    expect(appSource).toContain("const updateAdapterProductionRouteReviewConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterProductionRouteReview = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterProductionRouteReview(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterProductionRouteReviews((current) => [");
+    expect(appSource).toContain(
+      "productionRouteReviewConfirmations={adapterProductionRouteReviewConfirmations}"
+    );
+    expect(appSource).toContain("recordingProductionRouteReviewId={recordingAdapterProductionRouteReviewId}");
+    expect(appSource).toContain("productionRouteReviewRows={executionAdapterProductionRouteReviewRows}");
+    expect(appSource).toContain("onRecordProductionRouteReview={recordAdapterProductionRouteReview}");
+    expect(appSource).toContain(
+      "onProductionRouteReviewConfirmationChange={updateAdapterProductionRouteReviewConfirmation}"
+    );
+    expect(appSource).toContain("productionRouteReviewConfirmations: Record<string, ExecutionAdapterProductionRouteReviewConfirmations>");
+    expect(appSource).toContain("productionRouteReviewRows: ExecutionAdapterProductionRouteReviewRow[]");
+    expect(appSource).toContain('className="adapter-production-route-review-list"');
+    expect(appSource).toContain('className={`adapter-production-route-review-row');
+    expect(appSource).toContain('className={`adapter-production-route-review-confirmation');
+    expect(appSource).toContain("adapterProductionRouteReviewStatusLabel(i18n, routeReview.statusLabel)");
+    expect(appSource).toContain("adapterProductionRouteReviewConfirmationSummary(i18n, routeReview.confirmationSummary)");
+    expect(styles).toContain(".promotion-production-route-review-evidence");
+    expect(styles).toContain(".promotion-production-route-review-evidence-row");
+    expect(styles).toContain(".promotion-production-route-review-empty");
+    expect(styles).toContain(".adapter-production-route-review-list");
+    expect(styles).toContain(".adapter-production-route-review-row");
+    expect(styles).toContain(".adapter-production-route-review-confirmation");
+  });
+
   test("renders platform settings from local-core status when available", () => {
     expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
     expect(appSource).toContain("settingsStatus.settings");
