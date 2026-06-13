@@ -10170,7 +10170,13 @@ function AuditEvidenceReportLedgerPanel({
               {i18n.locale === "zh-CN" ? "需关注" : "Attention"} <strong>{summary.attention}</strong>
             </span>
             <span>
-              {i18n.locale === "zh-CN" ? "最新" : "Latest"} <strong>{summary.latestHash ? summary.latestHash.slice(0, 12) : "n/a"}</strong>
+              {i18n.locale === "zh-CN" ? "最新" : "Latest"}{" "}
+              {summary.latestReportLabel ? (
+                <small title={summary.latestReportKind}>
+                  {auditReportLedgerReportKindLabel(i18n, summary.latestReportLabel)}
+                </small>
+              ) : null}{" "}
+              <strong>{summary.latestHash ? summary.latestHash.slice(0, 12) : "n/a"}</strong>
             </span>
           </div>
           <input
@@ -12479,6 +12485,20 @@ function auditReportLedgerStatusLabel(i18n: AppI18n, label: string): string {
       "Backtest report hash recorded": "回测报告 hash 已记录",
       "Report hash recorded": "报告 hash 已记录",
       "Report hash invalid": "报告 hash 异常"
+    }[label] ?? label
+  );
+}
+
+function auditReportLedgerReportKindLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return (
+    {
+      "Audit evidence report": "审计证据报告",
+      "Backtest report": "回测报告",
+      "P0 readiness report": "P0 可用性报告",
+      "Portfolio report": "组合报告"
     }[label] ?? label
   );
 }

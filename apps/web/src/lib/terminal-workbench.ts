@@ -1519,6 +1519,8 @@ export interface AuditEvidenceReportLedgerSummary {
   latestAuditAidPreflightState: string;
   latestAuditAidRunId: string;
   latestHash: string;
+  latestReportKind: AuditEvidenceReportLedgerRow["reportKind"] | "";
+  latestReportLabel: string;
   ready: number;
   revoked: number;
   signed: number;
@@ -6897,6 +6899,18 @@ function auditReportLedgerEvidenceLinkLabel(
   return status ? `${workspaceLabel} · ${status}` : workspaceLabel;
 }
 
+function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["reportKind"] | ""): string {
+  return (
+    {
+      audit_evidence_report: "Audit evidence report",
+      backtest_report: "Backtest report",
+      p0_readiness_report: "P0 readiness report",
+      portfolio_report: "Portfolio report",
+      "": ""
+    } satisfies Record<AuditEvidenceReportLedgerRow["reportKind"] | "", string>
+  )[kind];
+}
+
 export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
@@ -7207,6 +7221,8 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
     latestHash: latestReadyRow?.contentSha256 ?? "",
+    latestReportKind: latestReadyRow?.reportKind ?? "",
+    latestReportLabel: auditReportLedgerReportKindLabel(latestReadyRow?.reportKind ?? ""),
     ready,
     revoked,
     signed,

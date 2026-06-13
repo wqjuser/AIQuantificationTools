@@ -7431,6 +7431,8 @@ describe("terminal workbench model", () => {
       latestAuditAidPreflightState: "",
       latestAuditAidRunId: "",
       latestHash: reportHash,
+      latestReportKind: "audit_evidence_report",
+      latestReportLabel: "Audit evidence report",
       ready: 1,
       revoked: 0,
       signed: 0,
@@ -7529,16 +7531,17 @@ describe("terminal workbench model", () => {
       {
         schemaVersion: 1,
         eventId: "audit-report-run-new-2222222222222222",
-        eventType: "audit_evidence_report",
+        eventType: "backtest_report",
         runId: "run-new",
         createdAt: "2026-06-12T09:00:00.000Z",
         stage: "generated",
         source: "web",
-        summary: "Newer audit evidence report",
-        detail: "run-new-audit-evidence-report.md",
+        summary: "Newer backtest report",
+        detail: "run-new-backtest-report.md",
         metadata: {
+          artifactKind: "aiqt.backtestReport",
           contentSha256: newerHash,
-          fileName: "run-new-audit-evidence-report.md"
+          fileName: "run-new-backtest-report.md"
         }
       }
     ]);
@@ -7546,6 +7549,8 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
         latestHash: newerHash,
+        latestReportKind: "backtest_report",
+        latestReportLabel: "Backtest report",
         ready: 2,
         total: 2
       })
