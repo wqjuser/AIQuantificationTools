@@ -67,6 +67,8 @@ import {
   buildExecutionAdapterRuntimeReloadAcceptanceUrl,
   buildExecutionAdapterOrchestrationDryRunHistoryUrl,
   buildExecutionAdapterOrchestrationDryRunUrl,
+  buildExecutionAdapterOrchestrationExecutionHistoryUrl,
+  buildExecutionAdapterOrchestrationExecutionUrl,
   buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
   buildExecutionAdapterRuntimeReloadExecutionUrl,
   buildExecutionAdapterRuntimeReloadPlanHistoryUrl,
@@ -106,6 +108,7 @@ import {
   loadExecutionAdapterEnvironmentBindings,
   loadExecutionAdapterRuntimeReloadAcceptances,
   loadExecutionAdapterOrchestrationDryRuns,
+  loadExecutionAdapterOrchestrationExecutions,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterSecretReferences,
@@ -122,6 +125,7 @@ import {
   recordExecutionAdapterEnvironmentBinding,
   recordExecutionAdapterRuntimeReloadAcceptance,
   recordExecutionAdapterOrchestrationDryRun,
+  recordExecutionAdapterOrchestrationExecution,
   recordExecutionAdapterRuntimeReloadExecution,
   recordExecutionAdapterRuntimeReloadPlan,
   recordExecutionAdapterSecretReference,
@@ -4026,6 +4030,208 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterOrchestrationDryRuns).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("orchestration-dry-run-token-should-not-leak");
+  });
+
+  test("records adapter orchestration execution after dry run without enabling live trading", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterOrchestrationExecution: {
+            schemaVersion: 1,
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "execution_recorded",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T10:00:00+00:00",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              { id: "dry-run-evidence-reviewed", label: "Adapter orchestration dry-run evidence was reviewed", status: "confirmed" },
+              { id: "sandbox-route-locked", label: "Sandbox or paper route remains locked for the handoff", status: "confirmed" },
+              { id: "kill-switch-armed", label: "Kill switch remains armed during orchestration", status: "confirmed" },
+              { id: "idempotency-key-recorded", label: "Idempotency key or replay guard was recorded", status: "confirmed" },
+              { id: "operator-confirmed-no-capital", label: "Operator confirmed no capital was routed", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-orchestration-execution-us-live",
+            eventType: "execution_adapter_orchestration_execution",
+            runId: "",
+            createdAt: "2026-06-09T10:00:00+00:00",
+            stage: "execution-adapter-orchestration-execution",
+            source: "execution-adapter-ledger",
+            summary: "us-live adapter orchestration execution recorded as execution_recorded.",
+            detail: "Adapter orchestration execution is paper-only.",
+            metadata: {
+              orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+              dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+              adapterId: "us-live",
+              status: "execution_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterOrchestrationExecutionUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-orchestration-executions"
+    );
+
+    const result = await recordExecutionAdapterOrchestrationExecution(
+      "/",
+      {
+        adapterId: "us-live",
+        dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+        operator: "settings-panel",
+        orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+        confirmations: {
+          dryRunEvidenceReviewed: true,
+          sandboxRouteLocked: true,
+          killSwitchArmed: true,
+          idempotencyKeyRecorded: true,
+          operatorConfirmedNoCapital: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-orchestration-executions"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      operator: "settings-panel",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      confirmations: {
+        dryRunEvidenceReviewed: true,
+        sandboxRouteLocked: true,
+        killSwitchArmed: true,
+        idempotencyKeyRecorded: true,
+        operatorConfirmedNoCapital: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterOrchestrationExecution?.status).toBe("execution_recorded");
+    expect(result.adapterOrchestrationExecution?.dryRunId).toBe("execution-adapter-orchestration-dry-run-us-live");
+    expect(result.adapterOrchestrationExecution?.liveTradingAllowed).toBe(false);
+    expect(result.adapterOrchestrationExecution?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_orchestration_execution");
+  });
+
+  test("loads adapter orchestration execution history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const execution = {
+      schemaVersion: 1,
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "execution_recorded",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T10:00:00+00:00",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        { id: "dry-run-evidence-reviewed", label: "Adapter orchestration dry-run evidence was reviewed", status: "confirmed" }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterOrchestrationExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterOrchestrationExecutions: [execution] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterOrchestrationExecutionHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-orchestration-executions?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-orchestration-executions?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterOrchestrationExecutions).toHaveLength(1);
+    expect(result.adapterOrchestrationExecutions[0].status).toBe("execution_recorded");
+    expect(result.adapterOrchestrationExecutions[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterOrchestrationExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterOrchestrationExecutions: [
+            {
+              ...execution,
+              metadata: { token: "orchestration-execution-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterOrchestrationExecutions).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("orchestration-execution-token-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

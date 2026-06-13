@@ -1835,6 +1835,74 @@ export interface ExecutionAdapterOrchestrationDryRunHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterOrchestrationExecutionStatus = "blocked" | "execution_recorded";
+export type ExecutionAdapterOrchestrationExecutionConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterOrchestrationExecutionConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterOrchestrationExecutionConfirmationStatus;
+}
+
+export interface ExecutionAdapterOrchestrationExecutionResult {
+  schemaVersion: 1;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterOrchestrationExecutionStatus;
+  operator: string;
+  recordedAt: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterOrchestrationExecutionConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterOrchestrationExecutionRequest {
+  adapterId: string;
+  dryRunId: string;
+  operator?: string;
+  orchestrationExecutionMode?: string;
+  confirmations?: {
+    dryRunEvidenceReviewed?: boolean;
+    sandboxRouteLocked?: boolean;
+    killSwitchArmed?: boolean;
+    idempotencyKeyRecorded?: boolean;
+    operatorConfirmedNoCapital?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterOrchestrationExecutionRecordResult {
+  adapterOrchestrationExecution?: ExecutionAdapterOrchestrationExecutionResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterOrchestrationExecutionHistoryResult {
+  adapterOrchestrationExecutions: ExecutionAdapterOrchestrationExecutionResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -2833,6 +2901,10 @@ export function buildExecutionAdapterOrchestrationDryRunUrl(baseUrl: string): st
   return buildApiUrl(baseUrl, "api/execution/adapter-orchestration-dry-runs");
 }
 
+export function buildExecutionAdapterOrchestrationExecutionUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-orchestration-executions");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -2964,6 +3036,20 @@ export function buildExecutionAdapterOrchestrationDryRunHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-orchestration-dry-runs", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterOrchestrationExecutionHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-orchestration-executions", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -5607,6 +5693,52 @@ export async function recordExecutionAdapterOrchestrationDryRun(
   }
 }
 
+export async function recordExecutionAdapterOrchestrationExecution(
+  baseUrl: string,
+  request: ExecutionAdapterOrchestrationExecutionRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterOrchestrationExecutionRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterOrchestrationExecutionUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        dryRunId: request.dryRunId,
+        operator: request.operator ?? "local-operator",
+        orchestrationExecutionMode:
+          request.orchestrationExecutionMode ?? "manual_adapter_orchestration_execution",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterOrchestrationExecutionRecordPayload(payload)) {
+      return {
+        adapterOrchestrationExecution: payload.adapterOrchestrationExecution,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter orchestration execution contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter orchestration execution error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -5913,6 +6045,36 @@ export async function loadExecutionAdapterOrchestrationDryRuns(
       adapterOrchestrationDryRuns: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter orchestration dry run history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterOrchestrationExecutions(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterOrchestrationExecutionHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildExecutionAdapterOrchestrationExecutionHistoryUrl(baseUrl, { adapterId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterOrchestrationExecutionHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter orchestration execution history contract");
+    }
+    return {
+      adapterOrchestrationExecutions: payload.adapterOrchestrationExecutions,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterOrchestrationExecutions: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter orchestration execution history error"
     };
   }
 }
@@ -8301,6 +8463,22 @@ function isExecutionAdapterOrchestrationDryRunRecordPayload(
   );
 }
 
+function isExecutionAdapterOrchestrationExecutionRecordPayload(
+  value: unknown
+): value is {
+  adapterOrchestrationExecution: ExecutionAdapterOrchestrationExecutionResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterOrchestrationExecution?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterOrchestrationExecutionResult(payload.adapterOrchestrationExecution) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -8441,6 +8619,19 @@ function isExecutionAdapterOrchestrationDryRunHistoryPayload(
   return (
     Array.isArray(payload.adapterOrchestrationDryRuns) &&
     payload.adapterOrchestrationDryRuns.every(isExecutionAdapterOrchestrationDryRunResult)
+  );
+}
+
+function isExecutionAdapterOrchestrationExecutionHistoryPayload(
+  value: unknown
+): value is { adapterOrchestrationExecutions: ExecutionAdapterOrchestrationExecutionResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterOrchestrationExecutions?: unknown };
+  return (
+    Array.isArray(payload.adapterOrchestrationExecutions) &&
+    payload.adapterOrchestrationExecutions.every(isExecutionAdapterOrchestrationExecutionResult)
   );
 }
 
@@ -8774,6 +8965,48 @@ function isExecutionAdapterOrchestrationDryRunResult(
   );
 }
 
+function isExecutionAdapterOrchestrationExecutionResult(
+  value: unknown
+): value is ExecutionAdapterOrchestrationExecutionResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterOrchestrationExecutionResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterOrchestrationExecutionStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterOrchestrationExecutionConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -8967,6 +9200,20 @@ function isExecutionAdapterOrchestrationDryRunConfirmation(
   );
 }
 
+function isExecutionAdapterOrchestrationExecutionConfirmation(
+  value: unknown
+): value is ExecutionAdapterOrchestrationExecutionConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterOrchestrationExecutionConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -9027,6 +9274,12 @@ function isExecutionAdapterOrchestrationDryRunStatus(
   value: unknown
 ): value is ExecutionAdapterOrchestrationDryRunStatus {
   return value === "blocked" || value === "dry_run_recorded";
+}
+
+function isExecutionAdapterOrchestrationExecutionStatus(
+  value: unknown
+): value is ExecutionAdapterOrchestrationExecutionStatus {
+  return value === "blocked" || value === "execution_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
