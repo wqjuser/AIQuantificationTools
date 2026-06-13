@@ -82,6 +82,7 @@ from quant_core.execution import (
     build_execution_adapter_runtime_reload_acceptance,
     build_execution_adapter_runtime_reload_execution,
     build_execution_adapter_runtime_reload_plan,
+    build_execution_adapter_sandbox_probe_plan,
     build_execution_adapter_secret_materialization,
     build_execution_adapter_secret_reference,
     create_execution_adapter_certification_run,
@@ -113,6 +114,9 @@ from quant_core.execution import (
     execution_adapter_runtime_reload_plan_payload_from_audit_event,
     execution_adapter_runtime_reload_plan_to_audit_event_payload,
     execution_adapter_runtime_reload_plan_to_payload,
+    execution_adapter_sandbox_probe_plan_payload_from_audit_event,
+    execution_adapter_sandbox_probe_plan_to_audit_event_payload,
+    execution_adapter_sandbox_probe_plan_to_payload,
     execution_adapter_runtime_reload_acceptance_payload_from_audit_event,
     execution_adapter_runtime_reload_acceptance_to_audit_event_payload,
     execution_adapter_runtime_reload_acceptance_to_payload,
@@ -785,6 +789,47 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if human_confirmation.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-sandbox-probe-plans":
+            payload = self._read_json_body()
+            human_confirmation_id = str(payload.get("humanConfirmationId") or "").strip()
+            human_confirmation_event = self.audit_event_store.get(human_confirmation_id)
+            human_confirmation = (
+                execution_adapter_human_confirmation_payload_from_audit_event(human_confirmation_event)
+                if human_confirmation_event
+                else None
+            )
+            if not human_confirmation:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_human_confirmation_not_found",
+                        "humanConfirmationId": human_confirmation_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                sandbox_probe_plan = build_execution_adapter_sandbox_probe_plan(
+                    human_confirmation,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    probe_mode=str(payload.get("probeMode") or "manual_sandbox_probe_plan"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_sandbox_probe_plan", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_sandbox_probe_plan_to_audit_event_payload(sandbox_probe_plan)
+            )
+            self._send_json(
+                {
+                    "adapterSandboxProbePlan": execution_adapter_sandbox_probe_plan_to_payload(sandbox_probe_plan),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if sandbox_probe_plan.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -1845,6 +1890,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(human_confirmations) >= limit:
                     break
             self._send_json({"adapterHumanConfirmations": human_confirmations})
+            return
+        if parsed.path == "/api/execution/adapter-sandbox-probe-plans":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_sandbox_probe_plan_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            sandbox_probe_plan_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_sandbox_probe_plan",
+                limit=50,
+                query=adapter_id,
+            )
+            sandbox_probe_plans = []
+            for event in sandbox_probe_plan_events:
+                payload = execution_adapter_sandbox_probe_plan_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    sandbox_probe_plans.append(payload)
+                if len(sandbox_probe_plans) >= limit:
+                    break
+            self._send_json({"adapterSandboxProbePlans": sandbox_probe_plans})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

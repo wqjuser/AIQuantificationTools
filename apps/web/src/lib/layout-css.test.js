@@ -2205,6 +2205,57 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-human-confirmation-confirmation");
   });
 
+  test("renders adapter sandbox probe plan history and recording controls", () => {
+    expect(appSource).toContain("loadExecutionAdapterSandboxProbePlans(quantCoreBaseUrl");
+    expect(appSource).toContain("recordExecutionAdapterSandboxProbePlan,");
+    expect(appSource).toContain(
+      "setExecutionAdapterSandboxProbePlans(sandboxProbePlanResults.flatMap((result) => result.adapterSandboxProbePlans))"
+    );
+    expect(appSource).toContain("const executionAdapterSandboxProbePlanRows = buildExecutionAdapterSandboxProbePlanRows(");
+    expect(appSource).toContain("executionAdapterSandboxProbePlans");
+    expect(appSource).toContain("adapterSandboxProbePlanRows={executionAdapterSandboxProbePlanRows}");
+    expect(appSource).toContain("adapterSandboxProbePlanRows: ExecutionAdapterSandboxProbePlanRow[]");
+    expect(appSource).toContain('className="promotion-sandbox-probe-plan-evidence"');
+    expect(appSource).toContain('className={`promotion-sandbox-probe-plan-evidence-row');
+    expect(appSource).toContain('className="promotion-sandbox-probe-plan-empty"');
+    expect(appSource).toContain("等待 sandbox/testnet 探针计划");
+    expect(appSource).toContain("adapterSandboxProbePlanStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterSandboxProbePlanConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(appSource).toContain("interface ExecutionAdapterSandboxProbePlanConfirmations");
+    expect(appSource).toContain(
+      "const [adapterSandboxProbePlanConfirmations, setAdapterSandboxProbePlanConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterSandboxProbePlanId, setRecordingAdapterSandboxProbePlanId]"
+    );
+    expect(appSource).toContain("const updateAdapterSandboxProbePlanConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterSandboxProbePlan = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterSandboxProbePlan(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterSandboxProbePlans((current) => [");
+    expect(appSource).toContain(
+      "sandboxProbePlanConfirmations={adapterSandboxProbePlanConfirmations}"
+    );
+    expect(appSource).toContain("recordingSandboxProbePlanId={recordingAdapterSandboxProbePlanId}");
+    expect(appSource).toContain("sandboxProbePlanRows={executionAdapterSandboxProbePlanRows}");
+    expect(appSource).toContain("onRecordSandboxProbePlan={recordAdapterSandboxProbePlan}");
+    expect(appSource).toContain(
+      "onSandboxProbePlanConfirmationChange={updateAdapterSandboxProbePlanConfirmation}"
+    );
+    expect(appSource).toContain("sandboxProbePlanConfirmations: Record<string, ExecutionAdapterSandboxProbePlanConfirmations>");
+    expect(appSource).toContain("sandboxProbePlanRows: ExecutionAdapterSandboxProbePlanRow[]");
+    expect(appSource).toContain('className="adapter-sandbox-probe-plan-list"');
+    expect(appSource).toContain('className={`adapter-sandbox-probe-plan-row');
+    expect(appSource).toContain('className={`adapter-sandbox-probe-plan-confirmation');
+    expect(appSource).toContain("adapterSandboxProbePlanStatusLabel(i18n, probePlan.statusLabel)");
+    expect(appSource).toContain("adapterSandboxProbePlanConfirmationSummary(i18n, probePlan.confirmationSummary)");
+    expect(styles).toContain(".promotion-sandbox-probe-plan-evidence");
+    expect(styles).toContain(".promotion-sandbox-probe-plan-evidence-row");
+    expect(styles).toContain(".promotion-sandbox-probe-plan-empty");
+    expect(styles).toContain(".adapter-sandbox-probe-plan-list");
+    expect(styles).toContain(".adapter-sandbox-probe-plan-row");
+    expect(styles).toContain(".adapter-sandbox-probe-plan-confirmation");
+  });
+
   test("renders platform settings from local-core status when available", () => {
     expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
     expect(appSource).toContain("settingsStatus.settings");

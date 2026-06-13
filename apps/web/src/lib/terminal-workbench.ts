@@ -2758,6 +2758,82 @@ export interface ExecutionAdapterHumanConfirmationRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterSandboxProbePlanStatus = "blocked" | "probe_plan_recorded";
+export type ExecutionAdapterSandboxProbePlanConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSandboxProbePlanSnapshot {
+  schemaVersion: 1;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSandboxProbePlanStatus;
+  operator: string;
+  recordedAt: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterSandboxProbePlanConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSandboxProbePlanRow {
+  id: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSandboxProbePlanStatus;
+  statusLabel: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -11110,6 +11186,52 @@ export function buildExecutionAdapterHumanConfirmationRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSandboxProbePlanRows(
+  plans: ExecutionAdapterSandboxProbePlanSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSandboxProbePlanRow[] {
+  return (plans ?? [])
+    .map((row) => ({
+      id: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSandboxProbePlanStatusLabel(row.status),
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterSandboxProbePlanConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.sandboxProbePlanId,
+      tone: executionAdapterSandboxProbePlanTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -13614,6 +13736,31 @@ function executionAdapterHumanConfirmationStatusLabel(
 
 function executionAdapterHumanConfirmationConfirmationSummary(
   confirmations: ExecutionAdapterHumanConfirmationSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterSandboxProbePlanTone(
+  status: ExecutionAdapterSandboxProbePlanStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "probe_plan_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterSandboxProbePlanStatusLabel(
+  status: ExecutionAdapterSandboxProbePlanStatus
+): string {
+  return (
+    {
+      probe_plan_recorded: "Probe plan recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterSandboxProbePlanStatus, string>
+  )[status];
+}
+
+function executionAdapterSandboxProbePlanConfirmationSummary(
+  confirmations: ExecutionAdapterSandboxProbePlanSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
