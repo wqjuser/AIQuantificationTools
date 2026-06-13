@@ -18,7 +18,7 @@ Make the portfolio paper execution loop visibly traceable after a simulated fill
 - [x] Update product plan with the new visible execution trace.
 - [x] Run focused tests.
 - [x] Run broader verification, build, Docker smoke, and browser smoke.
-- [ ] Commit and push with proxy.
+- [x] Commit and push with proxy.
 
 ## Validation Notes
 
@@ -31,3 +31,4 @@ Make the portfolio paper execution loop visibly traceable after a simulated fill
 - Production build passed: `npm --prefix apps/web run build`; no large-chunk warning appeared.
 - Docker smoke passed: `npm run docker:smoke` rebuilt the stack, reported core health `ok`, and served web at `http://127.0.0.1:5173`.
 - Browser smoke passed against `http://127.0.0.1:5173/?workspace=execution`: execution panel and paper boundary rendered with zero console errors. The local container data had no simulated portfolio fills, so the latest-fill card correctly had zero instances in this smoke.
+- Commit and proxy push completed on `codex/p0-product-workspaces` as `4e5adc5`.
