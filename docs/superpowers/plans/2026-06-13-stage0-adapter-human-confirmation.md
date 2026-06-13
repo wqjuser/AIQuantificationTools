@@ -107,6 +107,10 @@ Verification completed:
 
 Run focused Python/Web tests, `npm --prefix apps/web run build`, `npm test`, `npm run docker:smoke`, browser checks, and `git diff --check`.
 
-- [ ] **Step 3: Ship**
+- [x] **Step 3: Ship**
 
 Commit implementation, push through `http://127.0.0.1:7890`, mark this plan shipped, commit the plan closure, and push again.
+
+Implementation shipped:
+- Commit `4c1d112` (`feat: add adapter human confirmation gate`)
+- Pushed `codex/p0-product-workspaces` to `origin` through `http://127.0.0.1:7890`
