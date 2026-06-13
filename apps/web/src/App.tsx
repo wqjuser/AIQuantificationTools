@@ -225,6 +225,7 @@ import {
   buildPortfolioBacktestDiagnosticRows,
   buildPortfolioBacktestReportMarkdown,
   buildPortfolioPaperOrderApprovalRows,
+  buildPortfolioPaperOrderLatestSimulationSummary,
   buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
@@ -331,6 +332,7 @@ import {
   PortfolioBacktestDraft,
   PortfolioBacktestDiagnosticRow,
   PortfolioPaperOrderApprovalRow,
+  PortfolioPaperOrderLatestSimulationSummary,
   PortfolioPaperOrderLifecycleRow,
   PortfolioPaperOrderReplayPositionRow,
   PortfolioPaperOrderReplaySummaryTile,
@@ -1270,6 +1272,11 @@ export function App() {
   );
   const portfolioPaperOrderReplaySummaryTiles = buildPortfolioPaperOrderReplaySummaryTiles(portfolioPaperOrderReplay);
   const portfolioPaperOrderReplayPositionRows = buildPortfolioPaperOrderReplayPositionRows(portfolioPaperOrderReplay);
+  const portfolioPaperOrderLatestSimulationSummary = buildPortfolioPaperOrderLatestSimulationSummary(
+    portfolioPaperOrderSimulations,
+    portfolioPaperOrderReplay,
+    portfolioPaperOrderStateHistories
+  );
   const portfolioPaperOrderStateHistoryRows =
     buildPortfolioPaperOrderStateHistoryRows(portfolioPaperOrderStateHistories);
   const persistedPaperTradingRows = activePaperExecutionRecord
@@ -5420,6 +5427,7 @@ export function App() {
             portfolioPaperOrderApprovalRows={portfolioPaperOrderApprovalRows}
             portfolioPaperOrderHistoryError={portfolioPaperOrderHistoryError}
             portfolioPaperOrderLifecycleRows={portfolioPaperOrderLifecycleRows}
+            portfolioPaperOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
             portfolioPaperOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioPaperOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
             portfolioPaperOrderSimulations={portfolioPaperOrderSimulations}
@@ -5450,6 +5458,7 @@ export function App() {
             onRejectPortfolioOrder={rejectPortfolioPaperOrder}
             onSimulatePortfolioOrder={simulatePortfolioPaperOrder}
             portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
+            portfolioOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
             portfolioOrderRows={portfolioPaperOrderLifecycleRows}
             portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
@@ -13371,6 +13380,7 @@ function ExecutionPanel({
   onSimulatePortfolioOrder,
   onSubmit,
   portfolioOrderApprovalRows = [],
+  portfolioOrderLatestSimulationSummary = null,
   portfolioOrderReplayPositionRows = [],
   portfolioOrderReplaySummaryTiles = [],
   portfolioOrderRows = [],
@@ -13391,6 +13401,7 @@ function ExecutionPanel({
   onSimulatePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSubmit?: () => void;
   portfolioOrderApprovalRows?: PortfolioPaperOrderApprovalRow[];
+  portfolioOrderLatestSimulationSummary?: PortfolioPaperOrderLatestSimulationSummary | null;
   portfolioOrderReplayPositionRows?: PortfolioPaperOrderReplayPositionRow[];
   portfolioOrderReplaySummaryTiles?: PortfolioPaperOrderReplaySummaryTile[];
   portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
@@ -13401,6 +13412,8 @@ function ExecutionPanel({
   summaryTiles: PaperExecutionSummaryTile[];
   workspace: TerminalWorkspace;
 }) {
+  const [portfolioOrderFocusedStateId, setPortfolioOrderFocusedStateId] = useState<string | null>(null);
+
   return (
     <Panel
       title={i18n.t("panel.execution.title")}
@@ -13455,6 +13468,31 @@ function ExecutionPanel({
           </span>
         ))}
       </div>
+      {portfolioOrderLatestSimulationSummary ? (
+        <div className={`portfolio-order-latest-simulation ${portfolioOrderLatestSimulationSummary.tone}`}>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "最近模拟成交" : "Latest paper fill"}</span>
+            <strong>{portfolioOrderLatestSimulationSummary.fillLabel}</strong>
+            <p>{portfolioOrderLatestSimulationSummary.orderLabel}</p>
+          </div>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "账户回放" : "Replay account"}</span>
+            <strong>{portfolioOrderLatestSimulationSummary.accountLabel}</strong>
+            <p>{portfolioOrderLatestSimulationSummary.timelineLabel}</p>
+          </div>
+          <button
+            className="portfolio-order-latest-simulation-action"
+            disabled={!portfolioOrderLatestSimulationSummary.stateEventId}
+            onClick={() => setPortfolioOrderFocusedStateId(portfolioOrderLatestSimulationSummary.stateEventId)}
+            title={portfolioOrderLatestSimulationSummary.focusQuery}
+            type="button"
+          >
+            <Search size={13} />
+            {i18n.locale === "zh-CN" ? "定位流水" : "Focus timeline"}
+          </button>
+          <em>{portfolioOrderLatestSimulationSummary.boundaryLabel}</em>
+        </div>
+      ) : null}
       <div className="paper-blotter">
         <div className="paper-blotter-title">
           <span>{i18n.t("execution.paperBlotter")}</span>
@@ -13519,7 +13557,12 @@ function ExecutionPanel({
           </div>
           <div className="portfolio-order-state-list">
             {portfolioOrderStateHistoryRows.map((row) => (
-              <article className={`portfolio-order-state-row ${row.tone}`} key={row.id}>
+              <article
+                className={`portfolio-order-state-row ${row.tone}${
+                  portfolioOrderFocusedStateId === row.id ? " focused" : ""
+                }`}
+                key={row.id}
+              >
                 <div>
                   <strong>
                     {row.symbol} · {portfolioOrderStateLabel(i18n, row)}
@@ -13745,6 +13788,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderApprovalRows,
   portfolioPaperOrderHistoryError,
   portfolioPaperOrderLifecycleRows,
+  portfolioPaperOrderLatestSimulationSummary,
   portfolioPaperOrderReplayPositionRows,
   portfolioPaperOrderReplaySummaryTiles,
   portfolioPaperOrderSimulations,
@@ -13781,6 +13825,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderApprovalRows: PortfolioPaperOrderApprovalRow[];
   portfolioPaperOrderHistoryError: string | null;
   portfolioPaperOrderLifecycleRows: PortfolioPaperOrderLifecycleRow[];
+  portfolioPaperOrderLatestSimulationSummary: PortfolioPaperOrderLatestSimulationSummary | null;
   portfolioPaperOrderReplayPositionRows: PortfolioPaperOrderReplayPositionRow[];
   portfolioPaperOrderReplaySummaryTiles: PortfolioPaperOrderReplaySummaryTile[];
   portfolioPaperOrderSimulations: PortfolioPaperOrderSimulation[];
@@ -14217,6 +14262,7 @@ function PortfolioWorkspace({
         onSimulatePortfolioOrder={onSimulatePortfolioOrder}
         onSubmit={onSubmitPaperExecution}
         portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
+        portfolioOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
         portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
         portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
         portfolioOrderRows={portfolioPaperOrderLifecycleRows}

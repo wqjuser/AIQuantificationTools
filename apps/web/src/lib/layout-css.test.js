@@ -1725,6 +1725,20 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".portfolio-order-simulation-list");
   });
 
+  test("renders the latest portfolio paper fill as a timeline focus cue", () => {
+    expect(appSource).toContain("buildPortfolioPaperOrderLatestSimulationSummary");
+    expect(appSource).toContain("portfolioPaperOrderSimulations");
+    expect(appSource).toContain("portfolioPaperOrderReplay");
+    expect(appSource).toContain("portfolioPaperOrderStateHistories");
+    expect(appSource).toContain("portfolioOrderLatestSimulationSummary");
+    expect(appSource).toContain("setPortfolioOrderFocusedStateId");
+    expect(appSource).toContain('className={`portfolio-order-latest-simulation ${portfolioOrderLatestSimulationSummary.tone}`}');
+    expect(appSource).toContain('className={`portfolio-order-state-row ${row.tone}${');
+    expect(styles).toContain(".portfolio-order-latest-simulation");
+    expect(styles).toContain(".portfolio-order-latest-simulation-action");
+    expect(styles).toContain(".portfolio-order-state-row.focused");
+  });
+
   test("renders portfolio paper order replay as account and position state", () => {
     expect(appSource).toContain("loadPortfolioPaperOrderReplay");
     expect(appSource).toContain("buildPortfolioPaperOrderReplaySummaryTiles(portfolioPaperOrderReplay)");

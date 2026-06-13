@@ -944,6 +944,24 @@ export interface PortfolioPaperOrderReplayPositionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PortfolioPaperOrderLatestSimulationSummary {
+  id: string;
+  simulationId: string;
+  batchId: string;
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  simulatedAt: string;
+  fillLabel: string;
+  orderLabel: string;
+  accountLabel: string;
+  timelineLabel: string;
+  boundaryLabel: string;
+  focusQuery: string;
+  stateEventId: string | null;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface PortfolioPaperOrderStateHistoryEventSnapshot {
   eventId: string;
   batchId: string;
@@ -10089,6 +10107,61 @@ export function buildPortfolioPaperOrderReplayPositionRows(
       unrealizedPnl: formatSignedCurrency(position.unrealizedPnl),
       tone: position.unrealizedPnl > 0 ? "positive" : position.unrealizedPnl < 0 ? "warning" : "neutral"
     }));
+}
+
+export function buildPortfolioPaperOrderLatestSimulationSummary(
+  simulations: PortfolioPaperOrderSimulationSnapshot[] | null | undefined,
+  replay: PortfolioPaperOrderReplaySnapshot | null | undefined,
+  histories: PortfolioPaperOrderStateHistorySnapshot[] | null | undefined
+): PortfolioPaperOrderLatestSimulationSummary | null {
+  const latest = [...(simulations ?? [])].sort(
+    (left, right) => right.simulatedAt.localeCompare(left.simulatedAt) || right.simulationId.localeCompare(left.simulationId)
+  )[0];
+  if (!latest) {
+    return null;
+  }
+
+  const replayOrder = replay?.orders.find(
+    (order) =>
+      order.simulationId === latest.simulationId ||
+      (order.batchId === latest.batchId && order.orderId === latest.orderId && order.symbol === latest.symbol)
+  );
+  const stateEvent =
+    histories
+      ?.flatMap((history) => history.orders)
+      .filter(
+        (order) => order.batchId === latest.batchId && order.orderId === latest.orderId && order.symbol === latest.symbol
+      )
+      .flatMap((order) => order.events)
+      .filter((event) => event.state === "simulation_filled")
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.eventId.localeCompare(left.eventId))[0] ?? null;
+  const cashAfter = replayOrder?.cashAfter ?? replay?.account.cash;
+  const positionAfter = replayOrder?.positionAfter ?? replay?.account.positions[latest.symbol];
+  const timelineLabel = stateEvent
+    ? `${stateEvent.label} · ${stateEvent.actor || stateEvent.source} · ${stateEvent.reason}`
+    : "Simulation recorded · paper-simulator · State history pending.";
+
+  return {
+    id: `portfolio-latest-simulation-${latest.simulationId}`,
+    simulationId: latest.simulationId,
+    batchId: latest.batchId,
+    orderId: latest.orderId,
+    symbol: latest.symbol,
+    side: latest.side,
+    simulatedAt: latest.simulatedAt,
+    fillLabel: `${latest.symbol} · ${latest.side} · ${formatQuantity(latest.quantity)} @ ${formatQuantity(latest.fillPrice)}`,
+    orderLabel: `${latest.orderId} · Notional ${formatAssumptionCurrency(latest.notionalValue)}`,
+    accountLabel: `Cash ${cashAfter === undefined ? "-" : formatAssumptionCurrency(cashAfter)} / Position ${
+      positionAfter === undefined ? "-" : formatQuantity(positionAfter)
+    }`,
+    timelineLabel,
+    boundaryLabel: `${latest.paperOnly ? "Paper only" : "Live route"} · ${
+      latest.liveExecutionBlocked ? "live blocked" : "live route open"
+    }`,
+    focusQuery: `${latest.simulationId} ${latest.batchId} ${latest.orderId} ${latest.symbol} simulation_filled`,
+    stateEventId: stateEvent?.eventId ?? null,
+    tone: latest.paperOnly && latest.liveExecutionBlocked ? "positive" : "risk"
+  };
 }
 
 export function buildPortfolioPaperOrderStateHistoryRows(

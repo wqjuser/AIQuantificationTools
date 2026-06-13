@@ -74,6 +74,7 @@ import {
   buildPortfolioPaperOrderLifecycleRows,
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
+  buildPortfolioPaperOrderLatestSimulationSummary,
   buildPortfolioPaperOrderStateHistoryRows,
   buildPortfolioPeerAuditPlan,
   buildProductDevelopmentStages,
@@ -10035,6 +10036,166 @@ describe("terminal workbench model", () => {
         tone: "neutral"
       }
     ]);
+  });
+
+  test("builds a latest portfolio paper simulation summary with timeline focus", () => {
+    const simulations = [
+      {
+        simulationId: "sim-old",
+        baseRunId: "portfolio-run-sim",
+        batchId: "portfolio-paper-batch-old",
+        orderId: "portfolio-paper-run-a-buy",
+        simulatedAt: "2026-05-27T08:46:00+00:00",
+        mode: "portfolio_paper_order_simulation" as const,
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy" as const,
+        quantity: 1000,
+        fillPrice: 9.2,
+        notionalValue: 9200,
+        orderState: "filled" as const,
+        fillStatus: "filled" as const,
+        reason: "Filled in simulator.",
+        approvedBy: "operator-a",
+        paperOnly: true,
+        liveExecutionBlocked: true
+      },
+      {
+        simulationId: "sim-new",
+        baseRunId: "portfolio-run-sim",
+        batchId: "portfolio-paper-batch-new",
+        orderId: "portfolio-paper-run-b-sell",
+        simulatedAt: "2026-05-27T09:12:00+00:00",
+        mode: "portfolio_paper_order_simulation" as const,
+        symbol: "000300",
+        sourceRunId: "run-b",
+        side: "sell" as const,
+        quantity: 800,
+        fillPrice: 3898.22,
+        notionalValue: 3118576,
+        orderState: "filled" as const,
+        fillStatus: "filled" as const,
+        reason: "Filled in simulator.",
+        approvedBy: "operator-b",
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    ];
+    const replay = {
+      schemaVersion: 1 as const,
+      baseRunId: "portfolio-run-sim",
+      generatedAt: "2026-05-27T09:13:00+00:00",
+      mode: "portfolio_paper_order_replay" as const,
+      initialCash: 100000,
+      account: { cash: 140000, equity: 256000, positions: { "000300": 800 } },
+      positions: [],
+      orders: [
+        {
+          simulationId: "sim-new",
+          batchId: "portfolio-paper-batch-new",
+          orderId: "portfolio-paper-run-b-sell",
+          simulatedAt: "2026-05-27T09:12:00+00:00",
+          symbol: "000300",
+          side: "sell" as const,
+          quantity: 800,
+          fillPrice: 3898.22,
+          notionalValue: 3118576,
+          cashAfter: 140000,
+          positionAfter: 800,
+          replayState: "applied" as const,
+          paperOnly: true,
+          liveExecutionBlocked: true
+        }
+      ],
+      summary: {
+        filledOrders: 2,
+        buyNotional: 9200,
+        sellNotional: 3118576,
+        netNotional: -3109376,
+        realizedPnl: 0,
+        unrealizedPnl: 0,
+        positionCount: 1,
+        warnings: []
+      },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const histories = [
+      {
+        schemaVersion: 1 as const,
+        baseRunId: "portfolio-run-sim",
+        batchId: "portfolio-paper-batch-new",
+        portfolioName: "A-share state basket",
+        generatedAt: "2026-05-27T09:13:00+00:00",
+        mode: "portfolio_paper_order_state_history" as const,
+        summary: {
+          orderCount: 1,
+          eventCount: 1,
+          approvedOrders: 1,
+          rejectedOrders: 0,
+          filledOrders: 1,
+          liveBlockedEvents: 0,
+          stateCounts: { simulation_filled: 1 }
+        },
+        orders: [
+          {
+            batchId: "portfolio-paper-batch-new",
+            baseRunId: "portfolio-run-sim",
+            portfolioName: "A-share state basket",
+            orderId: "portfolio-paper-run-b-sell",
+            symbol: "000300",
+            sourceRunId: "run-b",
+            side: "sell" as const,
+            quantity: 800,
+            notionalValue: 3118576,
+            originalStatus: "pending_review" as const,
+            riskStatus: "passed" as const,
+            currentState: "simulation_filled",
+            currentStateLabel: "Paper simulation filled",
+            events: [
+              {
+                eventId: "state-filled-new",
+                batchId: "portfolio-paper-batch-new",
+                baseRunId: "portfolio-run-sim",
+                orderId: "portfolio-paper-run-b-sell",
+                timestamp: "2026-05-27T09:12:00+00:00",
+                state: "simulation_filled",
+                label: "Paper simulation filled",
+                actor: "operator-b",
+                source: "paper-simulator",
+                reason: "Filled in simulator.",
+                paperOnly: true,
+                liveExecutionBlocked: true
+              }
+            ],
+            paperOnly: true,
+            liveExecutionBlocked: true
+          }
+        ],
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    ];
+
+    const summary = buildPortfolioPaperOrderLatestSimulationSummary(simulations, replay, histories);
+
+    expect(summary).toEqual({
+      id: "portfolio-latest-simulation-sim-new",
+      simulationId: "sim-new",
+      batchId: "portfolio-paper-batch-new",
+      orderId: "portfolio-paper-run-b-sell",
+      symbol: "000300",
+      side: "sell",
+      simulatedAt: "2026-05-27T09:12:00+00:00",
+      fillLabel: "000300 · sell · 800 @ 3898.22",
+      orderLabel: "portfolio-paper-run-b-sell · Notional 3,118,576",
+      accountLabel: "Cash 140,000 / Position 800",
+      timelineLabel: "Paper simulation filled · operator-b · Filled in simulator.",
+      boundaryLabel: "Paper only · live blocked",
+      focusQuery: "sim-new portfolio-paper-batch-new portfolio-paper-run-b-sell 000300 simulation_filled",
+      stateEventId: "state-filled-new",
+      tone: "positive"
+    });
   });
 
   test("builds compact portfolio paper order state history rows", () => {

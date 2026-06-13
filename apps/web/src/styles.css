@@ -7892,6 +7892,83 @@ em {
   opacity: 0.45;
 }
 
+.portfolio-order-latest-simulation {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.2fr) minmax(240px, 1.4fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #101925;
+  padding: 10px 12px;
+}
+
+.portfolio-order-latest-simulation.warning {
+  border-left-color: #e8be62;
+}
+
+.portfolio-order-latest-simulation.risk {
+  border-left-color: #ff7f6d;
+}
+
+.portfolio-order-latest-simulation span,
+.portfolio-order-latest-simulation strong,
+.portfolio-order-latest-simulation p,
+.portfolio-order-latest-simulation em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-order-latest-simulation span {
+  display: block;
+  color: #9cadbd;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.portfolio-order-latest-simulation strong {
+  display: block;
+  margin-top: 3px;
+  color: #dce6ee;
+  font-size: 13px;
+}
+
+.portfolio-order-latest-simulation p {
+  margin: 4px 0 0;
+  color: #9cadbd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.portfolio-order-latest-simulation em {
+  color: #71dfc5;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  text-align: right;
+}
+
+.portfolio-order-latest-simulation-action {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 1px solid #2d5f8d;
+  border-radius: 7px;
+  background: #10263d;
+  color: #9ad1ff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.portfolio-order-latest-simulation-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .portfolio-order-state-history {
   display: grid;
   gap: 8px;
@@ -7930,6 +8007,11 @@ em {
 
 .portfolio-order-state-row.neutral {
   border-left-color: #2a3b51;
+}
+
+.portfolio-order-state-row.focused {
+  border-color: #71dfc5;
+  box-shadow: 0 0 0 1px rgba(113, 223, 197, 0.35);
 }
 
 .portfolio-order-state-row strong,
@@ -8467,6 +8549,16 @@ em {
 
 .paper-position-title strong {
   color: #dce6ee;
+}
+
+@media (max-width: 920px) {
+  .portfolio-order-latest-simulation {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-order-latest-simulation em {
+    text-align: left;
+  }
 }
 
 .paper-position-table {
