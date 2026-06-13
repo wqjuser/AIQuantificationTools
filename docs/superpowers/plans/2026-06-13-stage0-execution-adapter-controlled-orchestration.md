@@ -28,4 +28,4 @@ Add the next safe evidence layer after adapter orchestration dry-run: a controll
 - [x] GREEN: frontend typed API and row model pass.
 - [x] DOCS: update product plan and close this plan.
 - [x] VERIFY: run focused tests, full tests/build, docker smoke.
-- [ ] SHIP: commit and push through the configured proxy.
+- [x] SHIP: committed as `c357aa4` and pushed through the configured proxy.
