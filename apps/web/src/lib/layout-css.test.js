@@ -1739,6 +1739,16 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".portfolio-order-state-row.focused");
   });
 
+  test("renders portfolio paper simulation route checks before fills", () => {
+    expect(appSource).toContain("buildPortfolioPaperOrderSimulationRouteRows");
+    expect(appSource).toContain("portfolioPaperOrderSimulationRouteRows");
+    expect(appSource).toContain("portfolioOrderSimulationRouteRows");
+    expect(appSource).toContain('className="portfolio-simulation-route"');
+    expect(appSource).toContain('className={`portfolio-simulation-route-row ${row.tone}`}');
+    expect(styles).toContain(".portfolio-simulation-route");
+    expect(styles).toContain(".portfolio-simulation-route-row");
+  });
+
   test("renders portfolio paper order replay as account and position state", () => {
     expect(appSource).toContain("loadPortfolioPaperOrderReplay");
     expect(appSource).toContain("buildPortfolioPaperOrderReplaySummaryTiles(portfolioPaperOrderReplay)");

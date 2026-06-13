@@ -227,6 +227,7 @@ import {
   buildPortfolioPaperOrderApprovalRows,
   buildPortfolioPaperOrderLatestSimulationSummary,
   buildPortfolioPaperOrderLifecycleRows,
+  buildPortfolioPaperOrderSimulationRouteRows,
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
   buildPortfolioPaperOrderStateHistoryRows,
@@ -334,6 +335,7 @@ import {
   PortfolioPaperOrderApprovalRow,
   PortfolioPaperOrderLatestSimulationSummary,
   PortfolioPaperOrderLifecycleRow,
+  PortfolioPaperOrderSimulationRouteRow,
   PortfolioPaperOrderReplayPositionRow,
   PortfolioPaperOrderReplaySummaryTile,
   PortfolioPaperOrderStateHistoryRow,
@@ -1279,6 +1281,11 @@ export function App() {
   );
   const portfolioPaperOrderStateHistoryRows =
     buildPortfolioPaperOrderStateHistoryRows(portfolioPaperOrderStateHistories);
+  const portfolioPaperOrderSimulationRouteRows = buildPortfolioPaperOrderSimulationRouteRows(
+    portfolioPaperOrderApprovalRows,
+    portfolioPaperOrderSimulations,
+    portfolioPaperOrderStateHistoryRows
+  );
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -5430,6 +5437,7 @@ export function App() {
             portfolioPaperOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
             portfolioPaperOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioPaperOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
+            portfolioPaperOrderSimulationRouteRows={portfolioPaperOrderSimulationRouteRows}
             portfolioPaperOrderSimulations={portfolioPaperOrderSimulations}
             portfolioPaperOrderStateHistoryRows={portfolioPaperOrderStateHistoryRows}
             portfolioPeerAuditPlan={portfolioPeerAuditPlan}
@@ -5462,6 +5470,7 @@ export function App() {
             portfolioOrderRows={portfolioPaperOrderLifecycleRows}
             portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
+            portfolioOrderSimulationRouteRows={portfolioPaperOrderSimulationRouteRows}
             portfolioOrderSimulations={portfolioPaperOrderSimulations}
             portfolioOrderStateHistoryRows={portfolioPaperOrderStateHistoryRows}
             rows={visiblePaperTradingRows}
@@ -13384,6 +13393,7 @@ function ExecutionPanel({
   portfolioOrderReplayPositionRows = [],
   portfolioOrderReplaySummaryTiles = [],
   portfolioOrderRows = [],
+  portfolioOrderSimulationRouteRows = [],
   portfolioOrderSimulations = [],
   portfolioOrderStateHistoryRows = [],
   rows,
@@ -13405,6 +13415,7 @@ function ExecutionPanel({
   portfolioOrderReplayPositionRows?: PortfolioPaperOrderReplayPositionRow[];
   portfolioOrderReplaySummaryTiles?: PortfolioPaperOrderReplaySummaryTile[];
   portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
+  portfolioOrderSimulationRouteRows?: PortfolioPaperOrderSimulationRouteRow[];
   portfolioOrderSimulations?: PortfolioPaperOrderSimulation[];
   portfolioOrderStateHistoryRows?: PortfolioPaperOrderStateHistoryRow[];
   rows: PaperTradingRow[];
@@ -13573,6 +13584,31 @@ function ExecutionPanel({
                 <em>
                   {formatChartDate(row.timestamp)} · {row.actor || row.source}
                 </em>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {portfolioOrderSimulationRouteRows.length ? (
+        <div className="portfolio-simulation-route">
+          <div className="paper-blotter-title">
+            <span>{i18n.locale === "zh-CN" ? "模拟路由检查" : "Simulation route checks"}</span>
+            <strong>{portfolioOrderSimulationRouteRows.filter((row) => row.canSimulate).length}</strong>
+          </div>
+          <div className="portfolio-simulation-route-list">
+            {portfolioOrderSimulationRouteRows.map((row) => (
+              <article className={`portfolio-simulation-route-row ${row.tone}`} key={row.id}>
+                <div>
+                  <strong>
+                    {row.symbol} · {portfolioTradeReviewSideLabel(i18n, row.side)}
+                  </strong>
+                  <span>{row.orderId}</span>
+                </div>
+                <div>
+                  <span>{portfolioSimulationRouteStatusLabel(i18n, row)}</span>
+                  <p>{portfolioSimulationRouteDetail(i18n, row)}</p>
+                </div>
+                <em title={row.focusQuery}>{portfolioSimulationRouteStateLabel(i18n, row)}</em>
               </article>
             ))}
           </div>
@@ -13791,6 +13827,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderLatestSimulationSummary,
   portfolioPaperOrderReplayPositionRows,
   portfolioPaperOrderReplaySummaryTiles,
+  portfolioPaperOrderSimulationRouteRows,
   portfolioPaperOrderSimulations,
   portfolioPaperOrderStateHistoryRows,
   portfolioPeerAuditPlan,
@@ -13828,6 +13865,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderLatestSimulationSummary: PortfolioPaperOrderLatestSimulationSummary | null;
   portfolioPaperOrderReplayPositionRows: PortfolioPaperOrderReplayPositionRow[];
   portfolioPaperOrderReplaySummaryTiles: PortfolioPaperOrderReplaySummaryTile[];
+  portfolioPaperOrderSimulationRouteRows: PortfolioPaperOrderSimulationRouteRow[];
   portfolioPaperOrderSimulations: PortfolioPaperOrderSimulation[];
   portfolioPaperOrderStateHistoryRows: PortfolioPaperOrderStateHistoryRow[];
   portfolioPeerAuditPlan: PortfolioPeerAuditPlan;
@@ -14265,6 +14303,7 @@ function PortfolioWorkspace({
         portfolioOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
         portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
         portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
+        portfolioOrderSimulationRouteRows={portfolioPaperOrderSimulationRouteRows}
         portfolioOrderRows={portfolioPaperOrderLifecycleRows}
         portfolioOrderSimulations={portfolioPaperOrderSimulations}
         portfolioOrderStateHistoryRows={portfolioPaperOrderStateHistoryRows}
@@ -15487,6 +15526,54 @@ function portfolioOrderStateReason(i18n: AppI18n, row: PortfolioPaperOrderStateH
     .replace("Paper-only simulation filled the approved portfolio order; live execution remains blocked.", "已对批准的组合委托完成 paper-only 模拟成交；实盘仍阻断。")
     .replace("Operator approved this paper-only portfolio order for simulation.", "人工批准该 paper-only 组合委托进入模拟成交。")
     .replace("Operator rejected this paper-only portfolio order before simulation.", "人工在模拟成交前拒绝该 paper-only 组合委托。");
+}
+
+function portfolioSimulationRouteStatusLabel(i18n: AppI18n, row: PortfolioPaperOrderSimulationRouteRow): string {
+  if (i18n.locale === "en-US") {
+    return row.statusLabel;
+  }
+  return (
+    {
+      "Ready for simulator": "可进入模拟器",
+      "Waiting for operator review": "等待人工复核",
+      "Waiting for risk review": "等待风控复核",
+      "Already simulated": "已模拟成交",
+      "Risk blocked": "风控阻断",
+      "Operator rejected": "人工拒绝",
+      "Invalid order": "无效委托",
+      Skipped: "已跳过"
+    }[row.statusLabel] ?? row.statusLabel
+  );
+}
+
+function portfolioSimulationRouteDetail(i18n: AppI18n, row: PortfolioPaperOrderSimulationRouteRow): string {
+  if (i18n.locale === "en-US") {
+    return row.detail;
+  }
+  return row.detail
+    .replace(
+      "Approved paper-only order can use the local simulator; live broker route remains blocked.",
+      "已批准的 paper-only 委托可进入本地模拟器；真实券商通道仍保持阻断。"
+    )
+    .replace(/^Filled by (.+); duplicate simulator route is blocked\.$/u, "已由 $1 成交；重复模拟路由已阻断。")
+    .replace("Approval evidence is required before the local simulator can be used.", "需要审批证据后才能使用本地模拟器。")
+    .replace("Hold or skipped orders are not routed to the simulator.", "持有或跳过委托不会进入模拟器。")
+    .replace("Risk or operator state blocks the local simulator route.", "风控或人工状态阻断本地模拟器路由。")
+    .replace(/^Risk blocked\.$/u, "风控阻断。")
+    .replace(/^Awaiting operator\.$/u, "等待人工复核。")
+    .replace(/^Ready\.$/u, "可进入模拟器。");
+}
+
+function portfolioSimulationRouteStateLabel(i18n: AppI18n, row: PortfolioPaperOrderSimulationRouteRow): string {
+  if (i18n.locale === "en-US") {
+    return row.latestStateLabel;
+  }
+  return row.latestStateLabel
+    .replace("Ready for simulation", "可模拟路由")
+    .replace("Paper simulation filled", "模拟成交")
+    .replace("No timeline event yet", "暂无状态流水")
+    .replace("operator-a", "operator-a")
+    .replace("operator-b", "operator-b");
 }
 
 function portfolioPaperOrderApprovalHint(i18n: AppI18n, row: PortfolioPaperOrderApprovalRow): string {

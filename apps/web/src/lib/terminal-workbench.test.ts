@@ -72,6 +72,7 @@ import {
   buildPortfolioBacktestReportMarkdown,
   buildPortfolioPaperOrderApprovalRows,
   buildPortfolioPaperOrderLifecycleRows,
+  buildPortfolioPaperOrderSimulationRouteRows,
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
   buildPortfolioPaperOrderLatestSimulationSummary,
@@ -10195,6 +10196,177 @@ describe("terminal workbench model", () => {
       focusQuery: "sim-new portfolio-paper-batch-new portfolio-paper-run-b-sell 000300 simulation_filled",
       stateEventId: "state-filled-new",
       tone: "positive"
+    });
+  });
+
+  test("builds portfolio paper simulation route rows from approvals, fills, and state history", () => {
+    const approvals = [
+      {
+        id: "batch-route:ready-order",
+        portfolioName: "Route basket",
+        batchId: "batch-route",
+        baseRunId: "run-route",
+        orderId: "ready-order",
+        symbol: "600000",
+        side: "buy" as const,
+        quantity: 1000,
+        notionalValue: 9200,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        canApprove: false,
+        canReject: false,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:40:00+00:00",
+        actionHint: "Ready.",
+        tone: "positive" as const
+      },
+      {
+        id: "batch-route:waiting-order",
+        portfolioName: "Route basket",
+        batchId: "batch-route",
+        baseRunId: "run-route",
+        orderId: "waiting-order",
+        symbol: "000300",
+        side: "sell" as const,
+        quantity: 800,
+        notionalValue: 3118576,
+        riskStatus: "passed" as const,
+        state: "awaiting_operator_review" as const,
+        canApprove: true,
+        canReject: true,
+        approvedBy: null,
+        reviewedAt: null,
+        actionHint: "Awaiting operator.",
+        tone: "warning" as const
+      },
+      {
+        id: "batch-route:filled-order",
+        portfolioName: "Route basket",
+        batchId: "batch-route",
+        baseRunId: "run-route",
+        orderId: "filled-order",
+        symbol: "600519",
+        side: "buy" as const,
+        quantity: 10,
+        notionalValue: 12733.8,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        canApprove: false,
+        canReject: false,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:44:00+00:00",
+        actionHint: "Ready.",
+        tone: "positive" as const
+      },
+      {
+        id: "batch-route:blocked-order",
+        portfolioName: "Route basket",
+        batchId: "batch-route",
+        baseRunId: "run-route",
+        orderId: "blocked-order",
+        symbol: "AAPL",
+        side: "buy" as const,
+        quantity: 40,
+        notionalValue: 7648,
+        riskStatus: "blocked" as const,
+        state: "risk_rejected" as const,
+        canApprove: false,
+        canReject: false,
+        approvedBy: null,
+        reviewedAt: null,
+        actionHint: "Risk blocked.",
+        tone: "risk" as const
+      }
+    ];
+    const simulations = [
+      {
+        simulationId: "sim-filled-route",
+        baseRunId: "run-route",
+        batchId: "batch-route",
+        orderId: "filled-order",
+        simulatedAt: "2026-05-27T09:12:00+00:00",
+        mode: "portfolio_paper_order_simulation" as const,
+        symbol: "600519",
+        sourceRunId: "run-filled",
+        side: "buy" as const,
+        quantity: 10,
+        fillPrice: 1273.38,
+        notionalValue: 12733.8,
+        orderState: "filled" as const,
+        fillStatus: "filled" as const,
+        reason: "Already filled.",
+        approvedBy: "operator-a",
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    ];
+    const stateRows = [
+      {
+        id: "state-ready",
+        batchId: "batch-route",
+        baseRunId: "run-route",
+        orderId: "ready-order",
+        symbol: "600000",
+        timestamp: "2026-05-27T08:41:00+00:00",
+        state: "ready_for_simulation",
+        label: "Ready for simulation",
+        actor: "operator-a",
+        source: "portfolio-paper-approval",
+        reason: "Operator approved.",
+        quantity: "1000",
+        notionalValue: "9200.00",
+        tone: "positive" as const
+      },
+      {
+        id: "state-filled-route",
+        batchId: "batch-route",
+        baseRunId: "run-route",
+        orderId: "filled-order",
+        symbol: "600519",
+        timestamp: "2026-05-27T09:12:00+00:00",
+        state: "simulation_filled",
+        label: "Paper simulation filled",
+        actor: "operator-a",
+        source: "paper-simulator",
+        reason: "Already filled.",
+        quantity: "10",
+        notionalValue: "12733.80",
+        tone: "positive" as const
+      }
+    ];
+
+    const rows = buildPortfolioPaperOrderSimulationRouteRows(approvals, simulations, stateRows);
+
+    expect(rows.map((row) => row.routeState)).toEqual(["ready", "waiting_review", "filled", "blocked"]);
+    expect(rows[0]).toMatchObject({
+      id: "portfolio-simulation-route-batch-route-ready-order",
+      orderId: "ready-order",
+      statusLabel: "Ready for simulator",
+      detail: "Approved paper-only order can use the local simulator; live broker route remains blocked.",
+      canSimulate: true,
+      latestStateLabel: "Ready for simulation · operator-a",
+      focusQuery: "batch-route ready-order 600000 ready_for_simulation",
+      tone: "positive"
+    });
+    expect(rows[1]).toMatchObject({
+      orderId: "waiting-order",
+      statusLabel: "Waiting for operator review",
+      canSimulate: false,
+      tone: "warning"
+    });
+    expect(rows[2]).toMatchObject({
+      orderId: "filled-order",
+      statusLabel: "Already simulated",
+      detail: "Filled by sim-filled-route; duplicate simulator route is blocked.",
+      canSimulate: false,
+      latestStateLabel: "Paper simulation filled · operator-a",
+      tone: "neutral"
+    });
+    expect(rows[3]).toMatchObject({
+      orderId: "blocked-order",
+      statusLabel: "Risk blocked",
+      canSimulate: false,
+      tone: "risk"
     });
   });
 

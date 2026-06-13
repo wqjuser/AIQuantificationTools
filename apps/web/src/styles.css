@@ -8046,6 +8046,79 @@ em {
   font-weight: 800;
 }
 
+.portfolio-simulation-route {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.portfolio-simulation-route-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.portfolio-simulation-route-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(170px, 1.2fr) minmax(120px, 0.8fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 78px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101925;
+  padding: 9px 10px;
+}
+
+.portfolio-simulation-route-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.portfolio-simulation-route-row.warning {
+  border-left-color: #e8be62;
+}
+
+.portfolio-simulation-route-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.portfolio-simulation-route-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.portfolio-simulation-route-row strong,
+.portfolio-simulation-route-row span,
+.portfolio-simulation-route-row p,
+.portfolio-simulation-route-row em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-simulation-route-row strong {
+  display: block;
+  color: #dce6ee;
+  font-size: 13px;
+}
+
+.portfolio-simulation-route-row span,
+.portfolio-simulation-route-row p,
+.portfolio-simulation-route-row em {
+  color: #9cadbd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.portfolio-simulation-route-row p {
+  margin: 3px 0 0;
+}
+
+.portfolio-simulation-route-row em {
+  color: #71dfc5;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .portfolio-order-simulation {
   display: grid;
   gap: 8px;
@@ -8553,6 +8626,10 @@ em {
 
 @media (max-width: 920px) {
   .portfolio-order-latest-simulation {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-simulation-route-row {
     grid-template-columns: 1fr;
   }
 

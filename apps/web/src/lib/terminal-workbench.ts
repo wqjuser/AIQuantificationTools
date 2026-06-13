@@ -962,6 +962,29 @@ export interface PortfolioPaperOrderLatestSimulationSummary {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type PortfolioPaperOrderSimulationRouteState =
+  | "ready"
+  | "waiting_review"
+  | "filled"
+  | "blocked"
+  | "skipped";
+
+export interface PortfolioPaperOrderSimulationRouteRow {
+  id: string;
+  batchId: string;
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell" | "hold";
+  routeState: PortfolioPaperOrderSimulationRouteState;
+  statusLabel: string;
+  detail: string;
+  latestStateLabel: string;
+  focusQuery: string;
+  canSimulate: boolean;
+  simulationId: string | null;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export interface PortfolioPaperOrderStateHistoryEventSnapshot {
   eventId: string;
   batchId: string;
@@ -10162,6 +10185,97 @@ export function buildPortfolioPaperOrderLatestSimulationSummary(
     stateEventId: stateEvent?.eventId ?? null,
     tone: latest.paperOnly && latest.liveExecutionBlocked ? "positive" : "risk"
   };
+}
+
+export function buildPortfolioPaperOrderSimulationRouteRows(
+  approvalRows: PortfolioPaperOrderApprovalRow[] | null | undefined,
+  simulations: PortfolioPaperOrderSimulationSnapshot[] | null | undefined,
+  stateRows: PortfolioPaperOrderStateHistoryRow[] | null | undefined
+): PortfolioPaperOrderSimulationRouteRow[] {
+  const simulationByOrder = new Map(
+    [...(simulations ?? [])].map((simulation) => [`${simulation.batchId}:${simulation.orderId}`, simulation])
+  );
+  const stateByOrder = new Map<string, PortfolioPaperOrderStateHistoryRow>();
+  for (const row of [...(stateRows ?? [])].sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))) {
+    const key = `${row.batchId}:${row.orderId}`;
+    if (!stateByOrder.has(key)) {
+      stateByOrder.set(key, row);
+    }
+  }
+
+  return [...(approvalRows ?? [])].map((row) => {
+    const key = `${row.batchId}:${row.orderId}`;
+    const simulation = simulationByOrder.get(key) ?? null;
+    const latestState = stateByOrder.get(key) ?? null;
+    const base = {
+      id: `portfolio-simulation-route-${row.batchId}-${row.orderId}`,
+      batchId: row.batchId,
+      orderId: row.orderId,
+      symbol: row.symbol,
+      side: row.side,
+      latestStateLabel: latestState ? `${latestState.label} · ${latestState.actor || latestState.source}` : "No timeline event yet",
+      focusQuery: `${row.batchId} ${row.orderId} ${row.symbol} ${latestState?.state ?? row.state}`,
+      simulationId: simulation?.simulationId ?? null
+    };
+
+    if (simulation) {
+      return {
+        ...base,
+        routeState: "filled" as const,
+        statusLabel: "Already simulated",
+        detail: `Filled by ${simulation.simulationId}; duplicate simulator route is blocked.`,
+        canSimulate: false,
+        tone: "neutral" as const
+      };
+    }
+
+    if (row.state === "ready_for_simulation" && (row.side === "buy" || row.side === "sell")) {
+      return {
+        ...base,
+        routeState: "ready" as const,
+        statusLabel: "Ready for simulator",
+        detail: "Approved paper-only order can use the local simulator; live broker route remains blocked.",
+        canSimulate: true,
+        tone: "positive" as const
+      };
+    }
+
+    if (row.state === "awaiting_operator_review" || row.state === "risk_review") {
+      return {
+        ...base,
+        routeState: "waiting_review" as const,
+        statusLabel: row.state === "risk_review" ? "Waiting for risk review" : "Waiting for operator review",
+        detail: row.actionHint || "Approval evidence is required before the local simulator can be used.",
+        canSimulate: false,
+        tone: "warning" as const
+      };
+    }
+
+    if (row.state === "skipped" || row.side === "hold") {
+      return {
+        ...base,
+        routeState: "skipped" as const,
+        statusLabel: "Skipped",
+        detail: row.actionHint || "Hold or skipped orders are not routed to the simulator.",
+        canSimulate: false,
+        tone: "neutral" as const
+      };
+    }
+
+    return {
+      ...base,
+      routeState: "blocked" as const,
+      statusLabel:
+        row.state === "operator_rejected"
+          ? "Operator rejected"
+          : row.state === "invalid_order"
+            ? "Invalid order"
+            : "Risk blocked",
+      detail: row.actionHint || "Risk or operator state blocks the local simulator route.",
+      canSimulate: false,
+      tone: "risk" as const
+    };
+  });
 }
 
 export function buildPortfolioPaperOrderStateHistoryRows(
