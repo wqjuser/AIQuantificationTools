@@ -19,7 +19,7 @@ Show the latest saved P0 readiness report back on the P0 current-task card. Afte
 - [x] Update product plan with the ledger echo behavior.
 - [x] Run focused tests.
 - [x] Run broader verification, build, Docker smoke, and browser smoke.
-- [ ] Commit and push with proxy.
+- [x] Commit and push with proxy.
 
 ## Validation Notes
 
@@ -31,3 +31,4 @@ Show the latest saved P0 readiness report back on the P0 current-task card. Afte
 - Production build passed: `npm --prefix apps/web run build`, with no large-chunk warning in the output.
 - Docker smoke passed: `npm run docker:smoke` reported core health `ok` and web `ok` at `http://127.0.0.1:5173`.
 - Browser smoke passed against `http://127.0.0.1:5173/?workspace=research`: P0 readiness and save-report action rendered with zero page errors; after saving one local P0 readiness report, the new latest-report echo and `在审计中查看` action were visible with zero page errors.
+- Commit and proxy push completed on `codex/p0-product-workspaces` as `4efd94b5`.
