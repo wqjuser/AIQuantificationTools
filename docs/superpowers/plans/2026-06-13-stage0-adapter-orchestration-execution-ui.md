@@ -27,4 +27,4 @@ Connect the controlled adapter orchestration execution evidence contract to the 
 - [x] GREEN: Settings can record orchestration execution evidence and Promotion Queue can display it.
 - [x] DOCS: update product plan and close this plan.
 - [x] VERIFY: focused orchestration UI test, production build, full Python/Web test suite, Docker smoke, browser checks, and `git diff --check` passed.
-- [ ] SHIP: commit and push through the configured proxy.
+- [x] SHIP: committed as `0bba316` and pushed through the configured proxy.
