@@ -2310,6 +2310,57 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-sandbox-probe-execution-confirmation");
   });
 
+  test("renders adapter sandbox probe review history and recording controls", () => {
+    expect(appSource).toContain("loadExecutionAdapterSandboxProbeReviews(quantCoreBaseUrl");
+    expect(appSource).toContain("recordExecutionAdapterSandboxProbeReview,");
+    expect(appSource).toContain(
+      "setExecutionAdapterSandboxProbeReviews("
+    );
+    expect(appSource).toContain("const executionAdapterSandboxProbeReviewRows = buildExecutionAdapterSandboxProbeReviewRows(");
+    expect(appSource).toContain("executionAdapterSandboxProbeReviews");
+    expect(appSource).toContain("adapterSandboxProbeReviewRows={executionAdapterSandboxProbeReviewRows}");
+    expect(appSource).toContain("adapterSandboxProbeReviewRows: ExecutionAdapterSandboxProbeReviewRow[]");
+    expect(appSource).toContain('className="promotion-sandbox-probe-review-evidence"');
+    expect(appSource).toContain('className={`promotion-sandbox-probe-review-evidence-row');
+    expect(appSource).toContain('className="promotion-sandbox-probe-review-empty"');
+    expect(appSource).toContain("等待 sandbox/testnet 探针复核");
+    expect(appSource).toContain("adapterSandboxProbeReviewStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterSandboxProbeReviewConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(appSource).toContain("interface ExecutionAdapterSandboxProbeReviewConfirmations");
+    expect(appSource).toContain(
+      "const [adapterSandboxProbeReviewConfirmations, setAdapterSandboxProbeReviewConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterSandboxProbeReviewId, setRecordingAdapterSandboxProbeReviewId]"
+    );
+    expect(appSource).toContain("const updateAdapterSandboxProbeReviewConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterSandboxProbeReview = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterSandboxProbeReview(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterSandboxProbeReviews((current) => [");
+    expect(appSource).toContain(
+      "sandboxProbeReviewConfirmations={adapterSandboxProbeReviewConfirmations}"
+    );
+    expect(appSource).toContain("recordingSandboxProbeReviewId={recordingAdapterSandboxProbeReviewId}");
+    expect(appSource).toContain("sandboxProbeReviewRows={executionAdapterSandboxProbeReviewRows}");
+    expect(appSource).toContain("onRecordSandboxProbeReview={recordAdapterSandboxProbeReview}");
+    expect(appSource).toContain(
+      "onSandboxProbeReviewConfirmationChange={updateAdapterSandboxProbeReviewConfirmation}"
+    );
+    expect(appSource).toContain("sandboxProbeReviewConfirmations: Record<string, ExecutionAdapterSandboxProbeReviewConfirmations>");
+    expect(appSource).toContain("sandboxProbeReviewRows: ExecutionAdapterSandboxProbeReviewRow[]");
+    expect(appSource).toContain('className="adapter-sandbox-probe-review-list"');
+    expect(appSource).toContain('className={`adapter-sandbox-probe-review-row');
+    expect(appSource).toContain('className={`adapter-sandbox-probe-review-confirmation');
+    expect(appSource).toContain("adapterSandboxProbeReviewStatusLabel(i18n, probeReview.statusLabel)");
+    expect(appSource).toContain("adapterSandboxProbeReviewConfirmationSummary(i18n, probeReview.confirmationSummary)");
+    expect(styles).toContain(".promotion-sandbox-probe-review-evidence");
+    expect(styles).toContain(".promotion-sandbox-probe-review-evidence-row");
+    expect(styles).toContain(".promotion-sandbox-probe-review-empty");
+    expect(styles).toContain(".adapter-sandbox-probe-review-list");
+    expect(styles).toContain(".adapter-sandbox-probe-review-row");
+    expect(styles).toContain(".adapter-sandbox-probe-review-confirmation");
+  });
+
   test("renders platform settings from local-core status when available", () => {
     expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
     expect(appSource).toContain("settingsStatus.settings");

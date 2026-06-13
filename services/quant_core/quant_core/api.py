@@ -84,6 +84,7 @@ from quant_core.execution import (
     build_execution_adapter_runtime_reload_plan,
     build_execution_adapter_sandbox_probe_execution,
     build_execution_adapter_sandbox_probe_plan,
+    build_execution_adapter_sandbox_probe_review,
     build_execution_adapter_secret_materialization,
     build_execution_adapter_secret_reference,
     create_execution_adapter_certification_run,
@@ -121,6 +122,9 @@ from quant_core.execution import (
     execution_adapter_sandbox_probe_plan_payload_from_audit_event,
     execution_adapter_sandbox_probe_plan_to_audit_event_payload,
     execution_adapter_sandbox_probe_plan_to_payload,
+    execution_adapter_sandbox_probe_review_payload_from_audit_event,
+    execution_adapter_sandbox_probe_review_to_audit_event_payload,
+    execution_adapter_sandbox_probe_review_to_payload,
     execution_adapter_runtime_reload_acceptance_payload_from_audit_event,
     execution_adapter_runtime_reload_acceptance_to_audit_event_payload,
     execution_adapter_runtime_reload_acceptance_to_payload,
@@ -877,6 +881,49 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if sandbox_probe_execution.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-sandbox-probe-reviews":
+            payload = self._read_json_body()
+            sandbox_probe_execution_id = str(payload.get("sandboxProbeExecutionId") or "").strip()
+            sandbox_probe_execution_event = self.audit_event_store.get(sandbox_probe_execution_id)
+            sandbox_probe_execution = (
+                execution_adapter_sandbox_probe_execution_payload_from_audit_event(sandbox_probe_execution_event)
+                if sandbox_probe_execution_event
+                else None
+            )
+            if not sandbox_probe_execution:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_sandbox_probe_execution_not_found",
+                        "sandboxProbeExecutionId": sandbox_probe_execution_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                sandbox_probe_review = build_execution_adapter_sandbox_probe_review(
+                    sandbox_probe_execution,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    review_mode=str(payload.get("reviewMode") or "manual_sandbox_probe_review"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_sandbox_probe_review", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_sandbox_probe_review_to_audit_event_payload(sandbox_probe_review)
+            )
+            self._send_json(
+                {
+                    "adapterSandboxProbeReview": execution_adapter_sandbox_probe_review_to_payload(
+                        sandbox_probe_review
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if sandbox_probe_review.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -1979,6 +2026,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(sandbox_probe_executions) >= limit:
                     break
             self._send_json({"adapterSandboxProbeExecutions": sandbox_probe_executions})
+            return
+        if parsed.path == "/api/execution/adapter-sandbox-probe-reviews":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_sandbox_probe_review_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            sandbox_probe_review_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_sandbox_probe_review",
+                limit=50,
+                query=adapter_id,
+            )
+            sandbox_probe_reviews = []
+            for event in sandbox_probe_review_events:
+                payload = execution_adapter_sandbox_probe_review_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    sandbox_probe_reviews.append(payload)
+                if len(sandbox_probe_reviews) >= limit:
+                    break
+            self._send_json({"adapterSandboxProbeReviews": sandbox_probe_reviews})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

@@ -4389,6 +4389,223 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("sandbox-probe-execution-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("sandbox-probe-execution-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_sandbox_probe_review_records_post_probe_attestation_without_enabling_live(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_sandbox_probe_execution,
+            build_execution_adapter_sandbox_probe_plan,
+            execution_adapter_sandbox_probe_execution_to_audit_event_payload,
+        )
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            sandbox_probe_plan = build_execution_adapter_sandbox_probe_plan(
+                {
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "confirmation_recorded",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-sandbox-review-1",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                probe_mode="manual_sandbox_probe_plan",
+                confirmations={
+                    "humanConfirmationReviewed": True,
+                    "testnetEndpointLocked": True,
+                    "credentialsAreSandboxOnly": True,
+                    "orderRoutingDisabled": True,
+                    "probeLimitsDocumented": True,
+                },
+                operator="sandbox-operator",
+                metadata={"source": "settings-panel"},
+                sandbox_probe_plan_id="execution-adapter-sandbox-probe-plan-ccxt-live",
+            )
+            sandbox_probe_execution = build_execution_adapter_sandbox_probe_execution(
+                {
+                    **sandbox_probe_plan.__dict__,
+                    "sandboxProbePlanId": sandbox_probe_plan.sandbox_probe_plan_id,
+                    "humanConfirmationId": sandbox_probe_plan.human_confirmation_id,
+                    "orchestrationExecutionId": sandbox_probe_plan.orchestration_execution_id,
+                    "dryRunId": sandbox_probe_plan.dry_run_id,
+                    "acceptanceId": sandbox_probe_plan.acceptance_id,
+                    "executionId": sandbox_probe_plan.execution_id,
+                    "planId": sandbox_probe_plan.plan_id,
+                    "bindingId": sandbox_probe_plan.binding_id,
+                    "materializationId": sandbox_probe_plan.materialization_id,
+                    "adapterId": sandbox_probe_plan.adapter_id,
+                    "recordedAt": sandbox_probe_plan.recorded_at.isoformat(),
+                    "probeMode": sandbox_probe_plan.probe_mode,
+                    "confirmationMode": sandbox_probe_plan.confirmation_mode,
+                    "orchestrationExecutionMode": sandbox_probe_plan.orchestration_execution_mode,
+                    "orchestrationMode": sandbox_probe_plan.orchestration_mode,
+                    "acceptanceMode": sandbox_probe_plan.acceptance_mode,
+                    "executionMode": sandbox_probe_plan.execution_mode,
+                    "reloadMode": sandbox_probe_plan.reload_mode,
+                    "maintenanceWindowId": sandbox_probe_plan.maintenance_window_id,
+                    "bindingMode": sandbox_probe_plan.binding_mode,
+                    "manifestPath": sandbox_probe_plan.manifest_path,
+                    "requiredEnvVars": sandbox_probe_plan.required_env_vars,
+                    "liveTradingAllowed": False,
+                    "paperOnly": True,
+                },
+                adapter_id="ccxt-live",
+                probe_execution_mode="manual_readonly_sandbox_probe",
+                confirmations={
+                    "probePlanReviewed": True,
+                    "readonlyHandshakeCaptured": True,
+                    "accountSnapshotRedacted": True,
+                    "orderSchemaValidated": True,
+                    "operatorConfirmedNoOrdersSubmitted": True,
+                },
+                operator="sandbox-operator",
+                metadata={"source": "settings-panel"},
+                sandbox_probe_execution_id="execution-adapter-sandbox-probe-execution-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(
+                execution_adapter_sandbox_probe_execution_to_audit_event_payload(sandbox_probe_execution)
+            )
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                missing_response, missing_payload = post_json(
+                    "/api/execution/adapter-sandbox-probe-reviews",
+                    {
+                        "adapterId": "ccxt-live",
+                        "sandboxProbeExecutionId": "missing-sandbox-probe-execution",
+                        "operator": "sandbox-reviewer",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-sandbox-probe-reviews",
+                    {
+                        "adapterId": "ccxt-live",
+                        "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                        "operator": "sandbox-reviewer",
+                        "reviewMode": "manual_sandbox_probe_review",
+                        "confirmations": {},
+                        "metadata": {
+                            "source": "settings-panel",
+                            "apiSecret": "sandbox-probe-review-blocked-secret-should-not-leak",
+                        },
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-sandbox-probe-reviews",
+                    {
+                        "adapterId": "ccxt-live",
+                        "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                        "operator": "sandbox-reviewer",
+                        "reviewMode": "manual_sandbox_probe_review",
+                        "confirmations": {
+                            "probeExecutionReviewed": True,
+                            "readonlyEvidenceMatchesPlan": True,
+                            "redactedSnapshotArchived": True,
+                            "orderSchemaRiskReviewed": True,
+                            "productionRouteStillBlocked": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "sandbox-probe-review-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-sandbox-probe-reviews?adapterId=ccxt-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_sandbox_probe_execution_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterSandboxProbeReview"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterSandboxProbeReview"]["blockedReasons"],
+            [
+                "sandbox_probe_review_execution_not_reviewed",
+                "sandbox_probe_review_evidence_plan_mismatch",
+                "sandbox_probe_review_redacted_snapshot_not_archived",
+                "sandbox_probe_review_order_schema_risk_not_reviewed",
+                "sandbox_probe_review_production_route_not_blocked",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterSandboxProbeReview"]["status"], "probe_review_recorded")
+        self.assertEqual(
+            recorded_payload["adapterSandboxProbeReview"]["sandboxProbeExecutionId"],
+            "execution-adapter-sandbox-probe-execution-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterSandboxProbeReview"]["adapterId"], "ccxt-live")
+        self.assertEqual(recorded_payload["adapterSandboxProbeReview"]["reviewMode"], "manual_sandbox_probe_review")
+        self.assertEqual(
+            recorded_payload["adapterSandboxProbeReview"]["requiredEnvVars"],
+            ["CCXT_API_KEY", "CCXT_API_SECRET"],
+        )
+        self.assertFalse(recorded_payload["adapterSandboxProbeReview"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterSandboxProbeReview"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_sandbox_probe_review")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterSandboxProbeReviews"]), 2)
+        self.assertEqual(history_payload["adapterSandboxProbeReviews"][0]["status"], "probe_review_recorded")
+        self.assertEqual(history_payload["adapterSandboxProbeReviews"][1]["status"], "blocked")
+        self.assertNotIn("sandbox-probe-review-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("sandbox-probe-review-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

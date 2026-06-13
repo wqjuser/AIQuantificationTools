@@ -2914,6 +2914,90 @@ export interface ExecutionAdapterSandboxProbeExecutionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterSandboxProbeReviewStatus = "blocked" | "probe_review_recorded";
+export type ExecutionAdapterSandboxProbeReviewConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSandboxProbeReviewSnapshot {
+  schemaVersion: 1;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSandboxProbeReviewStatus;
+  operator: string;
+  recordedAt: string;
+  reviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterSandboxProbeReviewConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSandboxProbeReviewRow {
+  id: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSandboxProbeReviewStatus;
+  statusLabel: string;
+  reviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -11360,6 +11444,56 @@ export function buildExecutionAdapterSandboxProbeExecutionRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSandboxProbeReviewRows(
+  reviews: ExecutionAdapterSandboxProbeReviewSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSandboxProbeReviewRow[] {
+  return (reviews ?? [])
+    .map((row) => ({
+      id: row.sandboxProbeReviewId,
+      sandboxProbeExecutionId: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSandboxProbeReviewStatusLabel(row.status),
+      reviewMode: row.reviewMode,
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterSandboxProbeReviewConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.sandboxProbeReviewId,
+      tone: executionAdapterSandboxProbeReviewTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -13989,6 +14123,31 @@ function executionAdapterSandboxProbeExecutionStatusLabel(
 
 function executionAdapterSandboxProbeExecutionConfirmationSummary(
   confirmations: ExecutionAdapterSandboxProbeExecutionSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterSandboxProbeReviewTone(
+  status: ExecutionAdapterSandboxProbeReviewStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "probe_review_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterSandboxProbeReviewStatusLabel(
+  status: ExecutionAdapterSandboxProbeReviewStatus
+): string {
+  return (
+    {
+      probe_review_recorded: "Probe review recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterSandboxProbeReviewStatus, string>
+  )[status];
+}
+
+function executionAdapterSandboxProbeReviewConfirmationSummary(
+  confirmations: ExecutionAdapterSandboxProbeReviewSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;

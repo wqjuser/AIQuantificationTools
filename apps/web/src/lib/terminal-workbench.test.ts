@@ -50,6 +50,7 @@ import {
   buildExecutionAdapterHumanConfirmationRows,
   buildExecutionAdapterSandboxProbeExecutionRows,
   buildExecutionAdapterSandboxProbePlanRows,
+  buildExecutionAdapterSandboxProbeReviewRows,
   buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterSecretMaterializationRows,
@@ -11623,6 +11624,96 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
+  test("builds compact adapter sandbox probe review rows from ledger results", () => {
+    const rows = buildExecutionAdapterSandboxProbeReviewRows([
+      {
+        schemaVersion: 1,
+        sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+        sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+        sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+        humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+        orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+        dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "probe_review_recorded",
+        operator: "sandbox-reviewer",
+        recordedAt: "2026-06-09T10:18:00+00:00",
+        reviewMode: "manual_sandbox_probe_review",
+        probeExecutionMode: "manual_readonly_sandbox_probe",
+        probeMode: "manual_sandbox_probe_plan",
+        confirmationMode: "manual_final_human_confirmation",
+        orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "probe-execution-reviewed", label: "Probe execution reviewed", status: "confirmed" },
+          { id: "readonly-evidence-matches-plan", label: "Evidence matches plan", status: "confirmed" },
+          { id: "redacted-snapshot-archived", label: "Snapshot archived", status: "confirmed" },
+          { id: "order-schema-risk-reviewed", label: "Order schema reviewed", status: "confirmed" },
+          { id: "production-route-still-blocked", label: "Production route blocked", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { token: "[redacted]", fingerprint: "sha256:sandbox-probe-review" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-sandbox-probe-review-us-live",
+        sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+        sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+        humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+        orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+        dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T10:18:00+00:00",
+        status: "probe_review_recorded",
+        statusLabel: "Probe review recorded",
+        reviewMode: "manual_sandbox_probe_review",
+        probeExecutionMode: "manual_readonly_sandbox_probe",
+        probeMode: "manual_sandbox_probe_plan",
+        confirmationMode: "manual_final_human_confirmation",
+        orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-sandbox-probe-review-us-live",
         tone: "positive"
       }
     ]);

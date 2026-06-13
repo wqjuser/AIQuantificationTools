@@ -75,6 +75,8 @@ import {
   buildExecutionAdapterSandboxProbeExecutionUrl,
   buildExecutionAdapterSandboxProbePlanHistoryUrl,
   buildExecutionAdapterSandboxProbePlanUrl,
+  buildExecutionAdapterSandboxProbeReviewHistoryUrl,
+  buildExecutionAdapterSandboxProbeReviewUrl,
   buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
   buildExecutionAdapterRuntimeReloadExecutionUrl,
   buildExecutionAdapterRuntimeReloadPlanHistoryUrl,
@@ -118,6 +120,7 @@ import {
   loadExecutionAdapterHumanConfirmations,
   loadExecutionAdapterSandboxProbeExecutions,
   loadExecutionAdapterSandboxProbePlans,
+  loadExecutionAdapterSandboxProbeReviews,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterSecretReferences,
@@ -138,6 +141,7 @@ import {
   recordExecutionAdapterHumanConfirmation,
   recordExecutionAdapterSandboxProbeExecution,
   recordExecutionAdapterSandboxProbePlan,
+  recordExecutionAdapterSandboxProbeReview,
   recordExecutionAdapterRuntimeReloadExecution,
   recordExecutionAdapterRuntimeReloadPlan,
   recordExecutionAdapterSecretReference,
@@ -4894,6 +4898,226 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterSandboxProbeExecutions).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("sandbox-probe-execution-token-should-not-leak");
+  });
+
+  test("records adapter sandbox probe review from probe execution without enabling live routing", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterSandboxProbeReview: {
+            schemaVersion: 1,
+            sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "probe_review_recorded",
+            operator: "sandbox-reviewer",
+            recordedAt: "2026-06-09T10:18:00+00:00",
+            reviewMode: "manual_sandbox_probe_review",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              { id: "probe-execution-reviewed", label: "Probe execution reviewed", status: "confirmed" },
+              { id: "readonly-evidence-matches-plan", label: "Evidence matches plan", status: "confirmed" },
+              { id: "redacted-snapshot-archived", label: "Redacted snapshot archived", status: "confirmed" },
+              { id: "order-schema-risk-reviewed", label: "Order schema risk reviewed", status: "confirmed" },
+              { id: "production-route-still-blocked", label: "Production route still blocked", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-sandbox-probe-review-us-live",
+            eventType: "execution_adapter_sandbox_probe_review",
+            runId: "",
+            createdAt: "2026-06-09T10:18:00+00:00",
+            stage: "execution-adapter-sandbox-probe-review",
+            source: "execution-adapter-ledger",
+            summary: "us-live adapter sandbox probe review recorded as probe_review_recorded.",
+            detail: "Adapter sandbox probe review is paper-only.",
+            metadata: {
+              sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+              sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+              adapterId: "us-live",
+              status: "probe_review_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterSandboxProbeReviewUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-probe-reviews"
+    );
+
+    const result = await recordExecutionAdapterSandboxProbeReview(
+      "/",
+      {
+        adapterId: "us-live",
+        sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+        operator: "sandbox-reviewer",
+        reviewMode: "manual_sandbox_probe_review",
+        confirmations: {
+          probeExecutionReviewed: true,
+          readonlyEvidenceMatchesPlan: true,
+          redactedSnapshotArchived: true,
+          orderSchemaRiskReviewed: true,
+          productionRouteStillBlocked: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-sandbox-probe-reviews"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      operator: "sandbox-reviewer",
+      reviewMode: "manual_sandbox_probe_review",
+      confirmations: {
+        probeExecutionReviewed: true,
+        readonlyEvidenceMatchesPlan: true,
+        redactedSnapshotArchived: true,
+        orderSchemaRiskReviewed: true,
+        productionRouteStillBlocked: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterSandboxProbeReview?.status).toBe("probe_review_recorded");
+    expect(result.adapterSandboxProbeReview?.sandboxProbeExecutionId).toBe(
+      "execution-adapter-sandbox-probe-execution-us-live"
+    );
+    expect(result.adapterSandboxProbeReview?.liveTradingAllowed).toBe(false);
+    expect(result.adapterSandboxProbeReview?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_probe_review");
+  });
+
+  test("loads adapter sandbox probe review history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const sandboxProbeReview = {
+      schemaVersion: 1,
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "probe_review_recorded",
+      operator: "sandbox-reviewer",
+      recordedAt: "2026-06-09T10:18:00+00:00",
+      reviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        { id: "probe-execution-reviewed", label: "Probe execution reviewed", status: "confirmed" }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterSandboxProbeReviews(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterSandboxProbeReviews: [sandboxProbeReview] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterSandboxProbeReviewHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-sandbox-probe-reviews?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-probe-reviews?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterSandboxProbeReviews).toHaveLength(1);
+    expect(result.adapterSandboxProbeReviews[0].status).toBe("probe_review_recorded");
+    expect(result.adapterSandboxProbeReviews[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterSandboxProbeReviews(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterSandboxProbeReviews: [
+            {
+              ...sandboxProbeReview,
+              metadata: { token: "sandbox-probe-review-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterSandboxProbeReviews).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("sandbox-probe-review-token-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

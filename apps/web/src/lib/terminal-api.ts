@@ -2119,6 +2119,82 @@ export interface ExecutionAdapterSandboxProbeExecutionHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterSandboxProbeReviewStatus = "blocked" | "probe_review_recorded";
+export type ExecutionAdapterSandboxProbeReviewConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSandboxProbeReviewConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterSandboxProbeReviewConfirmationStatus;
+}
+
+export interface ExecutionAdapterSandboxProbeReviewResult {
+  schemaVersion: 1;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSandboxProbeReviewStatus;
+  operator: string;
+  recordedAt: string;
+  reviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterSandboxProbeReviewConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSandboxProbeReviewRequest {
+  adapterId: string;
+  sandboxProbeExecutionId: string;
+  operator?: string;
+  reviewMode?: string;
+  confirmations?: {
+    probeExecutionReviewed?: boolean;
+    readonlyEvidenceMatchesPlan?: boolean;
+    redactedSnapshotArchived?: boolean;
+    orderSchemaRiskReviewed?: boolean;
+    productionRouteStillBlocked?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterSandboxProbeReviewRecordResult {
+  adapterSandboxProbeReview?: ExecutionAdapterSandboxProbeReviewResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterSandboxProbeReviewHistoryResult {
+  adapterSandboxProbeReviews: ExecutionAdapterSandboxProbeReviewResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -3133,6 +3209,10 @@ export function buildExecutionAdapterSandboxProbeExecutionUrl(baseUrl: string): 
   return buildApiUrl(baseUrl, "api/execution/adapter-sandbox-probe-executions");
 }
 
+export function buildExecutionAdapterSandboxProbeReviewUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-sandbox-probe-reviews");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -3320,6 +3400,20 @@ export function buildExecutionAdapterSandboxProbeExecutionHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-sandbox-probe-executions", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterSandboxProbeReviewHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-sandbox-probe-reviews", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -6144,6 +6238,51 @@ export async function recordExecutionAdapterSandboxProbeExecution(
   }
 }
 
+export async function recordExecutionAdapterSandboxProbeReview(
+  baseUrl: string,
+  request: ExecutionAdapterSandboxProbeReviewRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterSandboxProbeReviewRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSandboxProbeReviewUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        sandboxProbeExecutionId: request.sandboxProbeExecutionId,
+        operator: request.operator ?? "local-operator",
+        reviewMode: request.reviewMode ?? "manual_sandbox_probe_review",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterSandboxProbeReviewRecordPayload(payload)) {
+      return {
+        adapterSandboxProbeReview: payload.adapterSandboxProbeReview,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter sandbox probe review contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter sandbox probe review error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -6564,6 +6703,34 @@ export async function loadExecutionAdapterSandboxProbeExecutions(
       adapterSandboxProbeExecutions: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter sandbox probe execution history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterSandboxProbeReviews(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterSandboxProbeReviewHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSandboxProbeReviewHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterSandboxProbeReviewHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter sandbox probe review history contract");
+    }
+    return {
+      adapterSandboxProbeReviews: payload.adapterSandboxProbeReviews,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterSandboxProbeReviews: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter sandbox probe review history error"
     };
   }
 }
@@ -9016,6 +9183,22 @@ function isExecutionAdapterSandboxProbeExecutionRecordPayload(
   );
 }
 
+function isExecutionAdapterSandboxProbeReviewRecordPayload(
+  value: unknown
+): value is {
+  adapterSandboxProbeReview: ExecutionAdapterSandboxProbeReviewResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSandboxProbeReview?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterSandboxProbeReviewResult(payload.adapterSandboxProbeReview) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -9208,6 +9391,19 @@ function isExecutionAdapterSandboxProbeExecutionHistoryPayload(
   return (
     Array.isArray(payload.adapterSandboxProbeExecutions) &&
     payload.adapterSandboxProbeExecutions.every(isExecutionAdapterSandboxProbeExecutionResult)
+  );
+}
+
+function isExecutionAdapterSandboxProbeReviewHistoryPayload(
+  value: unknown
+): value is { adapterSandboxProbeReviews: ExecutionAdapterSandboxProbeReviewResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSandboxProbeReviews?: unknown };
+  return (
+    Array.isArray(payload.adapterSandboxProbeReviews) &&
+    payload.adapterSandboxProbeReviews.every(isExecutionAdapterSandboxProbeReviewResult)
   );
 }
 
@@ -9721,6 +9917,56 @@ function isExecutionAdapterSandboxProbeExecutionResult(
   );
 }
 
+function isExecutionAdapterSandboxProbeReviewResult(
+  value: unknown
+): value is ExecutionAdapterSandboxProbeReviewResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterSandboxProbeReviewResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.sandboxProbeReviewId === "string" &&
+    typeof result.sandboxProbeExecutionId === "string" &&
+    typeof result.sandboxProbePlanId === "string" &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterSandboxProbeReviewStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.reviewMode === "string" &&
+    typeof result.probeExecutionMode === "string" &&
+    typeof result.probeMode === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterSandboxProbeReviewConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -9970,6 +10216,20 @@ function isExecutionAdapterSandboxProbeExecutionConfirmation(
   );
 }
 
+function isExecutionAdapterSandboxProbeReviewConfirmation(
+  value: unknown
+): value is ExecutionAdapterSandboxProbeReviewConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterSandboxProbeReviewConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -10054,6 +10314,12 @@ function isExecutionAdapterSandboxProbeExecutionStatus(
   value: unknown
 ): value is ExecutionAdapterSandboxProbeExecutionStatus {
   return value === "blocked" || value === "probe_execution_recorded";
+}
+
+function isExecutionAdapterSandboxProbeReviewStatus(
+  value: unknown
+): value is ExecutionAdapterSandboxProbeReviewStatus {
+  return value === "blocked" || value === "probe_review_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
