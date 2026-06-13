@@ -3245,6 +3245,250 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("runtime-reload-acceptance-blocked-token-should-not-leak", serialized)
         self.assertNotIn("runtime-reload-acceptance-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_orchestration_dry_run_records_preflight_without_enabling_live(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "ibkr-live",
+                        "market": "us",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "ibkr-live/paper-gateway",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["IBKR_ACCOUNT_ID", "IBKR_GATEWAY_HOST"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "ibkr-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": "local-secret-store://ibkr-live/paper-gateway",
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "ibkr-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "ibkr-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-ibkr-orchestration-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                plan_id = plan_payload["adapterRuntimeReloadPlan"]["planId"]
+
+                execution_response, execution_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "ibkr-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                execution_id = execution_payload["adapterRuntimeReloadExecution"]["executionId"]
+
+                acceptance_response, acceptance_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-acceptances",
+                    {
+                        "adapterId": "ibkr-live",
+                        "executionId": execution_id,
+                        "operator": "runtime-operator",
+                        "acceptanceMode": "manual_runtime_reload_acceptance",
+                        "confirmations": {
+                            "executionEvidenceReviewed": True,
+                            "postReloadHealthVerified": True,
+                            "adapterHandshakeVerified": True,
+                            "killSwitchStillEnabled": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                acceptance_id = acceptance_payload["adapterRuntimeReloadAcceptance"]["acceptanceId"]
+
+                missing_acceptance_response, missing_acceptance_payload = post_json(
+                    "/api/execution/adapter-orchestration-dry-runs",
+                    {
+                        "adapterId": "ibkr-live",
+                        "acceptanceId": "missing-runtime-reload-acceptance",
+                        "operator": "runtime-operator",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-orchestration-dry-runs",
+                    {
+                        "adapterId": "ibkr-live",
+                        "acceptanceId": acceptance_id,
+                        "operator": "runtime-operator",
+                        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                        "confirmations": {},
+                        "metadata": {
+                            "source": "settings-panel",
+                            "apiKey": "orchestration-dry-run-blocked-api-key-should-not-leak",
+                        },
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-orchestration-dry-runs",
+                    {
+                        "adapterId": "ibkr-live",
+                        "acceptanceId": acceptance_id,
+                        "operator": "runtime-operator",
+                        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                        "confirmations": {
+                            "acceptedChainReviewed": True,
+                            "sandboxHandshakeDryRunPassed": True,
+                            "orderSchemaDryRunPassed": True,
+                            "accountSyncDryRunPassed": True,
+                            "operatorConfirmedNoLiveOrders": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "orchestration-dry-run-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-orchestration-dry-runs?adapterId=ibkr-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(execution_response.status, 201)
+        self.assertEqual(acceptance_response.status, 201)
+        self.assertEqual(missing_acceptance_response.status, 404)
+        self.assertEqual(missing_acceptance_payload["error"], "execution_adapter_runtime_reload_acceptance_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterOrchestrationDryRun"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterOrchestrationDryRun"]["blockedReasons"],
+            [
+                "orchestration_dry_run_acceptance_not_reviewed",
+                "orchestration_dry_run_sandbox_handshake_missing",
+                "orchestration_dry_run_order_schema_missing",
+                "orchestration_dry_run_account_sync_missing",
+                "orchestration_dry_run_live_order_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterOrchestrationDryRun"]["status"], "dry_run_recorded")
+        self.assertEqual(recorded_payload["adapterOrchestrationDryRun"]["acceptanceId"], acceptance_id)
+        self.assertEqual(recorded_payload["adapterOrchestrationDryRun"]["adapterId"], "ibkr-live")
+        self.assertEqual(recorded_payload["adapterOrchestrationDryRun"]["orchestrationMode"], "manual_adapter_orchestration_dry_run")
+        self.assertEqual(recorded_payload["adapterOrchestrationDryRun"]["requiredEnvVars"], ["IBKR_ACCOUNT_ID", "IBKR_GATEWAY_HOST"])
+        self.assertFalse(recorded_payload["adapterOrchestrationDryRun"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterOrchestrationDryRun"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_orchestration_dry_run")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterOrchestrationDryRuns"]), 2)
+        self.assertEqual(history_payload["adapterOrchestrationDryRuns"][0]["status"], "dry_run_recorded")
+        self.assertEqual(history_payload["adapterOrchestrationDryRuns"][1]["status"], "blocked")
+        self.assertNotIn("orchestration-dry-run-blocked-api-key-should-not-leak", serialized)
+        self.assertNotIn("orchestration-dry-run-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

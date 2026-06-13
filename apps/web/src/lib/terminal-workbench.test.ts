@@ -45,6 +45,7 @@ import {
   buildExecutionAdapterEnvironmentBindingRows,
   buildExecutionAdapterRestartAcceptanceRows,
   buildExecutionAdapterRuntimeReloadAcceptanceRows,
+  buildExecutionAdapterOrchestrationDryRunRows,
   buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterSecretMaterializationRows,
@@ -11224,6 +11225,76 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-runtime-reload-acceptance-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
+  test("builds compact adapter orchestration dry run rows from ledger results", () => {
+    const rows = buildExecutionAdapterOrchestrationDryRunRows([
+      {
+        schemaVersion: 1,
+        dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "dry_run_recorded",
+        operator: "settings-panel",
+        recordedAt: "2026-06-09T10:00:00+00:00",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "accepted-chain-reviewed", label: "Accepted chain reviewed", status: "confirmed" },
+          { id: "sandbox-handshake-dry-run-passed", label: "Sandbox handshake dry run passed", status: "confirmed" },
+          { id: "order-schema-dry-run-passed", label: "Order schema dry run passed", status: "confirmed" },
+          { id: "account-sync-dry-run-passed", label: "Account sync dry run passed", status: "confirmed" },
+          { id: "operator-confirmed-no-live-orders", label: "No live orders routed", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { token: "[redacted]", fingerprint: "sha256:orchestration-dry-run" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-orchestration-dry-run-us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T10:00:00+00:00",
+        status: "dry_run_recorded",
+        statusLabel: "Dry run recorded",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-orchestration-dry-run-us-live",
         tone: "positive"
       }
     ]);

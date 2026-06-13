@@ -65,6 +65,8 @@ import {
   buildExecutionAdapterEnvironmentBindingUrl,
   buildExecutionAdapterRuntimeReloadAcceptanceHistoryUrl,
   buildExecutionAdapterRuntimeReloadAcceptanceUrl,
+  buildExecutionAdapterOrchestrationDryRunHistoryUrl,
+  buildExecutionAdapterOrchestrationDryRunUrl,
   buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
   buildExecutionAdapterRuntimeReloadExecutionUrl,
   buildExecutionAdapterRuntimeReloadPlanHistoryUrl,
@@ -103,6 +105,7 @@ import {
   loadExecutionAdapterSecretMaterializations,
   loadExecutionAdapterEnvironmentBindings,
   loadExecutionAdapterRuntimeReloadAcceptances,
+  loadExecutionAdapterOrchestrationDryRuns,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterSecretReferences,
@@ -118,6 +121,7 @@ import {
   recordExecutionAdapterSecretMaterialization,
   recordExecutionAdapterEnvironmentBinding,
   recordExecutionAdapterRuntimeReloadAcceptance,
+  recordExecutionAdapterOrchestrationDryRun,
   recordExecutionAdapterRuntimeReloadExecution,
   recordExecutionAdapterRuntimeReloadPlan,
   recordExecutionAdapterSecretReference,
@@ -3798,6 +3802,230 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterRuntimeReloadAcceptances).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("runtime-reload-acceptance-token-should-not-leak");
+  });
+
+  test("records adapter orchestration dry run after final acceptance without enabling live trading", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterOrchestrationDryRun: {
+            schemaVersion: 1,
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "dry_run_recorded",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T10:00:00+00:00",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              {
+                id: "accepted-chain-reviewed",
+                label: "Runtime reload acceptance chain was reviewed",
+                status: "confirmed"
+              },
+              {
+                id: "sandbox-handshake-dry-run-passed",
+                label: "Sandbox or paper adapter handshake dry run passed",
+                status: "confirmed"
+              },
+              {
+                id: "order-schema-dry-run-passed",
+                label: "Order schema dry run passed without submission",
+                status: "confirmed"
+              },
+              {
+                id: "account-sync-dry-run-passed",
+                label: "Account sync dry run passed without broker mutation",
+                status: "confirmed"
+              },
+              {
+                id: "operator-confirmed-no-live-orders",
+                label: "Operator confirmed no live orders were routed",
+                status: "confirmed"
+              }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-orchestration-dry-run-us-live",
+            eventType: "execution_adapter_orchestration_dry_run",
+            runId: "",
+            createdAt: "2026-06-09T10:00:00+00:00",
+            stage: "execution-adapter-orchestration-dry-run",
+            source: "execution-adapter-ledger",
+            summary: "us-live adapter orchestration dry run recorded as dry_run_recorded.",
+            detail: "Adapter orchestration dry run is paper-only.",
+            metadata: {
+              dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+              acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+              adapterId: "us-live",
+              status: "dry_run_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterOrchestrationDryRunUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-orchestration-dry-runs"
+    );
+
+    const result = await recordExecutionAdapterOrchestrationDryRun(
+      "/",
+      {
+        adapterId: "us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        operator: "settings-panel",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        confirmations: {
+          acceptedChainReviewed: true,
+          sandboxHandshakeDryRunPassed: true,
+          orderSchemaDryRunPassed: true,
+          accountSyncDryRunPassed: true,
+          operatorConfirmedNoLiveOrders: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-orchestration-dry-runs"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      operator: "settings-panel",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      confirmations: {
+        acceptedChainReviewed: true,
+        sandboxHandshakeDryRunPassed: true,
+        orderSchemaDryRunPassed: true,
+        accountSyncDryRunPassed: true,
+        operatorConfirmedNoLiveOrders: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterOrchestrationDryRun?.status).toBe("dry_run_recorded");
+    expect(result.adapterOrchestrationDryRun?.acceptanceId).toBe(
+      "execution-adapter-runtime-reload-acceptance-us-live"
+    );
+    expect(result.adapterOrchestrationDryRun?.liveTradingAllowed).toBe(false);
+    expect(result.adapterOrchestrationDryRun?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_orchestration_dry_run");
+  });
+
+  test("loads adapter orchestration dry run history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const dryRun = {
+      schemaVersion: 1,
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "dry_run_recorded",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T10:00:00+00:00",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        {
+          id: "accepted-chain-reviewed",
+          label: "Runtime reload acceptance chain was reviewed",
+          status: "confirmed"
+        }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterOrchestrationDryRuns(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterOrchestrationDryRuns: [dryRun] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterOrchestrationDryRunHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-orchestration-dry-runs?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-orchestration-dry-runs?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterOrchestrationDryRuns).toHaveLength(1);
+    expect(result.adapterOrchestrationDryRuns[0].status).toBe("dry_run_recorded");
+    expect(result.adapterOrchestrationDryRuns[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterOrchestrationDryRuns(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterOrchestrationDryRuns: [
+            {
+              ...dryRun,
+              metadata: { token: "orchestration-dry-run-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterOrchestrationDryRuns).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("orchestration-dry-run-token-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

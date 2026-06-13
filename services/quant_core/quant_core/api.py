@@ -75,6 +75,7 @@ from quant_core.execution import (
     build_execution_adapter_certification_apply,
     build_execution_adapter_controlled_restart_evidence,
     build_execution_adapter_environment_binding,
+    build_execution_adapter_orchestration_dry_run,
     build_execution_adapter_restart_acceptance,
     build_execution_adapter_runtime_reload_acceptance,
     build_execution_adapter_runtime_reload_execution,
@@ -95,6 +96,9 @@ from quant_core.execution import (
     execution_adapter_environment_binding_payload_from_audit_event,
     execution_adapter_environment_binding_to_audit_event_payload,
     execution_adapter_environment_binding_to_payload,
+    execution_adapter_orchestration_dry_run_payload_from_audit_event,
+    execution_adapter_orchestration_dry_run_to_audit_event_payload,
+    execution_adapter_orchestration_dry_run_to_payload,
     execution_adapter_restart_acceptance_payload_from_audit_event,
     execution_adapter_restart_acceptance_to_audit_event_payload,
     execution_adapter_restart_acceptance_to_payload,
@@ -648,6 +652,47 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if runtime_reload_acceptance.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-orchestration-dry-runs":
+            payload = self._read_json_body()
+            acceptance_id = str(payload.get("acceptanceId") or "").strip()
+            acceptance_event = self.audit_event_store.get(acceptance_id)
+            runtime_reload_acceptance = (
+                execution_adapter_runtime_reload_acceptance_payload_from_audit_event(acceptance_event)
+                if acceptance_event
+                else None
+            )
+            if not runtime_reload_acceptance:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_runtime_reload_acceptance_not_found",
+                        "acceptanceId": acceptance_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                orchestration_dry_run = build_execution_adapter_orchestration_dry_run(
+                    runtime_reload_acceptance,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    orchestration_mode=str(payload.get("orchestrationMode") or "manual_adapter_orchestration_dry_run"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_orchestration_dry_run", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_orchestration_dry_run_to_audit_event_payload(orchestration_dry_run)
+            )
+            self._send_json(
+                {
+                    "adapterOrchestrationDryRun": execution_adapter_orchestration_dry_run_to_payload(orchestration_dry_run),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if orchestration_dry_run.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -1645,6 +1690,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(runtime_reload_acceptances) >= limit:
                     break
             self._send_json({"adapterRuntimeReloadAcceptances": runtime_reload_acceptances})
+            return
+        if parsed.path == "/api/execution/adapter-orchestration-dry-runs":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_orchestration_dry_run_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            dry_run_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_orchestration_dry_run",
+                limit=50,
+                query=adapter_id,
+            )
+            orchestration_dry_runs = []
+            for event in dry_run_events:
+                payload = execution_adapter_orchestration_dry_run_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    orchestration_dry_runs.append(payload)
+                if len(orchestration_dry_runs) >= limit:
+                    break
+            self._send_json({"adapterOrchestrationDryRuns": orchestration_dry_runs})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

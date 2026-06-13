@@ -2554,6 +2554,70 @@ export interface ExecutionAdapterRuntimeReloadAcceptanceRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterOrchestrationDryRunStatus = "blocked" | "dry_run_recorded";
+export type ExecutionAdapterOrchestrationDryRunConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterOrchestrationDryRunSnapshot {
+  schemaVersion: 1;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterOrchestrationDryRunStatus;
+  operator: string;
+  recordedAt: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterOrchestrationDryRunConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterOrchestrationDryRunRow {
+  id: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterOrchestrationDryRunStatus;
+  statusLabel: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -10780,6 +10844,46 @@ export function buildExecutionAdapterRuntimeReloadAcceptanceRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterOrchestrationDryRunRows(
+  dryRuns: ExecutionAdapterOrchestrationDryRunSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterOrchestrationDryRunRow[] {
+  return (dryRuns ?? [])
+    .map((row) => ({
+      id: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterOrchestrationDryRunStatusLabel(row.status),
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterOrchestrationDryRunConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.dryRunId,
+      tone: executionAdapterOrchestrationDryRunTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -13180,6 +13284,31 @@ function executionAdapterRuntimeReloadAcceptanceStatusLabel(
 
 function executionAdapterRuntimeReloadAcceptanceConfirmationSummary(
   confirmations: ExecutionAdapterRuntimeReloadAcceptanceSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterOrchestrationDryRunTone(
+  status: ExecutionAdapterOrchestrationDryRunStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "dry_run_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterOrchestrationDryRunStatusLabel(
+  status: ExecutionAdapterOrchestrationDryRunStatus
+): string {
+  return (
+    {
+      dry_run_recorded: "Dry run recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterOrchestrationDryRunStatus, string>
+  )[status];
+}
+
+function executionAdapterOrchestrationDryRunConfirmationSummary(
+  confirmations: ExecutionAdapterOrchestrationDryRunSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
