@@ -5486,12 +5486,14 @@ em {
   opacity: 0.62;
 }
 
+.adapter-orchestration-dry-run-list,
 .adapter-runtime-reload-acceptance-list {
   display: grid;
   gap: 8px;
   margin-top: 10px;
 }
 
+.adapter-orchestration-dry-run-row,
 .adapter-runtime-reload-acceptance-row {
   min-width: 0;
   border: 1px solid #27364a;
@@ -5501,18 +5503,22 @@ em {
   padding: 10px;
 }
 
+.adapter-orchestration-dry-run-row.positive,
 .adapter-runtime-reload-acceptance-row.positive {
   border-left-color: #4cc9ad;
 }
 
+.adapter-orchestration-dry-run-row.warning,
 .adapter-runtime-reload-acceptance-row.warning {
   border-left-color: #e8be62;
 }
 
+.adapter-orchestration-dry-run-row.risk,
 .adapter-runtime-reload-acceptance-row.risk {
   border-left-color: #ff7f6d;
 }
 
+.adapter-orchestration-dry-run-row > div:first-child,
 .adapter-runtime-reload-acceptance-row > div:first-child {
   align-items: center;
   display: flex;
@@ -5520,6 +5526,10 @@ em {
   justify-content: space-between;
 }
 
+.adapter-orchestration-dry-run-row strong,
+.adapter-orchestration-dry-run-row span,
+.adapter-orchestration-dry-run-row p,
+.adapter-orchestration-dry-run-row em,
 .adapter-runtime-reload-acceptance-row strong,
 .adapter-runtime-reload-acceptance-row span,
 .adapter-runtime-reload-acceptance-row p,
@@ -5527,17 +5537,21 @@ em {
   min-width: 0;
 }
 
+.adapter-orchestration-dry-run-row strong,
 .adapter-runtime-reload-acceptance-row strong {
   color: #e8f0f8;
   font-size: 13px;
 }
 
+.adapter-orchestration-dry-run-row span,
+.adapter-orchestration-dry-run-row em,
 .adapter-runtime-reload-acceptance-row span,
 .adapter-runtime-reload-acceptance-row em {
   color: #9fb0c3;
   font-size: 12px;
 }
 
+.adapter-orchestration-dry-run-row p,
 .adapter-runtime-reload-acceptance-row p {
   color: #c9d7e7;
   font-size: 12px;
@@ -5545,12 +5559,14 @@ em {
   margin: 7px 0 0;
 }
 
+.adapter-orchestration-dry-run-row em,
 .adapter-runtime-reload-acceptance-row em {
   display: block;
   font-style: normal;
   margin-top: 5px;
 }
 
+.adapter-orchestration-dry-run-confirmations,
 .adapter-runtime-reload-acceptance-confirmations {
   display: grid;
   gap: 6px;
@@ -5558,6 +5574,7 @@ em {
   margin-top: 8px;
 }
 
+.adapter-orchestration-dry-run-confirmation,
 .adapter-runtime-reload-acceptance-confirmation {
   align-items: center;
   border: 1px solid #27364a;
@@ -5570,20 +5587,24 @@ em {
   padding: 7px;
 }
 
+.adapter-orchestration-dry-run-confirmation.positive,
 .adapter-runtime-reload-acceptance-confirmation.positive {
   border-color: #2e6b5d;
   background: #0d211f;
 }
 
+.adapter-orchestration-dry-run-confirmation input,
 .adapter-runtime-reload-acceptance-confirmation input {
   accent-color: #4cc9ad;
   flex: 0 0 auto;
 }
 
+.adapter-orchestration-dry-run-confirmation span,
 .adapter-runtime-reload-acceptance-confirmation span {
   overflow-wrap: anywhere;
 }
 
+.adapter-orchestration-dry-run-result,
 .adapter-runtime-reload-acceptance-result {
   border: 1px solid #27364a;
   border-radius: 6px;
@@ -5593,6 +5614,7 @@ em {
   padding: 8px;
 }
 
+.adapter-orchestration-dry-run-result.positive,
 .adapter-runtime-reload-acceptance-result.positive {
   border-color: #2e6b5d;
   background: #0d211f;
@@ -8303,6 +8325,7 @@ em {
 .promotion-certification-apply-evidence,
 .promotion-controlled-restart-evidence,
 .promotion-environment-binding-evidence,
+.promotion-orchestration-dry-run-evidence,
 .promotion-restart-acceptance,
 .promotion-runtime-reload-acceptance-evidence,
 .promotion-runtime-reload-execution-evidence,
@@ -8321,6 +8344,7 @@ em {
 .promotion-certification-apply-evidence > span,
 .promotion-controlled-restart-evidence > span,
 .promotion-environment-binding-evidence > span,
+.promotion-orchestration-dry-run-evidence > span,
 .promotion-restart-acceptance > span,
 .promotion-runtime-reload-acceptance-evidence > span,
 .promotion-runtime-reload-execution-evidence > span,
@@ -8336,6 +8360,7 @@ em {
 .promotion-certification-apply-evidence-row,
 .promotion-controlled-restart-evidence-row,
 .promotion-environment-binding-evidence-row,
+.promotion-orchestration-dry-run-evidence-row,
 .promotion-restart-acceptance-row,
 .promotion-runtime-reload-acceptance-evidence-row,
 .promotion-runtime-reload-execution-evidence-row,
@@ -8358,6 +8383,7 @@ em {
 .promotion-certification-apply-evidence-row.positive,
 .promotion-controlled-restart-evidence-row.positive,
 .promotion-environment-binding-evidence-row.positive,
+.promotion-orchestration-dry-run-evidence-row.positive,
 .promotion-restart-acceptance-row.positive,
 .promotion-runtime-reload-acceptance-evidence-row.positive,
 .promotion-runtime-reload-execution-evidence-row.positive,
@@ -8371,6 +8397,7 @@ em {
 .promotion-certification-apply-evidence-row.warning,
 .promotion-controlled-restart-evidence-row.warning,
 .promotion-environment-binding-evidence-row.warning,
+.promotion-orchestration-dry-run-evidence-row.warning,
 .promotion-restart-acceptance-row.warning,
 .promotion-runtime-reload-acceptance-evidence-row.warning,
 .promotion-runtime-reload-execution-evidence-row.warning,
@@ -8384,6 +8411,7 @@ em {
 .promotion-certification-apply-evidence-row.risk,
 .promotion-controlled-restart-evidence-row.risk,
 .promotion-environment-binding-evidence-row.risk,
+.promotion-orchestration-dry-run-evidence-row.risk,
 .promotion-restart-acceptance-row.risk,
 .promotion-runtime-reload-acceptance-evidence-row.risk,
 .promotion-runtime-reload-execution-evidence-row.risk,
@@ -8405,6 +8433,9 @@ em {
 .promotion-environment-binding-evidence-row strong,
 .promotion-environment-binding-evidence-row p,
 .promotion-environment-binding-evidence-row em,
+.promotion-orchestration-dry-run-evidence-row strong,
+.promotion-orchestration-dry-run-evidence-row p,
+.promotion-orchestration-dry-run-evidence-row em,
 .promotion-restart-acceptance-row strong,
 .promotion-restart-acceptance-row p,
 .promotion-restart-acceptance-row em,
@@ -8432,6 +8463,7 @@ em {
 .promotion-certification-apply-evidence-row strong,
 .promotion-controlled-restart-evidence-row strong,
 .promotion-environment-binding-evidence-row strong,
+.promotion-orchestration-dry-run-evidence-row strong,
 .promotion-restart-acceptance-row strong,
 .promotion-runtime-reload-acceptance-evidence-row strong,
 .promotion-runtime-reload-execution-evidence-row strong,
@@ -8450,6 +8482,8 @@ em {
 .promotion-controlled-restart-evidence-row em,
 .promotion-environment-binding-evidence-row p,
 .promotion-environment-binding-evidence-row em,
+.promotion-orchestration-dry-run-evidence-row p,
+.promotion-orchestration-dry-run-evidence-row em,
 .promotion-restart-acceptance-row p,
 .promotion-restart-acceptance-row em,
 .promotion-runtime-reload-acceptance-evidence-row p,

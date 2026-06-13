@@ -2042,6 +2042,59 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-runtime-reload-acceptance-confirmation");
   });
 
+  test("renders adapter orchestration dry run history in promotion queue", () => {
+    expect(appSource).toContain("loadExecutionAdapterOrchestrationDryRuns(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterOrchestrationDryRuns(orchestrationDryRunResults.flatMap((result) => result.adapterOrchestrationDryRuns))"
+    );
+    expect(appSource).toContain("const executionAdapterOrchestrationDryRunRows = buildExecutionAdapterOrchestrationDryRunRows(");
+    expect(appSource).toContain("executionAdapterOrchestrationDryRuns");
+    expect(appSource).toContain("adapterOrchestrationDryRunRows={executionAdapterOrchestrationDryRunRows}");
+    expect(appSource).toContain("adapterOrchestrationDryRunRows: ExecutionAdapterOrchestrationDryRunRow[]");
+    expect(appSource).toContain('className="promotion-orchestration-dry-run-evidence"');
+    expect(appSource).toContain('className={`promotion-orchestration-dry-run-evidence-row');
+    expect(appSource).toContain("adapterOrchestrationDryRunStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterOrchestrationDryRunConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(styles).toContain(".promotion-orchestration-dry-run-evidence");
+    expect(styles).toContain(".promotion-orchestration-dry-run-evidence-row");
+  });
+
+  test("renders adapter orchestration dry run recording controls in platform settings", () => {
+    expect(appSource).toContain("recordExecutionAdapterOrchestrationDryRun,");
+    expect(appSource).toContain("interface ExecutionAdapterOrchestrationDryRunConfirmations");
+    expect(appSource).toContain(
+      "const [adapterOrchestrationDryRunConfirmations, setAdapterOrchestrationDryRunConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterOrchestrationDryRunId, setRecordingAdapterOrchestrationDryRunId]"
+    );
+    expect(appSource).toContain("const updateAdapterOrchestrationDryRunConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterOrchestrationDryRun = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterOrchestrationDryRun(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterOrchestrationDryRuns((current) => [");
+    expect(appSource).toContain(
+      "orchestrationDryRunConfirmations={adapterOrchestrationDryRunConfirmations}"
+    );
+    expect(appSource).toContain(
+      "recordingOrchestrationDryRunId={recordingAdapterOrchestrationDryRunId}"
+    );
+    expect(appSource).toContain("orchestrationDryRunRows={executionAdapterOrchestrationDryRunRows}");
+    expect(appSource).toContain("onRecordOrchestrationDryRun={recordAdapterOrchestrationDryRun}");
+    expect(appSource).toContain(
+      "onOrchestrationDryRunConfirmationChange={updateAdapterOrchestrationDryRunConfirmation}"
+    );
+    expect(appSource).toContain("orchestrationDryRunConfirmations: Record<string, ExecutionAdapterOrchestrationDryRunConfirmations>");
+    expect(appSource).toContain("orchestrationDryRunRows: ExecutionAdapterOrchestrationDryRunRow[]");
+    expect(appSource).toContain('className="adapter-orchestration-dry-run-list"');
+    expect(appSource).toContain('className={`adapter-orchestration-dry-run-row');
+    expect(appSource).toContain('className={`adapter-orchestration-dry-run-confirmation');
+    expect(appSource).toContain("adapterOrchestrationDryRunStatusLabel(i18n, dryRun.statusLabel)");
+    expect(appSource).toContain("adapterOrchestrationDryRunConfirmationSummary(i18n, dryRun.confirmationSummary)");
+    expect(styles).toContain(".adapter-orchestration-dry-run-list");
+    expect(styles).toContain(".adapter-orchestration-dry-run-row");
+    expect(styles).toContain(".adapter-orchestration-dry-run-confirmation");
+  });
+
   test("renders platform settings from local-core status when available", () => {
     expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
     expect(appSource).toContain("settingsStatus.settings");
