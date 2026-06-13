@@ -71,6 +71,8 @@ import {
   buildExecutionAdapterOrchestrationExecutionUrl,
   buildExecutionAdapterHumanConfirmationHistoryUrl,
   buildExecutionAdapterHumanConfirmationUrl,
+  buildExecutionAdapterSandboxProbeExecutionHistoryUrl,
+  buildExecutionAdapterSandboxProbeExecutionUrl,
   buildExecutionAdapterSandboxProbePlanHistoryUrl,
   buildExecutionAdapterSandboxProbePlanUrl,
   buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
@@ -114,6 +116,7 @@ import {
   loadExecutionAdapterOrchestrationDryRuns,
   loadExecutionAdapterOrchestrationExecutions,
   loadExecutionAdapterHumanConfirmations,
+  loadExecutionAdapterSandboxProbeExecutions,
   loadExecutionAdapterSandboxProbePlans,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
@@ -133,6 +136,7 @@ import {
   recordExecutionAdapterOrchestrationDryRun,
   recordExecutionAdapterOrchestrationExecution,
   recordExecutionAdapterHumanConfirmation,
+  recordExecutionAdapterSandboxProbeExecution,
   recordExecutionAdapterSandboxProbePlan,
   recordExecutionAdapterRuntimeReloadExecution,
   recordExecutionAdapterRuntimeReloadPlan,
@@ -4677,6 +4681,219 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterSandboxProbePlans).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("sandbox-probe-token-should-not-leak");
+  });
+
+  test("records adapter sandbox probe execution from probe plan without enabling live routing", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterSandboxProbeExecution: {
+            schemaVersion: 1,
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "probe_execution_recorded",
+            operator: "sandbox-operator",
+            recordedAt: "2026-06-09T10:16:00+00:00",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            requiredConfirmations: [
+              { id: "probe-plan-reviewed", label: "Probe plan reviewed", status: "confirmed" },
+              { id: "readonly-handshake-captured", label: "Readonly handshake captured", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-sandbox-probe-execution-us-live",
+            eventType: "execution_adapter_sandbox_probe_execution",
+            runId: "",
+            createdAt: "2026-06-09T10:16:00+00:00",
+            stage: "execution-adapter-sandbox-probe-execution",
+            source: "execution-adapter-ledger",
+            summary: "us-live adapter sandbox probe execution recorded as probe_execution_recorded.",
+            detail: "Adapter sandbox probe execution is paper-only.",
+            metadata: {
+              sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+              sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+              adapterId: "us-live",
+              status: "probe_execution_recorded",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterSandboxProbeExecutionUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-probe-executions"
+    );
+
+    const result = await recordExecutionAdapterSandboxProbeExecution(
+      "/",
+      {
+        adapterId: "us-live",
+        sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+        operator: "sandbox-operator",
+        probeExecutionMode: "manual_readonly_sandbox_probe",
+        confirmations: {
+          probePlanReviewed: true,
+          readonlyHandshakeCaptured: true,
+          accountSnapshotRedacted: true,
+          orderSchemaValidated: true,
+          operatorConfirmedNoOrdersSubmitted: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-sandbox-probe-executions"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      operator: "sandbox-operator",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      confirmations: {
+        probePlanReviewed: true,
+        readonlyHandshakeCaptured: true,
+        accountSnapshotRedacted: true,
+        orderSchemaValidated: true,
+        operatorConfirmedNoOrdersSubmitted: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterSandboxProbeExecution?.status).toBe("probe_execution_recorded");
+    expect(result.adapterSandboxProbeExecution?.sandboxProbePlanId).toBe(
+      "execution-adapter-sandbox-probe-plan-us-live"
+    );
+    expect(result.adapterSandboxProbeExecution?.liveTradingAllowed).toBe(false);
+    expect(result.adapterSandboxProbeExecution?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_probe_execution");
+  });
+
+  test("loads adapter sandbox probe execution history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const sandboxProbeExecution = {
+      schemaVersion: 1,
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "probe_execution_recorded",
+      operator: "sandbox-operator",
+      recordedAt: "2026-06-09T10:16:00+00:00",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      requiredConfirmations: [
+        { id: "probe-plan-reviewed", label: "Probe plan reviewed", status: "confirmed" }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterSandboxProbeExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterSandboxProbeExecutions: [sandboxProbeExecution] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterSandboxProbeExecutionHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-sandbox-probe-executions?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-probe-executions?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterSandboxProbeExecutions).toHaveLength(1);
+    expect(result.adapterSandboxProbeExecutions[0].status).toBe("probe_execution_recorded");
+    expect(result.adapterSandboxProbeExecutions[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterSandboxProbeExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterSandboxProbeExecutions: [
+            {
+              ...sandboxProbeExecution,
+              metadata: { token: "sandbox-probe-execution-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterSandboxProbeExecutions).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("sandbox-probe-execution-token-should-not-leak");
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {

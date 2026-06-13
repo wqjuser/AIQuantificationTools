@@ -69,6 +69,7 @@ import {
   loadExecutionAdapterOrchestrationDryRuns,
   loadExecutionAdapterOrchestrationExecutions,
   loadExecutionAdapterHumanConfirmations,
+  loadExecutionAdapterSandboxProbeExecutions,
   loadExecutionAdapterSandboxProbePlans,
   loadExecutionAdapterRuntimeReloadAcceptances,
   loadExecutionAdapterRuntimeReloadExecutions,
@@ -77,6 +78,7 @@ import {
   recordExecutionAdapterOrchestrationDryRun,
   recordExecutionAdapterOrchestrationExecution,
   recordExecutionAdapterHumanConfirmation,
+  recordExecutionAdapterSandboxProbeExecution,
   recordExecutionAdapterSandboxProbePlan,
   recordExecutionAdapterRuntimeReloadAcceptance,
   recordExecutionAdapterCertification,
@@ -141,6 +143,7 @@ import {
   ExecutionAdapterOrchestrationDryRunResult,
   ExecutionAdapterOrchestrationExecutionResult,
   ExecutionAdapterHumanConfirmationResult,
+  ExecutionAdapterSandboxProbeExecutionResult,
   ExecutionAdapterSandboxProbePlanResult,
   ExecutionAdapterRuntimeReloadAcceptanceResult,
   ExecutionAdapterRuntimeReloadExecutionResult,
@@ -217,6 +220,7 @@ import {
   buildExecutionAdapterOrchestrationDryRunRows,
   buildExecutionAdapterOrchestrationExecutionRows,
   buildExecutionAdapterHumanConfirmationRows,
+  buildExecutionAdapterSandboxProbeExecutionRows,
   buildExecutionAdapterSandboxProbePlanRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
@@ -333,6 +337,7 @@ import {
   ExecutionAdapterOrchestrationDryRunRow,
   ExecutionAdapterOrchestrationExecutionRow,
   ExecutionAdapterHumanConfirmationRow,
+  ExecutionAdapterSandboxProbeExecutionRow,
   ExecutionAdapterSandboxProbePlanRow,
   ExecutionAdapterSecretMaterializationRow,
   ExecutionAdapterSecretReferenceRow,
@@ -917,6 +922,55 @@ const executionAdapterSandboxProbePlanConfirmationRows: Array<{
   }
 ];
 
+interface ExecutionAdapterSandboxProbeExecutionConfirmations {
+  probePlanReviewed: boolean;
+  readonlyHandshakeCaptured: boolean;
+  accountSnapshotRedacted: boolean;
+  orderSchemaValidated: boolean;
+  operatorConfirmedNoOrdersSubmitted: boolean;
+}
+
+const createDefaultExecutionAdapterSandboxProbeExecutionConfirmations =
+  (): ExecutionAdapterSandboxProbeExecutionConfirmations => ({
+    probePlanReviewed: false,
+    readonlyHandshakeCaptured: false,
+    accountSnapshotRedacted: false,
+    orderSchemaValidated: false,
+    operatorConfirmedNoOrdersSubmitted: false
+  });
+
+const executionAdapterSandboxProbeExecutionConfirmationRows: Array<{
+  key: keyof ExecutionAdapterSandboxProbeExecutionConfirmations;
+  labelEn: string;
+  labelZh: string;
+}> = [
+  {
+    key: "probePlanReviewed",
+    labelEn: "Probe plan reviewed",
+    labelZh: "探针计划已复核"
+  },
+  {
+    key: "readonlyHandshakeCaptured",
+    labelEn: "Read-only handshake captured",
+    labelZh: "只读握手证据已记录"
+  },
+  {
+    key: "accountSnapshotRedacted",
+    labelEn: "Account snapshot redacted",
+    labelZh: "账户快照已脱敏"
+  },
+  {
+    key: "orderSchemaValidated",
+    labelEn: "Order schema validated",
+    labelZh: "订单 schema 已验证"
+  },
+  {
+    key: "operatorConfirmedNoOrdersSubmitted",
+    labelEn: "Operator confirmed no orders submitted",
+    labelZh: "操作员确认未提交任何订单"
+  }
+];
+
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
@@ -1234,6 +1288,9 @@ export function App() {
   const [executionAdapterSandboxProbePlans, setExecutionAdapterSandboxProbePlans] = useState<
     ExecutionAdapterSandboxProbePlanResult[]
   >([]);
+  const [executionAdapterSandboxProbeExecutions, setExecutionAdapterSandboxProbeExecutions] = useState<
+    ExecutionAdapterSandboxProbeExecutionResult[]
+  >([]);
   const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
     Record<string, ExecutionAdapterCertificationApplyConfirmations>
   >({});
@@ -1251,6 +1308,9 @@ export function App() {
   >({});
   const [adapterSandboxProbePlanConfirmations, setAdapterSandboxProbePlanConfirmations] = useState<
     Record<string, ExecutionAdapterSandboxProbePlanConfirmations>
+  >({});
+  const [adapterSandboxProbeExecutionConfirmations, setAdapterSandboxProbeExecutionConfirmations] = useState<
+    Record<string, ExecutionAdapterSandboxProbeExecutionConfirmations>
   >({});
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
@@ -1359,6 +1419,8 @@ export function App() {
   const [recordingAdapterHumanConfirmationId, setRecordingAdapterHumanConfirmationId] =
     useState<string | null>(null);
   const [recordingAdapterSandboxProbePlanId, setRecordingAdapterSandboxProbePlanId] =
+    useState<string | null>(null);
+  const [recordingAdapterSandboxProbeExecutionId, setRecordingAdapterSandboxProbeExecutionId] =
     useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
@@ -1523,6 +1585,9 @@ export function App() {
   );
   const executionAdapterSandboxProbePlanRows = buildExecutionAdapterSandboxProbePlanRows(
     executionAdapterSandboxProbePlans
+  );
+  const executionAdapterSandboxProbeExecutionRows = buildExecutionAdapterSandboxProbeExecutionRows(
+    executionAdapterSandboxProbeExecutions
   );
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
@@ -2144,7 +2209,8 @@ export function App() {
       orchestrationDryRunResults,
       orchestrationExecutionResults,
       humanConfirmationResults,
-      sandboxProbePlanResults
+      sandboxProbePlanResults,
+      sandboxProbeExecutionResults
     ] = await Promise.all([
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5))),
@@ -2159,7 +2225,8 @@ export function App() {
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterOrchestrationDryRuns(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterOrchestrationExecutions(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterHumanConfirmations(quantCoreBaseUrl, row.id, undefined, 5))),
-      Promise.all(liveAdapters.map((row) => loadExecutionAdapterSandboxProbePlans(quantCoreBaseUrl, row.id, undefined, 5)))
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterSandboxProbePlans(quantCoreBaseUrl, row.id, undefined, 5))),
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterSandboxProbeExecutions(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
     setWatchlistCacheRefreshHistory(watchlistRefreshHistory.watchlistRefreshes);
@@ -2178,6 +2245,9 @@ export function App() {
     setExecutionAdapterOrchestrationExecutions(orchestrationExecutionResults.flatMap((result) => result.adapterOrchestrationExecutions));
     setExecutionAdapterHumanConfirmations(humanConfirmationResults.flatMap((result) => result.adapterHumanConfirmations));
     setExecutionAdapterSandboxProbePlans(sandboxProbePlanResults.flatMap((result) => result.adapterSandboxProbePlans));
+    setExecutionAdapterSandboxProbeExecutions(
+      sandboxProbeExecutionResults.flatMap((result) => result.adapterSandboxProbeExecutions)
+    );
   }, []);
 
   const recordAdapterCertificationEvidence = useCallback(
@@ -2651,6 +2721,84 @@ export function App() {
       }
     },
     [adapterSandboxProbePlanConfirmations, refreshSettingsStatus]
+  );
+
+  const updateAdapterSandboxProbeExecutionConfirmation = useCallback(
+    (
+      sandboxProbePlanId: string,
+      key: keyof ExecutionAdapterSandboxProbeExecutionConfirmations,
+      checked: boolean
+    ) => {
+      setAdapterSandboxProbeExecutionConfirmations((current) => ({
+        ...current,
+        [sandboxProbePlanId]: {
+          ...createDefaultExecutionAdapterSandboxProbeExecutionConfirmations(),
+          ...(current[sandboxProbePlanId] ?? {}),
+          [key]: checked
+        }
+      }));
+    },
+    []
+  );
+
+  const recordAdapterSandboxProbeExecution = useCallback(
+    async (row: ExecutionAdapterSandboxProbePlanRow) => {
+      const confirmations =
+        adapterSandboxProbeExecutionConfirmations[row.id] ??
+        createDefaultExecutionAdapterSandboxProbeExecutionConfirmations();
+      setRecordingAdapterSandboxProbeExecutionId(row.id);
+      try {
+        const result = await recordExecutionAdapterSandboxProbeExecution(quantCoreBaseUrl, {
+          adapterId: row.adapterId,
+          confirmations,
+          metadata: {
+            acceptanceId: row.acceptanceId,
+            bindingId: row.bindingId,
+            dryRunId: row.dryRunId,
+            executionId: row.executionId,
+            humanConfirmationId: row.humanConfirmationId,
+            materializationId: row.materializationId,
+            orchestrationExecutionId: row.orchestrationExecutionId,
+            planId: row.planId,
+            probeMode: row.probeMode,
+            source: "settings-panel"
+          },
+          operator: "settings-panel",
+          probeExecutionMode: "manual_readonly_sandbox_probe",
+          sandboxProbePlanId: row.id
+        });
+        if (result.adapterSandboxProbeExecution) {
+          setExecutionAdapterSandboxProbeExecutions((current) => [
+            result.adapterSandboxProbeExecution!,
+            ...current.filter(
+              (currentRow) =>
+                currentRow.sandboxProbeExecutionId !== result.adapterSandboxProbeExecution!.sandboxProbeExecutionId
+            )
+          ]);
+        }
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: result.error,
+            statusLabel: "Adapter sandbox probe execution failed"
+          }));
+        } else {
+          const status = result.adapterSandboxProbeExecution?.status ?? "blocked";
+          setWorkspaceState((current) => ({
+            ...current,
+            error: undefined,
+            statusLabel:
+              status === "probe_execution_recorded"
+                ? `Adapter sandbox probe execution recorded · ${row.adapterId}`
+                : `Adapter sandbox probe execution blocked · ${row.adapterId}`
+          }));
+          await refreshSettingsStatus();
+        }
+      } finally {
+        setRecordingAdapterSandboxProbeExecutionId(null);
+      }
+    },
+    [adapterSandboxProbeExecutionConfirmations, refreshSettingsStatus]
   );
 
   const refreshAuditSigningKeys = useCallback(async () => {
@@ -6052,6 +6200,7 @@ export function App() {
             adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}
             adapterEnvironmentBindingRows={executionAdapterEnvironmentBindingRows}
             adapterHumanConfirmationRows={executionAdapterHumanConfirmationRows}
+            adapterSandboxProbeExecutionRows={executionAdapterSandboxProbeExecutionRows}
             adapterSandboxProbePlanRows={executionAdapterSandboxProbePlanRows}
             adapterOrchestrationDryRunRows={executionAdapterOrchestrationDryRunRows}
             adapterOrchestrationExecutionRows={executionAdapterOrchestrationExecutionRows}
@@ -6277,9 +6426,11 @@ export function App() {
             onOrchestrationDryRunConfirmationChange={updateAdapterOrchestrationDryRunConfirmation}
             onOrchestrationExecutionConfirmationChange={updateAdapterOrchestrationExecutionConfirmation}
             onHumanConfirmationChange={updateAdapterHumanConfirmationConfirmation}
+            onSandboxProbeExecutionConfirmationChange={updateAdapterSandboxProbeExecutionConfirmation}
             onSandboxProbePlanConfirmationChange={updateAdapterSandboxProbePlanConfirmation}
             onRecordAdapterCertification={recordAdapterCertificationEvidence}
             onRecordHumanConfirmation={recordAdapterHumanConfirmation}
+            onRecordSandboxProbeExecution={recordAdapterSandboxProbeExecution}
             onRecordSandboxProbePlan={recordAdapterSandboxProbePlan}
             onRecordOrchestrationDryRun={recordAdapterOrchestrationDryRun}
             onRecordOrchestrationExecution={recordAdapterOrchestrationExecution}
@@ -6290,10 +6441,13 @@ export function App() {
             recordingOrchestrationDryRunId={recordingAdapterOrchestrationDryRunId}
             recordingOrchestrationExecutionId={recordingAdapterOrchestrationExecutionId}
             recordingHumanConfirmationId={recordingAdapterHumanConfirmationId}
+            recordingSandboxProbeExecutionId={recordingAdapterSandboxProbeExecutionId}
             recordingSandboxProbePlanId={recordingAdapterSandboxProbePlanId}
             recordingRuntimeReloadAcceptanceId={recordingAdapterRuntimeReloadAcceptanceId}
             humanConfirmationConfirmations={adapterHumanConfirmationConfirmations}
             humanConfirmationRows={executionAdapterHumanConfirmationRows}
+            sandboxProbeExecutionConfirmations={adapterSandboxProbeExecutionConfirmations}
+            sandboxProbeExecutionRows={executionAdapterSandboxProbeExecutionRows}
             sandboxProbePlanConfirmations={adapterSandboxProbePlanConfirmations}
             sandboxProbePlanRows={executionAdapterSandboxProbePlanRows}
             refreshingCacheKey={refreshingCacheKey}
@@ -9417,12 +9571,14 @@ function PlatformSettingsPanel({
   onHumanConfirmationChange,
   onOrchestrationDryRunConfirmationChange,
   onOrchestrationExecutionConfirmationChange,
+  onSandboxProbeExecutionConfirmationChange,
   onSandboxProbePlanConfirmationChange,
   onRecordAdapterCertification,
   onRecordHumanConfirmation,
   onRecordOrchestrationDryRun,
   onRecordOrchestrationExecution,
   onRecordRuntimeReloadAcceptance,
+  onRecordSandboxProbeExecution,
   onRecordSandboxProbePlan,
   onRefreshContext,
   onRuntimeReloadAcceptanceConfirmationChange,
@@ -9431,6 +9587,7 @@ function PlatformSettingsPanel({
   recordingOrchestrationDryRunId,
   recordingOrchestrationExecutionId,
   recordingRuntimeReloadAcceptanceId,
+  recordingSandboxProbeExecutionId,
   recordingSandboxProbePlanId,
   humanConfirmationConfirmations,
   humanConfirmationRows,
@@ -9442,6 +9599,8 @@ function PlatformSettingsPanel({
   runtimeReloadAcceptanceConfirmations,
   runtimeReloadAcceptanceRows,
   runtimeReloadExecutionRows,
+  sandboxProbeExecutionConfirmations,
+  sandboxProbeExecutionRows,
   sandboxProbePlanConfirmations,
   sandboxProbePlanRows,
   settings,
@@ -9477,6 +9636,11 @@ function PlatformSettingsPanel({
     key: keyof ExecutionAdapterOrchestrationExecutionConfirmations,
     checked: boolean
   ) => void;
+  onSandboxProbeExecutionConfirmationChange?: (
+    sandboxProbePlanId: string,
+    key: keyof ExecutionAdapterSandboxProbeExecutionConfirmations,
+    checked: boolean
+  ) => void;
   onSandboxProbePlanConfirmationChange?: (
     humanConfirmationId: string,
     key: keyof ExecutionAdapterSandboxProbePlanConfirmations,
@@ -9487,6 +9651,7 @@ function PlatformSettingsPanel({
   onRecordOrchestrationDryRun?: (row: ExecutionAdapterRuntimeReloadAcceptanceRow) => void;
   onRecordOrchestrationExecution?: (row: ExecutionAdapterOrchestrationDryRunRow) => void;
   onRecordRuntimeReloadAcceptance?: (row: ExecutionAdapterRuntimeReloadExecutionRow) => void;
+  onRecordSandboxProbeExecution?: (row: ExecutionAdapterSandboxProbePlanRow) => void;
   onRecordSandboxProbePlan?: (row: ExecutionAdapterHumanConfirmationRow) => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
   onRuntimeReloadAcceptanceConfirmationChange?: (
@@ -9499,6 +9664,7 @@ function PlatformSettingsPanel({
   recordingOrchestrationDryRunId?: string | null;
   recordingOrchestrationExecutionId?: string | null;
   recordingRuntimeReloadAcceptanceId?: string | null;
+  recordingSandboxProbeExecutionId?: string | null;
   recordingSandboxProbePlanId?: string | null;
   humanConfirmationConfirmations: Record<string, ExecutionAdapterHumanConfirmationConfirmations>;
   humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[];
@@ -9510,6 +9676,8 @@ function PlatformSettingsPanel({
   runtimeReloadAcceptanceConfirmations: Record<string, ExecutionAdapterRuntimeReloadAcceptanceConfirmations>;
   runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[];
   runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[];
+  sandboxProbeExecutionConfirmations: Record<string, ExecutionAdapterSandboxProbeExecutionConfirmations>;
+  sandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[];
   sandboxProbePlanConfirmations: Record<string, ExecutionAdapterSandboxProbePlanConfirmations>;
   sandboxProbePlanRows: ExecutionAdapterSandboxProbePlanRow[];
   settings?: PlatformSettingsStatus;
@@ -10208,6 +10376,94 @@ function PlatformSettingsPanel({
             {i18n.locale === "zh-CN"
               ? "等待最终人工确认；确认后才能记录 sandbox/testnet 探针计划。"
               : "Waiting for final human confirmation before recording a sandbox/testnet probe plan."}
+          </p>
+        )}
+      </div>
+      <div className="adapter-sandbox-probe-execution-list">
+        <div className="paper-blotter-title">
+          <span>{i18n.locale === "zh-CN" ? "Sandbox 探针执行" : "Sandbox probe execution"}</span>
+          <strong>{sandboxProbePlanRows.length}</strong>
+        </div>
+        {sandboxProbePlanRows.length ? (
+          sandboxProbePlanRows.slice(0, 4).map((row) => {
+            const confirmations =
+              sandboxProbeExecutionConfirmations[row.id] ??
+              createDefaultExecutionAdapterSandboxProbeExecutionConfirmations();
+            const probeExecution = sandboxProbeExecutionRows.find(
+              (item) => item.adapterId === row.adapterId && item.sandboxProbePlanId === row.id
+            );
+            return (
+              <article className={`adapter-sandbox-probe-execution-row ${probeExecution?.tone ?? row.tone}`} key={row.id}>
+                <div>
+                  <strong>
+                    {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                    {adapterSandboxProbePlanStatusLabel(i18n, row.statusLabel)}
+                  </strong>
+                  <span>{formatChartDate(row.timestamp)}</span>
+                </div>
+                <p>
+                  {adapterSandboxProbePlanConfirmationSummary(i18n, row.confirmationSummary)} ·{" "}
+                  {adapterCertificationBoundaryLabel(i18n, row.boundary)}
+                </p>
+                <div className="adapter-sandbox-probe-execution-confirmations">
+                  {executionAdapterSandboxProbeExecutionConfirmationRows.map((item) => (
+                    <label
+                      className={`adapter-sandbox-probe-execution-confirmation ${
+                        confirmations[item.key] ? "positive" : "warning"
+                      }`}
+                      key={`${row.id}-${item.key}`}
+                    >
+                      <input
+                        checked={confirmations[item.key]}
+                        onChange={(event) =>
+                          onSandboxProbeExecutionConfirmationChange?.(row.id, item.key, event.currentTarget.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? item.labelZh : item.labelEn}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  className="adapter-certification-apply-button"
+                  disabled={recordingSandboxProbeExecutionId === row.id || !onRecordSandboxProbeExecution}
+                  onClick={() => onRecordSandboxProbeExecution?.(row)}
+                  type="button"
+                >
+                  <ShieldCheck size={13} />
+                  {recordingSandboxProbeExecutionId === row.id
+                    ? i18n.locale === "zh-CN"
+                      ? "记录中"
+                      : "Recording"
+                    : i18n.locale === "zh-CN"
+                      ? "记录探针执行"
+                      : "Record probe execution"}
+                </button>
+                {probeExecution ? (
+                  <div className={`adapter-sandbox-probe-execution-result ${probeExecution.tone}`}>
+                    <strong>{adapterSandboxProbeExecutionStatusLabel(i18n, probeExecution.statusLabel)}</strong>
+                    <span>
+                      {adapterSandboxProbeExecutionConfirmationSummary(i18n, probeExecution.confirmationSummary)} ·{" "}
+                      {adapterCertificationApplyBlockerSummary(i18n, probeExecution.blockerSummary)} ·{" "}
+                      {adapterCertificationBoundaryLabel(i18n, probeExecution.boundary)}
+                    </span>
+                    <em>{probeExecution.auditEventId}</em>
+                  </div>
+                ) : (
+                  <em>
+                    {i18n.locale === "zh-CN"
+                      ? "等待 sandbox/testnet 只读探针执行；这一步只记录握手和订单 schema 证据，不提交任何订单。"
+                      : "Waiting for a read-only sandbox/testnet probe execution; this records handshake and order-schema evidence only, with no order submission."}
+                  </em>
+                )}
+              </article>
+            );
+          })
+        ) : (
+          <p className="empty-state">
+            {i18n.locale === "zh-CN"
+              ? "等待 sandbox/testnet 探针计划；计划记录后才能录入只读探针执行证据。"
+              : "Waiting for a sandbox/testnet probe plan before read-only probe execution evidence can be recorded."}
           </p>
         )}
       </div>
@@ -15371,6 +15627,7 @@ function PromotionQueuePanel({
   adapterRuntimeReloadAcceptanceRows,
   adapterRuntimeReloadExecutionRows,
   adapterRuntimeReloadPlanRows,
+  adapterSandboxProbeExecutionRows,
   adapterSandboxProbePlanRows,
   adapterSecretMaterializationRows,
   adapterSecretReferenceRows,
@@ -15389,6 +15646,7 @@ function PromotionQueuePanel({
   adapterRuntimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[];
   adapterRuntimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[];
   adapterRuntimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[];
+  adapterSandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[];
   adapterSandboxProbePlanRows: ExecutionAdapterSandboxProbePlanRow[];
   adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[];
   adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[];
@@ -15409,6 +15667,7 @@ function PromotionQueuePanel({
   const recentOrchestrationExecutionRows = adapterOrchestrationExecutionRows.slice(0, 3);
   const recentHumanConfirmationRows = adapterHumanConfirmationRows.slice(0, 3);
   const recentSandboxProbePlanRows = adapterSandboxProbePlanRows.slice(0, 3);
+  const recentSandboxProbeExecutionRows = adapterSandboxProbeExecutionRows.slice(0, 3);
   const recentSecretReferenceRows = adapterSecretReferenceRows.slice(0, 3);
   const recentSecretMaterializationRows = adapterSecretMaterializationRows.slice(0, 3);
   return (
@@ -15658,6 +15917,30 @@ function PromotionQueuePanel({
               {i18n.locale === "zh-CN"
                 ? "等待 sandbox/testnet 探针计划。最终人工确认后，先记录受控测试计划，仍不连接券商或提交订单。"
                 : "Waiting for a sandbox/testnet probe plan. After final human confirmation, record the controlled test plan before any broker connection or order submission."}
+            </p>
+          )}
+        </div>
+        <div className="promotion-sandbox-probe-execution-evidence">
+          <span>{i18n.locale === "zh-CN" ? "最近 sandbox 探针执行" : "Recent sandbox probe execution"}</span>
+          {recentSandboxProbeExecutionRows.length ? (
+            recentSandboxProbeExecutionRows.map((row) => (
+              <article className={`promotion-sandbox-probe-execution-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterSandboxProbeExecutionStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterSandboxProbeExecutionConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.probeExecutionMode)} · {row.auditEventId}
+                </em>
+              </article>
+            ))
+          ) : (
+            <p className="promotion-sandbox-probe-execution-empty">
+              {i18n.locale === "zh-CN"
+                ? "等待只读 sandbox/testnet 探针执行。计划记录后，只能记录握手和订单 schema 证据，不提交任何订单。"
+                : "Waiting for read-only sandbox/testnet probe execution. After planning, record handshake and order-schema evidence only, with no order submission."}
             </p>
           )}
         </div>
@@ -17561,6 +17844,10 @@ function adapterSandboxProbePlanConfirmationSummary(i18n: AppI18n, summary: stri
   return adapterCertificationApplyConfirmationSummary(i18n, summary);
 }
 
+function adapterSandboxProbeExecutionConfirmationSummary(i18n: AppI18n, summary: string): string {
+  return adapterCertificationApplyConfirmationSummary(i18n, summary);
+}
+
 function adapterSandboxProbePlanStatusLabel(i18n: AppI18n, statusLabel: string): string {
   if (i18n.locale === "en-US") {
     return statusLabel;
@@ -17569,6 +17856,18 @@ function adapterSandboxProbePlanStatusLabel(i18n: AppI18n, statusLabel: string):
     {
       Blocked: "阻断",
       "Probe plan recorded": "探针计划已记录"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
+function adapterSandboxProbeExecutionStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Blocked: "阻断",
+      "Probe execution recorded": "探针执行已记录"
     }[statusLabel] ?? statusLabel
   );
 }
@@ -17600,7 +17899,8 @@ function adapterCertificationApplyModeLabel(i18n: AppI18n, mode: string): string
       manual_adapter_orchestration_dry_run: "人工适配器编排 dry-run",
       manual_adapter_orchestration_execution: "人工适配器编排执行证据",
       manual_final_human_confirmation: "最终人工确认",
-      manual_sandbox_probe_plan: "人工 sandbox 探针计划"
+      manual_sandbox_probe_plan: "人工 sandbox 探针计划",
+      manual_readonly_sandbox_probe: "人工只读 sandbox 探针"
     }[mode] ?? mode.replaceAll("_", " ")
   );
 }

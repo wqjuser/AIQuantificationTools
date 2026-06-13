@@ -2834,6 +2834,86 @@ export interface ExecutionAdapterSandboxProbePlanRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterSandboxProbeExecutionStatus = "blocked" | "probe_execution_recorded";
+export type ExecutionAdapterSandboxProbeExecutionConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSandboxProbeExecutionSnapshot {
+  schemaVersion: 1;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSandboxProbeExecutionStatus;
+  operator: string;
+  recordedAt: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterSandboxProbeExecutionConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSandboxProbeExecutionRow {
+  id: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSandboxProbeExecutionStatus;
+  statusLabel: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -11232,6 +11312,54 @@ export function buildExecutionAdapterSandboxProbePlanRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSandboxProbeExecutionRows(
+  executions: ExecutionAdapterSandboxProbeExecutionSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSandboxProbeExecutionRow[] {
+  return (executions ?? [])
+    .map((row) => ({
+      id: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSandboxProbeExecutionStatusLabel(row.status),
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterSandboxProbeExecutionConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.sandboxProbeExecutionId,
+      tone: executionAdapterSandboxProbeExecutionTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -13761,6 +13889,31 @@ function executionAdapterSandboxProbePlanStatusLabel(
 
 function executionAdapterSandboxProbePlanConfirmationSummary(
   confirmations: ExecutionAdapterSandboxProbePlanSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterSandboxProbeExecutionTone(
+  status: ExecutionAdapterSandboxProbeExecutionStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "probe_execution_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterSandboxProbeExecutionStatusLabel(
+  status: ExecutionAdapterSandboxProbeExecutionStatus
+): string {
+  return (
+    {
+      probe_execution_recorded: "Probe execution recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterSandboxProbeExecutionStatus, string>
+  )[status];
+}
+
+function executionAdapterSandboxProbeExecutionConfirmationSummary(
+  confirmations: ExecutionAdapterSandboxProbeExecutionSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;

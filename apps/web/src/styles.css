@@ -5489,6 +5489,7 @@ em {
 .adapter-orchestration-dry-run-list,
 .adapter-orchestration-execution-list,
 .adapter-human-confirmation-list,
+.adapter-sandbox-probe-execution-list,
 .adapter-sandbox-probe-plan-list,
 .adapter-runtime-reload-acceptance-list {
   display: grid;
@@ -5499,6 +5500,7 @@ em {
 .adapter-orchestration-dry-run-row,
 .adapter-orchestration-execution-row,
 .adapter-human-confirmation-row,
+.adapter-sandbox-probe-execution-row,
 .adapter-sandbox-probe-plan-row,
 .adapter-runtime-reload-acceptance-row {
   min-width: 0;
@@ -5512,6 +5514,7 @@ em {
 .adapter-orchestration-dry-run-row.positive,
 .adapter-orchestration-execution-row.positive,
 .adapter-human-confirmation-row.positive,
+.adapter-sandbox-probe-execution-row.positive,
 .adapter-sandbox-probe-plan-row.positive,
 .adapter-runtime-reload-acceptance-row.positive {
   border-left-color: #4cc9ad;
@@ -5520,6 +5523,7 @@ em {
 .adapter-orchestration-dry-run-row.warning,
 .adapter-orchestration-execution-row.warning,
 .adapter-human-confirmation-row.warning,
+.adapter-sandbox-probe-execution-row.warning,
 .adapter-sandbox-probe-plan-row.warning,
 .adapter-runtime-reload-acceptance-row.warning {
   border-left-color: #e8be62;
@@ -5528,6 +5532,7 @@ em {
 .adapter-orchestration-dry-run-row.risk,
 .adapter-orchestration-execution-row.risk,
 .adapter-human-confirmation-row.risk,
+.adapter-sandbox-probe-execution-row.risk,
 .adapter-sandbox-probe-plan-row.risk,
 .adapter-runtime-reload-acceptance-row.risk {
   border-left-color: #ff7f6d;
@@ -5536,6 +5541,7 @@ em {
 .adapter-orchestration-dry-run-row > div:first-child,
 .adapter-orchestration-execution-row > div:first-child,
 .adapter-human-confirmation-row > div:first-child,
+.adapter-sandbox-probe-execution-row > div:first-child,
 .adapter-sandbox-probe-plan-row > div:first-child,
 .adapter-runtime-reload-acceptance-row > div:first-child {
   align-items: center;
@@ -5556,6 +5562,10 @@ em {
 .adapter-human-confirmation-row span,
 .adapter-human-confirmation-row p,
 .adapter-human-confirmation-row em,
+.adapter-sandbox-probe-execution-row strong,
+.adapter-sandbox-probe-execution-row span,
+.adapter-sandbox-probe-execution-row p,
+.adapter-sandbox-probe-execution-row em,
 .adapter-sandbox-probe-plan-row strong,
 .adapter-sandbox-probe-plan-row span,
 .adapter-sandbox-probe-plan-row p,
@@ -5570,6 +5580,7 @@ em {
 .adapter-orchestration-dry-run-row strong,
 .adapter-orchestration-execution-row strong,
 .adapter-human-confirmation-row strong,
+.adapter-sandbox-probe-execution-row strong,
 .adapter-sandbox-probe-plan-row strong,
 .adapter-runtime-reload-acceptance-row strong {
   color: #e8f0f8;
@@ -5582,6 +5593,8 @@ em {
 .adapter-orchestration-execution-row em,
 .adapter-human-confirmation-row span,
 .adapter-human-confirmation-row em,
+.adapter-sandbox-probe-execution-row span,
+.adapter-sandbox-probe-execution-row em,
 .adapter-sandbox-probe-plan-row span,
 .adapter-sandbox-probe-plan-row em,
 .adapter-runtime-reload-acceptance-row span,
@@ -5593,6 +5606,7 @@ em {
 .adapter-orchestration-dry-run-row p,
 .adapter-orchestration-execution-row p,
 .adapter-human-confirmation-row p,
+.adapter-sandbox-probe-execution-row p,
 .adapter-sandbox-probe-plan-row p,
 .adapter-runtime-reload-acceptance-row p {
   color: #c9d7e7;
@@ -5604,6 +5618,7 @@ em {
 .adapter-orchestration-dry-run-row em,
 .adapter-orchestration-execution-row em,
 .adapter-human-confirmation-row em,
+.adapter-sandbox-probe-execution-row em,
 .adapter-sandbox-probe-plan-row em,
 .adapter-runtime-reload-acceptance-row em {
   display: block;
@@ -5614,6 +5629,7 @@ em {
 .adapter-orchestration-dry-run-confirmations,
 .adapter-orchestration-execution-confirmations,
 .adapter-human-confirmation-confirmations,
+.adapter-sandbox-probe-execution-confirmations,
 .adapter-sandbox-probe-plan-confirmations,
 .adapter-runtime-reload-acceptance-confirmations {
   display: grid;
@@ -5625,6 +5641,7 @@ em {
 .adapter-orchestration-dry-run-confirmation,
 .adapter-orchestration-execution-confirmation,
 .adapter-human-confirmation-confirmation,
+.adapter-sandbox-probe-execution-confirmation,
 .adapter-sandbox-probe-plan-confirmation,
 .adapter-runtime-reload-acceptance-confirmation {
   align-items: center;
@@ -5641,6 +5658,7 @@ em {
 .adapter-orchestration-dry-run-confirmation.positive,
 .adapter-orchestration-execution-confirmation.positive,
 .adapter-human-confirmation-confirmation.positive,
+.adapter-sandbox-probe-execution-confirmation.positive,
 .adapter-sandbox-probe-plan-confirmation.positive,
 .adapter-runtime-reload-acceptance-confirmation.positive {
   border-color: #2e6b5d;
@@ -5650,6 +5668,7 @@ em {
 .adapter-orchestration-dry-run-confirmation input,
 .adapter-orchestration-execution-confirmation input,
 .adapter-human-confirmation-confirmation input,
+.adapter-sandbox-probe-execution-confirmation input,
 .adapter-sandbox-probe-plan-confirmation input,
 .adapter-runtime-reload-acceptance-confirmation input {
   accent-color: #4cc9ad;
@@ -5659,6 +5678,7 @@ em {
 .adapter-orchestration-dry-run-confirmation span,
 .adapter-orchestration-execution-confirmation span,
 .adapter-human-confirmation-confirmation span,
+.adapter-sandbox-probe-execution-confirmation span,
 .adapter-sandbox-probe-plan-confirmation span,
 .adapter-runtime-reload-acceptance-confirmation span {
   overflow-wrap: anywhere;
@@ -5667,6 +5687,7 @@ em {
 .adapter-orchestration-dry-run-result,
 .adapter-orchestration-execution-result,
 .adapter-human-confirmation-result,
+.adapter-sandbox-probe-execution-result,
 .adapter-sandbox-probe-plan-result,
 .adapter-runtime-reload-acceptance-result {
   border: 1px solid #27364a;
@@ -5680,6 +5701,7 @@ em {
 .adapter-orchestration-dry-run-result.positive,
 .adapter-orchestration-execution-result.positive,
 .adapter-human-confirmation-result.positive,
+.adapter-sandbox-probe-execution-result.positive,
 .adapter-sandbox-probe-plan-result.positive,
 .adapter-runtime-reload-acceptance-result.positive {
   border-color: #2e6b5d;
@@ -8398,6 +8420,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence,
 .promotion-runtime-reload-execution-evidence,
 .promotion-runtime-reload-plan-evidence,
+.promotion-sandbox-probe-execution-evidence,
 .promotion-sandbox-probe-plan-evidence,
 .promotion-secret-materialization-evidence,
 .promotion-secret-reference-evidence {
@@ -8420,6 +8443,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence > span,
 .promotion-runtime-reload-execution-evidence > span,
 .promotion-runtime-reload-plan-evidence > span,
+.promotion-sandbox-probe-execution-evidence > span,
 .promotion-sandbox-probe-plan-evidence > span,
 .promotion-secret-materialization-evidence > span,
 .promotion-secret-reference-evidence > span {
@@ -8430,6 +8454,7 @@ em {
 
 .promotion-human-confirmation-empty,
 .promotion-orchestration-execution-empty,
+.promotion-sandbox-probe-execution-empty,
 .promotion-sandbox-probe-plan-empty {
   margin: 0;
   border: 1px dashed #2a3b51;
@@ -8451,6 +8476,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence-row,
 .promotion-runtime-reload-execution-evidence-row,
 .promotion-runtime-reload-plan-evidence-row,
+.promotion-sandbox-probe-execution-evidence-row,
 .promotion-sandbox-probe-plan-evidence-row,
 .promotion-secret-materialization-evidence-row,
 .promotion-secret-reference-evidence-row {
@@ -8477,6 +8503,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence-row.positive,
 .promotion-runtime-reload-execution-evidence-row.positive,
 .promotion-runtime-reload-plan-evidence-row.positive,
+.promotion-sandbox-probe-execution-evidence-row.positive,
 .promotion-sandbox-probe-plan-evidence-row.positive,
 .promotion-secret-materialization-evidence-row.positive,
 .promotion-secret-reference-evidence-row.positive {
@@ -8494,6 +8521,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence-row.warning,
 .promotion-runtime-reload-execution-evidence-row.warning,
 .promotion-runtime-reload-plan-evidence-row.warning,
+.promotion-sandbox-probe-execution-evidence-row.warning,
 .promotion-sandbox-probe-plan-evidence-row.warning,
 .promotion-secret-materialization-evidence-row.warning,
 .promotion-secret-reference-evidence-row.warning {
@@ -8511,6 +8539,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence-row.risk,
 .promotion-runtime-reload-execution-evidence-row.risk,
 .promotion-runtime-reload-plan-evidence-row.risk,
+.promotion-sandbox-probe-execution-evidence-row.risk,
 .promotion-sandbox-probe-plan-evidence-row.risk,
 .promotion-secret-materialization-evidence-row.risk,
 .promotion-secret-reference-evidence-row.risk {
@@ -8550,6 +8579,9 @@ em {
 .promotion-runtime-reload-plan-evidence-row strong,
 .promotion-runtime-reload-plan-evidence-row p,
 .promotion-runtime-reload-plan-evidence-row em,
+.promotion-sandbox-probe-execution-evidence-row strong,
+.promotion-sandbox-probe-execution-evidence-row p,
+.promotion-sandbox-probe-execution-evidence-row em,
 .promotion-sandbox-probe-plan-evidence-row strong,
 .promotion-sandbox-probe-plan-evidence-row p,
 .promotion-sandbox-probe-plan-evidence-row em,
@@ -8575,6 +8607,7 @@ em {
 .promotion-runtime-reload-acceptance-evidence-row strong,
 .promotion-runtime-reload-execution-evidence-row strong,
 .promotion-runtime-reload-plan-evidence-row strong,
+.promotion-sandbox-probe-execution-evidence-row strong,
 .promotion-sandbox-probe-plan-evidence-row strong,
 .promotion-secret-materialization-evidence-row strong,
 .promotion-secret-reference-evidence-row strong {
@@ -8604,6 +8637,8 @@ em {
 .promotion-runtime-reload-execution-evidence-row em,
 .promotion-runtime-reload-plan-evidence-row p,
 .promotion-runtime-reload-plan-evidence-row em,
+.promotion-sandbox-probe-execution-evidence-row p,
+.promotion-sandbox-probe-execution-evidence-row em,
 .promotion-sandbox-probe-plan-evidence-row p,
 .promotion-sandbox-probe-plan-evidence-row em,
 .promotion-secret-materialization-evidence-row p,
