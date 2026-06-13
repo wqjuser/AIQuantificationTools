@@ -5488,6 +5488,7 @@ em {
 
 .adapter-orchestration-dry-run-list,
 .adapter-orchestration-execution-list,
+.adapter-human-confirmation-list,
 .adapter-runtime-reload-acceptance-list {
   display: grid;
   gap: 8px;
@@ -5496,6 +5497,7 @@ em {
 
 .adapter-orchestration-dry-run-row,
 .adapter-orchestration-execution-row,
+.adapter-human-confirmation-row,
 .adapter-runtime-reload-acceptance-row {
   min-width: 0;
   border: 1px solid #27364a;
@@ -5507,24 +5509,28 @@ em {
 
 .adapter-orchestration-dry-run-row.positive,
 .adapter-orchestration-execution-row.positive,
+.adapter-human-confirmation-row.positive,
 .adapter-runtime-reload-acceptance-row.positive {
   border-left-color: #4cc9ad;
 }
 
 .adapter-orchestration-dry-run-row.warning,
 .adapter-orchestration-execution-row.warning,
+.adapter-human-confirmation-row.warning,
 .adapter-runtime-reload-acceptance-row.warning {
   border-left-color: #e8be62;
 }
 
 .adapter-orchestration-dry-run-row.risk,
 .adapter-orchestration-execution-row.risk,
+.adapter-human-confirmation-row.risk,
 .adapter-runtime-reload-acceptance-row.risk {
   border-left-color: #ff7f6d;
 }
 
 .adapter-orchestration-dry-run-row > div:first-child,
 .adapter-orchestration-execution-row > div:first-child,
+.adapter-human-confirmation-row > div:first-child,
 .adapter-runtime-reload-acceptance-row > div:first-child {
   align-items: center;
   display: flex;
@@ -5540,6 +5546,10 @@ em {
 .adapter-orchestration-execution-row span,
 .adapter-orchestration-execution-row p,
 .adapter-orchestration-execution-row em,
+.adapter-human-confirmation-row strong,
+.adapter-human-confirmation-row span,
+.adapter-human-confirmation-row p,
+.adapter-human-confirmation-row em,
 .adapter-runtime-reload-acceptance-row strong,
 .adapter-runtime-reload-acceptance-row span,
 .adapter-runtime-reload-acceptance-row p,
@@ -5549,6 +5559,7 @@ em {
 
 .adapter-orchestration-dry-run-row strong,
 .adapter-orchestration-execution-row strong,
+.adapter-human-confirmation-row strong,
 .adapter-runtime-reload-acceptance-row strong {
   color: #e8f0f8;
   font-size: 13px;
@@ -5558,6 +5569,8 @@ em {
 .adapter-orchestration-dry-run-row em,
 .adapter-orchestration-execution-row span,
 .adapter-orchestration-execution-row em,
+.adapter-human-confirmation-row span,
+.adapter-human-confirmation-row em,
 .adapter-runtime-reload-acceptance-row span,
 .adapter-runtime-reload-acceptance-row em {
   color: #9fb0c3;
@@ -5566,6 +5579,7 @@ em {
 
 .adapter-orchestration-dry-run-row p,
 .adapter-orchestration-execution-row p,
+.adapter-human-confirmation-row p,
 .adapter-runtime-reload-acceptance-row p {
   color: #c9d7e7;
   font-size: 12px;
@@ -5575,6 +5589,7 @@ em {
 
 .adapter-orchestration-dry-run-row em,
 .adapter-orchestration-execution-row em,
+.adapter-human-confirmation-row em,
 .adapter-runtime-reload-acceptance-row em {
   display: block;
   font-style: normal;
@@ -5583,6 +5598,7 @@ em {
 
 .adapter-orchestration-dry-run-confirmations,
 .adapter-orchestration-execution-confirmations,
+.adapter-human-confirmation-confirmations,
 .adapter-runtime-reload-acceptance-confirmations {
   display: grid;
   gap: 6px;
@@ -5592,6 +5608,7 @@ em {
 
 .adapter-orchestration-dry-run-confirmation,
 .adapter-orchestration-execution-confirmation,
+.adapter-human-confirmation-confirmation,
 .adapter-runtime-reload-acceptance-confirmation {
   align-items: center;
   border: 1px solid #27364a;
@@ -5606,6 +5623,7 @@ em {
 
 .adapter-orchestration-dry-run-confirmation.positive,
 .adapter-orchestration-execution-confirmation.positive,
+.adapter-human-confirmation-confirmation.positive,
 .adapter-runtime-reload-acceptance-confirmation.positive {
   border-color: #2e6b5d;
   background: #0d211f;
@@ -5613,6 +5631,7 @@ em {
 
 .adapter-orchestration-dry-run-confirmation input,
 .adapter-orchestration-execution-confirmation input,
+.adapter-human-confirmation-confirmation input,
 .adapter-runtime-reload-acceptance-confirmation input {
   accent-color: #4cc9ad;
   flex: 0 0 auto;
@@ -5620,12 +5639,14 @@ em {
 
 .adapter-orchestration-dry-run-confirmation span,
 .adapter-orchestration-execution-confirmation span,
+.adapter-human-confirmation-confirmation span,
 .adapter-runtime-reload-acceptance-confirmation span {
   overflow-wrap: anywhere;
 }
 
 .adapter-orchestration-dry-run-result,
 .adapter-orchestration-execution-result,
+.adapter-human-confirmation-result,
 .adapter-runtime-reload-acceptance-result {
   border: 1px solid #27364a;
   border-radius: 6px;
@@ -5637,6 +5658,7 @@ em {
 
 .adapter-orchestration-dry-run-result.positive,
 .adapter-orchestration-execution-result.positive,
+.adapter-human-confirmation-result.positive,
 .adapter-runtime-reload-acceptance-result.positive {
   border-color: #2e6b5d;
   background: #0d211f;
@@ -8347,6 +8369,7 @@ em {
 .promotion-certification-apply-evidence,
 .promotion-controlled-restart-evidence,
 .promotion-environment-binding-evidence,
+.promotion-human-confirmation-evidence,
 .promotion-orchestration-dry-run-evidence,
 .promotion-orchestration-execution-evidence,
 .promotion-restart-acceptance,
@@ -8367,6 +8390,7 @@ em {
 .promotion-certification-apply-evidence > span,
 .promotion-controlled-restart-evidence > span,
 .promotion-environment-binding-evidence > span,
+.promotion-human-confirmation-evidence > span,
 .promotion-orchestration-dry-run-evidence > span,
 .promotion-orchestration-execution-evidence > span,
 .promotion-restart-acceptance > span,
@@ -8380,6 +8404,7 @@ em {
   font-weight: 900;
 }
 
+.promotion-human-confirmation-empty,
 .promotion-orchestration-execution-empty {
   margin: 0;
   border: 1px dashed #2a3b51;
@@ -8394,6 +8419,7 @@ em {
 .promotion-certification-apply-evidence-row,
 .promotion-controlled-restart-evidence-row,
 .promotion-environment-binding-evidence-row,
+.promotion-human-confirmation-evidence-row,
 .promotion-orchestration-dry-run-evidence-row,
 .promotion-orchestration-execution-evidence-row,
 .promotion-restart-acceptance-row,
@@ -8418,6 +8444,7 @@ em {
 .promotion-certification-apply-evidence-row.positive,
 .promotion-controlled-restart-evidence-row.positive,
 .promotion-environment-binding-evidence-row.positive,
+.promotion-human-confirmation-evidence-row.positive,
 .promotion-orchestration-dry-run-evidence-row.positive,
 .promotion-orchestration-execution-evidence-row.positive,
 .promotion-restart-acceptance-row.positive,
@@ -8433,6 +8460,7 @@ em {
 .promotion-certification-apply-evidence-row.warning,
 .promotion-controlled-restart-evidence-row.warning,
 .promotion-environment-binding-evidence-row.warning,
+.promotion-human-confirmation-evidence-row.warning,
 .promotion-orchestration-dry-run-evidence-row.warning,
 .promotion-orchestration-execution-evidence-row.warning,
 .promotion-restart-acceptance-row.warning,
@@ -8448,6 +8476,7 @@ em {
 .promotion-certification-apply-evidence-row.risk,
 .promotion-controlled-restart-evidence-row.risk,
 .promotion-environment-binding-evidence-row.risk,
+.promotion-human-confirmation-evidence-row.risk,
 .promotion-orchestration-dry-run-evidence-row.risk,
 .promotion-orchestration-execution-evidence-row.risk,
 .promotion-restart-acceptance-row.risk,
@@ -8471,6 +8500,9 @@ em {
 .promotion-environment-binding-evidence-row strong,
 .promotion-environment-binding-evidence-row p,
 .promotion-environment-binding-evidence-row em,
+.promotion-human-confirmation-evidence-row strong,
+.promotion-human-confirmation-evidence-row p,
+.promotion-human-confirmation-evidence-row em,
 .promotion-orchestration-dry-run-evidence-row strong,
 .promotion-orchestration-dry-run-evidence-row p,
 .promotion-orchestration-dry-run-evidence-row em,
@@ -8504,6 +8536,7 @@ em {
 .promotion-certification-apply-evidence-row strong,
 .promotion-controlled-restart-evidence-row strong,
 .promotion-environment-binding-evidence-row strong,
+.promotion-human-confirmation-evidence-row strong,
 .promotion-orchestration-dry-run-evidence-row strong,
 .promotion-orchestration-execution-evidence-row strong,
 .promotion-restart-acceptance-row strong,
@@ -8524,6 +8557,8 @@ em {
 .promotion-controlled-restart-evidence-row em,
 .promotion-environment-binding-evidence-row p,
 .promotion-environment-binding-evidence-row em,
+.promotion-human-confirmation-evidence-row p,
+.promotion-human-confirmation-evidence-row em,
 .promotion-orchestration-dry-run-evidence-row p,
 .promotion-orchestration-dry-run-evidence-row em,
 .promotion-orchestration-execution-evidence-row p,

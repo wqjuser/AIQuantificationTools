@@ -75,6 +75,7 @@ from quant_core.execution import (
     build_execution_adapter_certification_apply,
     build_execution_adapter_controlled_restart_evidence,
     build_execution_adapter_environment_binding,
+    build_execution_adapter_human_confirmation,
     build_execution_adapter_orchestration_dry_run,
     build_execution_adapter_orchestration_execution,
     build_execution_adapter_restart_acceptance,
@@ -97,6 +98,9 @@ from quant_core.execution import (
     execution_adapter_environment_binding_payload_from_audit_event,
     execution_adapter_environment_binding_to_audit_event_payload,
     execution_adapter_environment_binding_to_payload,
+    execution_adapter_human_confirmation_payload_from_audit_event,
+    execution_adapter_human_confirmation_to_audit_event_payload,
+    execution_adapter_human_confirmation_to_payload,
     execution_adapter_orchestration_dry_run_payload_from_audit_event,
     execution_adapter_orchestration_dry_run_to_audit_event_payload,
     execution_adapter_orchestration_dry_run_to_payload,
@@ -740,6 +744,47 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "auditEvent": audit_event_record_to_payload(audit_event),
                 },
                 status=409 if orchestration_execution.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-human-confirmations":
+            payload = self._read_json_body()
+            orchestration_execution_id = str(payload.get("orchestrationExecutionId") or "").strip()
+            orchestration_execution_event = self.audit_event_store.get(orchestration_execution_id)
+            orchestration_execution = (
+                execution_adapter_orchestration_execution_payload_from_audit_event(orchestration_execution_event)
+                if orchestration_execution_event
+                else None
+            )
+            if not orchestration_execution:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_orchestration_execution_not_found",
+                        "orchestrationExecutionId": orchestration_execution_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                human_confirmation = build_execution_adapter_human_confirmation(
+                    orchestration_execution,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    confirmation_mode=str(payload.get("confirmationMode") or "manual_final_human_confirmation"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_execution_adapter_human_confirmation", "detail": str(error)}, status=400)
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_human_confirmation_to_audit_event_payload(human_confirmation)
+            )
+            self._send_json(
+                {
+                    "adapterHumanConfirmation": execution_adapter_human_confirmation_to_payload(human_confirmation),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if human_confirmation.status == "blocked" else 201,
             )
             return
         if parsed.path == "/api/execution/adapter-certifications":
@@ -1779,6 +1824,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(orchestration_executions) >= limit:
                     break
             self._send_json({"adapterOrchestrationExecutions": orchestration_executions})
+            return
+        if parsed.path == "/api/execution/adapter-human-confirmations":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_human_confirmation_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            human_confirmation_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_human_confirmation",
+                limit=50,
+                query=adapter_id,
+            )
+            human_confirmations = []
+            for event in human_confirmation_events:
+                payload = execution_adapter_human_confirmation_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    human_confirmations.append(payload)
+                if len(human_confirmations) >= limit:
+                    break
+            self._send_json({"adapterHumanConfirmations": human_confirmations})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

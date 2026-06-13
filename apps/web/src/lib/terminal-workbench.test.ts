@@ -47,6 +47,7 @@ import {
   buildExecutionAdapterRuntimeReloadAcceptanceRows,
   buildExecutionAdapterOrchestrationDryRunRows,
   buildExecutionAdapterOrchestrationExecutionRows,
+  buildExecutionAdapterHumanConfirmationRows,
   buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterSecretMaterializationRows,
@@ -11376,6 +11377,84 @@ describe("terminal workbench model", () => {
     expect(JSON.stringify(rows)).not.toContain("[redacted]");
   });
 
+  test("builds compact adapter human confirmation rows from ledger results", () => {
+    const rows = buildExecutionAdapterHumanConfirmationRows([
+      {
+        schemaVersion: 1,
+        humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+        orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+        dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        status: "confirmation_recorded",
+        operator: "human-operator",
+        recordedAt: "2026-06-09T10:05:00+00:00",
+        confirmationMode: "manual_final_human_confirmation",
+        orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+        requiredConfirmations: [
+          { id: "orchestration-execution-reviewed", label: "Orchestration execution reviewed", status: "confirmed" },
+          { id: "risk-approval-still-valid", label: "Risk approval still valid", status: "confirmed" },
+          { id: "paper-execution-reviewed", label: "Paper execution reviewed", status: "confirmed" },
+          { id: "kill-switch-ready", label: "Kill switch ready", status: "confirmed" },
+          { id: "operator-confirmed-final-boundary", label: "Final boundary confirmed", status: "confirmed" }
+        ],
+        blockedReasons: [],
+        metadata: { token: "[redacted]", fingerprint: "sha256:human-confirmation" },
+        liveTradingAllowed: false,
+        paperOnly: true
+      }
+    ]);
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-human-confirmation-us-live",
+        orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+        dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+        executionId: "execution-adapter-runtime-reload-execution-us-live",
+        planId: "execution-adapter-runtime-reload-plan-us-live",
+        bindingId: "execution-adapter-environment-binding-us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        adapterId: "us-live",
+        market: "us",
+        route: "live",
+        timestamp: "2026-06-09T10:05:00+00:00",
+        status: "confirmation_recorded",
+        statusLabel: "Confirmation recorded",
+        confirmationMode: "manual_final_human_confirmation",
+        orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-us-live-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-human-confirmation-us-live",
+        tone: "positive"
+      }
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
   test("blocks promotion readiness before an audited run is bound", () => {
     const workspace = buildTerminalWorkspace();
     const readiness = buildPromotionReadiness(workspace, null, buildBrokerAdapterRows(workspace));
@@ -11655,6 +11734,110 @@ describe("terminal workbench model", () => {
     });
     expect(readiness.stages.find((stage) => stage.id === "human-confirmation")).toMatchObject({
       status: "blocked"
+    });
+  });
+
+  test("surfaces adapter human confirmation evidence in promotion readiness without enabling live routing", () => {
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-promotion-human-confirmation",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA Trend / Bank Sector",
+      strategyRevision: "rev-promotion-human-confirmation",
+      dataRows: 240,
+      metrics: { total_return_pct: 12.4, max_drawdown_pct: 5.8, win_rate_pct: 51, trade_count: 42 },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 }
+    });
+    const execution = {
+      executionId: "paper-promotion-human-confirmation",
+      runId: "run-promotion-human-confirmation",
+      createdAt: "2026-05-26T08:00:00+00:00",
+      mode: "paper_only",
+      account: {
+        cash: 80_659,
+        equity: 100_000,
+        positions: { "600000": 2100 }
+      },
+      orders: [
+        {
+          orderId: "order-promotion-human-confirmation",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 2100,
+          price: 9.21,
+          status: "filled" as const,
+          reason: "filled_immediately",
+          timestamp: "2026-05-26T08:00:00+00:00"
+        }
+      ],
+      gates: [
+        { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+        { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+        { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper only" }
+      ]
+    };
+    const humanConfirmationRows = [
+      {
+        id: "execution-adapter-human-confirmation-ashare-live",
+        orchestrationExecutionId: "execution-adapter-orchestration-execution-ashare-live",
+        dryRunId: "execution-adapter-orchestration-dry-run-ashare-live",
+        acceptanceId: "execution-adapter-runtime-reload-acceptance-ashare-live",
+        executionId: "execution-adapter-runtime-reload-execution-ashare-live",
+        planId: "execution-adapter-runtime-reload-plan-ashare-live",
+        bindingId: "execution-adapter-environment-binding-ashare-live",
+        materializationId: "execution-adapter-secret-materialization-ashare-live",
+        adapterId: "ashare-live",
+        market: "ashare" as const,
+        route: "live" as const,
+        timestamp: "2026-06-09T10:05:00+00:00",
+        status: "confirmation_recorded" as const,
+        statusLabel: "Confirmation recorded",
+        confirmationMode: "manual_final_human_confirmation",
+        orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+        orchestrationMode: "manual_adapter_orchestration_dry_run",
+        acceptanceMode: "manual_runtime_reload_acceptance",
+        executionMode: "manual_controlled_reload",
+        reloadMode: "manual_container_reload_plan",
+        maintenanceWindowId: "window-ashare-human-1",
+        bindingMode: "container_env_reference",
+        manifestPath: "local-secret-store://ashare-live/sandbox",
+        envVarSummary: "2 env vars",
+        confirmationSummary: "5 confirmed / 0 missing",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: "execution-adapter-human-confirmation-ashare-live",
+        tone: "positive" as const
+      }
+    ];
+
+    const readiness = buildPromotionReadiness(
+      workspace,
+      execution,
+      buildBrokerAdapterRows(workspace),
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      humanConfirmationRows
+    );
+
+    expect(readiness.status).toBe("certification_pending");
+    expect(readiness.stages.find((stage) => stage.id === "human-confirmation")).toMatchObject({
+      value: "Confirmation recorded · ashare-live",
+      status: "passed",
+      tone: "positive",
+      detail:
+        "Latest human confirmation execution-adapter-human-confirmation-ashare-live: Confirmation recorded · 5 confirmed / 0 missing · No blockers · Paper only · live trading blocked."
     });
   });
 

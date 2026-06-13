@@ -3756,6 +3756,291 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("orchestration-execution-blocked-api-key-should-not-leak", serialized)
         self.assertNotIn("orchestration-execution-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_human_confirmation_records_final_gate_without_enabling_live(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "ccxt-live",
+                        "market": "crypto",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "ccxt-live/sandbox",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "ccxt-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "ccxt-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-ccxt-human-confirmation-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                    },
+                )
+                plan_id = plan_payload["adapterRuntimeReloadPlan"]["planId"]
+
+                reload_execution_response, reload_execution_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                    },
+                )
+                reload_execution_id = reload_execution_payload["adapterRuntimeReloadExecution"]["executionId"]
+
+                acceptance_response, acceptance_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-acceptances",
+                    {
+                        "adapterId": "ccxt-live",
+                        "executionId": reload_execution_id,
+                        "operator": "runtime-operator",
+                        "acceptanceMode": "manual_runtime_reload_acceptance",
+                        "confirmations": {
+                            "executionEvidenceReviewed": True,
+                            "postReloadHealthVerified": True,
+                            "adapterHandshakeVerified": True,
+                            "killSwitchStillEnabled": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                    },
+                )
+                acceptance_id = acceptance_payload["adapterRuntimeReloadAcceptance"]["acceptanceId"]
+
+                dry_run_response, dry_run_payload = post_json(
+                    "/api/execution/adapter-orchestration-dry-runs",
+                    {
+                        "adapterId": "ccxt-live",
+                        "acceptanceId": acceptance_id,
+                        "operator": "runtime-operator",
+                        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                        "confirmations": {
+                            "acceptedChainReviewed": True,
+                            "sandboxHandshakeDryRunPassed": True,
+                            "orderSchemaDryRunPassed": True,
+                            "accountSyncDryRunPassed": True,
+                            "operatorConfirmedNoLiveOrders": True,
+                        },
+                    },
+                )
+                dry_run_id = dry_run_payload["adapterOrchestrationDryRun"]["dryRunId"]
+
+                orchestration_execution_response, orchestration_execution_payload = post_json(
+                    "/api/execution/adapter-orchestration-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "dryRunId": dry_run_id,
+                        "operator": "runtime-operator",
+                        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                        "confirmations": {
+                            "dryRunEvidenceReviewed": True,
+                            "sandboxRouteLocked": True,
+                            "killSwitchArmed": True,
+                            "idempotencyKeyRecorded": True,
+                            "operatorConfirmedNoCapital": True,
+                        },
+                    },
+                )
+                orchestration_execution_id = orchestration_execution_payload["adapterOrchestrationExecution"][
+                    "orchestrationExecutionId"
+                ]
+
+                missing_execution_response, missing_execution_payload = post_json(
+                    "/api/execution/adapter-human-confirmations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "orchestrationExecutionId": "missing-orchestration-execution",
+                        "operator": "human-operator",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-human-confirmations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "orchestrationExecutionId": orchestration_execution_id,
+                        "operator": "human-operator",
+                        "confirmationMode": "manual_final_human_confirmation",
+                        "confirmations": {},
+                        "metadata": {
+                            "source": "settings-panel",
+                            "apiKey": "human-confirmation-blocked-api-key-should-not-leak",
+                        },
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-human-confirmations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "orchestrationExecutionId": orchestration_execution_id,
+                        "operator": "human-operator",
+                        "confirmationMode": "manual_final_human_confirmation",
+                        "confirmations": {
+                            "orchestrationExecutionReviewed": True,
+                            "riskApprovalStillValid": True,
+                            "paperExecutionReviewed": True,
+                            "killSwitchReady": True,
+                            "operatorConfirmedFinalBoundary": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "human-confirmation-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-human-confirmations?adapterId=ccxt-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(reload_execution_response.status, 201)
+        self.assertEqual(acceptance_response.status, 201)
+        self.assertEqual(dry_run_response.status, 201)
+        self.assertEqual(orchestration_execution_response.status, 201)
+        self.assertEqual(missing_execution_response.status, 404)
+        self.assertEqual(missing_execution_payload["error"], "execution_adapter_orchestration_execution_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterHumanConfirmation"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterHumanConfirmation"]["blockedReasons"],
+            [
+                "human_confirmation_orchestration_execution_not_reviewed",
+                "human_confirmation_risk_approval_not_current",
+                "human_confirmation_paper_execution_not_reviewed",
+                "human_confirmation_kill_switch_not_ready",
+                "human_confirmation_final_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterHumanConfirmation"]["status"], "confirmation_recorded")
+        self.assertEqual(
+            recorded_payload["adapterHumanConfirmation"]["orchestrationExecutionId"],
+            orchestration_execution_id,
+        )
+        self.assertEqual(recorded_payload["adapterHumanConfirmation"]["adapterId"], "ccxt-live")
+        self.assertEqual(
+            recorded_payload["adapterHumanConfirmation"]["confirmationMode"],
+            "manual_final_human_confirmation",
+        )
+        self.assertEqual(recorded_payload["adapterHumanConfirmation"]["requiredEnvVars"], ["CCXT_API_KEY", "CCXT_API_SECRET"])
+        self.assertFalse(recorded_payload["adapterHumanConfirmation"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterHumanConfirmation"]["paperOnly"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_human_confirmation")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterHumanConfirmations"]), 2)
+        self.assertEqual(history_payload["adapterHumanConfirmations"][0]["status"], "confirmation_recorded")
+        self.assertEqual(history_payload["adapterHumanConfirmations"][1]["status"], "blocked")
+        self.assertNotIn("human-confirmation-blocked-api-key-should-not-leak", serialized)
+        self.assertNotIn("human-confirmation-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

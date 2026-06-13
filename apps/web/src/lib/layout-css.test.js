@@ -1894,7 +1894,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows)"
     );
     expect(appSource).toContain("adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}");
     expect(appSource).toContain("adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[]");
@@ -1913,7 +1913,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretReferenceRows(executionAdapterSecretReferences)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows)"
     );
     expect(appSource).toContain("adapterSecretReferenceRows={executionAdapterSecretReferenceRows}");
     expect(appSource).toContain("adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[]");
@@ -1932,7 +1932,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretMaterializationRows(executionAdapterSecretMaterializations)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows)"
     );
     expect(appSource).toContain("adapterSecretMaterializationRows={executionAdapterSecretMaterializationRows}");
     expect(appSource).toContain("adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[]");
@@ -1968,7 +1968,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const executionAdapterRuntimeReloadAcceptanceRows = buildExecutionAdapterRuntimeReloadAcceptanceRows(");
     expect(appSource).toContain("executionAdapterRuntimeReloadAcceptances");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows)"
     );
     expect(appSource).toContain("adapterEnvironmentBindingRows={executionAdapterEnvironmentBindingRows}");
     expect(appSource).toContain("adapterRuntimeReloadPlanRows={executionAdapterRuntimeReloadPlanRows}");
@@ -2149,6 +2149,60 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-orchestration-execution-list");
     expect(styles).toContain(".adapter-orchestration-execution-row");
     expect(styles).toContain(".adapter-orchestration-execution-confirmation");
+  });
+
+  test("renders adapter human confirmation history and recording controls", () => {
+    expect(appSource).toContain("loadExecutionAdapterHumanConfirmations(quantCoreBaseUrl");
+    expect(appSource).toContain("recordExecutionAdapterHumanConfirmation,");
+    expect(appSource).toContain(
+      "setExecutionAdapterHumanConfirmations(humanConfirmationResults.flatMap((result) => result.adapterHumanConfirmations))"
+    );
+    expect(appSource).toContain("const executionAdapterHumanConfirmationRows = buildExecutionAdapterHumanConfirmationRows(");
+    expect(appSource).toContain("executionAdapterHumanConfirmations");
+    expect(appSource).toContain(
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows)"
+    );
+    expect(appSource).toContain("adapterHumanConfirmationRows={executionAdapterHumanConfirmationRows}");
+    expect(appSource).toContain("adapterHumanConfirmationRows: ExecutionAdapterHumanConfirmationRow[]");
+    expect(appSource).toContain('className="promotion-human-confirmation-evidence"');
+    expect(appSource).toContain('className={`promotion-human-confirmation-evidence-row');
+    expect(appSource).toContain('className="promotion-human-confirmation-empty"');
+    expect(appSource).toContain("等待最终人工确认");
+    expect(appSource).toContain("adapterHumanConfirmationStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterHumanConfirmationConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(appSource).toContain("interface ExecutionAdapterHumanConfirmationConfirmations");
+    expect(appSource).toContain(
+      "const [adapterHumanConfirmationConfirmations, setAdapterHumanConfirmationConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterHumanConfirmationId, setRecordingAdapterHumanConfirmationId]"
+    );
+    expect(appSource).toContain("const updateAdapterHumanConfirmationConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterHumanConfirmation = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterHumanConfirmation(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterHumanConfirmations((current) => [");
+    expect(appSource).toContain(
+      "humanConfirmationConfirmations={adapterHumanConfirmationConfirmations}"
+    );
+    expect(appSource).toContain("recordingHumanConfirmationId={recordingAdapterHumanConfirmationId}");
+    expect(appSource).toContain("humanConfirmationRows={executionAdapterHumanConfirmationRows}");
+    expect(appSource).toContain("onRecordHumanConfirmation={recordAdapterHumanConfirmation}");
+    expect(appSource).toContain(
+      "onHumanConfirmationChange={updateAdapterHumanConfirmationConfirmation}"
+    );
+    expect(appSource).toContain("humanConfirmationConfirmations: Record<string, ExecutionAdapterHumanConfirmationConfirmations>");
+    expect(appSource).toContain("humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[]");
+    expect(appSource).toContain('className="adapter-human-confirmation-list"');
+    expect(appSource).toContain('className={`adapter-human-confirmation-row');
+    expect(appSource).toContain('className={`adapter-human-confirmation-confirmation');
+    expect(appSource).toContain("adapterHumanConfirmationStatusLabel(i18n, confirmation.statusLabel)");
+    expect(appSource).toContain("adapterHumanConfirmationConfirmationSummary(i18n, confirmation.confirmationSummary)");
+    expect(styles).toContain(".promotion-human-confirmation-evidence");
+    expect(styles).toContain(".promotion-human-confirmation-evidence-row");
+    expect(styles).toContain(".promotion-human-confirmation-empty");
+    expect(styles).toContain(".adapter-human-confirmation-list");
+    expect(styles).toContain(".adapter-human-confirmation-row");
+    expect(styles).toContain(".adapter-human-confirmation-confirmation");
   });
 
   test("renders platform settings from local-core status when available", () => {

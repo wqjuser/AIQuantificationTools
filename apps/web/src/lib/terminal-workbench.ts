@@ -2686,6 +2686,78 @@ export interface ExecutionAdapterOrchestrationExecutionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterHumanConfirmationStatus = "blocked" | "confirmation_recorded";
+export type ExecutionAdapterHumanConfirmationConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterHumanConfirmationSnapshot {
+  schemaVersion: 1;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterHumanConfirmationStatus;
+  operator: string;
+  recordedAt: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterHumanConfirmationConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterHumanConfirmationRow {
+  id: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterHumanConfirmationStatus;
+  statusLabel: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -10994,6 +11066,50 @@ export function buildExecutionAdapterOrchestrationExecutionRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterHumanConfirmationRows(
+  confirmations: ExecutionAdapterHumanConfirmationSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterHumanConfirmationRow[] {
+  return (confirmations ?? [])
+    .map((row) => ({
+      id: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterHumanConfirmationStatusLabel(row.status),
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      confirmationSummary: executionAdapterHumanConfirmationConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.humanConfirmationId,
+      tone: executionAdapterHumanConfirmationTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -11250,6 +11366,22 @@ function latestPromotionRuntimeReloadAcceptanceRow(
   );
 }
 
+function latestPromotionHumanConfirmationRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterHumanConfirmationRow[]
+): ExecutionAdapterHumanConfirmationRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local"
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -11437,7 +11569,8 @@ export function buildPromotionReadiness(
   environmentBindingRows: ExecutionAdapterEnvironmentBindingRow[] = [],
   runtimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[] = [],
   runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[] = [],
-  runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[] = []
+  runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[] = [],
+  humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -11447,7 +11580,6 @@ export function buildPromotionReadiness(
   const paperRiskGate = activeExecution?.gates.find((gate) => gate.id === "paper-risk-check");
   const paperExecutionPassed = filledOrders.length > 0 && paperRiskGate?.passed === true;
   const adapterGatePassed = workspace.execution.gates.find((gate) => gate.id === "adapter-certified")?.passed === true;
-  const humanGatePassed = workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true;
   const latestCertification = latestPromotionCertificationRow(workspace, certificationRows);
   const latestCertificationApply = latestPromotionCertificationApplyRow(workspace, certificationApplyRows, latestCertification);
   const latestRestartEvidence = latestPromotionControlledRestartEvidenceRow(
@@ -11495,6 +11627,10 @@ export function buildPromotionReadiness(
     latestRuntimeReloadPlan,
     latestRuntimeReloadExecution
   );
+  const latestHumanConfirmation = latestPromotionHumanConfirmationRow(workspace, humanConfirmationRows);
+  const humanGatePassed =
+    workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true ||
+    latestHumanConfirmation?.status === "confirmation_recorded";
   const evidenceCertified =
     latestCertification?.status === "passed" && latestCertification.liveTradingAllowed && latestCertification.route === "live";
   const certifiedLiveAdapters = brokerRows.filter(
@@ -11572,16 +11708,25 @@ export function buildPromotionReadiness(
     adapterGatePassed
   );
 
-  const humanStage: PromotionQueueStage = {
-    id: "human-confirmation",
-    label: "Human confirmation",
-    value: humanGatePassed ? "manual approval recorded" : "manual approval required",
-    detail: humanGatePassed
-      ? "A human operator confirmed this promotion path."
-      : "Live promotion requires explicit human confirmation after adapter certification.",
-    status: humanGatePassed ? "passed" : "blocked",
-    tone: humanGatePassed ? "positive" : "warning"
-  };
+  const humanStage: PromotionQueueStage = latestHumanConfirmation
+    ? {
+        id: "human-confirmation",
+        label: "Human confirmation",
+        value: `${latestHumanConfirmation.statusLabel} · ${latestHumanConfirmation.adapterId}`,
+        detail: `Latest human confirmation ${latestHumanConfirmation.auditEventId}: ${latestHumanConfirmation.statusLabel} · ${latestHumanConfirmation.confirmationSummary} · ${latestHumanConfirmation.blockerSummary} · ${latestHumanConfirmation.boundary}.`,
+        status: latestHumanConfirmation.status === "confirmation_recorded" ? "passed" : "blocked",
+        tone: latestHumanConfirmation.tone
+      }
+    : {
+        id: "human-confirmation",
+        label: "Human confirmation",
+        value: humanGatePassed ? "manual approval recorded" : "manual approval required",
+        detail: humanGatePassed
+          ? "A human operator confirmed this promotion path."
+          : "Live promotion requires explicit human confirmation after adapter certification.",
+        status: humanGatePassed ? "passed" : "blocked",
+        tone: humanGatePassed ? "positive" : "warning"
+      };
 
   const stages = [auditedStage, riskStage, paperStage, adapterStage, humanStage];
   if (!run || approval.status === "blocked") {
@@ -13444,6 +13589,31 @@ function executionAdapterOrchestrationExecutionStatusLabel(
 
 function executionAdapterOrchestrationExecutionConfirmationSummary(
   confirmations: ExecutionAdapterOrchestrationExecutionSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterHumanConfirmationTone(
+  status: ExecutionAdapterHumanConfirmationStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "confirmation_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterHumanConfirmationStatusLabel(
+  status: ExecutionAdapterHumanConfirmationStatus
+): string {
+  return (
+    {
+      confirmation_recorded: "Confirmation recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterHumanConfirmationStatus, string>
+  )[status];
+}
+
+function executionAdapterHumanConfirmationConfirmationSummary(
+  confirmations: ExecutionAdapterHumanConfirmationSnapshot["requiredConfirmations"]
 ): string {
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;

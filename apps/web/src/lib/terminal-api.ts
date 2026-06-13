@@ -1903,6 +1903,76 @@ export interface ExecutionAdapterOrchestrationExecutionHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterHumanConfirmationStatus = "blocked" | "confirmation_recorded";
+export type ExecutionAdapterHumanConfirmationConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterHumanConfirmationConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterHumanConfirmationConfirmationStatus;
+}
+
+export interface ExecutionAdapterHumanConfirmationResult {
+  schemaVersion: 1;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterHumanConfirmationStatus;
+  operator: string;
+  recordedAt: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  requiredConfirmations: ExecutionAdapterHumanConfirmationConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterHumanConfirmationRequest {
+  adapterId: string;
+  orchestrationExecutionId: string;
+  operator?: string;
+  confirmationMode?: string;
+  confirmations?: {
+    orchestrationExecutionReviewed?: boolean;
+    riskApprovalStillValid?: boolean;
+    paperExecutionReviewed?: boolean;
+    killSwitchReady?: boolean;
+    operatorConfirmedFinalBoundary?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterHumanConfirmationRecordResult {
+  adapterHumanConfirmation?: ExecutionAdapterHumanConfirmationResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterHumanConfirmationHistoryResult {
+  adapterHumanConfirmations: ExecutionAdapterHumanConfirmationResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -2905,6 +2975,10 @@ export function buildExecutionAdapterOrchestrationExecutionUrl(baseUrl: string):
   return buildApiUrl(baseUrl, "api/execution/adapter-orchestration-executions");
 }
 
+export function buildExecutionAdapterHumanConfirmationUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-human-confirmations");
+}
+
 export function buildExecutionAdapterCertificationAppliesUrl(
   baseUrl: string,
   params: { adapterId?: string; limit?: number } = {}
@@ -3050,6 +3124,20 @@ export function buildExecutionAdapterOrchestrationExecutionHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-orchestration-executions", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterHumanConfirmationHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-human-confirmations", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -5739,6 +5827,51 @@ export async function recordExecutionAdapterOrchestrationExecution(
   }
 }
 
+export async function recordExecutionAdapterHumanConfirmation(
+  baseUrl: string,
+  request: ExecutionAdapterHumanConfirmationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterHumanConfirmationRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterHumanConfirmationUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        orchestrationExecutionId: request.orchestrationExecutionId,
+        operator: request.operator ?? "local-operator",
+        confirmationMode: request.confirmationMode ?? "manual_final_human_confirmation",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterHumanConfirmationRecordPayload(payload)) {
+      return {
+        adapterHumanConfirmation: payload.adapterHumanConfirmation,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter human confirmation contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter human confirmation error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -6075,6 +6208,34 @@ export async function loadExecutionAdapterOrchestrationExecutions(
       adapterOrchestrationExecutions: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter orchestration execution history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterHumanConfirmations(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterHumanConfirmationHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterHumanConfirmationHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterHumanConfirmationHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter human confirmation history contract");
+    }
+    return {
+      adapterHumanConfirmations: payload.adapterHumanConfirmations,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterHumanConfirmations: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter human confirmation history error"
     };
   }
 }
@@ -8479,6 +8640,22 @@ function isExecutionAdapterOrchestrationExecutionRecordPayload(
   );
 }
 
+function isExecutionAdapterHumanConfirmationRecordPayload(
+  value: unknown
+): value is {
+  adapterHumanConfirmation: ExecutionAdapterHumanConfirmationResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterHumanConfirmation?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterHumanConfirmationResult(payload.adapterHumanConfirmation) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -8632,6 +8809,19 @@ function isExecutionAdapterOrchestrationExecutionHistoryPayload(
   return (
     Array.isArray(payload.adapterOrchestrationExecutions) &&
     payload.adapterOrchestrationExecutions.every(isExecutionAdapterOrchestrationExecutionResult)
+  );
+}
+
+function isExecutionAdapterHumanConfirmationHistoryPayload(
+  value: unknown
+): value is { adapterHumanConfirmations: ExecutionAdapterHumanConfirmationResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterHumanConfirmations?: unknown };
+  return (
+    Array.isArray(payload.adapterHumanConfirmations) &&
+    payload.adapterHumanConfirmations.every(isExecutionAdapterHumanConfirmationResult)
   );
 }
 
@@ -9007,6 +9197,50 @@ function isExecutionAdapterOrchestrationExecutionResult(
   );
 }
 
+function isExecutionAdapterHumanConfirmationResult(
+  value: unknown
+): value is ExecutionAdapterHumanConfirmationResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterHumanConfirmationResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterHumanConfirmationStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterHumanConfirmationConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationApplyConfirmation(
   value: unknown
 ): value is ExecutionAdapterCertificationApplyConfirmation {
@@ -9214,6 +9448,20 @@ function isExecutionAdapterOrchestrationExecutionConfirmation(
   );
 }
 
+function isExecutionAdapterHumanConfirmationConfirmation(
+  value: unknown
+): value is ExecutionAdapterHumanConfirmationConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterHumanConfirmationConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -9280,6 +9528,12 @@ function isExecutionAdapterOrchestrationExecutionStatus(
   value: unknown
 ): value is ExecutionAdapterOrchestrationExecutionStatus {
   return value === "blocked" || value === "execution_recorded";
+}
+
+function isExecutionAdapterHumanConfirmationStatus(
+  value: unknown
+): value is ExecutionAdapterHumanConfirmationStatus {
+  return value === "blocked" || value === "confirmation_recorded";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
