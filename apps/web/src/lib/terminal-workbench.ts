@@ -1510,6 +1510,7 @@ export interface AuditEvidenceReportLedgerSummary {
   importVerificationInvalid: number;
   importVerificationVerified: number;
   invalid: number;
+  latestAuditAidEventId: string;
   latestAuditAidEvidenceLabel: string;
   latestAuditAidEvidenceLink: string;
   latestAuditAidPreflightActionId: string;
@@ -1517,7 +1518,9 @@ export interface AuditEvidenceReportLedgerSummary {
   latestAuditAidPreflightAttention: number;
   latestAuditAidPreflightLabel: string;
   latestAuditAidPreflightState: string;
+  latestAuditAidReportQuery: string;
   latestAuditAidRunId: string;
+  latestAuditAidShortHash: string;
   latestHash: string;
   latestReportKind: AuditEvidenceReportLedgerRow["reportKind"] | "";
   latestReportLabel: string;
@@ -7217,6 +7220,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     importVerificationInvalid,
     importVerificationVerified,
     invalid,
+    latestAuditAidEventId: latestAuditAidRow?.id ?? "",
     latestAuditAidEvidenceLabel: latestAuditAidRow?.evidenceLinkLabel || latestAuditAidRow?.focusQuery || "",
     latestAuditAidEvidenceLink:
       latestAuditAidRow?.evidenceLinkDecodedSearch || latestAuditAidRow?.evidenceLinkSearch || "",
@@ -7227,7 +7231,9 @@ export function buildAuditEvidenceReportLedgerSummary(
       : 0,
     latestAuditAidPreflightLabel: latestAuditAidRow?.paperPreflightLabel ?? "",
     latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
+    latestAuditAidReportQuery: auditReportLedgerLatestReportQuery(latestAuditAidRow),
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
+    latestAuditAidShortHash: latestAuditAidRow?.shortHash ?? "",
     latestHash: latestReadyRow?.contentSha256 ?? "",
     latestReportKind: latestReadyRow?.reportKind ?? "",
     latestReportLabel: auditReportLedgerReportKindLabel(latestReadyRow?.reportKind ?? ""),

@@ -7422,6 +7422,7 @@ describe("terminal workbench model", () => {
       invalid: 1,
       importVerificationInvalid: 0,
       importVerificationVerified: 1,
+      latestAuditAidEventId: "",
       latestAuditAidEvidenceLabel: "",
       latestAuditAidEvidenceLink: "",
       latestAuditAidPreflightActionId: "",
@@ -7429,7 +7430,9 @@ describe("terminal workbench model", () => {
       latestAuditAidPreflightAttention: 0,
       latestAuditAidPreflightLabel: "",
       latestAuditAidPreflightState: "",
+      latestAuditAidReportQuery: "",
       latestAuditAidRunId: "",
+      latestAuditAidShortHash: "",
       latestHash: reportHash,
       latestReportKind: "audit_evidence_report",
       latestReportLabel: "Audit evidence report",
@@ -7897,15 +7900,23 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
         auditAid: 2,
+        latestAuditAidEventId: "p0-readiness-report-run-new-7777777777777777",
         latestAuditAidEvidenceLink: "workspace=audit&runId=run-new&exportPath=manifest:run-new",
         latestAuditAidPreflightActionId: "submit-paper-order",
         latestAuditAidPreflightActionLabel: "Submit paper order",
         latestAuditAidPreflightAttention: 1,
         latestAuditAidPreflightLabel: "Paper preflight ready · Submit paper order · gates 3/1/0 · paper only",
         latestAuditAidPreflightState: "ready",
+        latestAuditAidReportQuery: "p0_readiness_report run-new 777777777777 run-new-p0-readiness-report.md",
+        latestAuditAidShortHash: "777777777777",
         latestAuditAidRunId: "run-new"
       })
     );
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, buildAuditEvidenceReportLedgerSummary(rows).latestAuditAidReportQuery).map(
+        (row) => row.id
+      )
+    ).toEqual(["p0-readiness-report-run-new-7777777777777777"]);
   });
 
   test("promotes audit report ledger rows when signature chain metadata is present", () => {

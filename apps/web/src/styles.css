@@ -1172,6 +1172,59 @@ em {
   cursor: pointer;
 }
 
+.p0-readiness-ledger-echo {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #244158;
+  border-radius: 6px;
+  background: #0d1825;
+}
+
+.p0-readiness-ledger-echo > div {
+  min-width: 0;
+}
+
+.p0-readiness-ledger-echo span,
+.p0-readiness-ledger-echo strong,
+.p0-readiness-ledger-echo small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p0-readiness-ledger-echo span {
+  color: #8fa0b2;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.p0-readiness-ledger-echo strong {
+  color: #dce6ee;
+  font-size: 10px;
+}
+
+.p0-readiness-ledger-echo button {
+  border: 1px solid #266c60;
+  border-radius: 5px;
+  background: #102d34;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.p0-readiness-ledger-echo button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .p0-action-outcome button:disabled {
   cursor: not-allowed;
   opacity: 0.45;

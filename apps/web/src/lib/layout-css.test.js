@@ -331,6 +331,22 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-readiness-report-actions button")).toContain("cursor: pointer;");
   });
 
+  test("echoes the latest saved P0 readiness report from the audit ledger", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("const auditEvidenceReportLedgerSummary = buildAuditEvidenceReportLedgerSummary(auditEvidenceReportLedgerRows);");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidEventId");
+    expect(overviewSource).toContain('className="p0-readiness-ledger-echo"');
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidShortHash");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidReportQuery");
+    expect(overviewSource).toContain("focusLatestP0ReadinessReport");
+    expect(appSource).toContain("const focusLatestP0ReadinessReport = useCallback(");
+    expect(appSource).toContain("setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidReportQuery)");
+    expect(appSource).toContain('setActiveWorkAreaId("audit")');
+    expect(cssBlock(".p0-readiness-ledger-echo")).toContain("display: grid;");
+    expect(cssBlock(".p0-readiness-ledger-echo")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+  });
+
   test("copies P0 action outcome evidence links without changing the evidence open path", () => {
     const copyHandlerSource = sourceBetween("const copyP0ActionOutcomeEvidenceLink = useCallback(", "const openP0ActionOutcomeEvidence = useCallback(");
 

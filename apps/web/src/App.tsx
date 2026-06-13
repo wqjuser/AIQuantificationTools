@@ -1287,6 +1287,7 @@ export function App() {
   const researchRunExportBrowserRows = buildResearchRunExportBrowserRows(inspectedExportPackage);
   const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
   const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows(auditEvidenceReportEvents);
+  const auditEvidenceReportLedgerSummary = buildAuditEvidenceReportLedgerSummary(auditEvidenceReportLedgerRows);
   const auditSigningKeyRotationLedgerRows = filterAuditSigningKeyRotationLedgerRows(
     buildAuditSigningKeyRotationLedgerRows(auditSigningKeyRotationEvents),
     ""
@@ -4752,6 +4753,23 @@ export function App() {
     quantCoreBaseUrl
   ]);
 
+  const focusLatestP0ReadinessReport = useCallback(() => {
+    if (!auditEvidenceReportLedgerSummary.latestAuditAidReportQuery) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidReportQuery);
+    setAuditEvidenceReportOffset(0);
+    setActiveWorkAreaId("audit");
+    setActiveLoopStepId("backtest");
+    setActiveWorkflowStageId("execution");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Latest P0 readiness report selected",
+      error: undefined
+    }));
+  }, [auditEvidenceReportLedgerSummary.latestAuditAidReportQuery, selectProductWorkArea]);
+
   const openP0ActionOutcomeEvidence = useCallback(
     (outcome: P0PlatformActionOutcome) => {
       if (!outcome.evidenceId) {
@@ -6000,6 +6018,25 @@ export function App() {
                     </div>
                   </div>
                 </div>
+                {auditEvidenceReportLedgerSummary.latestAuditAidEventId ? (
+                  <div className="p0-readiness-ledger-echo">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "最近入账报告" : "Latest saved report"}</span>
+                      <strong>{auditEvidenceReportLedgerSummary.latestAuditAidRunId}</strong>
+                      <small>
+                        {auditEvidenceReportLedgerSummary.latestAuditAidShortHash} ·{" "}
+                        {auditEvidenceReportLedgerSummary.latestAuditAidPreflightState || "n/a"}
+                      </small>
+                    </div>
+                    <button
+                      disabled={!auditEvidenceReportLedgerSummary.latestAuditAidReportQuery}
+                      onClick={focusLatestP0ReadinessReport}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "在审计中查看" : "Open in Audit"}
+                    </button>
+                  </div>
+                ) : null}
                 <div className={`p0-paper-preflight ${p0PaperExecutionPreflight.state}`}>
                   <div className="p0-paper-preflight-head">
                     <div>
