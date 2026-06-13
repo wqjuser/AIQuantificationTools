@@ -19,7 +19,7 @@ Show a controlled simulation-route checklist before portfolio paper orders are f
 - [x] Update product plan with the visible simulation-route checks.
 - [x] Run focused tests.
 - [x] Run broader verification, build, Docker smoke, and browser smoke.
-- [ ] Commit and push with proxy.
+- [x] Commit and push with proxy.
 
 ## Validation Notes
 
@@ -29,3 +29,4 @@ Show a controlled simulation-route checklist before portfolio paper orders are f
 - Related frontend verification passed: `npm --prefix apps/web test -- --run src/lib/terminal-workbench.test.ts src/lib/layout-css.test.js`.
 - Broad verification passed: `git diff --check`, `npm test`, `npm --prefix apps/web run build`, and `npm run docker:smoke`.
 - Browser smoke passed on `http://127.0.0.1:5173/?workspace=execution`: title `AI Quantification Tools`, execution/paper-boundary text present, and no console errors. The current runtime data had no portfolio simulation route rows, so visible route-row rendering remains covered by model and layout tests.
+- Feature commit pushed with proxy: `6925d73 feat: show portfolio simulation route checks`.
