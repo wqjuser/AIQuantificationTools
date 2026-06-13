@@ -11632,6 +11632,45 @@ function latestPromotionHumanConfirmationRow(
   );
 }
 
+function latestPromotionSandboxProbeExecutionRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterSandboxProbeExecutionRow[],
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterSandboxProbeExecutionRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -11644,6 +11683,7 @@ function buildPromotionAdapterCertificationStage(
   latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
   latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
   latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -11665,6 +11705,9 @@ function buildPromotionAdapterCertificationStage(
   const runtimeReloadAcceptanceDetail = latestRuntimeReloadAcceptance
     ? `Latest runtime reload acceptance ${latestRuntimeReloadAcceptance.auditEventId}: ${latestRuntimeReloadAcceptance.statusLabel} · ${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.blockerSummary} · ${latestRuntimeReloadAcceptance.acceptanceMode} · ${latestRuntimeReloadAcceptance.executionMode} · ${latestRuntimeReloadAcceptance.reloadMode} · ${latestRuntimeReloadAcceptance.maintenanceWindowId} · ${latestRuntimeReloadAcceptance.boundary}. ${promotionRuntimeReloadAcceptanceNextStep(latestRuntimeReloadAcceptance)}`
     : "";
+  const sandboxProbeExecutionDetail = latestSandboxProbeExecution
+    ? `Latest sandbox probe execution ${latestSandboxProbeExecution.auditEventId}: ${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.confirmationSummary} · ${latestSandboxProbeExecution.blockerSummary} · ${latestSandboxProbeExecution.probeExecutionMode} · ${latestSandboxProbeExecution.probeMode} · ${latestSandboxProbeExecution.boundary}. ${promotionSandboxProbeExecutionNextStep(latestSandboxProbeExecution)}`
+    : "";
   if (!latestCertification) {
     const liveAdapterDetail = liveAdapterCertified
       ? "A certified live adapter is available for the selected market."
@@ -11672,8 +11715,11 @@ function buildPromotionAdapterCertificationStage(
     return {
       id: "adapter-certification",
       label: "Adapter certification",
-      value:
-        certifiedLiveAdapters === 1 ? "1 certified live adapter" : `${certifiedLiveAdapters} certified live adapters`,
+      value: latestSandboxProbeExecution
+        ? `${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.adapterId}`
+        : certifiedLiveAdapters === 1
+          ? "1 certified live adapter"
+          : `${certifiedLiveAdapters} certified live adapters`,
       detail: [
         liveAdapterDetail,
         secretReferenceDetail,
@@ -11681,13 +11727,18 @@ function buildPromotionAdapterCertificationStage(
         environmentBindingDetail,
         runtimeReloadPlanDetail,
         runtimeReloadExecutionDetail,
-        runtimeReloadAcceptanceDetail
+        runtimeReloadAcceptanceDetail,
+        sandboxProbeExecutionDetail
       ]
         .filter(Boolean)
         .join(" "),
       status: liveAdapterCertified ? "passed" : "blocked",
       tone: liveAdapterCertified
         ? "positive"
+        : latestSandboxProbeExecution?.status === "probe_execution_recorded"
+          ? "warning"
+        : latestSandboxProbeExecution
+          ? latestSandboxProbeExecution.tone
         : latestRuntimeReloadAcceptance?.status === "acceptance_recorded" ||
             latestRuntimeReloadExecution?.status === "execution_recorded" ||
             latestRuntimeReloadPlan?.status === "plan_recorded" ||
@@ -11716,7 +11767,7 @@ function buildPromotionAdapterCertificationStage(
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    value: `${latestSandboxProbeExecution?.statusLabel ?? latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
     detail: [
       secretReferenceDetail,
       secretMaterializationDetail,
@@ -11724,6 +11775,7 @@ function buildPromotionAdapterCertificationStage(
       runtimeReloadPlanDetail,
       runtimeReloadExecutionDetail,
       runtimeReloadAcceptanceDetail,
+      sandboxProbeExecutionDetail,
       certificationDetail,
       applyDetail,
       restartEvidenceDetail,
@@ -11735,6 +11787,10 @@ function buildPromotionAdapterCertificationStage(
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
+      : latestSandboxProbeExecution?.status === "probe_execution_recorded"
+        ? "warning"
+      : latestSandboxProbeExecution
+        ? latestSandboxProbeExecution.tone
       : latestRuntimeReloadAcceptance?.status === "acceptance_recorded" ||
           latestRuntimeReloadExecution?.status === "execution_recorded" ||
           latestRuntimeReloadPlan?.status === "plan_recorded" ||
@@ -11806,6 +11862,13 @@ function promotionRuntimeReloadAcceptanceNextStep(acceptance: ExecutionAdapterRu
   return "Resolve runtime reload acceptance blockers before real adapter orchestration.";
 }
 
+function promotionSandboxProbeExecutionNextStep(execution: ExecutionAdapterSandboxProbeExecutionRow): string {
+  if (execution.status === "probe_execution_recorded") {
+    return "Sandbox probe execution is recorded; live routing remains blocked until adapter certification policy explicitly allows production routing.";
+  }
+  return "Resolve sandbox probe execution blockers before treating sandbox evidence as reviewed.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -11820,7 +11883,8 @@ export function buildPromotionReadiness(
   runtimeReloadPlanRows: ExecutionAdapterRuntimeReloadPlanRow[] = [],
   runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[] = [],
   runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[] = [],
-  humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[] = []
+  humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[] = [],
+  sandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -11878,6 +11942,16 @@ export function buildPromotionReadiness(
     latestRuntimeReloadExecution
   );
   const latestHumanConfirmation = latestPromotionHumanConfirmationRow(workspace, humanConfirmationRows);
+  const latestSandboxProbeExecution = latestPromotionSandboxProbeExecutionRow(
+    workspace,
+    sandboxProbeExecutionRows,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
   const humanGatePassed =
     workspace.execution.gates.find((gate) => gate.id === "human-confirmed")?.passed === true ||
     latestHumanConfirmation?.status === "confirmation_recorded";
@@ -11954,6 +12028,7 @@ export function buildPromotionReadiness(
     latestRuntimeReloadPlan,
     latestRuntimeReloadExecution,
     latestRuntimeReloadAcceptance,
+    latestSandboxProbeExecution,
     liveAdapterCertified,
     adapterGatePassed
   );
