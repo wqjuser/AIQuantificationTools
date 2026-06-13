@@ -67,11 +67,13 @@ import {
   loadExecutionAdapterSecretMaterializations,
   loadExecutionAdapterSecretReferences,
   loadExecutionAdapterOrchestrationDryRuns,
+  loadExecutionAdapterOrchestrationExecutions,
   loadExecutionAdapterRuntimeReloadAcceptances,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterCertifications,
   recordExecutionAdapterOrchestrationDryRun,
+  recordExecutionAdapterOrchestrationExecution,
   recordExecutionAdapterRuntimeReloadAcceptance,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
@@ -133,6 +135,7 @@ import {
   ExecutionAdapterSecretMaterializationResult,
   ExecutionAdapterSecretReferenceResult,
   ExecutionAdapterOrchestrationDryRunResult,
+  ExecutionAdapterOrchestrationExecutionResult,
   ExecutionAdapterRuntimeReloadAcceptanceResult,
   ExecutionAdapterRuntimeReloadExecutionResult,
   ExecutionAdapterRuntimeReloadPlanResult,
@@ -206,6 +209,7 @@ import {
   buildExecutionAdapterRestartAcceptanceRows,
   buildExecutionAdapterEnvironmentBindingRows,
   buildExecutionAdapterOrchestrationDryRunRows,
+  buildExecutionAdapterOrchestrationExecutionRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
   buildExecutionAdapterRuntimeReloadAcceptanceRows,
@@ -319,6 +323,7 @@ import {
   ExecutionAdapterRestartAcceptanceRow,
   ExecutionAdapterEnvironmentBindingRow,
   ExecutionAdapterOrchestrationDryRunRow,
+  ExecutionAdapterOrchestrationExecutionRow,
   ExecutionAdapterSecretMaterializationRow,
   ExecutionAdapterSecretReferenceRow,
   ExecutionAdapterRuntimeReloadAcceptanceRow,
@@ -755,6 +760,55 @@ const executionAdapterOrchestrationDryRunConfirmationRows: Array<{
   }
 ];
 
+interface ExecutionAdapterOrchestrationExecutionConfirmations {
+  dryRunEvidenceReviewed: boolean;
+  sandboxRouteLocked: boolean;
+  killSwitchArmed: boolean;
+  idempotencyKeyRecorded: boolean;
+  operatorConfirmedNoCapital: boolean;
+}
+
+const createDefaultExecutionAdapterOrchestrationExecutionConfirmations =
+  (): ExecutionAdapterOrchestrationExecutionConfirmations => ({
+    dryRunEvidenceReviewed: false,
+    sandboxRouteLocked: false,
+    killSwitchArmed: false,
+    idempotencyKeyRecorded: false,
+    operatorConfirmedNoCapital: false
+  });
+
+const executionAdapterOrchestrationExecutionConfirmationRows: Array<{
+  key: keyof ExecutionAdapterOrchestrationExecutionConfirmations;
+  labelEn: string;
+  labelZh: string;
+}> = [
+  {
+    key: "dryRunEvidenceReviewed",
+    labelEn: "Dry-run evidence reviewed",
+    labelZh: "Dry-run 证据已复核"
+  },
+  {
+    key: "sandboxRouteLocked",
+    labelEn: "Sandbox route locked",
+    labelZh: "沙盒/模拟路由已锁定"
+  },
+  {
+    key: "killSwitchArmed",
+    labelEn: "Kill switch armed",
+    labelZh: "急停已武装"
+  },
+  {
+    key: "idempotencyKeyRecorded",
+    labelEn: "Idempotency key recorded",
+    labelZh: "幂等键已记录"
+  },
+  {
+    key: "operatorConfirmedNoCapital",
+    labelEn: "Operator confirmed no capital can route",
+    labelZh: "操作员确认无真实资金路由"
+  }
+];
+
 const workflowIcons: Record<string, typeof BarChart3> = {
   research: Radar,
   strategy: GitBranch,
@@ -1063,6 +1117,9 @@ export function App() {
   const [executionAdapterOrchestrationDryRuns, setExecutionAdapterOrchestrationDryRuns] = useState<
     ExecutionAdapterOrchestrationDryRunResult[]
   >([]);
+  const [executionAdapterOrchestrationExecutions, setExecutionAdapterOrchestrationExecutions] = useState<
+    ExecutionAdapterOrchestrationExecutionResult[]
+  >([]);
   const [adapterCertificationApplyConfirmations, setAdapterCertificationApplyConfirmations] = useState<
     Record<string, ExecutionAdapterCertificationApplyConfirmations>
   >({});
@@ -1071,6 +1128,9 @@ export function App() {
   >({});
   const [adapterOrchestrationDryRunConfirmations, setAdapterOrchestrationDryRunConfirmations] = useState<
     Record<string, ExecutionAdapterOrchestrationDryRunConfirmations>
+  >({});
+  const [adapterOrchestrationExecutionConfirmations, setAdapterOrchestrationExecutionConfirmations] = useState<
+    Record<string, ExecutionAdapterOrchestrationExecutionConfirmations>
   >({});
   const [auditSigningKeyRegistry, setAuditSigningKeyRegistry] = useState<AuditSigningKeyRegistryResult>(
     initialAuditSigningKeyRegistryState
@@ -1173,6 +1233,8 @@ export function App() {
   const [recordingAdapterRuntimeReloadAcceptanceId, setRecordingAdapterRuntimeReloadAcceptanceId] =
     useState<string | null>(null);
   const [recordingAdapterOrchestrationDryRunId, setRecordingAdapterOrchestrationDryRunId] =
+    useState<string | null>(null);
+  const [recordingAdapterOrchestrationExecutionId, setRecordingAdapterOrchestrationExecutionId] =
     useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
   const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
@@ -1328,6 +1390,9 @@ export function App() {
   );
   const executionAdapterOrchestrationDryRunRows = buildExecutionAdapterOrchestrationDryRunRows(
     executionAdapterOrchestrationDryRuns
+  );
+  const executionAdapterOrchestrationExecutionRows = buildExecutionAdapterOrchestrationExecutionRows(
+    executionAdapterOrchestrationExecutions
   );
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
@@ -1946,7 +2011,8 @@ export function App() {
       runtimeReloadPlanResults,
       runtimeReloadExecutionResults,
       runtimeReloadAcceptanceResults,
-      orchestrationDryRunResults
+      orchestrationDryRunResults,
+      orchestrationExecutionResults
     ] = await Promise.all([
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertifications(quantCoreBaseUrl, row.id, undefined, 3))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterCertificationApplies(quantCoreBaseUrl, row.id, undefined, 5))),
@@ -1958,7 +2024,8 @@ export function App() {
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadPlans(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadExecutions(quantCoreBaseUrl, row.id, undefined, 5))),
       Promise.all(liveAdapters.map((row) => loadExecutionAdapterRuntimeReloadAcceptances(quantCoreBaseUrl, row.id, undefined, 5))),
-      Promise.all(liveAdapters.map((row) => loadExecutionAdapterOrchestrationDryRuns(quantCoreBaseUrl, row.id, undefined, 5)))
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterOrchestrationDryRuns(quantCoreBaseUrl, row.id, undefined, 5))),
+      Promise.all(liveAdapters.map((row) => loadExecutionAdapterOrchestrationExecutions(quantCoreBaseUrl, row.id, undefined, 5)))
     ]);
     setSettingsStatus(settingsResult);
     setWatchlistCacheRefreshHistory(watchlistRefreshHistory.watchlistRefreshes);
@@ -1974,6 +2041,7 @@ export function App() {
     setExecutionAdapterRuntimeReloadExecutions(runtimeReloadExecutionResults.flatMap((result) => result.adapterRuntimeReloadExecutions));
     setExecutionAdapterRuntimeReloadAcceptances(runtimeReloadAcceptanceResults.flatMap((result) => result.adapterRuntimeReloadAcceptances));
     setExecutionAdapterOrchestrationDryRuns(orchestrationDryRunResults.flatMap((result) => result.adapterOrchestrationDryRuns));
+    setExecutionAdapterOrchestrationExecutions(orchestrationExecutionResults.flatMap((result) => result.adapterOrchestrationExecutions));
   }, []);
 
   const recordAdapterCertificationEvidence = useCallback(
@@ -2223,6 +2291,80 @@ export function App() {
       }
     },
     [adapterOrchestrationDryRunConfirmations, refreshSettingsStatus]
+  );
+
+  const updateAdapterOrchestrationExecutionConfirmation = useCallback(
+    (
+      dryRunId: string,
+      key: keyof ExecutionAdapterOrchestrationExecutionConfirmations,
+      checked: boolean
+    ) => {
+      setAdapterOrchestrationExecutionConfirmations((current) => ({
+        ...current,
+        [dryRunId]: {
+          ...createDefaultExecutionAdapterOrchestrationExecutionConfirmations(),
+          ...(current[dryRunId] ?? {}),
+          [key]: checked
+        }
+      }));
+    },
+    []
+  );
+
+  const recordAdapterOrchestrationExecution = useCallback(
+    async (row: ExecutionAdapterOrchestrationDryRunRow) => {
+      const confirmations =
+        adapterOrchestrationExecutionConfirmations[row.id] ??
+        createDefaultExecutionAdapterOrchestrationExecutionConfirmations();
+      setRecordingAdapterOrchestrationExecutionId(row.id);
+      try {
+        const result = await recordExecutionAdapterOrchestrationExecution(quantCoreBaseUrl, {
+          adapterId: row.adapterId,
+          confirmations,
+          dryRunId: row.id,
+          metadata: {
+            acceptanceId: row.acceptanceId,
+            bindingId: row.bindingId,
+            executionId: row.executionId,
+            materializationId: row.materializationId,
+            planId: row.planId,
+            source: "settings-panel"
+          },
+          operator: "settings-panel",
+          orchestrationExecutionMode: "manual_adapter_orchestration_execution"
+        });
+        if (result.adapterOrchestrationExecution) {
+          setExecutionAdapterOrchestrationExecutions((current) => [
+            result.adapterOrchestrationExecution!,
+            ...current.filter(
+              (currentRow) =>
+                currentRow.orchestrationExecutionId !== result.adapterOrchestrationExecution!.orchestrationExecutionId
+            )
+          ]);
+        }
+        if (result.error) {
+          setWorkspaceState((current) => ({
+            ...current,
+            error: result.error,
+            statusLabel: "Adapter orchestration execution failed"
+          }));
+        } else {
+          const status = result.adapterOrchestrationExecution?.status ?? "blocked";
+          setWorkspaceState((current) => ({
+            ...current,
+            error: undefined,
+            statusLabel:
+              status === "execution_recorded"
+                ? `Adapter orchestration execution recorded · ${row.adapterId}`
+                : `Adapter orchestration execution blocked · ${row.adapterId}`
+          }));
+          await refreshSettingsStatus();
+        }
+      } finally {
+        setRecordingAdapterOrchestrationExecutionId(null);
+      }
+    },
+    [adapterOrchestrationExecutionConfirmations, refreshSettingsStatus]
   );
 
   const refreshAuditSigningKeys = useCallback(async () => {
@@ -5624,6 +5766,7 @@ export function App() {
             adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}
             adapterEnvironmentBindingRows={executionAdapterEnvironmentBindingRows}
             adapterOrchestrationDryRunRows={executionAdapterOrchestrationDryRunRows}
+            adapterOrchestrationExecutionRows={executionAdapterOrchestrationExecutionRows}
             adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}
             adapterRuntimeReloadAcceptanceRows={executionAdapterRuntimeReloadAcceptanceRows}
             adapterRuntimeReloadExecutionRows={executionAdapterRuntimeReloadExecutionRows}
@@ -5844,17 +5987,22 @@ export function App() {
             onApplyAdapterCertification={applyAdapterCertificationPreflight}
             onApplyConfirmationChange={updateAdapterCertificationApplyConfirmation}
             onOrchestrationDryRunConfirmationChange={updateAdapterOrchestrationDryRunConfirmation}
+            onOrchestrationExecutionConfirmationChange={updateAdapterOrchestrationExecutionConfirmation}
             onRecordAdapterCertification={recordAdapterCertificationEvidence}
             onRecordOrchestrationDryRun={recordAdapterOrchestrationDryRun}
+            onRecordOrchestrationExecution={recordAdapterOrchestrationExecution}
             onRecordRuntimeReloadAcceptance={recordAdapterRuntimeReloadAcceptance}
             onRefreshContext={refreshCacheContext}
             onRuntimeReloadAcceptanceConfirmationChange={updateAdapterRuntimeReloadAcceptanceConfirmation}
             recordingAdapterCertificationId={recordingAdapterCertificationId}
             recordingOrchestrationDryRunId={recordingAdapterOrchestrationDryRunId}
+            recordingOrchestrationExecutionId={recordingAdapterOrchestrationExecutionId}
             recordingRuntimeReloadAcceptanceId={recordingAdapterRuntimeReloadAcceptanceId}
             refreshingCacheKey={refreshingCacheKey}
             orchestrationDryRunConfirmations={adapterOrchestrationDryRunConfirmations}
             orchestrationDryRunRows={executionAdapterOrchestrationDryRunRows}
+            orchestrationExecutionConfirmations={adapterOrchestrationExecutionConfirmations}
+            orchestrationExecutionRows={executionAdapterOrchestrationExecutionRows}
             runtimeReloadAcceptanceConfirmations={adapterRuntimeReloadAcceptanceConfirmations}
             runtimeReloadAcceptanceRows={executionAdapterRuntimeReloadAcceptanceRows}
             runtimeReloadExecutionRows={executionAdapterRuntimeReloadExecutionRows}
@@ -8969,16 +9117,21 @@ function PlatformSettingsPanel({
   onApplyAdapterCertification,
   onApplyConfirmationChange,
   onOrchestrationDryRunConfirmationChange,
+  onOrchestrationExecutionConfirmationChange,
   onRecordAdapterCertification,
   onRecordOrchestrationDryRun,
+  onRecordOrchestrationExecution,
   onRecordRuntimeReloadAcceptance,
   onRefreshContext,
   onRuntimeReloadAcceptanceConfirmationChange,
   recordingAdapterCertificationId,
   recordingOrchestrationDryRunId,
+  recordingOrchestrationExecutionId,
   recordingRuntimeReloadAcceptanceId,
   orchestrationDryRunConfirmations,
   orchestrationDryRunRows,
+  orchestrationExecutionConfirmations,
+  orchestrationExecutionRows,
   refreshingCacheKey,
   runtimeReloadAcceptanceConfirmations,
   runtimeReloadAcceptanceRows,
@@ -9006,8 +9159,14 @@ function PlatformSettingsPanel({
     key: keyof ExecutionAdapterOrchestrationDryRunConfirmations,
     checked: boolean
   ) => void;
+  onOrchestrationExecutionConfirmationChange?: (
+    dryRunId: string,
+    key: keyof ExecutionAdapterOrchestrationExecutionConfirmations,
+    checked: boolean
+  ) => void;
   onRecordAdapterCertification?: (adapter: PlatformSettingsStatus["executionAdapters"][number]) => void;
   onRecordOrchestrationDryRun?: (row: ExecutionAdapterRuntimeReloadAcceptanceRow) => void;
+  onRecordOrchestrationExecution?: (row: ExecutionAdapterOrchestrationDryRunRow) => void;
   onRecordRuntimeReloadAcceptance?: (row: ExecutionAdapterRuntimeReloadExecutionRow) => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
   onRuntimeReloadAcceptanceConfirmationChange?: (
@@ -9017,9 +9176,12 @@ function PlatformSettingsPanel({
   ) => void;
   recordingAdapterCertificationId?: string | null;
   recordingOrchestrationDryRunId?: string | null;
+  recordingOrchestrationExecutionId?: string | null;
   recordingRuntimeReloadAcceptanceId?: string | null;
   orchestrationDryRunConfirmations: Record<string, ExecutionAdapterOrchestrationDryRunConfirmations>;
   orchestrationDryRunRows: ExecutionAdapterOrchestrationDryRunRow[];
+  orchestrationExecutionConfirmations: Record<string, ExecutionAdapterOrchestrationExecutionConfirmations>;
+  orchestrationExecutionRows: ExecutionAdapterOrchestrationExecutionRow[];
   refreshingCacheKey?: string | null;
   runtimeReloadAcceptanceConfirmations: Record<string, ExecutionAdapterRuntimeReloadAcceptanceConfirmations>;
   runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[];
@@ -9452,6 +9614,98 @@ function PlatformSettingsPanel({
             {i18n.locale === "zh-CN"
               ? "等待运行时重载最终验收；验收完成后才能录入适配器编排 dry-run。"
               : "Waiting for runtime reload final acceptance before adapter orchestration dry-run can be recorded."}
+          </p>
+        )}
+      </div>
+      <div className="adapter-orchestration-execution-list">
+        <div className="paper-blotter-title">
+          <span>{i18n.locale === "zh-CN" ? "受控编排执行证据" : "Controlled orchestration execution"}</span>
+          <strong>{orchestrationDryRunRows.length}</strong>
+        </div>
+        {orchestrationDryRunRows.length ? (
+          orchestrationDryRunRows.slice(0, 4).map((row) => {
+            const confirmations =
+              orchestrationExecutionConfirmations[row.id] ??
+              createDefaultExecutionAdapterOrchestrationExecutionConfirmations();
+            const execution = orchestrationExecutionRows.find(
+              (item) => item.adapterId === row.adapterId && item.dryRunId === row.id
+            );
+            return (
+              <article className={`adapter-orchestration-execution-row ${execution?.tone ?? row.tone}`} key={row.id}>
+                <div>
+                  <strong>
+                    {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                    {adapterOrchestrationDryRunStatusLabel(i18n, row.statusLabel)}
+                  </strong>
+                  <span>{formatChartDate(row.timestamp)}</span>
+                </div>
+                <p>
+                  {adapterOrchestrationDryRunConfirmationSummary(i18n, row.confirmationSummary)} ·{" "}
+                  {adapterCertificationBoundaryLabel(i18n, row.boundary)}
+                </p>
+                <div className="adapter-orchestration-execution-confirmations">
+                  {executionAdapterOrchestrationExecutionConfirmationRows.map((confirmation) => (
+                    <label
+                      className={`adapter-orchestration-execution-confirmation ${
+                        confirmations[confirmation.key] ? "positive" : "warning"
+                      }`}
+                      key={`${row.id}-${confirmation.key}`}
+                    >
+                      <input
+                        checked={confirmations[confirmation.key]}
+                        onChange={(event) =>
+                          onOrchestrationExecutionConfirmationChange?.(
+                            row.id,
+                            confirmation.key,
+                            event.currentTarget.checked
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      <span>{i18n.locale === "zh-CN" ? confirmation.labelZh : confirmation.labelEn}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  className="adapter-certification-apply-button"
+                  disabled={recordingOrchestrationExecutionId === row.id || !onRecordOrchestrationExecution}
+                  onClick={() => onRecordOrchestrationExecution?.(row)}
+                  type="button"
+                >
+                  <ShieldCheck size={13} />
+                  {recordingOrchestrationExecutionId === row.id
+                    ? i18n.locale === "zh-CN"
+                      ? "记录中"
+                      : "Recording"
+                    : i18n.locale === "zh-CN"
+                      ? "记录执行证据"
+                      : "Record execution evidence"}
+                </button>
+                {execution ? (
+                  <div className={`adapter-orchestration-execution-result ${execution.tone}`}>
+                    <strong>{adapterOrchestrationExecutionStatusLabel(i18n, execution.statusLabel)}</strong>
+                    <span>
+                      {adapterOrchestrationExecutionConfirmationSummary(i18n, execution.confirmationSummary)} ·{" "}
+                      {adapterCertificationApplyBlockerSummary(i18n, execution.blockerSummary)} ·{" "}
+                      {adapterCertificationBoundaryLabel(i18n, execution.boundary)}
+                    </span>
+                    <em>{execution.auditEventId}</em>
+                  </div>
+                ) : (
+                  <em>
+                    {i18n.locale === "zh-CN"
+                      ? "等待录入受控编排执行证据；录入仍不会连接券商或路由任何订单。"
+                      : "Waiting for controlled orchestration execution evidence; recording still avoids broker connections and all order routing."}
+                  </em>
+                )}
+              </article>
+            );
+          })
+        ) : (
+          <p className="empty-state">
+            {i18n.locale === "zh-CN"
+              ? "等待适配器编排 dry-run；dry-run 完整后才能记录受控执行证据。"
+              : "Waiting for adapter orchestration dry-run before controlled execution evidence can be recorded."}
           </p>
         )}
       </div>
@@ -14609,6 +14863,7 @@ function PromotionQueuePanel({
   adapterControlledRestartEvidenceRows,
   adapterEnvironmentBindingRows,
   adapterOrchestrationDryRunRows,
+  adapterOrchestrationExecutionRows,
   adapterRestartAcceptanceRows,
   adapterRuntimeReloadAcceptanceRows,
   adapterRuntimeReloadExecutionRows,
@@ -14624,6 +14879,7 @@ function PromotionQueuePanel({
   adapterControlledRestartEvidenceRows: ExecutionAdapterControlledRestartEvidenceRow[];
   adapterEnvironmentBindingRows: ExecutionAdapterEnvironmentBindingRow[];
   adapterOrchestrationDryRunRows: ExecutionAdapterOrchestrationDryRunRow[];
+  adapterOrchestrationExecutionRows: ExecutionAdapterOrchestrationExecutionRow[];
   adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[];
   adapterRuntimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[];
   adapterRuntimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[];
@@ -14644,6 +14900,7 @@ function PromotionQueuePanel({
   const recentRuntimeReloadExecutionRows = adapterRuntimeReloadExecutionRows.slice(0, 3);
   const recentRuntimeReloadAcceptanceRows = adapterRuntimeReloadAcceptanceRows.slice(0, 3);
   const recentOrchestrationDryRunRows = adapterOrchestrationDryRunRows.slice(0, 3);
+  const recentOrchestrationExecutionRows = adapterOrchestrationExecutionRows.slice(0, 3);
   const recentSecretReferenceRows = adapterSecretReferenceRows.slice(0, 3);
   const recentSecretMaterializationRows = adapterSecretMaterializationRows.slice(0, 3);
   return (
@@ -14822,6 +15079,32 @@ function PromotionQueuePanel({
             ))}
           </div>
         ) : null}
+        <div className="promotion-orchestration-execution-evidence">
+          <span>{i18n.locale === "zh-CN" ? "最近受控编排执行证据" : "Recent controlled orchestration execution"}</span>
+          {recentOrchestrationExecutionRows.length ? (
+            recentOrchestrationExecutionRows.map((row) => (
+              <article className={`promotion-orchestration-execution-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterOrchestrationExecutionStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterOrchestrationExecutionConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.orchestrationExecutionMode)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.orchestrationMode)} · {row.maintenanceWindowId} ·{" "}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))
+          ) : (
+            <p className="promotion-orchestration-execution-empty">
+              {i18n.locale === "zh-CN"
+                ? "等待受控编排执行证据。先在设置中完成适配器编排 dry-run，再记录不会连接券商或下单的受控执行证据。"
+                : "Waiting for controlled orchestration execution evidence. Complete an adapter orchestration dry run in Settings, then record controlled evidence that does not connect to brokers or place orders."}
+            </p>
+          )}
+        </div>
         {recentApplyRows.length ? (
           <div className="promotion-certification-apply-evidence">
             <span>{i18n.locale === "zh-CN" ? "最近应用预检证据" : "Recent apply preflight evidence"}</span>
@@ -16621,6 +16904,18 @@ function adapterOrchestrationDryRunStatusLabel(i18n: AppI18n, statusLabel: strin
   );
 }
 
+function adapterOrchestrationExecutionStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Blocked: "阻断",
+      "Execution recorded": "执行证据已记录"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
 function adapterCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
   if (i18n.locale === "en-US") {
     return boundary;
@@ -16686,6 +16981,10 @@ function adapterOrchestrationDryRunConfirmationSummary(i18n: AppI18n, summary: s
   return adapterCertificationApplyConfirmationSummary(i18n, summary);
 }
 
+function adapterOrchestrationExecutionConfirmationSummary(i18n: AppI18n, summary: string): string {
+  return adapterCertificationApplyConfirmationSummary(i18n, summary);
+}
+
 function adapterCertificationApplyBlockerSummary(i18n: AppI18n, summary: string): string {
   if (i18n.locale === "en-US") {
     return summary;
@@ -16710,7 +17009,8 @@ function adapterCertificationApplyModeLabel(i18n: AppI18n, mode: string): string
       manual_runtime_reload: "人工运行时重载",
       manual_controlled_reload: "人工受控重载执行",
       manual_runtime_reload_acceptance: "人工运行时重载最终验收",
-      manual_adapter_orchestration_dry_run: "人工适配器编排 dry-run"
+      manual_adapter_orchestration_dry_run: "人工适配器编排 dry-run",
+      manual_adapter_orchestration_execution: "人工适配器编排执行证据"
     }[mode] ?? mode.replaceAll("_", " ")
   );
 }

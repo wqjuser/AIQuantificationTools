@@ -2095,6 +2095,62 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-orchestration-dry-run-confirmation");
   });
 
+  test("renders adapter orchestration execution history in promotion queue", () => {
+    expect(appSource).toContain("loadExecutionAdapterOrchestrationExecutions(quantCoreBaseUrl");
+    expect(appSource).toContain(
+      "setExecutionAdapterOrchestrationExecutions(orchestrationExecutionResults.flatMap((result) => result.adapterOrchestrationExecutions))"
+    );
+    expect(appSource).toContain("const executionAdapterOrchestrationExecutionRows = buildExecutionAdapterOrchestrationExecutionRows(");
+    expect(appSource).toContain("executionAdapterOrchestrationExecutions");
+    expect(appSource).toContain("adapterOrchestrationExecutionRows={executionAdapterOrchestrationExecutionRows}");
+    expect(appSource).toContain("adapterOrchestrationExecutionRows: ExecutionAdapterOrchestrationExecutionRow[]");
+    expect(appSource).toContain('className="promotion-orchestration-execution-evidence"');
+    expect(appSource).toContain('className={`promotion-orchestration-execution-evidence-row');
+    expect(appSource).toContain('className="promotion-orchestration-execution-empty"');
+    expect(appSource).toContain("等待受控编排执行证据");
+    expect(appSource).toContain("adapterOrchestrationExecutionStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterOrchestrationExecutionConfirmationSummary(i18n, row.confirmationSummary)");
+    expect(styles).toContain(".promotion-orchestration-execution-evidence");
+    expect(styles).toContain(".promotion-orchestration-execution-evidence-row");
+    expect(styles).toContain(".promotion-orchestration-execution-empty");
+  });
+
+  test("renders adapter orchestration execution recording controls in platform settings", () => {
+    expect(appSource).toContain("recordExecutionAdapterOrchestrationExecution,");
+    expect(appSource).toContain("interface ExecutionAdapterOrchestrationExecutionConfirmations");
+    expect(appSource).toContain(
+      "const [adapterOrchestrationExecutionConfirmations, setAdapterOrchestrationExecutionConfirmations]"
+    );
+    expect(appSource).toContain(
+      "const [recordingAdapterOrchestrationExecutionId, setRecordingAdapterOrchestrationExecutionId]"
+    );
+    expect(appSource).toContain("const updateAdapterOrchestrationExecutionConfirmation = useCallback");
+    expect(appSource).toContain("const recordAdapterOrchestrationExecution = useCallback");
+    expect(appSource).toContain("recordExecutionAdapterOrchestrationExecution(quantCoreBaseUrl");
+    expect(appSource).toContain("setExecutionAdapterOrchestrationExecutions((current) => [");
+    expect(appSource).toContain(
+      "orchestrationExecutionConfirmations={adapterOrchestrationExecutionConfirmations}"
+    );
+    expect(appSource).toContain(
+      "recordingOrchestrationExecutionId={recordingAdapterOrchestrationExecutionId}"
+    );
+    expect(appSource).toContain("orchestrationExecutionRows={executionAdapterOrchestrationExecutionRows}");
+    expect(appSource).toContain("onRecordOrchestrationExecution={recordAdapterOrchestrationExecution}");
+    expect(appSource).toContain(
+      "onOrchestrationExecutionConfirmationChange={updateAdapterOrchestrationExecutionConfirmation}"
+    );
+    expect(appSource).toContain("orchestrationExecutionConfirmations: Record<string, ExecutionAdapterOrchestrationExecutionConfirmations>");
+    expect(appSource).toContain("orchestrationExecutionRows: ExecutionAdapterOrchestrationExecutionRow[]");
+    expect(appSource).toContain('className="adapter-orchestration-execution-list"');
+    expect(appSource).toContain('className={`adapter-orchestration-execution-row');
+    expect(appSource).toContain('className={`adapter-orchestration-execution-confirmation');
+    expect(appSource).toContain("adapterOrchestrationExecutionStatusLabel(i18n, execution.statusLabel)");
+    expect(appSource).toContain("adapterOrchestrationExecutionConfirmationSummary(i18n, execution.confirmationSummary)");
+    expect(styles).toContain(".adapter-orchestration-execution-list");
+    expect(styles).toContain(".adapter-orchestration-execution-row");
+    expect(styles).toContain(".adapter-orchestration-execution-confirmation");
+  });
+
   test("renders platform settings from local-core status when available", () => {
     expect(appSource).toContain("loadPlatformSettings(quantCoreBaseUrl)");
     expect(appSource).toContain("settingsStatus.settings");
