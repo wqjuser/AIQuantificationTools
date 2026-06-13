@@ -18,7 +18,7 @@ Connect the already implemented execution adapter orchestration dry-run ledger t
 - [x] REFACTOR: keep labels and helpers compact and consistent with existing adapter certification/reload evidence UI.
 - [x] DOCS: close the product-plan dry-run UI gap.
 - [x] VERIFY: run focused tests, full tests/build, docker smoke, browser smoke.
-- [ ] SHIP: commit and push through the configured proxy.
+- [x] SHIP: commit `909d0ed` and push through the configured proxy.
 
 ## Acceptance Notes
 
