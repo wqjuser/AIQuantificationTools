@@ -20,7 +20,7 @@ Make the Audit report ledger summary explain what the latest ready hash points t
 - [x] Run related frontend verification.
 - [x] Run broader verification.
 - [x] Browser smoke the Audit workspace.
-- [ ] Commit and push with proxy.
+- [x] Commit and push with proxy.
 
 ## Validation Notes
 
@@ -32,3 +32,4 @@ Make the Audit report ledger summary explain what the latest ready hash points t
 - Root verification passed: `npm test` covered 166 Python core tests and 481 frontend tests.
 - Docker smoke passed: `npm run docker:smoke` reported core health `ok` and web `ok` at `http://127.0.0.1:5173`.
 - Browser smoke passed against `http://127.0.0.1:5173/?workspace=audit`: Audit workspace, P0 readiness, report ledger summary, and latest report-kind text were visible; captured page error count was 0.
+- Commit and proxy push completed on `codex/p0-product-workspaces` as `f8f0a4d`.
