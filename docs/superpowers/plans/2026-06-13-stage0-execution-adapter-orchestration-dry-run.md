@@ -29,7 +29,7 @@ Add the next paper-only ledger step after execution adapter runtime reload final
 - [x] Update product plan.
 - [x] Run focused tests.
 - [x] Run broader verification, build, Docker smoke, and browser smoke.
-- [ ] Commit and push with proxy.
+- [x] Commit and push with proxy.
 
 ## Validation Notes
 
@@ -43,3 +43,4 @@ Add the next paper-only ledger step after execution adapter runtime reload final
 - Focused verification passed for backend dry-run contract, frontend typed API, and frontend workbench row model.
 - Broad verification passed: `git diff --check`, `npm test`, `npm --prefix apps/web run build`, and `npm run docker:smoke`.
 - Browser smoke passed on `http://127.0.0.1:5173/?workspace=execution`: title `AI Quantification Tools`, execution/paper-boundary text present, and no console errors.
+- Feature commit pushed with proxy: `bd06d73 feat: record adapter orchestration dry runs`.
