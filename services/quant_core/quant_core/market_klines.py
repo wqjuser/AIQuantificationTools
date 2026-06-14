@@ -11,7 +11,7 @@ from typing import Callable
 from urllib.parse import quote, urlencode
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
-from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
+from quant_core.adapters import CcxtMarketDataAdapter, DemoMarketDataAdapter, MarketDataAdapter
 from quant_core.domain import DataQuality, Market, MarketDataRequest, OHLCVBar, Timeframe
 from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
 
@@ -48,11 +48,13 @@ class QuantDingerKlineAdapter:
         *,
         fetch_text: FetchText | None = None,
         fallback_adapter: MarketDataAdapter | None = None,
+        ccxt_adapter: MarketDataAdapter | None = None,
         cache_ttl_seconds: int = 90,
         now: Now | None = None,
     ) -> None:
         self.fetch_text = fetch_text or default_fetch_text
         self.fallback_adapter = fallback_adapter or DemoMarketDataAdapter()
+        self.ccxt_adapter = ccxt_adapter or CcxtMarketDataAdapter()
         self.cache = KlineCache(ttl_seconds=cache_ttl_seconds, now=now)
 
     def cache_key(self, request: MarketDataRequest, limit: int) -> str:
@@ -233,34 +235,25 @@ class QuantDingerKlineAdapter:
             coinbase_warning = str(exc)
 
         try:
-            import ccxt  # type: ignore
-        except ImportError:
-            warning = "ccxt is not installed"
-            if binance_warning:
-                warning = f"{binance_warning}; {warning}"
-            if coinbase_warning:
-                warning = f"{coinbase_warning}; {warning}"
-            return self._fallback(request, limit, warning)
-
-        exchange_id = os.getenv("CCXT_DEFAULT_EXCHANGE", "binance").strip().lower() or "binance"
-        exchange_class = getattr(ccxt, exchange_id)
-        exchange = exchange_class({"enableRateLimit": True, "timeout": int(os.getenv("CCXT_TIMEOUT", "10000"))})
-        rows = exchange.fetch_ohlcv(normalize_crypto_symbol(request.symbol), timeframe=ccxt_timeframe(request.timeframe), limit=limit)
-        bars = [
-            OHLCVBar(
-                symbol=request.symbol,
-                market="crypto",
-                timeframe=request.timeframe,
-                timestamp=datetime.fromtimestamp(float(row[0]) / 1000, tz=timezone.utc),
-                open=round(float(row[1]), 4),
-                high=round(float(row[2]), 4),
-                low=round(float(row[3]), 4),
-                close=round(float(row[4]), 4),
-                volume=round(float(row[5]), 2),
-            )
-            for row in rows
-        ]
-        return bars, DataQuality(source=f"ccxt:{exchange_id}", is_complete=True, warnings=[], rows=len(bars))
+            bars, quality = self.ccxt_adapter.fetch_ohlcv(request, limit=limit)
+            if bars:
+                limited = bars[-limit:]
+                return limited, DataQuality(
+                    source=quality.source,
+                    is_complete=quality.is_complete,
+                    warnings=quality.warnings,
+                    rows=len(limited),
+                )
+            warning = "ccxt returned no chart bars"
+            if quality.warnings:
+                warning = f"{warning}; {'; '.join(quality.warnings)}"
+        except Exception as exc:
+            warning = str(exc)
+        if binance_warning:
+            warning = f"{binance_warning}; {warning}"
+        if coinbase_warning:
+            warning = f"{coinbase_warning}; {warning}"
+        return self._fallback(request, limit, warning)
 
     def _fetch_binance_crypto_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
         params = urlencode(

@@ -13960,6 +13960,97 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 194.8)
         self.assertEqual(bars[-1].volume, 55200000.0)
 
+    def test_ccxt_market_data_adapter_normalizes_ohlcv_rows(self):
+        from quant_core.adapters import CcxtMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        class FakeExchange:
+            instances = []
+
+            def __init__(self, config):
+                self.config = config
+                self.calls = []
+                FakeExchange.instances.append(self)
+
+            def fetch_ohlcv(self, symbol: str, *, timeframe: str, limit: int):
+                self.calls.append({"symbol": symbol, "timeframe": timeframe, "limit": limit})
+                return [
+                    [1779408060000, "100.11119", "101.22229", "99.33339", "100.44449", "12.3456"],
+                    [1779408000000, "99.0", "100.0", "98.0", "99.5", "8"],
+                    ["malformed"],
+                ]
+
+        class FakeCcxt:
+            binance = FakeExchange
+
+        adapter = CcxtMarketDataAdapter(exchange_id="binance", ccxt_module=FakeCcxt, timeout_ms=4321)
+        bars, quality = adapter.fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTCUSDT", timeframe="1m"),
+            limit=2,
+        )
+
+        self.assertEqual(FakeExchange.instances[0].config, {"enableRateLimit": True, "timeout": 4321})
+        self.assertEqual(FakeExchange.instances[0].calls, [{"symbol": "BTC/USDT", "timeframe": "1m", "limit": 2}])
+        self.assertEqual(quality.source, "ccxt:binance")
+        self.assertTrue(quality.is_complete)
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual([bar.timestamp.isoformat() for bar in bars], ["2026-05-22T00:00:00+00:00", "2026-05-22T00:01:00+00:00"])
+        self.assertEqual(bars[0].open, 99.0)
+        self.assertEqual(bars[-1].close, 100.4445)
+        self.assertEqual(bars[-1].volume, 12.35)
+
+    def test_ccxt_market_data_adapter_rejects_non_crypto_requests(self):
+        from quant_core.adapters import CcxtMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        with self.assertRaisesRegex(ValueError, "only supports crypto"):
+            CcxtMarketDataAdapter(exchange_id="binance", ccxt_module=object()).fetch_ohlcv(
+                MarketDataRequest(market="us", symbol="AAPL", timeframe="1d"),
+                limit=1,
+            )
+
+    def test_crypto_kline_adapter_uses_ccxt_adapter_when_public_sources_are_unavailable(self):
+        from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        class FakeCcxtAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160):
+                self.calls.append({"request": request, "limit": limit})
+                return [
+                    OHLCVBar(
+                        symbol=request.symbol,
+                        market=request.market,
+                        timeframe=request.timeframe,
+                        timestamp=datetime(2026, 5, 21, 21, 20, tzinfo=timezone.utc),
+                        open=100.0,
+                        high=102.0,
+                        low=99.5,
+                        close=101.2,
+                        volume=12.34,
+                    )
+                ], DataQuality(source="ccxt:testexchange", is_complete=True, warnings=[], rows=1)
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            if "api.binance.com" in url:
+                return '{"code":451,"msg":"restricted"}'
+            if "api.exchange.coinbase.com" in url:
+                return "[]"
+            raise AssertionError(f"unexpected url {url}")
+
+        ccxt_adapter = FakeCcxtAdapter()
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text, ccxt_adapter=ccxt_adapter).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTCUSDT", timeframe="1m"),
+            limit=1,
+        )
+
+        self.assertEqual(quality.source, "ccxt:testexchange")
+        self.assertEqual(bars[-1].close, 101.2)
+        self.assertEqual(ccxt_adapter.calls[0]["request"].symbol, "BTCUSDT")
+        self.assertEqual(ccxt_adapter.calls[0]["limit"], 1)
+
     def test_crypto_kline_adapter_uses_binance_without_ccxt(self):
         from quant_core.domain import MarketDataRequest
         from quant_core.market_klines import QuantDingerKlineAdapter
