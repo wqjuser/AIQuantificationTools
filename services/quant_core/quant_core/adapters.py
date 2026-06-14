@@ -3,13 +3,16 @@ from __future__ import annotations
 import math
 import os
 from abc import ABC, abstractmethod
+from contextlib import redirect_stderr
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from typing import Any
 
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
 from quant_core.live_quotes import normalize_crypto_symbol
 
 _CCXT_UNSET = object()
+_YFINANCE_UNSET = object()
 
 
 class MarketDataAdapter(ABC):
@@ -81,12 +84,43 @@ class YFinanceMarketDataAdapter(OptionalDependencyAdapter):
     source = "yfinance"
     package_name = "yfinance"
 
+    def __init__(self, *, yfinance_module: Any = _YFINANCE_UNSET) -> None:
+        self.yfinance_module = yfinance_module
+
     def fetch_ohlcv(self, request: MarketDataRequest, limit: int | None = None) -> tuple[list[OHLCVBar], DataQuality]:
+        if request.market != "us":
+            raise ValueError("yfinance adapter only supports US market")
+
+        yf = self._load_yfinance_module()
+        bounded_limit = max(1, min(int(limit or 160), 500))
+        interval, period = yfinance_period(request.timeframe)
+        with redirect_stderr(StringIO()):
+            frame = yf.Ticker(request.symbol.upper()).history(period=period, interval=interval, auto_adjust=False)
+        bars = yfinance_history_to_bars(frame, request=request, limit=bounded_limit)
+        if not bars:
+            return [], DataQuality(
+                source=self.source,
+                is_complete=False,
+                warnings=["yfinance returned no chart bars"],
+                rows=0,
+            )
+        return bars[-bounded_limit:], DataQuality(
+            source=self.source,
+            is_complete=True,
+            warnings=[],
+            rows=len(bars[-bounded_limit:]),
+        )
+
+    def _load_yfinance_module(self) -> Any:
+        if self.yfinance_module is not _YFINANCE_UNSET:
+            if self.yfinance_module is None:
+                raise self._missing_dependency()
+            return self.yfinance_module
         try:
             import yfinance as yf  # type: ignore
         except ImportError as exc:
             raise self._missing_dependency() from exc
-        raise NotImplementedError("yfinance normalization is reserved for the external data integration phase")
+        return yf
 
 
 class CcxtMarketDataAdapter(OptionalDependencyAdapter):
@@ -169,6 +203,42 @@ def ccxt_timeframe(timeframe: str) -> str:
     return "1d" if timeframe == "1d" else timeframe
 
 
+def yfinance_period(timeframe: str) -> tuple[str, str]:
+    if timeframe == "1d":
+        return "1d", "1y"
+    if timeframe == "60m":
+        return "60m", "3mo"
+    return timeframe, "1mo"
+
+
+def yfinance_history_to_bars(frame: Any, *, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
+    if frame is None or getattr(frame, "empty", False):
+        return []
+    rows = frame.tail(limit) if hasattr(frame, "tail") else frame
+    if not hasattr(rows, "iterrows"):
+        return []
+    bars: list[OHLCVBar] = []
+    for timestamp, row in rows.iterrows():
+        try:
+            bars.append(
+                OHLCVBar(
+                    symbol=request.symbol.upper(),
+                    market="us",
+                    timeframe=request.timeframe,
+                    timestamp=coerce_datetime(timestamp),
+                    open=round(float(row_value(row, "Open")), 4),
+                    high=round(float(row_value(row, "High")), 4),
+                    low=round(float(row_value(row, "Low")), 4),
+                    close=round(float(row_value(row, "Close")), 4),
+                    volume=round(float(row_value(row, "Volume", 0) or 0), 2),
+                )
+            )
+        except (TypeError, ValueError, KeyError):
+            continue
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
 def ccxt_ohlcv_rows_to_bars(rows: Any, *, request: MarketDataRequest) -> list[OHLCVBar]:
     if not isinstance(rows, list):
         return []
@@ -194,3 +264,21 @@ def ccxt_ohlcv_rows_to_bars(rows: Any, *, request: MarketDataRequest) -> list[OH
             continue
     bars.sort(key=lambda bar: bar.timestamp)
     return bars
+
+
+def row_value(row: Any, key: str, default: Any = None) -> Any:
+    if hasattr(row, "get"):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, TypeError, IndexError):
+        return default
+
+
+def coerce_datetime(value: Any) -> datetime:
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    parsed = datetime.fromisoformat(str(value))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

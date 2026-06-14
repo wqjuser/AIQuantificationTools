@@ -13933,6 +13933,115 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 9.27)
         self.assertEqual(bars[-1].volume, 26674.0)
 
+    def test_yfinance_market_data_adapter_normalizes_history_rows(self):
+        from quant_core.adapters import YFinanceMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        class FakeFrame:
+            empty = False
+
+            def __init__(self, rows):
+                self.rows = rows
+
+            def tail(self, limit):
+                return FakeFrame(self.rows[-limit:])
+
+            def iterrows(self):
+                return iter(self.rows)
+
+        class FakeTicker:
+            calls = []
+
+            def __init__(self, symbol: str):
+                self.symbol = symbol
+
+            def history(self, *, period: str, interval: str, auto_adjust: bool):
+                FakeTicker.calls.append(
+                    {
+                        "symbol": self.symbol,
+                        "period": period,
+                        "interval": interval,
+                        "auto_adjust": auto_adjust,
+                    }
+                )
+                return FakeFrame(
+                    [
+                        (
+                            datetime(2026, 5, 20, 14, 30, tzinfo=timezone.utc),
+                            {"Open": "190.11119", "High": "193.22229", "Low": "188.33339", "Close": "192.44449", "Volume": "50100000"},
+                        ),
+                        (
+                            datetime(2026, 5, 20, 15, 30, tzinfo=timezone.utc),
+                            {"Open": 192.4, "High": 195.0, "Low": 191.5, "Close": 194.8, "Volume": 55200000},
+                        ),
+                    ]
+                )
+
+        class FakeYFinance:
+            Ticker = FakeTicker
+
+        adapter = YFinanceMarketDataAdapter(yfinance_module=FakeYFinance)
+        bars, quality = adapter.fetch_ohlcv(
+            MarketDataRequest(market="us", symbol="aapl", timeframe="60m"),
+            limit=2,
+        )
+
+        self.assertEqual(FakeTicker.calls, [{"symbol": "AAPL", "period": "3mo", "interval": "60m", "auto_adjust": False}])
+        self.assertEqual(quality.source, "yfinance")
+        self.assertTrue(quality.is_complete)
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(bars[0].open, 190.1112)
+        self.assertEqual(bars[0].volume, 50100000.0)
+        self.assertEqual(bars[-1].close, 194.8)
+
+    def test_yfinance_market_data_adapter_rejects_non_us_requests(self):
+        from quant_core.adapters import YFinanceMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        with self.assertRaisesRegex(ValueError, "only supports US"):
+            YFinanceMarketDataAdapter(yfinance_module=object()).fetch_ohlcv(
+                MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1d"),
+                limit=1,
+            )
+
+    def test_us_kline_adapter_uses_yfinance_adapter_when_yahoo_chart_is_unavailable(self):
+        from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        class FakeYFinanceAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160):
+                self.calls.append({"request": request, "limit": limit})
+                return [
+                    OHLCVBar(
+                        symbol=request.symbol,
+                        market=request.market,
+                        timeframe=request.timeframe,
+                        timestamp=datetime(2026, 5, 20, 14, 30, tzinfo=timezone.utc),
+                        open=190.0,
+                        high=193.2,
+                        low=188.9,
+                        close=192.1,
+                        volume=50100000.0,
+                    )
+                ], DataQuality(source="yfinance", is_complete=True, warnings=[], rows=1)
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            raise RuntimeError("Yahoo chart unavailable")
+
+        yfinance_adapter = FakeYFinanceAdapter()
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text, yfinance_adapter=yfinance_adapter).fetch_ohlcv(
+            MarketDataRequest(market="us", symbol="AAPL", timeframe="1d"),
+            limit=1,
+        )
+
+        self.assertEqual(quality.source, "yfinance")
+        self.assertEqual(bars[-1].close, 192.1)
+        self.assertEqual(yfinance_adapter.calls[0]["request"].symbol, "AAPL")
+        self.assertEqual(yfinance_adapter.calls[0]["limit"], 1)
+
     def test_us_kline_adapter_uses_yahoo_chart_without_python_package(self):
         from quant_core.domain import MarketDataRequest
         from quant_core.market_klines import QuantDingerKlineAdapter

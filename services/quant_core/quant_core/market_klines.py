@@ -3,15 +3,14 @@ from __future__ import annotations
 import json
 import os
 import time
-from contextlib import contextmanager, redirect_stderr
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-from io import StringIO
 from typing import Callable
 from urllib.parse import quote, urlencode
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
-from quant_core.adapters import CcxtMarketDataAdapter, DemoMarketDataAdapter, MarketDataAdapter
+from quant_core.adapters import CcxtMarketDataAdapter, DemoMarketDataAdapter, MarketDataAdapter, YFinanceMarketDataAdapter
 from quant_core.domain import DataQuality, Market, MarketDataRequest, OHLCVBar, Timeframe
 from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
 
@@ -48,12 +47,14 @@ class QuantDingerKlineAdapter:
         *,
         fetch_text: FetchText | None = None,
         fallback_adapter: MarketDataAdapter | None = None,
+        yfinance_adapter: MarketDataAdapter | None = None,
         ccxt_adapter: MarketDataAdapter | None = None,
         cache_ttl_seconds: int = 90,
         now: Now | None = None,
     ) -> None:
         self.fetch_text = fetch_text or default_fetch_text
         self.fallback_adapter = fallback_adapter or DemoMarketDataAdapter()
+        self.yfinance_adapter = yfinance_adapter or YFinanceMarketDataAdapter()
         self.ccxt_adapter = ccxt_adapter or CcxtMarketDataAdapter()
         self.cache = KlineCache(ttl_seconds=cache_ttl_seconds, now=now)
 
@@ -176,37 +177,26 @@ class QuantDingerKlineAdapter:
             yahoo_warning = str(exc)
 
         try:
-            import yfinance as yf  # type: ignore
-        except ImportError:
-            warning = "yfinance is not installed"
-            if yahoo_warning:
-                warning = f"{yahoo_warning}; {warning}"
-            return self._fallback(request, limit, warning)
-
-        interval, period = yfinance_period(request.timeframe)
-        with redirect_stderr(StringIO()):
-            frame = yf.Ticker(request.symbol).history(period=period, interval=interval, auto_adjust=False)
-        if frame is None or frame.empty:
-            warning = "yfinance returned no chart bars"
-            if yahoo_warning:
-                warning = f"{yahoo_warning}; {warning}"
-            return self._fallback(request, limit, warning)
-        bars: list[OHLCVBar] = []
-        for timestamp, row in frame.tail(limit).iterrows():
-            bars.append(
-                OHLCVBar(
-                    symbol=request.symbol,
-                    market="us",
-                    timeframe=request.timeframe,
-                    timestamp=coerce_datetime(timestamp),
-                    open=round(float(row["Open"]), 4),
-                    high=round(float(row["High"]), 4),
-                    low=round(float(row["Low"]), 4),
-                    close=round(float(row["Close"]), 4),
-                    volume=round(float(row.get("Volume", 0) or 0), 2),
+            bars, quality = self.yfinance_adapter.fetch_ohlcv(request, limit=limit)
+            if bars:
+                limited = bars[-limit:]
+                return limited, DataQuality(
+                    source=quality.source,
+                    is_complete=quality.is_complete,
+                    warnings=quality.warnings,
+                    rows=len(limited),
                 )
-            )
-        return bars, DataQuality(source="yfinance", is_complete=True, warnings=[], rows=len(bars))
+            warning = "yfinance returned no chart bars"
+            if quality.warnings:
+                warning = f"{warning}; {'; '.join(quality.warnings)}"
+        except Exception as exc:
+            warning = str(exc)
+            if yahoo_warning:
+                warning = f"{yahoo_warning}; {warning}"
+            return self._fallback(request, limit, warning)
+        if yahoo_warning:
+            warning = f"{yahoo_warning}; {warning}"
+        return self._fallback(request, limit, warning)
 
     def _fetch_yahoo_us_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
         interval, range_label = yahoo_chart_range_interval(request.timeframe)
