@@ -10196,6 +10196,7 @@ function PlatformSettingsPanel({
                     : "No trading key"}
               </em>
               <small>
+                {marketDataAdapterExternalTelemetryLabel(i18n, row.externalTelemetry)} ·{" "}
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
               </small>
@@ -18782,6 +18783,25 @@ function marketDataAdapterCacheDiagnosticsLabel(
       ? `${diagnostics.contextCount.toLocaleString("zh-CN")} 上下文`
       : `${diagnostics.contextCount.toLocaleString("en-US")} contexts`;
   return `${freshness} · ${rows} · ${contexts}`;
+}
+
+function marketDataAdapterExternalTelemetryLabel(
+  i18n: AppI18n,
+  telemetry: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]
+): string {
+  if (telemetry.status === "ok") {
+    return i18n.locale === "zh-CN"
+      ? `依赖可用 · ${telemetry.dependency} · ${telemetry.retryState}`
+      : `Dependency ready · ${telemetry.dependency} · ${telemetry.retryState}`;
+  }
+  if (telemetry.retryState === "dependency_missing") {
+    return i18n.locale === "zh-CN"
+      ? `依赖缺失 · ${telemetry.dependency}`
+      : `Dependency missing · ${telemetry.dependency}`;
+  }
+  return i18n.locale === "zh-CN"
+    ? `外部源未知 · ${telemetry.dependency}`
+    : `External source unknown · ${telemetry.dependency}`;
 }
 
 function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearchSuggestion["cache"]>): string {

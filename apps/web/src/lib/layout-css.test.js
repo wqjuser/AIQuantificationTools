@@ -2435,6 +2435,14 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Open cache workflow");
   });
 
+  test("renders external source telemetry on settings market data adapters", () => {
+    expect(appSource).toContain("marketDataAdapterExternalTelemetryLabel(i18n, row.externalTelemetry)");
+    expect(appSource).toContain("依赖可用");
+    expect(appSource).toContain("Dependency ready");
+    expect(appSource).toContain("依赖缺失");
+    expect(appSource).toContain("Dependency missing");
+  });
+
   test("renders execution adapter state ledger as a compact settings audit rail", () => {
     expect(appSource).toContain("loadExecutionAdapterLedger(quantCoreBaseUrl)");
     expect(appSource).toContain("buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger)");

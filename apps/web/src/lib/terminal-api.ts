@@ -1104,6 +1104,7 @@ export interface PlatformSettingsMarketDataAdapter {
   requiresTradingKey: boolean;
   cacheScope: string;
   cacheDiagnostics: PlatformSettingsMarketDataAdapterCacheDiagnostics;
+  externalTelemetry: PlatformSettingsMarketDataAdapterExternalTelemetry;
   note: string;
 }
 
@@ -1113,6 +1114,15 @@ export interface PlatformSettingsMarketDataAdapterCacheDiagnostics {
   rowCount: number;
   latestTimestamp: string | null;
   freshnessSummary: PlatformSettingsCacheFreshnessSummary;
+}
+
+export interface PlatformSettingsMarketDataAdapterExternalTelemetry {
+  status: "ok" | "blocked" | "unknown";
+  dependency: string;
+  dependencyAvailable: boolean;
+  lastError: string | null;
+  retryState: "idle" | "dependency_missing" | "not_observed";
+  checkedAt: string;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -9089,6 +9099,7 @@ function isPlatformSettingsMarketDataAdapter(value: unknown): value is PlatformS
     typeof adapter.requiresTradingKey === "boolean" &&
     typeof adapter.cacheScope === "string" &&
     isPlatformSettingsMarketDataAdapterCacheDiagnostics(adapter.cacheDiagnostics) &&
+    isPlatformSettingsMarketDataAdapterExternalTelemetry(adapter.externalTelemetry) &&
     typeof adapter.note === "string"
   );
 }
@@ -9106,6 +9117,25 @@ function isPlatformSettingsMarketDataAdapterCacheDiagnostics(
     typeof diagnostics.rowCount === "number" &&
     (diagnostics.latestTimestamp === null || typeof diagnostics.latestTimestamp === "string") &&
     isPlatformSettingsCacheFreshnessSummary(diagnostics.freshnessSummary)
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterExternalTelemetry(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterExternalTelemetry {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const telemetry = value as Partial<PlatformSettingsMarketDataAdapterExternalTelemetry>;
+  return (
+    (telemetry.status === "ok" || telemetry.status === "blocked" || telemetry.status === "unknown") &&
+    typeof telemetry.dependency === "string" &&
+    typeof telemetry.dependencyAvailable === "boolean" &&
+    (telemetry.lastError === null || typeof telemetry.lastError === "string") &&
+    (telemetry.retryState === "idle" ||
+      telemetry.retryState === "dependency_missing" ||
+      telemetry.retryState === "not_observed") &&
+    typeof telemetry.checkedAt === "string"
   );
 }
 

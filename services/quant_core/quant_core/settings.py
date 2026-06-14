@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from importlib.util import find_spec
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ def build_settings_status(
     cache_stats: dict[str, Any] | None = None,
     finnhub_api_key: str | None = None,
     ccxt_exchange: str | None = None,
+    adapter_dependency_statuses: dict[str, bool] | None = None,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a read-only platform settings status payload without returning secrets."""
@@ -65,7 +67,12 @@ def build_settings_status(
                 "note": "Public OHLCV and ticker routes stay paper-only until exchange trade keys are explicitly certified.",
             },
         ],
-        "marketDataAdapters": _market_data_adapter_statuses(exchange, cache_context_payloads),
+        "marketDataAdapters": _market_data_adapter_statuses(
+            exchange,
+            cache_context_payloads,
+            adapter_dependency_statuses=adapter_dependency_statuses,
+            generated_at=generated_timestamp,
+        ),
         "cache": {
             "engine": "sqlite",
             "path": str(cache),
@@ -126,14 +133,35 @@ def build_settings_status(
     }
 
 
-def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _market_data_adapter_statuses(
+    exchange: str,
+    cache_contexts: list[dict[str, Any]],
+    *,
+    adapter_dependency_statuses: dict[str, bool] | None,
+    generated_at: datetime,
+) -> list[dict[str, Any]]:
+    akshare_telemetry = _market_data_adapter_external_telemetry(
+        dependency="akshare",
+        dependency_statuses=adapter_dependency_statuses,
+        generated_at=generated_at,
+    )
+    yfinance_telemetry = _market_data_adapter_external_telemetry(
+        dependency="yfinance",
+        dependency_statuses=adapter_dependency_statuses,
+        generated_at=generated_at,
+    )
+    ccxt_telemetry = _market_data_adapter_external_telemetry(
+        dependency="ccxt",
+        dependency_statuses=adapter_dependency_statuses,
+        generated_at=generated_at,
+    )
     return [
         {
             "id": "akshare-ohlcv",
             "market": "ashare",
             "adapter": "AkShareMarketDataAdapter",
             "provider": "akshare",
-            "status": "ready",
+            "status": _market_data_adapter_status_from_telemetry(akshare_telemetry),
             "route": "public_ohlcv",
             "capabilities": ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
             "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
@@ -141,6 +169,7 @@ def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, 
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
             "cacheDiagnostics": _market_data_adapter_cache_diagnostics("ashare", cache_contexts),
+            "externalTelemetry": akshare_telemetry,
             "note": "Normalizes A-share daily and recent minute OHLCV through public AKShare routes.",
         },
         {
@@ -148,7 +177,7 @@ def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, 
             "market": "us",
             "adapter": "YFinanceMarketDataAdapter",
             "provider": "yfinance",
-            "status": "ready",
+            "status": _market_data_adapter_status_from_telemetry(yfinance_telemetry),
             "route": "public_ohlcv",
             "capabilities": ["Ticker.history"],
             "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
@@ -156,6 +185,7 @@ def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, 
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
             "cacheDiagnostics": _market_data_adapter_cache_diagnostics("us", cache_contexts),
+            "externalTelemetry": yfinance_telemetry,
             "note": "Normalizes US equity OHLCV through yfinance without reading trading credentials.",
         },
         {
@@ -163,7 +193,7 @@ def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, 
             "market": "crypto",
             "adapter": "CcxtMarketDataAdapter",
             "provider": f"ccxt:{exchange}",
-            "status": "ready",
+            "status": _market_data_adapter_status_from_telemetry(ccxt_telemetry),
             "route": "public_ohlcv",
             "capabilities": ["fetch_ohlcv"],
             "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
@@ -171,9 +201,46 @@ def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, 
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
             "cacheDiagnostics": _market_data_adapter_cache_diagnostics("crypto", cache_contexts),
+            "externalTelemetry": ccxt_telemetry,
             "note": "Normalizes public crypto exchange OHLCV; exchange trading keys stay outside this route.",
         },
     ]
+
+
+def _market_data_adapter_external_telemetry(
+    *,
+    dependency: str,
+    dependency_statuses: dict[str, bool] | None,
+    generated_at: datetime,
+) -> dict[str, Any]:
+    available = _adapter_dependency_available(dependency, dependency_statuses)
+    if available:
+        return {
+            "status": "ok",
+            "dependency": dependency,
+            "dependencyAvailable": True,
+            "lastError": None,
+            "retryState": "idle",
+            "checkedAt": generated_at.isoformat(),
+        }
+    return {
+        "status": "blocked",
+        "dependency": dependency,
+        "dependencyAvailable": False,
+        "lastError": f"optional package '{dependency}' is not installed",
+        "retryState": "dependency_missing",
+        "checkedAt": generated_at.isoformat(),
+    }
+
+
+def _adapter_dependency_available(dependency: str, dependency_statuses: dict[str, bool] | None) -> bool:
+    if dependency_statuses is not None and dependency in dependency_statuses:
+        return bool(dependency_statuses[dependency])
+    return find_spec(dependency) is not None
+
+
+def _market_data_adapter_status_from_telemetry(telemetry: dict[str, Any]) -> str:
+    return "ready" if telemetry.get("status") == "ok" else "blocked"
 
 
 def _market_data_adapter_cache_diagnostics(market: str, cache_contexts: list[dict[str, Any]]) -> dict[str, Any]:

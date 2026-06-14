@@ -233,6 +233,14 @@ const samplePlatformSettingsMarketDataAdapters = [
       latestTimestamp: "2026-05-29T00:00:00+00:00",
       freshnessSummary: { fresh: 1, stale: 0, empty: 0 }
     },
+    externalTelemetry: {
+      status: "ok",
+      dependency: "akshare",
+      dependencyAvailable: true,
+      lastError: null,
+      retryState: "idle",
+      checkedAt: "2026-06-14T08:00:00+00:00"
+    },
     note: "A-share public OHLCV adapter."
   },
   {
@@ -254,6 +262,14 @@ const samplePlatformSettingsMarketDataAdapters = [
       latestTimestamp: null,
       freshnessSummary: { fresh: 0, stale: 0, empty: 0 }
     },
+    externalTelemetry: {
+      status: "ok",
+      dependency: "yfinance",
+      dependencyAvailable: true,
+      lastError: null,
+      retryState: "idle",
+      checkedAt: "2026-06-14T08:00:00+00:00"
+    },
     note: "US equity public OHLCV adapter."
   },
   {
@@ -274,6 +290,14 @@ const samplePlatformSettingsMarketDataAdapters = [
       rowCount: 100,
       latestTimestamp: "2026-05-20T00:00:00+00:00",
       freshnessSummary: { fresh: 0, stale: 1, empty: 0 }
+    },
+    externalTelemetry: {
+      status: "blocked",
+      dependency: "ccxt",
+      dependencyAvailable: false,
+      lastError: "optional package 'ccxt' is not installed",
+      retryState: "dependency_missing",
+      checkedAt: "2026-06-14T08:00:00+00:00"
     },
     note: "Crypto public OHLCV adapter."
   }
@@ -1840,6 +1864,14 @@ describe("terminal workspace API client", () => {
                   latestTimestamp: "2026-05-29T00:00:00+00:00",
                   freshnessSummary: { fresh: 1, stale: 0, empty: 0 }
                 },
+                externalTelemetry: {
+                  status: "ok",
+                  dependency: "akshare",
+                  dependencyAvailable: true,
+                  lastError: null,
+                  retryState: "idle",
+                  checkedAt: "2026-06-14T08:00:00+00:00"
+                },
                 note: "Public A-share OHLCV."
               },
               {
@@ -1860,6 +1892,14 @@ describe("terminal workspace API client", () => {
                   rowCount: 0,
                   latestTimestamp: null,
                   freshnessSummary: { fresh: 0, stale: 0, empty: 0 }
+                },
+                externalTelemetry: {
+                  status: "blocked",
+                  dependency: "yfinance",
+                  dependencyAvailable: false,
+                  lastError: "optional package 'yfinance' is not installed",
+                  retryState: "dependency_missing",
+                  checkedAt: "2026-06-14T08:00:00+00:00"
                 },
                 note: "Public US OHLCV."
               }
@@ -1928,6 +1968,11 @@ describe("terminal workspace API client", () => {
         contextCount: 1,
         rowCount: 500,
         latestTimestamp: "2026-05-29T00:00:00+00:00"
+      },
+      externalTelemetry: {
+        status: "ok",
+        dependency: "akshare",
+        dependencyAvailable: true
       }
     });
     expect(result.settings?.marketDataAdapters?.[1]).toMatchObject({
@@ -1938,6 +1983,11 @@ describe("terminal workspace API client", () => {
         freshness: "empty",
         contextCount: 0,
         rowCount: 0
+      },
+      externalTelemetry: {
+        status: "blocked",
+        dependency: "yfinance",
+        retryState: "dependency_missing"
       }
     });
     expect((result.settings?.cache as unknown as { rowCount?: number }).rowCount).toBe(1280);
@@ -7661,6 +7711,83 @@ describe("terminal workspace API client", () => {
               requiresTradingKey: false,
               cacheScope: "ohlcv",
               note: "Diagnostics intentionally omitted."
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter external telemetry is missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-14T08:00:00+00:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              id: "akshare-ohlcv",
+              market: "ashare",
+              adapter: "AkShareMarketDataAdapter",
+              provider: "akshare",
+              status: "ready",
+              route: "public_ohlcv",
+              capabilities: ["stock_zh_a_hist"],
+              timeframes: ["1d"],
+              requiresApiKey: false,
+              requiresTradingKey: false,
+              cacheScope: "ohlcv",
+              cacheDiagnostics: {
+                freshness: "fresh",
+                contextCount: 1,
+                rowCount: 500,
+                latestTimestamp: "2026-05-29T00:00:00+00:00",
+                freshnessSummary: { fresh: 1, stale: 0, empty: 0 }
+              },
+              note: "External telemetry intentionally omitted."
             }
           ],
           cache: {

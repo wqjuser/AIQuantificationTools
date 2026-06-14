@@ -1089,16 +1089,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(len(market_data_adapters), 3)
         self.assertEqual(akshare_adapter["market"], "ashare")
         self.assertEqual(akshare_adapter["adapter"], "AkShareMarketDataAdapter")
-        self.assertEqual(akshare_adapter["status"], "ready")
+        self.assertIn(akshare_adapter["status"], ["ready", "blocked"])
         self.assertIn("stock_zh_a_hist", akshare_adapter["capabilities"])
         self.assertIn("stock_zh_a_hist_min_em", akshare_adapter["capabilities"])
         self.assertEqual(akshare_adapter["cacheDiagnostics"]["contextCount"], 1)
         self.assertEqual(akshare_adapter["cacheDiagnostics"]["rowCount"], 1)
         self.assertEqual(akshare_adapter["cacheDiagnostics"]["freshnessSummary"]["stale"], 1)
+        self.assertEqual(akshare_adapter["externalTelemetry"]["dependency"], "akshare")
+        self.assertIn(akshare_adapter["externalTelemetry"]["status"], ["ok", "blocked"])
+        self.assertIsInstance(akshare_adapter["externalTelemetry"]["dependencyAvailable"], bool)
         self.assertEqual(yfinance_adapter["cacheDiagnostics"]["freshness"], "empty")
         self.assertEqual(yfinance_adapter["cacheDiagnostics"]["contextCount"], 0)
         self.assertEqual(yfinance_adapter["market"], "us")
         self.assertEqual(yfinance_adapter["adapter"], "YFinanceMarketDataAdapter")
+        self.assertEqual(yfinance_adapter["externalTelemetry"]["dependency"], "yfinance")
         self.assertIn("Ticker.history", yfinance_adapter["capabilities"])
         self.assertEqual(ccxt_adapter["market"], "crypto")
         self.assertEqual(ccxt_adapter["adapter"], "CcxtMarketDataAdapter")
@@ -1106,6 +1110,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(ccxt_adapter["requiresTradingKey"])
         self.assertEqual(ccxt_adapter["cacheDiagnostics"]["contextCount"], 1)
         self.assertEqual(ccxt_adapter["cacheDiagnostics"]["rowCount"], 1)
+        self.assertEqual(ccxt_adapter["externalTelemetry"]["dependency"], "ccxt")
         self.assertTrue(all("secret" not in json.dumps(row).lower() for row in market_data_adapters))
         self.assertEqual(paper_adapter["route"], "paper")
         self.assertEqual(paper_adapter["status"], "paper_ready")
@@ -1396,6 +1401,36 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(adapters["yfinance-ohlcv"]["cacheDiagnostics"]["freshness"], "stale")
         self.assertEqual(adapters["yfinance-ohlcv"]["cacheDiagnostics"]["latestTimestamp"], "2026-05-20T00:00:00+00:00")
         self.assertEqual(adapters["ccxt-ohlcv"]["cacheDiagnostics"]["freshness"], "fresh")
+
+    def test_settings_status_reports_market_data_adapter_external_telemetry(self):
+        import json
+
+        from quant_core.settings import build_settings_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                adapter_dependency_statuses={"akshare": False, "yfinance": True, "ccxt": True},
+                generated_at=datetime(2026, 6, 14, 8, 0, tzinfo=timezone.utc),
+            )
+
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        self.assertEqual(adapters["akshare-ohlcv"]["status"], "blocked")
+        self.assertEqual(
+            adapters["akshare-ohlcv"]["externalTelemetry"],
+            {
+                "status": "blocked",
+                "dependency": "akshare",
+                "dependencyAvailable": False,
+                "lastError": "optional package 'akshare' is not installed",
+                "retryState": "dependency_missing",
+                "checkedAt": "2026-06-14T08:00:00+00:00",
+            },
+        )
+        self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["status"], "ok")
+        self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["retryState"], "idle")
+        self.assertIsNone(adapters["ccxt-ohlcv"]["externalTelemetry"]["lastError"])
+        self.assertTrue(all("secret" not in json.dumps(adapter).lower() for adapter in adapters.values()))
 
     def test_execution_adapter_state_ledger_summarizes_live_blocked_routes(self):
         from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
