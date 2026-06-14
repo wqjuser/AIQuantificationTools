@@ -35,6 +35,7 @@ class WatchlistCacheRefreshRun:
     requested_limit: int
     summary: dict[str, int]
     items: list[WatchlistCacheRefreshItem]
+    override_audit_event_id: str | None = None
 
 
 class WatchlistCacheRefreshRunStore:
@@ -57,10 +58,17 @@ class WatchlistCacheRefreshRunStore:
                     timeframe text not null,
                     requested_limit integer not null,
                     summary_json text not null,
-                    items_json text not null
+                    items_json text not null,
+                    override_audit_event_id text
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("pragma table_info(watchlist_cache_refresh_runs)").fetchall()
+            }
+            if "override_audit_event_id" not in columns:
+                connection.execute("alter table watchlist_cache_refresh_runs add column override_audit_event_id text")
             connection.commit()
         finally:
             connection.close()
@@ -71,15 +79,16 @@ class WatchlistCacheRefreshRunStore:
             connection.execute(
                 """
                 insert into watchlist_cache_refresh_runs (
-                    run_id, created_at, timeframe, requested_limit, summary_json, items_json
+                    run_id, created_at, timeframe, requested_limit, summary_json, items_json, override_audit_event_id
                 )
-                values (?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?)
                 on conflict(run_id) do update set
                     created_at = excluded.created_at,
                     timeframe = excluded.timeframe,
                     requested_limit = excluded.requested_limit,
                     summary_json = excluded.summary_json,
-                    items_json = excluded.items_json
+                    items_json = excluded.items_json,
+                    override_audit_event_id = excluded.override_audit_event_id
                 """,
                 (
                     run.run_id,
@@ -88,6 +97,7 @@ class WatchlistCacheRefreshRunStore:
                     run.requested_limit,
                     json.dumps(run.summary, ensure_ascii=False, sort_keys=True),
                     json.dumps([watchlist_cache_refresh_item_to_payload(item) for item in run.items], ensure_ascii=False),
+                    run.override_audit_event_id,
                 ),
             )
             connection.commit()
@@ -101,7 +111,7 @@ class WatchlistCacheRefreshRunStore:
         try:
             rows = connection.execute(
                 """
-                select run_id, created_at, timeframe, requested_limit, summary_json, items_json
+                select run_id, created_at, timeframe, requested_limit, summary_json, items_json, override_audit_event_id
                 from watchlist_cache_refresh_runs
                 order by created_at desc, run_id desc
                 limit ?
@@ -119,7 +129,7 @@ class WatchlistCacheRefreshRunStore:
         try:
             row = connection.execute(
                 """
-                select run_id, created_at, timeframe, requested_limit, summary_json, items_json
+                select run_id, created_at, timeframe, requested_limit, summary_json, items_json, override_audit_event_id
                 from watchlist_cache_refresh_runs
                 where run_id = ?
                 limit 1
@@ -138,6 +148,7 @@ def create_watchlist_cache_refresh_run(
     requested_limit: int,
     created_at: datetime | None = None,
     run_id: str | None = None,
+    override_audit_event_id: str | None = None,
 ) -> WatchlistCacheRefreshRun:
     summary = {
         "totalSymbols": len(items),
@@ -153,6 +164,7 @@ def create_watchlist_cache_refresh_run(
         requested_limit=requested_limit,
         summary=summary,
         items=items,
+        override_audit_event_id=override_audit_event_id,
     )
 
 
@@ -190,6 +202,7 @@ def watchlist_cache_refresh_run_to_payload(run: WatchlistCacheRefreshRun) -> dic
         "createdAt": run.created_at.isoformat(),
         "timeframe": run.timeframe,
         "requestedLimit": run.requested_limit,
+        "overrideAuditEventId": run.override_audit_event_id,
         "summary": dict(run.summary),
         "items": [watchlist_cache_refresh_item_to_payload(item) for item in run.items],
     }
@@ -218,6 +231,7 @@ def _watchlist_cache_refresh_run_from_row(row: tuple[object, ...]) -> WatchlistC
         requested_limit=int(row[3]),
         summary={key: int(value) for key, value in json.loads(str(row[4])).items()},
         items=[_watchlist_cache_refresh_item_from_payload(item) for item in items_payload],
+        override_audit_event_id=str(row[6]) if len(row) > 6 and row[6] is not None else None,
     )
 
 

@@ -389,6 +389,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 symbol = str(payload.get("symbol") or "600000")
                 timeframe = str(payload.get("timeframe") or "1d")
                 limit = _parse_kline_limit(str(payload.get("limit") or "160"))
+                override_audit_event_id = _optional_audit_event_id(payload.get("overrideAuditEventId"))
                 request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe)
                 bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
                 self._record_adapter_error_if_needed(request, quality=quality, context="cache-refresh")
@@ -406,6 +407,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         "timeframe": timeframe,
                         "requestedLimit": limit,
                         "upsertedRows": upserted_rows,
+                        "overrideAuditEventId": override_audit_event_id,
                         "quality": quality_payload,
                     },
                     "settings": self._settings_status_payload(),
@@ -418,6 +420,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 instruments = watchlist_from_payload(payload.get("watchlist"))
                 timeframe = str(payload.get("timeframe") or "1d")
                 limit = _parse_kline_limit(str(payload.get("limit") or "160"))
+                override_audit_event_id = _optional_audit_event_id(payload.get("overrideAuditEventId"))
                 items = []
                 for instrument in instruments:
                     request = MarketDataRequest(market=instrument.market, symbol=instrument.symbol, timeframe=timeframe)
@@ -461,7 +464,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                             )
                         )
                 refresh_run = self.watchlist_cache_refresh_store.record(
-                    create_watchlist_cache_refresh_run(items=items, timeframe=timeframe, requested_limit=limit)
+                    create_watchlist_cache_refresh_run(
+                        items=items,
+                        timeframe=timeframe,
+                        requested_limit=limit,
+                        override_audit_event_id=override_audit_event_id,
+                    )
                 )
             except ValueError as error:
                 self._send_json({"error": "invalid_watchlist_cache_refresh", "detail": str(error)}, status=400)
@@ -3613,6 +3621,13 @@ def _parse_optional_datetime(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _optional_audit_event_id(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _find_portfolio_paper_order_batch(

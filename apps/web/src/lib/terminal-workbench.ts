@@ -3690,6 +3690,7 @@ export interface WatchlistCacheRefreshRunSnapshot {
   createdAt: string;
   timeframe: Timeframe;
   requestedLimit: number;
+  overrideAuditEventId?: string | null;
   summary: {
     totalSymbols: number;
     refreshed: number;
@@ -9546,6 +9547,7 @@ export function buildWatchlistCacheRefreshHistoryRows(
     const skipped = Math.max(0, run.summary.skipped);
     const failed = Math.max(0, run.summary.failed);
     const tone: WatchlistCacheRefreshHistoryRow["tone"] = failed > 0 ? "risk" : skipped > 0 ? "warning" : "positive";
+    const overrideDetail = run.overrideAuditEventId ? ` · override ${run.overrideAuditEventId}` : "";
     return {
       id: run.runId,
       runId: run.runId,
@@ -9558,7 +9560,7 @@ export function buildWatchlistCacheRefreshHistoryRows(
       failed,
       upsertedRows: Math.max(0, run.summary.upsertedRows),
       value: `${refreshed}/${total} refreshed`,
-      detail: `${Math.max(0, run.summary.upsertedRows)} rows cached · ${skipped} skipped · ${failed} failed`,
+      detail: `${Math.max(0, run.summary.upsertedRows)} rows cached · ${skipped} skipped · ${failed} failed${overrideDetail}`,
       selected: selectedRunId === run.runId,
       tone
     };

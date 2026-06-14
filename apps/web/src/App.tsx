@@ -3718,11 +3718,13 @@ export function App() {
       const key = cacheContextKey(context);
       setRefreshingCacheKey(key);
       try {
+        const overrideAuditEventId = refreshGuard.overrideApplied ? marketDataRefreshOverride?.auditEventId : null;
         const result = await refreshMarketCache(quantCoreBaseUrl, {
           market: context.market,
           symbol: context.symbol,
           timeframe: context.timeframe,
-          limit: chartKlineLimit
+          limit: chartKlineLimit,
+          overrideAuditEventId
         });
         setSettingsStatus({
           settings: result.settings,
@@ -3796,9 +3798,11 @@ export function App() {
     }
     setIsRefreshingWatchlistCache(true);
     try {
+      const overrideAuditEventId = refreshGuard.overrideApplied ? activeMarketDataRefreshOverride?.auditEventId : null;
       const result = await refreshWatchlistCacheRun(quantCoreBaseUrl, {
         timeframe: workspace.selectedTimeframe,
         limit: chartKlineLimit,
+        overrideAuditEventId,
         watchlist: workspace.watchlist
       });
       setSettingsStatus((current) => ({

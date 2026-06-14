@@ -2512,6 +2512,7 @@ export interface CacheRefreshSummary {
   timeframe: ResearchTimeframe;
   requestedLimit: number;
   upsertedRows: number;
+  overrideAuditEventId?: string | null;
   quality: MarketKlineQuality;
 }
 
@@ -2543,6 +2544,7 @@ export interface CacheWatchlistRefreshRun {
   createdAt: string;
   timeframe: ResearchTimeframe;
   requestedLimit: number;
+  overrideAuditEventId?: string | null;
   summary: CacheWatchlistRefreshRunSummary;
   items: CacheWatchlistRefreshItem[];
 }
@@ -2550,6 +2552,7 @@ export interface CacheWatchlistRefreshRun {
 export interface CacheWatchlistRefreshParams {
   timeframe: ResearchTimeframe;
   limit?: number;
+  overrideAuditEventId?: string | null;
   watchlist: TerminalWorkspace["watchlist"];
 }
 
@@ -3030,6 +3033,7 @@ export interface MarketKlinesParams extends TerminalResearchParams {
 
 export interface CacheRefreshParams extends TerminalResearchParams {
   limit?: number;
+  overrideAuditEventId?: string | null;
 }
 
 export interface ResearchNoteSaveParams extends TerminalResearchParams {
@@ -7328,15 +7332,20 @@ export async function refreshMarketCache(
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<CacheRefreshResult> {
   try {
+    const overrideAuditEventId = params.overrideAuditEventId?.trim();
+    const body: Record<string, unknown> = {
+      market: params.market,
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      limit: Math.max(1, Math.min(params.limit ?? 160, 500))
+    };
+    if (overrideAuditEventId) {
+      body.overrideAuditEventId = overrideAuditEventId;
+    }
     const response = await fetcher(buildCacheRefreshUrl(baseUrl), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        market: params.market,
-        symbol: params.symbol,
-        timeframe: params.timeframe,
-        limit: Math.max(1, Math.min(params.limit ?? 160, 500))
-      })
+      body: JSON.stringify(body)
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
@@ -7364,18 +7373,23 @@ export async function refreshWatchlistCacheRun(
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<CacheWatchlistRefreshResult> {
   try {
+    const overrideAuditEventId = params.overrideAuditEventId?.trim();
+    const body: Record<string, unknown> = {
+      timeframe: params.timeframe,
+      limit: Math.max(1, Math.min(params.limit ?? 160, 500)),
+      watchlist: params.watchlist.map((instrument) => ({
+        market: instrument.market,
+        symbol: instrument.symbol,
+        name: instrument.name
+      }))
+    };
+    if (overrideAuditEventId) {
+      body.overrideAuditEventId = overrideAuditEventId;
+    }
     const response = await fetcher(buildWatchlistCacheRefreshUrl(baseUrl), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        timeframe: params.timeframe,
-        limit: Math.max(1, Math.min(params.limit ?? 160, 500)),
-        watchlist: params.watchlist.map((instrument) => ({
-          market: instrument.market,
-          symbol: instrument.symbol,
-          name: instrument.name
-        }))
-      })
+      body: JSON.stringify(body)
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
@@ -8803,6 +8817,7 @@ function isCacheRefreshSummary(value: unknown): value is CacheRefreshSummary {
     isTimeframe(refresh.timeframe) &&
     typeof refresh.requestedLimit === "number" &&
     typeof refresh.upsertedRows === "number" &&
+    isOptionalStringOrNull(refresh.overrideAuditEventId) &&
     isMarketKlineQuality(refresh.quality)
   );
 }
@@ -8835,6 +8850,7 @@ function isCacheWatchlistRefreshRun(value: unknown): value is CacheWatchlistRefr
     typeof run.createdAt === "string" &&
     isTimeframe(run.timeframe) &&
     typeof run.requestedLimit === "number" &&
+    isOptionalStringOrNull(run.overrideAuditEventId) &&
     isCacheWatchlistRefreshRunSummary(run.summary) &&
     Array.isArray(run.items) &&
     run.items.every(isCacheWatchlistRefreshItem)
@@ -8866,6 +8882,10 @@ function isCacheWatchlistRefreshItem(value: unknown): value is CacheWatchlistRef
     (item.status === "refreshed" || item.status === "skipped" || item.status === "failed") &&
     (item.error === null || typeof item.error === "string")
   );
+}
+
+function isOptionalStringOrNull(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
 }
 
 function isStrategyLibraryPayload(value: unknown): value is { strategies: StrategyLibraryItem[] } {

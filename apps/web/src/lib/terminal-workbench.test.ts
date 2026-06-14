@@ -15702,6 +15702,7 @@ describe("terminal workbench model", () => {
           createdAt: "2026-06-09T23:10:00+08:00",
           timeframe: "1d",
           requestedLimit: 240,
+          overrideAuditEventId: "market-data-refresh-override-latest",
           summary: { totalSymbols: 3, refreshed: 2, skipped: 1, failed: 0, upsertedRows: 480 },
           items: []
         },
@@ -15730,7 +15731,7 @@ describe("terminal workbench model", () => {
         failed: 0,
         upsertedRows: 480,
         value: "2/3 refreshed",
-        detail: "480 rows cached · 1 skipped · 0 failed",
+        detail: "480 rows cached · 1 skipped · 0 failed · override market-data-refresh-override-latest",
         selected: false,
         tone: "warning"
       },

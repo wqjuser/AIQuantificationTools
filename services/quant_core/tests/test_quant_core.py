@@ -5775,6 +5775,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "symbol": "600000",
                             "timeframe": "1d",
                             "limit": 240,
+                            "overrideAuditEventId": "market-data-refresh-override-api",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -5789,6 +5790,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertEqual(adapter.calls, [("ashare", "600000", "1d", 240)])
+        self.assertEqual(payload["refresh"]["overrideAuditEventId"], "market-data-refresh-override-api")
         self.assertEqual(payload["refresh"]["upsertedRows"], 3)
         self.assertEqual(payload["refresh"]["quality"]["source"], "test-kline")
         self.assertEqual(payload["settings"]["cache"]["rowCount"], 3)
@@ -5849,6 +5851,7 @@ class QuantCoreContractTest(unittest.TestCase):
                         {
                             "timeframe": "1d",
                             "limit": 240,
+                            "overrideAuditEventId": "market-data-refresh-override-watchlist",
                             "watchlist": [
                                 {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
                                 {"market": "us", "symbol": "AAPL", "name": "Apple"},
@@ -5870,6 +5873,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(response.status, 201)
         self.assertEqual(adapter.calls, [("ashare", "600000", "1d", 240), ("us", "AAPL", "1d", 240)])
+        self.assertEqual(payload["watchlistRefresh"]["overrideAuditEventId"], "market-data-refresh-override-watchlist")
         self.assertEqual(payload["watchlistRefresh"]["summary"]["totalSymbols"], 2)
         self.assertEqual(payload["watchlistRefresh"]["summary"]["refreshed"], 2)
         self.assertEqual(payload["watchlistRefresh"]["summary"]["failed"], 0)
@@ -5879,6 +5883,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["settings"]["cache"]["rowCount"], 4)
         self.assertEqual(history_response.status, 200)
         self.assertEqual(history_payload["watchlistRefreshes"][0]["runId"], payload["watchlistRefresh"]["runId"])
+        self.assertEqual(
+            history_payload["watchlistRefreshes"][0]["overrideAuditEventId"],
+            "market-data-refresh-override-watchlist",
+        )
         self.assertEqual(history_payload["watchlistRefreshes"][0]["summary"]["refreshed"], 2)
 
     def test_market_calendar_builds_deterministic_session_status(self):

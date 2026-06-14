@@ -7278,7 +7278,13 @@ describe("terminal workspace API client", () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const result = await refreshMarketCache(
       "http://127.0.0.1:8765/",
-      { market: "ashare", symbol: "600000", timeframe: "1d", limit: 240 },
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        limit: 240,
+        overrideAuditEventId: "market-data-refresh-override-client"
+      },
       async (url, init) => {
         calls.push({ url, init });
         return {
@@ -7290,6 +7296,7 @@ describe("terminal workspace API client", () => {
               timeframe: "1d",
               requestedLimit: 240,
               upsertedRows: 3,
+              overrideAuditEventId: "market-data-refresh-override-client",
               quality: {
                 source: "tencent",
                 isComplete: true,
@@ -7367,9 +7374,11 @@ describe("terminal workspace API client", () => {
       market: "ashare",
       symbol: "600000",
       timeframe: "1d",
-      limit: 240
+      limit: 240,
+      overrideAuditEventId: "market-data-refresh-override-client"
     });
     expect(result.source).toBe("core");
+    expect(result.refresh?.overrideAuditEventId).toBe("market-data-refresh-override-client");
     expect(result.refresh?.upsertedRows).toBe(3);
     expect(result.settings?.cache.rowCount).toBe(3);
   });
@@ -7481,6 +7490,7 @@ describe("terminal workspace API client", () => {
       {
         timeframe: "1d",
         limit: 240,
+        overrideAuditEventId: "market-data-refresh-override-watchlist-client",
         watchlist: [
           { market: "ashare", symbol: "600000", name: "浦发银行", changePct: 0 },
           { market: "us", symbol: "AAPL", name: "Apple", changePct: 0 }
@@ -7496,6 +7506,7 @@ describe("terminal workspace API client", () => {
               createdAt: "2026-06-09T22:50:00+08:00",
               timeframe: "1d",
               requestedLimit: 240,
+              overrideAuditEventId: "market-data-refresh-override-watchlist-client",
               summary: {
                 totalSymbols: 2,
                 refreshed: 2,
@@ -7596,6 +7607,7 @@ describe("terminal workspace API client", () => {
     expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({
       timeframe: "1d",
       limit: 240,
+      overrideAuditEventId: "market-data-refresh-override-watchlist-client",
       watchlist: [
         { market: "ashare", symbol: "600000", name: "浦发银行" },
         { market: "us", symbol: "AAPL", name: "Apple" }
@@ -7603,6 +7615,7 @@ describe("terminal workspace API client", () => {
     });
     expect(result.source).toBe("core");
     expect(result.watchlistRefresh?.runId).toBe("cache-refresh-run-1");
+    expect(result.watchlistRefresh?.overrideAuditEventId).toBe("market-data-refresh-override-watchlist-client");
     expect(result.watchlistRefresh?.summary.refreshed).toBe(2);
     expect(result.watchlistRefresh?.items.map((item) => item.symbol)).toEqual(["600000", "AAPL"]);
     expect(result.settings?.cache.rowCount).toBe(740);
@@ -7621,6 +7634,7 @@ describe("terminal workspace API client", () => {
               createdAt: "2026-06-09T23:10:00+08:00",
               timeframe: "1d",
               requestedLimit: 240,
+              overrideAuditEventId: "market-data-refresh-override-history-client",
               summary: { totalSymbols: 2, refreshed: 1, skipped: 1, failed: 0, upsertedRows: 240 },
               items: [
                 {
@@ -7665,6 +7679,7 @@ describe("terminal workspace API client", () => {
     expect(calls[0]?.init).toBeUndefined();
     expect(result.source).toBe("core");
     expect(result.watchlistRefreshes.map((run) => run.runId)).toEqual(["cache-refresh-run-2", "cache-refresh-run-1"]);
+    expect(result.watchlistRefreshes[0]?.overrideAuditEventId).toBe("market-data-refresh-override-history-client");
     expect(result.watchlistRefreshes[0]?.summary.skipped).toBe(1);
   });
 
