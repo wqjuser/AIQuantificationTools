@@ -3795,6 +3795,7 @@ export interface ResearchRunDataPreparationEvidence {
   kind: "watchlist_cache_refresh";
   runId: string;
   createdAt: string | null;
+  overrideAuditEventId?: string | null;
   market: Market;
   symbol: string;
   name: string;
@@ -14389,13 +14390,17 @@ function formatWarningCount(count: number): string {
 }
 
 function formatPreparationEvidenceDetail(evidence: ResearchRunDataPreparationEvidence): string {
-  return [
+  const parts = [
     evidence.runId,
     evidence.kind,
     `${evidence.symbol} ${evidence.timeframe}`,
     `${evidence.quality.source} ${evidence.quality.isComplete ? "complete" : "review"}`,
     `${evidence.upsertedRows} rows cached`
-  ].join(" · ");
+  ];
+  if (evidence.overrideAuditEventId) {
+    parts.push(`override ${evidence.overrideAuditEventId}`);
+  }
+  return parts.join(" · ");
 }
 
 function formatMarketCalendarEvidenceDetail(calendar: ResearchContextMarketCalendar): string {

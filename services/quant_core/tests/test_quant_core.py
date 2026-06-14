@@ -11094,6 +11094,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     ],
                     timeframe="1d",
                     requested_limit=120,
+                    override_audit_event_id="market-data-refresh-override-research",
                 )
             )
 
@@ -11141,6 +11142,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(evidence["timeframe"], "1d")
         self.assertEqual(evidence["status"], "refreshed")
         self.assertEqual(evidence["upsertedRows"], 120)
+        self.assertEqual(evidence["overrideAuditEventId"], "market-data-refresh-override-research")
         self.assertEqual(evidence["quality"]["source"], "tencent")
 
     def test_research_api_applies_submitted_strategy_snapshot(self):

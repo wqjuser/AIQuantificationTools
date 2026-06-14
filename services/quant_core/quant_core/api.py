@@ -2977,6 +2977,7 @@ def _watchlist_refresh_preparation_evidence(
                 "kind": "watchlist_cache_refresh",
                 "runId": refresh_run.run_id,
                 "createdAt": refresh_run.created_at.isoformat(),
+                "overrideAuditEventId": refresh_run.override_audit_event_id,
                 "market": item.market,
                 "symbol": item.symbol,
                 "name": item.name,

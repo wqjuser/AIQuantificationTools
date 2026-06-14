@@ -5045,6 +5045,7 @@ describe("terminal workbench model", () => {
             kind: "watchlist_cache_refresh",
             runId: "cache-refresh-browser",
             createdAt: "2026-05-26T08:05:00+00:00",
+            overrideAuditEventId: "market-data-refresh-override-browser",
             market: "ashare",
             symbol: "600000",
             name: "浦发银行",
@@ -5301,7 +5302,8 @@ describe("terminal workbench model", () => {
           id: "preparation-evidence",
           status: "ready",
           value: "cache-refresh-browser",
-          detail: "cache-refresh-browser · watchlist_cache_refresh · 600000 1d · tencent complete · 240 rows cached",
+          detail:
+            "cache-refresh-browser · watchlist_cache_refresh · 600000 1d · tencent complete · 240 rows cached · override market-data-refresh-override-browser",
           exportPath: "researchRun.dataSnapshot.preparationEvidence"
         }),
         expect.objectContaining({

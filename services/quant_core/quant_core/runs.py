@@ -1240,6 +1240,7 @@ def _normalize_data_preparation_evidence(value: Any) -> dict[str, Any] | None:
         "kind": str(value.get("kind") or "watchlist_cache_refresh"),
         "runId": run_id,
         "createdAt": _nullable_string(value.get("createdAt")),
+        "overrideAuditEventId": _nullable_string(value.get("overrideAuditEventId")),
         "market": market,
         "symbol": symbol,
         "name": str(value.get("name") or symbol),

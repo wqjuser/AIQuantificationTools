@@ -12543,6 +12543,7 @@ function isResearchRunDataPreparationEvidence(value: unknown): value is Research
     evidence.kind === "watchlist_cache_refresh" &&
     typeof evidence.runId === "string" &&
     (evidence.createdAt === null || typeof evidence.createdAt === "string") &&
+    isOptionalStringOrNull(evidence.overrideAuditEventId) &&
     isMarket(evidence.market) &&
     typeof evidence.symbol === "string" &&
     typeof evidence.name === "string" &&
