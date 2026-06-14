@@ -2463,6 +2463,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Backoff");
     expect(appSource).toContain("最近错误");
     expect(appSource).toContain("Latest error");
+    expect(appSource).toContain("marketDataAdapterProviderErrorCategoryLabel(i18n, error.category)");
+    expect(appSource).toContain("限流");
+    expect(appSource).toContain("Rate limit");
     expect(appSource).toContain("安装建议");
     expect(appSource).toContain("Install");
   });

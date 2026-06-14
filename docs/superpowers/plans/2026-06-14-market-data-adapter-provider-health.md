@@ -40,6 +40,6 @@ Turn the adapter error ledger into a compact provider health summary in Settings
 
 ## Follow-Ups
 
-- Add provider-level rate-limit classification when adapter errors expose structured rate-limit signals.
+- Done in `2026-06-14-market-data-provider-error-categories.md`: `lastProviderError` now carries a stable category including rate-limit, dependency, network, upstream, incomplete data, and unknown.
 - Done in `2026-06-14-market-data-refresh-cooldown-guard.md`: suggested backoff now blocks frontend manual refresh actions while the selected provider is in `cooldown`.
 - Add a compact health trend view after the ledger keeps time-windowed aggregates.

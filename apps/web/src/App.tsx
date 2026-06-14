@@ -18949,9 +18949,28 @@ function marketDataAdapterProviderErrorLabel(
   error: NonNullable<PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["lastProviderError"]>
 ): string {
   const target = `${error.market.toUpperCase()} ${error.symbol} ${error.timeframe}`;
+  const category = marketDataAdapterProviderErrorCategoryLabel(i18n, error.category);
   return i18n.locale === "zh-CN"
-    ? `最近错误 · ${error.source} · ${error.context} · ${target} · ${error.message}`
-    : `Latest error · ${error.source} · ${error.context} · ${target} · ${error.message}`;
+    ? `最近错误 · ${category} · ${error.source} · ${error.context} · ${target} · ${error.message}`
+    : `Latest error · ${category} · ${error.source} · ${error.context} · ${target} · ${error.message}`;
+}
+
+function marketDataAdapterProviderErrorCategoryLabel(
+  i18n: AppI18n,
+  category: NonNullable<
+    PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["lastProviderError"]
+  >["category"]
+): string {
+  const labels = {
+    rate_limit: { zh: "限流", en: "Rate limit" },
+    dependency: { zh: "依赖", en: "Dependency" },
+    network: { zh: "网络", en: "Network" },
+    upstream: { zh: "上游", en: "Upstream" },
+    incomplete_data: { zh: "数据不完整", en: "Incomplete data" },
+    unknown: { zh: "未知", en: "Unknown" }
+  } satisfies Record<typeof category, { zh: string; en: string }>;
+  const label = labels[category] ?? labels.unknown;
+  return i18n.locale === "zh-CN" ? label.zh : label.en;
 }
 
 function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearchSuggestion["cache"]>): string {

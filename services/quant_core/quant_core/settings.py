@@ -349,7 +349,28 @@ def _provider_error_payload(event: dict[str, Any]) -> dict[str, str] | None:
     required = ["eventId", "createdAt", "adapterId", "provider", "market", "symbol", "timeframe", "source", "context", "message"]
     if not all(isinstance(event.get(field), str) for field in required):
         return None
-    return {field: str(event[field]) for field in required}
+    payload = {field: str(event[field]) for field in required}
+    payload["category"] = _provider_error_category(
+        message=payload["message"],
+        source=payload["source"],
+        context=payload["context"],
+    )
+    return payload
+
+
+def _provider_error_category(*, message: str, source: str, context: str) -> str:
+    text = " ".join([message, source, context]).lower()
+    if any(marker in text for marker in ["429", "too many requests", "rate limit", "rate-limit", "throttle", "throttled", "quota"]):
+        return "rate_limit"
+    if any(marker in text for marker in ["not installed", "no module named", "module not found", "importerror", "dependency"]):
+        return "dependency"
+    if any(marker in text for marker in ["incomplete", "empty response", "no rows", "missing data", "insufficient data"]):
+        return "incomplete_data"
+    if any(marker in text for marker in ["timeout", "timed out", "connection", "network", "dns", "ssl", "socket", "unreachable"]):
+        return "network"
+    if any(marker in text for marker in ["http 5", "500", "502", "503", "504", "bad gateway", "service unavailable", "upstream"]):
+        return "upstream"
+    return "unknown"
 
 
 def _market_data_adapter_status_from_telemetry(telemetry: dict[str, Any]) -> str:

@@ -1146,8 +1146,17 @@ export interface PlatformSettingsMarketDataAdapterProviderError {
   timeframe: ResearchTimeframe;
   source: string;
   context: string;
+  category: PlatformSettingsMarketDataAdapterProviderErrorCategory;
   message: string;
 }
+
+export type PlatformSettingsMarketDataAdapterProviderErrorCategory =
+  | "rate_limit"
+  | "dependency"
+  | "network"
+  | "upstream"
+  | "incomplete_data"
+  | "unknown";
 
 export interface PlatformSettingsMarketDataAdapterProviderHealth {
   status: "ok" | "watch" | "cooldown" | "blocked";
@@ -9214,7 +9223,21 @@ function isPlatformSettingsMarketDataAdapterProviderError(
     isTimeframe(error.timeframe) &&
     typeof error.source === "string" &&
     typeof error.context === "string" &&
+    isPlatformSettingsMarketDataAdapterProviderErrorCategory(error.category) &&
     typeof error.message === "string"
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterProviderErrorCategory(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterProviderErrorCategory {
+  return (
+    value === "rate_limit" ||
+    value === "dependency" ||
+    value === "network" ||
+    value === "upstream" ||
+    value === "incomplete_data" ||
+    value === "unknown"
   );
 }
 

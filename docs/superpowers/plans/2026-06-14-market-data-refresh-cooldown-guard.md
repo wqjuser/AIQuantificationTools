@@ -35,6 +35,6 @@ Turn the provider health retry-after signal into an explicit frontend guard so u
 
 ## Follow-Ups
 
-- Add backend optional circuit-breaker metadata once provider errors include structured rate-limit classifications.
+- Provider error category metadata is now available via `2026-06-14-market-data-provider-error-categories.md`; next circuit-breaker work can consume it.
 - Add a guarded manual override flow for operators who explicitly want to refresh during cooldown.
 - Add health trend visualization after adapter ledger keeps time-windowed aggregates.

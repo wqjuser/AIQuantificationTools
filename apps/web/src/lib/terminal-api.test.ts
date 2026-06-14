@@ -243,6 +243,7 @@ const sampleYfinanceProviderError = {
   timeframe: "1d",
   source: "yfinance-fallback",
   context: "market-klines",
+  category: "network",
   message: "Yahoo chart timed out"
 } as const;
 
@@ -2079,6 +2080,7 @@ describe("terminal workspace API client", () => {
         lastProviderError: {
           source: "yfinance-fallback",
           context: "market-klines",
+          category: "network",
           message: "Yahoo chart timed out"
         }
       }
@@ -8030,6 +8032,70 @@ describe("terminal workspace API client", () => {
             contextCount: 1,
             latestTimestamp: "2026-05-29T00:00:00+00:00",
             freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter provider error category is missing", async () => {
+    const { category: _category, ...providerErrorWithoutCategory } = sampleYfinanceProviderError;
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-14T08:00:00+00:00",
+          dataSources: [
+            {
+              market: "us",
+              label: "US equities",
+              quoteSource: "yfinance",
+              klineSource: "yfinance",
+              status: "degraded",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              ...samplePlatformSettingsMarketDataAdapters[1],
+              externalTelemetry: {
+                ...samplePlatformSettingsMarketDataAdapters[1].externalTelemetry,
+                lastProviderError: providerErrorWithoutCategory
+              }
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 0,
+            contextCount: 0,
+            latestTimestamp: null,
+            freshnessSummary: { fresh: 0, stale: 0, empty: 0 },
             contexts: []
           },
           executionAdapters: [

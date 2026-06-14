@@ -1508,6 +1508,50 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["message"], "served local cache instead of incomplete yfinance")
         self.assertNotIn("secret", json.dumps(payload).lower())
 
+    def test_settings_status_classifies_market_data_adapter_provider_errors(self):
+        from quant_core.adapter_error_ledger import create_market_data_adapter_error_event, market_data_adapter_error_event_to_payload
+        from quant_core.settings import build_settings_status
+
+        events = [
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="AAPL",
+                timeframe="1m",
+                source="yfinance-fallback",
+                context="cache-refresh",
+                message="429 Too Many Requests: Yahoo rate limit exceeded",
+                created_at=datetime(2026, 6, 14, 8, 12, tzinfo=timezone.utc),
+                event_id="adapter-error-rate-limit",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="akshare-ohlcv",
+                provider="akshare",
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                source="akshare",
+                context="market-klines",
+                message="served local cache after incomplete akshare response",
+                created_at=datetime(2026, 6, 14, 8, 10, tzinfo=timezone.utc),
+                event_id="adapter-error-incomplete",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                adapter_dependency_statuses={"akshare": True, "yfinance": True, "ccxt": True},
+                adapter_error_events=[market_data_adapter_error_event_to_payload(event) for event in events],
+                generated_at=datetime(2026, 6, 14, 8, 16, tzinfo=timezone.utc),
+            )
+
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["lastProviderError"]["category"], "rate_limit")
+        self.assertEqual(adapters["akshare-ohlcv"]["externalTelemetry"]["lastProviderError"]["category"], "incomplete_data")
+        self.assertEqual(adapters["ccxt-ohlcv"]["externalTelemetry"]["providerHealth"]["reason"], "no_recent_provider_errors")
+
     def test_settings_status_reports_market_data_adapter_provider_error_ledger(self):
         from quant_core.adapter_error_ledger import create_market_data_adapter_error_event, market_data_adapter_error_event_to_payload
         from quant_core.settings import build_settings_status
@@ -1551,6 +1595,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "timeframe": "1d",
                 "source": "yfinance-fallback",
                 "context": "market-klines",
+                "category": "network",
                 "message": "Yahoo chart timed out",
             },
         )
