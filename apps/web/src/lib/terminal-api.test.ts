@@ -253,6 +253,15 @@ const sampleOkProviderHealth = {
   lastErrorAt: null,
   affectedSymbols: [],
   affectedContexts: [],
+  categorySummary: {
+    rate_limit: 0,
+    dependency: 0,
+    network: 0,
+    upstream: 0,
+    incomplete_data: 0,
+    unknown: 0
+  },
+  dominantCategory: null,
   retryAfterSeconds: 0,
   reason: "no_recent_provider_errors"
 } as const;
@@ -263,6 +272,15 @@ const sampleCooldownProviderHealth = {
   lastErrorAt: "2026-06-14T08:14:00+00:00",
   affectedSymbols: ["AAPL", "MSFT"],
   affectedContexts: ["cache-refresh", "market-klines", "watchlist-cache-refresh"],
+  categorySummary: {
+    rate_limit: 1,
+    dependency: 0,
+    network: 1,
+    upstream: 0,
+    incomplete_data: 1,
+    unknown: 0
+  },
+  dominantCategory: "rate_limit",
   retryAfterSeconds: 900,
   reason: "provider_cooldown"
 } as const;
@@ -273,6 +291,15 @@ const sampleBlockedProviderHealth = {
   lastErrorAt: null,
   affectedSymbols: [],
   affectedContexts: [],
+  categorySummary: {
+    rate_limit: 0,
+    dependency: 0,
+    network: 0,
+    upstream: 0,
+    incomplete_data: 0,
+    unknown: 0
+  },
+  dominantCategory: null,
   retryAfterSeconds: 0,
   reason: "dependency_missing"
 } as const;
@@ -2075,7 +2102,16 @@ describe("terminal workspace API client", () => {
           status: "cooldown",
           recentErrorCount: 3,
           retryAfterSeconds: 900,
-          affectedSymbols: ["AAPL", "MSFT"]
+          affectedSymbols: ["AAPL", "MSFT"],
+          categorySummary: {
+            rate_limit: 1,
+            dependency: 0,
+            network: 1,
+            upstream: 0,
+            incomplete_data: 1,
+            unknown: 0
+          },
+          dominantCategory: "rate_limit"
         },
         lastProviderError: {
           source: "yfinance-fallback",
@@ -8165,6 +8201,70 @@ describe("terminal workspace API client", () => {
             contextCount: 1,
             latestTimestamp: "2026-05-29T00:00:00+00:00",
             freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter provider health category summary is missing", async () => {
+    const { categorySummary: _categorySummary, ...providerHealthWithoutSummary } = sampleCooldownProviderHealth;
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-14T08:00:00+00:00",
+          dataSources: [
+            {
+              market: "us",
+              label: "US equities",
+              quoteSource: "yfinance",
+              klineSource: "yfinance",
+              status: "degraded",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              ...samplePlatformSettingsMarketDataAdapters[1],
+              externalTelemetry: {
+                ...samplePlatformSettingsMarketDataAdapters[1].externalTelemetry,
+                providerHealth: providerHealthWithoutSummary
+              }
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 0,
+            contextCount: 0,
+            latestTimestamp: null,
+            freshnessSummary: { fresh: 0, stale: 0, empty: 0 },
             contexts: []
           },
           executionAdapters: [

@@ -18889,6 +18889,7 @@ function marketDataAdapterProviderHealthLabel(
   health: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"]
 ): string {
   const statusLabel = marketDataAdapterProviderHealthStatusLabel(i18n, health.status);
+  const categoryLabel = marketDataAdapterProviderHealthCategoryLabel(i18n, health.dominantCategory);
   const affected =
     health.affectedSymbols.length > 0
       ? health.affectedSymbols.slice(0, 3).join("/")
@@ -18904,8 +18905,8 @@ function marketDataAdapterProviderHealthLabel(
         ? "无"
         : "none";
   return i18n.locale === "zh-CN"
-    ? `健康 · ${statusLabel} · 错误 ${health.recentErrorCount} · 影响 ${affected} · 建议退避 ${backoff}`
-    : `Provider health · ${statusLabel} · errors ${health.recentErrorCount} · affected ${affected} · Backoff ${backoff}`;
+    ? `健康 · ${statusLabel} · 错误 ${health.recentErrorCount} · 主因 ${categoryLabel} · 影响 ${affected} · 建议退避 ${backoff}`
+    : `Provider health · ${statusLabel} · errors ${health.recentErrorCount} · Primary ${categoryLabel} · affected ${affected} · Backoff ${backoff}`;
 }
 
 function marketDataAdapterProviderHealthStatusLabel(
@@ -18923,6 +18924,16 @@ function marketDataAdapterProviderHealthStatusLabel(
       blocked: "阻断"
     }[status] ?? status
   );
+}
+
+function marketDataAdapterProviderHealthCategoryLabel(
+  i18n: AppI18n,
+  category: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"]["dominantCategory"]
+): string {
+  if (category === null) {
+    return i18n.locale === "zh-CN" ? "无" : "none";
+  }
+  return marketDataAdapterProviderErrorCategoryLabel(i18n, category);
 }
 
 function marketDataRefreshGuardLabel(i18n: AppI18n, guard: MarketDataRefreshGuard): string {

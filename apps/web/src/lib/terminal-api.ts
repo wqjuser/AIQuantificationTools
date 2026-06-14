@@ -1158,12 +1158,28 @@ export type PlatformSettingsMarketDataAdapterProviderErrorCategory =
   | "incomplete_data"
   | "unknown";
 
+const platformSettingsMarketDataAdapterProviderErrorCategories = [
+  "rate_limit",
+  "dependency",
+  "network",
+  "upstream",
+  "incomplete_data",
+  "unknown"
+] as const satisfies readonly PlatformSettingsMarketDataAdapterProviderErrorCategory[];
+
+export type PlatformSettingsMarketDataAdapterProviderErrorCategorySummary = Record<
+  PlatformSettingsMarketDataAdapterProviderErrorCategory,
+  number
+>;
+
 export interface PlatformSettingsMarketDataAdapterProviderHealth {
   status: "ok" | "watch" | "cooldown" | "blocked";
   recentErrorCount: number;
   lastErrorAt: string | null;
   affectedSymbols: string[];
   affectedContexts: string[];
+  categorySummary: PlatformSettingsMarketDataAdapterProviderErrorCategorySummary;
+  dominantCategory: PlatformSettingsMarketDataAdapterProviderErrorCategory | null;
   retryAfterSeconds: number;
   reason: string;
 }
@@ -9231,14 +9247,22 @@ function isPlatformSettingsMarketDataAdapterProviderError(
 function isPlatformSettingsMarketDataAdapterProviderErrorCategory(
   value: unknown
 ): value is PlatformSettingsMarketDataAdapterProviderErrorCategory {
-  return (
-    value === "rate_limit" ||
-    value === "dependency" ||
-    value === "network" ||
-    value === "upstream" ||
-    value === "incomplete_data" ||
-    value === "unknown"
+  return platformSettingsMarketDataAdapterProviderErrorCategories.includes(
+    value as PlatformSettingsMarketDataAdapterProviderErrorCategory
   );
+}
+
+function isPlatformSettingsMarketDataAdapterProviderErrorCategorySummary(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterProviderErrorCategorySummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<PlatformSettingsMarketDataAdapterProviderErrorCategorySummary>;
+  return platformSettingsMarketDataAdapterProviderErrorCategories.every((category) => {
+    const count = summary[category];
+    return typeof count === "number" && Number.isFinite(count) && count >= 0;
+  });
 }
 
 function isPlatformSettingsMarketDataAdapterProviderHealth(
@@ -9261,6 +9285,8 @@ function isPlatformSettingsMarketDataAdapterProviderHealth(
     health.affectedSymbols.every((symbol) => typeof symbol === "string") &&
     Array.isArray(health.affectedContexts) &&
     health.affectedContexts.every((context) => typeof context === "string") &&
+    isPlatformSettingsMarketDataAdapterProviderErrorCategorySummary(health.categorySummary) &&
+    (health.dominantCategory === null || isPlatformSettingsMarketDataAdapterProviderErrorCategory(health.dominantCategory)) &&
     typeof health.retryAfterSeconds === "number" &&
     Number.isFinite(health.retryAfterSeconds) &&
     health.retryAfterSeconds >= 0 &&

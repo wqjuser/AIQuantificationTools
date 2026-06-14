@@ -2459,6 +2459,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Dependency missing");
     expect(appSource).toContain("健康");
     expect(appSource).toContain("Provider health");
+    expect(appSource).toContain("marketDataAdapterProviderHealthCategoryLabel(i18n, health.dominantCategory)");
+    expect(appSource).toContain("主因");
+    expect(appSource).toContain("Primary");
     expect(appSource).toContain("建议退避");
     expect(appSource).toContain("Backoff");
     expect(appSource).toContain("最近错误");

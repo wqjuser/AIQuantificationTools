@@ -1441,6 +1441,15 @@ class QuantCoreContractTest(unittest.TestCase):
                     "lastErrorAt": None,
                     "affectedSymbols": [],
                     "affectedContexts": [],
+                    "categorySummary": {
+                        "rate_limit": 0,
+                        "dependency": 0,
+                        "network": 0,
+                        "upstream": 0,
+                        "incomplete_data": 0,
+                        "unknown": 0,
+                    },
+                    "dominantCategory": None,
                     "retryAfterSeconds": 0,
                     "reason": "dependency_missing",
                 },
@@ -1675,13 +1684,49 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(yfinance_health["lastErrorAt"], "2026-06-14T08:14:00+00:00")
         self.assertEqual(yfinance_health["affectedSymbols"], ["AAPL", "MSFT"])
         self.assertEqual(yfinance_health["affectedContexts"], ["cache-refresh", "market-klines", "watchlist-cache-refresh"])
+        self.assertEqual(
+            yfinance_health["categorySummary"],
+            {
+                "rate_limit": 1,
+                "dependency": 0,
+                "network": 1,
+                "upstream": 0,
+                "incomplete_data": 1,
+                "unknown": 0,
+            },
+        )
+        self.assertEqual(yfinance_health["dominantCategory"], "rate_limit")
         self.assertEqual(yfinance_health["reason"], "provider_cooldown")
         self.assertEqual(akshare_health["status"], "watch")
         self.assertEqual(akshare_health["recentErrorCount"], 1)
         self.assertEqual(akshare_health["retryAfterSeconds"], 60)
+        self.assertEqual(
+            akshare_health["categorySummary"],
+            {
+                "rate_limit": 0,
+                "dependency": 0,
+                "network": 1,
+                "upstream": 0,
+                "incomplete_data": 0,
+                "unknown": 0,
+            },
+        )
+        self.assertEqual(akshare_health["dominantCategory"], "network")
         self.assertEqual(ccxt_health["status"], "blocked")
         self.assertEqual(ccxt_health["reason"], "dependency_missing")
         self.assertEqual(ccxt_health["recentErrorCount"], 0)
+        self.assertEqual(
+            ccxt_health["categorySummary"],
+            {
+                "rate_limit": 0,
+                "dependency": 0,
+                "network": 0,
+                "upstream": 0,
+                "incomplete_data": 0,
+                "unknown": 0,
+            },
+        )
+        self.assertIsNone(ccxt_health["dominantCategory"])
 
     def test_market_klines_api_records_provider_failures_in_adapter_error_ledger(self):
         import json

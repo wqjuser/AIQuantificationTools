@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_PROVIDER_ERROR_CATEGORIES = ("rate_limit", "dependency", "network", "upstream", "incomplete_data", "unknown")
+_PROVIDER_ERROR_CATEGORY_PRIORITY = {category: index for index, category in enumerate(_PROVIDER_ERROR_CATEGORIES)}
+
 
 def build_settings_status(
     *,
@@ -316,6 +319,8 @@ def _provider_health_for_adapter(
     if matching_events:
         latest_event = max(matching_events, key=lambda event: (event["createdAt"], event["eventId"]))
         last_error_at = latest_event["createdAt"]
+    category_summary = _provider_error_category_summary(matching_events)
+    dominant_category = _dominant_provider_error_category(category_summary)
 
     if not dependency_available:
         status = "blocked"
@@ -340,6 +345,8 @@ def _provider_health_for_adapter(
         "lastErrorAt": last_error_at,
         "affectedSymbols": sorted({event["symbol"] for event in matching_events}),
         "affectedContexts": sorted({event["context"] for event in matching_events}),
+        "categorySummary": category_summary,
+        "dominantCategory": dominant_category,
         "retryAfterSeconds": retry_after_seconds,
         "reason": reason,
     }
@@ -371,6 +378,26 @@ def _provider_error_category(*, message: str, source: str, context: str) -> str:
     if any(marker in text for marker in ["http 5", "500", "502", "503", "504", "bad gateway", "service unavailable", "upstream"]):
         return "upstream"
     return "unknown"
+
+
+def _provider_error_category_summary(events: list[dict[str, str]]) -> dict[str, int]:
+    summary = {category: 0 for category in _PROVIDER_ERROR_CATEGORIES}
+    for event in events:
+        category = event.get("category", "unknown")
+        if category not in summary:
+            category = "unknown"
+        summary[category] += 1
+    return summary
+
+
+def _dominant_provider_error_category(summary: dict[str, int]) -> str | None:
+    non_zero_categories = [(category, count) for category, count in summary.items() if count > 0]
+    if not non_zero_categories:
+        return None
+    return sorted(
+        non_zero_categories,
+        key=lambda item: (-item[1], _PROVIDER_ERROR_CATEGORY_PRIORITY.get(item[0], len(_PROVIDER_ERROR_CATEGORIES))),
+    )[0][0]
 
 
 def _market_data_adapter_status_from_telemetry(telemetry: dict[str, Any]) -> str:

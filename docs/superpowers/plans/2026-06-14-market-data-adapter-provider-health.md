@@ -9,6 +9,7 @@ Turn the adapter error ledger into a compact provider health summary in Settings
 - Add `providerHealth` to every `marketDataAdapters[].externalTelemetry` row.
 - Derive health only from already-sanitized adapter error events and dependency availability.
 - Report status, recent error count, latest error time, affected symbols, affected contexts, retry-after seconds, and reason.
+- Category summary and dominant category are handled by `2026-06-14-market-data-provider-health-category-summary.md`.
 - Use deterministic thresholds: no errors is `ok`; one or two errors is `watch`; three or more errors is `cooldown`; missing dependency is `blocked`.
 - Require the new field in the frontend runtime contract.
 - Render the health summary inline on Settings adapter cards.
@@ -41,5 +42,6 @@ Turn the adapter error ledger into a compact provider health summary in Settings
 ## Follow-Ups
 
 - Done in `2026-06-14-market-data-provider-error-categories.md`: `lastProviderError` now carries a stable category including rate-limit, dependency, network, upstream, incomplete data, and unknown.
+- Done in `2026-06-14-market-data-provider-health-category-summary.md`: `providerHealth` now carries per-category counts and a deterministic dominant category.
 - Done in `2026-06-14-market-data-refresh-cooldown-guard.md`: suggested backoff now blocks frontend manual refresh actions while the selected provider is in `cooldown`.
 - Add a compact health trend view after the ledger keeps time-windowed aggregates.
