@@ -5471,6 +5471,15 @@ em {
   overflow-wrap: anywhere;
 }
 
+.settings-source-row small {
+  color: #8fa0b2;
+  display: block;
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 .adapter-certification-button {
   align-items: center;
   border: 1px solid #295a52;

@@ -1057,6 +1057,10 @@ class QuantCoreContractTest(unittest.TestCase):
 
         settings = payload["settings"]
         us_source = next(row for row in settings["dataSources"] if row["market"] == "us")
+        market_data_adapters = settings["marketDataAdapters"]
+        akshare_adapter = next(row for row in market_data_adapters if row["id"] == "akshare-ohlcv")
+        yfinance_adapter = next(row for row in market_data_adapters if row["id"] == "yfinance-ohlcv")
+        ccxt_adapter = next(row for row in market_data_adapters if row["id"] == "ccxt-ohlcv")
         paper_adapter = next(row for row in settings["executionAdapters"] if row["id"] == "paper-local")
 
         self.assertEqual(response.status, 200)
@@ -1082,6 +1086,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(cache_contexts[1]["rowCount"], 1)
         self.assertIn(cache_contexts[1]["freshness"], ["fresh", "stale"])
         self.assertIsInstance(cache_contexts[1]["ageHours"], int)
+        self.assertEqual(len(market_data_adapters), 3)
+        self.assertEqual(akshare_adapter["market"], "ashare")
+        self.assertEqual(akshare_adapter["adapter"], "AkShareMarketDataAdapter")
+        self.assertEqual(akshare_adapter["status"], "ready")
+        self.assertIn("stock_zh_a_hist", akshare_adapter["capabilities"])
+        self.assertIn("stock_zh_a_hist_min_em", akshare_adapter["capabilities"])
+        self.assertEqual(yfinance_adapter["market"], "us")
+        self.assertEqual(yfinance_adapter["adapter"], "YFinanceMarketDataAdapter")
+        self.assertIn("Ticker.history", yfinance_adapter["capabilities"])
+        self.assertEqual(ccxt_adapter["market"], "crypto")
+        self.assertEqual(ccxt_adapter["adapter"], "CcxtMarketDataAdapter")
+        self.assertIn("fetch_ohlcv", ccxt_adapter["capabilities"])
+        self.assertFalse(ccxt_adapter["requiresTradingKey"])
+        self.assertTrue(all("secret" not in json.dumps(row).lower() for row in market_data_adapters))
         self.assertEqual(paper_adapter["route"], "paper")
         self.assertEqual(paper_adapter["status"], "paper_ready")
         self.assertFalse(settings["safety"]["liveTradingAllowed"])

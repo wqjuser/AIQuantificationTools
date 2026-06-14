@@ -213,6 +213,51 @@ import {
   type ResearchRunExportPackage
 } from "./terminal-api";
 
+const samplePlatformSettingsMarketDataAdapters = [
+  {
+    id: "akshare-ohlcv",
+    market: "ashare",
+    adapter: "AkShareMarketDataAdapter",
+    provider: "akshare",
+    status: "ready",
+    route: "public_ohlcv",
+    capabilities: ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
+    timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
+    requiresApiKey: false,
+    requiresTradingKey: false,
+    cacheScope: "ohlcv",
+    note: "A-share public OHLCV adapter."
+  },
+  {
+    id: "yfinance-ohlcv",
+    market: "us",
+    adapter: "YFinanceMarketDataAdapter",
+    provider: "yfinance",
+    status: "ready",
+    route: "public_ohlcv",
+    capabilities: ["Ticker.history"],
+    timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
+    requiresApiKey: false,
+    requiresTradingKey: false,
+    cacheScope: "ohlcv",
+    note: "US equity public OHLCV adapter."
+  },
+  {
+    id: "ccxt-ohlcv",
+    market: "crypto",
+    adapter: "CcxtMarketDataAdapter",
+    provider: "ccxt:binance",
+    status: "ready",
+    route: "public_ohlcv",
+    capabilities: ["fetch_ohlcv"],
+    timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
+    requiresApiKey: false,
+    requiresTradingKey: false,
+    cacheScope: "ohlcv",
+    note: "Crypto public OHLCV adapter."
+  }
+] as const;
+
 describe("terminal workspace API client", () => {
   test("builds the local core workspace URL without duplicate slashes", () => {
     expect(buildWorkspaceUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/workspace");
@@ -1754,6 +1799,36 @@ describe("terminal workspace API client", () => {
                 note: "Secret values stay local."
               }
             ],
+            marketDataAdapters: [
+              {
+                id: "akshare-ohlcv",
+                market: "ashare",
+                adapter: "AkShareMarketDataAdapter",
+                provider: "akshare",
+                status: "ready",
+                route: "public_ohlcv",
+                capabilities: ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
+                timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
+                requiresApiKey: false,
+                requiresTradingKey: false,
+                cacheScope: "ohlcv",
+                note: "Public A-share OHLCV."
+              },
+              {
+                id: "yfinance-ohlcv",
+                market: "us",
+                adapter: "YFinanceMarketDataAdapter",
+                provider: "yfinance",
+                status: "ready",
+                route: "public_ohlcv",
+                capabilities: ["Ticker.history"],
+                timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
+                requiresApiKey: false,
+                requiresTradingKey: false,
+                cacheScope: "ohlcv",
+                note: "Public US OHLCV."
+              }
+            ],
             cache: {
               engine: "sqlite",
               path: "data/market.sqlite",
@@ -1807,6 +1882,17 @@ describe("terminal workspace API client", () => {
       market: "us",
       optionalKeyName: "FINNHUB_API_KEY",
       optionalKeyConfigured: true
+    });
+    expect(result.settings?.marketDataAdapters?.[0]).toMatchObject({
+      id: "akshare-ohlcv",
+      adapter: "AkShareMarketDataAdapter",
+      capabilities: ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
+      requiresTradingKey: false
+    });
+    expect(result.settings?.marketDataAdapters?.[1]).toMatchObject({
+      id: "yfinance-ohlcv",
+      provider: "yfinance",
+      route: "public_ohlcv"
     });
     expect((result.settings?.cache as unknown as { rowCount?: number }).rowCount).toBe(1280);
     expect((result.settings?.cache as unknown as { contextCount?: number }).contextCount).toBe(12);
@@ -6960,6 +7046,7 @@ describe("terminal workspace API client", () => {
                   note: "No key required."
                 }
               ],
+              marketDataAdapters: samplePlatformSettingsMarketDataAdapters,
               cache: {
                 engine: "sqlite",
                 path: "data/market.sqlite",
@@ -7064,6 +7151,7 @@ describe("terminal workspace API client", () => {
                   note: "No key required."
                 }
               ],
+              marketDataAdapters: samplePlatformSettingsMarketDataAdapters,
               cache: {
                 engine: "sqlite",
                 path: "data/market.sqlite",
@@ -7189,6 +7277,7 @@ describe("terminal workspace API client", () => {
                   note: "No key required."
                 }
               ],
+              marketDataAdapters: samplePlatformSettingsMarketDataAdapters,
               cache: {
                 engine: "sqlite",
                 path: "data/market.sqlite",
@@ -7414,6 +7503,60 @@ describe("terminal workspace API client", () => {
                 endTimestamp: "2026-05-29T00:00:00+08:00"
               }
             ]
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapters are missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-05-31T09:00:00+08:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
           },
           executionAdapters: [
             {

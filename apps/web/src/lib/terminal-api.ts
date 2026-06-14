@@ -1091,6 +1091,21 @@ export interface PlatformSettingsCacheContext {
   ageHours: number | null;
 }
 
+export interface PlatformSettingsMarketDataAdapter {
+  id: string;
+  market: Market;
+  adapter: string;
+  provider: string;
+  status: PlatformSettingsStatusTone;
+  route: "public_ohlcv" | string;
+  capabilities: string[];
+  timeframes: ResearchTimeframe[];
+  requiresApiKey: boolean;
+  requiresTradingKey: boolean;
+  cacheScope: string;
+  note: string;
+}
+
 export interface PlatformSettingsExecutionAdapter {
   id: string;
   market: Market | "multi";
@@ -1106,6 +1121,7 @@ export interface PlatformSettingsStatus {
   schemaVersion: 1;
   generatedAt: string;
   dataSources: PlatformSettingsDataSource[];
+  marketDataAdapters: PlatformSettingsMarketDataAdapter[];
   cache: PlatformSettingsCacheStatus;
   executionAdapters: PlatformSettingsExecutionAdapter[];
   safety: {
@@ -9032,6 +9048,8 @@ function isPlatformSettingsStatus(value: unknown): value is PlatformSettingsStat
     typeof settings.generatedAt === "string" &&
     Array.isArray(settings.dataSources) &&
     settings.dataSources.every(isPlatformSettingsDataSource) &&
+    Array.isArray(settings.marketDataAdapters) &&
+    settings.marketDataAdapters.every(isPlatformSettingsMarketDataAdapter) &&
     isPlatformSettingsCacheStatus(settings.cache) &&
     Array.isArray(settings.executionAdapters) &&
     settings.executionAdapters.every(isPlatformSettingsExecutionAdapter) &&
@@ -9039,6 +9057,29 @@ function isPlatformSettingsStatus(value: unknown): value is PlatformSettingsStat
     typeof settings.safety?.liveTradingAllowed === "boolean" &&
     Array.isArray(settings.safety?.requiredGates) &&
     settings.safety.requiredGates.every((gate) => typeof gate === "string")
+  );
+}
+
+function isPlatformSettingsMarketDataAdapter(value: unknown): value is PlatformSettingsMarketDataAdapter {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const adapter = value as Partial<PlatformSettingsMarketDataAdapter>;
+  return (
+    typeof adapter.id === "string" &&
+    isMarket(adapter.market) &&
+    typeof adapter.adapter === "string" &&
+    typeof adapter.provider === "string" &&
+    isPlatformSettingsTone(adapter.status) &&
+    typeof adapter.route === "string" &&
+    Array.isArray(adapter.capabilities) &&
+    adapter.capabilities.every((capability) => typeof capability === "string") &&
+    Array.isArray(adapter.timeframes) &&
+    adapter.timeframes.every(isTimeframe) &&
+    typeof adapter.requiresApiKey === "boolean" &&
+    typeof adapter.requiresTradingKey === "boolean" &&
+    typeof adapter.cacheScope === "string" &&
+    typeof adapter.note === "string"
   );
 }
 

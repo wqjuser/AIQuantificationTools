@@ -10080,6 +10080,7 @@ function PlatformSettingsPanel({
           : "Current chart source status comes from the local page fallback.")
     }
   ];
+  const marketDataAdapters = settings?.marketDataAdapters ?? [];
   const executionAdapters = settings?.executionAdapters ?? adapterRows.map((row) => ({
     id: row.id,
     market: row.market,
@@ -10164,6 +10165,28 @@ function PlatformSettingsPanel({
           </article>
         ))}
       </div>
+      {marketDataAdapters.length ? (
+        <div className="settings-source-list adapters">
+          {marketDataAdapters.map((row) => (
+            <article className={`settings-source-row ${row.status}`} key={`market-adapter-${row.id}`}>
+              <span>{i18n.marketLabel(row.market)}</span>
+              <strong>{row.adapter}</strong>
+              <p>{row.provider} · {row.route} · {row.cacheScope}</p>
+              <em>
+                {settingsStatusLabel(i18n, row.status)} ·{" "}
+                {row.requiresApiKey || row.requiresTradingKey
+                  ? i18n.locale === "zh-CN"
+                    ? "需要配置密钥"
+                    : "Key required"
+                  : i18n.locale === "zh-CN"
+                    ? "无需交易密钥"
+                    : "No trading key"}
+              </em>
+              <small>{row.capabilities.join(" / ")} · {row.timeframes.join(" / ")}</small>
+            </article>
+          ))}
+        </div>
+      ) : null}
       <div className="settings-source-list adapters">
         {executionAdapters.map((row) => (
           <article className={`settings-source-row ${row.status}`} key={`adapter-${row.id}`}>

@@ -65,6 +65,7 @@ def build_settings_status(
                 "note": "Public OHLCV and ticker routes stay paper-only until exchange trade keys are explicitly certified.",
             },
         ],
+        "marketDataAdapters": _market_data_adapter_statuses(exchange),
         "cache": {
             "engine": "sqlite",
             "path": str(cache),
@@ -123,6 +124,53 @@ def build_settings_status(
             "requiredGates": ["adapter-certified", "risk-approved", "human-confirmed"],
         },
     }
+
+
+def _market_data_adapter_statuses(exchange: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "akshare-ohlcv",
+            "market": "ashare",
+            "adapter": "AkShareMarketDataAdapter",
+            "provider": "akshare",
+            "status": "ready",
+            "route": "public_ohlcv",
+            "capabilities": ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
+            "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
+            "requiresApiKey": False,
+            "requiresTradingKey": False,
+            "cacheScope": "ohlcv",
+            "note": "Normalizes A-share daily and recent minute OHLCV through public AKShare routes.",
+        },
+        {
+            "id": "yfinance-ohlcv",
+            "market": "us",
+            "adapter": "YFinanceMarketDataAdapter",
+            "provider": "yfinance",
+            "status": "ready",
+            "route": "public_ohlcv",
+            "capabilities": ["Ticker.history"],
+            "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
+            "requiresApiKey": False,
+            "requiresTradingKey": False,
+            "cacheScope": "ohlcv",
+            "note": "Normalizes US equity OHLCV through yfinance without reading trading credentials.",
+        },
+        {
+            "id": "ccxt-ohlcv",
+            "market": "crypto",
+            "adapter": "CcxtMarketDataAdapter",
+            "provider": f"ccxt:{exchange}",
+            "status": "ready",
+            "route": "public_ohlcv",
+            "capabilities": ["fetch_ohlcv"],
+            "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
+            "requiresApiKey": False,
+            "requiresTradingKey": False,
+            "cacheScope": "ohlcv",
+            "note": "Normalizes public crypto exchange OHLCV; exchange trading keys stay outside this route.",
+        },
+    ]
 
 
 def build_execution_adapter_state_ledger(
