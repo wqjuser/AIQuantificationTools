@@ -40,6 +40,8 @@ Watchlist cache refresh history selection is handled in the frontend workbench m
 
 Settings adapter handoff uses the same frontend derived-state boundary: `resolveAdapterWorkflowInstrument` maps a public OHLCV adapter market to the first matching watchlist instrument, falling back to the currently selected research context when no market peer exists. The Settings adapter card action then selects that instrument and opens the Market work area, where the existing single-context and watchlist cache refresh controls run. This is navigation and context selection only; it does not create research runs, AI reviews, portfolio events, paper orders, or live-trading side effects.
 
+Settings provider health trend strips are also frontend-derived: `buildMarketDataProviderHealthTrendRows` and `buildMarketDataProviderHealthTrendSummary` consume the existing `providerHealth.windowSummary` windows from `/api/settings/status`, derive a compact 1h/24h/7d visual trend, and render it on each public OHLCV adapter card. The strip explains quiet, easing, active, recent-spike and cooldown-pressure states without adding a backend table or endpoint. It does not trigger refresh, retry providers, connect brokers, create orders, or change live-trading gates.
+
 Watchlist persistence has an explicit unsaved state in the React shell: `watchlistIncludesInstrument` distinguishes existing watchlist rows from newly selected search results, the save action shows saved/unsaved status, and the marker clears only after `PUT /api/watchlist` succeeds. This keeps Stage 1 symbol switching local and visible without creating research runs, AI reviews, portfolio events, paper orders, or live-trading side effects.
 
 Research workspace persistence uses the same derived-state pattern: `researchWorkspaceStateMatchesDraft` compares the current market, symbol, timeframe and Stage 1 entry workspace with the persisted `researchWorkspaceState`; `workspaceWithSavedResearchWorkspaceState` merges the core response back into the React model after `PUT /api/research/workspace-state` succeeds. The UI status is therefore restored from the same saved snapshot that `/api/workspace` returns after refresh.
@@ -139,7 +141,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 ## Next Integration Points
 
 1. 将 `/api/workspace` 和 `/api/research/run` 的结果持久化为 workspace layout、数据快照、backtest run 和 agent run 记录。
-2. 在已记录 adapter 级 provider 错误台账、错误分类、基于 24 小时当前窗口的 provider health 摘要和 `1h/24h/7d` 错误窗口摘要的基础上，继续补齐失败退避执行器、可审计人工覆盖和 provider 健康趋势图。
+2. 在已记录 adapter 级 provider 错误台账、错误分类、基于 24 小时当前窗口的 provider health 摘要、`1h/24h/7d` 错误窗口摘要、人工覆盖审计和 Settings 趋势条基础上，继续补齐失败退避执行器、override-to-refresh 关联证据和更完整的 provider 运维视图。
 3. 增加策略 DSL 校验和更多可视化条件。
 4. 将 AI provider 抽象接到 OpenAI-compatible 和 Ollama-compatible 后端。
 5. 在 Paper Trading 稳定后增加 A 股券商适配器接口实现。

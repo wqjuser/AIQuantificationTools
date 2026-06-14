@@ -253,6 +253,8 @@ import {
   buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
   buildMarketDataRefreshGuard,
+  buildMarketDataProviderHealthTrendRows,
+  buildMarketDataProviderHealthTrendSummary,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -10563,6 +10565,7 @@ function PlatformSettingsPanel({
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
               </small>
+              <MarketDataProviderHealthTrendStrip i18n={i18n} health={row.externalTelemetry.providerHealth} />
               {row.externalTelemetry.lastProviderError ? (
                 <small>{marketDataAdapterProviderErrorLabel(i18n, row.externalTelemetry.lastProviderError)}</small>
               ) : null}
@@ -17260,6 +17263,46 @@ function BrokerAdapterPanel({
   );
 }
 
+function MarketDataProviderHealthTrendStrip({
+  health,
+  i18n
+}: {
+  health: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"];
+  i18n: AppI18n;
+}) {
+  const rows = buildMarketDataProviderHealthTrendRows(health);
+  const summary = buildMarketDataProviderHealthTrendSummary(health);
+  return (
+    <div className={`provider-health-trend ${summary.tone}`} title={summary.detail}>
+      <div className="provider-health-trend-summary">
+        <span>{i18n.locale === "zh-CN" ? "Provider 趋势" : "Provider trend"}</span>
+        <strong>{providerHealthTrendMomentumLabel(i18n, summary.momentum)}</strong>
+        <em>
+          {summary.totalErrors.toLocaleString(i18n.locale === "zh-CN" ? "zh-CN" : "en-US")}{" "}
+          {i18n.locale === "zh-CN" ? "次错误" : "errors"} ·{" "}
+          {providerHealthTrendLatestLabel(i18n, summary.latestErrorAt)}
+        </em>
+      </div>
+      <div className="provider-health-trend-bars">
+        {rows.map((row) => (
+          <div
+            className={`provider-health-trend-window level-${row.intensityLevel} ${row.tone}`}
+            key={`provider-health-trend-${row.id}`}
+            title={`${providerHealthTrendWindowLabel(i18n, row.id)} · ${row.errorCount} · ${providerHealthTrendCategoryLabel(i18n, row.dominantCategory)}`}
+          >
+            <span>{providerHealthTrendWindowLabel(i18n, row.id)}</span>
+            <strong>{row.errorCount.toLocaleString(i18n.locale === "zh-CN" ? "zh-CN" : "en-US")}</strong>
+            <i className="provider-health-trend-track">
+              <b className="provider-health-trend-fill" />
+            </i>
+            <em>{providerHealthTrendCategoryLabel(i18n, row.dominantCategory)}</em>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function promotionStatusLabel(i18n: AppI18n, status: PromotionReadiness["status"]): string {
   if (i18n.locale === "en-US") {
     return status.replaceAll("_", " ");
@@ -19330,6 +19373,76 @@ function marketDataAdapterInstallGuidanceLabel(
     return `安装建议 · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
   }
   return `Install · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
+}
+
+function providerHealthTrendMomentumLabel(
+  i18n: AppI18n,
+  momentum: ReturnType<typeof buildMarketDataProviderHealthTrendSummary>["momentum"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        quiet: "Quiet",
+        historical_only: "Historical only",
+        easing: "Easing",
+        active_errors: "Active errors",
+        recent_spike: "Recent spike",
+        cooldown_pressure: "Cooldown pressure"
+      }[momentum] ?? momentum
+    );
+  }
+  return (
+    {
+      quiet: "安静",
+      historical_only: "仅历史错误",
+      easing: "正在缓和",
+      active_errors: "仍有错误",
+      recent_spike: "近期抬升",
+      cooldown_pressure: "冷却压力"
+    }[momentum] ?? momentum
+  );
+}
+
+function providerHealthTrendWindowLabel(i18n: AppI18n, windowId: string): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        oneHour: "1h",
+        twentyFourHours: "24h",
+        sevenDays: "7d"
+      }[windowId] ?? windowId
+    );
+  }
+  return (
+    {
+      oneHour: "1小时",
+      twentyFourHours: "24小时",
+      sevenDays: "7天"
+    }[windowId] ?? windowId
+  );
+}
+
+function providerHealthTrendLatestLabel(i18n: AppI18n, latestErrorAt: string | null): string {
+  if (!latestErrorAt) {
+    return i18n.locale === "zh-CN" ? "无最近错误" : "No latest error";
+  }
+  return i18n.locale === "zh-CN" ? `最新 ${formatChartDate(latestErrorAt)}` : `Latest ${formatChartDate(latestErrorAt)}`;
+}
+
+function providerHealthTrendCategoryLabel(i18n: AppI18n, category: string | null): string {
+  if (!category) {
+    return i18n.locale === "zh-CN" ? "无主因" : "none";
+  }
+  const labels: Record<string, { zh: string; en: string }> = {
+    rate_limit: { zh: "限流", en: "Rate limit" },
+    dependency: { zh: "依赖", en: "Dependency" },
+    network: { zh: "网络", en: "Network" },
+    upstream: { zh: "上游", en: "Upstream" },
+    incomplete_data: { zh: "数据不完整", en: "Incomplete data" },
+    unknown: { zh: "未知", en: "Unknown" }
+  };
+  const label = labels[category] ?? { zh: category, en: category };
+  return i18n.locale === "zh-CN" ? label.zh : label.en;
 }
 
 function marketDataAdapterProviderHealthLabel(

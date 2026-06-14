@@ -3345,10 +3345,255 @@ export interface MarketDataProviderHealthSnapshot {
   status: MarketDataProviderHealthStatus;
   recentErrorCount: number;
   lastErrorAt: string | null;
-  affectedSymbols: string[];
-  affectedContexts: string[];
+  affectedSymbols: readonly string[];
+  affectedContexts: readonly string[];
   retryAfterSeconds: number;
   reason: string;
+}
+
+export type MarketDataProviderHealthTrendWindowId = "oneHour" | "twentyFourHours" | "sevenDays";
+export type MarketDataProviderHealthTrendMomentum =
+  | "quiet"
+  | "historical_only"
+  | "easing"
+  | "active_errors"
+  | "recent_spike"
+  | "cooldown_pressure";
+
+export interface MarketDataProviderHealthTrendWindowSource {
+  errorCount: number;
+  latestErrorAt: string | null;
+  dominantCategory?: string | null;
+  categorySummary?: Record<string, number> | null;
+}
+
+export interface MarketDataProviderHealthTrendSource extends MarketDataProviderHealthSnapshot {
+  dominantCategory?: string | null;
+  windowSummary?: Record<MarketDataProviderHealthTrendWindowId, MarketDataProviderHealthTrendWindowSource> | null;
+}
+
+export interface MarketDataProviderHealthTrendRow {
+  id: MarketDataProviderHealthTrendWindowId;
+  label: string;
+  shortLabel: string;
+  errorCount: number;
+  latestErrorAt: string | null;
+  dominantCategory: string | null;
+  intensity: number;
+  intensityLevel: 0 | 1 | 2 | 3 | 4;
+  tone: "positive" | "warning" | "risk" | "neutral";
+  detail: string;
+  searchText: string;
+}
+
+export interface MarketDataProviderHealthTrendSummary {
+  totalErrors: number;
+  currentWindowErrors: number;
+  peakWindowId: MarketDataProviderHealthTrendWindowId;
+  peakErrorCount: number;
+  latestErrorAt: string | null;
+  dominantCategory: string | null;
+  momentum: MarketDataProviderHealthTrendMomentum;
+  tone: "positive" | "warning" | "risk" | "neutral";
+  detail: string;
+  searchText: string;
+}
+
+const marketDataProviderHealthTrendWindows = [
+  { id: "oneHour", label: "1 hour", shortLabel: "1h" },
+  { id: "twentyFourHours", label: "24 hours", shortLabel: "24h" },
+  { id: "sevenDays", label: "7 days", shortLabel: "7d" }
+] as const satisfies readonly {
+  id: MarketDataProviderHealthTrendWindowId;
+  label: string;
+  shortLabel: string;
+}[];
+
+export function buildMarketDataProviderHealthTrendRows(
+  health: MarketDataProviderHealthTrendSource | null | undefined
+): MarketDataProviderHealthTrendRow[] {
+  const windows = marketDataProviderHealthTrendWindows.map((window) => {
+    const source = health?.windowSummary?.[window.id];
+    return {
+      ...window,
+      errorCount: Math.max(0, Math.trunc(source?.errorCount ?? 0)),
+      latestErrorAt: source?.latestErrorAt ?? null,
+      dominantCategory: source?.dominantCategory ?? null
+    };
+  });
+  const maxErrors = Math.max(1, ...windows.map((window) => window.errorCount));
+  return windows.map((window) => {
+    const intensity = window.errorCount / maxErrors;
+    const intensityLevel = providerHealthTrendIntensityLevel(window.errorCount, intensity);
+    const tone = providerHealthTrendRowTone(intensityLevel);
+    return {
+      ...window,
+      intensity,
+      intensityLevel,
+      tone,
+      detail: `${window.shortLabel}: ${window.errorCount} provider error${window.errorCount === 1 ? "" : "s"}; primary ${
+        window.dominantCategory ?? "none"
+      }.`,
+      searchText: [
+        window.id,
+        window.label,
+        window.shortLabel,
+        window.errorCount,
+        window.latestErrorAt,
+        window.dominantCategory,
+        tone,
+        health?.status,
+        health?.reason,
+        ...(health?.affectedSymbols ?? []),
+        ...(health?.affectedContexts ?? [])
+      ]
+        .filter((value) => value !== null && value !== undefined && `${value}`.trim().length > 0)
+        .join(" ")
+        .toLowerCase()
+    };
+  });
+}
+
+export function buildMarketDataProviderHealthTrendSummary(
+  health: MarketDataProviderHealthTrendSource | null | undefined
+): MarketDataProviderHealthTrendSummary {
+  const rows = buildMarketDataProviderHealthTrendRows(health);
+  const totalErrors = rows.reduce((total, row) => total + row.errorCount, 0);
+  const peak = rows.reduce((currentPeak, row) => (row.errorCount > currentPeak.errorCount ? row : currentPeak), rows[0]);
+  const currentWindowErrors = rows.find((row) => row.id === "oneHour")?.errorCount ?? 0;
+  const twentyFourHourErrors = rows.find((row) => row.id === "twentyFourHours")?.errorCount ?? 0;
+  const sevenDayErrors = rows.find((row) => row.id === "sevenDays")?.errorCount ?? 0;
+  const dominantCategory = health?.dominantCategory ?? peak.dominantCategory;
+  const latestErrorAt =
+    health?.lastErrorAt ??
+    rows
+      .map((row) => row.latestErrorAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ??
+    null;
+  const momentum = providerHealthTrendMomentum(
+    health?.status ?? "ok",
+    currentWindowErrors,
+    twentyFourHourErrors,
+    sevenDayErrors
+  );
+  const tone = providerHealthTrendSummaryTone(health?.status ?? "ok", totalErrors, peak.errorCount, momentum);
+  const detail = providerHealthTrendSummaryDetail(
+    momentum,
+    currentWindowErrors,
+    twentyFourHourErrors,
+    sevenDayErrors,
+    dominantCategory
+  );
+  return {
+    totalErrors,
+    currentWindowErrors,
+    peakWindowId: peak.id,
+    peakErrorCount: peak.errorCount,
+    latestErrorAt,
+    dominantCategory,
+    momentum,
+    tone,
+    detail,
+    searchText: [
+      momentum,
+      tone,
+      detail,
+      health?.status,
+      health?.reason,
+      health?.retryAfterSeconds,
+      dominantCategory,
+      latestErrorAt,
+      ...(health?.affectedSymbols ?? []),
+      ...(health?.affectedContexts ?? []),
+      ...rows.map((row) => row.searchText)
+    ]
+      .filter((value) => value !== null && value !== undefined && `${value}`.trim().length > 0)
+      .join(" ")
+      .toLowerCase()
+  };
+}
+
+function providerHealthTrendIntensityLevel(errorCount: number, intensity: number): 0 | 1 | 2 | 3 | 4 {
+  if (errorCount <= 0) {
+    return 0;
+  }
+  return Math.min(4, Math.max(1, Math.ceil(intensity * 4))) as 1 | 2 | 3 | 4;
+}
+
+function providerHealthTrendRowTone(
+  intensityLevel: MarketDataProviderHealthTrendRow["intensityLevel"]
+): MarketDataProviderHealthTrendRow["tone"] {
+  if (intensityLevel === 0) {
+    return "positive";
+  }
+  return intensityLevel >= 3 ? "risk" : "warning";
+}
+
+function providerHealthTrendMomentum(
+  status: MarketDataProviderHealthStatus,
+  oneHourErrors: number,
+  twentyFourHourErrors: number,
+  sevenDayErrors: number
+): MarketDataProviderHealthTrendMomentum {
+  if (status === "cooldown" || status === "blocked") {
+    return "cooldown_pressure";
+  }
+  if (oneHourErrors === 0 && twentyFourHourErrors === 0 && sevenDayErrors === 0) {
+    return "quiet";
+  }
+  if (oneHourErrors === 0 && twentyFourHourErrors === 0 && sevenDayErrors > 0) {
+    return "historical_only";
+  }
+  if (oneHourErrors === 0 && twentyFourHourErrors > 0) {
+    return "easing";
+  }
+  if (oneHourErrors > 0 && oneHourErrors >= Math.max(2, Math.ceil(twentyFourHourErrors / 2))) {
+    return "recent_spike";
+  }
+  return "active_errors";
+}
+
+function providerHealthTrendSummaryTone(
+  status: MarketDataProviderHealthStatus,
+  totalErrors: number,
+  peakErrorCount: number,
+  momentum: MarketDataProviderHealthTrendMomentum
+): MarketDataProviderHealthTrendSummary["tone"] {
+  if (status === "blocked" || status === "cooldown" || peakErrorCount >= 3) {
+    return "risk";
+  }
+  if (momentum === "quiet" || totalErrors === 0) {
+    return "positive";
+  }
+  return "warning";
+}
+
+function providerHealthTrendSummaryDetail(
+  momentum: MarketDataProviderHealthTrendMomentum,
+  oneHourErrors: number,
+  twentyFourHourErrors: number,
+  sevenDayErrors: number,
+  dominantCategory: string | null
+): string {
+  const primary = dominantCategory ?? "none";
+  if (momentum === "cooldown_pressure") {
+    return `Provider cooldown pressure: ${oneHourErrors} errors in 1h, ${twentyFourHourErrors} in 24h, ${sevenDayErrors} in 7d; primary ${primary}.`;
+  }
+  if (momentum === "quiet") {
+    return "Provider trend quiet: no errors in 1h, 24h, or 7d.";
+  }
+  if (momentum === "historical_only") {
+    return `Provider trend historical only: 0 errors in 1h/24h, ${sevenDayErrors} in 7d; primary ${primary}.`;
+  }
+  if (momentum === "easing") {
+    return `Provider trend easing: 0 errors in 1h, ${twentyFourHourErrors} in 24h, ${sevenDayErrors} in 7d; primary ${primary}.`;
+  }
+  if (momentum === "recent_spike") {
+    return `Provider recent spike: ${oneHourErrors} errors in 1h, ${twentyFourHourErrors} in 24h, ${sevenDayErrors} in 7d; primary ${primary}.`;
+  }
+  return `Provider active errors: ${oneHourErrors} errors in 1h, ${twentyFourHourErrors} in 24h, ${sevenDayErrors} in 7d; primary ${primary}.`;
 }
 
 export interface MarketDataRefreshOverride {
@@ -3390,8 +3635,8 @@ export function buildMarketDataRefreshGuard(
       status: health?.status ?? "ok",
       recentErrorCount: health?.recentErrorCount ?? 0,
       retryAfterSeconds: Math.max(0, Math.trunc(health?.retryAfterSeconds ?? 0)),
-      affectedSymbols: health?.affectedSymbols ?? [],
-      affectedContexts: health?.affectedContexts ?? [],
+      affectedSymbols: health?.affectedSymbols.slice() ?? [],
+      affectedContexts: health?.affectedContexts.slice() ?? [],
       reason: health?.reason ?? "provider_refresh_available",
       overrideApplied: false,
       overrideReason: null,

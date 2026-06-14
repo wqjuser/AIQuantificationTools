@@ -66,6 +66,8 @@ import {
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
   buildMarketDataRefreshGuard,
+  buildMarketDataProviderHealthTrendRows,
+  buildMarketDataProviderHealthTrendSummary,
   buildModuleNewsEvents,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
@@ -15587,6 +15589,109 @@ describe("terminal workbench model", () => {
       status: "ok",
       detail: "Provider refresh available for crypto."
     });
+  });
+
+  test("builds provider health trend rows from settings window summary", () => {
+    const health = {
+      status: "cooldown",
+      recentErrorCount: 5,
+      lastErrorAt: "2026-06-14T09:30:00+00:00",
+      affectedSymbols: ["600000", "000300"],
+      affectedContexts: ["ashare:600000:1d", "ashare:000300:1d"],
+      retryAfterSeconds: 300,
+      reason: "provider_cooldown",
+      dominantCategory: "network",
+      windowSummary: {
+        oneHour: {
+          errorCount: 2,
+          latestErrorAt: "2026-06-14T09:30:00+00:00",
+          dominantCategory: "network",
+          categorySummary: {
+            rate_limit: 0,
+            dependency: 0,
+            network: 2,
+            upstream: 0,
+            incomplete_data: 0,
+            unknown: 0
+          }
+        },
+        twentyFourHours: {
+          errorCount: 5,
+          latestErrorAt: "2026-06-14T09:30:00+00:00",
+          dominantCategory: "network",
+          categorySummary: {
+            rate_limit: 1,
+            dependency: 0,
+            network: 4,
+            upstream: 0,
+            incomplete_data: 0,
+            unknown: 0
+          }
+        },
+        sevenDays: {
+          errorCount: 7,
+          latestErrorAt: "2026-06-14T09:30:00+00:00",
+          dominantCategory: "network",
+          categorySummary: {
+            rate_limit: 1,
+            dependency: 0,
+            network: 6,
+            upstream: 0,
+            incomplete_data: 0,
+            unknown: 0
+          }
+        }
+      }
+    } as const;
+
+    const rows = buildMarketDataProviderHealthTrendRows(health);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: "oneHour",
+        label: "1 hour",
+        shortLabel: "1h",
+        errorCount: 2,
+        dominantCategory: "network",
+        intensityLevel: 2,
+        tone: "warning"
+      }),
+      expect.objectContaining({
+        id: "twentyFourHours",
+        label: "24 hours",
+        shortLabel: "24h",
+        errorCount: 5,
+        dominantCategory: "network",
+        intensityLevel: 3,
+        tone: "risk"
+      }),
+      expect.objectContaining({
+        id: "sevenDays",
+        label: "7 days",
+        shortLabel: "7d",
+        errorCount: 7,
+        dominantCategory: "network",
+        intensityLevel: 4,
+        tone: "risk"
+      })
+    ]);
+
+    const summary = buildMarketDataProviderHealthTrendSummary(health);
+    expect(summary).toEqual(
+      expect.objectContaining({
+        totalErrors: 14,
+        currentWindowErrors: 2,
+        peakWindowId: "sevenDays",
+        peakErrorCount: 7,
+        dominantCategory: "network",
+        latestErrorAt: "2026-06-14T09:30:00+00:00",
+        momentum: "cooldown_pressure",
+        tone: "risk"
+      })
+    );
+    expect(summary.detail).toBe("Provider cooldown pressure: 2 errors in 1h, 5 in 24h, 7 in 7d; primary network.");
+    expect(summary.searchText).toContain("600000");
+    expect(summary.searchText).toContain("ashare:600000:1d");
+    expect(rows[0].searchText).toContain("network");
   });
 
   test("summarizes recent watchlist cache refresh runs for the market health panel", () => {

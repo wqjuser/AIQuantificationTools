@@ -2529,6 +2529,22 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Install");
   });
 
+  test("renders provider health trend strips on settings market data adapters", () => {
+    expect(appSource).toContain("MarketDataProviderHealthTrendStrip");
+    expect(appSource).toContain("buildMarketDataProviderHealthTrendRows(health)");
+    expect(appSource).toContain("buildMarketDataProviderHealthTrendSummary(health)");
+    expect(appSource).toContain('className={`provider-health-trend');
+    expect(appSource).toContain("provider-health-trend-window level-${row.intensityLevel}");
+    expect(appSource).toContain("providerHealthTrendMomentumLabel(i18n, summary.momentum)");
+    expect(appSource).toContain("providerHealthTrendWindowLabel(i18n, row.id)");
+    expect(appSource).toContain("providerHealthTrendLatestLabel(i18n, summary.latestErrorAt)");
+    expect(styles).toContain(".provider-health-trend");
+    expect(styles).toContain(".provider-health-trend-summary");
+    expect(styles).toContain(".provider-health-trend-bars");
+    expect(styles).toContain(".provider-health-trend-window");
+    expect(styles).toContain(".provider-health-trend-window.level-4 .provider-health-trend-fill");
+  });
+
   test("renders execution adapter state ledger as a compact settings audit rail", () => {
     expect(appSource).toContain("loadExecutionAdapterLedger(quantCoreBaseUrl)");
     expect(appSource).toContain("buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger)");
