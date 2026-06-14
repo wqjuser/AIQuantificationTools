@@ -95,4 +95,11 @@ describe("docker deployment contract", () => {
     expect(nginx).toContain("location = /health");
     expect(nginx).toContain("proxy_pass http://api:8765/health;");
   });
+
+  test("keeps local Vite development on the same API path as Docker", () => {
+    const viteConfig = readRepoFile("apps/web/vite.config.ts");
+
+    expect(viteConfig).toContain('"/api": "http://127.0.0.1:8765"');
+    expect(viteConfig).toContain('"/health": "http://127.0.0.1:8765"');
+  });
 });

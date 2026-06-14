@@ -1,0 +1,559 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from time import perf_counter
+from typing import Any, Callable
+from uuid import uuid4
+
+
+_CCXT_UNSET = object()
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterHealthCheck:
+    check_id: str
+    label: str
+    status: str
+    detail: str
+    latency_ms: int | None = None
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterHealthProbe:
+    probe_id: str
+    adapter_id: str
+    provider: str
+    exchange_id: str
+    mode: str
+    status: str
+    generated_at: datetime
+    checks: list[ExecutionAdapterHealthCheck]
+    capabilities: dict[str, bool]
+    credentials: dict[str, Any]
+    market_count: int
+    exchange_status: str | None
+    server_time_ms: int | None
+    account_sync_state: str
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    paper_only: bool = True
+    live_trading_allowed: bool = False
+    order_routing_enabled: bool = False
+
+
+ExchangeFactory = Callable[[str, dict[str, Any]], Any]
+
+
+def probe_ccxt_sandbox_health(
+    *,
+    adapter_id: str,
+    exchange_id: str,
+    environ: dict[str, str] | None = None,
+    exchange_factory: ExchangeFactory | None = None,
+    ccxt_module: Any = _CCXT_UNSET,
+    generated_at: datetime | None = None,
+) -> ExecutionAdapterHealthProbe:
+    env = environ if environ is not None else os.environ
+    now = generated_at or datetime.now(timezone.utc)
+    clean_adapter_id = adapter_id.strip() or "ccxt-live"
+    clean_exchange_id = exchange_id.strip().lower() or "binance"
+    checks: list[ExecutionAdapterHealthCheck] = []
+    blocked_reasons: list[str] = []
+    market_count = 0
+    exchange_status: str | None = None
+    server_time_ms: int | None = None
+    account_sync_state = "not_run"
+    capabilities = {
+        "sandboxMode": False,
+        "loadMarkets": False,
+        "fetchStatus": False,
+        "fetchTime": False,
+        "fetchBalance": False,
+        "createOrder": False,
+    }
+    credentials = _resolve_ccxt_credentials(clean_exchange_id, env)
+
+    if exchange_factory is None:
+        ccxt_module = _load_ccxt_module(ccxt_module)
+        if ccxt_module is None:
+            blocked_reasons.append("ccxt_not_installed")
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="ccxt-installed",
+                    label="ccxt package installed",
+                    status="blocked",
+                    detail="Install optional data dependencies with INSTALL_DATA_DEPS=true or pip install ccxt.",
+                )
+            )
+            return _build_probe(
+                adapter_id=clean_adapter_id,
+                exchange_id=clean_exchange_id,
+                generated_at=now,
+                checks=checks,
+                capabilities=capabilities,
+                credentials=credentials,
+                market_count=market_count,
+                exchange_status=exchange_status,
+                server_time_ms=server_time_ms,
+                account_sync_state="blocked",
+                blocked_reasons=blocked_reasons,
+            )
+        exchange_class = getattr(ccxt_module, clean_exchange_id, None)
+        if not callable(exchange_class):
+            blocked_reasons.append("ccxt_exchange_not_found")
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="ccxt-exchange",
+                    label="ccxt exchange class",
+                    status="blocked",
+                    detail=f"Exchange '{clean_exchange_id}' is not available in ccxt.",
+                )
+            )
+            return _build_probe(
+                adapter_id=clean_adapter_id,
+                exchange_id=clean_exchange_id,
+                generated_at=now,
+                checks=checks,
+                capabilities=capabilities,
+                credentials=credentials,
+                market_count=market_count,
+                exchange_status=exchange_status,
+                server_time_ms=server_time_ms,
+                account_sync_state="blocked",
+                blocked_reasons=blocked_reasons,
+            )
+
+        def exchange_factory(exchange_id_arg: str, config: dict[str, Any]) -> Any:
+            return exchange_class(config)
+
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="ccxt-installed",
+                label="ccxt package installed",
+                status="passed",
+                detail="ccxt is importable and exchange class lookup succeeded.",
+            )
+        )
+    else:
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="ccxt-installed",
+                label="ccxt provider factory",
+                status="passed",
+                detail="Injected exchange factory is available for this probe.",
+            )
+        )
+
+    config = _build_ccxt_config(credentials, env)
+    try:
+        exchange = exchange_factory(clean_exchange_id, config)
+    except Exception as error:
+        blocked_reasons.append("ccxt_exchange_init_failed")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="exchange-init",
+                label="exchange instance created",
+                status="blocked",
+                detail=f"Exchange initialization failed: {type(error).__name__}",
+            )
+        )
+        return _build_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            market_count=market_count,
+            exchange_status=exchange_status,
+            server_time_ms=server_time_ms,
+            account_sync_state="blocked",
+            blocked_reasons=blocked_reasons,
+        )
+
+    capabilities = _ccxt_capabilities(exchange)
+    if hasattr(exchange, "set_sandbox_mode"):
+        try:
+            _timed(lambda: exchange.set_sandbox_mode(True))
+            capabilities["sandboxMode"] = True
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="sandbox-mode",
+                    label="sandbox mode enabled",
+                    status="passed",
+                    detail="set_sandbox_mode(True) was called before any exchange API call.",
+                )
+            )
+        except Exception as error:
+            blocked_reasons.append("ccxt_sandbox_mode_failed")
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="sandbox-mode",
+                    label="sandbox mode enabled",
+                    status="blocked",
+                    detail=f"Sandbox mode setup failed: {type(error).__name__}",
+                )
+            )
+    else:
+        blocked_reasons.append("ccxt_sandbox_mode_unavailable")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="sandbox-mode",
+                label="sandbox mode enabled",
+                status="blocked",
+                detail="Exchange object does not expose set_sandbox_mode.",
+            )
+        )
+
+    if blocked_reasons:
+        return _build_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            market_count=market_count,
+            exchange_status=exchange_status,
+            server_time_ms=server_time_ms,
+            account_sync_state="blocked",
+            blocked_reasons=blocked_reasons,
+        )
+
+    try:
+        markets, latency_ms = _timed(exchange.load_markets)
+        market_count = len(markets or {})
+        capabilities["loadMarkets"] = True
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="markets-loaded",
+                label="markets loaded",
+                status="passed" if market_count > 0 else "review",
+                detail=f"Loaded {market_count} markets from sandbox/testnet.",
+                latency_ms=latency_ms,
+            )
+        )
+    except Exception as error:
+        blocked_reasons.append("ccxt_load_markets_failed")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="markets-loaded",
+                label="markets loaded",
+                status="blocked",
+                detail=f"load_markets failed: {type(error).__name__}",
+            )
+        )
+        return _build_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            market_count=market_count,
+            exchange_status=exchange_status,
+            server_time_ms=server_time_ms,
+            account_sync_state="blocked",
+            blocked_reasons=blocked_reasons,
+        )
+
+    if capabilities["fetchStatus"] and hasattr(exchange, "fetch_status"):
+        try:
+            status_payload, latency_ms = _timed(exchange.fetch_status)
+            exchange_status = str((status_payload or {}).get("status") or "unknown")
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="exchange-status",
+                    label="exchange status",
+                    status="passed" if exchange_status in {"ok", "normal"} else "review",
+                    detail=f"Exchange status reported as {exchange_status}.",
+                    latency_ms=latency_ms,
+                )
+            )
+        except Exception as error:
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="exchange-status",
+                    label="exchange status",
+                    status="review",
+                    detail=f"fetch_status failed: {type(error).__name__}",
+                )
+            )
+    else:
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="exchange-status",
+                label="exchange status",
+                status="skipped",
+                detail="Exchange does not advertise fetchStatus.",
+            )
+        )
+
+    if capabilities["fetchTime"] and hasattr(exchange, "fetch_time"):
+        try:
+            raw_time, latency_ms = _timed(exchange.fetch_time)
+            server_time_ms = int(raw_time) if raw_time is not None else None
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="server-time",
+                    label="server time",
+                    status="passed" if server_time_ms is not None else "review",
+                    detail="Fetched exchange server time from sandbox/testnet.",
+                    latency_ms=latency_ms,
+                )
+            )
+        except Exception as error:
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="server-time",
+                    label="server time",
+                    status="review",
+                    detail=f"fetch_time failed: {type(error).__name__}",
+                )
+            )
+    else:
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="server-time",
+                label="server time",
+                status="skipped",
+                detail="Exchange does not advertise fetchTime.",
+            )
+        )
+
+    if credentials["apiKeyConfigured"] and credentials["secretConfigured"]:
+        if capabilities["fetchBalance"] and hasattr(exchange, "fetch_balance"):
+            try:
+                _balance, latency_ms = _timed(exchange.fetch_balance)
+                account_sync_state = "ready"
+                checks.append(
+                    ExecutionAdapterHealthCheck(
+                        check_id="account-sync",
+                        label="account sync",
+                        status="passed",
+                        detail="Sandbox/testnet credentials allowed a redacted balance read.",
+                        latency_ms=latency_ms,
+                    )
+                )
+            except Exception as error:
+                account_sync_state = "review"
+                checks.append(
+                    ExecutionAdapterHealthCheck(
+                        check_id="account-sync",
+                        label="account sync",
+                        status="review",
+                        detail=f"fetch_balance failed: {type(error).__name__}",
+                    )
+                )
+        else:
+            account_sync_state = "unsupported"
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="account-sync",
+                    label="account sync",
+                    status="skipped",
+                    detail="Exchange does not advertise fetchBalance.",
+                )
+            )
+    else:
+        account_sync_state = "credentials_missing"
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="account-sync",
+                label="account sync",
+                status="review",
+                detail="Sandbox/testnet API key and secret are not both configured; balance sync was skipped.",
+            )
+        )
+
+    checks.append(
+        ExecutionAdapterHealthCheck(
+            check_id="order-routing-disabled",
+            label="order routing disabled",
+            status="passed",
+            detail="Probe is read-only and does not call create_order, cancel_order, or any live routing method.",
+        )
+    )
+
+    return _build_probe(
+        adapter_id=clean_adapter_id,
+        exchange_id=clean_exchange_id,
+        generated_at=now,
+        checks=checks,
+        capabilities=capabilities,
+        credentials=credentials,
+        market_count=market_count,
+        exchange_status=exchange_status,
+        server_time_ms=server_time_ms,
+        account_sync_state=account_sync_state,
+        blocked_reasons=blocked_reasons,
+    )
+
+
+def execution_adapter_health_probe_to_payload(probe: ExecutionAdapterHealthProbe) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "probeId": probe.probe_id,
+        "adapterId": probe.adapter_id,
+        "provider": probe.provider,
+        "exchangeId": probe.exchange_id,
+        "mode": probe.mode,
+        "status": probe.status,
+        "generatedAt": probe.generated_at.isoformat(),
+        "checks": [
+            {
+                "id": check.check_id,
+                "label": check.label,
+                "status": check.status,
+                "detail": check.detail,
+                "latencyMs": check.latency_ms,
+            }
+            for check in probe.checks
+        ],
+        "capabilities": dict(probe.capabilities),
+        "credentials": dict(probe.credentials),
+        "marketCount": probe.market_count,
+        "exchangeStatus": probe.exchange_status,
+        "serverTimeMs": probe.server_time_ms,
+        "accountSyncState": probe.account_sync_state,
+        "blockedReasons": list(probe.blocked_reasons),
+        "metadata": dict(probe.metadata),
+        "paperOnly": probe.paper_only,
+        "liveTradingAllowed": probe.live_trading_allowed,
+        "orderRoutingEnabled": probe.order_routing_enabled,
+    }
+
+
+def _build_probe(
+    *,
+    adapter_id: str,
+    exchange_id: str,
+    generated_at: datetime,
+    checks: list[ExecutionAdapterHealthCheck],
+    capabilities: dict[str, bool],
+    credentials: dict[str, Any],
+    market_count: int,
+    exchange_status: str | None,
+    server_time_ms: int | None,
+    account_sync_state: str,
+    blocked_reasons: list[str],
+) -> ExecutionAdapterHealthProbe:
+    status = _probe_status(checks, blocked_reasons)
+    return ExecutionAdapterHealthProbe(
+        probe_id=f"execution-adapter-health-{adapter_id}-{uuid4()}",
+        adapter_id=adapter_id,
+        provider="ccxt",
+        exchange_id=exchange_id,
+        mode="sandbox",
+        status=status,
+        generated_at=generated_at,
+        checks=checks,
+        capabilities=capabilities,
+        credentials=credentials,
+        market_count=market_count,
+        exchange_status=exchange_status,
+        server_time_ms=server_time_ms,
+        account_sync_state=account_sync_state,
+        blocked_reasons=blocked_reasons,
+        metadata={
+            "readOnly": True,
+        },
+    )
+
+
+def _probe_status(checks: list[ExecutionAdapterHealthCheck], blocked_reasons: list[str]) -> str:
+    if blocked_reasons or any(check.status == "blocked" for check in checks):
+        return "blocked"
+    if any(check.status in {"review", "skipped"} for check in checks):
+        return "review"
+    return "ready"
+
+
+def _load_ccxt_module(ccxt_module: Any) -> Any | None:
+    if ccxt_module is not _CCXT_UNSET:
+        return ccxt_module
+    try:
+        import ccxt  # type: ignore
+
+        return ccxt
+    except Exception:
+        return None
+
+
+def _resolve_ccxt_credentials(exchange_id: str, env: dict[str, str]) -> dict[str, Any]:
+    prefix = exchange_id.upper().replace("-", "_")
+    api_key_source, api_key_value = _first_env(env, [f"CCXT_{prefix}_API_KEY", "CCXT_API_KEY"])
+    secret_source, secret_value = _first_env(
+        env,
+        [
+            f"CCXT_{prefix}_SECRET",
+            f"CCXT_{prefix}_API_SECRET",
+            "CCXT_SECRET",
+            "CCXT_API_SECRET",
+        ],
+    )
+    password_source, password_value = _first_env(env, [f"CCXT_{prefix}_PASSWORD", "CCXT_PASSWORD"])
+    return {
+        "apiKeyConfigured": bool(api_key_value),
+        "apiKeySource": api_key_source,
+        "secretConfigured": bool(secret_value),
+        "secretSource": secret_source,
+        "passwordConfigured": bool(password_value),
+        "passwordSource": password_source,
+    }
+
+
+def _build_ccxt_config(credentials: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
+    config: dict[str, Any] = {
+        "enableRateLimit": True,
+        "options": {"defaultType": env.get("CCXT_DEFAULT_TYPE", "spot")},
+    }
+    timeout = _parse_positive_int(env.get("CCXT_TIMEOUT"))
+    if timeout is not None:
+        config["timeout"] = timeout
+    if credentials.get("apiKeyConfigured") and credentials.get("apiKeySource"):
+        config["apiKey"] = env[str(credentials["apiKeySource"])]
+    if credentials.get("secretConfigured") and credentials.get("secretSource"):
+        config["secret"] = env[str(credentials["secretSource"])]
+    if credentials.get("passwordConfigured") and credentials.get("passwordSource"):
+        config["password"] = env[str(credentials["passwordSource"])]
+    return config
+
+
+def _first_env(env: dict[str, str], keys: list[str]) -> tuple[str | None, str | None]:
+    for key in keys:
+        value = env.get(key)
+        if value:
+            return key, value
+    return None, None
+
+
+def _parse_positive_int(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _ccxt_capabilities(exchange: Any) -> dict[str, bool]:
+    has = getattr(exchange, "has", {})
+    has_map = has if isinstance(has, dict) else {}
+    return {
+        "sandboxMode": hasattr(exchange, "set_sandbox_mode"),
+        "loadMarkets": hasattr(exchange, "load_markets"),
+        "fetchStatus": bool(has_map.get("fetchStatus")) or hasattr(exchange, "fetch_status"),
+        "fetchTime": bool(has_map.get("fetchTime")) or hasattr(exchange, "fetch_time"),
+        "fetchBalance": bool(has_map.get("fetchBalance")) or hasattr(exchange, "fetch_balance"),
+        "createOrder": bool(has_map.get("createOrder")) or hasattr(exchange, "create_order"),
+    }
+
+
+def _timed(operation: Callable[[], Any]) -> tuple[Any, int]:
+    start = perf_counter()
+    result = operation()
+    return result, int((perf_counter() - start) * 1000)

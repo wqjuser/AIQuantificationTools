@@ -5206,6 +5206,12 @@ em {
   margin-top: 10px;
 }
 
+.adapter-health-probe-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .adapter-certification-apply-list {
   display: grid;
   gap: 8px;
@@ -5222,6 +5228,15 @@ em {
 }
 
 .adapter-certification-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.adapter-health-probe-row {
   min-width: 0;
   border: 1px solid #27364a;
   border-left: 3px solid #2a3b51;
@@ -5247,6 +5262,10 @@ em {
   border-left-color: #4cc9ad;
 }
 
+.adapter-health-probe-row.positive {
+  border-left-color: #4cc9ad;
+}
+
 .adapter-certification-apply-row.positive {
   border-left-color: #4cc9ad;
 }
@@ -5259,6 +5278,10 @@ em {
   border-left-color: #e8be62;
 }
 
+.adapter-health-probe-row.warning {
+  border-left-color: #e8be62;
+}
+
 .adapter-certification-apply-row.warning {
   border-left-color: #e8be62;
 }
@@ -5268,6 +5291,10 @@ em {
 }
 
 .adapter-certification-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-health-probe-row.risk {
   border-left-color: #ff7f6d;
 }
 
@@ -5289,6 +5316,13 @@ em {
   gap: 10px;
 }
 
+.adapter-health-probe-row div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .adapter-certification-apply-row div {
   display: flex;
   align-items: center;
@@ -5304,6 +5338,10 @@ em {
 .adapter-certification-row span,
 .adapter-certification-row p,
 .adapter-certification-row em,
+.adapter-health-probe-row strong,
+.adapter-health-probe-row span,
+.adapter-health-probe-row p,
+.adapter-health-probe-row em,
 .adapter-certification-apply-row strong,
 .adapter-certification-apply-row span,
 .adapter-certification-apply-row p,
@@ -5313,6 +5351,7 @@ em {
 
 .adapter-ledger-row strong,
 .adapter-certification-row strong,
+.adapter-health-probe-row strong,
 .adapter-certification-apply-row strong {
   color: #e8f0f8;
   font-size: 13px;
@@ -5322,6 +5361,8 @@ em {
 .adapter-ledger-row em,
 .adapter-certification-row span,
 .adapter-certification-row em,
+.adapter-health-probe-row span,
+.adapter-health-probe-row em,
 .adapter-certification-apply-row span,
 .adapter-certification-apply-row em {
   color: #9fb0c3;
@@ -5330,6 +5371,7 @@ em {
 
 .adapter-ledger-row p,
 .adapter-certification-row p,
+.adapter-health-probe-row p,
 .adapter-certification-apply-row p {
   color: #c9d7e7;
   font-size: 12px;
@@ -5339,10 +5381,43 @@ em {
 
 .adapter-ledger-row em,
 .adapter-certification-row em,
+.adapter-health-probe-row em,
 .adapter-certification-apply-row em {
   display: block;
   font-style: normal;
   margin-top: 5px;
+}
+
+.adapter-health-probe-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.adapter-health-probe-check {
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  color: #9fb0c3;
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.adapter-health-probe-check.passed {
+  border-color: rgba(76, 201, 173, 0.45);
+  color: #7ce4d0;
+}
+
+.adapter-health-probe-check.review,
+.adapter-health-probe-check.skipped {
+  border-color: rgba(232, 190, 98, 0.45);
+  color: #f0cf83;
+}
+
+.adapter-health-probe-check.blocked {
+  border-color: rgba(255, 127, 109, 0.45);
+  color: #ffab9e;
 }
 
 .settings-source-row,

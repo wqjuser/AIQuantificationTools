@@ -18,6 +18,7 @@
 - 多语言：`apps/web/src/lib/i18n.ts` 提供 `zh-CN / en-US` 语言包，默认中文，顶部语言控件可切换。
 - 实时报价：参考 QuantDinger 的 REST quote + watchlist cache 方法，A 股走腾讯 quote，美股优先 Finnhub 并降级 yfinance，加密货币走 ccxt ticker，API 暴露 `/api/market/quotes`。
 - 实盘图表：参考 QuantDinger 的 `/api/kline` + `klinecharts` 方法，前端图表从 `/api/market/klines` 拉取 OHLCV，A 股日线优先使用腾讯 `fqkline`。
+- ccxt sandbox 健康检查：`GET /api/execution/adapter-health/ccxt-sandbox` 会在只读模式下检查 ccxt sandbox/testnet 的 `set_sandbox_mode(true)`、markets、status/time 和可选账户同步；Settings 页面会显示检查结果。该能力不下单、不撤单、不写密钥、不启用实盘。
 
 ## Commands
 
@@ -29,7 +30,7 @@ npm run api
 npm run dev
 ```
 
-前端默认连接 `http://127.0.0.1:8765`。如需更换本地核心地址，可在 `.env` 中设置：
+前端默认使用同源 `/api`，Docker 通过 Nginx 反向代理到核心服务，本地 `npm run dev` 通过 Vite 代理到 `http://127.0.0.1:8765`。如需更换核心地址，可在 `.env` 中设置：
 
 ```powershell
 VITE_QUANT_API_BASE=http://127.0.0.1:8765
@@ -83,6 +84,19 @@ $env:INSTALL_DATA_DEPS="true"
 docker compose build api
 docker compose up
 ```
+
+ccxt sandbox/testnet 健康检查只读取环境变量是否存在，不会把密钥值返回给浏览器。通用变量和交易所前缀变量都支持：
+
+```powershell
+$env:INSTALL_DATA_DEPS="true"
+$env:CCXT_DEFAULT_EXCHANGE="binance"
+$env:CCXT_BINANCE_API_KEY="your_testnet_key"
+$env:CCXT_BINANCE_SECRET="your_testnet_secret"
+$env:CCXT_TIMEOUT="10000"
+docker compose up --build
+```
+
+如果未安装 `ccxt` 或未配置测试网 key，Settings 会显示 blocked/review；这属于安全状态，不代表实盘可用。
 
 停止服务但保留 SQLite 数据卷：
 

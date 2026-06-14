@@ -157,6 +157,7 @@ from quant_core.execution import (
     portfolio_paper_order_simulation_to_payload,
     validate_paper_execution_handoff,
 )
+from quant_core.execution_adapter_health import execution_adapter_health_probe_to_payload, probe_ccxt_sandbox_health
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_calendar import build_market_calendar_status
@@ -289,6 +290,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     audit_signer_name = os.environ.get("AIQT_AUDIT_SIGNER_NAME", "Local Audit Key")
     audit_chain_id = os.environ.get("AIQT_AUDIT_CHAIN_ID", "audit-chain-local")
     audit_signing_keys_json = os.environ.get("AIQT_AUDIT_SIGNING_KEYS_JSON", "")
+    execution_adapter_health_exchange_factory = None
+    execution_adapter_health_environ = None
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -2115,6 +2118,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if len(production_route_reviews) >= limit:
                     break
             self._send_json({"adapterProductionRouteReviews": production_route_reviews})
+            return
+        if parsed.path == "/api/execution/adapter-health/ccxt-sandbox":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", ["ccxt-live"])[0].strip() or "ccxt-live"
+            exchange_id = (
+                query.get("exchange", [""])[0].strip()
+                or os.environ.get("CCXT_DEFAULT_EXCHANGE", "binance").strip()
+                or "binance"
+            )
+            probe = probe_ccxt_sandbox_health(
+                adapter_id=adapter_id,
+                exchange_id=exchange_id,
+                environ=type(self).execution_adapter_health_environ,
+                exchange_factory=type(self).execution_adapter_health_exchange_factory,
+            )
+            self._send_json({"adapterHealthProbe": execution_adapter_health_probe_to_payload(probe)})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)

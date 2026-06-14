@@ -4867,6 +4867,196 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("production-route-review-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("production-route-review-private-key-should-not-leak", serialized)
 
+    def test_ccxt_sandbox_health_probe_runs_readonly_checks_without_order_routing(self):
+        import json
+
+        from quant_core.execution_adapter_health import (
+            execution_adapter_health_probe_to_payload,
+            probe_ccxt_sandbox_health,
+        )
+
+        class FakeExchange:
+            has = {"fetchStatus": True, "fetchTime": True, "fetchBalance": True, "createOrder": True}
+
+            def __init__(self, config):
+                self.config = config
+                self.calls = ["init"]
+                self.markets = {"BTC/USDT": {}, "ETH/USDT": {}}
+
+            def set_sandbox_mode(self, enabled):
+                self.calls.append(("set_sandbox_mode", enabled))
+
+            def load_markets(self):
+                self.calls.append("load_markets")
+                return self.markets
+
+            def fetch_status(self):
+                self.calls.append("fetch_status")
+                return {"status": "ok", "apiSecret": "status-secret-should-not-leak"}
+
+            def fetch_time(self):
+                self.calls.append("fetch_time")
+                return 1780000000000
+
+            def fetch_balance(self):
+                self.calls.append("fetch_balance")
+                return {"total": {"USDT": 1000}, "password": "balance-secret-should-not-leak"}
+
+            def create_order(self, *args, **kwargs):
+                self.calls.append("create_order")
+                raise AssertionError("health probe must never place orders")
+
+        created = {}
+
+        def exchange_factory(exchange_id, config):
+            created["exchange_id"] = exchange_id
+            created["exchange"] = FakeExchange(config)
+            return created["exchange"]
+
+        probe = probe_ccxt_sandbox_health(
+            adapter_id="ccxt-live",
+            exchange_id="binance",
+            environ={
+                "CCXT_BINANCE_API_KEY": "unit-test-api-key",
+                "CCXT_BINANCE_SECRET": "unit-test-api-secret",
+                "CCXT_TIMEOUT": "3210",
+            },
+            exchange_factory=exchange_factory,
+            generated_at=datetime(2026, 6, 14, 8, 0, tzinfo=timezone.utc),
+        )
+        payload = execution_adapter_health_probe_to_payload(probe)
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+        exchange = created["exchange"]
+        self.assertEqual(created["exchange_id"], "binance")
+        self.assertEqual(exchange.config["timeout"], 3210)
+        self.assertEqual(exchange.calls[:2], ["init", ("set_sandbox_mode", True)])
+        self.assertIn("load_markets", exchange.calls)
+        self.assertIn("fetch_status", exchange.calls)
+        self.assertIn("fetch_time", exchange.calls)
+        self.assertIn("fetch_balance", exchange.calls)
+        self.assertNotIn("create_order", exchange.calls)
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["marketCount"], 2)
+        self.assertEqual(payload["accountSyncState"], "ready")
+        self.assertTrue(payload["credentials"]["apiKeyConfigured"])
+        self.assertEqual(payload["credentials"]["apiKeySource"], "CCXT_BINANCE_API_KEY")
+        self.assertTrue(payload["credentials"]["secretConfigured"])
+        self.assertEqual(payload["credentials"]["secretSource"], "CCXT_BINANCE_SECRET")
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertFalse(payload["orderRoutingEnabled"])
+        self.assertNotIn("apiKey", payload["metadata"])
+        self.assertNotIn("secret", payload["metadata"])
+        self.assertNotIn("password", payload["metadata"])
+        self.assertNotIn("unit-test-api-key", serialized)
+        self.assertNotIn("unit-test-api-secret", serialized)
+        self.assertNotIn("status-secret-should-not-leak", serialized)
+        self.assertNotIn("balance-secret-should-not-leak", serialized)
+
+    def test_ccxt_sandbox_health_probe_blocks_when_ccxt_package_is_missing(self):
+        import json
+
+        from quant_core.execution_adapter_health import (
+            execution_adapter_health_probe_to_payload,
+            probe_ccxt_sandbox_health,
+        )
+
+        probe = probe_ccxt_sandbox_health(
+            adapter_id="ccxt-live",
+            exchange_id="binance",
+            environ={"CCXT_API_KEY": "missing-package-secret-should-not-leak"},
+            ccxt_module=None,
+            generated_at=datetime(2026, 6, 14, 8, 0, tzinfo=timezone.utc),
+        )
+        payload = execution_adapter_health_probe_to_payload(probe)
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+        self.assertEqual(payload["status"], "blocked")
+        self.assertEqual(payload["blockedReasons"], ["ccxt_not_installed"])
+        self.assertEqual(payload["checks"][0]["id"], "ccxt-installed")
+        self.assertEqual(payload["checks"][0]["status"], "blocked")
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertFalse(payload["orderRoutingEnabled"])
+        self.assertNotIn("missing-package-secret-should-not-leak", serialized)
+
+    def test_ccxt_sandbox_health_probe_api_returns_secret_free_payload(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        class FakeExchange:
+            has = {"fetchStatus": True, "fetchTime": True, "fetchBalance": True}
+
+            def __init__(self, config):
+                self.config = config
+                self.markets = {"BTC/USDT": {}}
+                self.calls = []
+
+            def set_sandbox_mode(self, enabled):
+                self.calls.append(("set_sandbox_mode", enabled))
+
+            def load_markets(self):
+                self.calls.append("load_markets")
+                return self.markets
+
+            def fetch_status(self):
+                self.calls.append("fetch_status")
+                return {"status": "ok"}
+
+            def fetch_time(self):
+                self.calls.append("fetch_time")
+                return 1780000000000
+
+            def fetch_balance(self):
+                self.calls.append("fetch_balance")
+                return {"free": {"USDT": 100}}
+
+        def exchange_factory(exchange_id, config):
+            return FakeExchange(config)
+
+        class TestHandler(QuantApiHandler):
+            execution_adapter_health_exchange_factory = exchange_factory
+            execution_adapter_health_environ = {
+                "CCXT_BINANCE_API_KEY": "api-route-key-should-not-leak",
+                "CCXT_BINANCE_SECRET": "api-route-secret-should-not-leak",
+            }
+
+        server = HTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+        try:
+            connection.request(
+                "GET",
+                "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live",
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["adapterHealthProbe"]["adapterId"], "ccxt-live")
+        self.assertEqual(payload["adapterHealthProbe"]["exchangeId"], "binance")
+        self.assertEqual(payload["adapterHealthProbe"]["status"], "ready")
+        self.assertFalse(payload["adapterHealthProbe"]["liveTradingAllowed"])
+        self.assertTrue(payload["adapterHealthProbe"]["paperOnly"])
+        self.assertFalse(payload["adapterHealthProbe"]["orderRoutingEnabled"])
+        self.assertNotIn("apiKey", payload["adapterHealthProbe"]["metadata"])
+        self.assertNotIn("secret", payload["adapterHealthProbe"]["metadata"])
+        self.assertNotIn("password", payload["adapterHealthProbe"]["metadata"])
+        self.assertNotIn("api-route-key-should-not-leak", serialized)
+        self.assertNotIn("api-route-secret-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection

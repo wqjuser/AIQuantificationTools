@@ -73,6 +73,7 @@ import {
   loadExecutionAdapterSandboxProbePlans,
   loadExecutionAdapterSandboxProbeReviews,
   loadExecutionAdapterProductionRouteReviews,
+  loadExecutionAdapterHealthProbe,
   loadExecutionAdapterRuntimeReloadAcceptances,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
@@ -151,6 +152,7 @@ import {
   ExecutionAdapterSandboxProbePlanResult,
   ExecutionAdapterSandboxProbeReviewResult,
   ExecutionAdapterProductionRouteReviewResult,
+  ExecutionAdapterHealthProbeLoadResult,
   ExecutionAdapterRuntimeReloadAcceptanceResult,
   ExecutionAdapterRuntimeReloadExecutionResult,
   ExecutionAdapterRuntimeReloadPlanResult,
@@ -230,6 +232,7 @@ import {
   buildExecutionAdapterSandboxProbePlanRows,
   buildExecutionAdapterSandboxProbeReviewRows,
   buildExecutionAdapterProductionRouteReviewRows,
+  buildExecutionAdapterHealthProbeRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
   buildExecutionAdapterRuntimeReloadAcceptanceRows,
@@ -349,6 +352,7 @@ import {
   ExecutionAdapterSandboxProbePlanRow,
   ExecutionAdapterSandboxProbeReviewRow,
   ExecutionAdapterProductionRouteReviewRow,
+  ExecutionAdapterHealthProbeRow,
   ExecutionAdapterSecretMaterializationRow,
   ExecutionAdapterSecretReferenceRow,
   ExecutionAdapterRuntimeReloadAcceptanceRow,
@@ -496,6 +500,9 @@ const initialSettingsStatusState: PlatformSettingsResult = {
   source: "fallback"
 };
 const initialExecutionAdapterLedgerState: ExecutionAdapterLedgerResult = {
+  source: "fallback"
+};
+const initialExecutionAdapterHealthProbeState: ExecutionAdapterHealthProbeLoadResult = {
   source: "fallback"
 };
 const initialAuditSigningKeyRegistryState: AuditSigningKeyRegistryResult = {
@@ -1354,6 +1361,9 @@ export function App() {
   const [executionAdapterLedger, setExecutionAdapterLedger] = useState<ExecutionAdapterLedgerResult>(
     initialExecutionAdapterLedgerState
   );
+  const [executionAdapterHealthProbe, setExecutionAdapterHealthProbe] =
+    useState<ExecutionAdapterHealthProbeLoadResult>(initialExecutionAdapterHealthProbeState);
+  const [isRefreshingAdapterHealthProbe, setIsRefreshingAdapterHealthProbe] = useState(false);
   const [executionAdapterCertifications, setExecutionAdapterCertifications] = useState<
     ExecutionAdapterCertificationRun[]
   >([]);
@@ -1684,6 +1694,7 @@ export function App() {
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
   const executionAdapterLedgerRows = buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger);
+  const executionAdapterHealthProbeRows = buildExecutionAdapterHealthProbeRows(executionAdapterHealthProbe.adapterHealthProbe);
   const executionAdapterCertificationRows = buildExecutionAdapterCertificationRows(executionAdapterCertifications);
   const executionAdapterCertificationApplyRows = buildExecutionAdapterCertificationApplyRows(executionAdapterCertificationApplies);
   const executionAdapterControlledRestartEvidenceRows = buildExecutionAdapterControlledRestartEvidenceRows(executionAdapterControlledRestartEvidence);
@@ -2318,10 +2329,25 @@ export function App() {
     void refreshMarketCalendarStatus();
   }, [refreshMarketCalendarStatus]);
 
+  const refreshExecutionAdapterHealthProbe = useCallback(async () => {
+    setIsRefreshingAdapterHealthProbe(true);
+    try {
+      const result = await loadExecutionAdapterHealthProbe(quantCoreBaseUrl, {
+        adapterId: "ccxt-live",
+        exchange: "binance"
+      });
+      setExecutionAdapterHealthProbe(result);
+      return result;
+    } finally {
+      setIsRefreshingAdapterHealthProbe(false);
+    }
+  }, []);
+
   const refreshSettingsStatus = useCallback(async () => {
-    const [settingsResult, adapterLedgerResult, watchlistRefreshHistory] = await Promise.all([
+    const [settingsResult, adapterLedgerResult, adapterHealthProbeResult, watchlistRefreshHistory] = await Promise.all([
       loadPlatformSettings(quantCoreBaseUrl),
       loadExecutionAdapterLedger(quantCoreBaseUrl),
+      loadExecutionAdapterHealthProbe(quantCoreBaseUrl, { adapterId: "ccxt-live", exchange: "binance" }),
       loadWatchlistCacheRefreshRuns(quantCoreBaseUrl, { limit: 4 })
     ]);
     const liveAdapters = settingsResult.settings?.executionAdapters.filter((row) => row.route === "live") ?? [];
@@ -2365,6 +2391,7 @@ export function App() {
     setSettingsStatus(settingsResult);
     setWatchlistCacheRefreshHistory(watchlistRefreshHistory.watchlistRefreshes);
     setExecutionAdapterLedger(adapterLedgerResult);
+    setExecutionAdapterHealthProbe(adapterHealthProbeResult);
     setExecutionAdapterCertifications(certificationResults.flatMap((result) => result.adapterCertifications));
     setExecutionAdapterCertificationApplies(applyResults.flatMap((result) => result.certificationApplies));
     setExecutionAdapterControlledRestartEvidence(restartEvidenceResults.flatMap((result) => result.controlledRestartEvidence));
@@ -6721,11 +6748,13 @@ export function App() {
             adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
             adapterCertificationApplyConfirmations={adapterCertificationApplyConfirmations}
             adapterCertificationRows={executionAdapterCertificationRows}
+            adapterHealthProbeRows={executionAdapterHealthProbeRows}
             adapterRows={brokerAdapterRows}
             adapterLedgerRows={executionAdapterLedgerRows}
             applyingAdapterCertificationId={applyingAdapterCertificationId}
             className="workflow-settings-panel"
             i18n={i18n}
+            isRefreshingAdapterHealthProbe={isRefreshingAdapterHealthProbe}
             onApplyAdapterCertification={applyAdapterCertificationPreflight}
             onApplyConfirmationChange={updateAdapterCertificationApplyConfirmation}
             onOrchestrationDryRunConfirmationChange={updateAdapterOrchestrationDryRunConfirmation}
@@ -6743,6 +6772,7 @@ export function App() {
             onRecordOrchestrationDryRun={recordAdapterOrchestrationDryRun}
             onRecordOrchestrationExecution={recordAdapterOrchestrationExecution}
             onRecordRuntimeReloadAcceptance={recordAdapterRuntimeReloadAcceptance}
+            onRefreshAdapterHealthProbe={refreshExecutionAdapterHealthProbe}
             onRefreshContext={refreshCacheContext}
             onRuntimeReloadAcceptanceConfirmationChange={updateAdapterRuntimeReloadAcceptanceConfirmation}
             onProductionRouteReviewConfirmationChange={updateAdapterProductionRouteReviewConfirmation}
@@ -9876,11 +9906,13 @@ function PlatformSettingsPanel({
   adapterCertificationApplyConfirmations,
   adapterCertificationApplyRows,
   adapterCertificationRows,
+  adapterHealthProbeRows,
   adapterRows,
   adapterLedgerRows,
   applyingAdapterCertificationId,
   className,
   i18n,
+  isRefreshingAdapterHealthProbe,
   onApplyAdapterCertification,
   onApplyConfirmationChange,
   onHumanConfirmationChange,
@@ -9899,6 +9931,7 @@ function PlatformSettingsPanel({
   onRecordSandboxProbeExecution,
   onRecordSandboxProbePlan,
   onRecordSandboxProbeReview,
+  onRefreshAdapterHealthProbe,
   onRefreshContext,
   onRuntimeReloadAcceptanceConfirmationChange,
   recordingAdapterCertificationId,
@@ -9935,11 +9968,13 @@ function PlatformSettingsPanel({
   adapterCertificationApplyConfirmations: Record<string, ExecutionAdapterCertificationApplyConfirmations>;
   adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
+  adapterHealthProbeRows: ExecutionAdapterHealthProbeRow[];
   adapterRows: BrokerAdapterRow[];
   adapterLedgerRows: ExecutionAdapterLedgerRow[];
   applyingAdapterCertificationId?: string | null;
   className?: string;
   i18n: AppI18n;
+  isRefreshingAdapterHealthProbe?: boolean;
   onApplyAdapterCertification?: (row: ExecutionAdapterCertificationRow) => void;
   onApplyConfirmationChange?: (
     certificationId: string,
@@ -9990,6 +10025,7 @@ function PlatformSettingsPanel({
   onRecordSandboxProbeExecution?: (row: ExecutionAdapterSandboxProbePlanRow) => void;
   onRecordSandboxProbePlan?: (row: ExecutionAdapterHumanConfirmationRow) => void;
   onRecordSandboxProbeReview?: (row: ExecutionAdapterSandboxProbeExecutionRow) => void;
+  onRefreshAdapterHealthProbe?: () => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
   onRuntimeReloadAcceptanceConfirmationChange?: (
     executionId: string,
@@ -10165,6 +10201,58 @@ function PlatformSettingsPanel({
             ) : null}
           </article>
         ))}
+      </div>
+      <div className="adapter-health-probe-list">
+        <div className="paper-blotter-title">
+          <span>{i18n.locale === "zh-CN" ? "真实适配器健康检查" : "Real adapter health"}</span>
+          <button
+            className="adapter-certification-button"
+            disabled={isRefreshingAdapterHealthProbe || !onRefreshAdapterHealthProbe}
+            onClick={onRefreshAdapterHealthProbe}
+            type="button"
+          >
+            <RefreshCw size={13} />
+            {isRefreshingAdapterHealthProbe
+              ? i18n.locale === "zh-CN"
+                ? "检查中"
+                : "Checking"
+              : i18n.locale === "zh-CN"
+                ? "刷新"
+                : "Refresh"}
+          </button>
+        </div>
+        {adapterHealthProbeRows.length ? (
+          adapterHealthProbeRows.map((row) => (
+            <article className={`adapter-health-probe-row ${row.tone}`} key={row.id}>
+              <div>
+                <strong>
+                  {row.provider.toUpperCase()} {row.exchangeId} · {adapterHealthProbeStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <span>
+                  {row.marketSummary} · {adapterHealthProbeCredentialSummaryLabel(i18n, row.credentialSummary)}
+                </span>
+              </div>
+              <p>
+                {adapterHealthProbeCheckSummaryLabel(i18n, row.checkSummary)} ·{" "}
+                {adapterHealthProbeBoundaryLabel(i18n, row.boundary)}
+              </p>
+              <em>{adapterHealthProbeBlockerLabel(i18n, row.blockerSummary)}</em>
+              <div className="adapter-health-probe-checks">
+                {row.checks.slice(0, 4).map((check) => (
+                  <span className={`adapter-health-probe-check ${check.status}`} key={`${row.id}-${check.id}`}>
+                    {check.label}: {adapterHealthProbeCheckStatusLabel(i18n, check.status)}
+                  </span>
+                ))}
+              </div>
+            </article>
+          ))
+        ) : (
+          <p className="empty-state">
+            {i18n.locale === "zh-CN"
+              ? "等待本地核心返回 ccxt sandbox/testnet 只读健康检查。"
+              : "Waiting for the local core to return the ccxt sandbox/testnet read-only health probe."}
+          </p>
+        )}
       </div>
       {adapterLedgerRows.length ? (
         <div className="adapter-ledger-list">
@@ -18472,6 +18560,65 @@ function adapterProductionRouteReviewStatusLabel(i18n: AppI18n, statusLabel: str
       Blocked: "阻断",
       "Route review recorded": "路由复核已记录"
     }[statusLabel] ?? statusLabel
+  );
+}
+
+function adapterHealthProbeStatusLabel(i18n: AppI18n, statusLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return statusLabel;
+  }
+  return (
+    {
+      Ready: "可用",
+      "Review required": "待复核",
+      Blocked: "阻断"
+    }[statusLabel] ?? statusLabel
+  );
+}
+
+function adapterHealthProbeCredentialSummaryLabel(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  return summary
+    .replace("API key missing", "API Key 未配置")
+    .replace("secret missing", "Secret 未配置")
+    .replace("API key", "API Key")
+    .replace("secret", "Secret");
+}
+
+function adapterHealthProbeCheckSummaryLabel(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  return summary.replace("passed", "通过").replace("review", "复核").replace("blocked", "阻断");
+}
+
+function adapterHealthProbeBoundaryLabel(i18n: AppI18n, boundary: string): string {
+  if (i18n.locale === "en-US") {
+    return boundary;
+  }
+  return boundary.replace("Paper only", "仅模拟盘").replace("order routing disabled", "订单路由关闭");
+}
+
+function adapterHealthProbeBlockerLabel(i18n: AppI18n, blockerSummary: string): string {
+  if (i18n.locale === "en-US") {
+    return blockerSummary;
+  }
+  return blockerSummary === "No blockers" ? "无阻断" : blockerSummary;
+}
+
+function adapterHealthProbeCheckStatusLabel(i18n: AppI18n, status: string): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return (
+    {
+      passed: "通过",
+      review: "复核",
+      blocked: "阻断",
+      skipped: "跳过"
+    }[status] ?? status
   );
 }
 

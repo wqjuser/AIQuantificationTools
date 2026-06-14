@@ -85,6 +85,7 @@ AI Review 现在复用同一个 `BacktestParameterScanSummary` 生成 `parameter
 - `GET /api/market/klines?market=ashare&symbol=600000&timeframe=1d&limit=160`：返回图表用 OHLCV bars、数据质量、source 和 warning。
 - `GET /api/settings/status`：返回 Settings 工作区只读状态，包括 A 股/美股/加密数据源、可选 API Key 是否本地配置、SQLite 行情缓存路径、缓存行数、市场/标的/周期上下文数量、最新 K 线时间、最近缓存上下文清单、每个上下文的 `fresh/stale/empty` freshness、顶层 `freshnessSummary` 和执行适配器闸门；响应只暴露布尔配置状态，不包含 secret。
 - `GET /api/execution/adapter-ledger`：返回真实适配器前的只读执行状态账本，按 paper/local、A 股、美股和加密路由输出当前状态、状态事件、闸门通过数、阻断原因和下一步；该接口只从 Settings 状态派生，不读取交易密钥、不连接真实券商、不放开实盘交易。
+- `GET /api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt-live&exchange=binance`：对可选 `ccxt` 依赖执行只读 sandbox/testnet 健康检查，先调用 `set_sandbox_mode(True)`，再检查 markets、exchange status/time 和可选账户同步；响应只返回密钥配置来源名和布尔状态，不返回密钥值，不下单、不撤单、不启用实盘路由。
 - `POST /api/cache/refresh`：按 `market/symbol/timeframe/limit` 主动刷新单个缓存上下文，复用现有 K 线适配器写入 SQLite，并返回刷新摘要、数据质量和最新 Settings 状态；该接口只影响行情缓存，不触发研究 run、AI 评审或交易执行。
 - `POST /api/cache/watchlist-refreshes`：按提交的 watchlist 顺序批量刷新同一周期 K 线；完整数据写入 SQLite，incomplete 或异常数据只记录 skipped/failed，不污染缓存。响应包含 `watchlistRefresh` run id、逐标的质量/行数/错误、汇总计数和最新 Settings 状态。
 - `GET /api/cache/watchlist-refreshes?limit=10`：回读最近 watchlist cache refresh run，用于行情中心显示最近多次刷新历史和选中运行的逐标的刷新/跳过/失败明细；前端历史行只切换明细视图，并把选中的 run id 写入 `watchlistRefreshRun` URL 参数用于刷新后恢复或外部引用；明细行会携带可切换研究上下文的标的信息，并为后续审计/任务卡引用数据准备证据。

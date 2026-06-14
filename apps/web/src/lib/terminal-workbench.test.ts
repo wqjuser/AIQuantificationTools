@@ -52,6 +52,7 @@ import {
   buildExecutionAdapterSandboxProbePlanRows,
   buildExecutionAdapterSandboxProbeReviewRows,
   buildExecutionAdapterProductionRouteReviewRows,
+  buildExecutionAdapterHealthProbeRows,
   buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterSecretMaterializationRows,
@@ -11813,6 +11814,96 @@ describe("terminal workbench model", () => {
       }
     ]);
     expect(JSON.stringify(rows)).not.toContain("[redacted]");
+  });
+
+  test("builds compact ccxt sandbox health probe rows", () => {
+    const rows = buildExecutionAdapterHealthProbeRows({
+      schemaVersion: 1,
+      probeId: "execution-adapter-health-ccxt-live-1",
+      adapterId: "ccxt-live",
+      provider: "ccxt",
+      exchangeId: "binance",
+      mode: "sandbox",
+      status: "review",
+      generatedAt: "2026-06-14T08:00:00+00:00",
+      checks: [
+        {
+          id: "markets-loaded",
+          label: "markets loaded",
+          status: "passed",
+          detail: "Loaded 1200 markets from sandbox/testnet.",
+          latencyMs: 12
+        },
+        {
+          id: "account-sync",
+          label: "account sync",
+          status: "review",
+          detail: "Sandbox/testnet API key and secret are not both configured.",
+          latencyMs: null
+        }
+      ],
+      capabilities: {
+        sandboxMode: true,
+        loadMarkets: true,
+        fetchStatus: true,
+        fetchTime: true,
+        fetchBalance: true,
+        createOrder: true
+      },
+      credentials: {
+        apiKeyConfigured: false,
+        apiKeySource: null,
+        secretConfigured: false,
+        secretSource: null,
+        passwordConfigured: false,
+        passwordSource: null
+      },
+      marketCount: 1200,
+      exchangeStatus: "ok",
+      serverTimeMs: 1780000000000,
+      accountSyncState: "credentials_missing",
+      blockedReasons: [],
+      metadata: { readOnly: true },
+      paperOnly: true,
+      liveTradingAllowed: false,
+      orderRoutingEnabled: false
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "execution-adapter-health-ccxt-live-1",
+        adapterId: "ccxt-live",
+        provider: "ccxt",
+        exchangeId: "binance",
+        mode: "sandbox",
+        timestamp: "2026-06-14T08:00:00+00:00",
+        status: "review",
+        statusLabel: "Review required",
+        marketSummary: "1,200 markets",
+        credentialSummary: "API key missing · secret missing",
+        accountSyncSummary: "credentials_missing",
+        checkSummary: "1 passed / 1 review / 0 blocked",
+        blockerSummary: "No blockers",
+        boundary: "Paper only · order routing disabled",
+        tone: "warning",
+        checks: [
+          {
+            id: "markets-loaded",
+            label: "markets loaded",
+            status: "passed",
+            detail: "Loaded 1200 markets from sandbox/testnet.",
+            latencyMs: 12
+          },
+          {
+            id: "account-sync",
+            label: "account sync",
+            status: "review",
+            detail: "Sandbox/testnet API key and secret are not both configured.",
+            latencyMs: null
+          }
+        ]
+      }
+    ]);
   });
 
   test("blocks promotion readiness before an audited run is bound", () => {

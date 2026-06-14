@@ -26,7 +26,7 @@ import {
   type StrategySnapshot
 } from "./terminal-workbench";
 
-export const defaultQuantCoreBaseUrl = "http://127.0.0.1:8765";
+export const defaultQuantCoreBaseUrl = "/";
 export type ResearchTimeframe = Timeframe;
 
 export type WorkspaceSource = "core" | "fallback";
@@ -2273,6 +2273,55 @@ export interface ExecutionAdapterProductionRouteReviewHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterHealthProbeStatus = "ready" | "review" | "blocked";
+export type ExecutionAdapterHealthProbeCheckStatus = "passed" | "review" | "blocked" | "skipped";
+
+export interface ExecutionAdapterHealthProbeCheck {
+  id: string;
+  label: string;
+  status: ExecutionAdapterHealthProbeCheckStatus;
+  detail: string;
+  latencyMs: number | null;
+}
+
+export interface ExecutionAdapterHealthProbeCredentials {
+  apiKeyConfigured: boolean;
+  apiKeySource: string | null;
+  secretConfigured: boolean;
+  secretSource: string | null;
+  passwordConfigured: boolean;
+  passwordSource: string | null;
+}
+
+export interface ExecutionAdapterHealthProbeResult {
+  schemaVersion: 1;
+  probeId: string;
+  adapterId: string;
+  provider: "ccxt";
+  exchangeId: string;
+  mode: "sandbox";
+  status: ExecutionAdapterHealthProbeStatus;
+  generatedAt: string;
+  checks: ExecutionAdapterHealthProbeCheck[];
+  capabilities: Record<string, boolean>;
+  credentials: ExecutionAdapterHealthProbeCredentials;
+  marketCount: number;
+  exchangeStatus: string | null;
+  serverTimeMs: number | null;
+  accountSyncState: string;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  orderRoutingEnabled: boolean;
+}
+
+export interface ExecutionAdapterHealthProbeLoadResult {
+  adapterHealthProbe?: ExecutionAdapterHealthProbeResult;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type GoldenPathOverallStatus = "ready" | "review" | "blocked";
 export type GoldenPathStepStatus = "passed" | "review" | "blocked";
 export type GoldenPathWorkspaceStatus = "ready" | "needs_run" | "blocked";
@@ -3293,6 +3342,20 @@ export function buildExecutionAdapterSandboxProbeReviewUrl(baseUrl: string): str
 
 export function buildExecutionAdapterProductionRouteReviewUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-production-route-reviews");
+}
+
+export function buildExecutionAdapterHealthProbeUrl(
+  baseUrl: string,
+  params: { adapterId?: string; exchange?: string } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-health/ccxt-sandbox", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.exchange?.trim()) {
+      url.searchParams.set("exchange", params.exchange.trim());
+    }
+  });
 }
 
 export function buildExecutionAdapterCertificationAppliesUrl(
@@ -6424,6 +6487,32 @@ export async function recordExecutionAdapterProductionRouteReview(
   }
 }
 
+export async function loadExecutionAdapterHealthProbe(
+  baseUrl: string,
+  params: { adapterId?: string; exchange?: string } = {},
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterHealthProbeLoadResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterHealthProbeUrl(baseUrl, params));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterHealthProbePayload(payload)) {
+      throw new Error("Invalid execution adapter health probe contract");
+    }
+    return {
+      adapterHealthProbe: payload.adapterHealthProbe,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter health probe error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterCertifications(
   baseUrl: string,
   adapterId: string,
@@ -9139,6 +9228,82 @@ function isExecutionAdapterLedgerEvent(value: unknown): value is ExecutionAdapte
   );
 }
 
+function isExecutionAdapterHealthProbePayload(
+  value: unknown
+): value is { adapterHealthProbe: ExecutionAdapterHealthProbeResult } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterHealthProbe?: unknown };
+  return isExecutionAdapterHealthProbeResult(payload.adapterHealthProbe);
+}
+
+function isExecutionAdapterHealthProbeResult(value: unknown): value is ExecutionAdapterHealthProbeResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const probe = value as Partial<ExecutionAdapterHealthProbeResult>;
+  return (
+    probe.schemaVersion === 1 &&
+    typeof probe.probeId === "string" &&
+    typeof probe.adapterId === "string" &&
+    probe.provider === "ccxt" &&
+    typeof probe.exchangeId === "string" &&
+    probe.mode === "sandbox" &&
+    isExecutionAdapterHealthProbeStatus(probe.status) &&
+    typeof probe.generatedAt === "string" &&
+    Array.isArray(probe.checks) &&
+    probe.checks.every(isExecutionAdapterHealthProbeCheck) &&
+    isBooleanRecord(probe.capabilities) &&
+    isExecutionAdapterHealthProbeCredentials(probe.credentials) &&
+    typeof probe.marketCount === "number" &&
+    (probe.exchangeStatus === null || typeof probe.exchangeStatus === "string") &&
+    (probe.serverTimeMs === null || typeof probe.serverTimeMs === "number") &&
+    typeof probe.accountSyncState === "string" &&
+    Array.isArray(probe.blockedReasons) &&
+    probe.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(probe.metadata) &&
+    probe.paperOnly === true &&
+    probe.liveTradingAllowed === false &&
+    probe.orderRoutingEnabled === false
+  );
+}
+
+function isExecutionAdapterHealthProbeCheck(value: unknown): value is ExecutionAdapterHealthProbeCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<ExecutionAdapterHealthProbeCheck>;
+  return (
+    typeof check.id === "string" &&
+    typeof check.label === "string" &&
+    isExecutionAdapterHealthProbeCheckStatus(check.status) &&
+    typeof check.detail === "string" &&
+    (check.latencyMs === null || typeof check.latencyMs === "number")
+  );
+}
+
+function isExecutionAdapterHealthProbeCredentials(
+  value: unknown
+): value is ExecutionAdapterHealthProbeCredentials {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const credentials = value as Partial<ExecutionAdapterHealthProbeCredentials>;
+  return (
+    typeof credentials.apiKeyConfigured === "boolean" &&
+    (credentials.apiKeySource === null || typeof credentials.apiKeySource === "string") &&
+    typeof credentials.secretConfigured === "boolean" &&
+    (credentials.secretSource === null || typeof credentials.secretSource === "string") &&
+    typeof credentials.passwordConfigured === "boolean" &&
+    (credentials.passwordSource === null || typeof credentials.passwordSource === "string")
+  );
+}
+
+function isBooleanRecord(value: unknown): value is Record<string, boolean> {
+  return isPlainRecord(value) && Object.values(value).every((item) => typeof item === "boolean");
+}
+
 function isExecutionAdapterCertificationRecordPayload(
   value: unknown
 ): value is { adapterCertification: ExecutionAdapterCertificationRun; auditEvent?: AuditEventRecord } {
@@ -10590,6 +10755,16 @@ function isExecutionAdapterProductionRouteReviewStatus(
   value: unknown
 ): value is ExecutionAdapterProductionRouteReviewStatus {
   return value === "blocked" || value === "route_review_recorded";
+}
+
+function isExecutionAdapterHealthProbeStatus(value: unknown): value is ExecutionAdapterHealthProbeStatus {
+  return value === "ready" || value === "review" || value === "blocked";
+}
+
+function isExecutionAdapterHealthProbeCheckStatus(
+  value: unknown
+): value is ExecutionAdapterHealthProbeCheckStatus {
+  return value === "passed" || value === "review" || value === "blocked" || value === "skipped";
 }
 
 function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {

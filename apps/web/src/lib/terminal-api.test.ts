@@ -79,6 +79,7 @@ import {
   buildExecutionAdapterSandboxProbeReviewUrl,
   buildExecutionAdapterProductionRouteReviewHistoryUrl,
   buildExecutionAdapterProductionRouteReviewUrl,
+  buildExecutionAdapterHealthProbeUrl,
   buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
   buildExecutionAdapterRuntimeReloadExecutionUrl,
   buildExecutionAdapterRuntimeReloadPlanHistoryUrl,
@@ -124,6 +125,7 @@ import {
   loadExecutionAdapterSandboxProbePlans,
   loadExecutionAdapterSandboxProbeReviews,
   loadExecutionAdapterProductionRouteReviews,
+  loadExecutionAdapterHealthProbe,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
   loadExecutionAdapterSecretReferences,
@@ -356,10 +358,14 @@ describe("terminal workspace API client", () => {
 
   test("builds same-origin API URLs for containerized web deployments", () => {
     expect(resolveQuantCoreBaseUrl({ VITE_QUANT_API_BASE: "/" })).toBe("/");
+    expect(resolveQuantCoreBaseUrl({})).toBe("/");
     expect(buildWorkspaceUrl("/")).toBe("/api/workspace");
     expect(buildResearchRunDetailUrl("/", "run 你好/1")).toBe("/api/research/runs/run%20%E4%BD%A0%E5%A5%BD%2F1");
     expect(buildMarketSearchUrl("/", "ashare", "浦发", 8)).toBe(
       "/api/market/search?market=ashare&query=%E6%B5%A6%E5%8F%91&limit=8"
+    );
+    expect(buildExecutionAdapterHealthProbeUrl("/", { adapterId: "ccxt-live", exchange: "binance" })).toBe(
+      "/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt-live&exchange=binance"
     );
   });
 
@@ -525,6 +531,17 @@ describe("terminal workspace API client", () => {
     );
   });
 
+  test("builds the ccxt sandbox adapter health URL", () => {
+    expect(
+      buildExecutionAdapterHealthProbeUrl("http://127.0.0.1:8765/", {
+        adapterId: "ccxt live/1",
+        exchange: "binance-usdm"
+      })
+    ).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt+live%2F1&exchange=binance-usdm"
+    );
+  });
+
   test("builds the execution adapter certifications URL with an encoded adapter query", () => {
     expect(buildExecutionAdapterCertificationsUrl("http://127.0.0.1:8765/", { adapterId: "us live/1", limit: 3 })).toBe(
       "http://127.0.0.1:8765/api/execution/adapter-certifications?adapterId=us+live%2F1&limit=3"
@@ -597,7 +614,7 @@ describe("terminal workspace API client", () => {
 
   test("resolves the local core base URL from Vite environment with a default", () => {
     expect(resolveQuantCoreBaseUrl({ VITE_QUANT_API_BASE: "http://localhost:9999" })).toBe("http://localhost:9999");
-    expect(resolveQuantCoreBaseUrl({})).toBe("http://127.0.0.1:8765");
+    expect(resolveQuantCoreBaseUrl({})).toBe("/");
   });
 
   test("loads the workspace contract from the Python core", async () => {
@@ -1913,6 +1930,130 @@ describe("terminal workspace API client", () => {
       liveTradingAllowed: false
     });
     expect(JSON.stringify(result.adapterLedger)).not.toContain("secret");
+  });
+
+  test("loads ccxt sandbox adapter health without accepting raw secret metadata", async () => {
+    const calls: string[] = [];
+    const cleanResult = await loadExecutionAdapterHealthProbe(
+      "http://127.0.0.1:8765/",
+      {
+        adapterId: "ccxt-live",
+        exchange: "binance"
+      },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            adapterHealthProbe: {
+              schemaVersion: 1,
+              probeId: "execution-adapter-health-ccxt-live-1",
+              adapterId: "ccxt-live",
+              provider: "ccxt",
+              exchangeId: "binance",
+              mode: "sandbox",
+              status: "review",
+              generatedAt: "2026-06-14T08:00:00+00:00",
+              checks: [
+                {
+                  id: "markets-loaded",
+                  label: "markets loaded",
+                  status: "passed",
+                  detail: "Loaded 1200 markets.",
+                  latencyMs: 12
+                },
+                {
+                  id: "account-sync",
+                  label: "account sync",
+                  status: "review",
+                  detail: "Sandbox credentials missing.",
+                  latencyMs: null
+                }
+              ],
+              capabilities: {
+                sandboxMode: true,
+                loadMarkets: true,
+                fetchStatus: true,
+                fetchTime: true,
+                fetchBalance: true,
+                createOrder: true
+              },
+              credentials: {
+                apiKeyConfigured: false,
+                apiKeySource: null,
+                secretConfigured: false,
+                secretSource: null,
+                passwordConfigured: false,
+                passwordSource: null
+              },
+              marketCount: 1200,
+              exchangeStatus: "ok",
+              serverTimeMs: 1780000000000,
+              accountSyncState: "credentials_missing",
+              blockedReasons: [],
+              metadata: { readOnly: true },
+              paperOnly: true,
+              liveTradingAllowed: false,
+              orderRoutingEnabled: false
+            }
+          })
+        };
+      }
+    );
+
+    const rejectedResult = await loadExecutionAdapterHealthProbe(
+      "http://127.0.0.1:8765/",
+      {
+        adapterId: "ccxt-live",
+        exchange: "binance"
+      },
+      async () => ({
+        ok: true,
+        json: async () => ({
+          adapterHealthProbe: {
+            schemaVersion: 1,
+            probeId: "execution-adapter-health-ccxt-live-secret",
+            adapterId: "ccxt-live",
+            provider: "ccxt",
+            exchangeId: "binance",
+            mode: "sandbox",
+            status: "ready",
+            generatedAt: "2026-06-14T08:00:00+00:00",
+            checks: [],
+            capabilities: {},
+            credentials: {
+              apiKeyConfigured: true,
+              apiKeySource: "CCXT_API_KEY",
+              secretConfigured: true,
+              secretSource: "CCXT_SECRET",
+              passwordConfigured: false,
+              passwordSource: null
+            },
+            marketCount: 1,
+            exchangeStatus: "ok",
+            serverTimeMs: 1780000000000,
+            accountSyncState: "ready",
+            blockedReasons: [],
+            metadata: { apiSecret: "raw-secret-should-not-leak" },
+            paperOnly: true,
+            liveTradingAllowed: false,
+            orderRoutingEnabled: false
+          }
+        })
+      })
+    );
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt-live&exchange=binance"
+    ]);
+    expect(cleanResult.source).toBe("core");
+    expect(cleanResult.adapterHealthProbe?.adapterId).toBe("ccxt-live");
+    expect(cleanResult.adapterHealthProbe?.status).toBe("review");
+    expect(cleanResult.adapterHealthProbe?.paperOnly).toBe(true);
+    expect(cleanResult.adapterHealthProbe?.liveTradingAllowed).toBe(false);
+    expect(cleanResult.adapterHealthProbe?.orderRoutingEnabled).toBe(false);
+    expect(rejectedResult.source).toBe("fallback");
+    expect(rejectedResult.adapterHealthProbe).toBeUndefined();
   });
 
   test("records and loads execution adapter certification evidence without secrets", async () => {

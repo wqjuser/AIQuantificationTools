@@ -2439,6 +2439,21 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".adapter-ledger-row");
   });
 
+  test("renders ccxt sandbox health probe in settings", () => {
+    expect(appSource).toContain("loadExecutionAdapterHealthProbe(quantCoreBaseUrl");
+    expect(appSource).toContain("buildExecutionAdapterHealthProbeRows(executionAdapterHealthProbe.adapterHealthProbe)");
+    expect(appSource).toContain("adapterHealthProbeRows={executionAdapterHealthProbeRows}");
+    expect(appSource).toContain("onRefreshAdapterHealthProbe={refreshExecutionAdapterHealthProbe}");
+    expect(appSource).toContain("isRefreshingAdapterHealthProbe={isRefreshingAdapterHealthProbe}");
+    expect(appSource).toContain("adapterHealthProbeRows: ExecutionAdapterHealthProbeRow[]");
+    expect(appSource).toContain('className="adapter-health-probe-list"');
+    expect(appSource).toContain('className={`adapter-health-probe-row');
+    expect(appSource).toContain('className="adapter-health-probe-checks"');
+    expect(styles).toContain(".adapter-health-probe-list");
+    expect(styles).toContain(".adapter-health-probe-row");
+    expect(styles).toContain(".adapter-health-probe-checks");
+  });
+
   test("renders execution adapter certification evidence controls in settings", () => {
     expect(appSource).toContain("loadExecutionAdapterCertifications(quantCoreBaseUrl");
     expect(appSource).toContain("recordExecutionAdapterCertification(quantCoreBaseUrl");

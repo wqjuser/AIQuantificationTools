@@ -3086,6 +3086,64 @@ export interface ExecutionAdapterProductionRouteReviewRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterHealthProbeStatus = "ready" | "review" | "blocked";
+export type ExecutionAdapterHealthProbeCheckStatus = "passed" | "review" | "blocked" | "skipped";
+
+export interface ExecutionAdapterHealthProbeSnapshot {
+  schemaVersion: 1;
+  probeId: string;
+  adapterId: string;
+  provider: "ccxt";
+  exchangeId: string;
+  mode: "sandbox";
+  status: ExecutionAdapterHealthProbeStatus;
+  generatedAt: string;
+  checks: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterHealthProbeCheckStatus;
+    detail: string;
+    latencyMs: number | null;
+  }>;
+  capabilities: Record<string, boolean>;
+  credentials: {
+    apiKeyConfigured: boolean;
+    apiKeySource: string | null;
+    secretConfigured: boolean;
+    secretSource: string | null;
+    passwordConfigured: boolean;
+    passwordSource: string | null;
+  };
+  marketCount: number;
+  exchangeStatus: string | null;
+  serverTimeMs: number | null;
+  accountSyncState: string;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  orderRoutingEnabled: boolean;
+}
+
+export interface ExecutionAdapterHealthProbeRow {
+  id: string;
+  adapterId: string;
+  provider: "ccxt";
+  exchangeId: string;
+  mode: "sandbox";
+  timestamp: string;
+  status: ExecutionAdapterHealthProbeStatus;
+  statusLabel: string;
+  marketSummary: string;
+  credentialSummary: string;
+  accountSyncSummary: string;
+  checkSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+  checks: ExecutionAdapterHealthProbeSnapshot["checks"];
+}
+
 export type ExecutionAdapterCertificationApplyConfirmationKey =
   | "secretReferenceStored"
   | "controlledRestartWindowApproved"
@@ -11634,6 +11692,37 @@ export function buildExecutionAdapterProductionRouteReviewRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterHealthProbeRows(
+  probe: ExecutionAdapterHealthProbeSnapshot | null | undefined
+): ExecutionAdapterHealthProbeRow[] {
+  if (!probe) {
+    return [];
+  }
+  return [
+    {
+      id: probe.probeId,
+      adapterId: probe.adapterId,
+      provider: probe.provider,
+      exchangeId: probe.exchangeId,
+      mode: probe.mode,
+      timestamp: probe.generatedAt,
+      status: probe.status,
+      statusLabel: executionAdapterHealthProbeStatusLabel(probe.status),
+      marketSummary: `${formatAssumptionCurrency(probe.marketCount)} markets`,
+      credentialSummary: executionAdapterHealthProbeCredentialSummary(probe.credentials),
+      accountSyncSummary: probe.accountSyncState,
+      checkSummary: executionAdapterHealthProbeCheckSummary(probe.checks),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(probe.blockedReasons),
+      boundary:
+        probe.paperOnly && !probe.liveTradingAllowed && !probe.orderRoutingEnabled
+          ? "Paper only · order routing disabled"
+          : "Live trading blocked",
+      tone: executionAdapterHealthProbeTone(probe.status),
+      checks: probe.checks
+    }
+  ];
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -14317,6 +14406,40 @@ function executionAdapterProductionRouteReviewConfirmationSummary(
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
   return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterHealthProbeTone(
+  status: ExecutionAdapterHealthProbeStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  if (status === "ready") {
+    return "positive";
+  }
+  return status === "review" ? "warning" : "risk";
+}
+
+function executionAdapterHealthProbeStatusLabel(status: ExecutionAdapterHealthProbeStatus): string {
+  return (
+    {
+      ready: "Ready",
+      review: "Review required",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterHealthProbeStatus, string>
+  )[status];
+}
+
+function executionAdapterHealthProbeCredentialSummary(
+  credentials: ExecutionAdapterHealthProbeSnapshot["credentials"]
+): string {
+  const apiKey = credentials.apiKeyConfigured ? `API key ${credentials.apiKeySource ?? "configured"}` : "API key missing";
+  const secret = credentials.secretConfigured ? `secret ${credentials.secretSource ?? "configured"}` : "secret missing";
+  return `${apiKey} · ${secret}`;
+}
+
+function executionAdapterHealthProbeCheckSummary(checks: ExecutionAdapterHealthProbeSnapshot["checks"]): string {
+  const passed = checks.filter((check) => check.status === "passed").length;
+  const review = checks.filter((check) => check.status === "review" || check.status === "skipped").length;
+  const blocked = checks.filter((check) => check.status === "blocked").length;
+  return `${passed} passed / ${review} review / ${blocked} blocked`;
 }
 
 function formatAssumptionCurrency(value: number): string {
