@@ -15361,8 +15361,99 @@ describe("terminal workbench model", () => {
       affectedSymbols: ["600000", "000300"],
       affectedContexts: ["ashare:600000:1d"],
       reason: "provider_cooldown",
+      overrideApplied: false,
+      overrideReason: null,
       detail: "Provider cooldown for ashare: 4 recent errors; retry after 180s; affected 600000/000300."
     });
+  });
+
+  test("allows a manual market data refresh when a cooldown override reason is provided", () => {
+    const guard = buildMarketDataRefreshGuard(
+      "ashare",
+      [
+        {
+          market: "ashare",
+          externalTelemetry: {
+            providerHealth: {
+              status: "cooldown",
+              recentErrorCount: 4,
+              lastErrorAt: "2026-06-14T08:00:00+00:00",
+              affectedSymbols: ["600000", "000300"],
+              affectedContexts: ["ashare:600000:1d"],
+              retryAfterSeconds: 180,
+              reason: "provider_cooldown"
+            }
+          }
+        }
+      ],
+      {
+        enabled: true,
+        market: "ashare",
+        reason: "operator confirmed upstream recovered"
+      }
+    );
+
+    expect(guard).toEqual({
+      blocked: false,
+      status: "cooldown",
+      recentErrorCount: 4,
+      retryAfterSeconds: 180,
+      affectedSymbols: ["600000", "000300"],
+      affectedContexts: ["ashare:600000:1d"],
+      reason: "provider_cooldown_manual_override",
+      overrideApplied: true,
+      overrideReason: "operator confirmed upstream recovered",
+      detail:
+        "Provider cooldown override for ashare: operator confirmed upstream recovered; original retry after 180s; affected 600000/000300."
+    });
+  });
+
+  test("keeps manual market data refresh blocked when a cooldown override reason is blank or for another market", () => {
+    expect(
+      buildMarketDataRefreshGuard(
+        "ashare",
+        [
+          {
+            market: "ashare",
+            externalTelemetry: {
+              providerHealth: {
+                status: "cooldown",
+                recentErrorCount: 3,
+                lastErrorAt: "2026-06-14T08:00:00+00:00",
+                affectedSymbols: ["600000"],
+                affectedContexts: ["ashare:600000:1d"],
+                retryAfterSeconds: 900,
+                reason: "provider_cooldown"
+              }
+            }
+          }
+        ],
+        { enabled: true, market: "ashare", reason: "   " }
+      )
+    ).toMatchObject({ blocked: true, overrideApplied: false });
+
+    expect(
+      buildMarketDataRefreshGuard(
+        "ashare",
+        [
+          {
+            market: "ashare",
+            externalTelemetry: {
+              providerHealth: {
+                status: "cooldown",
+                recentErrorCount: 3,
+                lastErrorAt: "2026-06-14T08:00:00+00:00",
+                affectedSymbols: ["600000"],
+                affectedContexts: ["ashare:600000:1d"],
+                retryAfterSeconds: 900,
+                reason: "provider_cooldown"
+              }
+            }
+          }
+        ],
+        { enabled: true, market: "us", reason: "operator confirmed upstream recovered" }
+      )
+    ).toMatchObject({ blocked: true, overrideApplied: false });
   });
 
   test("allows manual market data refresh when provider health is not cooling down", () => {
@@ -15391,6 +15482,8 @@ describe("terminal workbench model", () => {
       affectedSymbols: ["AAPL"],
       affectedContexts: ["us:AAPL:1d"],
       reason: "provider_watch",
+      overrideApplied: false,
+      overrideReason: null,
       detail: "Provider refresh available for us."
     });
     expect(buildMarketDataRefreshGuard("crypto", [])).toMatchObject({

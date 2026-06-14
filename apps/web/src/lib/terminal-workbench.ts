@@ -3308,6 +3308,12 @@ export interface MarketDataProviderHealthSnapshot {
   reason: string;
 }
 
+export interface MarketDataRefreshOverride {
+  enabled: boolean;
+  market: Market;
+  reason: string;
+}
+
 export interface MarketDataRefreshGuardAdapterSnapshot {
   market: Market;
   externalTelemetry?: {
@@ -3323,12 +3329,15 @@ export interface MarketDataRefreshGuard {
   affectedSymbols: string[];
   affectedContexts: string[];
   reason: string;
+  overrideApplied: boolean;
+  overrideReason: string | null;
   detail: string;
 }
 
 export function buildMarketDataRefreshGuard(
   market: Market,
-  adapters: readonly MarketDataRefreshGuardAdapterSnapshot[] | null | undefined
+  adapters: readonly MarketDataRefreshGuardAdapterSnapshot[] | null | undefined,
+  override?: MarketDataRefreshOverride | null
 ): MarketDataRefreshGuard {
   const health = adapters?.find((adapter) => adapter.market === market)?.externalTelemetry?.providerHealth;
   if (!health || health.status !== "cooldown") {
@@ -3340,6 +3349,8 @@ export function buildMarketDataRefreshGuard(
       affectedSymbols: health?.affectedSymbols ?? [],
       affectedContexts: health?.affectedContexts ?? [],
       reason: health?.reason ?? "provider_refresh_available",
+      overrideApplied: false,
+      overrideReason: null,
       detail: `Provider refresh available for ${market}.`
     };
   }
@@ -3347,6 +3358,21 @@ export function buildMarketDataRefreshGuard(
   const retryAfterSeconds = Math.max(0, Math.trunc(health.retryAfterSeconds));
   const affectedSymbols = health.affectedSymbols.slice();
   const affectedLabel = affectedSymbols.length ? affectedSymbols.slice(0, 3).join("/") : "none";
+  const overrideReason = override?.enabled && override.market === market ? override.reason.trim() : "";
+  if (overrideReason) {
+    return {
+      blocked: false,
+      status: "cooldown",
+      recentErrorCount: health.recentErrorCount,
+      retryAfterSeconds,
+      affectedSymbols,
+      affectedContexts: health.affectedContexts.slice(),
+      reason: "provider_cooldown_manual_override",
+      overrideApplied: true,
+      overrideReason,
+      detail: `Provider cooldown override for ${market}: ${overrideReason}; original retry after ${retryAfterSeconds}s; affected ${affectedLabel}.`
+    };
+  }
   return {
     blocked: true,
     status: "cooldown",
@@ -3355,6 +3381,8 @@ export function buildMarketDataRefreshGuard(
     affectedSymbols,
     affectedContexts: health.affectedContexts.slice(),
     reason: health.reason,
+    overrideApplied: false,
+    overrideReason: null,
     detail: `Provider cooldown for ${market}: ${health.recentErrorCount} recent errors; retry after ${retryAfterSeconds}s; affected ${affectedLabel}.`
   };
 }

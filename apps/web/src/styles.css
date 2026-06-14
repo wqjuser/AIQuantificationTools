@@ -5195,6 +5195,73 @@ em {
   padding: 7px 9px;
 }
 
+.market-refresh-override {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.market-refresh-override label {
+  display: grid;
+  gap: 4px;
+}
+
+.market-refresh-override label span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.market-refresh-override input {
+  min-height: 32px;
+  border: 1px solid #263852;
+  border-radius: 7px;
+  background: #121b29;
+  color: #dce6ee;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 760;
+  padding: 7px 9px;
+}
+
+.market-refresh-override input:focus {
+  border-color: #2b6f62;
+  outline: none;
+}
+
+.market-refresh-override button {
+  align-items: center;
+  border-radius: 7px;
+  display: inline-flex;
+  gap: 6px;
+  min-height: 32px;
+  padding: 7px 10px;
+}
+
+.market-refresh-override-apply {
+  border-color: #614e20;
+  background: #2a2315;
+  color: #e8be62;
+}
+
+.market-refresh-override-apply:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.market-refresh-override-clear {
+  border-color: #2a3b51;
+  background: #101a27;
+  color: #9aabbc;
+}
+
+.market-refresh-override.active {
+  border-left: 3px solid #e8be62;
+  padding-left: 8px;
+}
+
 .settings-source-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

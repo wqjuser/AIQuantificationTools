@@ -327,6 +327,7 @@ import {
   AuditSigningKeyRotationLedgerRow,
   Market,
   MarketDataRefreshGuard,
+  MarketDataRefreshOverride,
   AgentCommitteeRound,
   BacktestAssumptionField,
   BacktestAssumptionRow,
@@ -1541,6 +1542,7 @@ export function App() {
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
   const [isIndexingExportPackages, setIsIndexingExportPackages] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
+  const [marketDataRefreshOverride, setMarketDataRefreshOverride] = useState<MarketDataRefreshOverride | null>(null);
   const [recordingAdapterCertificationId, setRecordingAdapterCertificationId] = useState<string | null>(null);
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
   const [recordingAdapterRuntimeReloadAcceptanceId, setRecordingAdapterRuntimeReloadAcceptanceId] =
@@ -1833,9 +1835,12 @@ export function App() {
     symbol: workspace.selectedInstrument.symbol,
     timeframe: workspace.selectedTimeframe
   });
+  const activeMarketDataRefreshOverride =
+    marketDataRefreshOverride?.market === workspace.selectedInstrument.market ? marketDataRefreshOverride : null;
   const marketDataRefreshGuard = buildMarketDataRefreshGuard(
     workspace.selectedInstrument.market,
-    settingsStatus.settings?.marketDataAdapters
+    settingsStatus.settings?.marketDataAdapters,
+    activeMarketDataRefreshOverride
   );
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
   const latestWatchlistCacheRefresh = watchlistCacheRefreshHistory[0] ?? null;
@@ -3580,9 +3585,38 @@ export function App() {
     }
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
+  const enableMarketDataRefreshOverride = useCallback(
+    (reason: string) => {
+      const normalizedReason = reason.trim();
+      if (!normalizedReason) {
+        return;
+      }
+      setMarketDataRefreshOverride({
+        enabled: true,
+        market: workspace.selectedInstrument.market,
+        reason: normalizedReason
+      });
+    },
+    [workspace.selectedInstrument.market]
+  );
+
+  const clearMarketDataRefreshOverride = useCallback(() => {
+    setMarketDataRefreshOverride(null);
+  }, []);
+
+  useEffect(() => {
+    setMarketDataRefreshOverride((current) =>
+      current?.market === workspace.selectedInstrument.market ? current : null
+    );
+  }, [workspace.selectedInstrument.market]);
+
   const refreshCacheContext = useCallback(
     async (context: PlatformSettingsStatus["cache"]["contexts"][number]) => {
-      const refreshGuard = buildMarketDataRefreshGuard(context.market, settingsStatus.settings?.marketDataAdapters);
+      const refreshGuard = buildMarketDataRefreshGuard(
+        context.market,
+        settingsStatus.settings?.marketDataAdapters,
+        marketDataRefreshOverride?.market === context.market ? marketDataRefreshOverride : null
+      );
       if (refreshGuard.blocked) {
         setSettingsStatus((current) => ({
           settings: current.settings,
@@ -3593,30 +3627,37 @@ export function App() {
       }
       const key = cacheContextKey(context);
       setRefreshingCacheKey(key);
-      const result = await refreshMarketCache(quantCoreBaseUrl, {
-        market: context.market,
-        symbol: context.symbol,
-        timeframe: context.timeframe,
-        limit: chartKlineLimit
-      });
-      setSettingsStatus({
-        settings: result.settings,
-        source: result.source,
-        error: result.error
-      });
-      if (
-        result.source === "core" &&
-        context.market === workspace.selectedInstrument.market &&
-        context.symbol === workspace.selectedInstrument.symbol &&
-        context.timeframe === workspace.selectedTimeframe
-      ) {
-        await refreshChart();
+      try {
+        const result = await refreshMarketCache(quantCoreBaseUrl, {
+          market: context.market,
+          symbol: context.symbol,
+          timeframe: context.timeframe,
+          limit: chartKlineLimit
+        });
+        setSettingsStatus({
+          settings: result.settings,
+          source: result.source,
+          error: result.error
+        });
+        if (
+          result.source === "core" &&
+          context.market === workspace.selectedInstrument.market &&
+          context.symbol === workspace.selectedInstrument.symbol &&
+          context.timeframe === workspace.selectedTimeframe
+        ) {
+          await refreshChart();
+        }
+        await refreshGoldenPathStatus();
+      } finally {
+        if (refreshGuard.overrideApplied) {
+          setMarketDataRefreshOverride(null);
+        }
+        setRefreshingCacheKey(null);
       }
-      await refreshGoldenPathStatus();
-      setRefreshingCacheKey(null);
     },
     [
       i18n,
+      marketDataRefreshOverride,
       refreshChart,
       refreshGoldenPathStatus,
       settingsStatus.settings?.marketDataAdapters,
@@ -3651,7 +3692,8 @@ export function App() {
     }
     const refreshGuard = buildMarketDataRefreshGuard(
       workspace.selectedInstrument.market,
-      settingsStatus.settings?.marketDataAdapters
+      settingsStatus.settings?.marketDataAdapters,
+      activeMarketDataRefreshOverride
     );
     if (refreshGuard.blocked) {
       setSettingsStatus((current) => ({
@@ -3693,9 +3735,13 @@ export function App() {
       }
       await refreshGoldenPathStatus();
     } finally {
+      if (refreshGuard.overrideApplied) {
+        setMarketDataRefreshOverride(null);
+      }
       setIsRefreshingWatchlistCache(false);
     }
   }, [
+    activeMarketDataRefreshOverride,
     i18n,
     refreshChart,
     refreshGoldenPathStatus,
@@ -6396,6 +6442,9 @@ export function App() {
             isRefreshingWatchlistCache={isRefreshingWatchlistCache}
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
             refreshGuard={marketDataRefreshGuard}
+            refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
+            onApplyRefreshOverride={enableMarketDataRefreshOverride}
+            onClearRefreshOverride={clearMarketDataRefreshOverride}
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
             onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
@@ -6881,9 +6930,12 @@ export function App() {
           isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
           isRefreshingWatchlistCache={isRefreshingWatchlistCache}
           refreshGuard={marketDataRefreshGuard}
+          refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
           isSavingNote={isSavingResearchNote}
           isSavingWatchlist={isSavingWatchlist}
           isSavingWorkspace={isSavingResearchWorkspace}
+          onApplyRefreshOverride={enableMarketDataRefreshOverride}
+          onClearRefreshOverride={clearMarketDataRefreshOverride}
           onRefreshCache={refreshSelectedMarketCache}
           onRefreshWatchlistCache={refreshWatchlistMarketCache}
           onInspectRefreshEvidence={inspectRefreshEvidenceRun}
@@ -9114,6 +9166,63 @@ function marketCalendarNextEventLabel(
   };
 }
 
+function MarketDataRefreshOverrideControl({
+  i18n,
+  onApplyOverride,
+  onClearOverride,
+  overrideReason,
+  refreshGuard
+}: {
+  i18n: AppI18n;
+  onApplyOverride?: (reason: string) => void;
+  onClearOverride?: () => void;
+  overrideReason?: string | null;
+  refreshGuard?: MarketDataRefreshGuard;
+}) {
+  const [draftReason, setDraftReason] = useState(overrideReason ?? "");
+  const isVisible = Boolean(refreshGuard && (refreshGuard.status === "cooldown" || refreshGuard.overrideApplied));
+  const normalizedReason = draftReason.trim();
+
+  useEffect(() => {
+    setDraftReason(overrideReason ?? "");
+  }, [overrideReason, refreshGuard?.status]);
+
+  if (!isVisible || !onApplyOverride) {
+    return null;
+  }
+
+  return (
+    <div className={`market-refresh-override${refreshGuard?.overrideApplied ? " active" : ""}`}>
+      <label>
+        <span>{i18n.locale === "zh-CN" ? "覆盖原因" : "Override reason"}</span>
+        <input
+          onChange={(event) => setDraftReason(event.target.value)}
+          placeholder={
+            i18n.locale === "zh-CN"
+              ? "例如：已确认上游恢复，本次手动刷新"
+              : "Example: upstream recovered, refresh this run"
+          }
+          value={draftReason}
+        />
+      </label>
+      <button
+        className="market-refresh-override-apply"
+        disabled={!normalizedReason}
+        onClick={() => onApplyOverride(normalizedReason)}
+        type="button"
+      >
+        <ShieldCheck size={13} />
+        <span>{i18n.locale === "zh-CN" ? "本次仍刷新" : "Manual override"}</span>
+      </button>
+      {refreshGuard?.overrideApplied ? (
+        <button className="market-refresh-override-clear" onClick={onClearOverride} type="button">
+          {i18n.locale === "zh-CN" ? "取消覆盖" : "Clear"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function MarketDataHealthPanel({
   cacheContext,
   className,
@@ -9122,6 +9231,9 @@ function MarketDataHealthPanel({
   isRefreshingWatchlistCache = false,
   latestWatchlistCacheRefresh,
   refreshGuard,
+  refreshOverrideReason,
+  onApplyRefreshOverride,
+  onClearRefreshOverride,
   onRefreshCache,
   onRefreshWatchlistCache,
   onOpenCoverageResearch,
@@ -9141,6 +9253,9 @@ function MarketDataHealthPanel({
   isRefreshingWatchlistCache?: boolean;
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
   refreshGuard?: MarketDataRefreshGuard;
+  refreshOverrideReason?: string | null;
+  onApplyRefreshOverride?: (reason: string) => void;
+  onClearRefreshOverride?: () => void;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
   onOpenCoverageResearch?: () => void;
@@ -9237,9 +9352,16 @@ function MarketDataHealthPanel({
         ) : null
       }
     >
-      {refreshGuard?.blocked ? (
+      {refreshGuard?.blocked || refreshGuard?.overrideApplied ? (
         <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
       ) : null}
+      <MarketDataRefreshOverrideControl
+        i18n={i18n}
+        onApplyOverride={onApplyRefreshOverride}
+        onClearOverride={onClearRefreshOverride}
+        overrideReason={refreshOverrideReason}
+        refreshGuard={refreshGuard}
+      />
       <div className="health-grid">
         <article className={state.quality.isComplete ? "positive" : "warning"}>
           <span>{i18n.locale === "zh-CN" ? "数据源" : "Source"}</span>
@@ -9439,9 +9561,12 @@ function ResearchContextReadinessPanel({
   isRefreshingCache = false,
   isRefreshingWatchlistCache = false,
   refreshGuard,
+  refreshOverrideReason,
   isSavingNote = false,
   isSavingWatchlist = false,
   isSavingWorkspace = false,
+  onApplyRefreshOverride,
+  onClearRefreshOverride,
   onRefreshCache,
   onRefreshWatchlistCache,
   onInspectRefreshEvidence,
@@ -9456,9 +9581,12 @@ function ResearchContextReadinessPanel({
   isRefreshingCache?: boolean;
   isRefreshingWatchlistCache?: boolean;
   refreshGuard?: MarketDataRefreshGuard;
+  refreshOverrideReason?: string | null;
   isSavingNote?: boolean;
   isSavingWatchlist?: boolean;
   isSavingWorkspace?: boolean;
+  onApplyRefreshOverride?: (reason: string) => void;
+  onClearRefreshOverride?: () => void;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
   onInspectRefreshEvidence?: (runId: string) => void;
@@ -9478,9 +9606,16 @@ function ResearchContextReadinessPanel({
       }
       className={className}
     >
-      {refreshGuard?.blocked ? (
+      {refreshGuard?.blocked || refreshGuard?.overrideApplied ? (
         <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
       ) : null}
+      <MarketDataRefreshOverrideControl
+        i18n={i18n}
+        onApplyOverride={onApplyRefreshOverride}
+        onClearOverride={onClearRefreshOverride}
+        overrideReason={refreshOverrideReason}
+        refreshGuard={refreshGuard}
+      />
       <div className="research-context-checklist">
         {rows.map((row, index) => {
           const action = row.action;
@@ -18946,6 +19081,12 @@ function marketDataAdapterProviderHealthCategoryLabel(
 }
 
 function marketDataRefreshGuardLabel(i18n: AppI18n, guard: MarketDataRefreshGuard): string {
+  if (guard.overrideApplied) {
+    const reason = guard.overrideReason ?? (i18n.locale === "zh-CN" ? "已记录人工确认" : "operator confirmation recorded");
+    return i18n.locale === "zh-CN"
+      ? `数据源冷却已手动覆盖：${reason}。本次刷新仍会执行。`
+      : `Provider cooldown manually overridden: ${reason}. This refresh can proceed.`;
+  }
   const affectedSymbols = guard.affectedSymbols.length
     ? guard.affectedSymbols.slice(0, 3).join("/")
     : i18n.locale === "zh-CN"

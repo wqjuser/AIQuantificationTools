@@ -1481,10 +1481,16 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildMarketDataRefreshGuard(");
     expect(appSource).toContain("settingsStatus.settings?.marketDataAdapters");
     expect(appSource).toContain("marketDataRefreshGuardLabel(i18n, refreshGuard)");
+    expect(appSource).toContain("MarketDataRefreshOverrideControl");
+    expect(appSource).toContain("marketDataRefreshOverride?.market === workspace.selectedInstrument.market");
+    expect(appSource).toContain("setMarketDataRefreshOverride");
     expect(appSource).toContain("数据源冷却");
     expect(appSource).toContain("Provider cooldown");
+    expect(appSource).toContain("Manual override");
     expect(cssBlock(".market-refresh-guard-note")).toContain("background:");
     expect(cssBlock(".market-refresh-guard-note")).toContain("margin: 0 0 8px;");
+    expect(cssBlock(".market-refresh-override")).toContain("grid-template-columns:");
+    expect(cssBlock(".market-refresh-override")).toContain("margin: 0 0 8px;");
   });
 
   test("renders selected market calendar session status in the market work area", () => {

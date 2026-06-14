@@ -34,5 +34,5 @@ Keep historical provider failures visible without letting stale market data erro
 
 ## Follow-Ups
 
-- Add a guarded manual override flow for operators who intentionally want to refresh during cooldown.
+- Done in `2026-06-14-market-data-refresh-cooldown-manual-override.md`: cooldown remains the default guard, but a same-market override reason can unlock one manual refresh attempt.
 - Add a visual Settings trend strip after the operator flow decides where provider history belongs.
