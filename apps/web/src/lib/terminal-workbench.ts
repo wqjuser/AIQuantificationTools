@@ -15296,6 +15296,10 @@ export function watchlistIncludesInstrument(watchlist: Instrument[], instrument:
   return watchlist.some((item) => item.market === instrument.market && item.symbol === instrument.symbol);
 }
 
+export function resolveAdapterWorkflowInstrument(workspace: TerminalWorkspace, market: Market): Instrument {
+  return workspace.watchlist.find((instrument) => instrument.market === market) ?? workspace.selectedInstrument;
+}
+
 function parseMarket(value: string | null | undefined): Market | null {
   const normalized = value?.trim().toLowerCase();
   return normalized === "ashare" || normalized === "us" || normalized === "crypto" ? normalized : null;

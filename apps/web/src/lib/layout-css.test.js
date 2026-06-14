@@ -2424,6 +2424,17 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".settings-source-row");
   });
 
+  test("lets settings market data adapters open the matching cache workflow", () => {
+    expect(appSource).toContain("resolveAdapterWorkflowInstrument(workspace, adapter.market)");
+    expect(appSource).toContain("openMarketDataAdapterWorkflow");
+    expect(appSource).toContain("onOpenMarketDataAdapterWorkflow={openMarketDataAdapterWorkflow}");
+    expect(appSource).toContain("onOpenMarketDataAdapterWorkflow?:");
+    expect(appSource).toContain("selectProductWorkArea(\"market\")");
+    expect(appSource).toContain("onClick={() => onOpenMarketDataAdapterWorkflow(row)}");
+    expect(appSource).toContain("打开缓存工作流");
+    expect(appSource).toContain("Open cache workflow");
+  });
+
   test("renders execution adapter state ledger as a compact settings audit rail", () => {
     expect(appSource).toContain("loadExecutionAdapterLedger(quantCoreBaseUrl)");
     expect(appSource).toContain("buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger)");

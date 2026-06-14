@@ -424,6 +424,7 @@ import {
   WorkflowRunState,
   WorkflowStageView,
   resolveResearchContextUrlState,
+  resolveAdapterWorkflowInstrument,
   resolveWatchlistCacheRefreshRunSelection,
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
@@ -5645,6 +5646,15 @@ export function App() {
     [activeWorkAreaId, workspace]
   );
 
+  const openMarketDataAdapterWorkflow = useCallback(
+    (adapter: PlatformSettingsStatus["marketDataAdapters"][number]) => {
+      const instrument = resolveAdapterWorkflowInstrument(workspace, adapter.market);
+      selectInstrument(instrument);
+      selectProductWorkArea("market");
+    },
+    [selectInstrument, selectProductWorkArea, workspace]
+  );
+
   const openAuditReportLedgerEvidenceLink = useCallback(
     (search: string) => {
       const params = new URLSearchParams(search);
@@ -6774,6 +6784,7 @@ export function App() {
             onRecordRuntimeReloadAcceptance={recordAdapterRuntimeReloadAcceptance}
             onRefreshAdapterHealthProbe={refreshExecutionAdapterHealthProbe}
             onRefreshContext={refreshCacheContext}
+            onOpenMarketDataAdapterWorkflow={openMarketDataAdapterWorkflow}
             onRuntimeReloadAcceptanceConfirmationChange={updateAdapterRuntimeReloadAcceptanceConfirmation}
             onProductionRouteReviewConfirmationChange={updateAdapterProductionRouteReviewConfirmation}
             recordingAdapterCertificationId={recordingAdapterCertificationId}
@@ -9933,6 +9944,7 @@ function PlatformSettingsPanel({
   onRecordSandboxProbeReview,
   onRefreshAdapterHealthProbe,
   onRefreshContext,
+  onOpenMarketDataAdapterWorkflow,
   onRuntimeReloadAcceptanceConfirmationChange,
   recordingAdapterCertificationId,
   recordingHumanConfirmationId,
@@ -10027,6 +10039,7 @@ function PlatformSettingsPanel({
   onRecordSandboxProbeReview?: (row: ExecutionAdapterSandboxProbeExecutionRow) => void;
   onRefreshAdapterHealthProbe?: () => void;
   onRefreshContext?: (context: PlatformSettingsStatus["cache"]["contexts"][number]) => void;
+  onOpenMarketDataAdapterWorkflow?: (adapter: PlatformSettingsStatus["marketDataAdapters"][number]) => void;
   onRuntimeReloadAcceptanceConfirmationChange?: (
     executionId: string,
     key: keyof ExecutionAdapterRuntimeReloadAcceptanceConfirmations,
@@ -10186,6 +10199,16 @@ function PlatformSettingsPanel({
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
               </small>
+              {onOpenMarketDataAdapterWorkflow ? (
+                <button
+                  className="adapter-certification-button"
+                  onClick={() => onOpenMarketDataAdapterWorkflow(row)}
+                  type="button"
+                >
+                  <RefreshCw size={13} />
+                  {i18n.locale === "zh-CN" ? "打开缓存工作流" : "Open cache workflow"}
+                </button>
+              ) : null}
             </article>
           ))}
         </div>

@@ -36,4 +36,4 @@ Make Settings show runtime cache diagnostics per public OHLCV adapter instead of
 
 - Add adapter-level external source error telemetry.
 - Track rate-limit retry and backoff state per provider.
-- Add a Settings action that jumps from an adapter card to the matching cache refresh workflow.
+- Done in `2026-06-14-market-data-adapter-cache-workflow-handoff.md`: Settings adapter cards can open the matching Market cache workflow.

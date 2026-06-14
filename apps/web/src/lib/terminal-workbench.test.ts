@@ -133,6 +133,7 @@ import {
   researchRunEvidenceLogLabel,
   researchRunHistoryLabel,
   researchRunLabel,
+  resolveAdapterWorkflowInstrument,
   watchlistIncludesInstrument,
   resolveWatchlistCacheRefreshRunIdFromUrl,
   resolveWatchlistCacheRefreshRunSelection,
@@ -15646,6 +15647,24 @@ describe("terminal workbench model", () => {
 
     expect(watchlistIncludesInstrument(workspace.watchlist, { market: "ashare", symbol: "600000" })).toBe(true);
     expect(watchlistIncludesInstrument(workspace.watchlist, { market: "us", symbol: "MSFT" })).toBe(false);
+  });
+
+  test("resolves a market data adapter handoff instrument from the watchlist", () => {
+    const workspace = buildTerminalWorkspace();
+
+    expect(resolveAdapterWorkflowInstrument(workspace, "crypto")).toMatchObject({
+      market: "crypto",
+      symbol: "BTC/USDT"
+    });
+    expect(
+      resolveAdapterWorkflowInstrument(
+        {
+          ...workspace,
+          watchlist: workspace.watchlist.filter((instrument) => instrument.market !== "crypto")
+        },
+        "crypto"
+      )
+    ).toEqual(workspace.selectedInstrument);
   });
 
   test("merges a saved watchlist into the selected research context", () => {
