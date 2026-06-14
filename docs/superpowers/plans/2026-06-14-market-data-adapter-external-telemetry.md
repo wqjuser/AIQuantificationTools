@@ -38,6 +38,6 @@ Make Settings show whether each public OHLCV adapter has the optional runtime de
 
 ## Follow-Ups
 
-- Persist real provider request failures from `/api/market/klines` and cache refresh runs into an adapter error ledger.
+- Done in `2026-06-14-market-data-adapter-error-ledger.md`: provider request failures from `/api/market/klines` and cache refresh runs are persisted into an adapter error ledger and surfaced in Settings.
 - Track rate-limit retry and backoff state per provider.
 - Install guidance for missing optional data dependencies is now covered by `2026-06-14-market-data-adapter-install-guidance.md`; future work can turn the guidance text into copy buttons or one-click diagnostics.

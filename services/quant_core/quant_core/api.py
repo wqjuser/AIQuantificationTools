@@ -46,6 +46,11 @@ from quant_core.cache_refresh_runs import (
     watchlist_cache_refresh_item_from_quality,
     watchlist_cache_refresh_run_to_payload,
 )
+from quant_core.adapter_error_ledger import (
+    MarketDataAdapterErrorStore,
+    create_market_data_adapter_error_event,
+    market_data_adapter_error_event_to_payload,
+)
 from quant_core.domain import (
     AiResearchRequest,
     BacktestMetrics,
@@ -282,6 +287,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     watchlist_store = WatchlistStore(Path("data/watchlist.sqlite"))
     workspace_state_store = ResearchWorkspaceStateStore(Path("data/research_workspace_state.sqlite"))
     watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(Path("data/watchlist_cache_refreshes.sqlite"))
+    adapter_error_store = MarketDataAdapterErrorStore(Path("data/adapter_errors.sqlite"))
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -385,6 +391,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 limit = _parse_kline_limit(str(payload.get("limit") or "160"))
                 request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe)
                 bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                self._record_adapter_error_if_needed(request, quality=quality, context="cache-refresh")
                 upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
             except ValueError as error:
                 self._send_json({"error": "invalid_cache_refresh", "detail": str(error)}, status=400)
@@ -416,6 +423,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     request = MarketDataRequest(market=instrument.market, symbol=instrument.symbol, timeframe=timeframe)
                     try:
                         bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                        self._record_adapter_error_if_needed(
+                            request,
+                            quality=quality,
+                            context="watchlist-cache-refresh",
+                        )
                         upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
                         items.append(
                             watchlist_cache_refresh_item_from_quality(
@@ -427,6 +439,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                             )
                         )
                     except Exception as error:
+                        self._record_adapter_error_if_needed(
+                            request,
+                            quality=None,
+                            context="watchlist-cache-refresh",
+                            error=str(error),
+                        )
                         items.append(
                             watchlist_cache_refresh_item_from_quality(
                                 instrument=instrument,
@@ -2541,8 +2559,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     limit=limit,
                 )
             except ValueError as error:
+                self._record_adapter_error_if_needed(
+                    request,
+                    quality=None,
+                    context="market-klines",
+                    error=str(error),
+                )
                 self._send_json({"error": "market_klines_unavailable", "detail": str(error)}, status=502)
                 return
+            self._record_adapter_error_if_needed(request, quality=quality, context="market-klines")
             self._send_json(market_klines_to_payload(market, symbol, timeframe, bars, quality))
             return
         if parsed.path == "/api/strategies":
@@ -2813,10 +2838,64 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             cache_contexts=self.cache.contexts(limit=8),
             cache_stats=self.cache.stats(),
             finnhub_api_key=getattr(self.quote_adapter, "finnhub_api_key", ""),
+            adapter_error_events=[
+                market_data_adapter_error_event_to_payload(event)
+                for event in self.adapter_error_store.list_recent(limit=50)
+            ],
+        )
+
+    def _record_adapter_error_if_needed(
+        self,
+        request: MarketDataRequest,
+        *,
+        quality: DataQuality | None,
+        context: str,
+        error: str | None = None,
+    ) -> None:
+        target = _adapter_error_target(request.market)
+        if not target:
+            return
+        message = _adapter_error_message(quality=quality, error=error)
+        if not message:
+            return
+        adapter_id, provider = target
+        self.adapter_error_store.record(
+            create_market_data_adapter_error_event(
+                adapter_id=adapter_id,
+                provider=provider,
+                market=request.market,
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                source=quality.source if quality else "unavailable",
+                context=context,
+                message=message,
+            )
         )
 
     def log_message(self, format: str, *args) -> None:
         return
+
+
+def _adapter_error_target(market: str) -> tuple[str, str] | None:
+    if market == "ashare":
+        return "akshare-ohlcv", "akshare"
+    if market == "us":
+        return "yfinance-ohlcv", "yfinance"
+    if market == "crypto":
+        return "ccxt-ohlcv", "ccxt"
+    return None
+
+
+def _adapter_error_message(*, quality: DataQuality | None, error: str | None) -> str | None:
+    if error:
+        return str(error)
+    if quality is None:
+        return "provider quality unavailable"
+    if quality.warnings:
+        return quality.warnings[0]
+    if not quality.is_complete:
+        return f"incomplete provider response from {quality.source}"
+    return None
 
 
 def resolve_api_bind(

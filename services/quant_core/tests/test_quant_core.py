@@ -1003,6 +1003,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from http.server import HTTPServer
         from threading import Thread
 
+        from quant_core.adapter_error_ledger import MarketDataAdapterErrorStore
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
         from quant_core.domain import OHLCVBar
@@ -1011,6 +1012,7 @@ class QuantCoreContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             class TestHandler(QuantApiHandler):
                 cache = MarketDataCache(f"{tmp}/market.sqlite")
+                adapter_error_store = MarketDataAdapterErrorStore(f"{tmp}/adapter_errors.sqlite")
                 quote_adapter = QuantDingerLiveQuoteAdapter(finnhub_api_key="secret-finnhub-token")
 
             TestHandler.cache.upsert_bars(
@@ -1432,6 +1434,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "projectExtraInstallCommand": 'pip install -e "services/quant_core[data]"',
                     "note": "Installs optional public market data dependencies only; it does not configure API keys or enable live trading.",
                 },
+                "lastProviderError": None,
             },
         )
         self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["status"], "ok")
@@ -1442,6 +1445,158 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertIsNone(adapters["ccxt-ohlcv"]["externalTelemetry"]["lastError"])
         self.assertTrue(all("secret" not in json.dumps(adapter).lower() for adapter in adapters.values()))
+
+    def test_market_data_adapter_error_store_records_recent_provider_failures(self):
+        import json
+
+        from quant_core.adapter_error_ledger import (
+            MarketDataAdapterErrorStore,
+            create_market_data_adapter_error_event,
+            market_data_adapter_error_event_to_payload,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MarketDataAdapterErrorStore(f"{tmp}/adapter_errors.sqlite")
+            older = store.record(
+                create_market_data_adapter_error_event(
+                    adapter_id="yfinance-ohlcv",
+                    provider="yfinance",
+                    market="us",
+                    symbol="AAPL",
+                    timeframe="1d",
+                    source="yfinance-fallback",
+                    context="market-klines",
+                    message="Yahoo timeout",
+                    created_at=datetime(2026, 6, 14, 8, 0, tzinfo=timezone.utc),
+                    event_id="adapter-error-old",
+                )
+            )
+            newer = store.record(
+                create_market_data_adapter_error_event(
+                    adapter_id="yfinance-ohlcv",
+                    provider="yfinance",
+                    market="us",
+                    symbol="MSFT",
+                    timeframe="5m",
+                    source="local-cache",
+                    context="watchlist-cache-refresh",
+                    message="served local cache instead of incomplete yfinance",
+                    created_at=datetime(2026, 6, 14, 8, 5, tzinfo=timezone.utc),
+                    event_id="adapter-error-new",
+                )
+            )
+
+            recent = store.list_recent(adapter_id="yfinance-ohlcv", limit=5)
+
+        self.assertEqual([event.event_id for event in recent], [newer.event_id, older.event_id])
+        payload = market_data_adapter_error_event_to_payload(recent[0])
+        self.assertEqual(payload["adapterId"], "yfinance-ohlcv")
+        self.assertEqual(payload["provider"], "yfinance")
+        self.assertEqual(payload["symbol"], "MSFT")
+        self.assertEqual(payload["context"], "watchlist-cache-refresh")
+        self.assertEqual(payload["message"], "served local cache instead of incomplete yfinance")
+        self.assertNotIn("secret", json.dumps(payload).lower())
+
+    def test_settings_status_reports_market_data_adapter_provider_error_ledger(self):
+        from quant_core.adapter_error_ledger import create_market_data_adapter_error_event, market_data_adapter_error_event_to_payload
+        from quant_core.settings import build_settings_status
+
+        error_event = create_market_data_adapter_error_event(
+            adapter_id="yfinance-ohlcv",
+            provider="yfinance",
+            market="us",
+            symbol="AAPL",
+            timeframe="1d",
+            source="yfinance-fallback",
+            context="market-klines",
+            message="Yahoo chart timed out",
+            created_at=datetime(2026, 6, 14, 8, 10, tzinfo=timezone.utc),
+            event_id="adapter-error-yf",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                adapter_dependency_statuses={"akshare": True, "yfinance": True, "ccxt": True},
+                adapter_error_events=[market_data_adapter_error_event_to_payload(error_event)],
+                generated_at=datetime(2026, 6, 14, 8, 11, tzinfo=timezone.utc),
+            )
+
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        yfinance_telemetry = adapters["yfinance-ohlcv"]["externalTelemetry"]
+        self.assertEqual(adapters["yfinance-ohlcv"]["status"], "degraded")
+        self.assertEqual(yfinance_telemetry["status"], "degraded")
+        self.assertEqual(yfinance_telemetry["retryState"], "provider_error")
+        self.assertEqual(yfinance_telemetry["lastError"], "Yahoo chart timed out")
+        self.assertEqual(
+            yfinance_telemetry["lastProviderError"],
+            {
+                "eventId": "adapter-error-yf",
+                "createdAt": "2026-06-14T08:10:00+00:00",
+                "adapterId": "yfinance-ohlcv",
+                "provider": "yfinance",
+                "market": "us",
+                "symbol": "AAPL",
+                "timeframe": "1d",
+                "source": "yfinance-fallback",
+                "context": "market-klines",
+                "message": "Yahoo chart timed out",
+            },
+        )
+        self.assertIsNone(adapters["akshare-ohlcv"]["externalTelemetry"]["lastProviderError"])
+
+    def test_market_klines_api_records_provider_failures_in_adapter_error_ledger(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapter_error_ledger import MarketDataAdapterErrorStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import DataQuality
+
+        class WarningKlineAdapter:
+            def fetch_ohlcv(self, request, limit=160):
+                return [], DataQuality(
+                    source="yfinance-fallback",
+                    is_complete=False,
+                    warnings=["Yahoo chart timed out; yfinance returned no chart bars"],
+                    rows=0,
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                kline_adapter = WarningKlineAdapter()
+                adapter_error_store = MarketDataAdapterErrorStore(f"{tmp}/adapter_errors.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/market/klines?market=us&symbol=AAPL&timeframe=1d&limit=5")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            events = TestHandler.adapter_error_store.list_recent(adapter_id="yfinance-ohlcv", limit=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["quality"]["source"], "yfinance-fallback")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].adapter_id, "yfinance-ohlcv")
+        self.assertEqual(events[0].provider, "yfinance")
+        self.assertEqual(events[0].market, "us")
+        self.assertEqual(events[0].symbol, "AAPL")
+        self.assertEqual(events[0].timeframe, "1d")
+        self.assertEqual(events[0].context, "market-klines")
+        self.assertEqual(events[0].message, "Yahoo chart timed out; yfinance returned no chart bars")
 
     def test_execution_adapter_state_ledger_summarizes_live_blocked_routes(self):
         from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status

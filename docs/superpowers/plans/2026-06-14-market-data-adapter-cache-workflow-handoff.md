@@ -33,6 +33,6 @@ Turn Settings market data adapter diagnostics into an actionable path by letting
 
 ## Follow-Ups
 
-- Add adapter-level external source error telemetry.
+- Done in `2026-06-14-market-data-adapter-error-ledger.md`: adapter-level external source errors are now persisted and visible from Settings.
 - Track rate-limit retry and backoff state per provider.
 - Consider passing a preselected cache context query param into Market when users jump from Settings.

@@ -233,6 +233,19 @@ const sampleCcxtInstallGuidance = {
   packageInstallCommand: "pip install ccxt"
 } as const;
 
+const sampleYfinanceProviderError = {
+  eventId: "adapter-error-yf",
+  createdAt: "2026-06-14T08:10:00+00:00",
+  adapterId: "yfinance-ohlcv",
+  provider: "yfinance",
+  market: "us",
+  symbol: "AAPL",
+  timeframe: "1d",
+  source: "yfinance-fallback",
+  context: "market-klines",
+  message: "Yahoo chart timed out"
+} as const;
+
 const samplePlatformSettingsMarketDataAdapters = [
   {
     id: "akshare-ohlcv",
@@ -260,7 +273,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       lastError: null,
       retryState: "idle",
       checkedAt: "2026-06-14T08:00:00+00:00",
-      installGuidance: sampleAkshareInstallGuidance
+      installGuidance: sampleAkshareInstallGuidance,
+      lastProviderError: null
     },
     note: "A-share public OHLCV adapter."
   },
@@ -269,7 +283,7 @@ const samplePlatformSettingsMarketDataAdapters = [
     market: "us",
     adapter: "YFinanceMarketDataAdapter",
     provider: "yfinance",
-    status: "ready",
+    status: "degraded",
     route: "public_ohlcv",
     capabilities: ["Ticker.history"],
     timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
@@ -284,13 +298,14 @@ const samplePlatformSettingsMarketDataAdapters = [
       freshnessSummary: { fresh: 0, stale: 0, empty: 0 }
     },
     externalTelemetry: {
-      status: "ok",
+      status: "degraded",
       dependency: "yfinance",
       dependencyAvailable: true,
-      lastError: null,
-      retryState: "idle",
+      lastError: "Yahoo chart timed out",
+      retryState: "provider_error",
       checkedAt: "2026-06-14T08:00:00+00:00",
-      installGuidance: sampleYfinanceInstallGuidance
+      installGuidance: sampleYfinanceInstallGuidance,
+      lastProviderError: sampleYfinanceProviderError
     },
     note: "US equity public OHLCV adapter."
   },
@@ -320,7 +335,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       lastError: "optional package 'ccxt' is not installed",
       retryState: "dependency_missing",
       checkedAt: "2026-06-14T08:00:00+00:00",
-      installGuidance: sampleCcxtInstallGuidance
+      installGuidance: sampleCcxtInstallGuidance,
+      lastProviderError: null
     },
     note: "Crypto public OHLCV adapter."
   }
@@ -1894,7 +1910,8 @@ describe("terminal workspace API client", () => {
                   lastError: null,
                   retryState: "idle",
                   checkedAt: "2026-06-14T08:00:00+00:00",
-                  installGuidance: sampleAkshareInstallGuidance
+                  installGuidance: sampleAkshareInstallGuidance,
+                  lastProviderError: null
                 },
                 note: "Public A-share OHLCV."
               },
@@ -1903,7 +1920,7 @@ describe("terminal workspace API client", () => {
                 market: "us",
                 adapter: "YFinanceMarketDataAdapter",
                 provider: "yfinance",
-                status: "ready",
+                status: "degraded",
                 route: "public_ohlcv",
                 capabilities: ["Ticker.history"],
                 timeframes: ["1d", "1m", "5m", "15m", "30m", "60m"],
@@ -1918,13 +1935,14 @@ describe("terminal workspace API client", () => {
                   freshnessSummary: { fresh: 0, stale: 0, empty: 0 }
                 },
                 externalTelemetry: {
-                  status: "blocked",
+                  status: "degraded",
                   dependency: "yfinance",
-                  dependencyAvailable: false,
-                  lastError: "optional package 'yfinance' is not installed",
-                  retryState: "dependency_missing",
+                  dependencyAvailable: true,
+                  lastError: "Yahoo chart timed out",
+                  retryState: "provider_error",
                   checkedAt: "2026-06-14T08:00:00+00:00",
-                  installGuidance: sampleYfinanceInstallGuidance
+                  installGuidance: sampleYfinanceInstallGuidance,
+                  lastProviderError: sampleYfinanceProviderError
                 },
                 note: "Public US OHLCV."
               }
@@ -2010,12 +2028,17 @@ describe("terminal workspace API client", () => {
         rowCount: 0
       },
       externalTelemetry: {
-        status: "blocked",
+        status: "degraded",
         dependency: "yfinance",
-        retryState: "dependency_missing",
+        retryState: "provider_error",
         installGuidance: {
           dockerBuildArg: "INSTALL_DATA_DEPS=true",
           packageInstallCommand: "pip install yfinance"
+        },
+        lastProviderError: {
+          source: "yfinance-fallback",
+          context: "market-klines",
+          message: "Yahoo chart timed out"
         }
       }
     });
@@ -7882,7 +7905,76 @@ describe("terminal workspace API client", () => {
                 dependencyAvailable: true,
                 lastError: null,
                 retryState: "idle",
-                checkedAt: "2026-06-14T08:00:00+00:00"
+                checkedAt: "2026-06-14T08:00:00+00:00",
+                lastProviderError: null
+              }
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter provider error state is missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-14T08:00:00+00:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              ...samplePlatformSettingsMarketDataAdapters[0],
+              externalTelemetry: {
+                status: "ok",
+                dependency: "akshare",
+                dependencyAvailable: true,
+                lastError: null,
+                retryState: "idle",
+                checkedAt: "2026-06-14T08:00:00+00:00",
+                installGuidance: sampleAkshareInstallGuidance
               }
             }
           ],

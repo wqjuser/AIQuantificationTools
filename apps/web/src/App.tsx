@@ -10201,6 +10201,9 @@ function PlatformSettingsPanel({
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
               </small>
+              {row.externalTelemetry.lastProviderError ? (
+                <small>{marketDataAdapterProviderErrorLabel(i18n, row.externalTelemetry.lastProviderError)}</small>
+              ) : null}
               {onOpenMarketDataAdapterWorkflow ? (
                 <button
                   className="adapter-certification-button"
@@ -18795,6 +18798,11 @@ function marketDataAdapterExternalTelemetryLabel(
       ? `依赖可用 · ${telemetry.dependency} · ${telemetry.retryState}`
       : `Dependency ready · ${telemetry.dependency} · ${telemetry.retryState}`;
   }
+  if (telemetry.status === "degraded") {
+    return i18n.locale === "zh-CN"
+      ? `外部源降级 · ${telemetry.dependency} · ${telemetry.retryState}`
+      : `Provider degraded · ${telemetry.dependency} · ${telemetry.retryState}`;
+  }
   if (telemetry.retryState === "dependency_missing") {
     return i18n.locale === "zh-CN"
       ? `依赖缺失 · ${telemetry.dependency}`
@@ -18813,6 +18821,16 @@ function marketDataAdapterInstallGuidanceLabel(
     return `安装建议 · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
   }
   return `Install · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
+}
+
+function marketDataAdapterProviderErrorLabel(
+  i18n: AppI18n,
+  error: NonNullable<PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["lastProviderError"]>
+): string {
+  const target = `${error.market.toUpperCase()} ${error.symbol} ${error.timeframe}`;
+  return i18n.locale === "zh-CN"
+    ? `最近错误 · ${error.source} · ${error.context} · ${target} · ${error.message}`
+    : `Latest error · ${error.source} · ${error.context} · ${target} · ${error.message}`;
 }
 
 function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearchSuggestion["cache"]>): string {

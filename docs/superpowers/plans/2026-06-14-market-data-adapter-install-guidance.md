@@ -37,5 +37,5 @@ Make missing optional market-data dependencies actionable from Settings by retur
 ## Follow-Ups
 
 - Add copy buttons for Docker/local commands in Settings.
-- Persist provider request failures into an adapter error ledger.
+- Done in `2026-06-14-market-data-adapter-error-ledger.md`: provider request failures are persisted into an adapter error ledger and surfaced in Settings.
 - Track provider retry/backoff state after real request failures, not just missing dependency checks.

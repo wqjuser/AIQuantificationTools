@@ -1117,13 +1117,14 @@ export interface PlatformSettingsMarketDataAdapterCacheDiagnostics {
 }
 
 export interface PlatformSettingsMarketDataAdapterExternalTelemetry {
-  status: "ok" | "blocked" | "unknown";
+  status: "ok" | "degraded" | "blocked" | "unknown";
   dependency: string;
   dependencyAvailable: boolean;
   lastError: string | null;
-  retryState: "idle" | "dependency_missing" | "not_observed";
+  retryState: "idle" | "dependency_missing" | "provider_error" | "not_observed";
   checkedAt: string;
   installGuidance: PlatformSettingsMarketDataAdapterInstallGuidance;
+  lastProviderError: PlatformSettingsMarketDataAdapterProviderError | null;
 }
 
 export interface PlatformSettingsMarketDataAdapterInstallGuidance {
@@ -1132,6 +1133,19 @@ export interface PlatformSettingsMarketDataAdapterInstallGuidance {
   packageInstallCommand: string;
   projectExtraInstallCommand: string;
   note: string;
+}
+
+export interface PlatformSettingsMarketDataAdapterProviderError {
+  eventId: string;
+  createdAt: string;
+  adapterId: string;
+  provider: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  source: string;
+  context: string;
+  message: string;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -9137,15 +9151,21 @@ function isPlatformSettingsMarketDataAdapterExternalTelemetry(
   }
   const telemetry = value as Partial<PlatformSettingsMarketDataAdapterExternalTelemetry>;
   return (
-    (telemetry.status === "ok" || telemetry.status === "blocked" || telemetry.status === "unknown") &&
+    (telemetry.status === "ok" ||
+      telemetry.status === "degraded" ||
+      telemetry.status === "blocked" ||
+      telemetry.status === "unknown") &&
     typeof telemetry.dependency === "string" &&
     typeof telemetry.dependencyAvailable === "boolean" &&
     (telemetry.lastError === null || typeof telemetry.lastError === "string") &&
     (telemetry.retryState === "idle" ||
       telemetry.retryState === "dependency_missing" ||
+      telemetry.retryState === "provider_error" ||
       telemetry.retryState === "not_observed") &&
     typeof telemetry.checkedAt === "string" &&
-    isPlatformSettingsMarketDataAdapterInstallGuidance(telemetry.installGuidance)
+    isPlatformSettingsMarketDataAdapterInstallGuidance(telemetry.installGuidance) &&
+    (telemetry.lastProviderError === null ||
+      isPlatformSettingsMarketDataAdapterProviderError(telemetry.lastProviderError))
   );
 }
 
@@ -9162,6 +9182,27 @@ function isPlatformSettingsMarketDataAdapterInstallGuidance(
     typeof guidance.packageInstallCommand === "string" &&
     typeof guidance.projectExtraInstallCommand === "string" &&
     typeof guidance.note === "string"
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterProviderError(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterProviderError {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const error = value as Partial<PlatformSettingsMarketDataAdapterProviderError>;
+  return (
+    typeof error.eventId === "string" &&
+    typeof error.createdAt === "string" &&
+    typeof error.adapterId === "string" &&
+    typeof error.provider === "string" &&
+    isMarket(error.market) &&
+    typeof error.symbol === "string" &&
+    isTimeframe(error.timeframe) &&
+    typeof error.source === "string" &&
+    typeof error.context === "string" &&
+    typeof error.message === "string"
   );
 }
 

@@ -15,6 +15,7 @@ def build_settings_status(
     finnhub_api_key: str | None = None,
     ccxt_exchange: str | None = None,
     adapter_dependency_statuses: dict[str, bool] | None = None,
+    adapter_error_events: list[dict[str, Any]] | None = None,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a read-only platform settings status payload without returning secrets."""
@@ -71,6 +72,7 @@ def build_settings_status(
             exchange,
             cache_context_payloads,
             adapter_dependency_statuses=adapter_dependency_statuses,
+            adapter_error_events=adapter_error_events,
             generated_at=generated_timestamp,
         ),
         "cache": {
@@ -138,21 +140,28 @@ def _market_data_adapter_statuses(
     cache_contexts: list[dict[str, Any]],
     *,
     adapter_dependency_statuses: dict[str, bool] | None,
+    adapter_error_events: list[dict[str, Any]] | None,
     generated_at: datetime,
 ) -> list[dict[str, Any]]:
     akshare_telemetry = _market_data_adapter_external_telemetry(
+        adapter_id="akshare-ohlcv",
         dependency="akshare",
         dependency_statuses=adapter_dependency_statuses,
+        adapter_error_events=adapter_error_events,
         generated_at=generated_at,
     )
     yfinance_telemetry = _market_data_adapter_external_telemetry(
+        adapter_id="yfinance-ohlcv",
         dependency="yfinance",
         dependency_statuses=adapter_dependency_statuses,
+        adapter_error_events=adapter_error_events,
         generated_at=generated_at,
     )
     ccxt_telemetry = _market_data_adapter_external_telemetry(
+        adapter_id="ccxt-ohlcv",
         dependency="ccxt",
         dependency_statuses=adapter_dependency_statuses,
+        adapter_error_events=adapter_error_events,
         generated_at=generated_at,
     )
     return [
@@ -209,12 +218,26 @@ def _market_data_adapter_statuses(
 
 def _market_data_adapter_external_telemetry(
     *,
+    adapter_id: str,
     dependency: str,
     dependency_statuses: dict[str, bool] | None,
+    adapter_error_events: list[dict[str, Any]] | None,
     generated_at: datetime,
 ) -> dict[str, Any]:
     available = _adapter_dependency_available(dependency, dependency_statuses)
+    last_provider_error = _latest_provider_error_for_adapter(adapter_id, adapter_error_events)
     if available:
+        if last_provider_error:
+            return {
+                "status": "degraded",
+                "dependency": dependency,
+                "dependencyAvailable": True,
+                "lastError": last_provider_error["message"],
+                "retryState": "provider_error",
+                "checkedAt": generated_at.isoformat(),
+                "installGuidance": _market_data_adapter_install_guidance(dependency),
+                "lastProviderError": last_provider_error,
+            }
         return {
             "status": "ok",
             "dependency": dependency,
@@ -223,6 +246,7 @@ def _market_data_adapter_external_telemetry(
             "retryState": "idle",
             "checkedAt": generated_at.isoformat(),
             "installGuidance": _market_data_adapter_install_guidance(dependency),
+            "lastProviderError": None,
         }
     return {
         "status": "blocked",
@@ -232,6 +256,7 @@ def _market_data_adapter_external_telemetry(
         "retryState": "dependency_missing",
         "checkedAt": generated_at.isoformat(),
         "installGuidance": _market_data_adapter_install_guidance(dependency),
+        "lastProviderError": last_provider_error,
     }
 
 
@@ -254,7 +279,28 @@ def _market_data_adapter_install_guidance(dependency: str) -> dict[str, str]:
     }
 
 
+def _latest_provider_error_for_adapter(adapter_id: str, events: list[dict[str, Any]] | None) -> dict[str, str] | None:
+    matching_events = [
+        _provider_error_payload(event)
+        for event in (events or [])
+        if isinstance(event, dict) and event.get("adapterId") == adapter_id
+    ]
+    matching_events = [event for event in matching_events if event is not None]
+    if not matching_events:
+        return None
+    return max(matching_events, key=lambda event: (event["createdAt"], event["eventId"]))
+
+
+def _provider_error_payload(event: dict[str, Any]) -> dict[str, str] | None:
+    required = ["eventId", "createdAt", "adapterId", "provider", "market", "symbol", "timeframe", "source", "context", "message"]
+    if not all(isinstance(event.get(field), str) for field in required):
+        return None
+    return {field: str(event[field]) for field in required}
+
+
 def _market_data_adapter_status_from_telemetry(telemetry: dict[str, Any]) -> str:
+    if telemetry.get("status") == "degraded":
+        return "degraded"
     return "ready" if telemetry.get("status") == "ok" else "blocked"
 
 
