@@ -213,6 +213,26 @@ import {
   type ResearchRunExportPackage
 } from "./terminal-api";
 
+const sampleAkshareInstallGuidance = {
+  packageName: "akshare",
+  dockerBuildArg: "INSTALL_DATA_DEPS=true",
+  packageInstallCommand: "pip install akshare",
+  projectExtraInstallCommand: 'pip install -e "services/quant_core[data]"',
+  note: "Installs optional public market data dependencies only; it does not configure API keys or enable live trading."
+} as const;
+
+const sampleYfinanceInstallGuidance = {
+  ...sampleAkshareInstallGuidance,
+  packageName: "yfinance",
+  packageInstallCommand: "pip install yfinance"
+} as const;
+
+const sampleCcxtInstallGuidance = {
+  ...sampleAkshareInstallGuidance,
+  packageName: "ccxt",
+  packageInstallCommand: "pip install ccxt"
+} as const;
+
 const samplePlatformSettingsMarketDataAdapters = [
   {
     id: "akshare-ohlcv",
@@ -239,7 +259,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       dependencyAvailable: true,
       lastError: null,
       retryState: "idle",
-      checkedAt: "2026-06-14T08:00:00+00:00"
+      checkedAt: "2026-06-14T08:00:00+00:00",
+      installGuidance: sampleAkshareInstallGuidance
     },
     note: "A-share public OHLCV adapter."
   },
@@ -268,7 +289,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       dependencyAvailable: true,
       lastError: null,
       retryState: "idle",
-      checkedAt: "2026-06-14T08:00:00+00:00"
+      checkedAt: "2026-06-14T08:00:00+00:00",
+      installGuidance: sampleYfinanceInstallGuidance
     },
     note: "US equity public OHLCV adapter."
   },
@@ -297,7 +319,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       dependencyAvailable: false,
       lastError: "optional package 'ccxt' is not installed",
       retryState: "dependency_missing",
-      checkedAt: "2026-06-14T08:00:00+00:00"
+      checkedAt: "2026-06-14T08:00:00+00:00",
+      installGuidance: sampleCcxtInstallGuidance
     },
     note: "Crypto public OHLCV adapter."
   }
@@ -1870,7 +1893,8 @@ describe("terminal workspace API client", () => {
                   dependencyAvailable: true,
                   lastError: null,
                   retryState: "idle",
-                  checkedAt: "2026-06-14T08:00:00+00:00"
+                  checkedAt: "2026-06-14T08:00:00+00:00",
+                  installGuidance: sampleAkshareInstallGuidance
                 },
                 note: "Public A-share OHLCV."
               },
@@ -1899,7 +1923,8 @@ describe("terminal workspace API client", () => {
                   dependencyAvailable: false,
                   lastError: "optional package 'yfinance' is not installed",
                   retryState: "dependency_missing",
-                  checkedAt: "2026-06-14T08:00:00+00:00"
+                  checkedAt: "2026-06-14T08:00:00+00:00",
+                  installGuidance: sampleYfinanceInstallGuidance
                 },
                 note: "Public US OHLCV."
               }
@@ -1987,7 +2012,11 @@ describe("terminal workspace API client", () => {
       externalTelemetry: {
         status: "blocked",
         dependency: "yfinance",
-        retryState: "dependency_missing"
+        retryState: "dependency_missing",
+        installGuidance: {
+          dockerBuildArg: "INSTALL_DATA_DEPS=true",
+          packageInstallCommand: "pip install yfinance"
+        }
       }
     });
     expect((result.settings?.cache as unknown as { rowCount?: number }).rowCount).toBe(1280);
@@ -7788,6 +7817,73 @@ describe("terminal workspace API client", () => {
                 freshnessSummary: { fresh: 1, stale: 0, empty: 0 }
               },
               note: "External telemetry intentionally omitted."
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter install guidance is missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-14T08:00:00+00:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              ...samplePlatformSettingsMarketDataAdapters[0],
+              externalTelemetry: {
+                status: "ok",
+                dependency: "akshare",
+                dependencyAvailable: true,
+                lastError: null,
+                retryState: "idle",
+                checkedAt: "2026-06-14T08:00:00+00:00"
+              }
             }
           ],
           cache: {

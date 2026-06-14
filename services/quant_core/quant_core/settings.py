@@ -222,6 +222,7 @@ def _market_data_adapter_external_telemetry(
             "lastError": None,
             "retryState": "idle",
             "checkedAt": generated_at.isoformat(),
+            "installGuidance": _market_data_adapter_install_guidance(dependency),
         }
     return {
         "status": "blocked",
@@ -230,6 +231,7 @@ def _market_data_adapter_external_telemetry(
         "lastError": f"optional package '{dependency}' is not installed",
         "retryState": "dependency_missing",
         "checkedAt": generated_at.isoformat(),
+        "installGuidance": _market_data_adapter_install_guidance(dependency),
     }
 
 
@@ -237,6 +239,19 @@ def _adapter_dependency_available(dependency: str, dependency_statuses: dict[str
     if dependency_statuses is not None and dependency in dependency_statuses:
         return bool(dependency_statuses[dependency])
     return find_spec(dependency) is not None
+
+
+def _market_data_adapter_install_guidance(dependency: str) -> dict[str, str]:
+    return {
+        "packageName": dependency,
+        "dockerBuildArg": "INSTALL_DATA_DEPS=true",
+        "packageInstallCommand": f"pip install {dependency}",
+        "projectExtraInstallCommand": 'pip install -e "services/quant_core[data]"',
+        "note": (
+            "Installs optional public market data dependencies only; "
+            "it does not configure API keys or enable live trading."
+        ),
+    }
 
 
 def _market_data_adapter_status_from_telemetry(telemetry: dict[str, Any]) -> str:

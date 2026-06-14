@@ -40,4 +40,4 @@ Make Settings show whether each public OHLCV adapter has the optional runtime de
 
 - Persist real provider request failures from `/api/market/klines` and cache refresh runs into an adapter error ledger.
 - Track rate-limit retry and backoff state per provider.
-- Add an install guidance action for missing optional data dependencies in Docker/local setups.
+- Install guidance for missing optional data dependencies is now covered by `2026-06-14-market-data-adapter-install-guidance.md`; future work can turn the guidance text into copy buttons or one-click diagnostics.

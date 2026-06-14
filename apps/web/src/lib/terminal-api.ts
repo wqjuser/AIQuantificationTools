@@ -1123,6 +1123,15 @@ export interface PlatformSettingsMarketDataAdapterExternalTelemetry {
   lastError: string | null;
   retryState: "idle" | "dependency_missing" | "not_observed";
   checkedAt: string;
+  installGuidance: PlatformSettingsMarketDataAdapterInstallGuidance;
+}
+
+export interface PlatformSettingsMarketDataAdapterInstallGuidance {
+  packageName: string;
+  dockerBuildArg: string;
+  packageInstallCommand: string;
+  projectExtraInstallCommand: string;
+  note: string;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -9135,7 +9144,24 @@ function isPlatformSettingsMarketDataAdapterExternalTelemetry(
     (telemetry.retryState === "idle" ||
       telemetry.retryState === "dependency_missing" ||
       telemetry.retryState === "not_observed") &&
-    typeof telemetry.checkedAt === "string"
+    typeof telemetry.checkedAt === "string" &&
+    isPlatformSettingsMarketDataAdapterInstallGuidance(telemetry.installGuidance)
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterInstallGuidance(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterInstallGuidance {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const guidance = value as Partial<PlatformSettingsMarketDataAdapterInstallGuidance>;
+  return (
+    typeof guidance.packageName === "string" &&
+    typeof guidance.dockerBuildArg === "string" &&
+    typeof guidance.packageInstallCommand === "string" &&
+    typeof guidance.projectExtraInstallCommand === "string" &&
+    typeof guidance.note === "string"
   );
 }
 

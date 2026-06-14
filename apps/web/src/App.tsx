@@ -10197,6 +10197,7 @@ function PlatformSettingsPanel({
               </em>
               <small>
                 {marketDataAdapterExternalTelemetryLabel(i18n, row.externalTelemetry)} ·{" "}
+                {marketDataAdapterInstallGuidanceLabel(i18n, row.externalTelemetry.installGuidance)} ·{" "}
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
               </small>
@@ -18802,6 +18803,16 @@ function marketDataAdapterExternalTelemetryLabel(
   return i18n.locale === "zh-CN"
     ? `外部源未知 · ${telemetry.dependency}`
     : `External source unknown · ${telemetry.dependency}`;
+}
+
+function marketDataAdapterInstallGuidanceLabel(
+  i18n: AppI18n,
+  guidance: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["installGuidance"]
+): string {
+  if (i18n.locale === "zh-CN") {
+    return `安装建议 · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
+  }
+  return `Install · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
 }
 
 function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearchSuggestion["cache"]>): string {

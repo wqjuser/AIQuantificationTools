@@ -1425,10 +1425,21 @@ class QuantCoreContractTest(unittest.TestCase):
                 "lastError": "optional package 'akshare' is not installed",
                 "retryState": "dependency_missing",
                 "checkedAt": "2026-06-14T08:00:00+00:00",
+                "installGuidance": {
+                    "packageName": "akshare",
+                    "dockerBuildArg": "INSTALL_DATA_DEPS=true",
+                    "packageInstallCommand": "pip install akshare",
+                    "projectExtraInstallCommand": 'pip install -e "services/quant_core[data]"',
+                    "note": "Installs optional public market data dependencies only; it does not configure API keys or enable live trading.",
+                },
             },
         )
         self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["status"], "ok")
         self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["retryState"], "idle")
+        self.assertEqual(
+            adapters["yfinance-ohlcv"]["externalTelemetry"]["installGuidance"]["packageInstallCommand"],
+            "pip install yfinance",
+        )
         self.assertIsNone(adapters["ccxt-ohlcv"]["externalTelemetry"]["lastError"])
         self.assertTrue(all("secret" not in json.dumps(adapter).lower() for adapter in adapters.values()))
 
