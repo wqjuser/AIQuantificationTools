@@ -246,6 +246,36 @@ const sampleYfinanceProviderError = {
   message: "Yahoo chart timed out"
 } as const;
 
+const sampleOkProviderHealth = {
+  status: "ok",
+  recentErrorCount: 0,
+  lastErrorAt: null,
+  affectedSymbols: [],
+  affectedContexts: [],
+  retryAfterSeconds: 0,
+  reason: "no_recent_provider_errors"
+} as const;
+
+const sampleCooldownProviderHealth = {
+  status: "cooldown",
+  recentErrorCount: 3,
+  lastErrorAt: "2026-06-14T08:14:00+00:00",
+  affectedSymbols: ["AAPL", "MSFT"],
+  affectedContexts: ["cache-refresh", "market-klines", "watchlist-cache-refresh"],
+  retryAfterSeconds: 900,
+  reason: "provider_cooldown"
+} as const;
+
+const sampleBlockedProviderHealth = {
+  status: "blocked",
+  recentErrorCount: 0,
+  lastErrorAt: null,
+  affectedSymbols: [],
+  affectedContexts: [],
+  retryAfterSeconds: 0,
+  reason: "dependency_missing"
+} as const;
+
 const samplePlatformSettingsMarketDataAdapters = [
   {
     id: "akshare-ohlcv",
@@ -274,7 +304,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       retryState: "idle",
       checkedAt: "2026-06-14T08:00:00+00:00",
       installGuidance: sampleAkshareInstallGuidance,
-      lastProviderError: null
+      lastProviderError: null,
+      providerHealth: sampleOkProviderHealth
     },
     note: "A-share public OHLCV adapter."
   },
@@ -305,7 +336,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       retryState: "provider_error",
       checkedAt: "2026-06-14T08:00:00+00:00",
       installGuidance: sampleYfinanceInstallGuidance,
-      lastProviderError: sampleYfinanceProviderError
+      lastProviderError: sampleYfinanceProviderError,
+      providerHealth: sampleCooldownProviderHealth
     },
     note: "US equity public OHLCV adapter."
   },
@@ -336,7 +368,8 @@ const samplePlatformSettingsMarketDataAdapters = [
       retryState: "dependency_missing",
       checkedAt: "2026-06-14T08:00:00+00:00",
       installGuidance: sampleCcxtInstallGuidance,
-      lastProviderError: null
+      lastProviderError: null,
+      providerHealth: sampleBlockedProviderHealth
     },
     note: "Crypto public OHLCV adapter."
   }
@@ -1911,7 +1944,8 @@ describe("terminal workspace API client", () => {
                   retryState: "idle",
                   checkedAt: "2026-06-14T08:00:00+00:00",
                   installGuidance: sampleAkshareInstallGuidance,
-                  lastProviderError: null
+                  lastProviderError: null,
+                  providerHealth: sampleOkProviderHealth
                 },
                 note: "Public A-share OHLCV."
               },
@@ -1942,7 +1976,8 @@ describe("terminal workspace API client", () => {
                   retryState: "provider_error",
                   checkedAt: "2026-06-14T08:00:00+00:00",
                   installGuidance: sampleYfinanceInstallGuidance,
-                  lastProviderError: sampleYfinanceProviderError
+                  lastProviderError: sampleYfinanceProviderError,
+                  providerHealth: sampleCooldownProviderHealth
                 },
                 note: "Public US OHLCV."
               }
@@ -2034,6 +2069,12 @@ describe("terminal workspace API client", () => {
         installGuidance: {
           dockerBuildArg: "INSTALL_DATA_DEPS=true",
           packageInstallCommand: "pip install yfinance"
+        },
+        providerHealth: {
+          status: "cooldown",
+          recentErrorCount: 3,
+          retryAfterSeconds: 900,
+          affectedSymbols: ["AAPL", "MSFT"]
         },
         lastProviderError: {
           source: "yfinance-fallback",
@@ -7906,7 +7947,8 @@ describe("terminal workspace API client", () => {
                 lastError: null,
                 retryState: "idle",
                 checkedAt: "2026-06-14T08:00:00+00:00",
-                lastProviderError: null
+                lastProviderError: null,
+                providerHealth: sampleOkProviderHealth
               }
             }
           ],
@@ -7974,7 +8016,77 @@ describe("terminal workspace API client", () => {
                 lastError: null,
                 retryState: "idle",
                 checkedAt: "2026-06-14T08:00:00+00:00",
-                installGuidance: sampleAkshareInstallGuidance
+                installGuidance: sampleAkshareInstallGuidance,
+                providerHealth: sampleOkProviderHealth
+              }
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter provider health is missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-06-14T08:00:00+00:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              ...samplePlatformSettingsMarketDataAdapters[0],
+              externalTelemetry: {
+                status: "ok",
+                dependency: "akshare",
+                dependencyAvailable: true,
+                lastError: null,
+                retryState: "idle",
+                checkedAt: "2026-06-14T08:00:00+00:00",
+                installGuidance: sampleAkshareInstallGuidance,
+                lastProviderError: null
               }
             }
           ],

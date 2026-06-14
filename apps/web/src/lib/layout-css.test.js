@@ -2439,10 +2439,15 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("marketDataAdapterExternalTelemetryLabel(i18n, row.externalTelemetry)");
     expect(appSource).toContain("marketDataAdapterInstallGuidanceLabel(i18n, row.externalTelemetry.installGuidance)");
     expect(appSource).toContain("marketDataAdapterProviderErrorLabel(i18n, row.externalTelemetry.lastProviderError)");
+    expect(appSource).toContain("marketDataAdapterProviderHealthLabel(i18n, row.externalTelemetry.providerHealth)");
     expect(appSource).toContain("依赖可用");
     expect(appSource).toContain("Dependency ready");
     expect(appSource).toContain("依赖缺失");
     expect(appSource).toContain("Dependency missing");
+    expect(appSource).toContain("健康");
+    expect(appSource).toContain("Provider health");
+    expect(appSource).toContain("建议退避");
+    expect(appSource).toContain("Backoff");
     expect(appSource).toContain("最近错误");
     expect(appSource).toContain("Latest error");
     expect(appSource).toContain("安装建议");

@@ -226,6 +226,11 @@ def _market_data_adapter_external_telemetry(
 ) -> dict[str, Any]:
     available = _adapter_dependency_available(dependency, dependency_statuses)
     last_provider_error = _latest_provider_error_for_adapter(adapter_id, adapter_error_events)
+    provider_health = _provider_health_for_adapter(
+        adapter_id,
+        adapter_error_events,
+        dependency_available=available,
+    )
     if available:
         if last_provider_error:
             return {
@@ -237,6 +242,7 @@ def _market_data_adapter_external_telemetry(
                 "checkedAt": generated_at.isoformat(),
                 "installGuidance": _market_data_adapter_install_guidance(dependency),
                 "lastProviderError": last_provider_error,
+                "providerHealth": provider_health,
             }
         return {
             "status": "ok",
@@ -247,6 +253,7 @@ def _market_data_adapter_external_telemetry(
             "checkedAt": generated_at.isoformat(),
             "installGuidance": _market_data_adapter_install_guidance(dependency),
             "lastProviderError": None,
+            "providerHealth": provider_health,
         }
     return {
         "status": "blocked",
@@ -257,6 +264,7 @@ def _market_data_adapter_external_telemetry(
         "checkedAt": generated_at.isoformat(),
         "installGuidance": _market_data_adapter_install_guidance(dependency),
         "lastProviderError": last_provider_error,
+        "providerHealth": provider_health,
     }
 
 
@@ -289,6 +297,52 @@ def _latest_provider_error_for_adapter(adapter_id: str, events: list[dict[str, A
     if not matching_events:
         return None
     return max(matching_events, key=lambda event: (event["createdAt"], event["eventId"]))
+
+
+def _provider_health_for_adapter(
+    adapter_id: str,
+    events: list[dict[str, Any]] | None,
+    *,
+    dependency_available: bool,
+) -> dict[str, Any]:
+    matching_events = [
+        _provider_error_payload(event)
+        for event in (events or [])
+        if isinstance(event, dict) and event.get("adapterId") == adapter_id
+    ]
+    matching_events = [event for event in matching_events if event is not None]
+    recent_error_count = len(matching_events)
+    last_error_at = None
+    if matching_events:
+        latest_event = max(matching_events, key=lambda event: (event["createdAt"], event["eventId"]))
+        last_error_at = latest_event["createdAt"]
+
+    if not dependency_available:
+        status = "blocked"
+        reason = "dependency_missing"
+        retry_after_seconds = 0
+    elif recent_error_count >= 3:
+        status = "cooldown"
+        reason = "provider_cooldown"
+        retry_after_seconds = 900
+    elif recent_error_count:
+        status = "watch"
+        reason = "recent_provider_errors"
+        retry_after_seconds = 60 if recent_error_count == 1 else 300
+    else:
+        status = "ok"
+        reason = "no_recent_provider_errors"
+        retry_after_seconds = 0
+
+    return {
+        "status": status,
+        "recentErrorCount": recent_error_count,
+        "lastErrorAt": last_error_at,
+        "affectedSymbols": sorted({event["symbol"] for event in matching_events}),
+        "affectedContexts": sorted({event["context"] for event in matching_events}),
+        "retryAfterSeconds": retry_after_seconds,
+        "reason": reason,
+    }
 
 
 def _provider_error_payload(event: dict[str, Any]) -> dict[str, str] | None:

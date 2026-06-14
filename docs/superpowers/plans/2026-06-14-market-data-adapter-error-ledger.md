@@ -43,6 +43,6 @@ Persist recent public OHLCV provider failures so Settings can explain why an ada
 
 ## Follow-Ups
 
-- Add provider-level retry/backoff state once the ledger has enough observed failures.
+- Done in `2026-06-14-market-data-adapter-provider-health.md`: Settings now derives provider health, affected symbols/contexts, and suggested backoff seconds from the adapter error ledger.
 - Add a compact Settings filter for degraded adapters when the adapter list grows.
 - Consider a maintenance task that prunes old adapter error rows after retention policy is defined.

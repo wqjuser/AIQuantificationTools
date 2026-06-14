@@ -1125,6 +1125,7 @@ export interface PlatformSettingsMarketDataAdapterExternalTelemetry {
   checkedAt: string;
   installGuidance: PlatformSettingsMarketDataAdapterInstallGuidance;
   lastProviderError: PlatformSettingsMarketDataAdapterProviderError | null;
+  providerHealth: PlatformSettingsMarketDataAdapterProviderHealth;
 }
 
 export interface PlatformSettingsMarketDataAdapterInstallGuidance {
@@ -1146,6 +1147,16 @@ export interface PlatformSettingsMarketDataAdapterProviderError {
   source: string;
   context: string;
   message: string;
+}
+
+export interface PlatformSettingsMarketDataAdapterProviderHealth {
+  status: "ok" | "watch" | "cooldown" | "blocked";
+  recentErrorCount: number;
+  lastErrorAt: string | null;
+  affectedSymbols: string[];
+  affectedContexts: string[];
+  retryAfterSeconds: number;
+  reason: string;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -9165,7 +9176,8 @@ function isPlatformSettingsMarketDataAdapterExternalTelemetry(
     typeof telemetry.checkedAt === "string" &&
     isPlatformSettingsMarketDataAdapterInstallGuidance(telemetry.installGuidance) &&
     (telemetry.lastProviderError === null ||
-      isPlatformSettingsMarketDataAdapterProviderError(telemetry.lastProviderError))
+      isPlatformSettingsMarketDataAdapterProviderError(telemetry.lastProviderError)) &&
+    isPlatformSettingsMarketDataAdapterProviderHealth(telemetry.providerHealth)
   );
 }
 
@@ -9203,6 +9215,33 @@ function isPlatformSettingsMarketDataAdapterProviderError(
     typeof error.source === "string" &&
     typeof error.context === "string" &&
     typeof error.message === "string"
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterProviderHealth(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterProviderHealth {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const health = value as Partial<PlatformSettingsMarketDataAdapterProviderHealth>;
+  return (
+    (health.status === "ok" ||
+      health.status === "watch" ||
+      health.status === "cooldown" ||
+      health.status === "blocked") &&
+    typeof health.recentErrorCount === "number" &&
+    Number.isFinite(health.recentErrorCount) &&
+    health.recentErrorCount >= 0 &&
+    (health.lastErrorAt === null || typeof health.lastErrorAt === "string") &&
+    Array.isArray(health.affectedSymbols) &&
+    health.affectedSymbols.every((symbol) => typeof symbol === "string") &&
+    Array.isArray(health.affectedContexts) &&
+    health.affectedContexts.every((context) => typeof context === "string") &&
+    typeof health.retryAfterSeconds === "number" &&
+    Number.isFinite(health.retryAfterSeconds) &&
+    health.retryAfterSeconds >= 0 &&
+    typeof health.reason === "string"
   );
 }
 

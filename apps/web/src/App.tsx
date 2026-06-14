@@ -10197,6 +10197,7 @@ function PlatformSettingsPanel({
               </em>
               <small>
                 {marketDataAdapterExternalTelemetryLabel(i18n, row.externalTelemetry)} ·{" "}
+                {marketDataAdapterProviderHealthLabel(i18n, row.externalTelemetry.providerHealth)} ·{" "}
                 {marketDataAdapterInstallGuidanceLabel(i18n, row.externalTelemetry.installGuidance)} ·{" "}
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
@@ -18821,6 +18822,47 @@ function marketDataAdapterInstallGuidanceLabel(
     return `安装建议 · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
   }
   return `Install · Docker ${guidance.dockerBuildArg} · ${guidance.packageInstallCommand}`;
+}
+
+function marketDataAdapterProviderHealthLabel(
+  i18n: AppI18n,
+  health: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"]
+): string {
+  const statusLabel = marketDataAdapterProviderHealthStatusLabel(i18n, health.status);
+  const affected =
+    health.affectedSymbols.length > 0
+      ? health.affectedSymbols.slice(0, 3).join("/")
+      : i18n.locale === "zh-CN"
+        ? "无"
+        : "none";
+  const backoff =
+    health.retryAfterSeconds > 0
+      ? i18n.locale === "zh-CN"
+        ? `${health.retryAfterSeconds} 秒`
+        : `${health.retryAfterSeconds}s`
+      : i18n.locale === "zh-CN"
+        ? "无"
+        : "none";
+  return i18n.locale === "zh-CN"
+    ? `健康 · ${statusLabel} · 错误 ${health.recentErrorCount} · 影响 ${affected} · 建议退避 ${backoff}`
+    : `Provider health · ${statusLabel} · errors ${health.recentErrorCount} · affected ${affected} · Backoff ${backoff}`;
+}
+
+function marketDataAdapterProviderHealthStatusLabel(
+  i18n: AppI18n,
+  status: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"]["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return (
+    {
+      ok: "正常",
+      watch: "观察",
+      cooldown: "冷却",
+      blocked: "阻断"
+    }[status] ?? status
+  );
 }
 
 function marketDataAdapterProviderErrorLabel(

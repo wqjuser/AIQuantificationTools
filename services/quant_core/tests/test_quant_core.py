@@ -1435,10 +1435,21 @@ class QuantCoreContractTest(unittest.TestCase):
                     "note": "Installs optional public market data dependencies only; it does not configure API keys or enable live trading.",
                 },
                 "lastProviderError": None,
+                "providerHealth": {
+                    "status": "blocked",
+                    "recentErrorCount": 0,
+                    "lastErrorAt": None,
+                    "affectedSymbols": [],
+                    "affectedContexts": [],
+                    "retryAfterSeconds": 0,
+                    "reason": "dependency_missing",
+                },
             },
         )
         self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["status"], "ok")
         self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["retryState"], "idle")
+        self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["providerHealth"]["status"], "ok")
+        self.assertEqual(adapters["yfinance-ohlcv"]["externalTelemetry"]["providerHealth"]["recentErrorCount"], 0)
         self.assertEqual(
             adapters["yfinance-ohlcv"]["externalTelemetry"]["installGuidance"]["packageInstallCommand"],
             "pip install yfinance",
@@ -1544,6 +1555,88 @@ class QuantCoreContractTest(unittest.TestCase):
             },
         )
         self.assertIsNone(adapters["akshare-ohlcv"]["externalTelemetry"]["lastProviderError"])
+
+    def test_settings_status_reports_market_data_adapter_provider_health_summary(self):
+        from quant_core.adapter_error_ledger import create_market_data_adapter_error_event, market_data_adapter_error_event_to_payload
+        from quant_core.settings import build_settings_status
+
+        events = [
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="AAPL",
+                timeframe="1d",
+                source="yfinance-fallback",
+                context="market-klines",
+                message="Yahoo chart timed out",
+                created_at=datetime(2026, 6, 14, 8, 10, tzinfo=timezone.utc),
+                event_id="adapter-error-yf-1",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="MSFT",
+                timeframe="5m",
+                source="yfinance-fallback",
+                context="watchlist-cache-refresh",
+                message="Yahoo intraday throttled",
+                created_at=datetime(2026, 6, 14, 8, 12, tzinfo=timezone.utc),
+                event_id="adapter-error-yf-2",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="AAPL",
+                timeframe="5m",
+                source="local-cache",
+                context="cache-refresh",
+                message="served local cache after incomplete yfinance response",
+                created_at=datetime(2026, 6, 14, 8, 14, tzinfo=timezone.utc),
+                event_id="adapter-error-yf-3",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="akshare-ohlcv",
+                provider="akshare",
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                source="akshare",
+                context="market-klines",
+                message="akshare transient timeout",
+                created_at=datetime(2026, 6, 14, 8, 15, tzinfo=timezone.utc),
+                event_id="adapter-error-ak-1",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                adapter_dependency_statuses={"akshare": True, "yfinance": True, "ccxt": False},
+                adapter_error_events=[market_data_adapter_error_event_to_payload(event) for event in events],
+                generated_at=datetime(2026, 6, 14, 8, 16, tzinfo=timezone.utc),
+            )
+
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        yfinance_health = adapters["yfinance-ohlcv"]["externalTelemetry"]["providerHealth"]
+        akshare_health = adapters["akshare-ohlcv"]["externalTelemetry"]["providerHealth"]
+        ccxt_health = adapters["ccxt-ohlcv"]["externalTelemetry"]["providerHealth"]
+
+        self.assertEqual(yfinance_health["status"], "cooldown")
+        self.assertEqual(yfinance_health["recentErrorCount"], 3)
+        self.assertEqual(yfinance_health["retryAfterSeconds"], 900)
+        self.assertEqual(yfinance_health["lastErrorAt"], "2026-06-14T08:14:00+00:00")
+        self.assertEqual(yfinance_health["affectedSymbols"], ["AAPL", "MSFT"])
+        self.assertEqual(yfinance_health["affectedContexts"], ["cache-refresh", "market-klines", "watchlist-cache-refresh"])
+        self.assertEqual(yfinance_health["reason"], "provider_cooldown")
+        self.assertEqual(akshare_health["status"], "watch")
+        self.assertEqual(akshare_health["recentErrorCount"], 1)
+        self.assertEqual(akshare_health["retryAfterSeconds"], 60)
+        self.assertEqual(ccxt_health["status"], "blocked")
+        self.assertEqual(ccxt_health["reason"], "dependency_missing")
+        self.assertEqual(ccxt_health["recentErrorCount"], 0)
 
     def test_market_klines_api_records_provider_failures_in_adapter_error_ledger(self):
         import json
