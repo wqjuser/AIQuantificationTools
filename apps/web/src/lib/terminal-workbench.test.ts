@@ -63,6 +63,7 @@ import {
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
+  buildMarketDataRefreshGuard,
   buildModuleNewsEvents,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
@@ -15332,6 +15333,71 @@ describe("terminal workbench model", () => {
     expect(formatInstrumentPrice(8.66)).toBe("8.66");
     expect(formatInstrumentPrice(3898.221)).toBe("3898.22");
     expect(formatInstrumentPrice(undefined)).toBe("N/A");
+  });
+
+  test("blocks manual market data refresh while the selected provider is cooling down", () => {
+    const guard = buildMarketDataRefreshGuard("ashare", [
+      {
+        market: "ashare",
+        externalTelemetry: {
+          providerHealth: {
+            status: "cooldown",
+            recentErrorCount: 4,
+            lastErrorAt: "2026-06-14T08:00:00+00:00",
+            affectedSymbols: ["600000", "000300"],
+            affectedContexts: ["ashare:600000:1d"],
+            retryAfterSeconds: 180,
+            reason: "provider_cooldown"
+          }
+        }
+      }
+    ]);
+
+    expect(guard).toEqual({
+      blocked: true,
+      status: "cooldown",
+      recentErrorCount: 4,
+      retryAfterSeconds: 180,
+      affectedSymbols: ["600000", "000300"],
+      affectedContexts: ["ashare:600000:1d"],
+      reason: "provider_cooldown",
+      detail: "Provider cooldown for ashare: 4 recent errors; retry after 180s; affected 600000/000300."
+    });
+  });
+
+  test("allows manual market data refresh when provider health is not cooling down", () => {
+    const guard = buildMarketDataRefreshGuard("us", [
+      {
+        market: "us",
+        externalTelemetry: {
+          providerHealth: {
+            status: "watch",
+            recentErrorCount: 1,
+            lastErrorAt: "2026-06-14T08:00:00+00:00",
+            affectedSymbols: ["AAPL"],
+            affectedContexts: ["us:AAPL:1d"],
+            retryAfterSeconds: 0,
+            reason: "provider_watch"
+          }
+        }
+      }
+    ]);
+
+    expect(guard).toEqual({
+      blocked: false,
+      status: "watch",
+      recentErrorCount: 1,
+      retryAfterSeconds: 0,
+      affectedSymbols: ["AAPL"],
+      affectedContexts: ["us:AAPL:1d"],
+      reason: "provider_watch",
+      detail: "Provider refresh available for us."
+    });
+    expect(buildMarketDataRefreshGuard("crypto", [])).toMatchObject({
+      blocked: false,
+      status: "ok",
+      detail: "Provider refresh available for crypto."
+    });
   });
 
   test("summarizes recent watchlist cache refresh runs for the market health panel", () => {

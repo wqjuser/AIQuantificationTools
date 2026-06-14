@@ -1455,9 +1455,11 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("refreshSelectedMarketCache");
     expect(marketWorkspaceSource).toContain("activeCacheContext");
+    expect(marketWorkspaceSource).toContain("refreshGuard={marketDataRefreshGuard}");
     expect(marketWorkspaceSource).toContain("onRefreshCache={refreshSelectedMarketCache}");
     expect(healthPanelSource).toContain("market-cache-refresh");
     expect(healthPanelSource).toContain("刷新当前缓存");
+    expect(healthPanelSource).toContain("disabled={isRefreshingCache || isRefreshBlocked}");
     expect(cssBlock(".market-cache-refresh")).toContain("display: inline-flex;");
   });
 
@@ -1470,8 +1472,19 @@ describe("terminal layout css", () => {
     expect(marketWorkspaceSource).toContain("onRefreshWatchlistCache={refreshWatchlistMarketCache}");
     expect(healthPanelSource).toContain("market-cache-bulk-refresh");
     expect(healthPanelSource).toContain("刷新自选缓存");
+    expect(healthPanelSource).toContain("!workspace.watchlist.length || isRefreshBlocked");
     expect(cssBlock(".market-cache-actions")).toContain("display: flex;");
     expect(cssBlock(".market-cache-bulk-refresh")).toContain("display: inline-flex;");
+  });
+
+  test("renders provider cooldown guard for manual market data refresh", () => {
+    expect(appSource).toContain("buildMarketDataRefreshGuard(");
+    expect(appSource).toContain("settingsStatus.settings?.marketDataAdapters");
+    expect(appSource).toContain("marketDataRefreshGuardLabel(i18n, refreshGuard)");
+    expect(appSource).toContain("数据源冷却");
+    expect(appSource).toContain("Provider cooldown");
+    expect(cssBlock(".market-refresh-guard-note")).toContain("background:");
+    expect(cssBlock(".market-refresh-guard-note")).toContain("margin: 0 0 8px;");
   });
 
   test("renders selected market calendar session status in the market work area", () => {

@@ -3296,6 +3296,69 @@ export interface ResearchContextReadinessRow {
   evidenceRunId?: string;
 }
 
+export type MarketDataProviderHealthStatus = "ok" | "watch" | "cooldown" | "blocked";
+
+export interface MarketDataProviderHealthSnapshot {
+  status: MarketDataProviderHealthStatus;
+  recentErrorCount: number;
+  lastErrorAt: string | null;
+  affectedSymbols: string[];
+  affectedContexts: string[];
+  retryAfterSeconds: number;
+  reason: string;
+}
+
+export interface MarketDataRefreshGuardAdapterSnapshot {
+  market: Market;
+  externalTelemetry?: {
+    providerHealth?: MarketDataProviderHealthSnapshot | null;
+  } | null;
+}
+
+export interface MarketDataRefreshGuard {
+  blocked: boolean;
+  status: MarketDataProviderHealthStatus;
+  recentErrorCount: number;
+  retryAfterSeconds: number;
+  affectedSymbols: string[];
+  affectedContexts: string[];
+  reason: string;
+  detail: string;
+}
+
+export function buildMarketDataRefreshGuard(
+  market: Market,
+  adapters: readonly MarketDataRefreshGuardAdapterSnapshot[] | null | undefined
+): MarketDataRefreshGuard {
+  const health = adapters?.find((adapter) => adapter.market === market)?.externalTelemetry?.providerHealth;
+  if (!health || health.status !== "cooldown") {
+    return {
+      blocked: false,
+      status: health?.status ?? "ok",
+      recentErrorCount: health?.recentErrorCount ?? 0,
+      retryAfterSeconds: Math.max(0, Math.trunc(health?.retryAfterSeconds ?? 0)),
+      affectedSymbols: health?.affectedSymbols ?? [],
+      affectedContexts: health?.affectedContexts ?? [],
+      reason: health?.reason ?? "provider_refresh_available",
+      detail: `Provider refresh available for ${market}.`
+    };
+  }
+
+  const retryAfterSeconds = Math.max(0, Math.trunc(health.retryAfterSeconds));
+  const affectedSymbols = health.affectedSymbols.slice();
+  const affectedLabel = affectedSymbols.length ? affectedSymbols.slice(0, 3).join("/") : "none";
+  return {
+    blocked: true,
+    status: "cooldown",
+    recentErrorCount: health.recentErrorCount,
+    retryAfterSeconds,
+    affectedSymbols,
+    affectedContexts: health.affectedContexts.slice(),
+    reason: health.reason,
+    detail: `Provider cooldown for ${market}: ${health.recentErrorCount} recent errors; retry after ${retryAfterSeconds}s; affected ${affectedLabel}.`
+  };
+}
+
 export interface ResearchContextEvidenceRow {
   id: "audit-run";
   label: string;

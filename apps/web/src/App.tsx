@@ -249,6 +249,7 @@ import {
   buildP0PlatformBacklogItems,
   buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
+  buildMarketDataRefreshGuard,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -325,6 +326,7 @@ import {
   AuditSigningKeyRotationChainSummary,
   AuditSigningKeyRotationLedgerRow,
   Market,
+  MarketDataRefreshGuard,
   AgentCommitteeRound,
   BacktestAssumptionField,
   BacktestAssumptionRow,
@@ -1831,6 +1833,10 @@ export function App() {
     symbol: workspace.selectedInstrument.symbol,
     timeframe: workspace.selectedTimeframe
   });
+  const marketDataRefreshGuard = buildMarketDataRefreshGuard(
+    workspace.selectedInstrument.market,
+    settingsStatus.settings?.marketDataAdapters
+  );
   const watchlistCacheSummary = buildWatchlistCacheSummary(settingsStatus.settings, workspace);
   const latestWatchlistCacheRefresh = watchlistCacheRefreshHistory[0] ?? null;
   const selectedWatchlistCacheRefresh = resolveWatchlistCacheRefreshRunSelection(
@@ -3576,6 +3582,15 @@ export function App() {
 
   const refreshCacheContext = useCallback(
     async (context: PlatformSettingsStatus["cache"]["contexts"][number]) => {
+      const refreshGuard = buildMarketDataRefreshGuard(context.market, settingsStatus.settings?.marketDataAdapters);
+      if (refreshGuard.blocked) {
+        setSettingsStatus((current) => ({
+          settings: current.settings,
+          source: current.source,
+          error: marketDataRefreshGuardLabel(i18n, refreshGuard)
+        }));
+        return;
+      }
       const key = cacheContextKey(context);
       setRefreshingCacheKey(key);
       const result = await refreshMarketCache(quantCoreBaseUrl, {
@@ -3601,8 +3616,10 @@ export function App() {
       setRefreshingCacheKey(null);
     },
     [
+      i18n,
       refreshChart,
       refreshGoldenPathStatus,
+      settingsStatus.settings?.marketDataAdapters,
       workspace.selectedInstrument.market,
       workspace.selectedInstrument.symbol,
       workspace.selectedTimeframe
@@ -3630,6 +3647,18 @@ export function App() {
 
   const refreshWatchlistMarketCache = useCallback(async () => {
     if (!workspace.watchlist.length) {
+      return;
+    }
+    const refreshGuard = buildMarketDataRefreshGuard(
+      workspace.selectedInstrument.market,
+      settingsStatus.settings?.marketDataAdapters
+    );
+    if (refreshGuard.blocked) {
+      setSettingsStatus((current) => ({
+        settings: current.settings,
+        source: current.source,
+        error: marketDataRefreshGuardLabel(i18n, refreshGuard)
+      }));
       return;
     }
     setIsRefreshingWatchlistCache(true);
@@ -3667,9 +3696,11 @@ export function App() {
       setIsRefreshingWatchlistCache(false);
     }
   }, [
+    i18n,
     refreshChart,
     refreshGoldenPathStatus,
     setWatchlistCacheRefreshRunSelection,
+    settingsStatus.settings?.marketDataAdapters,
     workspace.selectedInstrument.market,
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe,
@@ -6190,10 +6221,10 @@ export function App() {
         return true;
       }
       if (actionId === "refresh-data") {
-        return Boolean(refreshingCacheKey);
+        return Boolean(refreshingCacheKey) || marketDataRefreshGuard.blocked;
       }
       if (actionId === "refresh-watchlist-cache") {
-        return isRefreshingWatchlistCache || Boolean(refreshingCacheKey);
+        return isRefreshingWatchlistCache || Boolean(refreshingCacheKey) || marketDataRefreshGuard.blocked;
       }
       if (actionId === "run-pipeline") {
         return !researchPipelinePreflight.canRun;
@@ -6214,6 +6245,7 @@ export function App() {
       isRefreshingWatchlistCache,
       isRunning,
       isSubmittingPaperExecution,
+      marketDataRefreshGuard.blocked,
       refreshingCacheKey,
       researchPipelinePreflight.canRun,
       researchRunContextBinding.canUseRun,
@@ -6363,6 +6395,7 @@ export function App() {
             isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
             isRefreshingWatchlistCache={isRefreshingWatchlistCache}
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
+            refreshGuard={marketDataRefreshGuard}
             onRefreshCache={refreshSelectedMarketCache}
             onRefreshWatchlistCache={refreshWatchlistMarketCache}
             onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
@@ -6847,6 +6880,7 @@ export function App() {
           i18n={i18n}
           isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
           isRefreshingWatchlistCache={isRefreshingWatchlistCache}
+          refreshGuard={marketDataRefreshGuard}
           isSavingNote={isSavingResearchNote}
           isSavingWatchlist={isSavingWatchlist}
           isSavingWorkspace={isSavingResearchWorkspace}
@@ -9087,6 +9121,7 @@ function MarketDataHealthPanel({
   isRefreshingCache = false,
   isRefreshingWatchlistCache = false,
   latestWatchlistCacheRefresh,
+  refreshGuard,
   onRefreshCache,
   onRefreshWatchlistCache,
   onOpenCoverageResearch,
@@ -9105,6 +9140,7 @@ function MarketDataHealthPanel({
   isRefreshingCache?: boolean;
   isRefreshingWatchlistCache?: boolean;
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
+  refreshGuard?: MarketDataRefreshGuard;
   onRefreshCache?: () => void;
   onRefreshWatchlistCache?: () => void;
   onOpenCoverageResearch?: () => void;
@@ -9149,6 +9185,7 @@ function MarketDataHealthPanel({
     : i18n.locale === "zh-CN"
       ? "批量刷新后会生成可追踪 run。"
       : "Bulk refreshes create a traceable run.";
+  const isRefreshBlocked = Boolean(refreshGuard?.blocked);
 
   return (
     <Panel
@@ -9159,7 +9196,12 @@ function MarketDataHealthPanel({
         onRefreshCache || onRefreshWatchlistCache ? (
           <div className="market-cache-actions">
             {onRefreshCache ? (
-              <button className="market-cache-refresh" disabled={isRefreshingCache} onClick={onRefreshCache} type="button">
+              <button
+                className="market-cache-refresh"
+                disabled={isRefreshingCache || isRefreshBlocked}
+                onClick={onRefreshCache}
+                type="button"
+              >
                 <RefreshCw size={13} />
                 <span>
                   {isRefreshingCache
@@ -9175,7 +9217,7 @@ function MarketDataHealthPanel({
             {onRefreshWatchlistCache ? (
               <button
                 className="market-cache-bulk-refresh"
-                disabled={isRefreshingWatchlistCache || !workspace.watchlist.length}
+                disabled={isRefreshingWatchlistCache || !workspace.watchlist.length || isRefreshBlocked}
                 onClick={onRefreshWatchlistCache}
                 type="button"
               >
@@ -9195,6 +9237,9 @@ function MarketDataHealthPanel({
         ) : null
       }
     >
+      {refreshGuard?.blocked ? (
+        <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
+      ) : null}
       <div className="health-grid">
         <article className={state.quality.isComplete ? "positive" : "warning"}>
           <span>{i18n.locale === "zh-CN" ? "数据源" : "Source"}</span>
@@ -9393,6 +9438,7 @@ function ResearchContextReadinessPanel({
   i18n,
   isRefreshingCache = false,
   isRefreshingWatchlistCache = false,
+  refreshGuard,
   isSavingNote = false,
   isSavingWatchlist = false,
   isSavingWorkspace = false,
@@ -9409,6 +9455,7 @@ function ResearchContextReadinessPanel({
   i18n: AppI18n;
   isRefreshingCache?: boolean;
   isRefreshingWatchlistCache?: boolean;
+  refreshGuard?: MarketDataRefreshGuard;
   isSavingNote?: boolean;
   isSavingWatchlist?: boolean;
   isSavingWorkspace?: boolean;
@@ -9431,6 +9478,9 @@ function ResearchContextReadinessPanel({
       }
       className={className}
     >
+      {refreshGuard?.blocked ? (
+        <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
+      ) : null}
       <div className="research-context-checklist">
         {rows.map((row, index) => {
           const action = row.action;
@@ -9458,6 +9508,7 @@ function ResearchContextReadinessPanel({
                       action,
                       isRefreshingCache,
                       isRefreshingWatchlistCache,
+                      Boolean(refreshGuard?.blocked),
                       isSavingNote,
                       isSavingWatchlist,
                       isSavingWorkspace
@@ -9479,6 +9530,7 @@ function ResearchContextReadinessPanel({
                       action,
                       isRefreshingCache,
                       isRefreshingWatchlistCache,
+                      Boolean(refreshGuard?.blocked),
                       isSavingNote,
                       isSavingWatchlist,
                       isSavingWorkspace
@@ -9514,17 +9566,24 @@ function researchContextReadinessActionLabel(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   isRefreshingCache: boolean,
   isRefreshingWatchlistCache: boolean,
+  isRefreshGuardBlocked: boolean,
   isSavingNote: boolean,
   isSavingWatchlist: boolean,
   isSavingWorkspace: boolean
 ): string {
   if (action === "refresh-cache") {
+    if (isRefreshGuardBlocked) {
+      return i18n.locale === "zh-CN" ? "冷却中" : "Cooldown";
+    }
     if (isRefreshingCache) {
       return i18n.locale === "zh-CN" ? "刷新中" : "Refreshing";
     }
     return i18n.locale === "zh-CN" ? "刷新缓存" : "Refresh cache";
   }
   if (action === "refresh-watchlist-cache") {
+    if (isRefreshGuardBlocked) {
+      return i18n.locale === "zh-CN" ? "冷却中" : "Cooldown";
+    }
     if (isRefreshingWatchlistCache) {
       return i18n.locale === "zh-CN" ? "刷新中" : "Refreshing";
     }
@@ -9552,15 +9611,16 @@ function isResearchContextActionDisabled(
   action: NonNullable<ResearchContextReadinessRow["action"]>,
   isRefreshingCache: boolean,
   isRefreshingWatchlistCache: boolean,
+  isRefreshGuardBlocked: boolean,
   isSavingNote: boolean,
   isSavingWatchlist: boolean,
   isSavingWorkspace: boolean
 ): boolean {
   if (action === "refresh-cache") {
-    return isRefreshingCache;
+    return isRefreshingCache || isRefreshGuardBlocked;
   }
   if (action === "refresh-watchlist-cache") {
-    return isRefreshingWatchlistCache;
+    return isRefreshingWatchlistCache || isRefreshGuardBlocked;
   }
   if (action === "save-workspace") {
     return isSavingWorkspace;
@@ -18863,6 +18923,25 @@ function marketDataAdapterProviderHealthStatusLabel(
       blocked: "阻断"
     }[status] ?? status
   );
+}
+
+function marketDataRefreshGuardLabel(i18n: AppI18n, guard: MarketDataRefreshGuard): string {
+  const affectedSymbols = guard.affectedSymbols.length
+    ? guard.affectedSymbols.slice(0, 3).join("/")
+    : i18n.locale === "zh-CN"
+      ? "当前市场"
+      : "current market";
+  const retryAfter =
+    guard.retryAfterSeconds > 0
+      ? i18n.locale === "zh-CN"
+        ? `${guard.retryAfterSeconds} 秒`
+        : `${guard.retryAfterSeconds}s`
+      : i18n.locale === "zh-CN"
+        ? "稍后"
+        : "later";
+  return i18n.locale === "zh-CN"
+    ? `数据源冷却：${affectedSymbols} 暂停手动刷新，建议 ${retryAfter} 后再试。`
+    : `Provider cooldown: ${affectedSymbols} manual refresh is paused; retry after ${retryAfter}.`;
 }
 
 function marketDataAdapterProviderErrorLabel(
