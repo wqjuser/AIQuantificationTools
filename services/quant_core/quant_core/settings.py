@@ -65,7 +65,7 @@ def build_settings_status(
                 "note": "Public OHLCV and ticker routes stay paper-only until exchange trade keys are explicitly certified.",
             },
         ],
-        "marketDataAdapters": _market_data_adapter_statuses(exchange),
+        "marketDataAdapters": _market_data_adapter_statuses(exchange, cache_context_payloads),
         "cache": {
             "engine": "sqlite",
             "path": str(cache),
@@ -126,7 +126,7 @@ def build_settings_status(
     }
 
 
-def _market_data_adapter_statuses(exchange: str) -> list[dict[str, Any]]:
+def _market_data_adapter_statuses(exchange: str, cache_contexts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "id": "akshare-ohlcv",
@@ -140,6 +140,7 @@ def _market_data_adapter_statuses(exchange: str) -> list[dict[str, Any]]:
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
+            "cacheDiagnostics": _market_data_adapter_cache_diagnostics("ashare", cache_contexts),
             "note": "Normalizes A-share daily and recent minute OHLCV through public AKShare routes.",
         },
         {
@@ -154,6 +155,7 @@ def _market_data_adapter_statuses(exchange: str) -> list[dict[str, Any]]:
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
+            "cacheDiagnostics": _market_data_adapter_cache_diagnostics("us", cache_contexts),
             "note": "Normalizes US equity OHLCV through yfinance without reading trading credentials.",
         },
         {
@@ -168,9 +170,56 @@ def _market_data_adapter_statuses(exchange: str) -> list[dict[str, Any]]:
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
+            "cacheDiagnostics": _market_data_adapter_cache_diagnostics("crypto", cache_contexts),
             "note": "Normalizes public crypto exchange OHLCV; exchange trading keys stay outside this route.",
         },
     ]
+
+
+def _market_data_adapter_cache_diagnostics(market: str, cache_contexts: list[dict[str, Any]]) -> dict[str, Any]:
+    matching_contexts = [context for context in cache_contexts if context.get("market") == market]
+    freshness_summary = _cache_freshness_summary(matching_contexts)
+    row_count = sum(_non_negative_int(context.get("rowCount")) for context in matching_contexts)
+    return {
+        "freshness": _market_data_adapter_cache_freshness(
+            context_count=len(matching_contexts),
+            row_count=row_count,
+            freshness_summary=freshness_summary,
+        ),
+        "contextCount": len(matching_contexts),
+        "rowCount": row_count,
+        "latestTimestamp": _latest_cache_context_timestamp(matching_contexts),
+        "freshnessSummary": freshness_summary,
+    }
+
+
+def _market_data_adapter_cache_freshness(
+    *,
+    context_count: int,
+    row_count: int,
+    freshness_summary: dict[str, int],
+) -> str:
+    if context_count <= 0 or row_count <= 0:
+        return "empty"
+    if freshness_summary.get("stale", 0) > 0:
+        return "stale"
+    if freshness_summary.get("fresh", 0) > 0:
+        return "fresh"
+    return "empty"
+
+
+def _latest_cache_context_timestamp(contexts: list[dict[str, Any]]) -> str | None:
+    end_timestamps = [
+        context.get("endTimestamp") if isinstance(context.get("endTimestamp"), str) else None for context in contexts
+    ]
+    timestamps = [
+        parsed
+        for parsed in (_parse_timestamp(end_timestamp) for end_timestamp in end_timestamps)
+        if parsed is not None
+    ]
+    if not timestamps:
+        return None
+    return max(timestamps).isoformat()
 
 
 def build_execution_adapter_state_ledger(

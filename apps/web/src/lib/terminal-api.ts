@@ -1103,7 +1103,16 @@ export interface PlatformSettingsMarketDataAdapter {
   requiresApiKey: boolean;
   requiresTradingKey: boolean;
   cacheScope: string;
+  cacheDiagnostics: PlatformSettingsMarketDataAdapterCacheDiagnostics;
   note: string;
+}
+
+export interface PlatformSettingsMarketDataAdapterCacheDiagnostics {
+  freshness: "fresh" | "stale" | "empty";
+  contextCount: number;
+  rowCount: number;
+  latestTimestamp: string | null;
+  freshnessSummary: PlatformSettingsCacheFreshnessSummary;
 }
 
 export interface PlatformSettingsExecutionAdapter {
@@ -9079,7 +9088,24 @@ function isPlatformSettingsMarketDataAdapter(value: unknown): value is PlatformS
     typeof adapter.requiresApiKey === "boolean" &&
     typeof adapter.requiresTradingKey === "boolean" &&
     typeof adapter.cacheScope === "string" &&
+    isPlatformSettingsMarketDataAdapterCacheDiagnostics(adapter.cacheDiagnostics) &&
     typeof adapter.note === "string"
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterCacheDiagnostics(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterCacheDiagnostics {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const diagnostics = value as Partial<PlatformSettingsMarketDataAdapterCacheDiagnostics>;
+  return (
+    (diagnostics.freshness === "fresh" || diagnostics.freshness === "stale" || diagnostics.freshness === "empty") &&
+    typeof diagnostics.contextCount === "number" &&
+    typeof diagnostics.rowCount === "number" &&
+    (diagnostics.latestTimestamp === null || typeof diagnostics.latestTimestamp === "string") &&
+    isPlatformSettingsCacheFreshnessSummary(diagnostics.freshnessSummary)
   );
 }
 

@@ -10182,7 +10182,10 @@ function PlatformSettingsPanel({
                     ? "无需交易密钥"
                     : "No trading key"}
               </em>
-              <small>{row.capabilities.join(" / ")} · {row.timeframes.join(" / ")}</small>
+              <small>
+                {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
+                {row.timeframes.join(" / ")}
+              </small>
             </article>
           ))}
         </div>
@@ -18728,6 +18731,34 @@ function settingsKeyStatusLabel(i18n: AppI18n, keyName: string | null, isConfigu
     return i18n.locale === "zh-CN" ? `${keyName} 已配置` : `${keyName} configured`;
   }
   return i18n.locale === "zh-CN" ? `${keyName} 未配置` : `${keyName} not configured`;
+}
+
+function marketDataAdapterCacheDiagnosticsLabel(
+  i18n: AppI18n,
+  diagnostics: PlatformSettingsStatus["marketDataAdapters"][number]["cacheDiagnostics"]
+): string {
+  if (diagnostics.freshness === "empty") {
+    return i18n.locale === "zh-CN"
+      ? `无缓存 · ${diagnostics.contextCount.toLocaleString("zh-CN")} 上下文`
+      : `No cache · ${diagnostics.contextCount.toLocaleString("en-US")} contexts`;
+  }
+  const freshness =
+    diagnostics.freshness === "fresh"
+      ? i18n.locale === "zh-CN"
+        ? "新鲜"
+        : "Fresh"
+      : i18n.locale === "zh-CN"
+        ? "过期"
+        : "Stale";
+  const rows =
+    i18n.locale === "zh-CN"
+      ? `${diagnostics.rowCount.toLocaleString("zh-CN")} 行`
+      : `${diagnostics.rowCount.toLocaleString("en-US")} rows`;
+  const contexts =
+    i18n.locale === "zh-CN"
+      ? `${diagnostics.contextCount.toLocaleString("zh-CN")} 上下文`
+      : `${diagnostics.contextCount.toLocaleString("en-US")} contexts`;
+  return `${freshness} · ${rows} · ${contexts}`;
 }
 
 function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearchSuggestion["cache"]>): string {

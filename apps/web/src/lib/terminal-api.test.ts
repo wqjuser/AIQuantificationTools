@@ -226,6 +226,13 @@ const samplePlatformSettingsMarketDataAdapters = [
     requiresApiKey: false,
     requiresTradingKey: false,
     cacheScope: "ohlcv",
+    cacheDiagnostics: {
+      freshness: "fresh",
+      contextCount: 1,
+      rowCount: 500,
+      latestTimestamp: "2026-05-29T00:00:00+00:00",
+      freshnessSummary: { fresh: 1, stale: 0, empty: 0 }
+    },
     note: "A-share public OHLCV adapter."
   },
   {
@@ -240,6 +247,13 @@ const samplePlatformSettingsMarketDataAdapters = [
     requiresApiKey: false,
     requiresTradingKey: false,
     cacheScope: "ohlcv",
+    cacheDiagnostics: {
+      freshness: "empty",
+      contextCount: 0,
+      rowCount: 0,
+      latestTimestamp: null,
+      freshnessSummary: { fresh: 0, stale: 0, empty: 0 }
+    },
     note: "US equity public OHLCV adapter."
   },
   {
@@ -254,6 +268,13 @@ const samplePlatformSettingsMarketDataAdapters = [
     requiresApiKey: false,
     requiresTradingKey: false,
     cacheScope: "ohlcv",
+    cacheDiagnostics: {
+      freshness: "stale",
+      contextCount: 1,
+      rowCount: 100,
+      latestTimestamp: "2026-05-20T00:00:00+00:00",
+      freshnessSummary: { fresh: 0, stale: 1, empty: 0 }
+    },
     note: "Crypto public OHLCV adapter."
   }
 ] as const;
@@ -1812,6 +1833,13 @@ describe("terminal workspace API client", () => {
                 requiresApiKey: false,
                 requiresTradingKey: false,
                 cacheScope: "ohlcv",
+                cacheDiagnostics: {
+                  freshness: "fresh",
+                  contextCount: 1,
+                  rowCount: 500,
+                  latestTimestamp: "2026-05-29T00:00:00+00:00",
+                  freshnessSummary: { fresh: 1, stale: 0, empty: 0 }
+                },
                 note: "Public A-share OHLCV."
               },
               {
@@ -1826,6 +1854,13 @@ describe("terminal workspace API client", () => {
                 requiresApiKey: false,
                 requiresTradingKey: false,
                 cacheScope: "ohlcv",
+                cacheDiagnostics: {
+                  freshness: "empty",
+                  contextCount: 0,
+                  rowCount: 0,
+                  latestTimestamp: null,
+                  freshnessSummary: { fresh: 0, stale: 0, empty: 0 }
+                },
                 note: "Public US OHLCV."
               }
             ],
@@ -1887,12 +1922,23 @@ describe("terminal workspace API client", () => {
       id: "akshare-ohlcv",
       adapter: "AkShareMarketDataAdapter",
       capabilities: ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
-      requiresTradingKey: false
+      requiresTradingKey: false,
+      cacheDiagnostics: {
+        freshness: "fresh",
+        contextCount: 1,
+        rowCount: 500,
+        latestTimestamp: "2026-05-29T00:00:00+00:00"
+      }
     });
     expect(result.settings?.marketDataAdapters?.[1]).toMatchObject({
       id: "yfinance-ohlcv",
       provider: "yfinance",
-      route: "public_ohlcv"
+      route: "public_ohlcv",
+      cacheDiagnostics: {
+        freshness: "empty",
+        contextCount: 0,
+        rowCount: 0
+      }
     });
     expect((result.settings?.cache as unknown as { rowCount?: number }).rowCount).toBe(1280);
     expect((result.settings?.cache as unknown as { contextCount?: number }).contextCount).toBe(12);
@@ -7545,6 +7591,76 @@ describe("terminal workspace API client", () => {
               optionalKeyName: null,
               optionalKeyConfigured: false,
               note: "No key required."
+            }
+          ],
+          cache: {
+            engine: "sqlite",
+            path: "data/market.sqlite",
+            exists: true,
+            scope: "ohlcv",
+            rowCount: 500,
+            contextCount: 1,
+            latestTimestamp: "2026-05-29T00:00:00+00:00",
+            freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            contexts: []
+          },
+          executionAdapters: [
+            {
+              id: "paper-local",
+              market: "multi",
+              adapter: "Paper Trading",
+              route: "paper",
+              status: "paper_ready",
+              certification: "local",
+              liveTradingAllowed: false,
+              note: "Paper only."
+            }
+          ],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+          }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid settings status contract");
+  });
+
+  test("rejects settings status when market data adapter diagnostics are missing", async () => {
+    const result = await loadPlatformSettings("http://127.0.0.1:8765/", async () => ({
+      ok: true,
+      json: async () => ({
+        settings: {
+          schemaVersion: 1,
+          generatedAt: "2026-05-31T09:00:00+08:00",
+          dataSources: [
+            {
+              market: "ashare",
+              label: "A shares",
+              quoteSource: "tencent",
+              klineSource: "tencent",
+              status: "ready",
+              optionalKeyName: null,
+              optionalKeyConfigured: false,
+              note: "No key required."
+            }
+          ],
+          marketDataAdapters: [
+            {
+              id: "akshare-ohlcv",
+              market: "ashare",
+              adapter: "AkShareMarketDataAdapter",
+              provider: "akshare",
+              status: "ready",
+              route: "public_ohlcv",
+              capabilities: ["stock_zh_a_hist"],
+              timeframes: ["1d"],
+              requiresApiKey: false,
+              requiresTradingKey: false,
+              cacheScope: "ohlcv",
+              note: "Diagnostics intentionally omitted."
             }
           ],
           cache: {

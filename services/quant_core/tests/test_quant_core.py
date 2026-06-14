@@ -1092,6 +1092,11 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(akshare_adapter["status"], "ready")
         self.assertIn("stock_zh_a_hist", akshare_adapter["capabilities"])
         self.assertIn("stock_zh_a_hist_min_em", akshare_adapter["capabilities"])
+        self.assertEqual(akshare_adapter["cacheDiagnostics"]["contextCount"], 1)
+        self.assertEqual(akshare_adapter["cacheDiagnostics"]["rowCount"], 1)
+        self.assertEqual(akshare_adapter["cacheDiagnostics"]["freshnessSummary"]["stale"], 1)
+        self.assertEqual(yfinance_adapter["cacheDiagnostics"]["freshness"], "empty")
+        self.assertEqual(yfinance_adapter["cacheDiagnostics"]["contextCount"], 0)
         self.assertEqual(yfinance_adapter["market"], "us")
         self.assertEqual(yfinance_adapter["adapter"], "YFinanceMarketDataAdapter")
         self.assertIn("Ticker.history", yfinance_adapter["capabilities"])
@@ -1099,6 +1104,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(ccxt_adapter["adapter"], "CcxtMarketDataAdapter")
         self.assertIn("fetch_ohlcv", ccxt_adapter["capabilities"])
         self.assertFalse(ccxt_adapter["requiresTradingKey"])
+        self.assertEqual(ccxt_adapter["cacheDiagnostics"]["contextCount"], 1)
+        self.assertEqual(ccxt_adapter["cacheDiagnostics"]["rowCount"], 1)
         self.assertTrue(all("secret" not in json.dumps(row).lower() for row in market_data_adapters))
         self.assertEqual(paper_adapter["route"], "paper")
         self.assertEqual(paper_adapter["status"], "paper_ready")
@@ -1378,6 +1385,17 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(contexts[2]["ageHours"], 264)
         self.assertEqual(contexts[3]["freshness"], "empty")
         self.assertIsNone(contexts[3]["ageHours"])
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        self.assertEqual(adapters["akshare-ohlcv"]["cacheDiagnostics"]["contextCount"], 2)
+        self.assertEqual(adapters["akshare-ohlcv"]["cacheDiagnostics"]["rowCount"], 500)
+        self.assertEqual(
+            adapters["akshare-ohlcv"]["cacheDiagnostics"]["freshnessSummary"],
+            {"fresh": 1, "stale": 0, "empty": 1},
+        )
+        self.assertEqual(adapters["akshare-ohlcv"]["cacheDiagnostics"]["freshness"], "fresh")
+        self.assertEqual(adapters["yfinance-ohlcv"]["cacheDiagnostics"]["freshness"], "stale")
+        self.assertEqual(adapters["yfinance-ohlcv"]["cacheDiagnostics"]["latestTimestamp"], "2026-05-20T00:00:00+00:00")
+        self.assertEqual(adapters["ccxt-ohlcv"]["cacheDiagnostics"]["freshness"], "fresh")
 
     def test_execution_adapter_state_ledger_summarizes_live_blocked_routes(self):
         from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
