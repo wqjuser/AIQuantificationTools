@@ -190,6 +190,7 @@ import {
   buildP0PlatformReadinessReportAuditEvent,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
+  buildMarketDataRefreshOverrideAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   withResearchRunExportReportSignatures,
@@ -9852,6 +9853,89 @@ describe("terminal workspace API client", () => {
     expect(event.eventId).toBe(`audit-report-run-preview-${auditReport.contentSha256.hash.slice(0, 16)}`);
     expect(event.detail).toContain("run-preview-audit-evidence-report.md");
     expect(event.detail).toContain(auditReport.contentSha256.hash.slice(0, 12));
+  });
+
+  test("builds a ledger audit event when a market data cooldown refresh override is recorded", () => {
+    const event = buildMarketDataRefreshOverrideAuditEvent({
+      actionScope: "watchlist_cache_refresh",
+      createdAt: "2026-06-14T08:00:00.000Z",
+      guard: {
+        affectedContexts: ["ashare:600000:1d"],
+        affectedSymbols: ["600000", "000300"],
+        blocked: false,
+        detail:
+          "Provider cooldown override for ashare: operator confirmed upstream recovered; original retry after 180s; affected 600000/000300.",
+        overrideApplied: true,
+        overrideReason: "operator confirmed upstream recovered",
+        reason: "provider_cooldown_manual_override",
+        recentErrorCount: 4,
+        retryAfterSeconds: 180,
+        status: "cooldown"
+      },
+      market: "ashare",
+      name: "浦发银行",
+      operator: "local-operator",
+      reason: "operator confirmed upstream recovered",
+      symbol: "600000",
+      timeframe: "1d"
+    });
+
+    expect(event).toEqual({
+      schemaVersion: 1,
+      eventId:
+        "market-data-refresh-override-ashare-600000-1d-2026-06-14T08-00-00.000Z-operator-confirmed-upstream-reco",
+      eventType: "market_data_refresh_override",
+      runId: null,
+      createdAt: "2026-06-14T08:00:00.000Z",
+      stage: "override_recorded",
+      source: "web",
+      summary: "Market data refresh override recorded for ASHARE 600000 1d",
+      detail:
+        "watchlist_cache_refresh override by local-operator: operator confirmed upstream recovered; original retry after 180s; affected 600000/000300.",
+      metadata: {
+        actionScope: "watchlist_cache_refresh",
+        affectedContexts: ["ashare:600000:1d"],
+        affectedSymbols: ["600000", "000300"],
+        artifactKind: "aiqt.marketDataRefreshOverride",
+        boundary: "manual market-data refresh override only; no trading authorization or investment advice",
+        liveTradingAllowed: false,
+        market: "ashare",
+        name: "浦发银行",
+        operator: "local-operator",
+        overrideApplied: true,
+        overrideReason: "operator confirmed upstream recovered",
+        providerHealthReason: "provider_cooldown_manual_override",
+        providerHealthStatus: "cooldown",
+        recentErrorCount: 4,
+        retryAfterSeconds: 180,
+        symbol: "600000",
+        timeframe: "1d"
+      }
+    });
+  });
+
+  test("rejects blank market data refresh override audit reasons", () => {
+    expect(() =>
+      buildMarketDataRefreshOverrideAuditEvent({
+        createdAt: "2026-06-14T08:00:00.000Z",
+        guard: {
+          affectedContexts: [],
+          affectedSymbols: [],
+          blocked: true,
+          detail: "Provider cooldown for ashare.",
+          overrideApplied: false,
+          overrideReason: null,
+          reason: "provider_cooldown",
+          recentErrorCount: 3,
+          retryAfterSeconds: 900,
+          status: "cooldown"
+        },
+        market: "ashare",
+        reason: "   ",
+        symbol: "600000",
+        timeframe: "1d"
+      })
+    ).toThrow("market_data_refresh_override_reason_required");
   });
 
   test("builds a ledger audit event when a P0 readiness report is generated", async () => {

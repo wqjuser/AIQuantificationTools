@@ -17,7 +17,7 @@ Let an operator intentionally run one manual market data refresh during a provid
 ## Non-Goals
 
 - No backend circuit breaker bypass.
-- No persistent operator approval ledger yet.
+- Persistent operator approval ledger is handled by `2026-06-14-market-data-refresh-override-audit-event.md`.
 - No automatic retry scheduler.
 - No broker, paper order, live order, secret read, or live-trading side effect.
 
@@ -36,5 +36,5 @@ Let an operator intentionally run one manual market data refresh during a provid
 
 ## Follow-Ups
 
-- Persist manual override evidence in the audit/event ledger if operator overrides need formal compliance review.
+- Done in `2026-06-14-market-data-refresh-override-audit-event.md`: manual overrides now write `market_data_refresh_override` to the audit/event ledger before refresh unlock.
 - Add a Settings provider-health trend strip after the operator flow decides how much historical provider detail belongs in the main workflow.

@@ -3312,6 +3312,7 @@ export interface MarketDataRefreshOverride {
   enabled: boolean;
   market: Market;
   reason: string;
+  auditEventId?: string;
 }
 
 export interface MarketDataRefreshGuardAdapterSnapshot {

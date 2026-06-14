@@ -101,6 +101,7 @@ import {
   buildBacktestReportAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
+  buildMarketDataRefreshOverrideAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
   buildResearchRunExportAuditReport,
@@ -595,6 +596,12 @@ interface AuditSigningKeyRotationLedgerStatus {
   detail: string;
   state: "idle" | "saving" | "saved" | "failed";
 }
+
+type MarketDataRefreshOverrideAuditStatus =
+  | { state: "idle" }
+  | { state: "saving" }
+  | { state: "saved"; eventId: string }
+  | { state: "failed"; error: string };
 
 interface AuditSigningKeyRotationApplyConfirmations {
   legacySecretStored: boolean;
@@ -1543,6 +1550,8 @@ export function App() {
   const [isIndexingExportPackages, setIsIndexingExportPackages] = useState(false);
   const [refreshingCacheKey, setRefreshingCacheKey] = useState<string | null>(null);
   const [marketDataRefreshOverride, setMarketDataRefreshOverride] = useState<MarketDataRefreshOverride | null>(null);
+  const [marketDataRefreshOverrideAuditStatus, setMarketDataRefreshOverrideAuditStatus] =
+    useState<MarketDataRefreshOverrideAuditStatus>({ state: "idle" });
   const [recordingAdapterCertificationId, setRecordingAdapterCertificationId] = useState<string | null>(null);
   const [applyingAdapterCertificationId, setApplyingAdapterCertificationId] = useState<string | null>(null);
   const [recordingAdapterRuntimeReloadAcceptanceId, setRecordingAdapterRuntimeReloadAcceptanceId] =
@@ -3586,28 +3595,64 @@ export function App() {
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const enableMarketDataRefreshOverride = useCallback(
-    (reason: string) => {
+    async (reason: string) => {
       const normalizedReason = reason.trim();
       if (!normalizedReason) {
         return;
       }
-      setMarketDataRefreshOverride({
+      const override = {
         enabled: true,
         market: workspace.selectedInstrument.market,
         reason: normalizedReason
+      };
+      const auditGuard = buildMarketDataRefreshGuard(
+        workspace.selectedInstrument.market,
+        settingsStatus.settings?.marketDataAdapters,
+        override
+      );
+      const auditEvent = buildMarketDataRefreshOverrideAuditEvent({
+        guard: auditGuard,
+        market: workspace.selectedInstrument.market,
+        name: workspace.selectedInstrument.name,
+        reason: normalizedReason,
+        symbol: workspace.selectedInstrument.symbol,
+        timeframe: workspace.selectedTimeframe
       });
+      setMarketDataRefreshOverrideAuditStatus({ state: "saving" });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (!result.event) {
+        setMarketDataRefreshOverrideAuditStatus({
+          state: "failed",
+          error: result.error ?? "market_data_refresh_override_audit_save_failed"
+        });
+        return;
+      }
+      setMarketDataRefreshOverride({
+        ...override,
+        auditEventId: result.event.eventId
+      });
+      setMarketDataRefreshOverrideAuditStatus({ state: "saved", eventId: result.event.eventId });
     },
-    [workspace.selectedInstrument.market]
+    [
+      quantCoreBaseUrl,
+      settingsStatus.settings?.marketDataAdapters,
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.name,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
+    ]
   );
 
   const clearMarketDataRefreshOverride = useCallback(() => {
     setMarketDataRefreshOverride(null);
+    setMarketDataRefreshOverrideAuditStatus({ state: "idle" });
   }, []);
 
   useEffect(() => {
     setMarketDataRefreshOverride((current) =>
       current?.market === workspace.selectedInstrument.market ? current : null
     );
+    setMarketDataRefreshOverrideAuditStatus({ state: "idle" });
   }, [workspace.selectedInstrument.market]);
 
   const refreshCacheContext = useCallback(
@@ -3651,6 +3696,7 @@ export function App() {
       } finally {
         if (refreshGuard.overrideApplied) {
           setMarketDataRefreshOverride(null);
+          setMarketDataRefreshOverrideAuditStatus({ state: "idle" });
         }
         setRefreshingCacheKey(null);
       }
@@ -3737,6 +3783,7 @@ export function App() {
     } finally {
       if (refreshGuard.overrideApplied) {
         setMarketDataRefreshOverride(null);
+        setMarketDataRefreshOverrideAuditStatus({ state: "idle" });
       }
       setIsRefreshingWatchlistCache(false);
     }
@@ -6442,6 +6489,7 @@ export function App() {
             isRefreshingWatchlistCache={isRefreshingWatchlistCache}
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
             refreshGuard={marketDataRefreshGuard}
+            refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
             refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
             onApplyRefreshOverride={enableMarketDataRefreshOverride}
             onClearRefreshOverride={clearMarketDataRefreshOverride}
@@ -6930,6 +6978,7 @@ export function App() {
           isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
           isRefreshingWatchlistCache={isRefreshingWatchlistCache}
           refreshGuard={marketDataRefreshGuard}
+          refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
           refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
           isSavingNote={isSavingResearchNote}
           isSavingWatchlist={isSavingWatchlist}
@@ -9167,14 +9216,16 @@ function marketCalendarNextEventLabel(
 }
 
 function MarketDataRefreshOverrideControl({
+  auditStatus = { state: "idle" },
   i18n,
   onApplyOverride,
   onClearOverride,
   overrideReason,
   refreshGuard
 }: {
+  auditStatus?: MarketDataRefreshOverrideAuditStatus;
   i18n: AppI18n;
-  onApplyOverride?: (reason: string) => void;
+  onApplyOverride?: (reason: string) => void | Promise<void>;
   onClearOverride?: () => void;
   overrideReason?: string | null;
   refreshGuard?: MarketDataRefreshGuard;
@@ -9207,20 +9258,53 @@ function MarketDataRefreshOverrideControl({
       </label>
       <button
         className="market-refresh-override-apply"
-        disabled={!normalizedReason}
-        onClick={() => onApplyOverride(normalizedReason)}
+        disabled={!normalizedReason || auditStatus.state === "saving"}
+        onClick={() => void onApplyOverride(normalizedReason)}
         type="button"
       >
         <ShieldCheck size={13} />
-        <span>{i18n.locale === "zh-CN" ? "本次仍刷新" : "Manual override"}</span>
+        <span>
+          {auditStatus.state === "saving"
+            ? i18n.locale === "zh-CN"
+              ? "记录中"
+              : "Recording"
+            : i18n.locale === "zh-CN"
+              ? "本次仍刷新"
+              : "Manual override"}
+        </span>
       </button>
       {refreshGuard?.overrideApplied ? (
         <button className="market-refresh-override-clear" onClick={onClearOverride} type="button">
           {i18n.locale === "zh-CN" ? "取消覆盖" : "Clear"}
         </button>
       ) : null}
+      {auditStatus.state !== "idle" ? (
+        <p className={`market-refresh-override-audit-status ${auditStatus.state}`}>
+          {marketDataRefreshOverrideAuditStatusLabel(i18n, auditStatus)}
+        </p>
+      ) : null}
     </div>
   );
+}
+
+function marketDataRefreshOverrideAuditStatusLabel(
+  i18n: AppI18n,
+  status: MarketDataRefreshOverrideAuditStatus
+): string {
+  if (status.state === "saving") {
+    return i18n.locale === "zh-CN" ? "覆盖审计写入中，写入成功后才会放行刷新。" : "Recording override audit before refresh is enabled.";
+  }
+  if (status.state === "saved") {
+    return i18n.locale === "zh-CN"
+      ? `覆盖审计已记录：${status.eventId}`
+      : `Override audit recorded: ${status.eventId}`;
+  }
+  if (status.state === "failed") {
+    return i18n.locale === "zh-CN"
+      ? `覆盖审计失败：${status.error}`
+      : `Override audit failed: ${status.error}`;
+  }
+  return "";
 }
 
 function MarketDataHealthPanel({
@@ -9231,6 +9315,7 @@ function MarketDataHealthPanel({
   isRefreshingWatchlistCache = false,
   latestWatchlistCacheRefresh,
   refreshGuard,
+  refreshOverrideAuditStatus,
   refreshOverrideReason,
   onApplyRefreshOverride,
   onClearRefreshOverride,
@@ -9253,6 +9338,7 @@ function MarketDataHealthPanel({
   isRefreshingWatchlistCache?: boolean;
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
   refreshGuard?: MarketDataRefreshGuard;
+  refreshOverrideAuditStatus?: MarketDataRefreshOverrideAuditStatus;
   refreshOverrideReason?: string | null;
   onApplyRefreshOverride?: (reason: string) => void;
   onClearRefreshOverride?: () => void;
@@ -9356,6 +9442,7 @@ function MarketDataHealthPanel({
         <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
       ) : null}
       <MarketDataRefreshOverrideControl
+        auditStatus={refreshOverrideAuditStatus}
         i18n={i18n}
         onApplyOverride={onApplyRefreshOverride}
         onClearOverride={onClearRefreshOverride}
@@ -9561,6 +9648,7 @@ function ResearchContextReadinessPanel({
   isRefreshingCache = false,
   isRefreshingWatchlistCache = false,
   refreshGuard,
+  refreshOverrideAuditStatus,
   refreshOverrideReason,
   isSavingNote = false,
   isSavingWatchlist = false,
@@ -9581,6 +9669,7 @@ function ResearchContextReadinessPanel({
   isRefreshingCache?: boolean;
   isRefreshingWatchlistCache?: boolean;
   refreshGuard?: MarketDataRefreshGuard;
+  refreshOverrideAuditStatus?: MarketDataRefreshOverrideAuditStatus;
   refreshOverrideReason?: string | null;
   isSavingNote?: boolean;
   isSavingWatchlist?: boolean;
@@ -9610,6 +9699,7 @@ function ResearchContextReadinessPanel({
         <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
       ) : null}
       <MarketDataRefreshOverrideControl
+        auditStatus={refreshOverrideAuditStatus}
         i18n={i18n}
         onApplyOverride={onApplyRefreshOverride}
         onClearOverride={onClearRefreshOverride}

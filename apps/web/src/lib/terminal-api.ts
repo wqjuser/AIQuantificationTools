@@ -8,6 +8,7 @@ import {
   workspaceFromResearchRunAudit,
   workspaceWithPrimaryWorkflows,
   Market,
+  type MarketDataRefreshGuard,
   PromotionReadiness,
   ResearchRunAudit,
   TerminalWorkspace,
@@ -4320,6 +4321,74 @@ export function buildAuditEvidenceReportAuditEvent(
       importVerificationLatestReason: latestImportVerification?.latestReason ?? "",
       deepLinkStatus: summary.deepLinkStatus,
       deepLinkError: summary.deepLinkError
+    }
+  };
+}
+
+export function buildMarketDataRefreshOverrideAuditEvent({
+  actionScope = "manual_cache_refresh",
+  createdAt = new Date().toISOString(),
+  guard,
+  market,
+  name = "",
+  operator = "local-operator",
+  reason,
+  symbol,
+  timeframe
+}: {
+  actionScope?: "current_cache_refresh" | "watchlist_cache_refresh" | "manual_cache_refresh";
+  createdAt?: string;
+  guard: MarketDataRefreshGuard;
+  market: Market;
+  name?: string;
+  operator?: string;
+  reason: string;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+}): AuditEventRecord {
+  const overrideReason = reason.trim();
+  if (!overrideReason) {
+    throw new Error("market_data_refresh_override_reason_required");
+  }
+  const normalizedOperator = operator.trim() || "local-operator";
+  const affectedSymbols = guard.affectedSymbols.slice(0, 8);
+  const affectedContexts = guard.affectedContexts.slice(0, 8);
+  const affectedLabel = affectedSymbols.length ? affectedSymbols.slice(0, 3).join("/") : "current market";
+  const safeCreatedAt = sanitizeDownloadFileName(createdAt);
+  const safeReason = sanitizeDownloadFileName(overrideReason).slice(0, 32);
+
+  return {
+    schemaVersion: 1,
+    eventId: `market-data-refresh-override-${sanitizeDownloadFileName(market)}-${sanitizeDownloadFileName(
+      symbol
+    )}-${sanitizeDownloadFileName(timeframe)}-${safeCreatedAt}-${safeReason}`,
+    eventType: "market_data_refresh_override",
+    runId: null,
+    createdAt,
+    stage: "override_recorded",
+    source: "web",
+    summary: `Market data refresh override recorded for ${market.toUpperCase()} ${symbol} ${timeframe}`,
+    detail: `${actionScope} override by ${normalizedOperator}: ${overrideReason}; original retry after ${
+      guard.retryAfterSeconds
+    }s; affected ${affectedLabel}.`,
+    metadata: {
+      actionScope,
+      affectedContexts,
+      affectedSymbols,
+      artifactKind: "aiqt.marketDataRefreshOverride",
+      boundary: "manual market-data refresh override only; no trading authorization or investment advice",
+      liveTradingAllowed: false,
+      market,
+      name,
+      operator: normalizedOperator,
+      overrideApplied: guard.overrideApplied,
+      overrideReason,
+      providerHealthReason: guard.reason,
+      providerHealthStatus: guard.status,
+      recentErrorCount: guard.recentErrorCount,
+      retryAfterSeconds: guard.retryAfterSeconds,
+      symbol,
+      timeframe
     }
   };
 }
