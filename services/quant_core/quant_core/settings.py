@@ -241,12 +241,12 @@ def _market_data_adapter_external_telemetry(
         generated_at=generated_at,
     )
     if available:
-        if last_provider_error:
+        if provider_health["status"] in {"watch", "cooldown"}:
             return {
                 "status": "degraded",
                 "dependency": dependency,
                 "dependencyAvailable": True,
-                "lastError": last_provider_error["message"],
+                "lastError": last_provider_error["message"] if last_provider_error else None,
                 "retryState": "provider_error",
                 "checkedAt": generated_at.isoformat(),
                 "installGuidance": _market_data_adapter_install_guidance(dependency),
@@ -261,7 +261,7 @@ def _market_data_adapter_external_telemetry(
             "retryState": "idle",
             "checkedAt": generated_at.isoformat(),
             "installGuidance": _market_data_adapter_install_guidance(dependency),
-            "lastProviderError": None,
+            "lastProviderError": last_provider_error,
             "providerHealth": provider_health,
         }
     return {
@@ -321,14 +321,19 @@ def _provider_health_for_adapter(
         if isinstance(event, dict) and event.get("adapterId") == adapter_id
     ]
     matching_events = [event for event in matching_events if event is not None]
-    recent_error_count = len(matching_events)
-    last_error_at = None
-    if matching_events:
-        latest_event = max(matching_events, key=lambda event: (event["createdAt"], event["eventId"]))
-        last_error_at = latest_event["createdAt"]
-    category_summary = _provider_error_category_summary(matching_events)
-    dominant_category = _dominant_provider_error_category(category_summary)
     window_summary = _provider_error_window_summary(matching_events, generated_at=generated_at)
+    recent_events = _provider_error_events_in_window(
+        matching_events,
+        generated_at=generated_at,
+        seconds=_PROVIDER_ERROR_WINDOWS["twentyFourHours"],
+    )
+    recent_error_count = len(recent_events)
+    last_error_at = None
+    if recent_events:
+        latest_event = max(recent_events, key=lambda event: (event["createdAt"], event["eventId"]))
+        last_error_at = latest_event["createdAt"]
+    category_summary = _provider_error_category_summary(recent_events)
+    dominant_category = _dominant_provider_error_category(category_summary)
 
     if not dependency_available:
         status = "blocked"
@@ -351,8 +356,8 @@ def _provider_health_for_adapter(
         "status": status,
         "recentErrorCount": recent_error_count,
         "lastErrorAt": last_error_at,
-        "affectedSymbols": sorted({event["symbol"] for event in matching_events}),
-        "affectedContexts": sorted({event["context"] for event in matching_events}),
+        "affectedSymbols": sorted({event["symbol"] for event in recent_events}),
+        "affectedContexts": sorted({event["context"] for event in recent_events}),
         "categorySummary": category_summary,
         "dominantCategory": dominant_category,
         "windowSummary": window_summary,
@@ -421,11 +426,7 @@ def _provider_error_window_summary(
 def _provider_error_window_payload(
     events: list[dict[str, str]], *, generated_at: datetime, seconds: int
 ) -> dict[str, Any]:
-    window_events = []
-    for event in events:
-        age_seconds = _provider_error_event_age_seconds(event, generated_at=generated_at)
-        if age_seconds is not None and 0 <= age_seconds <= seconds:
-            window_events.append(event)
+    window_events = _provider_error_events_in_window(events, generated_at=generated_at, seconds=seconds)
 
     latest_error_at = None
     if window_events:
@@ -439,6 +440,17 @@ def _provider_error_window_payload(
         "categorySummary": category_summary,
         "dominantCategory": _dominant_provider_error_category(category_summary),
     }
+
+
+def _provider_error_events_in_window(
+    events: list[dict[str, str]], *, generated_at: datetime, seconds: int
+) -> list[dict[str, str]]:
+    window_events = []
+    for event in events:
+        age_seconds = _provider_error_event_age_seconds(event, generated_at=generated_at)
+        if age_seconds is not None and 0 <= age_seconds <= seconds:
+            window_events.append(event)
+    return window_events
 
 
 def _provider_error_event_age_seconds(event: dict[str, str], *, generated_at: datetime) -> float | None:

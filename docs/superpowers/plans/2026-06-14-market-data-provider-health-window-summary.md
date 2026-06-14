@@ -44,4 +44,5 @@ Make Settings provider health show whether market data provider failures are con
 ## Follow-Ups
 
 - Build a visual Settings trend strip after the operator flow decides where provider health history belongs.
+- Done in `2026-06-14-market-data-provider-health-current-window.md`: current `providerHealth` status now uses the 24h window, while seven-day history remains diagnostic.
 - Keep frontend refresh guards status-driven until backend retry and manual override semantics are explicit.

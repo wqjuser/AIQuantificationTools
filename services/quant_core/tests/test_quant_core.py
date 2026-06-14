@@ -1833,7 +1833,24 @@ class QuantCoreContractTest(unittest.TestCase):
             )
 
         adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
-        window_summary = adapters["yfinance-ohlcv"]["externalTelemetry"]["providerHealth"]["windowSummary"]
+        provider_health = adapters["yfinance-ohlcv"]["externalTelemetry"]["providerHealth"]
+        window_summary = provider_health["windowSummary"]
+        self.assertEqual(provider_health["status"], "watch")
+        self.assertEqual(provider_health["recentErrorCount"], 2)
+        self.assertEqual(provider_health["lastErrorAt"], "2026-06-14T07:45:00+00:00")
+        self.assertEqual(provider_health["affectedSymbols"], ["AAPL", "MSFT"])
+        self.assertEqual(provider_health["affectedContexts"], ["cache-refresh", "market-klines"])
+        self.assertEqual(
+            provider_health["categorySummary"],
+            {
+                "rate_limit": 1,
+                "dependency": 0,
+                "network": 1,
+                "upstream": 0,
+                "incomplete_data": 0,
+                "unknown": 0,
+            },
+        )
         self.assertEqual(window_summary["oneHour"]["errorCount"], 1)
         self.assertEqual(window_summary["oneHour"]["latestErrorAt"], "2026-06-14T07:45:00+00:00")
         self.assertEqual(window_summary["oneHour"]["dominantCategory"], "rate_limit")
@@ -1874,6 +1891,86 @@ class QuantCoreContractTest(unittest.TestCase):
                 "unknown": 0,
             },
         )
+
+    def test_settings_status_uses_twenty_four_hour_window_for_current_provider_health(self):
+        from quant_core.adapter_error_ledger import create_market_data_adapter_error_event, market_data_adapter_error_event_to_payload
+        from quant_core.settings import build_settings_status
+
+        events = [
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="AAPL",
+                timeframe="1d",
+                source="yfinance-fallback",
+                context="market-klines",
+                message="429 Too Many Requests: Yahoo rate limit exceeded",
+                created_at=datetime(2026, 6, 12, 7, 45, tzinfo=timezone.utc),
+                event_id="adapter-error-stale-1",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="MSFT",
+                timeframe="5m",
+                source="yfinance-fallback",
+                context="cache-refresh",
+                message="Yahoo chart timed out",
+                created_at=datetime(2026, 6, 12, 8, 0, tzinfo=timezone.utc),
+                event_id="adapter-error-stale-2",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="NVDA",
+                timeframe="1d",
+                source="local-cache",
+                context="watchlist-cache-refresh",
+                message="served local cache after incomplete yfinance response",
+                created_at=datetime(2026, 6, 12, 8, 15, tzinfo=timezone.utc),
+                event_id="adapter-error-stale-3",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                adapter_dependency_statuses={"akshare": True, "yfinance": True, "ccxt": True},
+                adapter_error_events=[market_data_adapter_error_event_to_payload(event) for event in events],
+                generated_at=datetime(2026, 6, 14, 8, 16, tzinfo=timezone.utc),
+            )
+
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        yfinance_adapter = adapters["yfinance-ohlcv"]
+        yfinance_telemetry = yfinance_adapter["externalTelemetry"]
+        yfinance_health = yfinance_telemetry["providerHealth"]
+
+        self.assertEqual(yfinance_adapter["status"], "ready")
+        self.assertEqual(yfinance_telemetry["status"], "ok")
+        self.assertEqual(yfinance_health["status"], "ok")
+        self.assertEqual(yfinance_health["reason"], "no_recent_provider_errors")
+        self.assertEqual(yfinance_health["recentErrorCount"], 0)
+        self.assertIsNone(yfinance_health["lastErrorAt"])
+        self.assertEqual(yfinance_health["affectedSymbols"], [])
+        self.assertEqual(yfinance_health["affectedContexts"], [])
+        self.assertEqual(
+            yfinance_health["categorySummary"],
+            {
+                "rate_limit": 0,
+                "dependency": 0,
+                "network": 0,
+                "upstream": 0,
+                "incomplete_data": 0,
+                "unknown": 0,
+            },
+        )
+        self.assertIsNone(yfinance_health["dominantCategory"])
+        self.assertEqual(yfinance_health["windowSummary"]["twentyFourHours"]["errorCount"], 0)
+        self.assertEqual(yfinance_health["windowSummary"]["sevenDays"]["errorCount"], 3)
+        self.assertIsNotNone(yfinance_telemetry["lastProviderError"])
 
     def test_market_klines_api_records_provider_failures_in_adapter_error_ledger(self):
         import json
