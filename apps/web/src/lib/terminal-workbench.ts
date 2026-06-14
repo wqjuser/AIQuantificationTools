@@ -1575,6 +1575,49 @@ export interface AuditEvidenceReportLedgerSummary {
   verified: number;
 }
 
+export interface MarketDataRefreshOverrideAuditLedgerRow {
+  id: string;
+  actionScope: string;
+  affectedContexts: string[];
+  affectedContextsLabel: string;
+  affectedSymbols: string[];
+  affectedSymbolsLabel: string;
+  boundary: string;
+  createdAt: string;
+  detail: string;
+  liveTradingAllowed: boolean;
+  market: Market;
+  name: string;
+  operator: string;
+  overrideApplied: boolean;
+  overrideReason: string;
+  providerHealthReason: string;
+  providerHealthStatus: string;
+  recentErrorCount: number;
+  retryAfterSeconds: number;
+  searchText: string;
+  source: string;
+  stage: string;
+  statusLabel: string;
+  summary: string;
+  symbol: string;
+  timeframe: Timeframe;
+  tone: "ai" | "positive" | "risk" | "warning";
+}
+
+export interface MarketDataRefreshOverrideAuditLedgerSummary {
+  blocked: number;
+  latestEventId: string;
+  latestMarket: Market | "";
+  latestReason: string;
+  latestRetryAfterSeconds: number;
+  latestSymbol: string;
+  latestTimeframe: Timeframe | "";
+  liveBlocked: number;
+  recorded: number;
+  total: number;
+}
+
 export type AuditSigningKeyRotationLedgerEventKind =
   | "plan"
   | "apply"
@@ -7643,6 +7686,151 @@ function auditReportLedgerLatestReportQuery(row: AuditEvidenceReportLedgerRow | 
     return "";
   }
   return [row.reportKind, row.runId, row.shortHash, row.fileName].filter(Boolean).join(" ");
+}
+
+export function buildMarketDataRefreshOverrideAuditLedgerRows(
+  events: AuditEvidenceReportLedgerEventRecord[]
+): MarketDataRefreshOverrideAuditLedgerRow[] {
+  return events
+    .filter((event) => event.eventType === "market_data_refresh_override")
+    .map((event) => {
+      const market = auditReportLedgerMetadataText(event.metadata, "market") as Market;
+      const timeframe = auditReportLedgerMetadataText(event.metadata, "timeframe") as Timeframe;
+      const affectedContexts = auditReportLedgerMetadataStringList(event.metadata, "affectedContexts");
+      const affectedSymbols = auditReportLedgerMetadataStringList(event.metadata, "affectedSymbols");
+      const liveTradingAllowed = auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed");
+      const overrideApplied = auditReportLedgerMetadataBoolean(event.metadata, "overrideApplied");
+      const providerHealthStatus = auditReportLedgerMetadataText(event.metadata, "providerHealthStatus");
+      const providerHealthReason = auditReportLedgerMetadataText(event.metadata, "providerHealthReason");
+      const boundary = auditReportLedgerMetadataText(event.metadata, "boundary");
+      const statusLabel = overrideApplied ? "Override recorded" : "Override blocked";
+      const liveBoundaryLabel = liveTradingAllowed ? "live allowed" : "live blocked";
+      const tone: MarketDataRefreshOverrideAuditLedgerRow["tone"] =
+        liveTradingAllowed || !overrideApplied
+          ? "risk"
+          : providerHealthStatus === "ok"
+            ? "positive"
+            : "warning";
+
+      return {
+        id: event.eventId,
+        actionScope: auditReportLedgerMetadataText(event.metadata, "actionScope"),
+        affectedContexts,
+        affectedContextsLabel: affectedContexts.join(", "),
+        affectedSymbols,
+        affectedSymbolsLabel: affectedSymbols.join(", "),
+        boundary,
+        createdAt: event.createdAt,
+        detail: event.detail,
+        liveTradingAllowed,
+        market,
+        name: auditReportLedgerMetadataText(event.metadata, "name"),
+        operator: auditReportLedgerMetadataText(event.metadata, "operator"),
+        overrideApplied,
+        overrideReason: auditReportLedgerMetadataText(event.metadata, "overrideReason"),
+        providerHealthReason,
+        providerHealthStatus,
+        recentErrorCount: auditReportLedgerMetadataNumber(event.metadata, "recentErrorCount"),
+        retryAfterSeconds: auditReportLedgerMetadataNumber(event.metadata, "retryAfterSeconds"),
+        searchText: [
+          event.eventType,
+          event.stage,
+          event.source,
+          event.summary,
+          event.detail,
+          market,
+          auditReportLedgerMetadataText(event.metadata, "symbol"),
+          timeframe,
+          auditReportLedgerMetadataText(event.metadata, "name"),
+          auditReportLedgerMetadataText(event.metadata, "operator"),
+          auditReportLedgerMetadataText(event.metadata, "overrideReason"),
+          providerHealthStatus,
+          providerHealthReason,
+          boundary,
+          liveBoundaryLabel,
+          affectedContexts.join(" "),
+          affectedSymbols.join(" "),
+          String(auditReportLedgerMetadataNumber(event.metadata, "retryAfterSeconds")),
+          String(auditReportLedgerMetadataNumber(event.metadata, "recentErrorCount"))
+        ]
+          .filter(Boolean)
+          .join(" "),
+        source: event.source,
+        stage: event.stage,
+        statusLabel,
+        summary: event.summary,
+        symbol: auditReportLedgerMetadataText(event.metadata, "symbol"),
+        timeframe,
+        tone
+      };
+    });
+}
+
+export function buildMarketDataRefreshOverrideAuditLedgerSummary(
+  rows: MarketDataRefreshOverrideAuditLedgerRow[]
+): MarketDataRefreshOverrideAuditLedgerSummary {
+  const latestRow = rows.reduce<MarketDataRefreshOverrideAuditLedgerRow | undefined>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
+
+  return {
+    blocked: rows.filter((row) => !row.overrideApplied).length,
+    latestEventId: latestRow?.id ?? "",
+    latestMarket: latestRow?.market ?? "",
+    latestReason: latestRow?.overrideReason ?? "",
+    latestRetryAfterSeconds: latestRow?.retryAfterSeconds ?? 0,
+    latestSymbol: latestRow?.symbol ?? "",
+    latestTimeframe: latestRow?.timeframe ?? "",
+    liveBlocked: rows.filter((row) => !row.liveTradingAllowed).length,
+    recorded: rows.filter((row) => row.overrideApplied).length,
+    total: rows.length
+  };
+}
+
+export function filterMarketDataRefreshOverrideAuditLedgerRows(
+  rows: MarketDataRefreshOverrideAuditLedgerRow[],
+  query: string
+): MarketDataRefreshOverrideAuditLedgerRow[] {
+  const queryTokens = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+  if (!queryTokens.length) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    queryTokens.every((token) =>
+      [
+        row.id,
+        row.actionScope,
+        row.affectedContextsLabel,
+        row.affectedSymbolsLabel,
+        row.boundary,
+        row.createdAt,
+        row.detail,
+        row.liveTradingAllowed ? "live allowed" : "live blocked",
+        row.market,
+        row.name,
+        row.operator,
+        row.overrideReason,
+        row.providerHealthReason,
+        row.providerHealthStatus,
+        row.searchText,
+        row.source,
+        row.stage,
+        row.statusLabel,
+        row.summary,
+        row.symbol,
+        row.timeframe,
+        row.tone,
+        String(row.recentErrorCount),
+        String(row.retryAfterSeconds)
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(token)
+    )
+  );
 }
 
 export function buildAuditEvidenceReportLedgerRows(

@@ -14,6 +14,8 @@ import {
   buildAuditEvidenceSummary,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
+  buildMarketDataRefreshOverrideAuditLedgerRows,
+  buildMarketDataRefreshOverrideAuditLedgerSummary,
   buildAuditSigningKeyRotationChainSummary,
   buildAuditSigningKeyRotationLedgerRows,
   buildResearchRunExportPreviewRows,
@@ -126,6 +128,7 @@ import {
   filterResearchRunImportDiffRows,
   filterResearchRunImportAuditEvents,
   filterAuditEvidenceReportLedgerRows,
+  filterMarketDataRefreshOverrideAuditLedgerRows,
   filterAuditSigningKeyRotationLedgerRows,
   filterBacktestCrossSymbolComparisonRows,
   filterBacktestRunComparisonMatrixRows,
@@ -7841,6 +7844,99 @@ describe("terminal workbench model", () => {
         verified: 0
       })
     );
+  });
+
+  test("builds market data refresh override audit ledger rows from persisted events", () => {
+    const rows = buildMarketDataRefreshOverrideAuditLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "market-data-refresh-override-ashare-600000-1d",
+        eventType: "market_data_refresh_override",
+        runId: null,
+        createdAt: "2026-06-14T08:00:00.000Z",
+        stage: "override_recorded",
+        source: "web",
+        summary: "Market data refresh override recorded for ASHARE 600000 1d",
+        detail:
+          "watchlist_cache_refresh override by local-operator: operator confirmed upstream recovered; original retry after 180s; affected 600000/000300.",
+        metadata: {
+          actionScope: "watchlist_cache_refresh",
+          affectedContexts: ["ashare:600000:1d", "ashare:000300:1d"],
+          affectedSymbols: ["600000", "000300"],
+          artifactKind: "aiqt.marketDataRefreshOverride",
+          boundary: "manual market-data refresh override only; no trading authorization or investment advice",
+          liveTradingAllowed: false,
+          market: "ashare",
+          name: "浦发银行",
+          operator: "local-operator",
+          overrideApplied: true,
+          overrideReason: "operator confirmed upstream recovered",
+          providerHealthReason: "provider_cooldown_manual_override",
+          providerHealthStatus: "cooldown",
+          recentErrorCount: 4,
+          retryAfterSeconds: 180,
+          symbol: "600000",
+          timeframe: "1d"
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "ignored-report",
+        eventType: "audit_evidence_report",
+        runId: "run-a1",
+        createdAt: "2026-06-14T08:05:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Ignored by override ledger",
+        detail: "ignored",
+        metadata: {}
+      }
+    ]);
+    const summary = buildMarketDataRefreshOverrideAuditLedgerSummary(rows);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        actionScope: "watchlist_cache_refresh",
+        affectedContextsLabel: "ashare:600000:1d, ashare:000300:1d",
+        affectedSymbolsLabel: "600000, 000300",
+        boundary: "manual market-data refresh override only; no trading authorization or investment advice",
+        detail:
+          "watchlist_cache_refresh override by local-operator: operator confirmed upstream recovered; original retry after 180s; affected 600000/000300.",
+        id: "market-data-refresh-override-ashare-600000-1d",
+        liveTradingAllowed: false,
+        market: "ashare",
+        name: "浦发银行",
+        operator: "local-operator",
+        overrideApplied: true,
+        overrideReason: "operator confirmed upstream recovered",
+        providerHealthReason: "provider_cooldown_manual_override",
+        providerHealthStatus: "cooldown",
+        recentErrorCount: 4,
+        retryAfterSeconds: 180,
+        statusLabel: "Override recorded",
+        symbol: "600000",
+        timeframe: "1d",
+        tone: "warning"
+      })
+    ]);
+    expect(summary).toEqual({
+      blocked: 0,
+      latestEventId: "market-data-refresh-override-ashare-600000-1d",
+      latestMarket: "ashare",
+      latestReason: "operator confirmed upstream recovered",
+      latestRetryAfterSeconds: 180,
+      latestSymbol: "600000",
+      latestTimeframe: "1d",
+      liveBlocked: 1,
+      recorded: 1,
+      total: 1
+    });
+    expect(filterMarketDataRefreshOverrideAuditLedgerRows(rows, "600000 recovered").map((row) => row.id)).toEqual([
+      "market-data-refresh-override-ashare-600000-1d"
+    ]);
+    expect(filterMarketDataRefreshOverrideAuditLedgerRows(rows, "live blocked").map((row) => row.id)).toEqual([
+      "market-data-refresh-override-ashare-600000-1d"
+    ]);
   });
 
   test("selects the newest P0 readiness audit aid for the ledger summary", () => {

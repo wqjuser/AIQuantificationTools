@@ -1218,6 +1218,47 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"package"', '"reports"', '"signing-keys"', '"import-diff"'])).toBe(true);
   });
 
+  test("renders market data refresh override audit events in the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const overridePanelSource = sourceBetween("function MarketDataRefreshOverrideAuditLedgerPanel", "function AuditEvidenceReportLedgerPanel");
+
+    expect(appSource).toContain("buildMarketDataRefreshOverrideAuditLedgerRows");
+    expect(appSource).toContain("buildMarketDataRefreshOverrideAuditLedgerSummary");
+    expect(appSource).toContain("filterMarketDataRefreshOverrideAuditLedgerRows");
+    expect(appSource).toContain('eventType: "market_data_refresh_override"');
+    expect(appSource).toContain("const [marketDataRefreshOverrideAuditEvents, setMarketDataRefreshOverrideAuditEvents]");
+    expect(appSource).toContain("const refreshMarketDataRefreshOverrideAuditEvents = useCallback");
+    expect(appSource).toContain("const marketDataRefreshOverrideAuditRows = buildMarketDataRefreshOverrideAuditLedgerRows");
+    expect(auditWorkspaceSource).toContain("<MarketDataRefreshOverrideAuditLedgerPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-market-refresh-overrides-panel"');
+    expect(auditWorkspaceSource).toContain("rows={marketDataRefreshOverrideAuditRows}");
+    expect(auditWorkspaceSource).toContain("pagination={marketDataRefreshOverrideAuditPagination}");
+    expect(auditWorkspaceSource).toContain("query={marketDataRefreshOverrideAuditQuery}");
+    expect(auditWorkspaceSource).toContain("isLoading={isLoadingMarketDataRefreshOverrideAudit}");
+    expect(overridePanelSource).toContain("buildMarketDataRefreshOverrideAuditLedgerSummary(rows)");
+    expect(overridePanelSource).toContain("filterMarketDataRefreshOverrideAuditLedgerRows(rows, query)");
+    expect(overridePanelSource).toContain("market-refresh-audit-summary");
+    expect(overridePanelSource).toContain("market-refresh-audit-pagination");
+    expect(overridePanelSource).toContain("market-refresh-audit-row");
+    expect(overridePanelSource).toContain("summary.liveBlocked");
+    expect(overridePanelSource).toContain("row.overrideReason");
+    expect(overridePanelSource).toContain("row.boundary");
+    expect(overridePanelSource).toContain("row.affectedSymbolsLabel");
+    expect(overridePanelSource).toContain("row.retryAfterSeconds");
+    expect(overridePanelSource).toContain("row.liveTradingAllowed");
+    expect(overridePanelSource).toContain("覆盖审计");
+    expect(overridePanelSource).toContain("Refresh overrides");
+    expect(cssBlock(".workflow-market-refresh-overrides-panel")).toContain("grid-area: refresh-overrides;");
+    expect(cssBlock(".market-refresh-audit")).toContain("display: grid;");
+    expect(cssBlock(".market-refresh-audit-summary")).toContain("display: flex;");
+    expect(cssBlock(".market-refresh-audit-pagination")).toContain("display: flex;");
+    expect(cssBlock(".market-refresh-audit-row")).toContain(
+      "grid-template-columns: minmax(120px, 0.34fr) minmax(180px, 0.46fr) minmax(0, 1fr) minmax(150px, 0.38fr);"
+    );
+    expect(hasCssBlockWith(".audit-layout", ['"refresh-overrides refresh-overrides"', '"reports reports"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"refresh-overrides"', '"reports"'])).toBe(true);
+  });
+
   test("compares current AI review evidence with the latest saved audit record", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
