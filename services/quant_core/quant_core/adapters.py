@@ -9,8 +9,9 @@ from io import StringIO
 from typing import Any
 
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
-from quant_core.live_quotes import normalize_crypto_symbol
+from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
 
+_AKSHARE_UNSET = object()
 _CCXT_UNSET = object()
 _YFINANCE_UNSET = object()
 
@@ -72,12 +73,62 @@ class AkShareMarketDataAdapter(OptionalDependencyAdapter):
     source = "akshare"
     package_name = "akshare"
 
+    def __init__(self, *, akshare_module: Any = _AKSHARE_UNSET) -> None:
+        self.akshare_module = akshare_module
+
     def fetch_ohlcv(self, request: MarketDataRequest, limit: int | None = None) -> tuple[list[OHLCVBar], DataQuality]:
+        if request.market != "ashare":
+            raise ValueError("akshare adapter only supports A-share market")
+
+        ak = self._load_akshare_module()
+        bounded_limit = max(1, min(int(limit or 160), 500))
+        symbol = ashare_digits(request.symbol)
+        if request.timeframe == "1d":
+            frame = ak.stock_zh_a_hist(
+                symbol=symbol,
+                period="daily",
+                start_date=akshare_daily_date(request.start, fallback_days=bounded_limit * 3),
+                end_date=akshare_daily_date(request.end),
+                adjust="qfq",
+            )
+            bars = akshare_frame_to_bars(frame, request=request, time_column="日期", limit=bounded_limit)
+        else:
+            period = akshare_minute_period(request.timeframe)
+            if not period:
+                return [], DataQuality(source=self.source, is_complete=False, warnings=[f"unsupported A-share timeframe {request.timeframe}"], rows=0)
+            start, end = akshare_minute_range(request, bounded_limit)
+            frame = ak.stock_zh_a_hist_min_em(
+                symbol=symbol,
+                start_date=start.strftime("%Y-%m-%d %H:%M:%S"),
+                end_date=end.strftime("%Y-%m-%d %H:%M:%S"),
+                period=period,
+                adjust="" if period == "1" else "qfq",
+            )
+            bars = akshare_frame_to_bars(frame, request=request, time_column="时间", limit=bounded_limit)
+        if not bars:
+            return [], DataQuality(
+                source=self.source,
+                is_complete=False,
+                warnings=["akshare returned no OHLCV bars"],
+                rows=0,
+            )
+        return bars[-bounded_limit:], DataQuality(
+            source=self.source,
+            is_complete=True,
+            warnings=[],
+            rows=len(bars[-bounded_limit:]),
+        )
+
+    def _load_akshare_module(self) -> Any:
+        if self.akshare_module is not _AKSHARE_UNSET:
+            if self.akshare_module is None:
+                raise self._missing_dependency()
+            return self.akshare_module
         try:
             import akshare as ak  # type: ignore
         except ImportError as exc:
             raise self._missing_dependency() from exc
-        raise NotImplementedError("akshare normalization is reserved for the external data integration phase")
+        return ak
 
 
 class YFinanceMarketDataAdapter(OptionalDependencyAdapter):
@@ -209,6 +260,77 @@ def yfinance_period(timeframe: str) -> tuple[str, str]:
     if timeframe == "60m":
         return "60m", "3mo"
     return timeframe, "1mo"
+
+
+def akshare_minute_period(timeframe: str) -> str | None:
+    return {"1m": "1", "5m": "5", "15m": "15", "30m": "30", "60m": "60"}.get(timeframe)
+
+
+def ashare_digits(symbol: str) -> str:
+    code = normalize_ashare_tencent_code(symbol)
+    return code[2:] if len(code) >= 8 and code[:2].upper() in {"SH", "SZ"} else code
+
+
+def akshare_daily_date(value: datetime | None, *, fallback_days: int = 365) -> str:
+    target = value or (datetime.now(timezone.utc) - timedelta(days=fallback_days))
+    if target.tzinfo:
+        target = target.astimezone(timezone.utc)
+    return target.strftime("%Y%m%d")
+
+
+def akshare_minute_range(request: MarketDataRequest, limit: int) -> tuple[datetime, datetime]:
+    end = request.end or datetime.now(timezone.utc)
+    if end.tzinfo:
+        end = end.astimezone(timezone.utc).replace(tzinfo=None)
+    start = request.start
+    if start is None:
+        start = end - timedelta(days=16)
+    elif start.tzinfo:
+        start = start.astimezone(timezone.utc).replace(tzinfo=None)
+    return start, end
+
+
+def akshare_frame_to_bars(frame: Any, *, request: MarketDataRequest, time_column: str, limit: int) -> list[OHLCVBar]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    rows = frame.tail(limit) if hasattr(frame, "tail") else frame
+    columns = [str(column) for column in getattr(rows, "columns", getattr(frame, "columns", []))]
+    timestamp_column = time_column if time_column in columns else (columns[0] if len(columns) > 5 else "")
+    open_column = pick_column(columns, "开盘", 1)
+    close_column = pick_column(columns, "收盘", 2)
+    high_column = pick_column(columns, "最高", 3)
+    low_column = pick_column(columns, "最低", 4)
+    volume_column = pick_column(columns, "成交量", 5)
+    if not all([timestamp_column, open_column, close_column, high_column, low_column, volume_column]):
+        return []
+    if not hasattr(rows, "iterrows"):
+        return []
+    bars: list[OHLCVBar] = []
+    for _, row in rows.iterrows():
+        try:
+            bars.append(
+                OHLCVBar(
+                    symbol=request.symbol,
+                    market="ashare",
+                    timeframe=request.timeframe,
+                    timestamp=coerce_datetime(row_value(row, timestamp_column)),
+                    open=round(float(row_value(row, open_column)), 4),
+                    close=round(float(row_value(row, close_column)), 4),
+                    high=round(float(row_value(row, high_column)), 4),
+                    low=round(float(row_value(row, low_column)), 4),
+                    volume=round(float(row_value(row, volume_column)), 2),
+                )
+            )
+        except (TypeError, ValueError, KeyError):
+            continue
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
+def pick_column(columns: list[str], preferred: str, index: int) -> str:
+    if preferred in columns:
+        return preferred
+    return columns[index] if len(columns) > index else ""
 
 
 def yfinance_history_to_bars(frame: Any, *, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:

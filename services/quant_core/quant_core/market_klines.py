@@ -10,7 +10,13 @@ from typing import Callable
 from urllib.parse import quote, urlencode
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
-from quant_core.adapters import CcxtMarketDataAdapter, DemoMarketDataAdapter, MarketDataAdapter, YFinanceMarketDataAdapter
+from quant_core.adapters import (
+    AkShareMarketDataAdapter,
+    CcxtMarketDataAdapter,
+    DemoMarketDataAdapter,
+    MarketDataAdapter,
+    YFinanceMarketDataAdapter,
+)
 from quant_core.domain import DataQuality, Market, MarketDataRequest, OHLCVBar, Timeframe
 from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
 
@@ -47,6 +53,7 @@ class QuantDingerKlineAdapter:
         *,
         fetch_text: FetchText | None = None,
         fallback_adapter: MarketDataAdapter | None = None,
+        akshare_adapter: MarketDataAdapter | None = None,
         yfinance_adapter: MarketDataAdapter | None = None,
         ccxt_adapter: MarketDataAdapter | None = None,
         cache_ttl_seconds: int = 90,
@@ -54,6 +61,7 @@ class QuantDingerKlineAdapter:
     ) -> None:
         self.fetch_text = fetch_text or default_fetch_text
         self.fallback_adapter = fallback_adapter or DemoMarketDataAdapter()
+        self.akshare_adapter = akshare_adapter or AkShareMarketDataAdapter()
         self.yfinance_adapter = yfinance_adapter or YFinanceMarketDataAdapter()
         self.ccxt_adapter = ccxt_adapter or CcxtMarketDataAdapter()
         self.cache = KlineCache(ttl_seconds=cache_ttl_seconds, now=now)
@@ -88,10 +96,22 @@ class QuantDingerKlineAdapter:
             bars = self._fetch_eastmoney_ashare_minute_bars(request, limit)
             if bars:
                 return bars[-limit:], DataQuality(source="eastmoney", is_complete=True, warnings=[], rows=len(bars[-limit:]))
-            bars = self._fetch_akshare_ashare_minute_bars(request, limit)
-            if bars:
-                return bars[-limit:], DataQuality(source="akshare", is_complete=True, warnings=[], rows=len(bars[-limit:]))
-            return self._fallback(request, limit, "Eastmoney and AkShare minute K-lines returned no chart bars")
+            try:
+                bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
+                if bars:
+                    limited = bars[-limit:]
+                    return limited, DataQuality(
+                        source=quality.source,
+                        is_complete=quality.is_complete,
+                        warnings=quality.warnings,
+                        rows=len(limited),
+                    )
+                warning = "AkShare minute K-lines returned no chart bars"
+                if quality.warnings:
+                    warning = f"{warning}; {'; '.join(quality.warnings)}"
+            except Exception as exc:
+                warning = str(exc)
+            return self._fallback(request, limit, f"Eastmoney unavailable; {warning}")
 
         code = normalize_ashare_tencent_code(request.symbol).lower()
         params = urlencode({"param": f"{code},day,,,{limit},qfq"})
@@ -104,7 +124,22 @@ class QuantDingerKlineAdapter:
         bars = [bar for bar in bars if bar is not None]
         bars.sort(key=lambda bar: bar.timestamp)
         if not bars:
-            return self._fallback(request, limit, "Tencent fqkline returned no chart bars")
+            try:
+                bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
+                if bars:
+                    limited = bars[-limit:]
+                    return limited, DataQuality(
+                        source=quality.source,
+                        is_complete=quality.is_complete,
+                        warnings=quality.warnings,
+                        rows=len(limited),
+                    )
+                warning = "AkShare daily K-lines returned no chart bars"
+                if quality.warnings:
+                    warning = f"{warning}; {'; '.join(quality.warnings)}"
+            except Exception as exc:
+                warning = str(exc)
+            return self._fallback(request, limit, f"Tencent fqkline returned no chart bars; {warning}")
         return bars[-limit:], DataQuality(source="tencent", is_complete=True, warnings=[], rows=len(bars[-limit:]))
 
     def _fetch_eastmoney_ashare_minute_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:

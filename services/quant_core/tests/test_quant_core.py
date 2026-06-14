@@ -13933,6 +13933,176 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 9.27)
         self.assertEqual(bars[-1].volume, 26674.0)
 
+    def test_akshare_market_data_adapter_normalizes_daily_rows(self):
+        from quant_core.adapters import AkShareMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        class FakeFrame:
+            empty = False
+            columns = ["日期", "开盘", "收盘", "最高", "最低", "成交量"]
+
+            def __init__(self, rows):
+                self.rows = rows
+
+            def tail(self, limit):
+                return FakeFrame(self.rows[-limit:])
+
+            def iterrows(self):
+                return enumerate(self.rows)
+
+        class FakeAkShare:
+            calls = []
+
+            @staticmethod
+            def stock_zh_a_hist(*, symbol: str, period: str, start_date: str, end_date: str, adjust: str):
+                FakeAkShare.calls.append(
+                    {
+                        "symbol": symbol,
+                        "period": period,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "adjust": adjust,
+                    }
+                )
+                return FakeFrame(
+                    [
+                        {"日期": "2026-05-20", "开盘": "9.11119", "收盘": "9.22229", "最高": "9.33339", "最低": "9.00001", "成交量": "123456"},
+                        {"日期": "2026-05-21", "开盘": 9.22, "收盘": 9.31, "最高": 9.40, "最低": 9.18, "成交量": 234567},
+                    ]
+                )
+
+        adapter = AkShareMarketDataAdapter(akshare_module=FakeAkShare)
+        bars, quality = adapter.fetch_ohlcv(
+            MarketDataRequest(
+                market="ashare",
+                symbol="600000.SH",
+                timeframe="1d",
+                start=datetime(2026, 5, 20, tzinfo=timezone.utc),
+                end=datetime(2026, 5, 21, tzinfo=timezone.utc),
+            ),
+            limit=2,
+        )
+
+        self.assertEqual(
+            FakeAkShare.calls,
+            [{"symbol": "600000", "period": "daily", "start_date": "20260520", "end_date": "20260521", "adjust": "qfq"}],
+        )
+        self.assertEqual(quality.source, "akshare")
+        self.assertTrue(quality.is_complete)
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual([bar.timestamp.isoformat() for bar in bars], ["2026-05-20T00:00:00+00:00", "2026-05-21T00:00:00+00:00"])
+        self.assertEqual(bars[0].open, 9.1112)
+        self.assertEqual(bars[0].volume, 123456.0)
+        self.assertEqual(bars[-1].close, 9.31)
+
+    def test_akshare_market_data_adapter_normalizes_minute_rows(self):
+        from quant_core.adapters import AkShareMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        class FakeFrame:
+            empty = False
+            columns = ["时间", "开盘", "收盘", "最高", "最低", "成交量"]
+
+            def __init__(self, rows):
+                self.rows = rows
+
+            def tail(self, limit):
+                return FakeFrame(self.rows[-limit:])
+
+            def iterrows(self):
+                return enumerate(self.rows)
+
+        class FakeAkShare:
+            calls = []
+
+            @staticmethod
+            def stock_zh_a_hist_min_em(*, symbol: str, start_date: str, end_date: str, period: str, adjust: str):
+                FakeAkShare.calls.append(
+                    {
+                        "symbol": symbol,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "period": period,
+                        "adjust": adjust,
+                    }
+                )
+                return FakeFrame(
+                    [
+                        {"时间": "2026-05-21 09:30:00", "开盘": "9.10", "收盘": "9.16", "最高": "9.18", "最低": "9.09", "成交量": "3200"},
+                        {"时间": "2026-05-21 09:35:00", "开盘": 9.16, "收盘": 9.20, "最高": 9.21, "最低": 9.15, "成交量": 4100},
+                    ]
+                )
+
+        adapter = AkShareMarketDataAdapter(akshare_module=FakeAkShare)
+        bars, quality = adapter.fetch_ohlcv(
+            MarketDataRequest(
+                market="ashare",
+                symbol="600000",
+                timeframe="5m",
+                start=datetime(2026, 5, 21, 9, 30, tzinfo=timezone.utc),
+                end=datetime(2026, 5, 21, 9, 35, tzinfo=timezone.utc),
+            ),
+            limit=2,
+        )
+
+        self.assertEqual(
+            FakeAkShare.calls,
+            [{"symbol": "600000", "start_date": "2026-05-21 09:30:00", "end_date": "2026-05-21 09:35:00", "period": "5", "adjust": "qfq"}],
+        )
+        self.assertEqual(quality.source, "akshare")
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(bars[-1].close, 9.20)
+        self.assertEqual(bars[-1].volume, 4100.0)
+
+    def test_akshare_market_data_adapter_rejects_non_ashare_requests(self):
+        from quant_core.adapters import AkShareMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        with self.assertRaisesRegex(ValueError, "only supports A-share"):
+            AkShareMarketDataAdapter(akshare_module=object()).fetch_ohlcv(
+                MarketDataRequest(market="us", symbol="AAPL", timeframe="1d"),
+                limit=1,
+            )
+
+    def test_ashare_kline_adapter_uses_akshare_adapter_when_tencent_is_unavailable(self):
+        from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        class FakeAkShareAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160):
+                self.calls.append({"request": request, "limit": limit})
+                return [
+                    OHLCVBar(
+                        symbol=request.symbol,
+                        market=request.market,
+                        timeframe=request.timeframe,
+                        timestamp=datetime(2026, 5, 21, tzinfo=timezone.utc),
+                        open=9.1,
+                        high=9.4,
+                        low=9.0,
+                        close=9.31,
+                        volume=234567.0,
+                    )
+                ], DataQuality(source="akshare:test", is_complete=True, warnings=[], rows=1)
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            self.assertIn("web.ifzq.gtimg.cn", url)
+            return '{"data":{"sh600000":{}}}'
+
+        akshare_adapter = FakeAkShareAdapter()
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text, akshare_adapter=akshare_adapter).fetch_ohlcv(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="1d"),
+            limit=1,
+        )
+
+        self.assertEqual(quality.source, "akshare:test")
+        self.assertEqual(bars[-1].close, 9.31)
+        self.assertEqual(akshare_adapter.calls[0]["request"].symbol, "600000")
+        self.assertEqual(akshare_adapter.calls[0]["limit"], 1)
+
     def test_yfinance_market_data_adapter_normalizes_history_rows(self):
         from quant_core.adapters import YFinanceMarketDataAdapter
         from quant_core.domain import MarketDataRequest
