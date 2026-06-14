@@ -39,4 +39,4 @@ Classify sanitized market data provider errors so Settings can show whether the 
 ## Follow-Ups
 
 - Feed `rate_limit` into an optional backend refresh preflight/circuit-breaker once operator override semantics are defined.
-- Add health trend aggregation after adapter error retention windows are documented.
+- Done in `2026-06-14-market-data-provider-health-window-summary.md`: Settings now derives `1h/24h/7d` provider health aggregates from categorized adapter errors.

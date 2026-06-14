@@ -8,6 +8,11 @@ from typing import Any
 
 _PROVIDER_ERROR_CATEGORIES = ("rate_limit", "dependency", "network", "upstream", "incomplete_data", "unknown")
 _PROVIDER_ERROR_CATEGORY_PRIORITY = {category: index for index, category in enumerate(_PROVIDER_ERROR_CATEGORIES)}
+_PROVIDER_ERROR_WINDOWS = {
+    "oneHour": 60 * 60,
+    "twentyFourHours": 24 * 60 * 60,
+    "sevenDays": 7 * 24 * 60 * 60,
+}
 
 
 def build_settings_status(
@@ -233,6 +238,7 @@ def _market_data_adapter_external_telemetry(
         adapter_id,
         adapter_error_events,
         dependency_available=available,
+        generated_at=generated_at,
     )
     if available:
         if last_provider_error:
@@ -307,6 +313,7 @@ def _provider_health_for_adapter(
     events: list[dict[str, Any]] | None,
     *,
     dependency_available: bool,
+    generated_at: datetime,
 ) -> dict[str, Any]:
     matching_events = [
         _provider_error_payload(event)
@@ -321,6 +328,7 @@ def _provider_health_for_adapter(
         last_error_at = latest_event["createdAt"]
     category_summary = _provider_error_category_summary(matching_events)
     dominant_category = _dominant_provider_error_category(category_summary)
+    window_summary = _provider_error_window_summary(matching_events, generated_at=generated_at)
 
     if not dependency_available:
         status = "blocked"
@@ -347,6 +355,7 @@ def _provider_health_for_adapter(
         "affectedContexts": sorted({event["context"] for event in matching_events}),
         "categorySummary": category_summary,
         "dominantCategory": dominant_category,
+        "windowSummary": window_summary,
         "retryAfterSeconds": retry_after_seconds,
         "reason": reason,
     }
@@ -398,6 +407,55 @@ def _dominant_provider_error_category(summary: dict[str, int]) -> str | None:
         non_zero_categories,
         key=lambda item: (-item[1], _PROVIDER_ERROR_CATEGORY_PRIORITY.get(item[0], len(_PROVIDER_ERROR_CATEGORIES))),
     )[0][0]
+
+
+def _provider_error_window_summary(
+    events: list[dict[str, str]], *, generated_at: datetime
+) -> dict[str, dict[str, Any]]:
+    return {
+        window: _provider_error_window_payload(events, generated_at=generated_at, seconds=seconds)
+        for window, seconds in _PROVIDER_ERROR_WINDOWS.items()
+    }
+
+
+def _provider_error_window_payload(
+    events: list[dict[str, str]], *, generated_at: datetime, seconds: int
+) -> dict[str, Any]:
+    window_events = []
+    for event in events:
+        age_seconds = _provider_error_event_age_seconds(event, generated_at=generated_at)
+        if age_seconds is not None and 0 <= age_seconds <= seconds:
+            window_events.append(event)
+
+    latest_error_at = None
+    if window_events:
+        latest_event = max(window_events, key=lambda event: (event["createdAt"], event["eventId"]))
+        latest_error_at = latest_event["createdAt"]
+
+    category_summary = _provider_error_category_summary(window_events)
+    return {
+        "errorCount": len(window_events),
+        "latestErrorAt": latest_error_at,
+        "categorySummary": category_summary,
+        "dominantCategory": _dominant_provider_error_category(category_summary),
+    }
+
+
+def _provider_error_event_age_seconds(event: dict[str, str], *, generated_at: datetime) -> float | None:
+    created_at = _parse_provider_error_timestamp(event.get("createdAt", ""))
+    if created_at is None:
+        return None
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    reference = generated_at if generated_at.tzinfo is not None else generated_at.replace(tzinfo=timezone.utc)
+    return (reference.astimezone(timezone.utc) - created_at.astimezone(timezone.utc)).total_seconds()
+
+
+def _parse_provider_error_timestamp(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _market_data_adapter_status_from_telemetry(telemetry: dict[str, Any]) -> str:

@@ -44,4 +44,5 @@ Turn the adapter error ledger into a compact provider health summary in Settings
 - Done in `2026-06-14-market-data-provider-error-categories.md`: `lastProviderError` now carries a stable category including rate-limit, dependency, network, upstream, incomplete data, and unknown.
 - Done in `2026-06-14-market-data-provider-health-category-summary.md`: `providerHealth` now carries per-category counts and a deterministic dominant category.
 - Done in `2026-06-14-market-data-refresh-cooldown-guard.md`: suggested backoff now blocks frontend manual refresh actions while the selected provider is in `cooldown`.
-- Add a compact health trend view after the ledger keeps time-windowed aggregates.
+- Done in `2026-06-14-market-data-provider-health-window-summary.md`: `providerHealth` now carries `oneHour`, `twentyFourHours`, and `sevenDays` time-windowed aggregates for a compact trend label.
+- Add a visual health trend view after the operator flow decides where provider history belongs.

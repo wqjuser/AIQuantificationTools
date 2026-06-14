@@ -2462,6 +2462,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("marketDataAdapterProviderHealthCategoryLabel(i18n, health.dominantCategory)");
     expect(appSource).toContain("主因");
     expect(appSource).toContain("Primary");
+    expect(appSource).toContain("marketDataAdapterProviderHealthWindowSummaryLabel(i18n, health.windowSummary)");
+    expect(appSource).toContain("趋势");
+    expect(appSource).toContain("Trend");
     expect(appSource).toContain("建议退避");
     expect(appSource).toContain("Backoff");
     expect(appSource).toContain("最近错误");

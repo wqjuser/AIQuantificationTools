@@ -18890,6 +18890,7 @@ function marketDataAdapterProviderHealthLabel(
 ): string {
   const statusLabel = marketDataAdapterProviderHealthStatusLabel(i18n, health.status);
   const categoryLabel = marketDataAdapterProviderHealthCategoryLabel(i18n, health.dominantCategory);
+  const trendLabel = marketDataAdapterProviderHealthWindowSummaryLabel(i18n, health.windowSummary);
   const affected =
     health.affectedSymbols.length > 0
       ? health.affectedSymbols.slice(0, 3).join("/")
@@ -18905,8 +18906,16 @@ function marketDataAdapterProviderHealthLabel(
         ? "无"
         : "none";
   return i18n.locale === "zh-CN"
-    ? `健康 · ${statusLabel} · 错误 ${health.recentErrorCount} · 主因 ${categoryLabel} · 影响 ${affected} · 建议退避 ${backoff}`
-    : `Provider health · ${statusLabel} · errors ${health.recentErrorCount} · Primary ${categoryLabel} · affected ${affected} · Backoff ${backoff}`;
+    ? `健康 · ${statusLabel} · 错误 ${health.recentErrorCount} · 主因 ${categoryLabel} · 影响 ${affected} · ${trendLabel} · 建议退避 ${backoff}`
+    : `Provider health · ${statusLabel} · errors ${health.recentErrorCount} · Primary ${categoryLabel} · affected ${affected} · ${trendLabel} · Backoff ${backoff}`;
+}
+
+function marketDataAdapterProviderHealthWindowSummaryLabel(
+  i18n: AppI18n,
+  windowSummary: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"]["windowSummary"]
+): string {
+  const trend = `${windowSummary.oneHour.errorCount}/${windowSummary.twentyFourHours.errorCount}/${windowSummary.sevenDays.errorCount}`;
+  return i18n.locale === "zh-CN" ? `趋势 1h/24h/7d ${trend}` : `Trend 1h/24h/7d ${trend}`;
 }
 
 function marketDataAdapterProviderHealthStatusLabel(

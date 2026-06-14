@@ -40,5 +40,5 @@ Make Settings provider health explain the main type of recent market data failur
 
 ## Follow-Ups
 
-- Use `categorySummary` as the input for a future provider health trend chart once retention windows are defined.
+- Done in `2026-06-14-market-data-provider-health-window-summary.md`: `categorySummary` now feeds `oneHour`, `twentyFourHours`, and `sevenDays` provider health windows.
 - Keep frontend refresh guards status-driven for now; category-specific retry policy still needs explicit operator override semantics.

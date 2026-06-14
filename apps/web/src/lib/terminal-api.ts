@@ -1172,6 +1172,19 @@ export type PlatformSettingsMarketDataAdapterProviderErrorCategorySummary = Reco
   number
 >;
 
+export interface PlatformSettingsMarketDataAdapterProviderHealthWindow {
+  errorCount: number;
+  latestErrorAt: string | null;
+  categorySummary: PlatformSettingsMarketDataAdapterProviderErrorCategorySummary;
+  dominantCategory: PlatformSettingsMarketDataAdapterProviderErrorCategory | null;
+}
+
+export interface PlatformSettingsMarketDataAdapterProviderHealthWindowSummary {
+  oneHour: PlatformSettingsMarketDataAdapterProviderHealthWindow;
+  twentyFourHours: PlatformSettingsMarketDataAdapterProviderHealthWindow;
+  sevenDays: PlatformSettingsMarketDataAdapterProviderHealthWindow;
+}
+
 export interface PlatformSettingsMarketDataAdapterProviderHealth {
   status: "ok" | "watch" | "cooldown" | "blocked";
   recentErrorCount: number;
@@ -1180,6 +1193,7 @@ export interface PlatformSettingsMarketDataAdapterProviderHealth {
   affectedContexts: string[];
   categorySummary: PlatformSettingsMarketDataAdapterProviderErrorCategorySummary;
   dominantCategory: PlatformSettingsMarketDataAdapterProviderErrorCategory | null;
+  windowSummary: PlatformSettingsMarketDataAdapterProviderHealthWindowSummary;
   retryAfterSeconds: number;
   reason: string;
 }
@@ -9287,10 +9301,43 @@ function isPlatformSettingsMarketDataAdapterProviderHealth(
     health.affectedContexts.every((context) => typeof context === "string") &&
     isPlatformSettingsMarketDataAdapterProviderErrorCategorySummary(health.categorySummary) &&
     (health.dominantCategory === null || isPlatformSettingsMarketDataAdapterProviderErrorCategory(health.dominantCategory)) &&
+    isPlatformSettingsMarketDataAdapterProviderHealthWindowSummary(health.windowSummary) &&
     typeof health.retryAfterSeconds === "number" &&
     Number.isFinite(health.retryAfterSeconds) &&
     health.retryAfterSeconds >= 0 &&
     typeof health.reason === "string"
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterProviderHealthWindowSummary(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterProviderHealthWindowSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const summary = value as Partial<PlatformSettingsMarketDataAdapterProviderHealthWindowSummary>;
+  return (
+    isPlatformSettingsMarketDataAdapterProviderHealthWindow(summary.oneHour) &&
+    isPlatformSettingsMarketDataAdapterProviderHealthWindow(summary.twentyFourHours) &&
+    isPlatformSettingsMarketDataAdapterProviderHealthWindow(summary.sevenDays)
+  );
+}
+
+function isPlatformSettingsMarketDataAdapterProviderHealthWindow(
+  value: unknown
+): value is PlatformSettingsMarketDataAdapterProviderHealthWindow {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const window = value as Partial<PlatformSettingsMarketDataAdapterProviderHealthWindow>;
+  return (
+    typeof window.errorCount === "number" &&
+    Number.isFinite(window.errorCount) &&
+    window.errorCount >= 0 &&
+    (window.latestErrorAt === null || typeof window.latestErrorAt === "string") &&
+    isPlatformSettingsMarketDataAdapterProviderErrorCategorySummary(window.categorySummary) &&
+    (window.dominantCategory === null ||
+      isPlatformSettingsMarketDataAdapterProviderErrorCategory(window.dominantCategory))
   );
 }
 

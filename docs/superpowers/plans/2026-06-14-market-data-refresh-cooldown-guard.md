@@ -37,4 +37,4 @@ Turn the provider health retry-after signal into an explicit frontend guard so u
 
 - Provider error category metadata is now available via `2026-06-14-market-data-provider-error-categories.md`; next circuit-breaker work can consume it.
 - Add a guarded manual override flow for operators who explicitly want to refresh during cooldown.
-- Add health trend visualization after adapter ledger keeps time-windowed aggregates.
+- Time-windowed health aggregates are now available via `2026-06-14-market-data-provider-health-window-summary.md`; add visualization after the operator flow decides where provider history belongs.

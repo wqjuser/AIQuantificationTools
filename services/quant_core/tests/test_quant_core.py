@@ -1450,6 +1450,47 @@ class QuantCoreContractTest(unittest.TestCase):
                         "unknown": 0,
                     },
                     "dominantCategory": None,
+                    "windowSummary": {
+                        "oneHour": {
+                            "errorCount": 0,
+                            "latestErrorAt": None,
+                            "categorySummary": {
+                                "rate_limit": 0,
+                                "dependency": 0,
+                                "network": 0,
+                                "upstream": 0,
+                                "incomplete_data": 0,
+                                "unknown": 0,
+                            },
+                            "dominantCategory": None,
+                        },
+                        "twentyFourHours": {
+                            "errorCount": 0,
+                            "latestErrorAt": None,
+                            "categorySummary": {
+                                "rate_limit": 0,
+                                "dependency": 0,
+                                "network": 0,
+                                "upstream": 0,
+                                "incomplete_data": 0,
+                                "unknown": 0,
+                            },
+                            "dominantCategory": None,
+                        },
+                        "sevenDays": {
+                            "errorCount": 0,
+                            "latestErrorAt": None,
+                            "categorySummary": {
+                                "rate_limit": 0,
+                                "dependency": 0,
+                                "network": 0,
+                                "upstream": 0,
+                                "incomplete_data": 0,
+                                "unknown": 0,
+                            },
+                            "dominantCategory": None,
+                        },
+                    },
                     "retryAfterSeconds": 0,
                     "reason": "dependency_missing",
                 },
@@ -1727,6 +1768,112 @@ class QuantCoreContractTest(unittest.TestCase):
             },
         )
         self.assertIsNone(ccxt_health["dominantCategory"])
+
+    def test_settings_status_reports_market_data_adapter_provider_health_window_summary(self):
+        from quant_core.adapter_error_ledger import create_market_data_adapter_error_event, market_data_adapter_error_event_to_payload
+        from quant_core.settings import build_settings_status
+
+        events = [
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="AAPL",
+                timeframe="1d",
+                source="yfinance-fallback",
+                context="market-klines",
+                message="429 Too Many Requests: Yahoo rate limit exceeded",
+                created_at=datetime(2026, 6, 14, 7, 45, tzinfo=timezone.utc),
+                event_id="adapter-error-window-1h",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="MSFT",
+                timeframe="5m",
+                source="yfinance-fallback",
+                context="cache-refresh",
+                message="Yahoo chart timed out",
+                created_at=datetime(2026, 6, 14, 6, 0, tzinfo=timezone.utc),
+                event_id="adapter-error-window-24h",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="NVDA",
+                timeframe="1d",
+                source="local-cache",
+                context="watchlist-cache-refresh",
+                message="served local cache after incomplete yfinance response",
+                created_at=datetime(2026, 6, 12, 8, 0, tzinfo=timezone.utc),
+                event_id="adapter-error-window-7d",
+            ),
+            create_market_data_adapter_error_event(
+                adapter_id="yfinance-ohlcv",
+                provider="yfinance",
+                market="us",
+                symbol="GOOG",
+                timeframe="1d",
+                source="yfinance-fallback",
+                context="market-klines",
+                message="Yahoo upstream service unavailable",
+                created_at=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
+                event_id="adapter-error-window-outside",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = build_settings_status(
+                cache_path=f"{tmp}/market.sqlite",
+                adapter_dependency_statuses={"akshare": True, "yfinance": True, "ccxt": True},
+                adapter_error_events=[market_data_adapter_error_event_to_payload(event) for event in events],
+                generated_at=datetime(2026, 6, 14, 8, 16, tzinfo=timezone.utc),
+            )
+
+        adapters = {adapter["id"]: adapter for adapter in settings["marketDataAdapters"]}
+        window_summary = adapters["yfinance-ohlcv"]["externalTelemetry"]["providerHealth"]["windowSummary"]
+        self.assertEqual(window_summary["oneHour"]["errorCount"], 1)
+        self.assertEqual(window_summary["oneHour"]["latestErrorAt"], "2026-06-14T07:45:00+00:00")
+        self.assertEqual(window_summary["oneHour"]["dominantCategory"], "rate_limit")
+        self.assertEqual(
+            window_summary["oneHour"]["categorySummary"],
+            {
+                "rate_limit": 1,
+                "dependency": 0,
+                "network": 0,
+                "upstream": 0,
+                "incomplete_data": 0,
+                "unknown": 0,
+            },
+        )
+        self.assertEqual(window_summary["twentyFourHours"]["errorCount"], 2)
+        self.assertEqual(window_summary["twentyFourHours"]["latestErrorAt"], "2026-06-14T07:45:00+00:00")
+        self.assertEqual(
+            window_summary["twentyFourHours"]["categorySummary"],
+            {
+                "rate_limit": 1,
+                "dependency": 0,
+                "network": 1,
+                "upstream": 0,
+                "incomplete_data": 0,
+                "unknown": 0,
+            },
+        )
+        self.assertEqual(window_summary["sevenDays"]["errorCount"], 3)
+        self.assertEqual(window_summary["sevenDays"]["latestErrorAt"], "2026-06-14T07:45:00+00:00")
+        self.assertEqual(
+            window_summary["sevenDays"]["categorySummary"],
+            {
+                "rate_limit": 1,
+                "dependency": 0,
+                "network": 1,
+                "upstream": 0,
+                "incomplete_data": 1,
+                "unknown": 0,
+            },
+        )
 
     def test_market_klines_api_records_provider_failures_in_adapter_error_ledger(self):
         import json
