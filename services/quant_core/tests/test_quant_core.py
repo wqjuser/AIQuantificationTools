@@ -3157,6 +3157,165 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("secret-materialization-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("secret-materialization-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_secret_manifest_validation_reads_manifest_without_leaking_secret(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "ashare-live-secret-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "backend": "local-secret-store",
+                        "referenceName": "ashare-live/broker-sandbox",
+                        "fingerprint": "sha256:validated-manifest-fingerprint",
+                        "requiredEnvVars": [
+                            "ASHARE_BROKER_CLIENT_ID",
+                            "ASHARE_BROKER_CLIENT_SECRET",
+                        ],
+                        "secrets": {
+                            "ASHARE_BROKER_CLIENT_ID": "manifest-client-id-should-not-leak",
+                            "ASHARE_BROKER_CLIENT_SECRET": "manifest-client-secret-should-not-leak",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                reference_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "settings-panel",
+                    "referenceName": "ashare-live/broker-sandbox",
+                    "backend": "local-secret-store",
+                    "requiredEnvVars": [
+                        "ASHARE_BROKER_CLIENT_ID",
+                        "ASHARE_BROKER_CLIENT_SECRET",
+                    ],
+                    "confirmations": {
+                        "referenceCreatedOutsideUi": True,
+                        "operatorVerifiedFingerprint": True,
+                        "rotationPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(reference_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                reference_response = connection.getresponse()
+                reference_payload = json.loads(reference_response.read().decode("utf-8"))
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_request = {
+                    "adapterId": "ashare-live",
+                    "referenceId": reference_id,
+                    "operator": "settings-panel",
+                    "manifestPath": str(manifest_path),
+                    "confirmations": {
+                        "localSecretStoreWriteVerified": True,
+                        "noRawSecretInPayload": True,
+                        "envBindingPlanDocumented": True,
+                        "rollbackPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-materializations",
+                    body=json.dumps(materialization_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                materialization_response = connection.getresponse()
+                materialization_payload = json.loads(materialization_response.read().decode("utf-8"))
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_request = {
+                    "adapterId": "ashare-live",
+                    "materializationId": materialization_id,
+                    "operator": "settings-panel",
+                    "metadata": {
+                        "source": "settings-panel",
+                        "apiToken": "validation-request-token-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-manifest-validations",
+                    body=json.dumps(validation_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                validation_response = connection.getresponse()
+                validation_payload = json.loads(validation_response.read().decode("utf-8"))
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-secret-manifest-validations?adapterId=ashare-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "reference": reference_payload,
+                "materialization": materialization_payload,
+                "validation": validation_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["status"], "validated")
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["materializationId"], materialization_id)
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["adapterId"], "ashare-live")
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["fingerprint"], "sha256:validated-manifest-fingerprint")
+        self.assertEqual(
+            validation_payload["adapterSecretManifestValidation"]["coveredEnvVars"],
+            [
+                "ASHARE_BROKER_CLIENT_ID",
+                "ASHARE_BROKER_CLIENT_SECRET",
+            ],
+        )
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["blockedReasons"], [])
+        self.assertFalse(validation_payload["adapterSecretManifestValidation"]["liveTradingAllowed"])
+        self.assertTrue(validation_payload["adapterSecretManifestValidation"]["paperOnly"])
+        self.assertEqual(validation_payload["auditEvent"]["eventType"], "execution_adapter_secret_manifest_validation")
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterSecretManifestValidations"]), 1)
+        self.assertEqual(history_payload["adapterSecretManifestValidations"][0]["status"], "validated")
+        self.assertNotIn("manifest-client-id-should-not-leak", serialized)
+        self.assertNotIn("manifest-client-secret-should-not-leak", serialized)
+        self.assertNotIn("validation-request-token-should-not-leak", serialized)
+
     def test_execution_adapter_environment_binding_records_evidence_without_leaking_secret(self):
         import json
         from http.client import HTTPConnection
@@ -3316,6 +3475,168 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterEnvironmentBindings"][1]["status"], "blocked")
         self.assertNotIn("environment-binding-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("environment-binding-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_environment_binding_can_reference_validated_manifest(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "ccxt-live-secret-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "backend": "local-secret-store",
+                        "referenceName": "ccxt-live/sandbox",
+                        "fingerprint": "sha256:ccxt-validated-manifest",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "secrets": {
+                            "CCXT_API_KEY": "ccxt-key-should-not-leak",
+                            "CCXT_API_SECRET": "ccxt-secret-should-not-leak",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                reference_request = {
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "operator": "settings-panel",
+                    "referenceName": "ccxt-live/sandbox",
+                    "backend": "local-secret-store",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                    "confirmations": {
+                        "referenceCreatedOutsideUi": True,
+                        "operatorVerifiedFingerprint": True,
+                        "rotationPlanDocumented": True,
+                    },
+                    "metadata": {"source": "settings-panel"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(reference_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                reference_response = connection.getresponse()
+                reference_payload = json.loads(reference_response.read().decode("utf-8"))
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_request = {
+                    "adapterId": "ccxt-live",
+                    "referenceId": reference_id,
+                    "operator": "settings-panel",
+                    "manifestPath": str(manifest_path),
+                    "confirmations": {
+                        "localSecretStoreWriteVerified": True,
+                        "noRawSecretInPayload": True,
+                        "envBindingPlanDocumented": True,
+                        "rollbackPlanDocumented": True,
+                    },
+                    "metadata": {"source": "settings-panel"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-materializations",
+                    body=json.dumps(materialization_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                materialization_response = connection.getresponse()
+                materialization_payload = json.loads(materialization_response.read().decode("utf-8"))
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_request = {
+                    "adapterId": "ccxt-live",
+                    "materializationId": materialization_id,
+                    "operator": "settings-panel",
+                    "metadata": {
+                        "source": "settings-panel",
+                        "privateKey": "validation-private-key-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-manifest-validations",
+                    body=json.dumps(validation_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                validation_response = connection.getresponse()
+                validation_payload = json.loads(validation_response.read().decode("utf-8"))
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
+
+                binding_request = {
+                    "adapterId": "ccxt-live",
+                    "manifestValidationId": validation_id,
+                    "operator": "settings-panel",
+                    "bindingMode": "container_env_reference",
+                    "confirmations": {
+                        "runtimeEnvMappingVerified": True,
+                        "configReloadPlanDocumented": True,
+                        "noRawSecretInPayload": True,
+                        "rollbackSnapshotRecorded": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                        "token": "binding-token-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-environment-bindings",
+                    body=json.dumps(binding_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                binding_response = connection.getresponse()
+                binding_payload = json.loads(binding_response.read().decode("utf-8"))
+
+                connection.request("GET", "/api/execution/adapter-environment-bindings?adapterId=ccxt-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "validation": validation_payload,
+                "binding": binding_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(binding_payload["adapterEnvironmentBinding"]["status"], "binding_recorded")
+        self.assertEqual(binding_payload["adapterEnvironmentBinding"]["manifestValidationId"], validation_id)
+        self.assertEqual(binding_payload["adapterEnvironmentBinding"]["materializationId"], materialization_id)
+        self.assertEqual(binding_payload["adapterEnvironmentBinding"]["requiredEnvVars"], ["CCXT_API_KEY", "CCXT_API_SECRET"])
+        self.assertEqual(binding_payload["auditEvent"]["metadata"]["manifestValidationId"], validation_id)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["adapterEnvironmentBindings"][0]["manifestValidationId"], validation_id)
+        self.assertNotIn("ccxt-key-should-not-leak", serialized)
+        self.assertNotIn("ccxt-secret-should-not-leak", serialized)
+        self.assertNotIn("validation-private-key-should-not-leak", serialized)
+        self.assertNotIn("binding-token-should-not-leak", serialized)
 
     def test_execution_adapter_runtime_reload_plan_records_evidence_without_enabling_live(self):
         import json
@@ -3490,6 +3811,181 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterRuntimeReloadPlans"][1]["status"], "blocked")
         self.assertNotIn("runtime-reload-blocked-token-should-not-leak", serialized)
         self.assertNotIn("runtime-reload-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_runtime_reload_plan_inherits_manifest_validation_id(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "ccxt-live-runtime-reload-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "backend": "local-secret-store",
+                        "referenceName": "ccxt-live/runtime-reload",
+                        "fingerprint": "sha256:ccxt-runtime-reload-manifest",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "secrets": {
+                            "CCXT_API_KEY": "runtime-reload-ccxt-key-should-not-leak",
+                            "CCXT_API_SECRET": "runtime-reload-ccxt-secret-should-not-leak",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "ccxt-live",
+                        "market": "crypto",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "ccxt-live/runtime-reload",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": str(manifest_path),
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {
+                            "source": "settings-panel",
+                            "token": "runtime-reload-validation-token-should-not-leak",
+                        },
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "ccxt-live",
+                        "manifestValidationId": validation_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "ccxt-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-ccxt-runtime-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "runtime-reload-plan-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-runtime-reload-plans?adapterId=ccxt-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "validation": validation_payload,
+                "binding": binding_payload,
+                "plan": plan_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(plan_payload["adapterRuntimeReloadPlan"]["status"], "plan_recorded")
+        self.assertEqual(plan_payload["adapterRuntimeReloadPlan"]["bindingId"], binding_id)
+        self.assertEqual(plan_payload["adapterRuntimeReloadPlan"]["materializationId"], materialization_id)
+        self.assertEqual(plan_payload["adapterRuntimeReloadPlan"]["manifestValidationId"], validation_id)
+        self.assertEqual(plan_payload["auditEvent"]["metadata"]["manifestValidationId"], validation_id)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["adapterRuntimeReloadPlans"][0]["manifestValidationId"], validation_id)
+        self.assertNotIn("runtime-reload-ccxt-key-should-not-leak", serialized)
+        self.assertNotIn("runtime-reload-ccxt-secret-should-not-leak", serialized)
+        self.assertNotIn("runtime-reload-validation-token-should-not-leak", serialized)
+        self.assertNotIn("runtime-reload-plan-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_runtime_reload_execution_records_evidence_without_enabling_live(self):
         import json
@@ -3683,6 +4179,203 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterRuntimeReloadExecutions"][1]["status"], "blocked")
         self.assertNotIn("runtime-reload-execution-blocked-token-should-not-leak", serialized)
         self.assertNotIn("runtime-reload-execution-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_runtime_reload_execution_inherits_manifest_validation_id(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "ccxt-live-runtime-execution-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "backend": "local-secret-store",
+                        "referenceName": "ccxt-live/runtime-execution",
+                        "fingerprint": "sha256:ccxt-runtime-execution-manifest",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "secrets": {
+                            "CCXT_API_KEY": "runtime-execution-ccxt-key-should-not-leak",
+                            "CCXT_API_SECRET": "runtime-execution-ccxt-secret-should-not-leak",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "ccxt-live",
+                        "market": "crypto",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "ccxt-live/runtime-execution",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": str(manifest_path),
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {
+                            "source": "settings-panel",
+                            "token": "runtime-execution-validation-token-should-not-leak",
+                        },
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "ccxt-live",
+                        "manifestValidationId": validation_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "ccxt-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-ccxt-runtime-execution-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                plan_id = plan_payload["adapterRuntimeReloadPlan"]["planId"]
+
+                execution_response, execution_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "runtime-execution-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-runtime-reload-executions?adapterId=ccxt-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "validation": validation_payload,
+                "binding": binding_payload,
+                "plan": plan_payload,
+                "execution": execution_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(execution_response.status, 201)
+        self.assertEqual(execution_payload["adapterRuntimeReloadExecution"]["status"], "execution_recorded")
+        self.assertEqual(execution_payload["adapterRuntimeReloadExecution"]["planId"], plan_id)
+        self.assertEqual(execution_payload["adapterRuntimeReloadExecution"]["bindingId"], binding_id)
+        self.assertEqual(execution_payload["adapterRuntimeReloadExecution"]["materializationId"], materialization_id)
+        self.assertEqual(execution_payload["adapterRuntimeReloadExecution"]["manifestValidationId"], validation_id)
+        self.assertEqual(execution_payload["auditEvent"]["metadata"]["manifestValidationId"], validation_id)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["adapterRuntimeReloadExecutions"][0]["manifestValidationId"], validation_id)
+        self.assertNotIn("runtime-execution-ccxt-key-should-not-leak", serialized)
+        self.assertNotIn("runtime-execution-ccxt-secret-should-not-leak", serialized)
+        self.assertNotIn("runtime-execution-validation-token-should-not-leak", serialized)
+        self.assertNotIn("runtime-execution-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_runtime_reload_acceptance_records_final_gate_without_enabling_live(self):
         import json
@@ -3908,6 +4601,225 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterRuntimeReloadAcceptances"][1]["status"], "blocked")
         self.assertNotIn("runtime-reload-acceptance-blocked-token-should-not-leak", serialized)
         self.assertNotIn("runtime-reload-acceptance-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_runtime_reload_acceptance_inherits_manifest_validation_id(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "ccxt-live-runtime-acceptance-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "backend": "local-secret-store",
+                        "referenceName": "ccxt-live/runtime-acceptance",
+                        "fingerprint": "sha256:ccxt-runtime-acceptance-manifest",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "secrets": {
+                            "CCXT_API_KEY": "runtime-acceptance-ccxt-key-should-not-leak",
+                            "CCXT_API_SECRET": "runtime-acceptance-ccxt-secret-should-not-leak",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "ccxt-live",
+                        "market": "crypto",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "ccxt-live/runtime-acceptance",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": str(manifest_path),
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {
+                            "source": "settings-panel",
+                            "token": "runtime-acceptance-validation-token-should-not-leak",
+                        },
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "ccxt-live",
+                        "manifestValidationId": validation_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "ccxt-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-ccxt-runtime-acceptance-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                plan_id = plan_payload["adapterRuntimeReloadPlan"]["planId"]
+
+                execution_response, execution_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                execution_id = execution_payload["adapterRuntimeReloadExecution"]["executionId"]
+
+                acceptance_response, acceptance_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-acceptances",
+                    {
+                        "adapterId": "ccxt-live",
+                        "executionId": execution_id,
+                        "operator": "runtime-operator",
+                        "acceptanceMode": "manual_runtime_reload_acceptance",
+                        "confirmations": {
+                            "executionEvidenceReviewed": True,
+                            "postReloadHealthVerified": True,
+                            "adapterHandshakeVerified": True,
+                            "killSwitchStillEnabled": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "runtime-acceptance-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-runtime-reload-acceptances?adapterId=ccxt-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "validation": validation_payload,
+                "binding": binding_payload,
+                "plan": plan_payload,
+                "execution": execution_payload,
+                "acceptance": acceptance_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(execution_response.status, 201)
+        self.assertEqual(acceptance_response.status, 201)
+        self.assertEqual(acceptance_payload["adapterRuntimeReloadAcceptance"]["status"], "acceptance_recorded")
+        self.assertEqual(acceptance_payload["adapterRuntimeReloadAcceptance"]["executionId"], execution_id)
+        self.assertEqual(acceptance_payload["adapterRuntimeReloadAcceptance"]["planId"], plan_id)
+        self.assertEqual(acceptance_payload["adapterRuntimeReloadAcceptance"]["bindingId"], binding_id)
+        self.assertEqual(acceptance_payload["adapterRuntimeReloadAcceptance"]["materializationId"], materialization_id)
+        self.assertEqual(acceptance_payload["adapterRuntimeReloadAcceptance"]["manifestValidationId"], validation_id)
+        self.assertEqual(acceptance_payload["auditEvent"]["metadata"]["manifestValidationId"], validation_id)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["adapterRuntimeReloadAcceptances"][0]["manifestValidationId"], validation_id)
+        self.assertNotIn("runtime-acceptance-ccxt-key-should-not-leak", serialized)
+        self.assertNotIn("runtime-acceptance-ccxt-secret-should-not-leak", serialized)
+        self.assertNotIn("runtime-acceptance-validation-token-should-not-leak", serialized)
+        self.assertNotIn("runtime-acceptance-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_orchestration_dry_run_records_preflight_without_enabling_live(self):
         import json
@@ -4151,6 +5063,247 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterOrchestrationDryRuns"][0]["status"], "dry_run_recorded")
         self.assertEqual(history_payload["adapterOrchestrationDryRuns"][1]["status"], "blocked")
         self.assertNotIn("orchestration-dry-run-blocked-api-key-should-not-leak", serialized)
+        self.assertNotIn("orchestration-dry-run-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_orchestration_dry_run_inherits_manifest_validation_id(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "ibkr-live-orchestration-dry-run-manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "backend": "local-secret-store",
+                        "referenceName": "ibkr-live/orchestration-dry-run",
+                        "fingerprint": "sha256:ibkr-orchestration-dry-run-manifest",
+                        "requiredEnvVars": ["IBKR_ACCOUNT_ID", "IBKR_GATEWAY_HOST"],
+                        "secrets": {
+                            "IBKR_ACCOUNT_ID": "orchestration-dry-run-account-should-not-leak",
+                            "IBKR_GATEWAY_HOST": "orchestration-dry-run-host-should-not-leak",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                reference_response, reference_payload = post_json(
+                    "/api/execution/adapter-secret-references",
+                    {
+                        "adapterId": "ibkr-live",
+                        "market": "us",
+                        "route": "live",
+                        "operator": "settings-panel",
+                        "referenceName": "ibkr-live/orchestration-dry-run",
+                        "backend": "local-secret-store",
+                        "requiredEnvVars": ["IBKR_ACCOUNT_ID", "IBKR_GATEWAY_HOST"],
+                        "confirmations": {
+                            "referenceCreatedOutsideUi": True,
+                            "operatorVerifiedFingerprint": True,
+                            "rotationPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_response, materialization_payload = post_json(
+                    "/api/execution/adapter-secret-materializations",
+                    {
+                        "adapterId": "ibkr-live",
+                        "referenceId": reference_id,
+                        "operator": "settings-panel",
+                        "manifestPath": str(manifest_path),
+                        "confirmations": {
+                            "localSecretStoreWriteVerified": True,
+                            "noRawSecretInPayload": True,
+                            "envBindingPlanDocumented": True,
+                            "rollbackPlanDocumented": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ibkr-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {
+                            "source": "settings-panel",
+                            "token": "orchestration-dry-run-validation-token-should-not-leak",
+                        },
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
+
+                binding_response, binding_payload = post_json(
+                    "/api/execution/adapter-environment-bindings",
+                    {
+                        "adapterId": "ibkr-live",
+                        "manifestValidationId": validation_id,
+                        "operator": "settings-panel",
+                        "bindingMode": "container_env_reference",
+                        "confirmations": {
+                            "runtimeEnvMappingVerified": True,
+                            "configReloadPlanDocumented": True,
+                            "noRawSecretInPayload": True,
+                            "rollbackSnapshotRecorded": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                binding_id = binding_payload["adapterEnvironmentBinding"]["bindingId"]
+
+                plan_response, plan_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-plans",
+                    {
+                        "adapterId": "ibkr-live",
+                        "bindingId": binding_id,
+                        "operator": "runtime-operator",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-ibkr-orchestration-dry-run-validation-1",
+                        "confirmations": {
+                            "maintenanceWindowApproved": True,
+                            "healthBaselineCaptured": True,
+                            "configDiffReviewed": True,
+                            "postReloadSmokePlanDocumented": True,
+                            "rollbackOwnerAssigned": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                plan_id = plan_payload["adapterRuntimeReloadPlan"]["planId"]
+
+                execution_response, execution_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-executions",
+                    {
+                        "adapterId": "ibkr-live",
+                        "planId": plan_id,
+                        "operator": "runtime-operator",
+                        "executionMode": "manual_controlled_reload",
+                        "confirmations": {
+                            "preReloadHealthVerified": True,
+                            "reloadActionRecorded": True,
+                            "postReloadSmokePassed": True,
+                            "rollbackReadinessConfirmed": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                execution_id = execution_payload["adapterRuntimeReloadExecution"]["executionId"]
+
+                acceptance_response, acceptance_payload = post_json(
+                    "/api/execution/adapter-runtime-reload-acceptances",
+                    {
+                        "adapterId": "ibkr-live",
+                        "executionId": execution_id,
+                        "operator": "runtime-operator",
+                        "acceptanceMode": "manual_runtime_reload_acceptance",
+                        "confirmations": {
+                            "executionEvidenceReviewed": True,
+                            "postReloadHealthVerified": True,
+                            "adapterHandshakeVerified": True,
+                            "killSwitchStillEnabled": True,
+                            "operatorConfirmedLiveBlocked": True,
+                        },
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                acceptance_id = acceptance_payload["adapterRuntimeReloadAcceptance"]["acceptanceId"]
+
+                dry_run_response, dry_run_payload = post_json(
+                    "/api/execution/adapter-orchestration-dry-runs",
+                    {
+                        "adapterId": "ibkr-live",
+                        "acceptanceId": acceptance_id,
+                        "operator": "runtime-operator",
+                        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                        "confirmations": {
+                            "acceptedChainReviewed": True,
+                            "sandboxHandshakeDryRunPassed": True,
+                            "orderSchemaDryRunPassed": True,
+                            "accountSyncDryRunPassed": True,
+                            "operatorConfirmedNoLiveOrders": True,
+                        },
+                        "metadata": {
+                            "source": "settings-panel",
+                            "privateKey": "orchestration-dry-run-private-key-should-not-leak",
+                        },
+                    },
+                )
+
+                connection.request("GET", "/api/execution/adapter-orchestration-dry-runs?adapterId=ibkr-live&limit=5")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "validation": validation_payload,
+                "binding": binding_payload,
+                "plan": plan_payload,
+                "execution": execution_payload,
+                "acceptance": acceptance_payload,
+                "dryRun": dry_run_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(binding_response.status, 201)
+        self.assertEqual(plan_response.status, 201)
+        self.assertEqual(execution_response.status, 201)
+        self.assertEqual(acceptance_response.status, 201)
+        self.assertEqual(dry_run_response.status, 201)
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["status"], "dry_run_recorded")
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["acceptanceId"], acceptance_id)
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["executionId"], execution_id)
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["planId"], plan_id)
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["bindingId"], binding_id)
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["materializationId"], materialization_id)
+        self.assertEqual(dry_run_payload["adapterOrchestrationDryRun"]["manifestValidationId"], validation_id)
+        self.assertEqual(dry_run_payload["auditEvent"]["metadata"]["manifestValidationId"], validation_id)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["adapterOrchestrationDryRuns"][0]["manifestValidationId"], validation_id)
+        self.assertNotIn("orchestration-dry-run-account-should-not-leak", serialized)
+        self.assertNotIn("orchestration-dry-run-host-should-not-leak", serialized)
+        self.assertNotIn("orchestration-dry-run-validation-token-should-not-leak", serialized)
         self.assertNotIn("orchestration-dry-run-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_orchestration_execution_records_controlled_handoff_without_enabling_live(self):
@@ -4419,6 +5572,88 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterOrchestrationExecutions"][1]["status"], "blocked")
         self.assertNotIn("orchestration-execution-blocked-api-key-should-not-leak", serialized)
         self.assertNotIn("orchestration-execution-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_orchestration_execution_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_orchestration_execution,
+            execution_adapter_orchestration_execution_payload_from_audit_event,
+            execution_adapter_orchestration_execution_to_audit_event_payload,
+            execution_adapter_orchestration_execution_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ibkr-live"
+        dry_run = {
+            "schemaVersion": 1,
+            "dryRunId": "execution-adapter-orchestration-dry-run-ibkr-live",
+            "acceptanceId": "execution-adapter-runtime-reload-acceptance-ibkr-live",
+            "executionId": "execution-adapter-runtime-reload-execution-ibkr-live",
+            "planId": "execution-adapter-runtime-reload-plan-ibkr-live",
+            "bindingId": "execution-adapter-environment-binding-ibkr-live",
+            "materializationId": "execution-adapter-secret-materialization-ibkr-live",
+            "manifestValidationId": validation_id,
+            "adapterId": "ibkr-live",
+            "market": "us",
+            "route": "live",
+            "status": "dry_run_recorded",
+            "operator": "runtime-operator",
+            "recordedAt": "2026-06-09T10:00:00+00:00",
+            "orchestrationMode": "manual_adapter_orchestration_dry_run",
+            "acceptanceMode": "manual_runtime_reload_acceptance",
+            "executionMode": "manual_controlled_reload",
+            "reloadMode": "manual_runtime_reload",
+            "maintenanceWindowId": "window-ibkr-live-1",
+            "bindingMode": "container_env_reference",
+            "manifestPath": "local-secret-store://ibkr-live/paper",
+            "requiredEnvVars": ["IBKR_HOST", "IBKR_ACCOUNT"],
+            "requiredConfirmations": [],
+            "blockedReasons": [],
+            "metadata": {"source": "settings-panel"},
+            "liveTradingAllowed": False,
+            "paperOnly": True,
+        }
+
+        result = build_execution_adapter_orchestration_execution(
+            dry_run,
+            adapter_id="ibkr-live",
+            orchestration_execution_mode="manual_adapter_orchestration_execution",
+            confirmations={
+                "dryRunEvidenceReviewed": True,
+                "sandboxRouteLocked": True,
+                "killSwitchArmed": True,
+                "idempotencyKeyRecorded": True,
+                "operatorConfirmedNoCapital": True,
+            },
+            operator="runtime-operator",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "orchestration-execution-validation-private-key-should-not-leak",
+            },
+            recorded_at="2026-06-09T10:05:00+00:00",
+            orchestration_execution_id="execution-adapter-orchestration-execution-ibkr-live",
+        )
+        payload = execution_adapter_orchestration_execution_to_payload(result)
+        audit_payload = execution_adapter_orchestration_execution_to_audit_event_payload(result)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            event = AuditEventStore(Path(tmp) / "audit_events.sqlite").record(audit_payload)
+            projected = execution_adapter_orchestration_execution_payload_from_audit_event(event)
+
+        serialized = json.dumps(
+            {"payload": payload, "audit": audit_payload, "projected": projected},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(payload["status"], "execution_recorded")
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertNotIn("orchestration-execution-validation-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_human_confirmation_records_final_gate_without_enabling_live(self):
         import json
@@ -4705,6 +5940,90 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("human-confirmation-blocked-api-key-should-not-leak", serialized)
         self.assertNotIn("human-confirmation-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_human_confirmation_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_human_confirmation,
+            execution_adapter_human_confirmation_payload_from_audit_event,
+            execution_adapter_human_confirmation_to_audit_event_payload,
+            execution_adapter_human_confirmation_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ibkr-live"
+        orchestration_execution = {
+            "schemaVersion": 1,
+            "orchestrationExecutionId": "execution-adapter-orchestration-execution-ibkr-live",
+            "dryRunId": "execution-adapter-orchestration-dry-run-ibkr-live",
+            "acceptanceId": "execution-adapter-runtime-reload-acceptance-ibkr-live",
+            "executionId": "execution-adapter-runtime-reload-execution-ibkr-live",
+            "planId": "execution-adapter-runtime-reload-plan-ibkr-live",
+            "bindingId": "execution-adapter-environment-binding-ibkr-live",
+            "materializationId": "execution-adapter-secret-materialization-ibkr-live",
+            "manifestValidationId": validation_id,
+            "adapterId": "ibkr-live",
+            "market": "us",
+            "route": "live",
+            "status": "execution_recorded",
+            "operator": "runtime-operator",
+            "recordedAt": "2026-06-09T10:05:00+00:00",
+            "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+            "orchestrationMode": "manual_adapter_orchestration_dry_run",
+            "acceptanceMode": "manual_runtime_reload_acceptance",
+            "executionMode": "manual_controlled_reload",
+            "reloadMode": "manual_runtime_reload",
+            "maintenanceWindowId": "window-ibkr-live-1",
+            "bindingMode": "container_env_reference",
+            "manifestPath": "local-secret-store://ibkr-live/paper",
+            "requiredEnvVars": ["IBKR_HOST", "IBKR_ACCOUNT"],
+            "requiredConfirmations": [],
+            "blockedReasons": [],
+            "metadata": {"source": "settings-panel"},
+            "liveTradingAllowed": False,
+            "paperOnly": True,
+        }
+
+        result = build_execution_adapter_human_confirmation(
+            orchestration_execution,
+            adapter_id="ibkr-live",
+            confirmation_mode="manual_final_human_confirmation",
+            confirmations={
+                "orchestrationExecutionReviewed": True,
+                "riskApprovalStillValid": True,
+                "paperExecutionReviewed": True,
+                "killSwitchReady": True,
+                "operatorConfirmedFinalBoundary": True,
+            },
+            operator="human-operator",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "human-confirmation-validation-private-key-should-not-leak",
+            },
+            recorded_at="2026-06-09T10:10:00+00:00",
+            human_confirmation_id="execution-adapter-human-confirmation-ibkr-live",
+        )
+        payload = execution_adapter_human_confirmation_to_payload(result)
+        audit_payload = execution_adapter_human_confirmation_to_audit_event_payload(result)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            event = AuditEventStore(Path(tmp) / "audit_events.sqlite").record(audit_payload)
+            projected = execution_adapter_human_confirmation_payload_from_audit_event(event)
+
+        serialized = json.dumps(
+            {"payload": payload, "audit": audit_payload, "projected": projected},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(payload["status"], "confirmation_recorded")
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertNotIn("human-confirmation-validation-private-key-should-not-leak", serialized)
+
     def test_execution_adapter_sandbox_probe_plan_records_next_gate_without_enabling_live(self):
         import json
         from http.client import HTTPConnection
@@ -4732,6 +6051,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
                     "bindingId": "execution-adapter-environment-binding-ccxt-live",
                     "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
                     "adapterId": "ccxt-live",
                     "market": "crypto",
                     "route": "live",
@@ -4875,6 +6195,78 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("sandbox-probe-blocked-api-key-should-not-leak", serialized)
         self.assertNotIn("sandbox-probe-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_sandbox_probe_plan_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_sandbox_probe_plan,
+            execution_adapter_sandbox_probe_plan_payload_from_audit_event,
+            execution_adapter_sandbox_probe_plan_to_audit_event_payload,
+            execution_adapter_sandbox_probe_plan_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox_probe_plan = build_execution_adapter_sandbox_probe_plan(
+                {
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": validation_id,
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "confirmation_recorded",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-sandbox-probe-1",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                probe_mode="manual_sandbox_probe_plan",
+                confirmations={
+                    "humanConfirmationReviewed": True,
+                    "testnetEndpointLocked": True,
+                    "credentialsAreSandboxOnly": True,
+                    "orderRoutingDisabled": True,
+                    "probeLimitsDocumented": True,
+                },
+                operator="sandbox-operator",
+                metadata={
+                    "source": "settings-panel",
+                    "privateKey": "sandbox-probe-plan-validation-private-key-should-not-leak",
+                },
+                sandbox_probe_plan_id="execution-adapter-sandbox-probe-plan-ccxt-live",
+            )
+            payload = execution_adapter_sandbox_probe_plan_to_payload(sandbox_probe_plan)
+            audit_payload = execution_adapter_sandbox_probe_plan_to_audit_event_payload(sandbox_probe_plan)
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_sandbox_probe_plan_payload_from_audit_event(
+                store.get("execution-adapter-sandbox-probe-plan-ccxt-live")
+            )
+
+        serialized = json.dumps({"payload": payload, "audit": audit_payload, "projected": projected}, sort_keys=True)
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertNotIn("sandbox-probe-plan-validation-private-key-should-not-leak", serialized)
+
     def test_execution_adapter_sandbox_probe_execution_records_readonly_probe_without_enabling_live(self):
         import json
         from http.client import HTTPConnection
@@ -4903,6 +6295,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
                     "bindingId": "execution-adapter-environment-binding-ccxt-live",
                     "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
                     "adapterId": "ccxt-live",
                     "market": "crypto",
                     "route": "live",
@@ -5043,15 +6436,101 @@ class QuantCoreContractTest(unittest.TestCase):
             recorded_payload["adapterSandboxProbeExecution"]["requiredEnvVars"],
             ["CCXT_API_KEY", "CCXT_API_SECRET"],
         )
+        self.assertEqual(
+            recorded_payload["adapterSandboxProbeExecution"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertFalse(recorded_payload["adapterSandboxProbeExecution"]["liveTradingAllowed"])
         self.assertTrue(recorded_payload["adapterSandboxProbeExecution"]["paperOnly"])
         self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_sandbox_probe_execution")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertEqual(history_response.status, 200)
         self.assertEqual(len(history_payload["adapterSandboxProbeExecutions"]), 2)
         self.assertEqual(history_payload["adapterSandboxProbeExecutions"][0]["status"], "probe_execution_recorded")
+        self.assertEqual(
+            history_payload["adapterSandboxProbeExecutions"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertEqual(history_payload["adapterSandboxProbeExecutions"][1]["status"], "blocked")
         self.assertNotIn("sandbox-probe-execution-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("sandbox-probe-execution-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_sandbox_probe_execution_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_sandbox_probe_execution,
+            execution_adapter_sandbox_probe_execution_payload_from_audit_event,
+            execution_adapter_sandbox_probe_execution_to_audit_event_payload,
+            execution_adapter_sandbox_probe_execution_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox_probe_execution = build_execution_adapter_sandbox_probe_execution(
+                {
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": validation_id,
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_plan_recorded",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-sandbox-probe-1",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                probe_execution_mode="manual_readonly_sandbox_probe",
+                confirmations={
+                    "probePlanReviewed": True,
+                    "readonlyHandshakeCaptured": True,
+                    "accountSnapshotRedacted": True,
+                    "orderSchemaValidated": True,
+                    "operatorConfirmedNoOrdersSubmitted": True,
+                },
+                operator="sandbox-operator",
+                metadata={
+                    "source": "settings-panel",
+                    "privateKey": "sandbox-probe-execution-validation-private-key-should-not-leak",
+                },
+                sandbox_probe_execution_id="execution-adapter-sandbox-probe-execution-ccxt-live",
+            )
+            payload = execution_adapter_sandbox_probe_execution_to_payload(sandbox_probe_execution)
+            audit_payload = execution_adapter_sandbox_probe_execution_to_audit_event_payload(sandbox_probe_execution)
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_sandbox_probe_execution_payload_from_audit_event(
+                store.get("execution-adapter-sandbox-probe-execution-ccxt-live")
+            )
+
+        serialized = json.dumps({"payload": payload, "audit": audit_payload, "projected": projected}, sort_keys=True)
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertNotIn("sandbox-probe-execution-validation-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_sandbox_probe_review_records_post_probe_attestation_without_enabling_live(self):
         import json
@@ -5082,6 +6561,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
                     "bindingId": "execution-adapter-environment-binding-ccxt-live",
                     "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
                     "adapterId": "ccxt-live",
                     "market": "crypto",
                     "route": "live",
@@ -5122,6 +6602,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": sandbox_probe_plan.plan_id,
                     "bindingId": sandbox_probe_plan.binding_id,
                     "materializationId": sandbox_probe_plan.materialization_id,
+                    "manifestValidationId": sandbox_probe_plan.manifest_validation_id,
                     "adapterId": sandbox_probe_plan.adapter_id,
                     "recordedAt": sandbox_probe_plan.recorded_at.isoformat(),
                     "probeMode": sandbox_probe_plan.probe_mode,
@@ -5260,15 +6741,104 @@ class QuantCoreContractTest(unittest.TestCase):
             recorded_payload["adapterSandboxProbeReview"]["requiredEnvVars"],
             ["CCXT_API_KEY", "CCXT_API_SECRET"],
         )
+        self.assertEqual(
+            recorded_payload["adapterSandboxProbeReview"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertFalse(recorded_payload["adapterSandboxProbeReview"]["liveTradingAllowed"])
         self.assertTrue(recorded_payload["adapterSandboxProbeReview"]["paperOnly"])
         self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_sandbox_probe_review")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertEqual(history_response.status, 200)
         self.assertEqual(len(history_payload["adapterSandboxProbeReviews"]), 2)
         self.assertEqual(history_payload["adapterSandboxProbeReviews"][0]["status"], "probe_review_recorded")
+        self.assertEqual(
+            history_payload["adapterSandboxProbeReviews"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertEqual(history_payload["adapterSandboxProbeReviews"][1]["status"], "blocked")
         self.assertNotIn("sandbox-probe-review-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("sandbox-probe-review-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_sandbox_probe_review_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_sandbox_probe_review,
+            execution_adapter_sandbox_probe_review_payload_from_audit_event,
+            execution_adapter_sandbox_probe_review_to_audit_event_payload,
+            execution_adapter_sandbox_probe_review_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        sandbox_probe_review = build_execution_adapter_sandbox_probe_review(
+            {
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "probe_execution_recorded",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-sandbox-probe-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            review_mode="manual_sandbox_probe_review",
+            confirmations={
+                "probeExecutionReviewed": True,
+                "readonlyEvidenceMatchesPlan": True,
+                "redactedSnapshotArchived": True,
+                "orderSchemaRiskReviewed": True,
+                "productionRouteStillBlocked": True,
+            },
+            operator="sandbox-reviewer",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "sandbox-probe-review-validation-private-key-should-not-leak",
+            },
+            sandbox_probe_review_id="execution-adapter-sandbox-probe-review-ccxt-live",
+        )
+        payload = execution_adapter_sandbox_probe_review_to_payload(sandbox_probe_review)
+        audit_payload = execution_adapter_sandbox_probe_review_to_audit_event_payload(sandbox_probe_review)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_sandbox_probe_review_payload_from_audit_event(
+                store.get("execution-adapter-sandbox-probe-review-ccxt-live")
+            )
+
+        serialized = json.dumps({"payload": payload, "audit": audit_payload, "projected": projected}, sort_keys=True)
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertNotIn("sandbox-probe-review-validation-private-key-should-not-leak", serialized)
 
     def test_execution_adapter_production_route_review_records_policy_attestation_without_enabling_live(self):
         import json
@@ -5300,6 +6870,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
                     "bindingId": "execution-adapter-environment-binding-ccxt-live",
                     "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
                     "adapterId": "ccxt-live",
                     "market": "crypto",
                     "route": "live",
@@ -5340,6 +6911,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": sandbox_probe_plan.plan_id,
                     "bindingId": sandbox_probe_plan.binding_id,
                     "materializationId": sandbox_probe_plan.materialization_id,
+                    "manifestValidationId": sandbox_probe_plan.manifest_validation_id,
                     "adapterId": sandbox_probe_plan.adapter_id,
                     "recordedAt": sandbox_probe_plan.recorded_at.isoformat(),
                     "probeMode": sandbox_probe_plan.probe_mode,
@@ -5382,6 +6954,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "planId": sandbox_probe_execution.plan_id,
                     "bindingId": sandbox_probe_execution.binding_id,
                     "materializationId": sandbox_probe_execution.materialization_id,
+                    "manifestValidationId": sandbox_probe_execution.manifest_validation_id,
                     "adapterId": sandbox_probe_execution.adapter_id,
                     "recordedAt": sandbox_probe_execution.recorded_at.isoformat(),
                     "probeExecutionMode": sandbox_probe_execution.probe_execution_mode,
@@ -5521,15 +7094,106 @@ class QuantCoreContractTest(unittest.TestCase):
             recorded_payload["adapterProductionRouteReview"]["requiredEnvVars"],
             ["CCXT_API_KEY", "CCXT_API_SECRET"],
         )
+        self.assertEqual(
+            recorded_payload["adapterProductionRouteReview"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertFalse(recorded_payload["adapterProductionRouteReview"]["liveTradingAllowed"])
         self.assertTrue(recorded_payload["adapterProductionRouteReview"]["paperOnly"])
         self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_production_route_review")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertEqual(history_response.status, 200)
         self.assertEqual(len(history_payload["adapterProductionRouteReviews"]), 2)
         self.assertEqual(history_payload["adapterProductionRouteReviews"][0]["status"], "route_review_recorded")
+        self.assertEqual(
+            history_payload["adapterProductionRouteReviews"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
         self.assertEqual(history_payload["adapterProductionRouteReviews"][1]["status"], "blocked")
         self.assertNotIn("production-route-review-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("production-route-review-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_production_route_review_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_production_route_review,
+            execution_adapter_production_route_review_payload_from_audit_event,
+            execution_adapter_production_route_review_to_audit_event_payload,
+            execution_adapter_production_route_review_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        production_route_review = build_execution_adapter_production_route_review(
+            {
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "probe_review_recorded",
+                "reviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-production-route-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            review_mode="manual_production_route_review",
+            confirmations={
+                "sandboxProbeReviewAccepted": True,
+                "killSwitchPolicyReviewed": True,
+                "orderRoutingDisabledVerified": True,
+                "positionLimitPolicyReviewed": True,
+                "rollbackOwnerRecorded": True,
+            },
+            operator="route-reviewer",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "production-route-review-validation-private-key-should-not-leak",
+            },
+            production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+        )
+        payload = execution_adapter_production_route_review_to_payload(production_route_review)
+        audit_payload = execution_adapter_production_route_review_to_audit_event_payload(production_route_review)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_production_route_review_payload_from_audit_event(
+                store.get("execution-adapter-production-route-review-ccxt-live")
+            )
+
+        serialized = json.dumps({"payload": payload, "audit": audit_payload, "projected": projected}, sort_keys=True)
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertNotIn("production-route-review-validation-private-key-should-not-leak", serialized)
 
     def test_ccxt_sandbox_health_probe_runs_readonly_checks_without_order_routing(self):
         import json
@@ -5721,6 +7385,1874 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("api-route-key-should-not-leak", serialized)
         self.assertNotIn("api-route-secret-should-not-leak", serialized)
 
+    def test_ccxt_sandbox_health_probe_can_bind_recorded_production_route_review(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_production_route_review,
+            execution_adapter_production_route_review_to_audit_event_payload,
+        )
+
+        class FakeExchange:
+            has = {"fetchStatus": True, "fetchTime": True, "fetchBalance": True}
+
+            def __init__(self, config):
+                self.config = config
+                self.markets = {"BTC/USDT": {}, "ETH/USDT": {}}
+
+            def set_sandbox_mode(self, enabled):
+                self.sandbox_enabled = enabled
+
+            def load_markets(self):
+                return self.markets
+
+            def fetch_status(self):
+                return {"status": "ok"}
+
+            def fetch_time(self):
+                return 1780000000000
+
+            def fetch_balance(self):
+                return {"free": {"USDT": 100}}
+
+        def exchange_factory(exchange_id, config):
+            return FakeExchange(config)
+
+        class TestHandler(QuantApiHandler):
+            execution_adapter_health_exchange_factory = exchange_factory
+            execution_adapter_health_environ = {
+                "CCXT_BINANCE_API_KEY": "route-review-health-key-should-not-leak",
+                "CCXT_BINANCE_SECRET": "route-review-health-secret-should-not-leak",
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            route_review = build_execution_adapter_production_route_review(
+                {
+                    "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                    "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_review_recorded",
+                    "reviewMode": "manual_sandbox_probe_review",
+                    "probeExecutionMode": "manual_readonly_sandbox_probe",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-health-route-review",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                review_mode="manual_production_route_review",
+                confirmations={
+                    "sandboxProbeReviewAccepted": True,
+                    "killSwitchPolicyReviewed": True,
+                    "orderRoutingDisabledVerified": True,
+                    "positionLimitPolicyReviewed": True,
+                    "rollbackOwnerRecorded": True,
+                },
+                operator="route-reviewer",
+                metadata={"source": "settings-panel"},
+                production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(execution_adapter_production_route_review_to_audit_event_payload(route_review))
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live&productionRouteReviewId=missing-route-review",
+                )
+                missing_response = connection.getresponse()
+                missing_payload = json.loads(missing_response.read().decode("utf-8"))
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live&productionRouteReviewId=execution-adapter-production-route-review-ccxt-live",
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_production_route_review_not_found")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["adapterHealthProbe"]["status"], "ready")
+        self.assertEqual(
+            payload["adapterHealthProbe"]["productionRouteReviewId"],
+            "execution-adapter-production-route-review-ccxt-live",
+        )
+        self.assertEqual(payload["adapterHealthProbe"]["productionRouteReviewStatus"], "route_review_recorded")
+        self.assertEqual(
+            payload["adapterHealthProbe"]["routeReview"]["maintenanceWindowId"],
+            "window-ccxt-health-route-review",
+        )
+        self.assertEqual(payload["adapterHealthProbe"]["routeReview"]["requiredEnvVars"], ["CCXT_API_KEY", "CCXT_API_SECRET"])
+        self.assertFalse(payload["adapterHealthProbe"]["liveTradingAllowed"])
+        self.assertFalse(payload["adapterHealthProbe"]["orderRoutingEnabled"])
+        self.assertNotIn("route-review-health-key-should-not-leak", serialized)
+        self.assertNotIn("route-review-health-secret-should-not-leak", serialized)
+
+    def test_execution_adapter_sandbox_order_schema_dry_run_records_without_order_submission(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_production_route_review,
+            execution_adapter_production_route_review_to_audit_event_payload,
+        )
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            route_review = build_execution_adapter_production_route_review(
+                {
+                    "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                    "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_review_recorded",
+                    "reviewMode": "manual_sandbox_probe_review",
+                    "probeExecutionMode": "manual_readonly_sandbox_probe",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-order-schema-dry-run",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                review_mode="manual_production_route_review",
+                confirmations={
+                    "sandboxProbeReviewAccepted": True,
+                    "killSwitchPolicyReviewed": True,
+                    "orderRoutingDisabledVerified": True,
+                    "positionLimitPolicyReviewed": True,
+                    "rollbackOwnerRecorded": True,
+                },
+                operator="route-reviewer",
+                metadata={"source": "settings-panel"},
+                production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(
+                execution_adapter_production_route_review_to_audit_event_payload(route_review)
+            )
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                missing_response, missing_payload = post_json(
+                    "/api/execution/adapter-sandbox-order-schema-dry-runs",
+                    {
+                        "adapterId": "ccxt-live",
+                        "productionRouteReviewId": "missing-route-review",
+                        "operator": "schema-runner",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-sandbox-order-schema-dry-runs",
+                    {
+                        "adapterId": "ccxt-live",
+                        "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                        "operator": "schema-runner",
+                        "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                        "orderIntent": {
+                            "symbol": "BTC/USDT",
+                            "side": "buy",
+                            "type": "limit",
+                            "quantity": 0.01,
+                            "price": 68000,
+                            "timeInForce": "GTC",
+                        },
+                        "confirmations": {},
+                        "metadata": {"apiSecret": "schema-dry-run-blocked-secret-should-not-leak"},
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-sandbox-order-schema-dry-runs",
+                    {
+                        "adapterId": "ccxt-live",
+                        "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                        "operator": "schema-runner",
+                        "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                        "orderIntent": {
+                            "symbol": "BTC/USDT",
+                            "side": "buy",
+                            "type": "limit",
+                            "quantity": 0.01,
+                            "price": 68000,
+                            "timeInForce": "GTC",
+                        },
+                        "confirmations": {
+                            "productionRouteReviewAccepted": True,
+                            "healthProbeBound": True,
+                            "orderIntentSchemaValidated": True,
+                            "sandboxEndpointStillLocked": True,
+                            "operatorConfirmedNoOrderSubmitted": True,
+                        },
+                        "metadata": {"privateKey": "schema-dry-run-private-key-should-not-leak"},
+                    },
+                )
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-sandbox-order-schema-dry-runs?adapterId=ccxt-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_production_route_review_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterSandboxOrderSchemaDryRun"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterSandboxOrderSchemaDryRun"]["blockedReasons"],
+            [
+                "sandbox_order_schema_dry_run_route_review_not_accepted",
+                "sandbox_order_schema_dry_run_health_probe_not_bound",
+                "sandbox_order_schema_dry_run_order_intent_not_validated",
+                "sandbox_order_schema_dry_run_endpoint_not_locked",
+                "sandbox_order_schema_dry_run_no_order_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterSandboxOrderSchemaDryRun"]["status"], "schema_dry_run_recorded")
+        self.assertEqual(
+            recorded_payload["adapterSandboxOrderSchemaDryRun"]["productionRouteReviewId"],
+            "execution-adapter-production-route-review-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterSandboxOrderSchemaDryRun"]["adapterId"], "ccxt-live")
+        self.assertEqual(recorded_payload["adapterSandboxOrderSchemaDryRun"]["route"], "live")
+        self.assertEqual(recorded_payload["adapterSandboxOrderSchemaDryRun"]["orderIntent"]["symbol"], "BTC/USDT")
+        self.assertEqual(
+            recorded_payload["adapterSandboxOrderSchemaDryRun"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertFalse(recorded_payload["adapterSandboxOrderSchemaDryRun"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterSandboxOrderSchemaDryRun"]["paperOnly"])
+        self.assertFalse(recorded_payload["adapterSandboxOrderSchemaDryRun"]["orderSubmitted"])
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_sandbox_order_schema_dry_run")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterSandboxOrderSchemaDryRuns"]), 2)
+        self.assertEqual(history_payload["adapterSandboxOrderSchemaDryRuns"][0]["status"], "schema_dry_run_recorded")
+        self.assertEqual(
+            history_payload["adapterSandboxOrderSchemaDryRuns"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_payload["adapterSandboxOrderSchemaDryRuns"][1]["status"], "blocked")
+        self.assertNotIn("schema-dry-run-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("schema-dry-run-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_sandbox_order_schema_dry_run_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_sandbox_order_schema_dry_run,
+            execution_adapter_sandbox_order_schema_dry_run_payload_from_audit_event,
+            execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload,
+            execution_adapter_sandbox_order_schema_dry_run_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+            {
+                "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "route_review_recorded",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-schema-dry-run-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            dry_run_mode="manual_sandbox_order_schema_dry_run",
+            order_intent={
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "type": "limit",
+                "quantity": 0.01,
+                "price": 68000,
+                "timeInForce": "GTC",
+            },
+            confirmations={
+                "productionRouteReviewAccepted": True,
+                "healthProbeBound": True,
+                "orderIntentSchemaValidated": True,
+                "sandboxEndpointStillLocked": True,
+                "operatorConfirmedNoOrderSubmitted": True,
+            },
+            operator="schema-runner",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "schema-dry-run-validation-private-key-should-not-leak",
+            },
+            sandbox_order_schema_dry_run_id="execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+        )
+        payload = execution_adapter_sandbox_order_schema_dry_run_to_payload(schema_dry_run)
+        audit_payload = execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(schema_dry_run)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_sandbox_order_schema_dry_run_payload_from_audit_event(
+                store.get("execution-adapter-sandbox-order-schema-dry-run-ccxt-live")
+            )
+
+        serialized = json.dumps({"payload": payload, "audit": audit_payload, "projected": projected}, sort_keys=True)
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmitted"])
+        self.assertNotIn("schema-dry-run-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_order_lifecycle_records_after_schema_dry_run_without_order_submission(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_production_route_review,
+            build_execution_adapter_sandbox_order_schema_dry_run,
+            execution_adapter_production_route_review_to_audit_event_payload,
+            execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload,
+        )
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            route_review = build_execution_adapter_production_route_review(
+                {
+                    "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                    "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_review_recorded",
+                    "reviewMode": "manual_sandbox_probe_review",
+                    "probeExecutionMode": "manual_readonly_sandbox_probe",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-paper-order-lifecycle",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                review_mode="manual_production_route_review",
+                confirmations={
+                    "sandboxProbeReviewAccepted": True,
+                    "killSwitchPolicyReviewed": True,
+                    "orderRoutingDisabledVerified": True,
+                    "positionLimitPolicyReviewed": True,
+                    "rollbackOwnerRecorded": True,
+                },
+                operator="route-reviewer",
+                metadata={"source": "settings-panel"},
+                production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+            )
+            schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+                execution_adapter_production_route_review_to_audit_event_payload(route_review)["metadata"],
+                adapter_id="ccxt-live",
+                dry_run_mode="manual_sandbox_order_schema_dry_run",
+                order_intent={
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                confirmations={
+                    "productionRouteReviewAccepted": True,
+                    "healthProbeBound": True,
+                    "orderIntentSchemaValidated": True,
+                    "sandboxEndpointStillLocked": True,
+                    "operatorConfirmedNoOrderSubmitted": True,
+                },
+                operator="schema-runner",
+                metadata={"source": "settings-panel"},
+                sandbox_order_schema_dry_run_id="execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(
+                execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(schema_dry_run)
+            )
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                missing_response, missing_payload = post_json(
+                    "/api/execution/adapter-paper-order-lifecycles",
+                    {
+                        "adapterId": "ccxt-live",
+                        "sandboxOrderSchemaDryRunId": "missing-schema-dry-run",
+                        "operator": "paper-lifecycle-runner",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-paper-order-lifecycles",
+                    {
+                        "adapterId": "ccxt-live",
+                        "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                        "operator": "paper-lifecycle-runner",
+                        "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                        "confirmations": {},
+                        "metadata": {"apiSecret": "paper-lifecycle-blocked-secret-should-not-leak"},
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-paper-order-lifecycles",
+                    {
+                        "adapterId": "ccxt-live",
+                        "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                        "operator": "paper-lifecycle-runner",
+                        "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                        "confirmations": {
+                            "schemaDryRunAccepted": True,
+                            "paperRouterLocked": True,
+                            "riskLimitsBound": True,
+                            "simulatedLifecycleGenerated": True,
+                            "operatorConfirmedNoLiveOrderSubmitted": True,
+                        },
+                        "metadata": {"privateKey": "paper-lifecycle-private-key-should-not-leak"},
+                    },
+                )
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-paper-order-lifecycles?adapterId=ccxt-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_sandbox_order_schema_dry_run_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterPaperOrderLifecycle"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterPaperOrderLifecycle"]["blockedReasons"],
+            [
+                "paper_order_lifecycle_schema_dry_run_not_accepted",
+                "paper_order_lifecycle_router_not_locked",
+                "paper_order_lifecycle_risk_limits_not_bound",
+                "paper_order_lifecycle_not_generated",
+                "paper_order_lifecycle_no_live_order_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterPaperOrderLifecycle"]["status"], "lifecycle_recorded")
+        self.assertEqual(
+            recorded_payload["adapterPaperOrderLifecycle"]["sandboxOrderSchemaDryRunId"],
+            "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterPaperOrderLifecycle"]["adapterId"], "ccxt-live")
+        self.assertEqual(recorded_payload["adapterPaperOrderLifecycle"]["orderIntent"]["symbol"], "BTC/USDT")
+        self.assertEqual(
+            recorded_payload["adapterPaperOrderLifecycle"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertFalse(recorded_payload["adapterPaperOrderLifecycle"]["orderSubmitted"])
+        self.assertFalse(recorded_payload["adapterPaperOrderLifecycle"]["liveOrderSubmitted"])
+        self.assertTrue(recorded_payload["adapterPaperOrderLifecycle"]["paperOnly"])
+        self.assertFalse(recorded_payload["adapterPaperOrderLifecycle"]["liveTradingAllowed"])
+        self.assertEqual(
+            [step["id"] for step in recorded_payload["adapterPaperOrderLifecycle"]["lifecycleSteps"]],
+            ["intent-validated", "paper-router-locked", "risk-limits-bound", "simulated-lifecycle-recorded"],
+        )
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_paper_order_lifecycle")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterPaperOrderLifecycles"]), 2)
+        self.assertEqual(history_payload["adapterPaperOrderLifecycles"][0]["status"], "lifecycle_recorded")
+        self.assertEqual(
+            history_payload["adapterPaperOrderLifecycles"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_payload["adapterPaperOrderLifecycles"][1]["status"], "blocked")
+        self.assertNotIn("paper-lifecycle-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("paper-lifecycle-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_order_lifecycle_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_paper_order_lifecycle,
+            execution_adapter_paper_order_lifecycle_payload_from_audit_event,
+            execution_adapter_paper_order_lifecycle_to_audit_event_payload,
+            execution_adapter_paper_order_lifecycle_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        lifecycle = build_execution_adapter_paper_order_lifecycle(
+            {
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "schema_dry_run_recorded",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-paper-lifecycle-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "orderSubmitted": False,
+            },
+            adapter_id="ccxt-live",
+            lifecycle_mode="manual_paper_order_lifecycle_adapter",
+            confirmations={
+                "schemaDryRunAccepted": True,
+                "paperRouterLocked": True,
+                "riskLimitsBound": True,
+                "simulatedLifecycleGenerated": True,
+                "operatorConfirmedNoLiveOrderSubmitted": True,
+            },
+            operator="paper-lifecycle-operator",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "paper-lifecycle-validation-private-key-should-not-leak",
+            },
+            paper_order_lifecycle_id="execution-adapter-paper-order-lifecycle-ccxt-live",
+        )
+        payload = execution_adapter_paper_order_lifecycle_to_payload(lifecycle)
+        audit_payload = execution_adapter_paper_order_lifecycle_to_audit_event_payload(lifecycle)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_paper_order_lifecycle_payload_from_audit_event(
+                store.get("execution-adapter-paper-order-lifecycle-ccxt-live")
+            )
+
+        serialized = json.dumps(
+            {"payload": payload, "audit": audit_payload, "projected": projected},
+            sort_keys=True,
+        )
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmitted"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertNotIn("paper-lifecycle-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_route_runbook_records_after_lifecycle_without_order_routing(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_paper_order_lifecycle,
+            build_execution_adapter_production_route_review,
+            build_execution_adapter_sandbox_order_schema_dry_run,
+            execution_adapter_paper_order_lifecycle_to_audit_event_payload,
+            execution_adapter_production_route_review_to_audit_event_payload,
+            execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload,
+        )
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            route_review = build_execution_adapter_production_route_review(
+                {
+                    "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                    "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_review_recorded",
+                    "reviewMode": "manual_sandbox_probe_review",
+                    "probeExecutionMode": "manual_readonly_sandbox_probe",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-paper-route-runbook",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                review_mode="manual_production_route_review",
+                confirmations={
+                    "sandboxProbeReviewAccepted": True,
+                    "killSwitchPolicyReviewed": True,
+                    "orderRoutingDisabledVerified": True,
+                    "positionLimitPolicyReviewed": True,
+                    "rollbackOwnerRecorded": True,
+                },
+                operator="route-reviewer",
+                metadata={"source": "settings-panel"},
+                production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+            )
+            schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+                execution_adapter_production_route_review_to_audit_event_payload(route_review)["metadata"],
+                adapter_id="ccxt-live",
+                dry_run_mode="manual_sandbox_order_schema_dry_run",
+                order_intent={
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                confirmations={
+                    "productionRouteReviewAccepted": True,
+                    "healthProbeBound": True,
+                    "orderIntentSchemaValidated": True,
+                    "sandboxEndpointStillLocked": True,
+                    "operatorConfirmedNoOrderSubmitted": True,
+                },
+                operator="schema-runner",
+                metadata={"source": "settings-panel"},
+                sandbox_order_schema_dry_run_id="execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+            )
+            lifecycle = build_execution_adapter_paper_order_lifecycle(
+                execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(schema_dry_run)["metadata"],
+                adapter_id="ccxt-live",
+                lifecycle_mode="manual_paper_order_lifecycle_adapter",
+                confirmations={
+                    "schemaDryRunAccepted": True,
+                    "paperRouterLocked": True,
+                    "riskLimitsBound": True,
+                    "simulatedLifecycleGenerated": True,
+                    "operatorConfirmedNoLiveOrderSubmitted": True,
+                },
+                operator="paper-lifecycle-runner",
+                metadata={"source": "settings-panel"},
+                paper_order_lifecycle_id="execution-adapter-paper-order-lifecycle-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(
+                execution_adapter_paper_order_lifecycle_to_audit_event_payload(lifecycle)
+            )
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                missing_response, missing_payload = post_json(
+                    "/api/execution/adapter-paper-route-runbooks",
+                    {
+                        "adapterId": "ccxt-live",
+                        "paperOrderLifecycleId": "missing-paper-order-lifecycle",
+                        "operator": "paper-route-runbook-runner",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-paper-route-runbooks",
+                    {
+                        "adapterId": "ccxt-live",
+                        "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-ccxt-live",
+                        "operator": "paper-route-runbook-runner",
+                        "runbookMode": "manual_paper_route_runbook",
+                        "confirmations": {},
+                        "metadata": {"apiSecret": "paper-route-runbook-blocked-secret-should-not-leak"},
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-paper-route-runbooks",
+                    {
+                        "adapterId": "ccxt-live",
+                        "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-ccxt-live",
+                        "operator": "paper-route-runbook-runner",
+                        "runbookMode": "manual_paper_route_runbook",
+                        "confirmations": {
+                            "paperLifecycleAccepted": True,
+                            "paperAccountSnapshotCaptured": True,
+                            "riskControlsVerified": True,
+                            "replayPlanRecorded": True,
+                            "operatorConfirmedNoLiveRouting": True,
+                        },
+                        "metadata": {"privateKey": "paper-route-runbook-private-key-should-not-leak"},
+                    },
+                )
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-paper-route-runbooks?adapterId=ccxt-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_paper_order_lifecycle_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterPaperRouteRunbook"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterPaperRouteRunbook"]["blockedReasons"],
+            [
+                "paper_route_runbook_lifecycle_not_accepted",
+                "paper_route_runbook_account_snapshot_missing",
+                "paper_route_runbook_risk_controls_not_verified",
+                "paper_route_runbook_replay_plan_missing",
+                "paper_route_runbook_no_live_route_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterPaperRouteRunbook"]["status"], "runbook_recorded")
+        self.assertEqual(
+            recorded_payload["adapterPaperRouteRunbook"]["paperOrderLifecycleId"],
+            "execution-adapter-paper-order-lifecycle-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterPaperRouteRunbook"]["adapterId"], "ccxt-live")
+        self.assertEqual(recorded_payload["adapterPaperRouteRunbook"]["orderIntent"]["symbol"], "BTC/USDT")
+        self.assertEqual(
+            recorded_payload["adapterPaperRouteRunbook"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertFalse(recorded_payload["adapterPaperRouteRunbook"]["orderSubmitted"])
+        self.assertFalse(recorded_payload["adapterPaperRouteRunbook"]["liveOrderSubmitted"])
+        self.assertFalse(recorded_payload["adapterPaperRouteRunbook"]["routeExecuted"])
+        self.assertTrue(recorded_payload["adapterPaperRouteRunbook"]["paperOnly"])
+        self.assertFalse(recorded_payload["adapterPaperRouteRunbook"]["liveTradingAllowed"])
+        self.assertEqual(
+            [step["id"] for step in recorded_payload["adapterPaperRouteRunbook"]["runbookSteps"]],
+            [
+                "lifecycle-evidence-linked",
+                "paper-account-snapshot-bound",
+                "risk-controls-verified",
+                "replay-plan-recorded",
+            ],
+        )
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_paper_route_runbook")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterPaperRouteRunbooks"]), 2)
+        self.assertEqual(history_payload["adapterPaperRouteRunbooks"][0]["status"], "runbook_recorded")
+        self.assertEqual(
+            history_payload["adapterPaperRouteRunbooks"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_payload["adapterPaperRouteRunbooks"][1]["status"], "blocked")
+        self.assertNotIn("paper-route-runbook-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("paper-route-runbook-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_route_runbook_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_paper_route_runbook,
+            execution_adapter_paper_route_runbook_payload_from_audit_event,
+            execution_adapter_paper_route_runbook_to_audit_event_payload,
+            execution_adapter_paper_route_runbook_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        runbook = build_execution_adapter_paper_route_runbook(
+            {
+                "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-ccxt-live",
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "lifecycle_recorded",
+                "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-paper-runbook-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "lifecycleSteps": [
+                    {"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}
+                ],
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+            },
+            adapter_id="ccxt-live",
+            runbook_mode="manual_paper_route_runbook",
+            confirmations={
+                "paperLifecycleAccepted": True,
+                "paperAccountSnapshotCaptured": True,
+                "riskControlsVerified": True,
+                "replayPlanRecorded": True,
+                "operatorConfirmedNoLiveRouting": True,
+            },
+            operator="paper-runbook-operator",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "paper-runbook-validation-private-key-should-not-leak",
+            },
+            paper_route_runbook_id="execution-adapter-paper-route-runbook-ccxt-live",
+        )
+        payload = execution_adapter_paper_route_runbook_to_payload(runbook)
+        audit_payload = execution_adapter_paper_route_runbook_to_audit_event_payload(runbook)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_paper_route_runbook_payload_from_audit_event(
+                store.get("execution-adapter-paper-route-runbook-ccxt-live")
+            )
+
+        serialized = json.dumps(
+            {"payload": payload, "audit": audit_payload, "projected": projected},
+            sort_keys=True,
+        )
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmitted"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertFalse(payload["routeExecuted"])
+        self.assertNotIn("paper-runbook-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_ops_state_records_after_paper_route_runbook_without_live_enablement(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_paper_order_lifecycle,
+            build_execution_adapter_paper_route_runbook,
+            build_execution_adapter_production_route_review,
+            build_execution_adapter_sandbox_order_schema_dry_run,
+            execution_adapter_paper_order_lifecycle_to_audit_event_payload,
+            execution_adapter_paper_route_runbook_to_audit_event_payload,
+            execution_adapter_production_route_review_to_audit_event_payload,
+            execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload,
+        )
+
+        temp_dir = tempfile.TemporaryDirectory()
+        previous_store = QuantApiHandler.audit_event_store
+        try:
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = AuditEventStore(Path(temp_dir.name) / "audit_events.sqlite")
+            route_review = build_execution_adapter_production_route_review(
+                {
+                    "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                    "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_review_recorded",
+                    "reviewMode": "manual_sandbox_probe_review",
+                    "probeExecutionMode": "manual_readonly_sandbox_probe",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-adapter-ops-state",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                review_mode="manual_production_route_review",
+                confirmations={
+                    "sandboxProbeReviewAccepted": True,
+                    "killSwitchPolicyReviewed": True,
+                    "orderRoutingDisabledVerified": True,
+                    "positionLimitPolicyReviewed": True,
+                    "rollbackOwnerRecorded": True,
+                },
+                operator="route-reviewer",
+                metadata={"source": "settings-panel"},
+                production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+            )
+            schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+                execution_adapter_production_route_review_to_audit_event_payload(route_review)["metadata"],
+                adapter_id="ccxt-live",
+                dry_run_mode="manual_sandbox_order_schema_dry_run",
+                order_intent={
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                confirmations={
+                    "productionRouteReviewAccepted": True,
+                    "healthProbeBound": True,
+                    "orderIntentSchemaValidated": True,
+                    "sandboxEndpointStillLocked": True,
+                    "operatorConfirmedNoOrderSubmitted": True,
+                },
+                operator="schema-runner",
+                metadata={"source": "settings-panel"},
+                sandbox_order_schema_dry_run_id="execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+            )
+            lifecycle = build_execution_adapter_paper_order_lifecycle(
+                execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(schema_dry_run)["metadata"],
+                adapter_id="ccxt-live",
+                lifecycle_mode="manual_paper_order_lifecycle_adapter",
+                confirmations={
+                    "schemaDryRunAccepted": True,
+                    "paperRouterLocked": True,
+                    "riskLimitsBound": True,
+                    "simulatedLifecycleGenerated": True,
+                    "operatorConfirmedNoLiveOrderSubmitted": True,
+                },
+                operator="paper-lifecycle-runner",
+                metadata={"source": "settings-panel"},
+                paper_order_lifecycle_id="execution-adapter-paper-order-lifecycle-ccxt-live",
+            )
+            runbook = build_execution_adapter_paper_route_runbook(
+                execution_adapter_paper_order_lifecycle_to_audit_event_payload(lifecycle)["metadata"],
+                adapter_id="ccxt-live",
+                runbook_mode="manual_paper_route_runbook",
+                confirmations={
+                    "paperLifecycleAccepted": True,
+                    "paperAccountSnapshotCaptured": True,
+                    "riskControlsVerified": True,
+                    "replayPlanRecorded": True,
+                    "operatorConfirmedNoLiveRouting": True,
+                },
+                operator="paper-route-runbook-runner",
+                metadata={"source": "settings-panel"},
+                paper_route_runbook_id="execution-adapter-paper-route-runbook-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(
+                execution_adapter_paper_route_runbook_to_audit_event_payload(runbook)
+            )
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                missing_response, missing_payload = post_json(
+                    "/api/execution/adapter-ops-states",
+                    {
+                        "adapterId": "ccxt-live",
+                        "paperRouteRunbookId": "missing-paper-route-runbook",
+                        "operator": "adapter-ops-runner",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-ops-states",
+                    {
+                        "adapterId": "ccxt-live",
+                        "paperRouteRunbookId": "execution-adapter-paper-route-runbook-ccxt-live",
+                        "operator": "adapter-ops-runner",
+                        "opsMode": "manual_adapter_ops_state",
+                        "confirmations": {},
+                        "metadata": {"apiSecret": "adapter-ops-blocked-secret-should-not-leak"},
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-ops-states",
+                    {
+                        "adapterId": "ccxt-live",
+                        "paperRouteRunbookId": "execution-adapter-paper-route-runbook-ccxt-live",
+                        "operator": "adapter-ops-runner",
+                        "opsMode": "manual_adapter_ops_state",
+                        "confirmations": {
+                            "paperRouteRunbookAccepted": True,
+                            "monitoringChannelReady": True,
+                            "killSwitchDrillRecorded": True,
+                            "paperAccountReconciled": True,
+                            "operatorConfirmedLiveTradingDisabled": True,
+                        },
+                        "metadata": {"privateKey": "adapter-ops-private-key-should-not-leak"},
+                    },
+                )
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-ops-states?adapterId=ccxt-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+        finally:
+            QuantApiHandler.audit_event_store = previous_store
+            temp_dir.cleanup()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_paper_route_runbook_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterOpsState"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterOpsState"]["blockedReasons"],
+            [
+                "adapter_ops_paper_route_runbook_not_accepted",
+                "adapter_ops_monitoring_channel_missing",
+                "adapter_ops_kill_switch_drill_missing",
+                "adapter_ops_paper_account_reconciliation_missing",
+                "adapter_ops_live_trading_disabled_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterOpsState"]["status"], "ops_state_recorded")
+        self.assertEqual(
+            recorded_payload["adapterOpsState"]["paperRouteRunbookId"],
+            "execution-adapter-paper-route-runbook-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterOpsState"]["adapterId"], "ccxt-live")
+        self.assertEqual(recorded_payload["adapterOpsState"]["orderIntent"]["symbol"], "BTC/USDT")
+        self.assertEqual(
+            recorded_payload["adapterOpsState"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertFalse(recorded_payload["adapterOpsState"]["orderSubmitted"])
+        self.assertFalse(recorded_payload["adapterOpsState"]["liveOrderSubmitted"])
+        self.assertFalse(recorded_payload["adapterOpsState"]["routeExecuted"])
+        self.assertFalse(recorded_payload["adapterOpsState"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterOpsState"]["paperOnly"])
+        self.assertEqual(
+            [step["id"] for step in recorded_payload["adapterOpsState"]["opsSteps"]],
+            [
+                "paper-route-runbook-linked",
+                "monitoring-channel-ready",
+                "kill-switch-drill-recorded",
+                "paper-account-reconciled",
+            ],
+        )
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_ops_state")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterOpsStates"]), 2)
+        self.assertEqual(history_payload["adapterOpsStates"][0]["status"], "ops_state_recorded")
+        self.assertEqual(
+            history_payload["adapterOpsStates"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_payload["adapterOpsStates"][1]["status"], "blocked")
+        self.assertNotIn("adapter-ops-blocked-secret-should-not-leak", serialized)
+        self.assertNotIn("adapter-ops-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_ops_state_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_ops_state,
+            execution_adapter_ops_state_payload_from_audit_event,
+            execution_adapter_ops_state_to_audit_event_payload,
+            execution_adapter_ops_state_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        ops_state = build_execution_adapter_ops_state(
+            {
+                "paperRouteRunbookId": "execution-adapter-paper-route-runbook-ccxt-live",
+                "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-ccxt-live",
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "runbook_recorded",
+                "runbookMode": "manual_paper_route_runbook",
+                "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-ops-state-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "lifecycleSteps": [
+                    {"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}
+                ],
+                "runbookSteps": [
+                    {
+                        "id": "lifecycle-evidence-linked",
+                        "label": "Paper lifecycle evidence linked",
+                        "status": "recorded",
+                    }
+                ],
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+            },
+            adapter_id="ccxt-live",
+            ops_mode="manual_adapter_ops_state",
+            confirmations={
+                "paperRouteRunbookAccepted": True,
+                "monitoringChannelReady": True,
+                "killSwitchDrillRecorded": True,
+                "paperAccountReconciled": True,
+                "operatorConfirmedLiveTradingDisabled": True,
+            },
+            operator="adapter-ops-operator",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "adapter-ops-validation-private-key-should-not-leak",
+            },
+            adapter_ops_state_id="execution-adapter-ops-state-ccxt-live",
+        )
+        payload = execution_adapter_ops_state_to_payload(ops_state)
+        audit_payload = execution_adapter_ops_state_to_audit_event_payload(ops_state)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_ops_state_payload_from_audit_event(
+                store.get("execution-adapter-ops-state-ccxt-live")
+            )
+
+        serialized = json.dumps(
+            {"payload": payload, "audit": audit_payload, "projected": projected},
+            sort_keys=True,
+        )
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmitted"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertFalse(payload["routeExecuted"])
+        self.assertNotIn("adapter-ops-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_execution_records_after_ops_state_without_live_routing(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_ops_state,
+            build_execution_adapter_paper_order_lifecycle,
+            build_execution_adapter_paper_route_runbook,
+            build_execution_adapter_production_route_review,
+            build_execution_adapter_sandbox_order_schema_dry_run,
+            execution_adapter_ops_state_to_audit_event_payload,
+            execution_adapter_paper_order_lifecycle_to_audit_event_payload,
+            execution_adapter_paper_route_runbook_to_audit_event_payload,
+            execution_adapter_production_route_review_to_audit_event_payload,
+            execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload,
+        )
+
+        temp_dir = tempfile.TemporaryDirectory()
+        previous_store = QuantApiHandler.audit_event_store
+        try:
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.audit_event_store = AuditEventStore(Path(temp_dir.name) / "audit_events.sqlite")
+            route_review = build_execution_adapter_production_route_review(
+                {
+                    "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                    "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                    "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                    "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                    "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                    "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                    "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                    "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                    "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                    "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                    "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                    "adapterId": "ccxt-live",
+                    "market": "crypto",
+                    "route": "live",
+                    "status": "probe_review_recorded",
+                    "reviewMode": "manual_sandbox_probe_review",
+                    "probeExecutionMode": "manual_readonly_sandbox_probe",
+                    "probeMode": "manual_sandbox_probe_plan",
+                    "confirmationMode": "manual_final_human_confirmation",
+                    "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                    "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                    "acceptanceMode": "manual_runtime_reload_acceptance",
+                    "executionMode": "manual_controlled_reload",
+                    "reloadMode": "manual_container_reload_plan",
+                    "maintenanceWindowId": "window-ccxt-adapter-paper-execution",
+                    "bindingMode": "container_env_reference",
+                    "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                    "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                },
+                adapter_id="ccxt-live",
+                review_mode="manual_production_route_review",
+                confirmations={
+                    "sandboxProbeReviewAccepted": True,
+                    "killSwitchPolicyReviewed": True,
+                    "orderRoutingDisabledVerified": True,
+                    "positionLimitPolicyReviewed": True,
+                    "rollbackOwnerRecorded": True,
+                },
+                operator="route-reviewer",
+                metadata={"source": "settings-panel"},
+                production_route_review_id="execution-adapter-production-route-review-ccxt-live",
+            )
+            schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+                execution_adapter_production_route_review_to_audit_event_payload(route_review)["metadata"],
+                adapter_id="ccxt-live",
+                dry_run_mode="manual_sandbox_order_schema_dry_run",
+                order_intent={
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                confirmations={
+                    "productionRouteReviewAccepted": True,
+                    "healthProbeBound": True,
+                    "orderIntentSchemaValidated": True,
+                    "sandboxEndpointStillLocked": True,
+                    "operatorConfirmedNoOrderSubmitted": True,
+                },
+                operator="schema-runner",
+                metadata={"source": "settings-panel"},
+                sandbox_order_schema_dry_run_id="execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+            )
+            lifecycle = build_execution_adapter_paper_order_lifecycle(
+                execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(schema_dry_run)["metadata"],
+                adapter_id="ccxt-live",
+                lifecycle_mode="manual_paper_order_lifecycle_adapter",
+                confirmations={
+                    "schemaDryRunAccepted": True,
+                    "paperRouterLocked": True,
+                    "riskLimitsBound": True,
+                    "simulatedLifecycleGenerated": True,
+                    "operatorConfirmedNoLiveOrderSubmitted": True,
+                },
+                operator="paper-lifecycle-runner",
+                metadata={"source": "settings-panel"},
+                paper_order_lifecycle_id="execution-adapter-paper-order-lifecycle-ccxt-live",
+            )
+            runbook = build_execution_adapter_paper_route_runbook(
+                execution_adapter_paper_order_lifecycle_to_audit_event_payload(lifecycle)["metadata"],
+                adapter_id="ccxt-live",
+                runbook_mode="manual_paper_route_runbook",
+                confirmations={
+                    "paperLifecycleAccepted": True,
+                    "paperAccountSnapshotCaptured": True,
+                    "riskControlsVerified": True,
+                    "replayPlanRecorded": True,
+                    "operatorConfirmedNoLiveRouting": True,
+                },
+                operator="paper-route-runbook-runner",
+                metadata={"source": "settings-panel"},
+                paper_route_runbook_id="execution-adapter-paper-route-runbook-ccxt-live",
+            )
+            ops_state = build_execution_adapter_ops_state(
+                execution_adapter_paper_route_runbook_to_audit_event_payload(runbook)["metadata"],
+                adapter_id="ccxt-live",
+                ops_mode="manual_adapter_ops_state",
+                confirmations={
+                    "paperRouteRunbookAccepted": True,
+                    "monitoringChannelReady": True,
+                    "killSwitchDrillRecorded": True,
+                    "paperAccountReconciled": True,
+                    "operatorConfirmedLiveTradingDisabled": True,
+                },
+                operator="adapter-ops-runner",
+                metadata={"source": "settings-panel"},
+                adapter_ops_state_id="execution-adapter-ops-state-ccxt-live",
+            )
+            TestHandler.audit_event_store.record(
+                execution_adapter_ops_state_to_audit_event_payload(ops_state)
+            )
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+            def post_json(path, payload):
+                connection.request(
+                    "POST",
+                    path,
+                    body=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response, json.loads(response.read().decode("utf-8"))
+
+            try:
+                missing_response, missing_payload = post_json(
+                    "/api/execution/adapter-paper-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "adapterOpsStateId": "missing-adapter-ops-state",
+                        "operator": "paper-execution-runner",
+                        "confirmations": {},
+                    },
+                )
+
+                blocked_response, blocked_payload = post_json(
+                    "/api/execution/adapter-paper-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "adapterOpsStateId": "execution-adapter-ops-state-ccxt-live",
+                        "operator": "paper-execution-runner",
+                        "paperExecutionMode": "manual_adapter_paper_execution",
+                        "confirmations": {},
+                        "metadata": {"apiSecret": "adapter-paper-execution-secret-should-not-leak"},
+                    },
+                )
+
+                recorded_response, recorded_payload = post_json(
+                    "/api/execution/adapter-paper-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "adapterOpsStateId": "execution-adapter-ops-state-ccxt-live",
+                        "operator": "paper-execution-runner",
+                        "paperExecutionMode": "manual_adapter_paper_execution",
+                        "confirmations": {
+                            "opsStateAccepted": True,
+                            "paperAccountSynced": True,
+                            "riskBudgetBound": True,
+                            "simulatedFillGenerated": True,
+                            "operatorConfirmedNoLiveRouting": True,
+                        },
+                        "metadata": {"privateKey": "adapter-paper-execution-private-key-should-not-leak"},
+                    },
+                )
+
+                connection.request(
+                    "GET",
+                    "/api/execution/adapter-paper-executions?adapterId=ccxt-live&limit=5",
+                )
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+        finally:
+            QuantApiHandler.audit_event_store = previous_store
+            temp_dir.cleanup()
+
+        serialized = json.dumps(
+            {
+                "blocked": blocked_payload,
+                "recorded": recorded_payload,
+                "history": history_payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["error"], "execution_adapter_ops_state_not_found")
+        self.assertEqual(blocked_response.status, 409)
+        self.assertEqual(blocked_payload["adapterPaperExecution"]["status"], "blocked")
+        self.assertEqual(
+            blocked_payload["adapterPaperExecution"]["blockedReasons"],
+            [
+                "adapter_paper_execution_ops_state_not_accepted",
+                "adapter_paper_execution_account_not_synced",
+                "adapter_paper_execution_risk_budget_not_bound",
+                "adapter_paper_execution_fill_not_generated",
+                "adapter_paper_execution_no_live_route_boundary_missing",
+            ],
+        )
+        self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterPaperExecution"]["status"], "paper_execution_recorded")
+        self.assertEqual(
+            recorded_payload["adapterPaperExecution"]["adapterOpsStateId"],
+            "execution-adapter-ops-state-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterPaperExecution"]["adapterId"], "ccxt-live")
+        self.assertEqual(recorded_payload["adapterPaperExecution"]["orderIntent"]["symbol"], "BTC/USDT")
+        self.assertEqual(
+            recorded_payload["adapterPaperExecution"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(recorded_payload["adapterPaperExecution"]["simulatedFill"]["status"], "filled")
+        self.assertEqual(recorded_payload["adapterPaperExecution"]["simulatedFill"]["symbol"], "BTC/USDT")
+        self.assertFalse(recorded_payload["adapterPaperExecution"]["orderSubmitted"])
+        self.assertFalse(recorded_payload["adapterPaperExecution"]["liveOrderSubmitted"])
+        self.assertFalse(recorded_payload["adapterPaperExecution"]["routeExecuted"])
+        self.assertFalse(recorded_payload["adapterPaperExecution"]["liveTradingAllowed"])
+        self.assertTrue(recorded_payload["adapterPaperExecution"]["paperOnly"])
+        self.assertEqual(
+            [step["id"] for step in recorded_payload["adapterPaperExecution"]["paperExecutionSteps"]],
+            [
+                "ops-state-linked",
+                "paper-account-synced",
+                "risk-budget-bound",
+                "simulated-fill-recorded",
+            ],
+        )
+        self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_paper_execution")
+        self.assertEqual(
+            recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(len(history_payload["adapterPaperExecutions"]), 2)
+        self.assertEqual(history_payload["adapterPaperExecutions"][0]["status"], "paper_execution_recorded")
+        self.assertEqual(
+            history_payload["adapterPaperExecutions"][0]["manifestValidationId"],
+            "execution-adapter-secret-manifest-validation-ccxt-live",
+        )
+        self.assertEqual(history_payload["adapterPaperExecutions"][1]["status"], "blocked")
+        self.assertNotIn("adapter-paper-execution-secret-should-not-leak", serialized)
+        self.assertNotIn("adapter-paper-execution-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_execution_inherits_manifest_validation_id(self):
+        import json
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            build_execution_adapter_paper_execution,
+            execution_adapter_paper_execution_payload_from_audit_event,
+            execution_adapter_paper_execution_to_audit_event_payload,
+            execution_adapter_paper_execution_to_payload,
+        )
+
+        validation_id = "execution-adapter-secret-manifest-validation-ccxt-live"
+        paper_execution = build_execution_adapter_paper_execution(
+            {
+                "adapterOpsStateId": "execution-adapter-ops-state-ccxt-live",
+                "paperRouteRunbookId": "execution-adapter-paper-route-runbook-ccxt-live",
+                "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-ccxt-live",
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": validation_id,
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "ops_state_recorded",
+                "opsMode": "manual_adapter_ops_state",
+                "runbookMode": "manual_paper_route_runbook",
+                "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-paper-execution-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "lifecycleSteps": [
+                    {"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}
+                ],
+                "runbookSteps": [
+                    {
+                        "id": "lifecycle-evidence-linked",
+                        "label": "Paper lifecycle evidence linked",
+                        "status": "recorded",
+                    }
+                ],
+                "opsSteps": [
+                    {"id": "paper-route-runbook-linked", "label": "Paper route runbook linked", "status": "recorded"}
+                ],
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "liveTradingAllowed": False,
+            },
+            adapter_id="ccxt-live",
+            paper_execution_mode="manual_adapter_paper_execution",
+            confirmations={
+                "opsStateAccepted": True,
+                "paperAccountSynced": True,
+                "riskBudgetBound": True,
+                "simulatedFillGenerated": True,
+                "operatorConfirmedNoLiveRouting": True,
+            },
+            operator="adapter-paper-execution-operator",
+            metadata={
+                "source": "settings-panel",
+                "privateKey": "adapter-paper-execution-validation-private-key-should-not-leak",
+            },
+            adapter_paper_execution_id="execution-adapter-paper-execution-ccxt-live",
+        )
+        payload = execution_adapter_paper_execution_to_payload(paper_execution)
+        audit_payload = execution_adapter_paper_execution_to_audit_event_payload(paper_execution)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            store.record(audit_payload)
+            projected = execution_adapter_paper_execution_payload_from_audit_event(
+                store.get("execution-adapter-paper-execution-ccxt-live")
+            )
+
+        serialized = json.dumps(
+            {"payload": payload, "audit": audit_payload, "projected": projected},
+            sort_keys=True,
+        )
+        self.assertEqual(payload["manifestValidationId"], validation_id)
+        self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
+        self.assertIsNotNone(projected)
+        self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmitted"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertFalse(payload["routeExecuted"])
+        self.assertTrue(payload["paperFillRecorded"])
+        self.assertNotIn("adapter-paper-execution-validation-private-key-should-not-leak", serialized)
+
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
         from http.client import HTTPConnection
@@ -5729,6 +9261,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import WatchlistCacheRefreshRunStore
         from quant_core.domain import DataQuality, OHLCVBar
 
         class RecordingKlineAdapter:
@@ -5759,6 +9292,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
             class TestHandler(QuantApiHandler):
                 cache = MarketDataCache(f"{tmp}/market.sqlite")
+                watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
                 kline_adapter = adapter
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
@@ -5782,6 +9316,9 @@ class QuantCoreContractTest(unittest.TestCase):
                 )
                 response = connection.getresponse()
                 payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", "/api/cache/watchlist-refreshes?limit=1")
+                history_response = connection.getresponse()
+                history_payload = json.loads(history_response.read().decode("utf-8"))
             finally:
                 connection.close()
                 server.shutdown()
@@ -5793,9 +9330,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["refresh"]["overrideAuditEventId"], "market-data-refresh-override-api")
         self.assertEqual(payload["refresh"]["upsertedRows"], 3)
         self.assertEqual(payload["refresh"]["quality"]["source"], "test-kline")
+        self.assertEqual(payload["watchlistRefresh"]["overrideAuditEventId"], "market-data-refresh-override-api")
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["totalSymbols"], 1)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["refreshed"], 1)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["upsertedRows"], 3)
+        self.assertEqual(payload["watchlistRefresh"]["items"][0]["market"], "ashare")
+        self.assertEqual(payload["watchlistRefresh"]["items"][0]["symbol"], "600000")
+        self.assertEqual(payload["watchlistRefresh"]["items"][0]["timeframe"], "1d")
+        self.assertEqual(payload["watchlistRefresh"]["items"][0]["status"], "refreshed")
         self.assertEqual(payload["settings"]["cache"]["rowCount"], 3)
         self.assertEqual(payload["settings"]["cache"]["contexts"][0]["symbol"], "600000")
         self.assertEqual(payload["settings"]["cache"]["freshnessSummary"]["fresh"], 1)
+        self.assertEqual(history_response.status, 200)
+        self.assertEqual(history_payload["watchlistRefreshes"][0]["runId"], payload["watchlistRefresh"]["runId"])
+        self.assertEqual(history_payload["watchlistRefreshes"][0]["summary"]["refreshed"], 1)
 
     def test_watchlist_cache_refresh_api_records_refresh_run(self):
         import json
@@ -6118,6 +9666,20 @@ class QuantCoreContractTest(unittest.TestCase):
                 "warnings": [],
                 "rows": 1,
                 "hash": "snapshot-paper-store",
+                "preparationEvidence": {
+                    "kind": "watchlist_cache_refresh",
+                    "runId": "cache-refresh-paper-store",
+                    "createdAt": "2026-05-26T07:55:00+00:00",
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "name": "浦发银行",
+                    "timeframe": "1d",
+                    "status": "refreshed",
+                    "requestedLimit": 500,
+                    "upsertedRows": 1,
+                    "quality": {"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
+                    "error": None,
+                },
                 "bars": [
                     {
                         "timestamp": "2026-05-26T08:00:00+00:00",
@@ -6148,6 +9710,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["orders"][0]["status"], "filled")
         self.assertEqual(payload["account"]["positions"], {"600000": 2100})
         self.assertEqual([gate["id"] for gate in payload["gates"]], ["audit-run-bound", "paper-risk-check", "live-route-blocked"])
+        self.assertEqual(payload["preparationEvidence"]["runId"], "cache-refresh-paper-store")
+        self.assertEqual(payload["preparationEvidence"]["quality"]["source"], "tencent")
         self.assertTrue(payload["gates"][0]["passed"])
         self.assertFalse(payload["gates"][2]["passed"])
 
@@ -8795,6 +12359,20 @@ class QuantCoreContractTest(unittest.TestCase):
                 "warnings": [],
                 "rows": 1,
                 "hash": "snapshot-paper-api",
+                "preparationEvidence": {
+                    "kind": "watchlist_cache_refresh",
+                    "runId": "cache-refresh-paper-api",
+                    "createdAt": "2026-05-26T07:55:00+00:00",
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "name": "浦发银行",
+                    "timeframe": "1d",
+                    "status": "refreshed",
+                    "requestedLimit": 500,
+                    "upsertedRows": 1,
+                    "quality": {"source": "tencent", "isComplete": True, "warnings": [], "rows": 1},
+                    "error": None,
+                },
                 "bars": [
                     {
                         "timestamp": "2026-05-26T08:00:00+00:00",
@@ -8849,12 +12427,14 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(response.status, 201)
         self.assertEqual(payload["execution"]["runId"], "run-paper-api")
+        self.assertEqual(payload["execution"]["preparationEvidence"]["runId"], "cache-refresh-paper-api")
         self.assertEqual(payload["execution"]["orders"][0]["status"], "filled")
         self.assertEqual(payload["promotion"]["runId"], "run-paper-api")
         self.assertEqual(payload["promotion"]["status"], "certification_pending")
         self.assertEqual(payload["promotion"]["latestPaperExecutionId"], payload["execution"]["executionId"])
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
+        self.assertEqual(list_payload["executions"][0]["preparationEvidence"]["quality"]["source"], "tencent")
 
     def test_portfolio_backtest_api_combines_audited_runs_by_weight(self):
         import json
@@ -9048,6 +12628,97 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(len(audit_payload["events"]), 1)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
 
+    def test_portfolio_paper_order_api_blocks_duplicate_batch_submission(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PortfolioPaperOrderStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-duplicate-batch",
+                        "portfolioName": "A-share duplicate basket",
+                        "source": "portfolio_backtest",
+                        "orders": [
+                            {
+                                "timestamp": "2026-05-26T08:00:00+00:00",
+                                "eventType": "portfolio_paper_order",
+                                "orderId": "portfolio-paper-run-a-buy",
+                                "symbol": "600000",
+                                "sourceRunId": "run-a",
+                                "side": "buy",
+                                "notionalValue": 60000.0,
+                                "quantity": 6500.0,
+                                "status": "pending_review",
+                                "riskStatus": "review",
+                                "reason": "Duplicate clicks should not create duplicate paper batches.",
+                            }
+                        ],
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-orders",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                first_response = connection.getresponse()
+                first_payload = json.loads(first_response.read().decode("utf-8"))
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-orders",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                duplicate_response = connection.getresponse()
+                duplicate_payload = json.loads(duplicate_response.read().decode("utf-8"))
+                connection.request("GET", "/api/portfolio/paper-orders?baseRunId=portfolio-run-duplicate-batch")
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=portfolio_paper_order_batch&runId=portfolio-run-duplicate-batch",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(first_response.status, 201)
+        self.assertEqual(duplicate_response.status, 409)
+        self.assertEqual(duplicate_payload["error"], "portfolio_paper_order_batch_already_recorded")
+        self.assertEqual(duplicate_payload["detail"], first_payload["portfolioPaperOrderBatch"]["batchId"])
+        self.assertEqual(duplicate_payload["existingBatch"]["batchId"], first_payload["portfolioPaperOrderBatch"]["batchId"])
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(len(list_payload["portfolioPaperOrderBatches"]), 1)
+        self.assertEqual(
+            list_payload["portfolioPaperOrderBatches"][0]["batchId"],
+            first_payload["portfolioPaperOrderBatch"]["batchId"],
+        )
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(len(audit_payload["events"]), 1)
+        self.assertEqual(audit_payload["events"][0]["eventId"], first_payload["auditEvent"]["eventId"])
+
     def test_portfolio_paper_order_approval_api_records_review_and_updates_lifecycle(self):
         import json
         from http.client import HTTPConnection
@@ -9153,6 +12824,153 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(audit_response.status, 200)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
 
+    def test_portfolio_paper_order_approval_api_blocks_changes_after_simulation_fill(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/portfolio_order_simulations.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            portfolio_order_store.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id="portfolio-run-approval-lock",
+                    portfolio_name="A-share approval lock basket",
+                    batch_id="portfolio-paper-batch-approval-lock",
+                    created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-run-locked-buy",
+                            "symbol": "600000",
+                            "sourceRunId": "run-locked-buy",
+                            "side": "buy",
+                            "notionalValue": 9200.0,
+                            "quantity": 1000.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "Filled paper order approval must become immutable.",
+                        }
+                    ],
+                )
+            )
+            portfolio_order_approval_store.record(
+                create_portfolio_paper_order_approval(
+                    base_run_id="portfolio-run-approval-lock",
+                    batch_id="portfolio-paper-batch-approval-lock",
+                    order_id="portfolio-paper-run-locked-buy",
+                    approved=True,
+                    reviewer="operator-a",
+                    reviewed_at="2026-05-26T08:45:00+00:00",
+                    reason="Approved before simulation.",
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = portfolio_order_simulation_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                simulation_body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-approval-lock",
+                        "batchId": "portfolio-paper-batch-approval-lock",
+                        "orderId": "portfolio-paper-run-locked-buy",
+                        "simulatedAt": "2026-05-26T08:46:00+00:00",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-simulations",
+                    body=simulation_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(simulation_body))},
+                )
+                simulation_response = connection.getresponse()
+                simulation_payload = json.loads(simulation_response.read().decode("utf-8"))
+                rejection_body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-approval-lock",
+                        "batchId": "portfolio-paper-batch-approval-lock",
+                        "orderId": "portfolio-paper-run-locked-buy",
+                        "approved": False,
+                        "reviewer": "operator-b",
+                        "reviewedAt": "2026-05-26T08:50:00+00:00",
+                        "reason": "Attempted reversal after simulated fill.",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-approvals",
+                    body=rejection_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(rejection_body))},
+                )
+                rejection_response = connection.getresponse()
+                rejection_payload = json.loads(rejection_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-approvals?baseRunId=portfolio-run-approval-lock&batchId=portfolio-paper-batch-approval-lock",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=portfolio_paper_order_approval&runId=portfolio-run-approval-lock",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(simulation_response.status, 201)
+        self.assertEqual(simulation_payload["simulation"]["orderState"], "filled")
+        self.assertEqual(rejection_response.status, 409)
+        self.assertEqual(rejection_payload["error"], "portfolio_paper_order_approval_locked_after_simulation")
+        self.assertEqual(rejection_payload["detail"], "portfolio-paper-run-locked-buy")
+        self.assertIn("existingApproval", rejection_payload)
+        self.assertIn("existingSimulation", rejection_payload)
+        self.assertIn("approvals", rejection_payload)
+        self.assertIn("portfolioPaperOrderLifecycle", rejection_payload)
+        self.assertEqual(rejection_payload["existingApproval"]["orderId"], "portfolio-paper-run-locked-buy")
+        self.assertTrue(rejection_payload["existingApproval"]["approved"])
+        self.assertEqual(rejection_payload["existingApproval"]["reviewer"], "operator-a")
+        self.assertEqual(rejection_payload["existingSimulation"]["orderId"], "portfolio-paper-run-locked-buy")
+        self.assertEqual(rejection_payload["existingSimulation"]["fillStatus"], "filled")
+        self.assertEqual(len(rejection_payload["approvals"]), 1)
+        self.assertEqual(
+            rejection_payload["portfolioPaperOrderLifecycle"][0]["orderId"],
+            "portfolio-paper-run-locked-buy",
+        )
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(len(list_payload["approvals"]), 1)
+        self.assertTrue(list_payload["approvals"][0]["approved"])
+        self.assertEqual(list_payload["approvals"][0]["reviewer"], "operator-a")
+        self.assertEqual(list_payload["portfolioPaperOrderLifecycle"][0]["state"], "ready_for_simulation")
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(audit_payload["events"], [])
+
     def test_portfolio_paper_order_simulation_api_fills_ready_orders_and_records_audit_event(self):
         import json
         from http.client import HTTPConnection
@@ -9226,6 +13044,17 @@ class QuantCoreContractTest(unittest.TestCase):
                         "batchId": "portfolio-paper-batch-simulation",
                         "orderId": "portfolio-paper-run-a-buy",
                         "simulatedAt": "2026-05-26T08:46:00+00:00",
+                        "adapterPaperExecutionId": "execution-adapter-paper-execution-portfolio-simulation",
+                        "adapterManifestValidationId": "execution-adapter-secret-manifest-validation-portfolio-simulation",
+                        "adapterPaperExecutionEvidence": {
+                            "fillSummary": "filled buy 1000 600000 @ 9.2",
+                            "paperFillRecorded": True,
+                            "orderSubmitted": False,
+                            "liveOrderSubmitted": False,
+                            "routeExecuted": False,
+                            "manifestValidationId": "execution-adapter-secret-manifest-validation-portfolio-simulation",
+                            "privateKey": "portfolio-simulation-adapter-private-key-should-not-leak",
+                        },
                     }
                 ).encode("utf-8")
                 connection.request(
@@ -9264,19 +13093,917 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["simulation"]["fillPrice"], 9.2)
         self.assertEqual(payload["simulation"]["quantity"], 1000.0)
         self.assertEqual(payload["simulation"]["notionalValue"], 9200.0)
+        self.assertEqual(payload["simulation"]["routeRisk"]["status"], "passed")
+        self.assertEqual(payload["simulation"]["routeRisk"]["cashAfter"], 90800.0)
+        self.assertEqual(
+            payload["simulation"]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-portfolio-simulation",
+        )
+        self.assertEqual(
+            payload["simulation"]["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-portfolio-simulation",
+        )
+        self.assertEqual(
+            payload["simulation"]["adapterPaperExecutionEvidence"]["fillSummary"],
+            "filled buy 1000 600000 @ 9.2",
+        )
         self.assertTrue(payload["simulation"]["paperOnly"])
         self.assertTrue(payload["simulation"]["liveExecutionBlocked"])
         self.assertEqual(payload["portfolioPaperOrderLifecycle"][0]["state"], "ready_for_simulation")
         self.assertEqual(payload["auditEvent"]["eventType"], "portfolio_paper_order_simulation")
         self.assertEqual(payload["auditEvent"]["metadata"]["orderState"], "filled")
         self.assertEqual(payload["auditEvent"]["metadata"]["approvalState"], "ready_for_simulation")
+        self.assertEqual(payload["auditEvent"]["metadata"]["routeRiskStatus"], "passed")
+        self.assertEqual(
+            payload["auditEvent"]["metadata"]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-portfolio-simulation",
+        )
+        self.assertEqual(
+            payload["auditEvent"]["metadata"]["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-portfolio-simulation",
+        )
         self.assertEqual(list_response.status, 200)
         self.assertEqual(len(list_payload["simulations"]), 1)
         self.assertEqual(list_payload["simulations"][0]["orderId"], "portfolio-paper-run-a-buy")
+        self.assertEqual(
+            list_payload["simulations"][0]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-portfolio-simulation",
+        )
         self.assertEqual(audit_response.status, 200)
         self.assertEqual(audit_payload["events"][0]["eventId"], payload["auditEvent"]["eventId"])
+        serialized = json.dumps(
+            {"payload": payload, "list": list_payload, "audit": audit_payload},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertNotIn("portfolio-simulation-adapter-private-key-should-not-leak", serialized)
+
+    def test_portfolio_paper_order_simulation_api_blocks_duplicate_single_order(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/portfolio_order_simulations.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            portfolio_order_store.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id="portfolio-run-simulation-idempotency",
+                    portfolio_name="A-share idempotency basket",
+                    batch_id="portfolio-paper-batch-idempotency",
+                    created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-idempotent-buy",
+                            "symbol": "600000",
+                            "sourceRunId": "run-idempotent-buy",
+                            "side": "buy",
+                            "notionalValue": 9200.0,
+                            "quantity": 1000.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "Approved order should only be paper-filled once.",
+                        }
+                    ],
+                )
+            )
+            portfolio_order_approval_store.record(
+                create_portfolio_paper_order_approval(
+                    base_run_id="portfolio-run-simulation-idempotency",
+                    batch_id="portfolio-paper-batch-idempotency",
+                    order_id="portfolio-paper-idempotent-buy",
+                    approved=True,
+                    reviewer="operator-a",
+                    reviewed_at="2026-05-26T08:45:00+00:00",
+                    reason="Approved for one paper simulation only.",
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = portfolio_order_simulation_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                first_body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-simulation-idempotency",
+                        "batchId": "portfolio-paper-batch-idempotency",
+                        "orderId": "portfolio-paper-idempotent-buy",
+                        "simulatedAt": "2026-05-26T08:46:00+00:00",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-simulations",
+                    body=first_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(first_body))},
+                )
+                first_response = connection.getresponse()
+                first_payload = json.loads(first_response.read().decode("utf-8"))
+                duplicate_body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-simulation-idempotency",
+                        "batchId": "portfolio-paper-batch-idempotency",
+                        "orderId": "portfolio-paper-idempotent-buy",
+                        "simulatedAt": "2026-05-26T08:50:00+00:00",
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-simulations",
+                    body=duplicate_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(duplicate_body))},
+                )
+                duplicate_response = connection.getresponse()
+                duplicate_payload = json.loads(duplicate_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-simulation-idempotency&batchId=portfolio-paper-batch-idempotency",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=portfolio_paper_order_simulation&runId=portfolio-run-simulation-idempotency",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(first_response.status, 201)
+        self.assertEqual(first_payload["simulation"]["orderId"], "portfolio-paper-idempotent-buy")
+        self.assertEqual(duplicate_response.status, 409)
+        self.assertEqual(duplicate_payload["error"], "portfolio_paper_order_simulation_already_recorded")
+        self.assertEqual(duplicate_payload["detail"], "portfolio-paper-idempotent-buy")
+        self.assertIn("existingSimulation", duplicate_payload)
+        self.assertIn("simulations", duplicate_payload)
+        self.assertIn("portfolioPaperOrderLifecycle", duplicate_payload)
+        self.assertEqual(duplicate_payload["existingSimulation"]["orderId"], "portfolio-paper-idempotent-buy")
+        self.assertEqual(duplicate_payload["existingSimulation"]["simulatedAt"], "2026-05-26T08:46:00+00:00")
+        self.assertEqual(len(duplicate_payload["simulations"]), 1)
+        self.assertEqual(duplicate_payload["simulations"][0]["simulationId"], first_payload["simulation"]["simulationId"])
+        self.assertEqual(
+            duplicate_payload["portfolioPaperOrderLifecycle"][0]["orderId"],
+            "portfolio-paper-idempotent-buy",
+        )
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(len(list_payload["simulations"]), 1)
+        self.assertEqual(list_payload["simulations"][0]["simulatedAt"], "2026-05-26T08:46:00+00:00")
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(len(audit_payload["events"]), 1)
+        self.assertEqual(audit_payload["events"][0]["eventId"], first_payload["auditEvent"]["eventId"])
+
+    def test_portfolio_paper_order_simulation_api_blocks_route_risk_limit_breaches(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/portfolio_order_simulations.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            portfolio_order_store.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id="portfolio-run-route-risk-api",
+                    portfolio_name="A-share route risk basket",
+                    batch_id="portfolio-paper-batch-route-risk",
+                    created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-risk-buy",
+                            "symbol": "600000",
+                            "sourceRunId": "run-risk-buy",
+                            "side": "buy",
+                            "notionalValue": 9200.0,
+                            "quantity": 1000.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "Route risk should still guard the simulator.",
+                        }
+                    ],
+                )
+            )
+            portfolio_order_approval_store.record(
+                create_portfolio_paper_order_approval(
+                    base_run_id="portfolio-run-route-risk-api",
+                    batch_id="portfolio-paper-batch-route-risk",
+                    order_id="portfolio-paper-risk-buy",
+                    approved=True,
+                    reviewer="operator-risk",
+                    reviewed_at="2026-05-26T08:45:00+00:00",
+                    reason="Approved for guarded paper simulation only.",
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = portfolio_order_simulation_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-route-risk-api",
+                        "batchId": "portfolio-paper-batch-route-risk",
+                        "orderId": "portfolio-paper-risk-buy",
+                        "simulatedAt": "2026-05-26T08:46:00+00:00",
+                        "routeRisk": {
+                            "initialCash": 5000,
+                            "minCashAfter": 0,
+                            "maxSymbolNotional": 10000,
+                            "maxBatchNotional": 10000,
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-simulations",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-route-risk-api&batchId=portfolio-paper-batch-route-risk",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "invalid_portfolio_paper_order_simulation")
+        self.assertIn("portfolio_paper_order_simulation_route_risk_blocked", payload["detail"])
+        self.assertIn("cash_after_below_minimum", payload["detail"])
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(list_payload["simulations"], [])
+
+    def test_portfolio_paper_order_simulation_blocks_sell_above_replayed_position(self):
+        from quant_core.execution import (
+            PortfolioPaperOrderSimulation,
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-sell-position-guard",
+            portfolio_name="A-share simulation basket",
+            batch_id="portfolio-paper-batch-sell-position-guard",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-sell-too-much",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "sell",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Sell should not exceed replayed paper position.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-sell-position-guard",
+            batch_id="portfolio-paper-batch-sell-position-guard",
+            order_id="portfolio-paper-sell-too-much",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+        existing_buy = PortfolioPaperOrderSimulation(
+            simulation_id="portfolio-paper-order-simulation-existing-buy",
+            base_run_id="portfolio-run-sell-position-guard",
+            batch_id="portfolio-paper-batch-existing-buy",
+            order_id="portfolio-paper-existing-buy",
+            simulated_at=datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc),
+            mode="portfolio_paper_order_simulation",
+            symbol="600000",
+            source_run_id="run-a",
+            side="buy",
+            quantity=500.0,
+            fill_price=9.2,
+            notional_value=4600.0,
+            order_state="filled",
+            fill_status="filled",
+            reason="Existing replayed paper position.",
+            approved_by="operator-a",
+        )
+
+        with self.assertRaisesRegex(ValueError, "insufficient_symbol_position"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                existing_simulations=[existing_buy],
+                simulated_at="2026-05-26T08:46:00+00:00",
+            )
+
+    def test_portfolio_paper_order_simulation_batch_api_fills_until_route_guard_blocks(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/portfolio_order_simulations.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            portfolio_order_store.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id="portfolio-run-batch-simulation-api",
+                    portfolio_name="A-share batch route basket",
+                    batch_id="portfolio-paper-batch-batch-simulation",
+                    created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-batch-buy-a",
+                            "symbol": "600000",
+                            "sourceRunId": "run-batch-a",
+                            "side": "buy",
+                            "notionalValue": 9200.0,
+                            "quantity": 1000.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "First batch order should fill.",
+                        },
+                        {
+                            "timestamp": "2026-05-26T08:05:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-batch-buy-b",
+                            "symbol": "000300",
+                            "sourceRunId": "run-batch-b",
+                            "side": "buy",
+                            "notionalValue": 7000.0,
+                            "quantity": 100.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "Second batch order should be blocked by batch cap.",
+                        },
+                    ],
+                )
+            )
+            for order_id in ["portfolio-paper-batch-buy-a", "portfolio-paper-batch-buy-b"]:
+                portfolio_order_approval_store.record(
+                    create_portfolio_paper_order_approval(
+                        base_run_id="portfolio-run-batch-simulation-api",
+                        batch_id="portfolio-paper-batch-batch-simulation",
+                        order_id=order_id,
+                        approved=True,
+                        reviewer="operator-batch",
+                        reviewed_at="2026-05-26T08:45:00+00:00",
+                        reason="Approved for guarded batch simulation only.",
+                    )
+                )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = portfolio_order_simulation_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-batch-simulation-api",
+                        "batchId": "portfolio-paper-batch-batch-simulation",
+                        "orderIds": ["portfolio-paper-batch-buy-a", "portfolio-paper-batch-buy-b"],
+                        "simulatedAt": "2026-05-26T08:46:00+00:00",
+                        "routeRisk": {
+                            "initialCash": 30000,
+                            "minCashAfter": 1000,
+                            "maxSymbolNotional": 30000,
+                            "maxBatchNotional": 15000,
+                        },
+                        "adapterPaperExecutionEvidenceByOrderId": {
+                            "portfolio-paper-batch-buy-a": {
+                                "adapterPaperExecutionId": "execution-adapter-paper-execution-batch-a",
+                                "adapterManifestValidationId": "execution-adapter-secret-manifest-validation-batch-a",
+                                "adapterPaperExecutionEvidence": {
+                                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                                    "manifestValidationId": "execution-adapter-secret-manifest-validation-batch-a",
+                                    "paperFillRecorded": True,
+                                    "liveOrderSubmitted": False,
+                                    "privateKey": "batch-adapter-private-key-should-not-leak",
+                                },
+                            },
+                            "portfolio-paper-batch-buy-b": {
+                                "adapterPaperExecutionId": "execution-adapter-paper-execution-batch-b",
+                                "adapterManifestValidationId": "execution-adapter-secret-manifest-validation-batch-b",
+                                "adapterPaperExecutionEvidence": {
+                                    "fillSummary": "blocked buy 100 000300",
+                                    "manifestValidationId": "execution-adapter-secret-manifest-validation-batch-b",
+                                    "paperFillRecorded": False,
+                                    "liveOrderSubmitted": False,
+                                },
+                            },
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-simulations/batch",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-batch-simulation-api&batchId=portfolio-paper-batch-batch-simulation",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=portfolio_paper_order_simulation&runId=portfolio-run-batch-simulation-api",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["batchSimulation"]["status"], "partial")
+        self.assertEqual(payload["batchSimulation"]["filledCount"], 1)
+        self.assertEqual(payload["batchSimulation"]["blockedCount"], 1)
+        self.assertEqual(payload["batchSimulation"]["blockedOrders"][0]["orderId"], "portfolio-paper-batch-buy-b")
+        self.assertIn("batch_notional_limit_exceeded", payload["batchSimulation"]["blockedOrders"][0]["detail"])
+        self.assertEqual(len(payload["simulations"]), 1)
+        self.assertEqual(payload["simulations"][0]["orderId"], "portfolio-paper-batch-buy-a")
+        self.assertEqual(payload["simulations"][0]["routeRisk"]["batchNotionalAfter"], 9200.0)
+        self.assertEqual(
+            payload["simulations"][0]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-batch-a",
+        )
+        self.assertEqual(
+            payload["simulations"][0]["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-batch-a",
+        )
+        self.assertEqual(payload["simulations"][0]["adapterPaperExecutionEvidence"]["privateKey"], "[redacted]")
+        self.assertNotIn("batch-adapter-private-key-should-not-leak", json.dumps(payload))
+        self.assertEqual(len(payload["auditEvents"]), 1)
+        self.assertEqual(payload["auditEvents"][0]["eventType"], "portfolio_paper_order_simulation")
+        self.assertEqual(
+            payload["auditEvents"][0]["metadata"]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-batch-a",
+        )
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(len(list_payload["simulations"]), 1)
+        self.assertEqual(list_payload["simulations"][0]["orderId"], "portfolio-paper-batch-buy-a")
+        self.assertEqual(
+            list_payload["simulations"][0]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-batch-a",
+        )
+        self.assertEqual(list_payload["simulations"][0]["adapterPaperExecutionEvidence"]["privateKey"], "[redacted]")
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(len(audit_payload["events"]), 1)
+
+    def test_portfolio_paper_order_simulation_batch_api_blocks_live_route_adapter_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            portfolio_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            portfolio_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/portfolio_order_approvals.sqlite")
+            portfolio_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/portfolio_order_simulations.sqlite")
+            portfolio_order_audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            portfolio_order_store.record(
+                create_portfolio_paper_order_batch(
+                    base_run_id="portfolio-run-batch-live-route-evidence",
+                    portfolio_name="A-share simulation basket",
+                    batch_id="portfolio-paper-batch-live-route-evidence",
+                    created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+                    orders=[
+                        {
+                            "timestamp": "2026-05-26T08:00:00+00:00",
+                            "eventType": "portfolio_paper_order",
+                            "orderId": "portfolio-paper-batch-live-route-buy",
+                            "symbol": "600000",
+                            "sourceRunId": "run-a",
+                            "side": "buy",
+                            "notionalValue": 9200.0,
+                            "quantity": 1000.0,
+                            "status": "pending_review",
+                            "riskStatus": "passed",
+                            "reason": "Live route adapter evidence should block batch simulation.",
+                        }
+                    ],
+                )
+            )
+            portfolio_order_approval_store.record(
+                create_portfolio_paper_order_approval(
+                    base_run_id="portfolio-run-batch-live-route-evidence",
+                    batch_id="portfolio-paper-batch-live-route-evidence",
+                    order_id="portfolio-paper-batch-live-route-buy",
+                    approved=True,
+                    reviewer="operator-a",
+                    reviewed_at="2026-05-26T08:45:00+00:00",
+                    reason="Approved for paper simulation only.",
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                portfolio_paper_order_store = portfolio_order_store
+                portfolio_paper_order_approval_store = portfolio_order_approval_store
+                portfolio_paper_order_simulation_store = portfolio_order_simulation_store
+                audit_event_store = portfolio_order_audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "baseRunId": "portfolio-run-batch-live-route-evidence",
+                        "batchId": "portfolio-paper-batch-live-route-evidence",
+                        "orderIds": ["portfolio-paper-batch-live-route-buy"],
+                        "simulatedAt": "2026-05-26T08:46:00+00:00",
+                        "adapterPaperExecutionEvidenceByOrderId": {
+                            "portfolio-paper-batch-live-route-buy": {
+                                "adapterPaperExecutionId": "execution-adapter-paper-execution-live-route",
+                                "adapterManifestValidationId": "execution-adapter-secret-manifest-validation-live-route",
+                                "adapterPaperExecutionEvidence": {
+                                    "adapterPaperExecutionId": "execution-adapter-paper-execution-live-route",
+                                    "manifestValidationId": "execution-adapter-secret-manifest-validation-live-route",
+                                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                                    "orderSubmitted": False,
+                                    "liveOrderSubmitted": True,
+                                    "routeExecuted": False,
+                                },
+                            },
+                        },
+                    }
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/portfolio/paper-order-simulations/batch",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-batch-live-route-evidence&batchId=portfolio-paper-batch-live-route-evidence",
+                )
+                list_response = connection.getresponse()
+                list_payload = json.loads(list_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 409)
+        self.assertEqual(payload["batchSimulation"]["status"], "blocked")
+        self.assertEqual(payload["batchSimulation"]["filledCount"], 0)
+        self.assertEqual(payload["batchSimulation"]["blockedCount"], 1)
+        self.assertIn(
+            "portfolio_paper_order_simulation_adapter_live_order_submitted",
+            payload["batchSimulation"]["blockedOrders"][0]["detail"],
+        )
+        self.assertEqual(list_response.status, 200)
+        self.assertEqual(list_payload["simulations"], [])
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_evidence_id_mismatch(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-state-evidence-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-state-evidence-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Evidence mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-state-evidence-mismatch",
+            batch_id="portfolio-paper-batch-state-evidence-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_execution_id_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-other",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_manifest_evidence_mismatch(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-state-manifest-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-state-manifest-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Manifest evidence mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-state-manifest-mismatch",
+            batch_id="portfolio-paper-batch-state-manifest-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_manifest_validation_id_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-other",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_live_route_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-live-route-evidence",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-live-route-evidence",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Live route evidence should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-live-route-evidence",
+            batch_id="portfolio-paper-batch-live-route-evidence",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_route_executed"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": True,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_submitted_order_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-submitted-order-evidence",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-submitted-order-evidence",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Submitted adapter order evidence should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-submitted-order-evidence",
+            batch_id="portfolio-paper-batch-submitted-order-evidence",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_submitted"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "orderSubmitted": True,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+            )
 
     def test_portfolio_paper_order_state_history_builds_order_timeline(self):
+        import json
+
         from quant_core.execution import (
             build_portfolio_paper_order_lifecycle,
             build_portfolio_paper_order_state_history,
@@ -9324,6 +14051,15 @@ class QuantCoreContractTest(unittest.TestCase):
             batch=batch,
             lifecycle_row=lifecycle[0],
             simulated_at="2026-05-26T08:46:00+00:00",
+            adapter_paper_execution_id="execution-adapter-paper-execution-state-history",
+            adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-state-history",
+            adapter_paper_execution_evidence={
+                "fillSummary": "filled buy 1000 600000 @ 9.2",
+                "manifestValidationId": "execution-adapter-secret-manifest-validation-state-history",
+                "paperFillRecorded": True,
+                "liveOrderSubmitted": False,
+                "privateKey": "state-history-adapter-private-key-should-not-leak",
+            },
         )
 
         history = build_portfolio_paper_order_state_history(
@@ -9354,6 +14090,16 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(order["events"][1]["actor"], "operator-a")
         self.assertEqual(order["events"][2]["source"], "paper-simulator")
+        self.assertEqual(
+            order["events"][2]["metadata"]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-state-history",
+        )
+        self.assertEqual(
+            order["events"][2]["metadata"]["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-state-history",
+        )
+        self.assertEqual(order["events"][2]["metadata"]["adapterPaperExecutionEvidence"]["privateKey"], "[redacted]")
+        self.assertNotIn("state-history-adapter-private-key-should-not-leak", json.dumps(history))
         self.assertTrue(order["events"][3]["liveExecutionBlocked"])
 
     def test_portfolio_paper_order_state_history_api_returns_batch_timeline(self):
@@ -9454,6 +14200,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["stateHistory"]["liveExecutionBlocked"])
 
     def test_portfolio_paper_order_replay_rebuilds_cash_positions_and_orders(self):
+        import json
+
         from quant_core.execution import (
             PortfolioPaperOrderSimulation,
             build_portfolio_paper_order_replay,
@@ -9495,6 +14243,15 @@ class QuantCoreContractTest(unittest.TestCase):
                 fill_status="filled",
                 reason="First fill.",
                 approved_by="operator-a",
+                adapter_paper_execution_id="execution-adapter-paper-execution-replay-early",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-replay-early",
+                adapter_paper_execution_evidence={
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-replay-early",
+                    "paperFillRecorded": True,
+                    "liveOrderSubmitted": False,
+                    "privateKey": "replay-adapter-private-key-should-not-leak",
+                },
             ),
         ]
 
@@ -9517,6 +14274,16 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertAlmostEqual(replay["positions"][0]["avgCost"], 9.466667, places=6)
         self.assertEqual([order["orderId"] for order in replay["orders"]], ["order-buy-early", "order-buy-late"])
         self.assertEqual(replay["orders"][0]["cashAfter"], 40800.0)
+        self.assertEqual(
+            replay["orders"][0]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-replay-early",
+        )
+        self.assertEqual(
+            replay["orders"][0]["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-replay-early",
+        )
+        self.assertEqual(replay["orders"][0]["adapterPaperExecutionEvidence"]["privateKey"], "[redacted]")
+        self.assertNotIn("replay-adapter-private-key-should-not-leak", json.dumps(replay))
         self.assertTrue(replay["paperOnly"])
         self.assertTrue(replay["liveExecutionBlocked"])
 
@@ -12357,6 +17124,164 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(export["executionHandoff"]["requiredGates"][0]["id"], "adapter-certified")
         self.assertFalse(export["executionHandoff"]["requiredGates"][0]["passed"])
 
+    def test_research_run_export_includes_adapter_paper_execution_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            PaperExecutionStore,
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+        )
+        from quant_core.runs import ResearchRunStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            audit_event_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            store.record(
+                self._sample_research_run_audit(
+                    run_id="run-adapter-paper-export",
+                    strategy_revision="rev-adapter-paper-export",
+                )
+            )
+            audit_event_store.record(
+                {
+                    "schemaVersion": 1,
+                    "eventId": "execution-adapter-paper-execution-export",
+                    "eventType": "execution_adapter_paper_execution",
+                    "runId": "",
+                    "createdAt": "2026-06-09T11:25:00+00:00",
+                    "stage": "execution-adapter-paper-execution",
+                    "source": "execution-adapter-ledger",
+                    "summary": "ashare-live adapter paper execution recorded as paper_execution_recorded.",
+                    "detail": "Adapter paper execution records local simulated fill evidence only.",
+                    "metadata": {
+                        "adapterPaperExecutionId": "execution-adapter-paper-execution-export",
+                        "adapterOpsStateId": "execution-adapter-ops-state-export",
+                        "paperRouteRunbookId": "execution-adapter-paper-route-runbook-export",
+                        "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-export",
+                        "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-export",
+                        "productionRouteReviewId": "execution-adapter-production-route-review-export",
+                        "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-export",
+                        "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-export",
+                        "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-export",
+                        "humanConfirmationId": "execution-adapter-human-confirmation-export",
+                        "orchestrationExecutionId": "execution-adapter-orchestration-execution-export",
+                        "dryRunId": "execution-adapter-orchestration-dry-run-export",
+                        "acceptanceId": "execution-adapter-runtime-reload-acceptance-export",
+                        "executionId": "execution-adapter-runtime-reload-execution-export",
+                        "planId": "execution-adapter-runtime-reload-plan-export",
+                        "bindingId": "execution-adapter-environment-binding-export",
+                        "materializationId": "execution-adapter-secret-materialization-export",
+                        "adapterId": "ashare-live",
+                        "market": "ashare",
+                        "route": "live",
+                        "status": "paper_execution_recorded",
+                        "operator": "paper-export-runner",
+                        "paperExecutionMode": "manual_adapter_paper_execution",
+                        "opsMode": "manual_adapter_ops_state",
+                        "runbookMode": "manual_paper_route_runbook",
+                        "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                        "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                        "reviewMode": "manual_production_route_review",
+                        "sandboxReviewMode": "manual_sandbox_probe_review",
+                        "probeExecutionMode": "manual_readonly_sandbox_probe",
+                        "probeMode": "manual_sandbox_probe_plan",
+                        "confirmationMode": "manual_final_human_confirmation",
+                        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                        "acceptanceMode": "manual_runtime_reload_acceptance",
+                        "executionMode": "manual_controlled_reload",
+                        "reloadMode": "manual_container_reload_plan",
+                        "maintenanceWindowId": "window-adapter-paper-export",
+                        "bindingMode": "container_env_reference",
+                        "manifestPath": "local-secret-store://ashare-live/sandbox",
+                        "requiredEnvVars": ["ASHARE_API_KEY", "ASHARE_API_SECRET"],
+                        "orderIntent": {"symbol": "600000", "side": "buy", "type": "limit", "quantity": 2100, "price": 9.21},
+                        "simulatedFill": {
+                            "fillId": "paper-fill-export",
+                            "status": "filled",
+                            "symbol": "600000",
+                            "side": "buy",
+                            "type": "limit",
+                            "quantity": 2100,
+                            "price": 9.21,
+                            "source": "local-paper-ledger",
+                            "orderSubmitted": False,
+                            "liveOrderSubmitted": False,
+                            "routeExecuted": False,
+                        },
+                        "paperExecutionSteps": [
+                            {"id": "ops-state-linked", "label": "Adapter ops state linked", "status": "recorded"},
+                            {"id": "simulated-fill-recorded", "label": "Simulated fill recorded", "status": "recorded"},
+                        ],
+                        "requiredConfirmationIds": [
+                            "ops-state-accepted",
+                            "paper-account-synced",
+                            "risk-budget-bound",
+                            "simulated-fill-generated",
+                            "operator-confirmed-no-live-routing",
+                        ],
+                        "confirmedConfirmationIds": [
+                            "ops-state-accepted",
+                            "paper-account-synced",
+                            "risk-budget-bound",
+                            "simulated-fill-generated",
+                            "operator-confirmed-no-live-routing",
+                        ],
+                        "blockedReasons": [],
+                        "metadata": {"source": "settings-panel"},
+                    },
+                }
+            )
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.run_store = store
+            TestHandler.audit_event_store = audit_event_store
+            TestHandler.paper_execution_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            TestHandler.portfolio_paper_order_store = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
+            TestHandler.portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(
+                f"{tmp}/portfolio_approvals.sqlite"
+            )
+            TestHandler.portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(
+                f"{tmp}/portfolio_simulations.sqlite"
+            )
+            TestHandler.ai_review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/research/runs/run-adapter-paper-export/export")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        export = payload["export"]
+        self.assertEqual(response.status, 200)
+        self.assertEqual(export["manifest"]["artifactCounts"]["adapterPaperExecutions"], 1)
+        self.assertEqual(
+            export["adapterPaperExecutions"][0]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-export",
+        )
+        self.assertEqual(export["adapterPaperExecutions"][0]["market"], "ashare")
+        self.assertEqual(export["adapterPaperExecutions"][0]["simulatedFill"]["status"], "filled")
+        self.assertFalse(export["adapterPaperExecutions"][0]["liveTradingAllowed"])
+        self.assertTrue(export["adapterPaperExecutions"][0]["paperOnly"])
+
     def test_research_run_export_import_preserves_research_note_evidence(self):
         from quant_core.runs import ResearchRunAudit, research_run_export_to_payload, research_run_import_to_audit
 
@@ -13932,6 +18857,14 @@ class QuantCoreContractTest(unittest.TestCase):
             batch=batch,
             lifecycle_row=lifecycle[0],
             simulated_at=datetime(2026, 5, 26, 8, 9, tzinfo=timezone.utc),
+            adapter_paper_execution_id="execution-adapter-paper-execution-portable",
+            adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-portable",
+            adapter_paper_execution_evidence={
+                "fillSummary": "filled buy 2100 600000 @ 9.21",
+                "manifestValidationId": "execution-adapter-secret-manifest-validation-portable",
+                "paperFillRecorded": True,
+                "privateKey": "portable-adapter-private-key-should-not-leak",
+            },
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -14047,6 +18980,15 @@ class QuantCoreContractTest(unittest.TestCase):
             export_payload["export"]["portfolioPaperOrderSimulations"][0]["simulationId"],
             "portfolio-paper-order-simulation-portfolio-paper-batch-api-portable-portfolio-paper-order-api-1",
         )
+        self.assertEqual(
+            export_payload["export"]["portfolioPaperOrderSimulations"][0]["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-portable",
+        )
+        self.assertEqual(
+            export_payload["export"]["portfolioPaperOrderSimulations"][0]["adapterPaperExecutionEvidence"]["privateKey"],
+            "[redacted]",
+        )
+        self.assertNotIn("portable-adapter-private-key-should-not-leak", json.dumps(export_payload["export"]))
         self.assertEqual(import_response.status, 201)
         self.assertEqual(import_payload["run"]["runId"], "run-portfolio-orders-portable")
         self.assertEqual(history_response.status, 200)
@@ -14062,6 +19004,14 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(simulation_history_response.status, 200)
         self.assertEqual(simulation_history_payload["simulations"][0]["fillStatus"], "filled")
         self.assertEqual(simulation_history_payload["simulations"][0]["fillPrice"], 9.210000)
+        self.assertEqual(
+            simulation_history_payload["simulations"][0]["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-portable",
+        )
+        self.assertEqual(
+            simulation_history_payload["simulations"][0]["adapterPaperExecutionEvidence"]["privateKey"],
+            "[redacted]",
+        )
 
     def test_research_run_export_import_preserves_ai_review_records(self):
         import json

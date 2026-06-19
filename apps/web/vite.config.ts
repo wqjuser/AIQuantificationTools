@@ -12,8 +12,19 @@ function vendorChunkName(id: string) {
     return "app-terminal-api";
   }
 
+  if (normalizedId.includes("/src/lib/i18n")) {
+    return "app-i18n";
+  }
+
   if (normalizedId.includes("/src/lib/backtest-report") || normalizedId.includes("/src/lib/chart-")) {
     return "app-research-models";
+  }
+
+  if (
+    normalizedId.includes("/src/components/PortfolioPaperOrderAuditLedgerPanel") ||
+    normalizedId.includes("/src/components/ExecutionAdapterPaperExecutionAuditLedgerPanel")
+  ) {
+    return "app-audit-panels";
   }
 
   if (!normalizedId.includes("node_modules/")) {

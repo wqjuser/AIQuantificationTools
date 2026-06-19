@@ -4,6 +4,9 @@ import {
   buildBacktestReportMarkdown,
   buildBacktestRunComparisonMatrixRows,
   buildPortfolioBacktestDiagnosticRows,
+  buildP0CurrentGapActionUrlSearch,
+  isExecutableP0CurrentGapActionId,
+  normalizeP0CurrentGapActionId,
   resolveBacktestAssumptions,
   workspaceFromResearchRunAudit,
   workspaceWithPrimaryWorkflows,
@@ -105,6 +108,7 @@ export interface ResearchRunExportManifest {
     decisions: number;
     aiRisks: number;
     paperExecutions?: number;
+    adapterPaperExecutions?: number;
     portfolioPaperOrderBatches?: number;
     portfolioPaperOrderApprovals?: number;
     portfolioPaperOrderSimulations?: number;
@@ -233,6 +237,7 @@ export interface ResearchRunExportPackage {
   researchRun: ResearchRunAudit;
   executionHandoff: ResearchRunExecutionHandoff;
   paperExecutions?: PaperExecutionRecord[];
+  adapterPaperExecutions?: ExecutionAdapterPaperExecutionResult[];
   portfolioPaperOrderBatches?: PortfolioPaperOrderBatch[];
   portfolioPaperOrderApprovals?: PortfolioPaperOrderApproval[];
   portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulation[];
@@ -306,6 +311,7 @@ export interface PaperExecutionRecord {
   account: PaperExecutionAccount;
   orders: PaperExecutionOrder[];
   gates: PaperExecutionGate[];
+  preparationEvidence?: ResearchRunDataPreparationEvidence;
 }
 
 export interface PromotionCandidateEvidence {
@@ -1635,6 +1641,54 @@ export interface ExecutionAdapterSecretMaterializationHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterSecretManifestValidationStatus = "blocked" | "validated";
+
+export interface ExecutionAdapterSecretManifestValidationResult {
+  schemaVersion: 1;
+  validationId: string;
+  materializationId: string;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSecretManifestValidationStatus;
+  operator: string;
+  recordedAt: string;
+  validationMode: string;
+  referenceName: string;
+  backend: string;
+  manifestPath: string;
+  fingerprint: string;
+  requiredEnvVars: string[];
+  coveredEnvVars: string[];
+  blockedReasons: string[];
+  manifestSummary: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSecretManifestValidationRequest {
+  adapterId: string;
+  materializationId: string;
+  operator?: string;
+  manifestPath?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterSecretManifestValidationRecordResult {
+  adapterSecretManifestValidation?: ExecutionAdapterSecretManifestValidationResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterSecretManifestValidationHistoryResult {
+  adapterSecretManifestValidations: ExecutionAdapterSecretManifestValidationResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type ExecutionAdapterEnvironmentBindingStatus = "blocked" | "binding_recorded";
 export type ExecutionAdapterEnvironmentBindingConfirmationStatus = "confirmed" | "missing";
 
@@ -1648,6 +1702,7 @@ export interface ExecutionAdapterEnvironmentBindingResult {
   schemaVersion: 1;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -1666,7 +1721,8 @@ export interface ExecutionAdapterEnvironmentBindingResult {
 
 export interface ExecutionAdapterEnvironmentBindingRequest {
   adapterId: string;
-  materializationId: string;
+  materializationId?: string;
+  manifestValidationId?: string;
   operator?: string;
   bindingMode?: string;
   confirmations?: {
@@ -1705,6 +1761,7 @@ export interface ExecutionAdapterRuntimeReloadPlanResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -1767,6 +1824,7 @@ export interface ExecutionAdapterRuntimeReloadExecutionResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -1830,6 +1888,7 @@ export interface ExecutionAdapterRuntimeReloadAcceptanceResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -1895,6 +1954,7 @@ export interface ExecutionAdapterOrchestrationDryRunResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -1962,6 +2022,7 @@ export interface ExecutionAdapterOrchestrationExecutionResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2031,6 +2092,7 @@ export interface ExecutionAdapterHumanConfirmationResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2102,6 +2164,7 @@ export interface ExecutionAdapterSandboxProbePlanResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2175,6 +2238,7 @@ export interface ExecutionAdapterSandboxProbeExecutionResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2250,6 +2314,7 @@ export interface ExecutionAdapterSandboxProbeReviewResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2327,6 +2392,7 @@ export interface ExecutionAdapterProductionRouteReviewResult {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2382,6 +2448,514 @@ export interface ExecutionAdapterProductionRouteReviewHistoryResult {
   error?: string;
 }
 
+export type ExecutionAdapterSandboxOrderSchemaDryRunStatus = "blocked" | "schema_dry_run_recorded";
+export type ExecutionAdapterSandboxOrderSchemaDryRunConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterSandboxOrderSchemaDryRunConfirmationStatus;
+}
+
+export interface ExecutionAdapterSandboxOrderIntent {
+  symbol: string;
+  side: "buy" | "sell";
+  type: string;
+  quantity: number;
+  price?: number;
+  timeInForce?: string;
+}
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunResult {
+  schemaVersion: 1;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSandboxOrderSchemaDryRunStatus;
+  operator: string;
+  recordedAt: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: ExecutionAdapterSandboxOrderIntent;
+  orderSubmitted: boolean;
+  requiredConfirmations: ExecutionAdapterSandboxOrderSchemaDryRunConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunRequest {
+  adapterId: string;
+  productionRouteReviewId: string;
+  operator?: string;
+  dryRunMode?: string;
+  orderIntent: ExecutionAdapterSandboxOrderIntent;
+  confirmations?: {
+    productionRouteReviewAccepted?: boolean;
+    healthProbeBound?: boolean;
+    orderIntentSchemaValidated?: boolean;
+    sandboxEndpointStillLocked?: boolean;
+    operatorConfirmedNoOrderSubmitted?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunRecordResult {
+  adapterSandboxOrderSchemaDryRun?: ExecutionAdapterSandboxOrderSchemaDryRunResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunHistoryResult {
+  adapterSandboxOrderSchemaDryRuns: ExecutionAdapterSandboxOrderSchemaDryRunResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export type ExecutionAdapterPaperOrderLifecycleStatus = "blocked" | "lifecycle_recorded";
+export type ExecutionAdapterPaperOrderLifecycleConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterPaperOrderLifecycleStepStatus = "blocked" | "recorded";
+
+export interface ExecutionAdapterPaperOrderLifecycleConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterPaperOrderLifecycleConfirmationStatus;
+}
+
+export interface ExecutionAdapterPaperOrderLifecycleStep {
+  id: string;
+  label: string;
+  status: ExecutionAdapterPaperOrderLifecycleStepStatus;
+}
+
+export interface ExecutionAdapterPaperOrderLifecycleResult {
+  schemaVersion: 1;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterPaperOrderLifecycleStatus;
+  operator: string;
+  recordedAt: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: ExecutionAdapterSandboxOrderIntent;
+  lifecycleSteps: ExecutionAdapterPaperOrderLifecycleStep[];
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  requiredConfirmations: ExecutionAdapterPaperOrderLifecycleConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterPaperOrderLifecycleRequest {
+  adapterId: string;
+  sandboxOrderSchemaDryRunId: string;
+  operator?: string;
+  lifecycleMode?: string;
+  confirmations?: {
+    schemaDryRunAccepted?: boolean;
+    paperRouterLocked?: boolean;
+    riskLimitsBound?: boolean;
+    simulatedLifecycleGenerated?: boolean;
+    operatorConfirmedNoLiveOrderSubmitted?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterPaperOrderLifecycleRecordResult {
+  adapterPaperOrderLifecycle?: ExecutionAdapterPaperOrderLifecycleResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterPaperOrderLifecycleHistoryResult {
+  adapterPaperOrderLifecycles: ExecutionAdapterPaperOrderLifecycleResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export type ExecutionAdapterPaperRouteRunbookStatus = "blocked" | "runbook_recorded";
+export type ExecutionAdapterPaperRouteRunbookConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterPaperRouteRunbookStepStatus = "blocked" | "recorded";
+
+export interface ExecutionAdapterPaperRouteRunbookConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterPaperRouteRunbookConfirmationStatus;
+}
+
+export interface ExecutionAdapterPaperRouteRunbookStep {
+  id: string;
+  label: string;
+  status: ExecutionAdapterPaperRouteRunbookStepStatus;
+}
+
+export interface ExecutionAdapterPaperRouteRunbookResult {
+  schemaVersion: 1;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterPaperRouteRunbookStatus;
+  operator: string;
+  recordedAt: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: ExecutionAdapterSandboxOrderIntent;
+  lifecycleSteps: ExecutionAdapterPaperOrderLifecycleStep[];
+  runbookSteps: ExecutionAdapterPaperRouteRunbookStep[];
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  requiredConfirmations: ExecutionAdapterPaperRouteRunbookConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterPaperRouteRunbookRequest {
+  adapterId: string;
+  paperOrderLifecycleId: string;
+  operator?: string;
+  runbookMode?: string;
+  confirmations?: {
+    paperLifecycleAccepted?: boolean;
+    paperAccountSnapshotCaptured?: boolean;
+    riskControlsVerified?: boolean;
+    replayPlanRecorded?: boolean;
+    operatorConfirmedNoLiveRouting?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterPaperRouteRunbookRecordResult {
+  adapterPaperRouteRunbook?: ExecutionAdapterPaperRouteRunbookResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterPaperRouteRunbookHistoryResult {
+  adapterPaperRouteRunbooks: ExecutionAdapterPaperRouteRunbookResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export type ExecutionAdapterOpsStateStatus = "blocked" | "ops_state_recorded";
+export type ExecutionAdapterOpsStateConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterOpsStateStepStatus = "blocked" | "recorded";
+
+export interface ExecutionAdapterOpsStateConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterOpsStateConfirmationStatus;
+}
+
+export interface ExecutionAdapterOpsStateStep {
+  id: string;
+  label: string;
+  status: ExecutionAdapterOpsStateStepStatus;
+}
+
+export interface ExecutionAdapterOpsStateResult {
+  schemaVersion: 1;
+  adapterOpsStateId: string;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterOpsStateStatus;
+  operator: string;
+  recordedAt: string;
+  opsMode: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: ExecutionAdapterSandboxOrderIntent;
+  lifecycleSteps: ExecutionAdapterPaperOrderLifecycleStep[];
+  runbookSteps: ExecutionAdapterPaperRouteRunbookStep[];
+  opsSteps: ExecutionAdapterOpsStateStep[];
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  requiredConfirmations: ExecutionAdapterOpsStateConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterOpsStateRequest {
+  adapterId: string;
+  paperRouteRunbookId: string;
+  operator?: string;
+  opsMode?: string;
+  confirmations?: {
+    paperRouteRunbookAccepted?: boolean;
+    monitoringChannelReady?: boolean;
+    killSwitchDrillRecorded?: boolean;
+    paperAccountReconciled?: boolean;
+    operatorConfirmedLiveTradingDisabled?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterOpsStateRecordResult {
+  adapterOpsState?: ExecutionAdapterOpsStateResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterOpsStateHistoryResult {
+  adapterOpsStates: ExecutionAdapterOpsStateResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export type ExecutionAdapterPaperExecutionStatus = "blocked" | "paper_execution_recorded";
+export type ExecutionAdapterPaperExecutionConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterPaperExecutionStepStatus = "blocked" | "recorded";
+export type ExecutionAdapterPaperExecutionFillStatus = "blocked" | "filled";
+
+export interface ExecutionAdapterPaperExecutionConfirmation {
+  id: string;
+  label: string;
+  status: ExecutionAdapterPaperExecutionConfirmationStatus;
+}
+
+export interface ExecutionAdapterPaperExecutionStep {
+  id: string;
+  label: string;
+  status: ExecutionAdapterPaperExecutionStepStatus;
+}
+
+export interface ExecutionAdapterPaperExecutionFill {
+  fillId: string;
+  status: ExecutionAdapterPaperExecutionFillStatus;
+  symbol: string;
+  side: "buy" | "sell";
+  type: string;
+  quantity: number;
+  price?: number;
+  timeInForce?: string;
+  source: string;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+}
+
+export interface ExecutionAdapterPaperExecutionResult {
+  schemaVersion: 1;
+  adapterPaperExecutionId: string;
+  adapterOpsStateId: string;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterPaperExecutionStatus;
+  operator: string;
+  recordedAt: string;
+  paperExecutionMode: string;
+  opsMode: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: ExecutionAdapterSandboxOrderIntent;
+  lifecycleSteps: ExecutionAdapterPaperOrderLifecycleStep[];
+  runbookSteps: ExecutionAdapterPaperRouteRunbookStep[];
+  opsSteps: ExecutionAdapterOpsStateStep[];
+  paperExecutionSteps: ExecutionAdapterPaperExecutionStep[];
+  simulatedFill: ExecutionAdapterPaperExecutionFill;
+  paperFillRecorded: boolean;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  requiredConfirmations: ExecutionAdapterPaperExecutionConfirmation[];
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterPaperExecutionRequest {
+  adapterId: string;
+  adapterOpsStateId: string;
+  operator?: string;
+  paperExecutionMode?: string;
+  confirmations?: {
+    opsStateAccepted?: boolean;
+    paperAccountSynced?: boolean;
+    riskBudgetBound?: boolean;
+    simulatedFillGenerated?: boolean;
+    operatorConfirmedNoLiveRouting?: boolean;
+  };
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExecutionAdapterPaperExecutionRecordResult {
+  adapterPaperExecution?: ExecutionAdapterPaperExecutionResult;
+  auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ExecutionAdapterPaperExecutionHistoryResult {
+  adapterPaperExecutions: ExecutionAdapterPaperExecutionResult[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export type ExecutionAdapterHealthProbeStatus = "ready" | "review" | "blocked";
 export type ExecutionAdapterHealthProbeCheckStatus = "passed" | "review" | "blocked" | "skipped";
 
@@ -2402,6 +2976,18 @@ export interface ExecutionAdapterHealthProbeCredentials {
   passwordSource: string | null;
 }
 
+export interface ExecutionAdapterHealthProbeRouteReview {
+  productionRouteReviewId: string;
+  status: "route_review_recorded";
+  adapterId: string;
+  market: string;
+  route: "live";
+  maintenanceWindowId: string;
+  requiredEnvVars: string[];
+  liveTradingAllowed: false;
+  paperOnly: true;
+}
+
 export interface ExecutionAdapterHealthProbeResult {
   schemaVersion: 1;
   probeId: string;
@@ -2420,6 +3006,9 @@ export interface ExecutionAdapterHealthProbeResult {
   accountSyncState: string;
   blockedReasons: string[];
   metadata: Record<string, unknown>;
+  productionRouteReviewId?: string;
+  productionRouteReviewStatus?: "route_review_recorded";
+  routeReview?: ExecutionAdapterHealthProbeRouteReview;
   paperOnly: boolean;
   liveTradingAllowed: boolean;
   orderRoutingEnabled: boolean;
@@ -2518,6 +3107,7 @@ export interface CacheRefreshSummary {
 
 export interface CacheRefreshResult {
   refresh?: CacheRefreshSummary;
+  watchlistRefresh?: CacheWatchlistRefreshRun;
   settings?: PlatformSettingsStatus;
   source: WorkspaceSource;
   error?: string;
@@ -2757,6 +3347,8 @@ export interface PortfolioPaperOrderApprovalRequest {
 
 export interface PortfolioPaperOrderApprovalRecordResult {
   approval?: PortfolioPaperOrderApproval;
+  existingApproval?: PortfolioPaperOrderApproval;
+  existingSimulation?: PortfolioPaperOrderSimulation;
   approvals: PortfolioPaperOrderApproval[];
   lifecycle?: PortfolioPaperOrderLifecycleEvent[];
   auditEvent?: AuditEventRecord;
@@ -2788,8 +3380,25 @@ export interface PortfolioPaperOrderSimulation {
   fillStatus: "filled";
   reason: string;
   approvedBy: string | null;
+  routeRisk?: PortfolioPaperOrderSimulationRouteRisk;
+  adapterPaperExecutionId?: string;
+  adapterManifestValidationId?: string;
+  adapterPaperExecutionEvidence?: Record<string, unknown>;
   paperOnly: boolean;
   liveExecutionBlocked: boolean;
+}
+
+export interface PortfolioPaperOrderSimulationRouteRisk {
+  status?: "passed" | "blocked" | string;
+  cashAfter?: number;
+  blockedReasons?: string[];
+  [key: string]: unknown;
+}
+
+export interface PortfolioPaperOrderAdapterEvidenceRequest {
+  adapterPaperExecutionId?: string;
+  adapterManifestValidationId?: string;
+  adapterPaperExecutionEvidence?: Record<string, unknown>;
 }
 
 export interface PortfolioPaperOrderSimulationRequest {
@@ -2797,6 +3406,54 @@ export interface PortfolioPaperOrderSimulationRequest {
   batchId: string;
   orderId: string;
   simulatedAt?: string;
+  routeRisk?: {
+    initialCash?: number;
+    minCashAfter?: number;
+    maxSymbolNotional?: number;
+    maxBatchNotional?: number;
+  };
+  adapterPaperExecutionId?: string;
+  adapterManifestValidationId?: string;
+  adapterPaperExecutionEvidence?: Record<string, unknown>;
+}
+
+export interface PortfolioPaperOrderBatchSimulationRequest {
+  baseRunId: string;
+  batchId: string;
+  orderIds?: string[];
+  simulatedAt?: string;
+  routeRisk?: {
+    initialCash?: number;
+    minCashAfter?: number;
+    maxSymbolNotional?: number;
+    maxBatchNotional?: number;
+  };
+  adapterPaperExecutionEvidenceByOrderId?: Record<string, PortfolioPaperOrderAdapterEvidenceRequest>;
+}
+
+export interface PortfolioPaperOrderBatchSimulationIssue {
+  orderId: string;
+  symbol?: string;
+  side?: string;
+  reason?: string;
+  detail?: string;
+}
+
+export interface PortfolioPaperOrderBatchSimulation {
+  schemaVersion: 1;
+  mode: "portfolio_paper_order_batch_simulation";
+  status: "filled" | "partial" | "blocked" | "skipped" | string;
+  baseRunId: string;
+  batchId: string;
+  requestedCount: number;
+  filledCount: number;
+  blockedCount: number;
+  skippedCount: number;
+  filledOrderIds: string[];
+  blockedOrders: PortfolioPaperOrderBatchSimulationIssue[];
+  skippedOrders: PortfolioPaperOrderBatchSimulationIssue[];
+  paperOnly: boolean;
+  liveExecutionBlocked: boolean;
 }
 
 export interface PortfolioPaperOrderSimulationRecordResult {
@@ -2804,6 +3461,16 @@ export interface PortfolioPaperOrderSimulationRecordResult {
   simulations: PortfolioPaperOrderSimulation[];
   lifecycle?: PortfolioPaperOrderLifecycleEvent[];
   auditEvent?: AuditEventRecord;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface PortfolioPaperOrderBatchSimulationRecordResult {
+  batchSimulation?: PortfolioPaperOrderBatchSimulation;
+  simulations: PortfolioPaperOrderSimulation[];
+  createdSimulations: PortfolioPaperOrderSimulation[];
+  lifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvents: AuditEventRecord[];
   source: WorkspaceSource;
   error?: string;
 }
@@ -2916,6 +3583,9 @@ export interface PortfolioPaperOrderReplayOrder {
   cashAfter: number;
   positionAfter: number;
   replayState: "applied" | "ignored";
+  adapterPaperExecutionId?: string;
+  adapterManifestValidationId?: string;
+  adapterPaperExecutionEvidence?: Record<string, unknown>;
   paperOnly: boolean;
   liveExecutionBlocked: boolean;
 }
@@ -3413,6 +4083,10 @@ export function buildExecutionAdapterSecretMaterializationUrl(baseUrl: string): 
   return buildApiUrl(baseUrl, "api/execution/adapter-secret-materializations");
 }
 
+export function buildExecutionAdapterSecretManifestValidationUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-secret-manifest-validations");
+}
+
 export function buildExecutionAdapterEnvironmentBindingUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-environment-bindings");
 }
@@ -3457,9 +4131,29 @@ export function buildExecutionAdapterProductionRouteReviewUrl(baseUrl: string): 
   return buildApiUrl(baseUrl, "api/execution/adapter-production-route-reviews");
 }
 
+export function buildExecutionAdapterSandboxOrderSchemaDryRunUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-sandbox-order-schema-dry-runs");
+}
+
+export function buildExecutionAdapterPaperOrderLifecycleUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-paper-order-lifecycles");
+}
+
+export function buildExecutionAdapterPaperRouteRunbookUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-paper-route-runbooks");
+}
+
+export function buildExecutionAdapterOpsStateUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-ops-states");
+}
+
+export function buildExecutionAdapterPaperExecutionUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-paper-executions");
+}
+
 export function buildExecutionAdapterHealthProbeUrl(
   baseUrl: string,
-  params: { adapterId?: string; exchange?: string } = {}
+  params: { adapterId?: string; exchange?: string; productionRouteReviewId?: string } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-health/ccxt-sandbox", (url) => {
     if (params.adapterId?.trim()) {
@@ -3467,6 +4161,9 @@ export function buildExecutionAdapterHealthProbeUrl(
     }
     if (params.exchange?.trim()) {
       url.searchParams.set("exchange", params.exchange.trim());
+    }
+    if (params.productionRouteReviewId?.trim()) {
+      url.searchParams.set("productionRouteReviewId", params.productionRouteReviewId.trim());
     }
   });
 }
@@ -3532,6 +4229,20 @@ export function buildExecutionAdapterSecretMaterializationHistoryUrl(
   params: { adapterId?: string; limit?: number } = {}
 ): string {
   return buildApiUrl(baseUrl, "api/execution/adapter-secret-materializations", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterSecretManifestValidationHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-secret-manifest-validations", (url) => {
     if (params.adapterId?.trim()) {
       url.searchParams.set("adapterId", params.adapterId.trim());
     }
@@ -3695,6 +4406,76 @@ export function buildExecutionAdapterProductionRouteReviewHistoryUrl(
   });
 }
 
+export function buildExecutionAdapterSandboxOrderSchemaDryRunHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-sandbox-order-schema-dry-runs", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterPaperOrderLifecycleHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-paper-order-lifecycles", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterPaperRouteRunbookHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-paper-route-runbooks", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterOpsStateHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-ops-states", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildExecutionAdapterPaperExecutionHistoryUrl(
+  baseUrl: string,
+  params: { adapterId?: string; limit?: number } = {}
+): string {
+  return buildApiUrl(baseUrl, "api/execution/adapter-paper-executions", (url) => {
+    if (params.adapterId?.trim()) {
+      url.searchParams.set("adapterId", params.adapterId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
 export function buildGoldenPathStatusUrl(baseUrl: string, params: TerminalResearchParams): string {
   return buildApiUrl(baseUrl, "api/golden-path/status", (url) => {
     url.searchParams.set("market", params.market);
@@ -3759,6 +4540,10 @@ export function buildPortfolioPaperOrderSimulationsUrl(
       url.searchParams.set("batchId", params.batchId.trim());
     }
   });
+}
+
+export function buildPortfolioPaperOrderBatchSimulationsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/portfolio/paper-order-simulations/batch");
 }
 
 export function buildPortfolioPaperOrderStateHistoryUrl(
@@ -4003,6 +4788,13 @@ export async function recordPortfolioPaperOrderBatch(
     });
     const payload = await response.json();
     if (!response.ok) {
+      if (isPortfolioPaperOrderDuplicateBatchPayload(payload)) {
+        return {
+          batch: payload.existingBatch,
+          lifecycle: payload.portfolioPaperOrderLifecycle,
+          source: "core"
+        };
+      }
       const detail = coreErrorDetail(payload);
       if (detail) {
         return {
@@ -4070,6 +4862,16 @@ export async function recordPortfolioPaperOrderApproval(
     });
     const payload = await response.json();
     if (!response.ok) {
+      if (isPortfolioPaperOrderApprovalLockedPayload(payload)) {
+        return {
+          existingApproval: payload.existingApproval,
+          existingSimulation: payload.existingSimulation,
+          approvals: payload.approvals,
+          lifecycle: payload.portfolioPaperOrderLifecycle,
+          source: "core",
+          error: payload.error
+        };
+      }
       const detail = coreErrorDetail(payload);
       if (detail) {
         return {
@@ -4421,8 +5223,32 @@ export async function buildP0PlatformReadinessReportAuditEvent({
   const fileName = `${safeRunId}-p0-readiness-report.md`;
   const currentGap = summary.currentGap;
   const firstBacklogItem = backlogItems[0] ?? null;
+  const backlogReadiness = backlogItems.map((item) =>
+    buildP0ReportActionReadiness(item.actionId, item.targetWorkspaceId || item.workspaceId || "")
+  );
+  const firstBacklogReadiness = firstBacklogItem ? backlogReadiness[0] : null;
+  const backlogExecutableCount = backlogReadiness.filter((item) => item.canExecute).length;
+  const backlogNotExecutableCount = backlogReadiness.filter((item) => !item.canExecute).length;
+  const backlogReadinessSummary = buildP0ReportBacklogReadinessSummary(
+    backlogItems.length,
+    backlogExecutableCount,
+    backlogNotExecutableCount,
+    firstBacklogItem,
+    firstBacklogReadiness
+  );
   const paperPreflightGates = paperPreflight?.gates ?? [];
   const paperPreflightLiveBoundary = paperPreflightGates.find((gate) => gate.id === "live-boundary");
+  const currentGapTargetWorkspaceId = currentGap?.targetWorkspaceId || currentGap?.workspaceId || "";
+  const currentGapActionId = currentGap?.actionId?.trim() ?? "";
+  const currentGapReadiness = buildP0ReportActionReadiness(currentGapActionId, currentGapTargetWorkspaceId);
+  const currentGapDeepLinkParams = new URLSearchParams();
+  currentGapDeepLinkParams.set("workspace", currentGapTargetWorkspaceId);
+  currentGapDeepLinkParams.set(
+    "auditReportQuery",
+    ["p0_readiness_report", runId, currentGap?.actionId ?? "", currentGapTargetWorkspaceId].filter(Boolean).join(" ")
+  );
+  currentGapDeepLinkParams.set("p0Action", currentGap?.actionId ?? "");
+  const currentGapDeepLinkSearch = buildP0CurrentGapActionUrlSearch(currentGapDeepLinkParams) ?? "";
 
   return {
     schemaVersion: 1,
@@ -4435,7 +5261,7 @@ export async function buildP0PlatformReadinessReportAuditEvent({
     summary: "P0 readiness report generated",
     detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${summary.passedSteps}/${
       summary.totalSteps
-    } steps · current gap ${currentGap?.label ?? "none"}`,
+    } steps · current gap ${currentGap?.label ?? "none"} · backlog ${backlogReadinessSummary}`,
     metadata: {
       artifactKind: "aiqt.p0ReadinessReport",
       fileName,
@@ -4452,10 +5278,25 @@ export async function buildP0PlatformReadinessReportAuditEvent({
       currentGapStepId: currentGap?.stepId ?? "",
       currentGapLabel: currentGap?.label ?? "",
       currentGapStatus: currentGap?.status ?? "",
+      currentGapWorkspaceId: currentGap?.workspaceId ?? "",
+      currentGapActionId: currentGap?.actionId ?? "",
+      currentGapActionLabel: currentGap?.actionLabel ?? "",
+      currentGapTargetWorkspaceId: currentGap?.targetWorkspaceId ?? "",
+      currentGapCanExecute: currentGapReadiness.canExecute,
+      currentGapDeepLinkSearch,
+      currentGapExecutableActionId: currentGapReadiness.executableActionId,
+      currentGapReadinessReason: currentGapReadiness.reason,
       latestEvidenceState: outcome.state,
       latestEvidenceId: outcome.evidenceId ?? outcome.runId ?? "",
       latestEvidenceLink: evidenceLink?.search ?? "",
+      latestEvidencePreparationRunId: outcome.preparationEvidenceRunId ?? "",
       backlogCount: backlogItems.length,
+      backlogExecutableCount,
+      backlogNotExecutableCount,
+      backlogReadinessSummary,
+      firstBacklogCanExecute: firstBacklogReadiness?.canExecute ?? false,
+      firstBacklogExecutableActionId: firstBacklogReadiness?.executableActionId ?? "",
+      firstBacklogReadinessReason: firstBacklogReadiness?.reason ?? "missing-action",
       firstBacklogStepId: firstBacklogItem?.stepId ?? "",
       paperPreflightState: paperPreflight?.state ?? "",
       paperPreflightActionId: paperPreflight?.primaryActionId ?? "",
@@ -4470,6 +5311,41 @@ export async function buildP0PlatformReadinessReportAuditEvent({
       boundary: "P0 readiness audit aid only; no live trading authorization or investment advice"
     }
   };
+}
+
+function buildP0ReportBacklogReadinessSummary(
+  backlogCount: number,
+  executableCount: number,
+  notExecutableCount: number,
+  firstBacklogItem: P0PlatformBacklogItem | null,
+  firstBacklogReadiness: ReturnType<typeof buildP0ReportActionReadiness> | null
+): string {
+  const firstAction =
+    firstBacklogReadiness?.executableActionId ||
+    firstBacklogItem?.actionId?.trim() ||
+    firstBacklogReadiness?.reason ||
+    "none";
+  const firstReason = firstBacklogReadiness?.reason ?? "none";
+  return `${executableCount}/${backlogCount} executable, ${notExecutableCount} not executable · first ${firstAction} ${firstReason}`;
+}
+
+function buildP0ReportActionReadiness(actionId: string | null | undefined, workspaceId: string | null | undefined): {
+  canExecute: boolean;
+  executableActionId: string;
+  reason: "missing-action" | "missing-workspace" | "ready" | "unknown-action";
+} {
+  const normalizedActionId = actionId?.trim() ?? "";
+  const executableActionId = normalizeP0CurrentGapActionId(normalizedActionId);
+  if (!normalizedActionId) {
+    return { canExecute: false, executableActionId, reason: "missing-action" };
+  }
+  if (!isExecutableP0CurrentGapActionId(normalizedActionId)) {
+    return { canExecute: false, executableActionId, reason: "unknown-action" };
+  }
+  if (!workspaceId?.trim()) {
+    return { canExecute: false, executableActionId, reason: "missing-workspace" };
+  }
+  return { canExecute: true, executableActionId, reason: "ready" };
 }
 
 export async function buildBacktestReportAuditEvent({
@@ -6171,6 +7047,50 @@ export async function recordExecutionAdapterSecretMaterialization(
   }
 }
 
+export async function recordExecutionAdapterSecretManifestValidation(
+  baseUrl: string,
+  request: ExecutionAdapterSecretManifestValidationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterSecretManifestValidationRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSecretManifestValidationUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        materializationId: request.materializationId ?? "",
+        operator: request.operator ?? "local-operator",
+        manifestPath: request.manifestPath ?? "",
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterSecretManifestValidationRecordPayload(payload)) {
+      return {
+        adapterSecretManifestValidation: payload.adapterSecretManifestValidation,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter secret manifest validation contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter secret manifest validation error"
+    };
+  }
+}
+
 export async function recordExecutionAdapterEnvironmentBinding(
   baseUrl: string,
   request: ExecutionAdapterEnvironmentBindingRequest,
@@ -6183,6 +7103,7 @@ export async function recordExecutionAdapterEnvironmentBinding(
       body: JSON.stringify({
         adapterId: request.adapterId,
         materializationId: request.materializationId,
+        manifestValidationId: request.manifestValidationId ?? "",
         operator: request.operator ?? "local-operator",
         bindingMode: request.bindingMode ?? "container_env_reference",
         confirmations: request.confirmations ?? {},
@@ -6668,9 +7589,235 @@ export async function recordExecutionAdapterProductionRouteReview(
   }
 }
 
+export async function recordExecutionAdapterSandboxOrderSchemaDryRun(
+  baseUrl: string,
+  request: ExecutionAdapterSandboxOrderSchemaDryRunRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterSandboxOrderSchemaDryRunRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSandboxOrderSchemaDryRunUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        productionRouteReviewId: request.productionRouteReviewId,
+        operator: request.operator ?? "local-operator",
+        dryRunMode: request.dryRunMode ?? "manual_sandbox_order_schema_dry_run",
+        orderIntent: request.orderIntent,
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterSandboxOrderSchemaDryRunRecordPayload(payload)) {
+      return {
+        adapterSandboxOrderSchemaDryRun: payload.adapterSandboxOrderSchemaDryRun,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter sandbox order schema dry-run contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter sandbox order schema dry-run error"
+    };
+  }
+}
+
+export async function recordExecutionAdapterPaperOrderLifecycle(
+  baseUrl: string,
+  request: ExecutionAdapterPaperOrderLifecycleRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterPaperOrderLifecycleRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterPaperOrderLifecycleUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        sandboxOrderSchemaDryRunId: request.sandboxOrderSchemaDryRunId,
+        operator: request.operator ?? "local-operator",
+        lifecycleMode: request.lifecycleMode ?? "manual_paper_order_lifecycle_adapter",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterPaperOrderLifecycleRecordPayload(payload)) {
+      return {
+        adapterPaperOrderLifecycle: payload.adapterPaperOrderLifecycle,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter paper order lifecycle contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter paper order lifecycle error"
+    };
+  }
+}
+
+export async function recordExecutionAdapterPaperRouteRunbook(
+  baseUrl: string,
+  request: ExecutionAdapterPaperRouteRunbookRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterPaperRouteRunbookRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterPaperRouteRunbookUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        paperOrderLifecycleId: request.paperOrderLifecycleId,
+        operator: request.operator ?? "local-operator",
+        runbookMode: request.runbookMode ?? "manual_paper_route_runbook",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterPaperRouteRunbookRecordPayload(payload)) {
+      return {
+        adapterPaperRouteRunbook: payload.adapterPaperRouteRunbook,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter paper route runbook contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter paper route runbook error"
+    };
+  }
+}
+
+export async function recordExecutionAdapterOpsState(
+  baseUrl: string,
+  request: ExecutionAdapterOpsStateRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterOpsStateRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterOpsStateUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        paperRouteRunbookId: request.paperRouteRunbookId,
+        operator: request.operator ?? "local-operator",
+        opsMode: request.opsMode ?? "manual_adapter_ops_state",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterOpsStateRecordPayload(payload)) {
+      return {
+        adapterOpsState: payload.adapterOpsState,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter ops state contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter ops state error"
+    };
+  }
+}
+
+export async function recordExecutionAdapterPaperExecution(
+  baseUrl: string,
+  request: ExecutionAdapterPaperExecutionRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ExecutionAdapterPaperExecutionRecordResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterPaperExecutionUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapterId: request.adapterId,
+        adapterOpsStateId: request.adapterOpsStateId,
+        operator: request.operator ?? "local-operator",
+        paperExecutionMode: request.paperExecutionMode ?? "manual_adapter_paper_execution",
+        confirmations: request.confirmations ?? {},
+        metadata: request.metadata ?? {}
+      })
+    });
+    const payload = await response.json();
+    if (isExecutionAdapterPaperExecutionRecordPayload(payload)) {
+      return {
+        adapterPaperExecution: payload.adapterPaperExecution,
+        auditEvent: payload.auditEvent,
+        source: "core"
+      };
+    }
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    throw new Error("Invalid execution adapter paper execution contract");
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter paper execution error"
+    };
+  }
+}
+
 export async function loadExecutionAdapterHealthProbe(
   baseUrl: string,
-  params: { adapterId?: string; exchange?: string } = {},
+  params: { adapterId?: string; exchange?: string; productionRouteReviewId?: string } = {},
   fetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<ExecutionAdapterHealthProbeLoadResult> {
   try {
@@ -6860,6 +8007,34 @@ export async function loadExecutionAdapterSecretMaterializations(
       adapterSecretMaterializations: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown execution adapter secret materialization history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterSecretManifestValidations(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterSecretManifestValidationHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterSecretManifestValidationHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterSecretManifestValidationHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter secret manifest validation history contract");
+    }
+    return {
+      adapterSecretManifestValidations: payload.adapterSecretManifestValidations,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterSecretManifestValidations: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter secret manifest validation history error"
     };
   }
 }
@@ -7174,6 +8349,152 @@ export async function loadExecutionAdapterProductionRouteReviews(
   }
 }
 
+export async function loadExecutionAdapterSandboxOrderSchemaDryRuns(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterSandboxOrderSchemaDryRunHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildExecutionAdapterSandboxOrderSchemaDryRunHistoryUrl(baseUrl, { adapterId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterSandboxOrderSchemaDryRunHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter sandbox order schema dry-run history contract");
+    }
+    return {
+      adapterSandboxOrderSchemaDryRuns: payload.adapterSandboxOrderSchemaDryRuns,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterSandboxOrderSchemaDryRuns: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter sandbox order schema dry-run history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterPaperOrderLifecycles(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterPaperOrderLifecycleHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildExecutionAdapterPaperOrderLifecycleHistoryUrl(baseUrl, { adapterId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterPaperOrderLifecycleHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter paper order lifecycle history contract");
+    }
+    return {
+      adapterPaperOrderLifecycles: payload.adapterPaperOrderLifecycles,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterPaperOrderLifecycles: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter paper order lifecycle history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterPaperRouteRunbooks(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterPaperRouteRunbookHistoryResult> {
+  try {
+    const response = await fetcher(
+      buildExecutionAdapterPaperRouteRunbookHistoryUrl(baseUrl, { adapterId, limit })
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterPaperRouteRunbookHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter paper route runbook history contract");
+    }
+    return {
+      adapterPaperRouteRunbooks: payload.adapterPaperRouteRunbooks,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterPaperRouteRunbooks: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter paper route runbook history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterOpsStates(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterOpsStateHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterOpsStateHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterOpsStateHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter ops state history contract");
+    }
+    return {
+      adapterOpsStates: payload.adapterOpsStates,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterOpsStates: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter ops state history error"
+    };
+  }
+}
+
+export async function loadExecutionAdapterPaperExecutions(
+  baseUrl: string,
+  adapterId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  limit = 20
+): Promise<ExecutionAdapterPaperExecutionHistoryResult> {
+  try {
+    const response = await fetcher(buildExecutionAdapterPaperExecutionHistoryUrl(baseUrl, { adapterId, limit }));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isExecutionAdapterPaperExecutionHistoryPayload(payload)) {
+      throw new Error("Invalid execution adapter paper execution history contract");
+    }
+    return {
+      adapterPaperExecutions: payload.adapterPaperExecutions,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      adapterPaperExecutions: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown execution adapter paper execution history error"
+    };
+  }
+}
+
 export async function recordPortfolioPaperOrderSimulation(
   baseUrl: string,
   request: PortfolioPaperOrderSimulationRequest,
@@ -7187,6 +8508,14 @@ export async function recordPortfolioPaperOrderSimulation(
     });
     const payload = await response.json();
     if (!response.ok) {
+      if (isPortfolioPaperOrderDuplicateSimulationPayload(payload)) {
+        return {
+          simulation: payload.existingSimulation,
+          simulations: payload.simulations,
+          lifecycle: payload.portfolioPaperOrderLifecycle,
+          source: "core"
+        };
+      }
       const detail = coreErrorDetail(payload);
       if (detail) {
         return {
@@ -7212,6 +8541,53 @@ export async function recordPortfolioPaperOrderSimulation(
       simulations: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown portfolio paper order simulation record error"
+    };
+  }
+}
+
+export async function recordPortfolioPaperOrderBatchSimulation(
+  baseUrl: string,
+  request: PortfolioPaperOrderBatchSimulationRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PortfolioPaperOrderBatchSimulationRecordResult> {
+  try {
+    const response = await fetcher(buildPortfolioPaperOrderBatchSimulationsUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = coreErrorDetail(payload);
+      if (detail) {
+        return {
+          simulations: [],
+          createdSimulations: [],
+          auditEvents: [],
+          source: "core",
+          error: detail
+        };
+      }
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!isPortfolioPaperOrderBatchSimulationRecordPayload(payload)) {
+      throw new Error("Invalid portfolio paper order batch simulation contract");
+    }
+    return {
+      batchSimulation: payload.batchSimulation,
+      simulations: payload.simulations,
+      createdSimulations: payload.createdSimulations,
+      lifecycle: payload.portfolioPaperOrderLifecycle,
+      auditEvents: payload.auditEvents,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      simulations: [],
+      createdSimulations: [],
+      auditEvents: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown portfolio paper order batch simulation record error"
     };
   }
 }
@@ -7356,6 +8732,7 @@ export async function refreshMarketCache(
     }
     return {
       refresh: payload.refresh,
+      watchlistRefresh: payload.watchlistRefresh,
       settings: payload.settings,
       source: "core"
     };
@@ -8798,12 +10175,18 @@ function isGoldenPathStatusPayload(value: unknown): value is { goldenPath: Golde
   return isGoldenPathStatus(payload.goldenPath);
 }
 
-function isCacheRefreshPayload(value: unknown): value is { refresh: CacheRefreshSummary; settings: PlatformSettingsStatus } {
+function isCacheRefreshPayload(
+  value: unknown
+): value is { refresh: CacheRefreshSummary; watchlistRefresh?: CacheWatchlistRefreshRun; settings: PlatformSettingsStatus } {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { refresh?: unknown; settings?: unknown };
-  return isCacheRefreshSummary(payload.refresh) && isPlatformSettingsStatus(payload.settings);
+  const payload = value as { refresh?: unknown; watchlistRefresh?: unknown; settings?: unknown };
+  return (
+    isCacheRefreshSummary(payload.refresh) &&
+    (payload.watchlistRefresh === undefined || isCacheWatchlistRefreshRun(payload.watchlistRefresh)) &&
+    isPlatformSettingsStatus(payload.settings)
+  );
 }
 
 function isCacheRefreshSummary(value: unknown): value is CacheRefreshSummary {
@@ -9651,9 +11034,31 @@ function isExecutionAdapterHealthProbeResult(value: unknown): value is Execution
     Array.isArray(probe.blockedReasons) &&
     probe.blockedReasons.every((reason) => typeof reason === "string") &&
     isSecretFreeRecord(probe.metadata) &&
+    (probe.productionRouteReviewId === undefined || typeof probe.productionRouteReviewId === "string") &&
+    (probe.productionRouteReviewStatus === undefined || probe.productionRouteReviewStatus === "route_review_recorded") &&
+    (probe.routeReview === undefined || isExecutionAdapterHealthProbeRouteReview(probe.routeReview)) &&
     probe.paperOnly === true &&
     probe.liveTradingAllowed === false &&
     probe.orderRoutingEnabled === false
+  );
+}
+
+function isExecutionAdapterHealthProbeRouteReview(value: unknown): value is ExecutionAdapterHealthProbeRouteReview {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const routeReview = value as Partial<ExecutionAdapterHealthProbeRouteReview>;
+  return (
+    typeof routeReview.productionRouteReviewId === "string" &&
+    routeReview.status === "route_review_recorded" &&
+    typeof routeReview.adapterId === "string" &&
+    typeof routeReview.market === "string" &&
+    routeReview.route === "live" &&
+    typeof routeReview.maintenanceWindowId === "string" &&
+    Array.isArray(routeReview.requiredEnvVars) &&
+    routeReview.requiredEnvVars.every((name) => typeof name === "string") &&
+    routeReview.liveTradingAllowed === false &&
+    routeReview.paperOnly === true
   );
 }
 
@@ -9766,6 +11171,19 @@ function isExecutionAdapterSecretMaterializationRecordPayload(
   const payload = value as { adapterSecretMaterialization?: unknown; auditEvent?: unknown };
   return (
     isExecutionAdapterSecretMaterializationResult(payload.adapterSecretMaterialization) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterSecretManifestValidationRecordPayload(
+  value: unknown
+): value is { adapterSecretManifestValidation: ExecutionAdapterSecretManifestValidationResult; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSecretManifestValidation?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterSecretManifestValidationResult(payload.adapterSecretManifestValidation) &&
     (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
   );
 }
@@ -9937,6 +11355,86 @@ function isExecutionAdapterProductionRouteReviewRecordPayload(
   );
 }
 
+function isExecutionAdapterSandboxOrderSchemaDryRunRecordPayload(
+  value: unknown
+): value is {
+  adapterSandboxOrderSchemaDryRun: ExecutionAdapterSandboxOrderSchemaDryRunResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSandboxOrderSchemaDryRun?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterSandboxOrderSchemaDryRunResult(payload.adapterSandboxOrderSchemaDryRun) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterPaperOrderLifecycleRecordPayload(
+  value: unknown
+): value is {
+  adapterPaperOrderLifecycle: ExecutionAdapterPaperOrderLifecycleResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterPaperOrderLifecycle?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterPaperOrderLifecycleResult(payload.adapterPaperOrderLifecycle) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterPaperRouteRunbookRecordPayload(
+  value: unknown
+): value is {
+  adapterPaperRouteRunbook: ExecutionAdapterPaperRouteRunbookResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterPaperRouteRunbook?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterPaperRouteRunbookResult(payload.adapterPaperRouteRunbook) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterOpsStateRecordPayload(
+  value: unknown
+): value is {
+  adapterOpsState: ExecutionAdapterOpsStateResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterOpsState?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterOpsStateResult(payload.adapterOpsState) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterPaperExecutionRecordPayload(
+  value: unknown
+): value is {
+  adapterPaperExecution: ExecutionAdapterPaperExecutionResult;
+  auditEvent?: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterPaperExecution?: unknown; auditEvent?: unknown };
+  return (
+    isExecutionAdapterPaperExecutionResult(payload.adapterPaperExecution) &&
+    (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
 function isExecutionAdapterCertificationHistoryPayload(
   value: unknown
 ): value is { adapterCertifications: ExecutionAdapterCertificationRun[] } {
@@ -10012,6 +11510,19 @@ function isExecutionAdapterSecretMaterializationHistoryPayload(
   return (
     Array.isArray(payload.adapterSecretMaterializations) &&
     payload.adapterSecretMaterializations.every(isExecutionAdapterSecretMaterializationResult)
+  );
+}
+
+function isExecutionAdapterSecretManifestValidationHistoryPayload(
+  value: unknown
+): value is { adapterSecretManifestValidations: ExecutionAdapterSecretManifestValidationResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSecretManifestValidations?: unknown };
+  return (
+    Array.isArray(payload.adapterSecretManifestValidations) &&
+    payload.adapterSecretManifestValidations.every(isExecutionAdapterSecretManifestValidationResult)
   );
 }
 
@@ -10155,6 +11666,68 @@ function isExecutionAdapterProductionRouteReviewHistoryPayload(
   return (
     Array.isArray(payload.adapterProductionRouteReviews) &&
     payload.adapterProductionRouteReviews.every(isExecutionAdapterProductionRouteReviewResult)
+  );
+}
+
+function isExecutionAdapterSandboxOrderSchemaDryRunHistoryPayload(
+  value: unknown
+): value is { adapterSandboxOrderSchemaDryRuns: ExecutionAdapterSandboxOrderSchemaDryRunResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterSandboxOrderSchemaDryRuns?: unknown };
+  return (
+    Array.isArray(payload.adapterSandboxOrderSchemaDryRuns) &&
+    payload.adapterSandboxOrderSchemaDryRuns.every(isExecutionAdapterSandboxOrderSchemaDryRunResult)
+  );
+}
+
+function isExecutionAdapterPaperOrderLifecycleHistoryPayload(
+  value: unknown
+): value is { adapterPaperOrderLifecycles: ExecutionAdapterPaperOrderLifecycleResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterPaperOrderLifecycles?: unknown };
+  return (
+    Array.isArray(payload.adapterPaperOrderLifecycles) &&
+    payload.adapterPaperOrderLifecycles.every(isExecutionAdapterPaperOrderLifecycleResult)
+  );
+}
+
+function isExecutionAdapterPaperRouteRunbookHistoryPayload(
+  value: unknown
+): value is { adapterPaperRouteRunbooks: ExecutionAdapterPaperRouteRunbookResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterPaperRouteRunbooks?: unknown };
+  return (
+    Array.isArray(payload.adapterPaperRouteRunbooks) &&
+    payload.adapterPaperRouteRunbooks.every(isExecutionAdapterPaperRouteRunbookResult)
+  );
+}
+
+function isExecutionAdapterOpsStateHistoryPayload(
+  value: unknown
+): value is { adapterOpsStates: ExecutionAdapterOpsStateResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterOpsStates?: unknown };
+  return Array.isArray(payload.adapterOpsStates) && payload.adapterOpsStates.every(isExecutionAdapterOpsStateResult);
+}
+
+function isExecutionAdapterPaperExecutionHistoryPayload(
+  value: unknown
+): value is { adapterPaperExecutions: ExecutionAdapterPaperExecutionResult[] } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { adapterPaperExecutions?: unknown };
+  return (
+    Array.isArray(payload.adapterPaperExecutions) &&
+    payload.adapterPaperExecutions.every(isExecutionAdapterPaperExecutionResult)
   );
 }
 
@@ -10309,6 +11882,42 @@ function isExecutionAdapterSecretMaterializationResult(
   );
 }
 
+function isExecutionAdapterSecretManifestValidationResult(
+  value: unknown
+): value is ExecutionAdapterSecretManifestValidationResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterSecretManifestValidationResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.validationId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.referenceId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterSecretManifestValidationStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.validationMode === "string" &&
+    typeof result.referenceName === "string" &&
+    typeof result.backend === "string" &&
+    typeof result.manifestPath === "string" &&
+    typeof result.fingerprint === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.coveredEnvVars) &&
+    result.coveredEnvVars.every((name) => typeof name === "string") &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.manifestSummary) &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
 function isExecutionAdapterEnvironmentBindingResult(
   value: unknown
 ): value is ExecutionAdapterEnvironmentBindingResult {
@@ -10320,6 +11929,7 @@ function isExecutionAdapterEnvironmentBindingResult(
     result.schemaVersion === 1 &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10352,6 +11962,7 @@ function isExecutionAdapterRuntimeReloadPlanResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10387,6 +11998,7 @@ function isExecutionAdapterRuntimeReloadExecutionResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10424,6 +12036,7 @@ function isExecutionAdapterRuntimeReloadAcceptanceResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10463,6 +12076,7 @@ function isExecutionAdapterOrchestrationDryRunResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10504,6 +12118,7 @@ function isExecutionAdapterOrchestrationExecutionResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10547,6 +12162,7 @@ function isExecutionAdapterHumanConfirmationResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10592,6 +12208,7 @@ function isExecutionAdapterSandboxProbePlanResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10639,6 +12256,7 @@ function isExecutionAdapterSandboxProbeExecutionResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10688,6 +12306,7 @@ function isExecutionAdapterSandboxProbeReviewResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10739,6 +12358,7 @@ function isExecutionAdapterProductionRouteReviewResult(
     typeof result.planId === "string" &&
     typeof result.bindingId === "string" &&
     typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
     typeof result.adapterId === "string" &&
     (isMarket(result.market) || result.market === "multi") &&
     (result.route === "paper" || result.route === "live") &&
@@ -10767,6 +12387,350 @@ function isExecutionAdapterProductionRouteReviewResult(
     isSecretFreeRecord(result.metadata) &&
     typeof result.liveTradingAllowed === "boolean" &&
     typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterSandboxOrderSchemaDryRunResult(
+  value: unknown
+): value is ExecutionAdapterSandboxOrderSchemaDryRunResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterSandboxOrderSchemaDryRunResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.sandboxOrderSchemaDryRunId === "string" &&
+    typeof result.productionRouteReviewId === "string" &&
+    typeof result.sandboxProbeReviewId === "string" &&
+    typeof result.sandboxProbeExecutionId === "string" &&
+    typeof result.sandboxProbePlanId === "string" &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterSandboxOrderSchemaDryRunStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.dryRunMode === "string" &&
+    typeof result.reviewMode === "string" &&
+    typeof result.sandboxReviewMode === "string" &&
+    typeof result.probeExecutionMode === "string" &&
+    typeof result.probeMode === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    isExecutionAdapterSandboxOrderIntent(result.orderIntent) &&
+    typeof result.orderSubmitted === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterSandboxOrderSchemaDryRunConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterPaperOrderLifecycleResult(value: unknown): value is ExecutionAdapterPaperOrderLifecycleResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterPaperOrderLifecycleResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.paperOrderLifecycleId === "string" &&
+    typeof result.sandboxOrderSchemaDryRunId === "string" &&
+    typeof result.productionRouteReviewId === "string" &&
+    typeof result.sandboxProbeReviewId === "string" &&
+    typeof result.sandboxProbeExecutionId === "string" &&
+    typeof result.sandboxProbePlanId === "string" &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterPaperOrderLifecycleStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.lifecycleMode === "string" &&
+    typeof result.dryRunMode === "string" &&
+    typeof result.reviewMode === "string" &&
+    typeof result.sandboxReviewMode === "string" &&
+    typeof result.probeExecutionMode === "string" &&
+    typeof result.probeMode === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    isExecutionAdapterSandboxOrderIntent(result.orderIntent) &&
+    Array.isArray(result.lifecycleSteps) &&
+    result.lifecycleSteps.every(isExecutionAdapterPaperOrderLifecycleStep) &&
+    typeof result.orderSubmitted === "boolean" &&
+    typeof result.liveOrderSubmitted === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterPaperOrderLifecycleConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterPaperRouteRunbookResult(value: unknown): value is ExecutionAdapterPaperRouteRunbookResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterPaperRouteRunbookResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.paperRouteRunbookId === "string" &&
+    typeof result.paperOrderLifecycleId === "string" &&
+    typeof result.sandboxOrderSchemaDryRunId === "string" &&
+    typeof result.productionRouteReviewId === "string" &&
+    typeof result.sandboxProbeReviewId === "string" &&
+    typeof result.sandboxProbeExecutionId === "string" &&
+    typeof result.sandboxProbePlanId === "string" &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterPaperRouteRunbookStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.runbookMode === "string" &&
+    typeof result.lifecycleMode === "string" &&
+    typeof result.dryRunMode === "string" &&
+    typeof result.reviewMode === "string" &&
+    typeof result.sandboxReviewMode === "string" &&
+    typeof result.probeExecutionMode === "string" &&
+    typeof result.probeMode === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    isExecutionAdapterSandboxOrderIntent(result.orderIntent) &&
+    Array.isArray(result.lifecycleSteps) &&
+    result.lifecycleSteps.every(isExecutionAdapterPaperOrderLifecycleStep) &&
+    Array.isArray(result.runbookSteps) &&
+    result.runbookSteps.every(isExecutionAdapterPaperRouteRunbookStep) &&
+    typeof result.orderSubmitted === "boolean" &&
+    typeof result.liveOrderSubmitted === "boolean" &&
+    typeof result.routeExecuted === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterPaperRouteRunbookConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterOpsStateResult(value: unknown): value is ExecutionAdapterOpsStateResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterOpsStateResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.adapterOpsStateId === "string" &&
+    typeof result.paperRouteRunbookId === "string" &&
+    typeof result.paperOrderLifecycleId === "string" &&
+    typeof result.sandboxOrderSchemaDryRunId === "string" &&
+    typeof result.productionRouteReviewId === "string" &&
+    typeof result.sandboxProbeReviewId === "string" &&
+    typeof result.sandboxProbeExecutionId === "string" &&
+    typeof result.sandboxProbePlanId === "string" &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterOpsStateStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.opsMode === "string" &&
+    typeof result.runbookMode === "string" &&
+    typeof result.lifecycleMode === "string" &&
+    typeof result.dryRunMode === "string" &&
+    typeof result.reviewMode === "string" &&
+    typeof result.sandboxReviewMode === "string" &&
+    typeof result.probeExecutionMode === "string" &&
+    typeof result.probeMode === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    isExecutionAdapterSandboxOrderIntent(result.orderIntent) &&
+    Array.isArray(result.lifecycleSteps) &&
+    result.lifecycleSteps.every(isExecutionAdapterPaperOrderLifecycleStep) &&
+    Array.isArray(result.runbookSteps) &&
+    result.runbookSteps.every(isExecutionAdapterPaperRouteRunbookStep) &&
+    Array.isArray(result.opsSteps) &&
+    result.opsSteps.every(isExecutionAdapterOpsStateStep) &&
+    typeof result.orderSubmitted === "boolean" &&
+    typeof result.liveOrderSubmitted === "boolean" &&
+    typeof result.routeExecuted === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterOpsStateConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterPaperExecutionResult(value: unknown): value is ExecutionAdapterPaperExecutionResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const result = value as Partial<ExecutionAdapterPaperExecutionResult>;
+  return (
+    result.schemaVersion === 1 &&
+    typeof result.adapterPaperExecutionId === "string" &&
+    typeof result.adapterOpsStateId === "string" &&
+    typeof result.paperRouteRunbookId === "string" &&
+    typeof result.paperOrderLifecycleId === "string" &&
+    typeof result.sandboxOrderSchemaDryRunId === "string" &&
+    typeof result.productionRouteReviewId === "string" &&
+    typeof result.sandboxProbeReviewId === "string" &&
+    typeof result.sandboxProbeExecutionId === "string" &&
+    typeof result.sandboxProbePlanId === "string" &&
+    typeof result.humanConfirmationId === "string" &&
+    typeof result.orchestrationExecutionId === "string" &&
+    typeof result.dryRunId === "string" &&
+    typeof result.acceptanceId === "string" &&
+    typeof result.executionId === "string" &&
+    typeof result.planId === "string" &&
+    typeof result.bindingId === "string" &&
+    typeof result.materializationId === "string" &&
+    typeof result.manifestValidationId === "string" &&
+    typeof result.adapterId === "string" &&
+    (isMarket(result.market) || result.market === "multi") &&
+    (result.route === "paper" || result.route === "live") &&
+    isExecutionAdapterPaperExecutionStatus(result.status) &&
+    typeof result.operator === "string" &&
+    typeof result.recordedAt === "string" &&
+    typeof result.paperExecutionMode === "string" &&
+    typeof result.opsMode === "string" &&
+    typeof result.runbookMode === "string" &&
+    typeof result.lifecycleMode === "string" &&
+    typeof result.dryRunMode === "string" &&
+    typeof result.reviewMode === "string" &&
+    typeof result.sandboxReviewMode === "string" &&
+    typeof result.probeExecutionMode === "string" &&
+    typeof result.probeMode === "string" &&
+    typeof result.confirmationMode === "string" &&
+    typeof result.orchestrationExecutionMode === "string" &&
+    typeof result.orchestrationMode === "string" &&
+    typeof result.acceptanceMode === "string" &&
+    typeof result.executionMode === "string" &&
+    typeof result.reloadMode === "string" &&
+    typeof result.maintenanceWindowId === "string" &&
+    typeof result.bindingMode === "string" &&
+    typeof result.manifestPath === "string" &&
+    Array.isArray(result.requiredEnvVars) &&
+    result.requiredEnvVars.every((name) => typeof name === "string") &&
+    isExecutionAdapterSandboxOrderIntent(result.orderIntent) &&
+    Array.isArray(result.lifecycleSteps) &&
+    result.lifecycleSteps.every(isExecutionAdapterPaperOrderLifecycleStep) &&
+    Array.isArray(result.runbookSteps) &&
+    result.runbookSteps.every(isExecutionAdapterPaperRouteRunbookStep) &&
+    Array.isArray(result.opsSteps) &&
+    result.opsSteps.every(isExecutionAdapterOpsStateStep) &&
+    Array.isArray(result.paperExecutionSteps) &&
+    result.paperExecutionSteps.every(isExecutionAdapterPaperExecutionStep) &&
+    isExecutionAdapterPaperExecutionFill(result.simulatedFill) &&
+    typeof result.paperFillRecorded === "boolean" &&
+    typeof result.orderSubmitted === "boolean" &&
+    typeof result.liveOrderSubmitted === "boolean" &&
+    typeof result.routeExecuted === "boolean" &&
+    Array.isArray(result.requiredConfirmations) &&
+    result.requiredConfirmations.every(isExecutionAdapterPaperExecutionConfirmation) &&
+    Array.isArray(result.blockedReasons) &&
+    result.blockedReasons.every((reason) => typeof reason === "string") &&
+    isSecretFreeRecord(result.metadata) &&
+    typeof result.liveTradingAllowed === "boolean" &&
+    typeof result.paperOnly === "boolean"
+  );
+}
+
+function isExecutionAdapterSandboxOrderIntent(value: unknown): value is ExecutionAdapterSandboxOrderIntent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const orderIntent = value as Partial<ExecutionAdapterSandboxOrderIntent>;
+  return (
+    typeof orderIntent.symbol === "string" &&
+    (orderIntent.side === "buy" || orderIntent.side === "sell") &&
+    typeof orderIntent.type === "string" &&
+    typeof orderIntent.quantity === "number" &&
+    Number.isFinite(orderIntent.quantity) &&
+    orderIntent.quantity > 0 &&
+    (orderIntent.price === undefined ||
+      (typeof orderIntent.price === "number" && Number.isFinite(orderIntent.price) && orderIntent.price > 0)) &&
+    (orderIntent.timeInForce === undefined || typeof orderIntent.timeInForce === "string")
   );
 }
 
@@ -11047,6 +13011,143 @@ function isExecutionAdapterProductionRouteReviewConfirmation(
   );
 }
 
+function isExecutionAdapterSandboxOrderSchemaDryRunConfirmation(
+  value: unknown
+): value is ExecutionAdapterSandboxOrderSchemaDryRunConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterSandboxOrderSchemaDryRunConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    (confirmation.status === "confirmed" || confirmation.status === "missing")
+  );
+}
+
+function isExecutionAdapterPaperOrderLifecycleConfirmation(
+  value: unknown
+): value is ExecutionAdapterPaperOrderLifecycleConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterPaperOrderLifecycleConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    isExecutionAdapterPaperOrderLifecycleConfirmationStatus(confirmation.status)
+  );
+}
+
+function isExecutionAdapterPaperOrderLifecycleStep(value: unknown): value is ExecutionAdapterPaperOrderLifecycleStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const step = value as Partial<ExecutionAdapterPaperOrderLifecycleStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.label === "string" &&
+    isExecutionAdapterPaperOrderLifecycleStepStatus(step.status)
+  );
+}
+
+function isExecutionAdapterPaperRouteRunbookConfirmation(
+  value: unknown
+): value is ExecutionAdapterPaperRouteRunbookConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterPaperRouteRunbookConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    isExecutionAdapterPaperRouteRunbookConfirmationStatus(confirmation.status)
+  );
+}
+
+function isExecutionAdapterPaperRouteRunbookStep(value: unknown): value is ExecutionAdapterPaperRouteRunbookStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const step = value as Partial<ExecutionAdapterPaperRouteRunbookStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.label === "string" &&
+    isExecutionAdapterPaperRouteRunbookStepStatus(step.status)
+  );
+}
+
+function isExecutionAdapterOpsStateConfirmation(value: unknown): value is ExecutionAdapterOpsStateConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterOpsStateConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    isExecutionAdapterOpsStateConfirmationStatus(confirmation.status)
+  );
+}
+
+function isExecutionAdapterOpsStateStep(value: unknown): value is ExecutionAdapterOpsStateStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const step = value as Partial<ExecutionAdapterOpsStateStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.label === "string" &&
+    isExecutionAdapterOpsStateStepStatus(step.status)
+  );
+}
+
+function isExecutionAdapterPaperExecutionConfirmation(
+  value: unknown
+): value is ExecutionAdapterPaperExecutionConfirmation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const confirmation = value as Partial<ExecutionAdapterPaperExecutionConfirmation>;
+  return (
+    typeof confirmation.id === "string" &&
+    typeof confirmation.label === "string" &&
+    isExecutionAdapterPaperExecutionConfirmationStatus(confirmation.status)
+  );
+}
+
+function isExecutionAdapterPaperExecutionStep(value: unknown): value is ExecutionAdapterPaperExecutionStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const step = value as Partial<ExecutionAdapterPaperExecutionStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.label === "string" &&
+    isExecutionAdapterPaperExecutionStepStatus(step.status)
+  );
+}
+
+function isExecutionAdapterPaperExecutionFill(value: unknown): value is ExecutionAdapterPaperExecutionFill {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const fill = value as Partial<ExecutionAdapterPaperExecutionFill>;
+  return (
+    typeof fill.fillId === "string" &&
+    isExecutionAdapterPaperExecutionFillStatus(fill.status) &&
+    typeof fill.symbol === "string" &&
+    (fill.side === "buy" || fill.side === "sell") &&
+    typeof fill.type === "string" &&
+    typeof fill.quantity === "number" &&
+    (fill.price === undefined || typeof fill.price === "number") &&
+    (fill.timeInForce === undefined || typeof fill.timeInForce === "string") &&
+    typeof fill.source === "string" &&
+    typeof fill.orderSubmitted === "boolean" &&
+    typeof fill.liveOrderSubmitted === "boolean" &&
+    typeof fill.routeExecuted === "boolean"
+  );
+}
+
 function isExecutionAdapterCertificationStatus(value: unknown): value is ExecutionAdapterCertificationStatus {
   return value === "passed" || value === "blocked" || value === "failed" || value === "review";
 }
@@ -11079,6 +13180,12 @@ function isExecutionAdapterSecretMaterializationStatus(
   value: unknown
 ): value is ExecutionAdapterSecretMaterializationStatus {
   return value === "blocked" || value === "manifest_recorded";
+}
+
+function isExecutionAdapterSecretManifestValidationStatus(
+  value: unknown
+): value is ExecutionAdapterSecretManifestValidationStatus {
+  return value === "blocked" || value === "validated";
 }
 
 function isExecutionAdapterEnvironmentBindingStatus(value: unknown): value is ExecutionAdapterEnvironmentBindingStatus {
@@ -11143,6 +13250,80 @@ function isExecutionAdapterProductionRouteReviewStatus(
   value: unknown
 ): value is ExecutionAdapterProductionRouteReviewStatus {
   return value === "blocked" || value === "route_review_recorded";
+}
+
+function isExecutionAdapterSandboxOrderSchemaDryRunStatus(
+  value: unknown
+): value is ExecutionAdapterSandboxOrderSchemaDryRunStatus {
+  return value === "blocked" || value === "schema_dry_run_recorded";
+}
+
+function isExecutionAdapterPaperOrderLifecycleStatus(value: unknown): value is ExecutionAdapterPaperOrderLifecycleStatus {
+  return value === "blocked" || value === "lifecycle_recorded";
+}
+
+function isExecutionAdapterPaperOrderLifecycleConfirmationStatus(
+  value: unknown
+): value is ExecutionAdapterPaperOrderLifecycleConfirmationStatus {
+  return value === "confirmed" || value === "missing";
+}
+
+function isExecutionAdapterPaperOrderLifecycleStepStatus(
+  value: unknown
+): value is ExecutionAdapterPaperOrderLifecycleStepStatus {
+  return value === "blocked" || value === "recorded";
+}
+
+function isExecutionAdapterPaperRouteRunbookStatus(value: unknown): value is ExecutionAdapterPaperRouteRunbookStatus {
+  return value === "blocked" || value === "runbook_recorded";
+}
+
+function isExecutionAdapterPaperRouteRunbookConfirmationStatus(
+  value: unknown
+): value is ExecutionAdapterPaperRouteRunbookConfirmationStatus {
+  return value === "confirmed" || value === "missing";
+}
+
+function isExecutionAdapterPaperRouteRunbookStepStatus(
+  value: unknown
+): value is ExecutionAdapterPaperRouteRunbookStepStatus {
+  return value === "blocked" || value === "recorded";
+}
+
+function isExecutionAdapterOpsStateStatus(value: unknown): value is ExecutionAdapterOpsStateStatus {
+  return value === "blocked" || value === "ops_state_recorded";
+}
+
+function isExecutionAdapterOpsStateConfirmationStatus(
+  value: unknown
+): value is ExecutionAdapterOpsStateConfirmationStatus {
+  return value === "confirmed" || value === "missing";
+}
+
+function isExecutionAdapterOpsStateStepStatus(value: unknown): value is ExecutionAdapterOpsStateStepStatus {
+  return value === "blocked" || value === "recorded";
+}
+
+function isExecutionAdapterPaperExecutionStatus(value: unknown): value is ExecutionAdapterPaperExecutionStatus {
+  return value === "blocked" || value === "paper_execution_recorded";
+}
+
+function isExecutionAdapterPaperExecutionConfirmationStatus(
+  value: unknown
+): value is ExecutionAdapterPaperExecutionConfirmationStatus {
+  return value === "confirmed" || value === "missing";
+}
+
+function isExecutionAdapterPaperExecutionStepStatus(
+  value: unknown
+): value is ExecutionAdapterPaperExecutionStepStatus {
+  return value === "blocked" || value === "recorded";
+}
+
+function isExecutionAdapterPaperExecutionFillStatus(
+  value: unknown
+): value is ExecutionAdapterPaperExecutionFillStatus {
+  return value === "blocked" || value === "filled";
 }
 
 function isExecutionAdapterHealthProbeStatus(value: unknown): value is ExecutionAdapterHealthProbeStatus {
@@ -11308,7 +13489,9 @@ function isPaperExecutionRecord(value: unknown): value is PaperExecutionRecord {
     Array.isArray(execution.orders) &&
     execution.orders.every(isPaperExecutionOrder) &&
     Array.isArray(execution.gates) &&
-    execution.gates.every(isPaperExecutionGate)
+    execution.gates.every(isPaperExecutionGate) &&
+    (execution.preparationEvidence === undefined ||
+      isResearchRunDataPreparationEvidence(execution.preparationEvidence))
   );
 }
 
@@ -11372,6 +13555,9 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
     isResearchRunExecutionHandoff(exportPackage.executionHandoff) &&
     (exportPackage.paperExecutions === undefined ||
       (Array.isArray(exportPackage.paperExecutions) && exportPackage.paperExecutions.every(isPaperExecutionRecord))) &&
+    (exportPackage.adapterPaperExecutions === undefined ||
+      (Array.isArray(exportPackage.adapterPaperExecutions) &&
+        exportPackage.adapterPaperExecutions.every(isExecutionAdapterPaperExecutionResult))) &&
     (exportPackage.portfolioPaperOrderBatches === undefined ||
       (Array.isArray(exportPackage.portfolioPaperOrderBatches) &&
         exportPackage.portfolioPaperOrderBatches.every(isPortfolioPaperOrderBatch))) &&
@@ -11671,6 +13857,7 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     typeof counts?.decisions === "number" &&
     typeof counts?.aiRisks === "number" &&
     (counts?.paperExecutions === undefined || typeof counts.paperExecutions === "number") &&
+    (counts?.adapterPaperExecutions === undefined || typeof counts.adapterPaperExecutions === "number") &&
     (counts?.portfolioPaperOrderBatches === undefined ||
       typeof counts.portfolioPaperOrderBatches === "number") &&
     (counts?.portfolioPaperOrderApprovals === undefined ||
@@ -11821,6 +14008,30 @@ function isPortfolioPaperOrderBatchPayload(
   );
 }
 
+function isPortfolioPaperOrderDuplicateBatchPayload(
+  value: unknown
+): value is {
+  error: "portfolio_paper_order_batch_already_recorded";
+  existingBatch: PortfolioPaperOrderBatch;
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    error?: unknown;
+    existingBatch?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+  };
+  return (
+    payload.error === "portfolio_paper_order_batch_already_recorded" &&
+    isPortfolioPaperOrderBatch(payload.existingBatch) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)))
+  );
+}
+
 function isPortfolioPaperOrderBatchesPayload(value: unknown): value is { portfolioPaperOrderBatches: PortfolioPaperOrderBatch[] } {
   if (!value || typeof value !== "object") {
     return false;
@@ -11854,6 +14065,37 @@ function isPortfolioPaperOrderApprovalRecordPayload(
       (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
         payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent))) &&
     (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isPortfolioPaperOrderApprovalLockedPayload(
+  value: unknown
+): value is {
+  error: "portfolio_paper_order_approval_locked_after_simulation";
+  existingApproval: PortfolioPaperOrderApproval;
+  existingSimulation: PortfolioPaperOrderSimulation;
+  approvals: PortfolioPaperOrderApproval[];
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    error?: unknown;
+    existingApproval?: unknown;
+    existingSimulation?: unknown;
+    approvals?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+  };
+  return (
+    payload.error === "portfolio_paper_order_approval_locked_after_simulation" &&
+    isPortfolioPaperOrderApproval(payload.existingApproval) &&
+    isPortfolioPaperOrderSimulation(payload.existingSimulation) &&
+    Array.isArray(payload.approvals) &&
+    payload.approvals.every(isPortfolioPaperOrderApproval) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)))
   );
 }
 
@@ -11897,6 +14139,107 @@ function isPortfolioPaperOrderSimulationRecordPayload(
       (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
         payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent))) &&
     (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isPortfolioPaperOrderDuplicateSimulationPayload(
+  value: unknown
+): value is {
+  error: "portfolio_paper_order_simulation_already_recorded";
+  existingSimulation: PortfolioPaperOrderSimulation;
+  simulations: PortfolioPaperOrderSimulation[];
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    error?: unknown;
+    existingSimulation?: unknown;
+    simulations?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+  };
+  return (
+    payload.error === "portfolio_paper_order_simulation_already_recorded" &&
+    isPortfolioPaperOrderSimulation(payload.existingSimulation) &&
+    Array.isArray(payload.simulations) &&
+    payload.simulations.every(isPortfolioPaperOrderSimulation) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent)))
+  );
+}
+
+function isPortfolioPaperOrderBatchSimulationRecordPayload(
+  value: unknown
+): value is {
+  batchSimulation: PortfolioPaperOrderBatchSimulation;
+  simulations: PortfolioPaperOrderSimulation[];
+  createdSimulations: PortfolioPaperOrderSimulation[];
+  portfolioPaperOrderLifecycle?: PortfolioPaperOrderLifecycleEvent[];
+  auditEvents: AuditEventRecord[];
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    batchSimulation?: unknown;
+    simulations?: unknown;
+    createdSimulations?: unknown;
+    portfolioPaperOrderLifecycle?: unknown;
+    auditEvents?: unknown;
+  };
+  return (
+    isPortfolioPaperOrderBatchSimulation(payload.batchSimulation) &&
+    Array.isArray(payload.simulations) &&
+    payload.simulations.every(isPortfolioPaperOrderSimulation) &&
+    Array.isArray(payload.createdSimulations) &&
+    payload.createdSimulations.every(isPortfolioPaperOrderSimulation) &&
+    (payload.portfolioPaperOrderLifecycle === undefined ||
+      (Array.isArray(payload.portfolioPaperOrderLifecycle) &&
+        payload.portfolioPaperOrderLifecycle.every(isPortfolioPaperOrderLifecycleEvent))) &&
+    Array.isArray(payload.auditEvents) &&
+    payload.auditEvents.every(isAuditEventRecord)
+  );
+}
+
+function isPortfolioPaperOrderBatchSimulation(value: unknown): value is PortfolioPaperOrderBatchSimulation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const simulation = value as Partial<PortfolioPaperOrderBatchSimulation>;
+  return (
+    simulation.schemaVersion === 1 &&
+    simulation.mode === "portfolio_paper_order_batch_simulation" &&
+    typeof simulation.status === "string" &&
+    typeof simulation.baseRunId === "string" &&
+    typeof simulation.batchId === "string" &&
+    typeof simulation.requestedCount === "number" &&
+    typeof simulation.filledCount === "number" &&
+    typeof simulation.blockedCount === "number" &&
+    typeof simulation.skippedCount === "number" &&
+    Array.isArray(simulation.filledOrderIds) &&
+    simulation.filledOrderIds.every((orderId) => typeof orderId === "string") &&
+    Array.isArray(simulation.blockedOrders) &&
+    simulation.blockedOrders.every(isPortfolioPaperOrderBatchSimulationIssue) &&
+    Array.isArray(simulation.skippedOrders) &&
+    simulation.skippedOrders.every(isPortfolioPaperOrderBatchSimulationIssue) &&
+    typeof simulation.paperOnly === "boolean" &&
+    typeof simulation.liveExecutionBlocked === "boolean"
+  );
+}
+
+function isPortfolioPaperOrderBatchSimulationIssue(value: unknown): value is PortfolioPaperOrderBatchSimulationIssue {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const issue = value as Partial<PortfolioPaperOrderBatchSimulationIssue>;
+  return (
+    typeof issue.orderId === "string" &&
+    (issue.symbol === undefined || typeof issue.symbol === "string") &&
+    (issue.side === undefined || typeof issue.side === "string") &&
+    (issue.reason === undefined || typeof issue.reason === "string") &&
+    (issue.detail === undefined || typeof issue.detail === "string")
   );
 }
 
@@ -12003,7 +14346,7 @@ function isPortfolioPaperOrderStateHistoryEvent(value: unknown): value is Portfo
     typeof event.actor === "string" &&
     typeof event.source === "string" &&
     typeof event.reason === "string" &&
-    (event.metadata === undefined || (typeof event.metadata === "object" && event.metadata !== null)) &&
+    (event.metadata === undefined || isSecretFreeRecord(event.metadata)) &&
     event.paperOnly === true &&
     event.liveExecutionBlocked === true
   );
@@ -12072,6 +14415,10 @@ function isPortfolioPaperOrderReplayOrder(value: unknown): value is PortfolioPap
     typeof order.cashAfter === "number" &&
     typeof order.positionAfter === "number" &&
     (order.replayState === "applied" || order.replayState === "ignored") &&
+    (order.adapterPaperExecutionId === undefined || typeof order.adapterPaperExecutionId === "string") &&
+    (order.adapterManifestValidationId === undefined || typeof order.adapterManifestValidationId === "string") &&
+    (order.adapterPaperExecutionEvidence === undefined ||
+      isSecretFreeRecord(order.adapterPaperExecutionEvidence)) &&
     order.paperOnly === true &&
     order.liveExecutionBlocked === true
   );
@@ -12134,8 +14481,28 @@ function isPortfolioPaperOrderSimulation(value: unknown): value is PortfolioPape
     simulation.fillStatus === "filled" &&
     typeof simulation.reason === "string" &&
     (typeof simulation.approvedBy === "string" || simulation.approvedBy === null) &&
+    (simulation.routeRisk === undefined || isPortfolioPaperOrderSimulationRouteRisk(simulation.routeRisk)) &&
+    (simulation.adapterPaperExecutionId === undefined || typeof simulation.adapterPaperExecutionId === "string") &&
+    (simulation.adapterManifestValidationId === undefined ||
+      typeof simulation.adapterManifestValidationId === "string") &&
+    (simulation.adapterPaperExecutionEvidence === undefined ||
+      isSecretFreeRecord(simulation.adapterPaperExecutionEvidence)) &&
     typeof simulation.paperOnly === "boolean" &&
     typeof simulation.liveExecutionBlocked === "boolean"
+  );
+}
+
+function isPortfolioPaperOrderSimulationRouteRisk(value: unknown): value is PortfolioPaperOrderSimulationRouteRisk {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const routeRisk = value as Partial<PortfolioPaperOrderSimulationRouteRisk>;
+  return (
+    (routeRisk.status === undefined || typeof routeRisk.status === "string") &&
+    (routeRisk.cashAfter === undefined || typeof routeRisk.cashAfter === "number") &&
+    (routeRisk.blockedReasons === undefined ||
+      (Array.isArray(routeRisk.blockedReasons) &&
+        routeRisk.blockedReasons.every((reason) => typeof reason === "string")))
   );
 }
 

@@ -483,6 +483,27 @@ h2 {
   gap: 6px;
 }
 
+.context-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 1px solid #2a3b51;
+  border-radius: 7px;
+  background: #111b29;
+  color: #dce6ee;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  padding: 0 9px;
+}
+
+.context-link-button:hover {
+  border-color: #2fd7b5;
+  color: #7af5dd;
+}
+
 .symbol-switcher {
   display: inline-flex;
   align-items: center;
@@ -717,6 +738,21 @@ h2 {
   border: 1px solid #614e20;
   background: #2a2315;
   color: #e8be62;
+}
+
+.status-pill.evidence-lock {
+  max-width: 260px;
+  min-width: 0;
+  border: 1px solid #255d59;
+  background: #102924;
+  color: #7ddfcb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill.evidence-lock svg {
+  flex: 0 0 auto;
 }
 
 .run-button {
@@ -1209,6 +1245,14 @@ em {
   font-size: 10px;
 }
 
+.p0-readiness-ledger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
 .p0-readiness-ledger-echo button {
   border: 1px solid #266c60;
   border-radius: 5px;
@@ -1372,6 +1416,78 @@ em {
 
 .p0-paper-deep-link.loading {
   border-color: #4b4386;
+}
+
+.p0-current-gap-deep-link {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #325d7a;
+  border-left: 3px solid #71a8ff;
+  border-radius: 6px;
+  background: #101c2d;
+}
+
+.p0-current-gap-deep-link > div {
+  min-width: 0;
+}
+
+.p0-current-gap-deep-link span,
+.p0-current-gap-deep-link strong,
+.p0-current-gap-deep-link small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p0-current-gap-deep-link span {
+  color: #91a5ba;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.p0-current-gap-deep-link strong {
+  color: #dce6ee;
+  font-size: 10px;
+}
+
+.p0-current-gap-deep-link small {
+  color: #8fa0b2;
+  font-size: 9px;
+}
+
+.p0-current-gap-deep-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.p0-current-gap-deep-link-actions button {
+  border: 1px solid #2d4b66;
+  border-radius: 5px;
+  background: #142337;
+  color: #cbd7e2;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+.p0-current-gap-deep-link-actions button:not(:disabled):hover {
+  border-color: #71a8ff;
+  background: #102d45;
+}
+
+.p0-current-gap-deep-link-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .p0-readiness-backlog {
@@ -1881,6 +1997,8 @@ em {
     "export export"
     "package package"
     "refresh-overrides refresh-overrides"
+    "portfolio-orders portfolio-orders"
+    "adapter-paper-executions adapter-paper-executions"
     "reports reports"
     "signing-keys signing-keys"
     "import-diff import-diff"
@@ -2218,6 +2336,16 @@ em {
 .workflow-market-refresh-overrides-panel {
   align-self: start;
   grid-area: refresh-overrides;
+}
+
+.workflow-portfolio-paper-order-audit-panel {
+  align-self: start;
+  grid-area: portfolio-orders;
+}
+
+.workflow-adapter-paper-execution-audit-panel {
+  align-self: start;
+  grid-area: adapter-paper-executions;
 }
 
 .workflow-signing-keys-panel {
@@ -3139,6 +3267,32 @@ em {
   min-width: 0;
 }
 
+.audit-report-ledger-query-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.audit-report-ledger-query-tools button {
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.12);
+  color: #9af1de;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 860;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.audit-report-ledger-query-tools button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 .market-refresh-audit-summary {
   display: flex;
   flex-wrap: wrap;
@@ -3702,6 +3856,397 @@ em {
   padding: 7px 9px;
 }
 
+.portfolio-paper-order-audit {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.portfolio-paper-order-audit-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.34fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.portfolio-paper-order-audit-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.portfolio-paper-order-audit-summary span {
+  border: 1px solid rgba(53, 78, 109, 0.78);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.72);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 820;
+  padding: 5px 8px;
+}
+
+.portfolio-paper-order-audit-summary strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.portfolio-paper-order-audit-toolbar input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(53, 78, 109, 0.92);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.86);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.portfolio-paper-order-audit-toolbar input:focus {
+  outline: none;
+  border-color: rgba(45, 212, 191, 0.58);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
+}
+
+.portfolio-paper-order-audit-query-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.portfolio-paper-order-audit-query-tools button {
+  border: 1px solid rgba(45, 212, 191, 0.42);
+  border-radius: 7px;
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.portfolio-paper-order-audit-query-tools button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.portfolio-paper-order-audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  min-width: 0;
+}
+
+.portfolio-paper-order-audit-pagination button {
+  border: 1px solid rgba(53, 78, 109, 0.88);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.84);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 9px;
+}
+
+.portfolio-paper-order-audit-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.portfolio-paper-order-audit-list {
+  display: grid;
+  gap: 6px;
+}
+
+.portfolio-paper-order-audit-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.24fr) minmax(164px, 0.42fr) minmax(0, 0.7fr) minmax(210px, 0.54fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #7a8fa6;
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.66);
+  padding: 7px 9px;
+}
+
+.portfolio-paper-order-audit-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.portfolio-paper-order-audit-row.warning {
+  border-left-color: #e8be62;
+}
+
+.portfolio-paper-order-audit-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.portfolio-paper-order-audit-row > span,
+.portfolio-paper-order-audit-row > strong,
+.portfolio-paper-order-audit-row > p,
+.portfolio-paper-order-audit-row > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-paper-order-audit-row > span {
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.portfolio-paper-order-audit-row > strong {
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.portfolio-paper-order-audit-row > strong small,
+.portfolio-paper-order-audit-row > p small,
+.portfolio-paper-order-audit-row > p em,
+.portfolio-paper-order-audit-row > div small,
+.portfolio-paper-order-audit-row > div time {
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-paper-order-audit-row > p,
+.portfolio-paper-order-audit-row > div {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: rgba(141, 163, 190, 0.82);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.portfolio-paper-order-audit-row > p b {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.portfolio-paper-order-audit-row.empty {
+  grid-template-columns: minmax(92px, 0.24fr) minmax(0, 1fr);
+}
+
+.adapter-paper-execution-audit {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.adapter-paper-execution-audit-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.34fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.adapter-paper-execution-audit-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.adapter-paper-execution-audit-summary span {
+  border: 1px solid rgba(53, 78, 109, 0.78);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.72);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 820;
+  padding: 5px 8px;
+}
+
+.adapter-paper-execution-audit-summary strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.adapter-paper-execution-audit-query-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.adapter-paper-execution-audit-query-tools input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(53, 78, 109, 0.92);
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.86);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.adapter-paper-execution-audit-query-tools input:focus {
+  outline: none;
+  border-color: rgba(45, 212, 191, 0.58);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
+}
+
+.adapter-paper-execution-audit-query-tools button,
+.adapter-paper-execution-audit-pagination button {
+  border: 1px solid rgba(45, 212, 191, 0.42);
+  border-radius: 7px;
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.adapter-paper-execution-audit-query-tools button:disabled,
+.adapter-paper-execution-audit-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.adapter-paper-execution-audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  min-width: 0;
+}
+
+.adapter-paper-execution-audit-list {
+  display: grid;
+  gap: 6px;
+}
+
+.adapter-paper-execution-audit-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.28fr) minmax(220px, 0.48fr) minmax(0, 0.72fr) minmax(240px, 0.56fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #7a8fa6;
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.66);
+  padding: 7px 9px;
+}
+
+.adapter-paper-execution-audit-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.adapter-paper-execution-audit-row.warning {
+  border-left-color: #e8be62;
+}
+
+.adapter-paper-execution-audit-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-paper-execution-audit-row > span,
+.adapter-paper-execution-audit-row > strong,
+.adapter-paper-execution-audit-row > p,
+.adapter-paper-execution-audit-row > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adapter-paper-execution-audit-row > span {
+  color: #9ab7d4;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.adapter-paper-execution-audit-row > strong {
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.adapter-paper-execution-audit-row > strong small,
+.adapter-paper-execution-audit-row > p small,
+.adapter-paper-execution-audit-row > p em,
+.adapter-paper-execution-audit-row > div small,
+.adapter-paper-execution-audit-row > div time {
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adapter-paper-execution-audit-row > p,
+.adapter-paper-execution-audit-row > div {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: rgba(141, 163, 190, 0.82);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.adapter-paper-execution-audit-row > p b {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.adapter-paper-execution-audit-open-execution {
+  align-items: center;
+  background: rgba(13, 31, 49, 0.92);
+  border: 1px solid #2b4b62;
+  border-radius: 6px;
+  color: #7ee4d2;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 850;
+  justify-content: center;
+  min-height: 24px;
+  padding: 4px 7px;
+  width: fit-content;
+}
+
+.adapter-paper-execution-audit-open-execution:hover {
+  border-color: #35c9b6;
+  color: #d8fff7;
+}
+
+.adapter-paper-execution-audit-row.empty {
+  grid-template-columns: minmax(120px, 0.28fr) minmax(0, 1fr);
+}
+
 .research-export-index-row {
   display: grid;
   grid-template-columns: minmax(118px, 0.44fr) minmax(96px, 0.34fr) minmax(0, 1fr) minmax(146px, 0.48fr) minmax(132px, 0.38fr) auto;
@@ -4040,21 +4585,78 @@ em {
   white-space: nowrap;
 }
 
-.audit-report-ledger-preflight {
+.audit-report-ledger-preflight,
+.audit-report-ledger-preparation,
+.audit-report-ledger-p0-backlog {
   display: inline-flex;
   width: fit-content;
   max-width: 100%;
   overflow: hidden;
-  border: 1px solid #266c60;
   border-radius: 999px;
-  background: #12332e;
   padding: 2px 7px;
-  color: #71dfc5;
   font-size: 10px;
   font-weight: 800;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.audit-report-ledger-preflight {
+  border: 1px solid #266c60;
+  background: #12332e;
+  color: #71dfc5;
+}
+
+.audit-report-ledger-preparation {
+  border: 1px solid #2e5f9d;
+  background: #111f35;
+  color: #9dc7ff;
+}
+
+.audit-report-ledger-p0-backlog.ready {
+  border: 1px solid #266c60;
+  background: #12332e;
+  color: #71dfc5;
+}
+
+.audit-report-ledger-p0-backlog.blocked {
+  border: 1px solid rgba(232, 190, 98, 0.72);
+  background: rgba(70, 48, 18, 0.62);
+  color: #ffd36d;
+}
+
+.audit-report-ledger-p0-backlog.muted {
+  border: 1px solid rgba(83, 107, 139, 0.72);
+  background: rgba(25, 39, 58, 0.78);
+  color: #9ab7d4;
+}
+
+.audit-report-ledger-p0-action-state {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  margin-left: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 820;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-report-ledger-p0-action-state.ready {
+  border: 1px solid #266c60;
+  background: #12332e;
+  color: #71dfc5;
+}
+
+.audit-report-ledger-p0-action-state.blocked {
+  border: 1px solid rgba(232, 190, 98, 0.72);
+  background: rgba(70, 48, 18, 0.62);
+  color: #ffd36d;
 }
 
 .audit-report-ledger-row > div {
@@ -5911,6 +6513,10 @@ em {
 .adapter-orchestration-dry-run-list,
 .adapter-orchestration-execution-list,
 .adapter-human-confirmation-list,
+.adapter-sandbox-order-schema-dry-run-list,
+.adapter-paper-order-lifecycle-list,
+.adapter-paper-route-runbook-list,
+.adapter-ops-state-list,
 .adapter-production-route-review-list,
 .adapter-sandbox-probe-execution-list,
 .adapter-sandbox-probe-plan-list,
@@ -5924,6 +6530,10 @@ em {
 .adapter-orchestration-dry-run-row,
 .adapter-orchestration-execution-row,
 .adapter-human-confirmation-row,
+.adapter-sandbox-order-schema-dry-run-row,
+.adapter-paper-order-lifecycle-row,
+.adapter-paper-route-runbook-row,
+.adapter-ops-state-row,
 .adapter-production-route-review-row,
 .adapter-sandbox-probe-execution-row,
 .adapter-sandbox-probe-plan-row,
@@ -5940,6 +6550,10 @@ em {
 .adapter-orchestration-dry-run-row.positive,
 .adapter-orchestration-execution-row.positive,
 .adapter-human-confirmation-row.positive,
+.adapter-sandbox-order-schema-dry-run-row.positive,
+.adapter-paper-order-lifecycle-row.positive,
+.adapter-paper-route-runbook-row.positive,
+.adapter-ops-state-row.positive,
 .adapter-production-route-review-row.positive,
 .adapter-sandbox-probe-execution-row.positive,
 .adapter-sandbox-probe-plan-row.positive,
@@ -5951,6 +6565,10 @@ em {
 .adapter-orchestration-dry-run-row.warning,
 .adapter-orchestration-execution-row.warning,
 .adapter-human-confirmation-row.warning,
+.adapter-sandbox-order-schema-dry-run-row.warning,
+.adapter-paper-order-lifecycle-row.warning,
+.adapter-paper-route-runbook-row.warning,
+.adapter-ops-state-row.warning,
 .adapter-production-route-review-row.warning,
 .adapter-sandbox-probe-execution-row.warning,
 .adapter-sandbox-probe-plan-row.warning,
@@ -5962,6 +6580,10 @@ em {
 .adapter-orchestration-dry-run-row.risk,
 .adapter-orchestration-execution-row.risk,
 .adapter-human-confirmation-row.risk,
+.adapter-sandbox-order-schema-dry-run-row.risk,
+.adapter-paper-order-lifecycle-row.risk,
+.adapter-paper-route-runbook-row.risk,
+.adapter-ops-state-row.risk,
 .adapter-production-route-review-row.risk,
 .adapter-sandbox-probe-execution-row.risk,
 .adapter-sandbox-probe-plan-row.risk,
@@ -5970,9 +6592,18 @@ em {
   border-left-color: #ff7f6d;
 }
 
+.adapter-ops-state-row.focused {
+  border-color: #35c9b6;
+  box-shadow: 0 0 0 1px rgba(53, 201, 182, 0.48), 0 12px 30px rgba(14, 184, 166, 0.12);
+}
+
 .adapter-orchestration-dry-run-row > div:first-child,
 .adapter-orchestration-execution-row > div:first-child,
 .adapter-human-confirmation-row > div:first-child,
+.adapter-sandbox-order-schema-dry-run-row > div:first-child,
+.adapter-paper-order-lifecycle-row > div:first-child,
+.adapter-paper-route-runbook-row > div:first-child,
+.adapter-ops-state-row > div:first-child,
 .adapter-production-route-review-row > div:first-child,
 .adapter-sandbox-probe-execution-row > div:first-child,
 .adapter-sandbox-probe-plan-row > div:first-child,
@@ -5996,6 +6627,22 @@ em {
 .adapter-human-confirmation-row span,
 .adapter-human-confirmation-row p,
 .adapter-human-confirmation-row em,
+.adapter-sandbox-order-schema-dry-run-row strong,
+.adapter-sandbox-order-schema-dry-run-row span,
+.adapter-sandbox-order-schema-dry-run-row p,
+.adapter-sandbox-order-schema-dry-run-row em,
+.adapter-paper-order-lifecycle-row strong,
+.adapter-paper-order-lifecycle-row span,
+.adapter-paper-order-lifecycle-row p,
+.adapter-paper-order-lifecycle-row em,
+.adapter-paper-route-runbook-row strong,
+.adapter-paper-route-runbook-row span,
+.adapter-paper-route-runbook-row p,
+.adapter-paper-route-runbook-row em,
+.adapter-ops-state-row strong,
+.adapter-ops-state-row span,
+.adapter-ops-state-row p,
+.adapter-ops-state-row em,
 .adapter-production-route-review-row strong,
 .adapter-production-route-review-row span,
 .adapter-production-route-review-row p,
@@ -6022,6 +6669,10 @@ em {
 .adapter-orchestration-dry-run-row strong,
 .adapter-orchestration-execution-row strong,
 .adapter-human-confirmation-row strong,
+.adapter-sandbox-order-schema-dry-run-row strong,
+.adapter-paper-order-lifecycle-row strong,
+.adapter-paper-route-runbook-row strong,
+.adapter-ops-state-row strong,
 .adapter-production-route-review-row strong,
 .adapter-sandbox-probe-execution-row strong,
 .adapter-sandbox-probe-plan-row strong,
@@ -6037,6 +6688,14 @@ em {
 .adapter-orchestration-execution-row em,
 .adapter-human-confirmation-row span,
 .adapter-human-confirmation-row em,
+.adapter-sandbox-order-schema-dry-run-row span,
+.adapter-sandbox-order-schema-dry-run-row em,
+.adapter-paper-order-lifecycle-row span,
+.adapter-paper-order-lifecycle-row em,
+.adapter-paper-route-runbook-row span,
+.adapter-paper-route-runbook-row em,
+.adapter-ops-state-row span,
+.adapter-ops-state-row em,
 .adapter-production-route-review-row span,
 .adapter-production-route-review-row em,
 .adapter-sandbox-probe-execution-row span,
@@ -6054,6 +6713,10 @@ em {
 .adapter-orchestration-dry-run-row p,
 .adapter-orchestration-execution-row p,
 .adapter-human-confirmation-row p,
+.adapter-sandbox-order-schema-dry-run-row p,
+.adapter-paper-order-lifecycle-row p,
+.adapter-paper-route-runbook-row p,
+.adapter-ops-state-row p,
 .adapter-production-route-review-row p,
 .adapter-sandbox-probe-execution-row p,
 .adapter-sandbox-probe-plan-row p,
@@ -6068,6 +6731,10 @@ em {
 .adapter-orchestration-dry-run-row em,
 .adapter-orchestration-execution-row em,
 .adapter-human-confirmation-row em,
+.adapter-sandbox-order-schema-dry-run-row em,
+.adapter-paper-order-lifecycle-row em,
+.adapter-paper-route-runbook-row em,
+.adapter-ops-state-row em,
 .adapter-production-route-review-row em,
 .adapter-sandbox-probe-execution-row em,
 .adapter-sandbox-probe-plan-row em,
@@ -6081,6 +6748,7 @@ em {
 .adapter-orchestration-dry-run-confirmations,
 .adapter-orchestration-execution-confirmations,
 .adapter-human-confirmation-confirmations,
+.adapter-ops-state-confirmations,
 .adapter-production-route-review-confirmations,
 .adapter-sandbox-probe-execution-confirmations,
 .adapter-sandbox-probe-plan-confirmations,
@@ -6095,6 +6763,7 @@ em {
 .adapter-orchestration-dry-run-confirmation,
 .adapter-orchestration-execution-confirmation,
 .adapter-human-confirmation-confirmation,
+.adapter-ops-state-confirmation,
 .adapter-production-route-review-confirmation,
 .adapter-sandbox-probe-execution-confirmation,
 .adapter-sandbox-probe-plan-confirmation,
@@ -6114,6 +6783,7 @@ em {
 .adapter-orchestration-dry-run-confirmation.positive,
 .adapter-orchestration-execution-confirmation.positive,
 .adapter-human-confirmation-confirmation.positive,
+.adapter-ops-state-confirmation.positive,
 .adapter-production-route-review-confirmation.positive,
 .adapter-sandbox-probe-execution-confirmation.positive,
 .adapter-sandbox-probe-plan-confirmation.positive,
@@ -6126,6 +6796,7 @@ em {
 .adapter-orchestration-dry-run-confirmation input,
 .adapter-orchestration-execution-confirmation input,
 .adapter-human-confirmation-confirmation input,
+.adapter-ops-state-confirmation input,
 .adapter-production-route-review-confirmation input,
 .adapter-sandbox-probe-execution-confirmation input,
 .adapter-sandbox-probe-plan-confirmation input,
@@ -6138,6 +6809,7 @@ em {
 .adapter-orchestration-dry-run-confirmation span,
 .adapter-orchestration-execution-confirmation span,
 .adapter-human-confirmation-confirmation span,
+.adapter-ops-state-confirmation span,
 .adapter-production-route-review-confirmation span,
 .adapter-sandbox-probe-execution-confirmation span,
 .adapter-sandbox-probe-plan-confirmation span,
@@ -6149,6 +6821,7 @@ em {
 .adapter-orchestration-dry-run-result,
 .adapter-orchestration-execution-result,
 .adapter-human-confirmation-result,
+.adapter-ops-state-result,
 .adapter-production-route-review-result,
 .adapter-sandbox-probe-execution-result,
 .adapter-sandbox-probe-plan-result,
@@ -6165,6 +6838,7 @@ em {
 .adapter-orchestration-dry-run-result.positive,
 .adapter-orchestration-execution-result.positive,
 .adapter-human-confirmation-result.positive,
+.adapter-ops-state-result.positive,
 .adapter-production-route-review-result.positive,
 .adapter-sandbox-probe-execution-result.positive,
 .adapter-sandbox-probe-plan-result.positive,
@@ -6172,6 +6846,35 @@ em {
 .adapter-runtime-reload-acceptance-result.positive {
   border-color: #2e6b5d;
   background: #0d211f;
+}
+
+.adapter-ops-state-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adapter-ops-state-result-actions button {
+  align-items: center;
+  background: #101c2b;
+  border: 1px solid #2b3b50;
+  border-radius: 6px;
+  color: #dce6ee;
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.adapter-ops-state-result-actions button:hover:not(:disabled) {
+  border-color: #35c9b6;
+  color: #7ee4d2;
+}
+
+.adapter-ops-state-result-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .settings-cache-row .settings-cache-stats {
@@ -8622,10 +9325,112 @@ em {
   font-weight: 800;
 }
 
+.portfolio-order-state-audit-action {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-height: 26px;
+  border: 1px solid #2d5f8d;
+  border-radius: 6px;
+  background: #0f2235;
+  color: #9ad1ff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .portfolio-simulation-route {
   display: grid;
   gap: 8px;
   margin-top: 12px;
+}
+
+.portfolio-simulation-route-title-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.portfolio-simulation-route-batch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  border: 1px solid #2b7e72;
+  border-radius: 6px;
+  background: #0f3b34;
+  color: #b7fff0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 5px 9px;
+}
+
+.portfolio-simulation-route-batch-action:disabled {
+  border-color: #27364a;
+  background: #111a27;
+  color: #657486;
+  cursor: not-allowed;
+}
+
+.portfolio-route-risk-template {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) repeat(3, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.portfolio-route-risk-template-summary,
+.portfolio-route-risk-template label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #101925;
+  padding: 9px 10px;
+}
+
+.portfolio-route-risk-template-summary span,
+.portfolio-route-risk-template label span {
+  color: #8fa0b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.portfolio-route-risk-template-summary strong {
+  color: #dce6ee;
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.portfolio-route-risk-template-summary em,
+.portfolio-route-risk-template label small {
+  color: #71dfc5;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.portfolio-route-risk-template input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #0f1722;
+  color: #dce6ee;
+  font-size: 12px;
+  font-weight: 900;
+  outline: none;
+  padding: 7px 8px;
+}
+
+.portfolio-route-risk-template input:focus {
+  border-color: #4cc9ad;
+  box-shadow: 0 0 0 2px rgba(76, 201, 173, 0.12);
 }
 
 .portfolio-simulation-route-list {
@@ -8661,6 +9466,11 @@ em {
 
 .portfolio-simulation-route-row.neutral {
   border-left-color: #2a3b51;
+}
+
+.portfolio-simulation-route-row.focused {
+  border-color: rgba(120, 230, 210, 0.7);
+  box-shadow: 0 0 0 1px rgba(120, 230, 210, 0.18);
 }
 
 .portfolio-simulation-route-row strong,
@@ -9304,12 +10114,22 @@ em {
     grid-template-columns: 1fr;
   }
 
+  .portfolio-route-risk-template {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .portfolio-simulation-route-row {
     grid-template-columns: 1fr;
   }
 
   .portfolio-order-latest-simulation em {
     text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .portfolio-route-risk-template {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -10603,6 +11423,8 @@ button.ai-review-record {
       "decision"
       "package"
       "refresh-overrides"
+      "portfolio-orders"
+      "adapter-paper-executions"
       "reports"
       "signing-keys"
       "import-diff"
@@ -10859,6 +11681,8 @@ button.ai-review-record {
       "decision"
       "package"
       "refresh-overrides"
+      "portfolio-orders"
+      "adapter-paper-executions"
       "reports"
       "signing-keys"
       "import-diff"

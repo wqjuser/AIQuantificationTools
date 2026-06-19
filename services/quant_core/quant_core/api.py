@@ -83,14 +83,20 @@ from quant_core.execution import (
     build_execution_adapter_human_confirmation,
     build_execution_adapter_orchestration_dry_run,
     build_execution_adapter_orchestration_execution,
+    build_execution_adapter_ops_state,
+    build_execution_adapter_paper_execution,
+    build_execution_adapter_paper_order_lifecycle,
+    build_execution_adapter_paper_route_runbook,
     build_execution_adapter_production_route_review,
     build_execution_adapter_restart_acceptance,
     build_execution_adapter_runtime_reload_acceptance,
     build_execution_adapter_runtime_reload_execution,
     build_execution_adapter_runtime_reload_plan,
+    build_execution_adapter_sandbox_order_schema_dry_run,
     build_execution_adapter_sandbox_probe_execution,
     build_execution_adapter_sandbox_probe_plan,
     build_execution_adapter_sandbox_probe_review,
+    build_execution_adapter_secret_manifest_validation,
     build_execution_adapter_secret_materialization,
     build_execution_adapter_secret_reference,
     create_execution_adapter_certification_run,
@@ -116,6 +122,18 @@ from quant_core.execution import (
     execution_adapter_orchestration_execution_payload_from_audit_event,
     execution_adapter_orchestration_execution_to_audit_event_payload,
     execution_adapter_orchestration_execution_to_payload,
+    execution_adapter_ops_state_payload_from_audit_event,
+    execution_adapter_ops_state_to_audit_event_payload,
+    execution_adapter_ops_state_to_payload,
+    execution_adapter_paper_execution_payload_from_audit_event,
+    execution_adapter_paper_execution_to_audit_event_payload,
+    execution_adapter_paper_execution_to_payload,
+    execution_adapter_paper_order_lifecycle_payload_from_audit_event,
+    execution_adapter_paper_order_lifecycle_to_audit_event_payload,
+    execution_adapter_paper_order_lifecycle_to_payload,
+    execution_adapter_paper_route_runbook_payload_from_audit_event,
+    execution_adapter_paper_route_runbook_to_audit_event_payload,
+    execution_adapter_paper_route_runbook_to_payload,
     execution_adapter_production_route_review_payload_from_audit_event,
     execution_adapter_production_route_review_to_audit_event_payload,
     execution_adapter_production_route_review_to_payload,
@@ -140,6 +158,12 @@ from quant_core.execution import (
     execution_adapter_runtime_reload_execution_payload_from_audit_event,
     execution_adapter_runtime_reload_execution_to_audit_event_payload,
     execution_adapter_runtime_reload_execution_to_payload,
+    execution_adapter_sandbox_order_schema_dry_run_payload_from_audit_event,
+    execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload,
+    execution_adapter_sandbox_order_schema_dry_run_to_payload,
+    execution_adapter_secret_manifest_validation_payload_from_audit_event,
+    execution_adapter_secret_manifest_validation_to_audit_event_payload,
+    execution_adapter_secret_manifest_validation_to_payload,
     execution_adapter_secret_materialization_payload_from_audit_event,
     execution_adapter_secret_materialization_to_audit_event_payload,
     execution_adapter_secret_materialization_to_payload,
@@ -197,7 +221,7 @@ from quant_core.strategy_library import (
     strategy_library_records_to_payload,
 )
 from quant_core.strategy_validation import strategy_validation_to_payload, validate_strategy_snapshot
-from quant_core.terminal import StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
+from quant_core.terminal import Instrument, StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 from quant_core.watchlist import WatchlistStore, instrument_to_payload, watchlist_from_payload, workspace_with_watchlist
 from quant_core.workspace_state import (
     ResearchWorkspaceStateStore,
@@ -216,6 +240,28 @@ def _json_default(value):
 
 def _response(payload: object) -> bytes:
     return json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+
+
+def _adapter_paper_executions_for_export(
+    audit_event_store: AuditEventStore,
+    *,
+    market: str,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    expected_market = str(market or "").strip()
+    events = audit_event_store.list_recent(event_type="execution_adapter_paper_execution", limit=max(1, limit * 3))
+    executions: list[dict[str, object]] = []
+    for event in events:
+        payload = execution_adapter_paper_execution_payload_from_audit_event(event)
+        if not payload:
+            continue
+        payload_market = str(payload.get("market") or "").strip()
+        if expected_market and payload_market not in {expected_market, "multi"}:
+            continue
+        executions.append(payload)
+        if len(executions) >= limit:
+            break
+    return executions
 
 
 def _fetch_market_klines_with_cache(
@@ -394,6 +440,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
                 self._record_adapter_error_if_needed(request, quality=quality, context="cache-refresh")
                 upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
+                refresh_run = self.watchlist_cache_refresh_store.record(
+                    create_watchlist_cache_refresh_run(
+                        items=[
+                            watchlist_cache_refresh_item_from_quality(
+                                instrument=Instrument(
+                                    market=market,  # type: ignore[arg-type]
+                                    symbol=symbol,
+                                    name=symbol,
+                                    change_pct=0.0,
+                                ),
+                                timeframe=timeframe,
+                                requested_limit=limit,
+                                quality=quality,
+                                upserted_rows=upserted_rows,
+                            )
+                        ],
+                        timeframe=timeframe,
+                        requested_limit=limit,
+                        override_audit_event_id=override_audit_event_id,
+                    )
+                )
             except ValueError as error:
                 self._send_json({"error": "invalid_cache_refresh", "detail": str(error)}, status=400)
                 return
@@ -410,6 +477,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         "overrideAuditEventId": override_audit_event_id,
                         "quality": quality_payload,
                     },
+                    "watchlistRefresh": watchlist_cache_refresh_run_to_payload(refresh_run),
                     "settings": self._settings_status_payload(),
                 }
             )
@@ -546,9 +614,72 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if materialization.status == "blocked" else 201,
             )
             return
-        if parsed.path == "/api/execution/adapter-environment-bindings":
+        if parsed.path == "/api/execution/adapter-secret-manifest-validations":
             payload = self._read_json_body()
             materialization_id = str(payload.get("materializationId") or "").strip()
+            materialization_event = self.audit_event_store.get(materialization_id)
+            materialization = (
+                execution_adapter_secret_materialization_payload_from_audit_event(materialization_event)
+                if materialization_event
+                else None
+            )
+            if not materialization:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_secret_materialization_not_found",
+                        "materializationId": materialization_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                validation = build_execution_adapter_secret_manifest_validation(
+                    materialization,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    manifest_path=str(payload.get("manifestPath") or ""),
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_execution_adapter_secret_manifest_validation", "detail": str(error)},
+                    status=400,
+                )
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_secret_manifest_validation_to_audit_event_payload(validation)
+            )
+            self._send_json(
+                {
+                    "adapterSecretManifestValidation": execution_adapter_secret_manifest_validation_to_payload(validation),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if validation.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-environment-bindings":
+            payload = self._read_json_body()
+            manifest_validation_id = str(payload.get("manifestValidationId") or "").strip()
+            manifest_validation = None
+            if manifest_validation_id:
+                validation_event = self.audit_event_store.get(manifest_validation_id)
+                manifest_validation = (
+                    execution_adapter_secret_manifest_validation_payload_from_audit_event(validation_event)
+                    if validation_event
+                    else None
+                )
+                if not manifest_validation:
+                    self._send_json(
+                        {
+                            "error": "execution_adapter_secret_manifest_validation_not_found",
+                            "manifestValidationId": manifest_validation_id,
+                        },
+                        status=404,
+                    )
+                    return
+            materialization_id = str(payload.get("materializationId") or "").strip()
+            if not materialization_id and manifest_validation:
+                materialization_id = str(manifest_validation.get("materializationId") or "").strip()
             materialization_event = self.audit_event_store.get(materialization_id)
             materialization = (
                 execution_adapter_secret_materialization_payload_from_audit_event(materialization_event)
@@ -569,6 +700,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     materialization,
                     adapter_id=str(payload.get("adapterId") or ""),
                     binding_mode=str(payload.get("bindingMode") or "container_env_reference"),
+                    manifest_validation=manifest_validation,
                     confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
                     operator=str(payload.get("operator") or "local-operator"),
                     metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
@@ -1002,6 +1134,237 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if production_route_review.status == "blocked" else 201,
             )
             return
+        if parsed.path == "/api/execution/adapter-sandbox-order-schema-dry-runs":
+            payload = self._read_json_body()
+            production_route_review_id = str(payload.get("productionRouteReviewId") or "").strip()
+            production_route_review_event = self.audit_event_store.get(production_route_review_id)
+            production_route_review = (
+                execution_adapter_production_route_review_payload_from_audit_event(production_route_review_event)
+                if production_route_review_event
+                else None
+            )
+            if not production_route_review:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_production_route_review_not_found",
+                        "productionRouteReviewId": production_route_review_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+                    production_route_review,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    dry_run_mode=str(payload.get("dryRunMode") or "manual_sandbox_order_schema_dry_run"),
+                    order_intent=payload.get("orderIntent") if isinstance(payload.get("orderIntent"), dict) else {},
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_execution_adapter_sandbox_order_schema_dry_run", "detail": str(error)},
+                    status=400,
+                )
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(schema_dry_run)
+            )
+            self._send_json(
+                {
+                    "adapterSandboxOrderSchemaDryRun": execution_adapter_sandbox_order_schema_dry_run_to_payload(
+                        schema_dry_run
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if schema_dry_run.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-paper-order-lifecycles":
+            payload = self._read_json_body()
+            schema_dry_run_id = str(payload.get("sandboxOrderSchemaDryRunId") or "").strip()
+            schema_dry_run_event = self.audit_event_store.get(schema_dry_run_id)
+            schema_dry_run = (
+                execution_adapter_sandbox_order_schema_dry_run_payload_from_audit_event(schema_dry_run_event)
+                if schema_dry_run_event
+                else None
+            )
+            if not schema_dry_run:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_sandbox_order_schema_dry_run_not_found",
+                        "sandboxOrderSchemaDryRunId": schema_dry_run_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                paper_order_lifecycle = build_execution_adapter_paper_order_lifecycle(
+                    schema_dry_run,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    lifecycle_mode=str(payload.get("lifecycleMode") or "manual_paper_order_lifecycle_adapter"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_execution_adapter_paper_order_lifecycle", "detail": str(error)},
+                    status=400,
+                )
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_paper_order_lifecycle_to_audit_event_payload(paper_order_lifecycle)
+            )
+            self._send_json(
+                {
+                    "adapterPaperOrderLifecycle": execution_adapter_paper_order_lifecycle_to_payload(
+                        paper_order_lifecycle
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if paper_order_lifecycle.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-paper-route-runbooks":
+            payload = self._read_json_body()
+            paper_order_lifecycle_id = str(payload.get("paperOrderLifecycleId") or "").strip()
+            paper_order_lifecycle_event = self.audit_event_store.get(paper_order_lifecycle_id)
+            paper_order_lifecycle = (
+                execution_adapter_paper_order_lifecycle_payload_from_audit_event(paper_order_lifecycle_event)
+                if paper_order_lifecycle_event
+                else None
+            )
+            if not paper_order_lifecycle:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_paper_order_lifecycle_not_found",
+                        "paperOrderLifecycleId": paper_order_lifecycle_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                paper_route_runbook = build_execution_adapter_paper_route_runbook(
+                    paper_order_lifecycle,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    runbook_mode=str(payload.get("runbookMode") or "manual_paper_route_runbook"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_execution_adapter_paper_route_runbook", "detail": str(error)},
+                    status=400,
+                )
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_paper_route_runbook_to_audit_event_payload(paper_route_runbook)
+            )
+            self._send_json(
+                {
+                    "adapterPaperRouteRunbook": execution_adapter_paper_route_runbook_to_payload(
+                        paper_route_runbook
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if paper_route_runbook.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-ops-states":
+            payload = self._read_json_body()
+            paper_route_runbook_id = str(payload.get("paperRouteRunbookId") or "").strip()
+            paper_route_runbook_event = self.audit_event_store.get(paper_route_runbook_id)
+            paper_route_runbook = (
+                execution_adapter_paper_route_runbook_payload_from_audit_event(paper_route_runbook_event)
+                if paper_route_runbook_event
+                else None
+            )
+            if not paper_route_runbook:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_paper_route_runbook_not_found",
+                        "paperRouteRunbookId": paper_route_runbook_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                adapter_ops_state = build_execution_adapter_ops_state(
+                    paper_route_runbook,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    ops_mode=str(payload.get("opsMode") or "manual_adapter_ops_state"),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_execution_adapter_ops_state", "detail": str(error)},
+                    status=400,
+                )
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_ops_state_to_audit_event_payload(adapter_ops_state)
+            )
+            self._send_json(
+                {
+                    "adapterOpsState": execution_adapter_ops_state_to_payload(adapter_ops_state),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if adapter_ops_state.status == "blocked" else 201,
+            )
+            return
+        if parsed.path == "/api/execution/adapter-paper-executions":
+            payload = self._read_json_body()
+            adapter_ops_state_id = str(payload.get("adapterOpsStateId") or "").strip()
+            adapter_ops_state_event = self.audit_event_store.get(adapter_ops_state_id)
+            adapter_ops_state = (
+                execution_adapter_ops_state_payload_from_audit_event(adapter_ops_state_event)
+                if adapter_ops_state_event
+                else None
+            )
+            if not adapter_ops_state:
+                self._send_json(
+                    {
+                        "error": "execution_adapter_ops_state_not_found",
+                        "adapterOpsStateId": adapter_ops_state_id,
+                    },
+                    status=404,
+                )
+                return
+            try:
+                adapter_paper_execution = build_execution_adapter_paper_execution(
+                    adapter_ops_state,
+                    adapter_id=str(payload.get("adapterId") or ""),
+                    paper_execution_mode=str(
+                        payload.get("paperExecutionMode") or "manual_adapter_paper_execution"
+                    ),
+                    confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
+                    operator=str(payload.get("operator") or "local-operator"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_execution_adapter_paper_execution", "detail": str(error)},
+                    status=400,
+                )
+                return
+            audit_event = self.audit_event_store.record(
+                execution_adapter_paper_execution_to_audit_event_payload(adapter_paper_execution)
+            )
+            self._send_json(
+                {
+                    "adapterPaperExecution": execution_adapter_paper_execution_to_payload(
+                        adapter_paper_execution
+                    ),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=409 if adapter_paper_execution.status == "blocked" else 201,
+            )
+            return
         if parsed.path == "/api/execution/adapter-certifications":
             try:
                 payload = self._read_json_body()
@@ -1156,6 +1519,21 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send_json({"error": "invalid_portfolio_paper_orders", "detail": str(error)}, status=400)
                 return
+            existing_batch = _find_duplicate_portfolio_paper_order_batch(
+                self.portfolio_paper_order_store,
+                batch,
+            )
+            if existing_batch is not None:
+                self._send_json(
+                    {
+                        "error": "portfolio_paper_order_batch_already_recorded",
+                        "detail": existing_batch.batch_id,
+                        "existingBatch": portfolio_paper_order_batch_to_payload(existing_batch),
+                        "portfolioPaperOrderLifecycle": build_portfolio_paper_order_lifecycle(existing_batch),
+                    },
+                    status=409,
+                )
+                return
             self.portfolio_paper_order_store.record(batch)
             audit_event = self.audit_event_store.record(portfolio_paper_order_batch_to_audit_event_payload(batch))
             self._send_json(
@@ -1186,6 +1564,59 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 if not any(str(order.get("orderId") or "") == approval.order_id for order in batch.orders):
                     raise ValueError("portfolio_paper_order_approval_order_not_found")
+                existing_simulations = self.portfolio_paper_order_simulation_store.list_all_by_base_run(
+                    approval.base_run_id
+                )
+                if any(
+                    simulation.batch_id == approval.batch_id
+                    and simulation.order_id == approval.order_id
+                    and simulation.order_state == "filled"
+                    and simulation.fill_status == "filled"
+                    for simulation in existing_simulations
+                ):
+                    approvals = self.portfolio_paper_order_approval_store.list_by_batch(
+                        approval.base_run_id,
+                        approval.batch_id,
+                    )
+                    lifecycle = build_portfolio_paper_order_lifecycle(
+                        batch,
+                        approvals=portfolio_paper_order_approvals_to_map(approvals),
+                    )
+                    existing_approval = next(
+                        (item for item in approvals if item.order_id == approval.order_id),
+                        None,
+                    )
+                    existing_simulation = next(
+                        (
+                            simulation
+                            for simulation in existing_simulations
+                            if simulation.batch_id == approval.batch_id
+                            and simulation.order_id == approval.order_id
+                            and simulation.order_state == "filled"
+                            and simulation.fill_status == "filled"
+                        ),
+                        None,
+                    )
+                    self._send_json(
+                        {
+                            "error": "portfolio_paper_order_approval_locked_after_simulation",
+                            "detail": approval.order_id,
+                            "existingApproval": (
+                                portfolio_paper_order_approval_to_payload(existing_approval)
+                                if existing_approval is not None
+                                else None
+                            ),
+                            "existingSimulation": (
+                                portfolio_paper_order_simulation_to_payload(existing_simulation)
+                                if existing_simulation is not None
+                                else None
+                            ),
+                            "approvals": [portfolio_paper_order_approval_to_payload(item) for item in approvals],
+                            "portfolioPaperOrderLifecycle": lifecycle,
+                        },
+                        status=409,
+                    )
+                    return
             except LookupError as error:
                 self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
                 return
@@ -1212,6 +1643,143 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=201,
             )
             return
+        if parsed.path == "/api/portfolio/paper-order-simulations/batch":
+            try:
+                payload = self._read_json_body()
+                base_run_id = str(payload.get("baseRunId") or "").strip()
+                batch_id = str(payload.get("batchId") or "").strip()
+                if not base_run_id or not batch_id:
+                    raise ValueError("portfolio_paper_order_simulation_context_required")
+                batch = _find_portfolio_paper_order_batch(self.portfolio_paper_order_store, base_run_id, batch_id)
+                approvals = self.portfolio_paper_order_approval_store.list_by_batch(base_run_id, batch_id)
+                lifecycle = build_portfolio_paper_order_lifecycle(
+                    batch,
+                    approvals=portfolio_paper_order_approvals_to_map(approvals),
+                )
+                requested_order_ids = [
+                    str(order_id).strip()
+                    for order_id in payload.get("orderIds", [])
+                    if str(order_id).strip()
+                ] if isinstance(payload.get("orderIds"), list) else []
+                requested_order_id_set = set(requested_order_ids)
+                lifecycle_rows = [
+                    row
+                    for row in lifecycle
+                    if not requested_order_id_set or str(row.get("orderId") or "") in requested_order_id_set
+                ]
+                if requested_order_ids and len(lifecycle_rows) != len(requested_order_id_set):
+                    raise ValueError("portfolio_paper_order_simulation_order_not_found")
+                adapter_evidence_by_order_id = _portfolio_paper_order_adapter_evidence_by_order_id(payload)
+                existing_simulations = self.portfolio_paper_order_simulation_store.list_all_by_base_run(base_run_id)
+                existing_simulation_keys = {
+                    (simulation.base_run_id, simulation.batch_id, simulation.order_id)
+                    for simulation in existing_simulations
+                    if simulation.order_state == "filled" and simulation.fill_status == "filled"
+                }
+                created_simulations: list[PortfolioPaperOrderSimulation] = []
+                audit_events = []
+                blocked_orders = []
+                skipped_orders = []
+                for row in lifecycle_rows:
+                    order_id = str(row.get("orderId") or "").strip()
+                    order_label = {
+                        "orderId": order_id,
+                        "symbol": str(row.get("symbol") or ""),
+                        "side": str(row.get("side") or ""),
+                    }
+                    if (base_run_id, batch_id, order_id) in existing_simulation_keys:
+                        skipped_orders.append({**order_label, "reason": "already_simulated"})
+                        continue
+                    if str(row.get("state") or "") != "ready_for_simulation" or not bool(row.get("routable")):
+                        skipped_orders.append({**order_label, "reason": str(row.get("state") or "not_routable")})
+                        continue
+                    try:
+                        adapter_evidence = adapter_evidence_by_order_id.get(order_id, {})
+                        simulation = create_portfolio_paper_order_simulation(
+                            batch=batch,
+                            lifecycle_row=row,
+                            existing_simulations=[*existing_simulations, *created_simulations],
+                            route_risk=payload.get("routeRisk") if isinstance(payload.get("routeRisk"), dict) else None,
+                            adapter_paper_execution_id=str(
+                                adapter_evidence.get("adapterPaperExecutionId")
+                                or payload.get("adapterPaperExecutionId")
+                                or ""
+                            ).strip(),
+                            adapter_manifest_validation_id=str(
+                                adapter_evidence.get("adapterManifestValidationId")
+                                or payload.get("adapterManifestValidationId")
+                                or ""
+                            ).strip(),
+                            adapter_paper_execution_evidence=(
+                                adapter_evidence.get("adapterPaperExecutionEvidence")
+                                if isinstance(adapter_evidence.get("adapterPaperExecutionEvidence"), dict)
+                                else payload.get("adapterPaperExecutionEvidence")
+                                if isinstance(payload.get("adapterPaperExecutionEvidence"), dict)
+                                else None
+                            ),
+                            simulated_at=payload.get("simulatedAt"),
+                        )
+                    except ValueError as error:
+                        blocked_orders.append({**order_label, "detail": str(error)})
+                        break
+                    self.portfolio_paper_order_simulation_store.record(simulation)
+                    created_simulations.append(simulation)
+                    audit_events.append(
+                        self.audit_event_store.record(
+                            portfolio_paper_order_simulation_to_audit_event_payload(
+                                simulation,
+                                batch=batch,
+                                lifecycle_row=row,
+                            )
+                        )
+                    )
+                simulations = self.portfolio_paper_order_simulation_store.list_by_batch(base_run_id, batch_id)
+                if blocked_orders and not created_simulations:
+                    batch_status = "blocked"
+                    response_status = 409
+                elif blocked_orders or skipped_orders:
+                    batch_status = "partial"
+                    response_status = 201
+                elif created_simulations:
+                    batch_status = "filled"
+                    response_status = 201
+                else:
+                    batch_status = "skipped"
+                    response_status = 200
+                self._send_json(
+                    {
+                        "batchSimulation": {
+                            "schemaVersion": 1,
+                            "mode": "portfolio_paper_order_batch_simulation",
+                            "status": batch_status,
+                            "baseRunId": base_run_id,
+                            "batchId": batch_id,
+                            "requestedCount": len(lifecycle_rows),
+                            "filledCount": len(created_simulations),
+                            "blockedCount": len(blocked_orders),
+                            "skippedCount": len(skipped_orders),
+                            "filledOrderIds": [simulation.order_id for simulation in created_simulations],
+                            "blockedOrders": blocked_orders,
+                            "skippedOrders": skipped_orders,
+                            "paperOnly": True,
+                            "liveExecutionBlocked": True,
+                        },
+                        "simulations": [portfolio_paper_order_simulation_to_payload(item) for item in simulations],
+                        "createdSimulations": [
+                            portfolio_paper_order_simulation_to_payload(item) for item in created_simulations
+                        ],
+                        "portfolioPaperOrderLifecycle": lifecycle,
+                        "auditEvents": [audit_event_record_to_payload(event) for event in audit_events],
+                    },
+                    status=response_status,
+                )
+                return
+            except LookupError as error:
+                self._send_json({"error": "portfolio_paper_order_batch_not_found", "detail": str(error)}, status=404)
+                return
+            except ValueError as error:
+                self._send_json({"error": "invalid_portfolio_paper_order_simulation_batch", "detail": str(error)}, status=400)
+                return
         if parsed.path == "/api/portfolio/paper-order-simulations":
             try:
                 payload = self._read_json_body()
@@ -1227,9 +1795,44 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     approvals=portfolio_paper_order_approvals_to_map(approvals),
                 )
                 lifecycle_row = _find_portfolio_paper_order_lifecycle_row(lifecycle, order_id)
+                existing_simulations = self.portfolio_paper_order_simulation_store.list_all_by_base_run(base_run_id)
+                existing_simulation = next(
+                    (
+                        simulation
+                        for simulation in existing_simulations
+                        if simulation.base_run_id == base_run_id
+                        and simulation.batch_id == batch_id
+                        and simulation.order_id == order_id
+                        and simulation.order_state == "filled"
+                        and simulation.fill_status == "filled"
+                    ),
+                    None,
+                )
+                if existing_simulation is not None:
+                    simulations = self.portfolio_paper_order_simulation_store.list_by_batch(base_run_id, batch_id)
+                    self._send_json(
+                        {
+                            "error": "portfolio_paper_order_simulation_already_recorded",
+                            "detail": order_id,
+                            "existingSimulation": portfolio_paper_order_simulation_to_payload(existing_simulation),
+                            "simulations": [portfolio_paper_order_simulation_to_payload(item) for item in simulations],
+                            "portfolioPaperOrderLifecycle": lifecycle,
+                        },
+                        status=409,
+                    )
+                    return
                 simulation = create_portfolio_paper_order_simulation(
                     batch=batch,
                     lifecycle_row=lifecycle_row,
+                    existing_simulations=existing_simulations,
+                    route_risk=payload.get("routeRisk") if isinstance(payload.get("routeRisk"), dict) else None,
+                    adapter_paper_execution_id=str(payload.get("adapterPaperExecutionId") or "").strip(),
+                    adapter_manifest_validation_id=str(payload.get("adapterManifestValidationId") or "").strip(),
+                    adapter_paper_execution_evidence=(
+                        payload.get("adapterPaperExecutionEvidence")
+                        if isinstance(payload.get("adapterPaperExecutionEvidence"), dict)
+                        else None
+                    ),
                     simulated_at=payload.get("simulatedAt"),
                 )
             except LookupError as error:
@@ -1914,6 +2517,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     break
             self._send_json({"adapterSecretMaterializations": materializations})
             return
+        if parsed.path == "/api/execution/adapter-secret-manifest-validations":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_secret_manifest_validation_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            validation_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_secret_manifest_validation",
+                limit=50,
+                query=adapter_id,
+            )
+            validations = []
+            for event in validation_events:
+                payload = execution_adapter_secret_manifest_validation_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    validations.append(payload)
+                if len(validations) >= limit:
+                    break
+            self._send_json({"adapterSecretManifestValidations": validations})
+            return
         if parsed.path == "/api/execution/adapter-environment-bindings":
             query = parse_qs(parsed.query)
             adapter_id = query.get("adapterId", [""])[0].strip()
@@ -2145,9 +2769,151 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     break
             self._send_json({"adapterProductionRouteReviews": production_route_reviews})
             return
+        if parsed.path == "/api/execution/adapter-sandbox-order-schema-dry-runs":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_sandbox_order_schema_dry_run_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            schema_dry_run_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_sandbox_order_schema_dry_run",
+                limit=50,
+                query=adapter_id,
+            )
+            schema_dry_runs = []
+            for event in schema_dry_run_events:
+                payload = execution_adapter_sandbox_order_schema_dry_run_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    schema_dry_runs.append(payload)
+                if len(schema_dry_runs) >= limit:
+                    break
+            self._send_json({"adapterSandboxOrderSchemaDryRuns": schema_dry_runs})
+            return
+        if parsed.path == "/api/execution/adapter-paper-order-lifecycles":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_paper_order_lifecycle_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            lifecycle_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_paper_order_lifecycle",
+                limit=50,
+                query=adapter_id,
+            )
+            lifecycles = []
+            for event in lifecycle_events:
+                payload = execution_adapter_paper_order_lifecycle_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    lifecycles.append(payload)
+                if len(lifecycles) >= limit:
+                    break
+            self._send_json({"adapterPaperOrderLifecycles": lifecycles})
+            return
+        if parsed.path == "/api/execution/adapter-paper-route-runbooks":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_paper_route_runbook_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            runbook_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_paper_route_runbook",
+                limit=50,
+                query=adapter_id,
+            )
+            runbooks = []
+            for event in runbook_events:
+                payload = execution_adapter_paper_route_runbook_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    runbooks.append(payload)
+                if len(runbooks) >= limit:
+                    break
+            self._send_json({"adapterPaperRouteRunbooks": runbooks})
+            return
+        if parsed.path == "/api/execution/adapter-ops-states":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_ops_state_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            ops_state_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_ops_state",
+                limit=50,
+                query=adapter_id,
+            )
+            ops_states = []
+            for event in ops_state_events:
+                payload = execution_adapter_ops_state_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    ops_states.append(payload)
+                if len(ops_states) >= limit:
+                    break
+            self._send_json({"adapterOpsStates": ops_states})
+            return
+        if parsed.path == "/api/execution/adapter-paper-executions":
+            query = parse_qs(parsed.query)
+            adapter_id = query.get("adapterId", [""])[0].strip()
+            if not adapter_id:
+                self._send_json({"error": "execution_adapter_paper_execution_adapter_id_required"}, status=400)
+                return
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            paper_execution_events = self.audit_event_store.list_recent(
+                event_type="execution_adapter_paper_execution",
+                limit=50,
+                query=adapter_id,
+            )
+            paper_executions = []
+            for event in paper_execution_events:
+                payload = execution_adapter_paper_execution_payload_from_audit_event(event)
+                if payload and payload.get("adapterId") == adapter_id:
+                    paper_executions.append(payload)
+                if len(paper_executions) >= limit:
+                    break
+            self._send_json({"adapterPaperExecutions": paper_executions})
+            return
         if parsed.path == "/api/execution/adapter-health/ccxt-sandbox":
             query = parse_qs(parsed.query)
             adapter_id = query.get("adapterId", ["ccxt-live"])[0].strip() or "ccxt-live"
+            production_route_review_id = query.get("productionRouteReviewId", [""])[0].strip()
+            production_route_review = None
+            if production_route_review_id:
+                production_route_review_event = self.audit_event_store.get(production_route_review_id)
+                production_route_review = (
+                    execution_adapter_production_route_review_payload_from_audit_event(production_route_review_event)
+                    if production_route_review_event
+                    else None
+                )
+                if not production_route_review:
+                    self._send_json(
+                        {
+                            "error": "execution_adapter_production_route_review_not_found",
+                            "productionRouteReviewId": production_route_review_id,
+                        },
+                        status=404,
+                    )
+                    return
+                if production_route_review.get("adapterId") != adapter_id:
+                    self._send_json(
+                        {
+                            "error": "execution_adapter_health_route_review_adapter_mismatch",
+                            "adapterId": adapter_id,
+                            "productionRouteReviewId": production_route_review_id,
+                        },
+                        status=400,
+                    )
+                    return
+                if production_route_review.get("status") != "route_review_recorded":
+                    self._send_json(
+                        {
+                            "error": "execution_adapter_health_route_review_not_recorded",
+                            "adapterProductionRouteReview": production_route_review,
+                        },
+                        status=409,
+                    )
+                    return
             exchange_id = (
                 query.get("exchange", [""])[0].strip()
                 or os.environ.get("CCXT_DEFAULT_EXCHANGE", "binance").strip()
@@ -2159,7 +2925,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 environ=type(self).execution_adapter_health_environ,
                 exchange_factory=type(self).execution_adapter_health_exchange_factory,
             )
-            self._send_json({"adapterHealthProbe": execution_adapter_health_probe_to_payload(probe)})
+            probe_payload = execution_adapter_health_probe_to_payload(probe)
+            if production_route_review:
+                _attach_production_route_review_to_health_probe(probe_payload, production_route_review)
+            self._send_json({"adapterHealthProbe": probe_payload})
             return
         if parsed.path == "/api/execution/adapter-certifications/restart-acceptance":
             query = parse_qs(parsed.query)
@@ -2716,6 +3485,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 paper_execution_record_to_payload(execution)
                 for execution in self.paper_execution_store.list_by_run(run_id, limit=20)
             ]
+            adapter_paper_executions = _adapter_paper_executions_for_export(
+                self.audit_event_store,
+                market=audit.market,
+                limit=20,
+            )
             portfolio_paper_orders = [
                 portfolio_paper_order_batch_to_payload(batch)
                 for batch in self.portfolio_paper_order_store.list_by_base_run(run_id, limit=20)
@@ -2737,6 +3511,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     "export": research_run_export_to_payload(
                         audit,
                         paper_executions=executions,
+                        adapter_paper_executions=adapter_paper_executions,
                         portfolio_paper_orders=portfolio_paper_orders,
                         portfolio_paper_order_approvals=portfolio_paper_order_approvals,
                         portfolio_paper_order_simulations=portfolio_paper_order_simulations,
@@ -2904,6 +3679,40 @@ def _adapter_error_message(*, quality: DataQuality | None, error: str | None) ->
     if not quality.is_complete:
         return f"incomplete provider response from {quality.source}"
     return None
+
+
+def _attach_production_route_review_to_health_probe(
+    probe_payload: dict[str, object],
+    production_route_review: dict[str, object],
+) -> None:
+    review_id = str(production_route_review.get("productionRouteReviewId") or "").strip()
+    review_status = str(production_route_review.get("status") or "").strip()
+    route_review_summary = {
+        "productionRouteReviewId": review_id,
+        "status": review_status,
+        "adapterId": str(production_route_review.get("adapterId") or "").strip(),
+        "market": str(production_route_review.get("market") or "").strip(),
+        "route": str(production_route_review.get("route") or "").strip(),
+        "maintenanceWindowId": str(production_route_review.get("maintenanceWindowId") or "").strip(),
+        "requiredEnvVars": [
+            str(name).strip()
+            for name in production_route_review.get("requiredEnvVars", [])
+            if isinstance(name, str) and name.strip()
+        ],
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+    metadata = probe_payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    probe_payload["metadata"] = {
+        **metadata,
+        "productionRouteReviewId": review_id,
+        "productionRouteReviewStatus": review_status,
+    }
+    probe_payload["productionRouteReviewId"] = review_id
+    probe_payload["productionRouteReviewStatus"] = review_status
+    probe_payload["routeReview"] = route_review_summary
 
 
 def resolve_api_bind(
@@ -3642,6 +4451,22 @@ def _find_portfolio_paper_order_batch(
     raise LookupError(batch_id)
 
 
+def _find_duplicate_portfolio_paper_order_batch(
+    store: PortfolioPaperOrderStore,
+    candidate: PortfolioPaperOrderBatch,
+) -> PortfolioPaperOrderBatch | None:
+    candidate_signature = _portfolio_paper_order_batch_signature(candidate)
+    for batch in store.list_all_by_base_run(candidate.base_run_id):
+        if _portfolio_paper_order_batch_signature(batch) == candidate_signature:
+            return batch
+    return None
+
+
+def _portfolio_paper_order_batch_signature(batch: PortfolioPaperOrderBatch) -> tuple[str, str, str]:
+    orders_signature = json.dumps(batch.orders, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return (batch.portfolio_name, batch.source, orders_signature)
+
+
 def _find_portfolio_paper_order_lifecycle_row(
     lifecycle: list[dict[str, object]],
     order_id: str,
@@ -3650,6 +4475,18 @@ def _find_portfolio_paper_order_lifecycle_row(
         if str(row.get("orderId") or "") == order_id:
             return row
     raise ValueError("portfolio_paper_order_approval_lifecycle_row_not_found")
+
+
+def _portfolio_paper_order_adapter_evidence_by_order_id(payload: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw = payload.get("adapterPaperExecutionEvidenceByOrderId")
+    if not isinstance(raw, dict):
+        return {}
+    normalized: dict[str, dict[str, object]] = {}
+    for order_id, evidence in raw.items():
+        normalized_order_id = str(order_id).strip()
+        if normalized_order_id and isinstance(evidence, dict):
+            normalized[normalized_order_id] = evidence
+    return normalized
 
 
 def _parse_kline_end(raw: str) -> datetime | None:

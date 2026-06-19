@@ -393,6 +393,7 @@ def research_run_export_to_payload(
     *,
     exported_at: datetime | None = None,
     paper_executions: list[dict[str, Any]] | None = None,
+    adapter_paper_executions: list[dict[str, Any]] | None = None,
     portfolio_paper_orders: list[dict[str, Any]] | None = None,
     portfolio_paper_order_approvals: list[dict[str, Any]] | None = None,
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
@@ -405,6 +406,10 @@ def research_run_export_to_payload(
     ai_report = run_payload.get("aiReport", {})
     research_note = _dict_or_empty(run_payload.get("researchNote"))
     paper_execution_payloads = _normalize_paper_execution_payloads(paper_executions, run_id=audit.run_id)
+    adapter_paper_execution_payloads = _normalize_adapter_paper_execution_payloads(
+        adapter_paper_executions,
+        market=audit.market,
+    )
     portfolio_paper_order_payloads = _normalize_portfolio_paper_order_payloads(
         portfolio_paper_orders,
         base_run_id=audit.run_id,
@@ -426,6 +431,7 @@ def research_run_export_to_payload(
         "decisions": len(run_payload.get("decisions", [])),
         "aiRisks": len(ai_report.get("risks", [])) if isinstance(ai_report, dict) else 0,
         "paperExecutions": len(paper_execution_payloads),
+        "adapterPaperExecutions": len(adapter_paper_execution_payloads),
         "portfolioPaperOrderBatches": len(portfolio_paper_order_payloads),
         "portfolioPaperOrderApprovals": len(portfolio_paper_order_approval_payloads),
         "portfolioPaperOrderSimulations": len(portfolio_paper_order_simulation_payloads),
@@ -453,6 +459,7 @@ def research_run_export_to_payload(
         },
         "researchRun": run_payload,
         "paperExecutions": paper_execution_payloads,
+        "adapterPaperExecutions": adapter_paper_execution_payloads,
         "portfolioPaperOrderBatches": portfolio_paper_order_payloads,
         "portfolioPaperOrderApprovals": portfolio_paper_order_approval_payloads,
         "portfolioPaperOrderSimulations": portfolio_paper_order_simulation_payloads,
@@ -506,6 +513,20 @@ def research_run_import_paper_executions(payload: dict[str, Any], *, run_id: str
             raise ValueError("paper_execution_run_id_mismatch")
         executions.append(execution)
     return executions
+
+
+def research_run_import_adapter_paper_executions(
+    payload: dict[str, Any],
+    *,
+    market: str | None = None,
+) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_executions = export_package.get("adapterPaperExecutions", [])
+    if raw_executions is None:
+        return []
+    return _normalize_adapter_paper_execution_payloads(raw_executions, market=market, strict=True)
 
 
 def research_run_import_portfolio_paper_orders(
@@ -592,6 +613,10 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
 
     run_id = _required_text(research_run, "runId")
     paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
+    adapter_paper_executions = research_run_import_adapter_paper_executions(
+        export_package,
+        market=str(research_run.get("market") or manifest.get("market") or ""),
+    )
     portfolio_paper_orders = research_run_import_portfolio_paper_orders(export_package, base_run_id=run_id)
     portfolio_paper_order_approvals = research_run_import_portfolio_paper_order_approvals(
         export_package,
@@ -612,6 +637,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         data_snapshot,
         handoff,
         paper_executions=paper_executions,
+        adapter_paper_executions=adapter_paper_executions,
         portfolio_paper_orders=portfolio_paper_orders,
         portfolio_paper_order_approvals=portfolio_paper_order_approvals,
         portfolio_paper_order_simulations=portfolio_paper_order_simulations,
@@ -745,6 +771,7 @@ def _validate_manifest_consistency(
     handoff: dict[str, Any],
     *,
     paper_executions: list[dict[str, Any]] | None = None,
+    adapter_paper_executions: list[dict[str, Any]] | None = None,
     portfolio_paper_orders: list[dict[str, Any]] | None = None,
     portfolio_paper_order_approvals: list[dict[str, Any]] | None = None,
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
@@ -792,6 +819,8 @@ def _validate_manifest_consistency(
     }
     if "paperExecutions" in counts or paper_executions:
         expected_counts["paperExecutions"] = len(paper_executions or [])
+    if "adapterPaperExecutions" in counts or adapter_paper_executions:
+        expected_counts["adapterPaperExecutions"] = len(adapter_paper_executions or [])
     if "portfolioPaperOrderBatches" in counts or portfolio_paper_orders:
         expected_counts["portfolioPaperOrderBatches"] = len(portfolio_paper_orders or [])
     if "portfolioPaperOrderApprovals" in counts or portfolio_paper_order_approvals:
@@ -881,6 +910,45 @@ def _normalize_paper_execution_payloads(value: list[dict[str, Any]] | None, *, r
                 "gates": _list_of_dicts(item.get("gates")),
             }
         )
+    return normalized
+
+
+def _normalize_adapter_paper_execution_payloads(
+    value: list[dict[str, Any]] | None,
+    *,
+    market: str | None = None,
+    strict: bool = False,
+) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        if strict:
+            raise ValueError("adapter_paper_executions_must_be_array")
+        return []
+
+    normalized = []
+    expected_market = str(market or "").strip()
+    for item in value:
+        if not isinstance(item, dict):
+            if strict:
+                raise ValueError("adapter_paper_execution_must_be_object")
+            continue
+        execution = dict(item)
+        execution_market = str(execution.get("market") or "").strip()
+        if expected_market and execution_market not in {expected_market, "multi"}:
+            if strict:
+                raise ValueError("adapter_paper_execution_market_mismatch")
+            continue
+        adapter_paper_execution_id = str(execution.get("adapterPaperExecutionId") or "").strip()
+        if strict and not adapter_paper_execution_id:
+            raise ValueError("adapter_paper_execution_id_required")
+        route = str(execution.get("route") or "").strip()
+        if strict and route not in {"paper", "live"}:
+            raise ValueError("adapter_paper_execution_route_invalid")
+        status = str(execution.get("status") or "").strip()
+        if strict and status not in {"blocked", "paper_execution_recorded"}:
+            raise ValueError("adapter_paper_execution_status_invalid")
+        normalized.append(execution)
     return normalized
 
 
@@ -1007,6 +1075,13 @@ def _normalize_portfolio_paper_order_simulation_payloads(
         quantity = _number_or_default(item.get("quantity"), 0)
         fill_price = _number_or_default(item.get("fillPrice"), 0)
         notional_value = _number_or_default(item.get("notionalValue"), 0)
+        adapter_paper_execution_id = str(item.get("adapterPaperExecutionId") or "").strip()
+        adapter_manifest_validation_id = str(item.get("adapterManifestValidationId") or "").strip()
+        adapter_paper_execution_evidence = (
+            _redact_run_secret_fields(dict(item.get("adapterPaperExecutionEvidence")))
+            if isinstance(item.get("adapterPaperExecutionEvidence"), dict)
+            else {}
+        )
         if strict:
             if not simulation_id:
                 raise ValueError("portfolio_paper_order_simulation_id_required")
@@ -1044,6 +1119,9 @@ def _normalize_portfolio_paper_order_simulation_payloads(
                 "fillStatus": str(item.get("fillStatus") or ""),
                 "reason": str(item.get("reason") or ""),
                 "approvedBy": str(item.get("approvedBy") or "").strip() or None,
+                "adapterPaperExecutionId": adapter_paper_execution_id,
+                "adapterManifestValidationId": adapter_manifest_validation_id,
+                "adapterPaperExecutionEvidence": adapter_paper_execution_evidence,
                 "paperOnly": True,
                 "liveExecutionBlocked": True,
             }
@@ -1361,6 +1439,25 @@ def _nullable_string(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _redact_run_secret_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if _is_run_secret_like_key(str(key)):
+                redacted[str(key)] = "[redacted]"
+            else:
+                redacted[str(key)] = _redact_run_secret_fields(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_run_secret_fields(item) for item in value]
+    return value
+
+
+def _is_run_secret_like_key(key: str) -> bool:
+    normalized = key.replace("_", "").replace("-", "").lower()
+    return any(marker in normalized for marker in ("secret", "token", "apikey", "privatekey", "password"))
 
 
 def _number_or_default(value: Any, default: int | float) -> int | float:

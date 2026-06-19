@@ -20,7 +20,7 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"');
     expect(workflow).toContain("actions/checkout@v6");
     expect(workflow).toContain("actions/setup-node@v6");
-    expect(workflow).toContain("node-version: 22");
+    expect(workflow).toContain("node-version: 24");
     expect(workflow).toContain("cache: npm");
     expect(workflow).toContain("actions/setup-python@v6");
     expect(workflow).toContain('python-version: "3.12"');
@@ -77,7 +77,7 @@ describe("docker deployment contract", () => {
     expect(apiDockerfile).toContain('CMD ["python", "tools/run_quant_api.py"]');
 
     const webDockerfile = readRepoFile("apps/web/Dockerfile");
-    expect(webDockerfile).toContain("FROM node:22-alpine AS build");
+    expect(webDockerfile).toContain("FROM node:24-alpine AS build");
     expect(webDockerfile).toContain("ARG VITE_QUANT_API_BASE=/");
     expect(webDockerfile).toContain("RUN npm run build --workspace @aiqt/web");
     expect(webDockerfile).toContain("FROM nginx:");

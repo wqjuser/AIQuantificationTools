@@ -220,6 +220,13 @@ export interface P0PlatformActionOutcomePaperExecution {
   gates?: readonly {
     passed: boolean;
   }[];
+  preparationEvidence?: {
+    runId?: string | null;
+    upsertedRows?: number | null;
+    quality?: {
+      source?: string | null;
+    } | null;
+  } | null;
 }
 
 export interface P0PlatformActionOutcomeSource {
@@ -240,6 +247,7 @@ export interface P0PlatformActionOutcome {
   detail: string;
   evidenceId: string | null;
   runId: string | null;
+  preparationEvidenceRunId?: string | null;
   targetWorkspaceId: ProductWorkAreaId;
   tone: P0PlatformActionOutcomeTone;
   nextStep: string;
@@ -704,6 +712,7 @@ export type AiReviewAuditTimelineItemKind =
   | "ai-boundary-evidence"
   | "data-snapshot-evidence"
   | "data-preparation-evidence"
+  | "paper-execution-preparation-evidence"
   | "market-calendar-evidence"
   | "saved-review"
   | "risk-approval";
@@ -801,6 +810,7 @@ export interface ResearchRunExportBrowserManifest {
     decisions: number;
     aiRisks: number;
     paperExecutions?: number;
+    adapterPaperExecutions?: number;
     portfolioPaperOrderBatches?: number;
     portfolioPaperOrderApprovals?: number;
     portfolioPaperOrderSimulations?: number;
@@ -868,6 +878,14 @@ export interface PortfolioPaperOrderSimulationSnapshot {
   fillStatus: "filled";
   reason: string;
   approvedBy: string | null;
+  routeRisk?: {
+    status?: string;
+    cashAfter?: number;
+    blockedReasons?: string[];
+  };
+  adapterPaperExecutionId?: string;
+  adapterManifestValidationId?: string;
+  adapterPaperExecutionEvidence?: Record<string, unknown>;
   paperOnly: boolean;
   liveExecutionBlocked: boolean;
 }
@@ -894,6 +912,9 @@ export interface PortfolioPaperOrderReplayOrderSnapshot {
   cashAfter: number;
   positionAfter: number;
   replayState: "applied" | "ignored";
+  adapterPaperExecutionId?: string;
+  adapterManifestValidationId?: string;
+  adapterPaperExecutionEvidence?: Record<string, unknown>;
   paperOnly: boolean;
   liveExecutionBlocked: boolean;
 }
@@ -944,6 +965,25 @@ export interface PortfolioPaperOrderReplayPositionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export interface PortfolioPaperOrderRouteRiskTemplate {
+  minCashBufferPct: number;
+  maxSymbolNotionalPct: number;
+  maxBatchNotionalPct: number;
+}
+
+export interface PortfolioPaperOrderSimulationRouteRiskRequest {
+  initialCash: number;
+  minCashAfter: number;
+  maxSymbolNotional: number;
+  maxBatchNotional: number;
+}
+
+export const defaultPortfolioPaperOrderRouteRiskTemplate: PortfolioPaperOrderRouteRiskTemplate = {
+  minCashBufferPct: 2,
+  maxSymbolNotionalPct: 20,
+  maxBatchNotionalPct: 60
+};
+
 export interface PortfolioPaperOrderLatestSimulationSummary {
   id: string;
   simulationId: string;
@@ -956,6 +996,7 @@ export interface PortfolioPaperOrderLatestSimulationSummary {
   orderLabel: string;
   accountLabel: string;
   timelineLabel: string;
+  adapterEvidenceLabel: string;
   boundaryLabel: string;
   focusQuery: string;
   stateEventId: string | null;
@@ -980,8 +1021,12 @@ export interface PortfolioPaperOrderSimulationRouteRow {
   detail: string;
   latestStateLabel: string;
   focusQuery: string;
+  stateEventId: string | null;
   canSimulate: boolean;
   simulationId: string | null;
+  adapterPaperExecutionId: string | null;
+  adapterPaperExecutionEvidenceLabel: string;
+  adapterManifestValidationId: string | null;
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
@@ -1055,6 +1100,8 @@ export interface PortfolioPaperOrderStateHistoryRow {
   reason: string;
   quantity: string;
   notionalValue: string;
+  focusQuery: string;
+  adapterEvidenceLabel: string;
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
@@ -1123,6 +1170,15 @@ export interface PortfolioPaperOrderApprovalRow {
   tone: "positive" | "warning" | "risk" | "neutral";
 }
 
+export interface PortfolioPaperOrderApprovalLockedLedgerStateResult {
+  approval?: unknown;
+  existingApproval?: PortfolioPaperOrderApprovalSnapshot;
+  existingSimulation?: PortfolioPaperOrderSimulationSnapshot;
+  approvals?: readonly unknown[];
+  lifecycle?: readonly PortfolioPaperOrderLifecycleSnapshot[];
+  error?: string;
+}
+
 export interface ResearchRunExportBrowserPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -1145,6 +1201,7 @@ export interface ResearchRunExportBrowserPackage {
   };
   researchRun?: ResearchRunAudit;
   paperExecutions?: PaperExecutionSnapshot[];
+  adapterPaperExecutions?: ExecutionAdapterPaperExecutionSnapshot[];
   portfolioPaperOrderBatches?: PortfolioPaperOrderBatchSnapshot[];
   portfolioPaperOrderApprovals?: PortfolioPaperOrderApprovalSnapshot[];
   portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulationSnapshot[];
@@ -1232,6 +1289,7 @@ export interface ResearchRunExportBrowserRow {
     | "backtest-report"
     | "research-note"
     | "paper-executions"
+    | "adapter-paper-executions"
     | "portfolio-paper-orders"
     | "promotion-candidate"
     | "ai-reviews"
@@ -1279,6 +1337,7 @@ export interface ResearchRunImportDiffRow {
     | "strategy-revision"
     | "research-note"
     | "paper-executions"
+    | "adapter-paper-executions"
     | "portfolio-paper-orders"
     | "ai-review-runs"
     | "audit-summary"
@@ -1315,6 +1374,13 @@ export interface AuditEvidenceImportPolicyBlockerBucket {
   tone: "risk" | "warning";
 }
 
+export interface AuditEvidenceMatchedEvidenceFocus {
+  area: "Export package" | "Import diff";
+  detail: string;
+  exportPath: string;
+  label: string;
+}
+
 export interface AuditEvidenceSummary {
   auditQuery: string;
   copyText: string;
@@ -1332,6 +1398,7 @@ export interface AuditEvidenceSummary {
   importVerificationBuckets: AuditEvidenceImportVerificationBucket[];
   importVerificationInvalidCount: number;
   importVerificationVerifiedCount: number;
+  matchedEvidenceFocus?: AuditEvidenceMatchedEvidenceFocus[];
   packageBlockedCount: number;
   packageMatchedCount: number;
   packageMissingCount: number;
@@ -1354,6 +1421,15 @@ export type ResearchRunImportFailureCategory = "schema" | "integrity" | "artifac
 export interface ResearchRunImportAuditBlockedRow {
   id: ResearchRunImportDiffRow["id"];
   label: string;
+  detail: string;
+  exportPath: string;
+  incoming: string;
+}
+
+export interface ResearchRunImportAuditArtifactRow {
+  id: ResearchRunImportDiffRow["id"];
+  label: string;
+  status: Exclude<ResearchRunImportDiffStatus, "blocked">;
   detail: string;
   exportPath: string;
   incoming: string;
@@ -1385,6 +1461,7 @@ export interface ResearchRunImportAuditEvent {
   recoveryHint: string;
   blockedCount: number;
   blockedRows: ResearchRunImportAuditBlockedRow[];
+  artifactRows: ResearchRunImportAuditArtifactRow[];
   changeCount: number;
   exportPath: string;
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
@@ -1516,6 +1593,22 @@ export interface AuditEvidenceReportLedgerRow {
   importVerificationDetail: string;
   importVerificationInvalid: number;
   importVerificationVerified: number;
+  p0BacklogExecutableCount: number;
+  p0BacklogNotExecutableCount: number;
+  p0BacklogReadinessRecorded: boolean;
+  p0BacklogReadinessSummary: string;
+  p0BacklogTotalCount: number;
+  p0CurrentGapActionId: string;
+  p0CurrentGapActionLabel: string;
+  p0CurrentGapCanExecute: boolean;
+  p0CurrentGapDeepLinkSearch: string;
+  p0CurrentGapExecutableActionId: string;
+  p0CurrentGapReadinessReason: P0CurrentGapActionReadinessReason;
+  p0CurrentGapTargetWorkspaceId: ProductWorkAreaId | null;
+  p0CurrentGapWorkspaceId: ProductWorkAreaId | null;
+  p0FirstBacklogCanExecute: boolean;
+  p0FirstBacklogExecutableActionId: string;
+  p0FirstBacklogReadinessReason: P0CurrentGapActionReadinessReason;
   paperPreflightActionId: string;
   paperPreflightActionLabel: string;
   paperPreflightGateBlockedCount: number;
@@ -1525,6 +1618,7 @@ export interface AuditEvidenceReportLedgerRow {
   paperPreflightLabel: string;
   paperPreflightLiveBoundary: string;
   paperPreflightState: string;
+  p0PreparationEvidenceRunId: string;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
   statusLabel: string;
@@ -1552,6 +1646,24 @@ export interface AuditEvidenceReportLedgerSummary {
   importVerificationVerified: number;
   invalid: number;
   latestAuditAidEventId: string;
+  latestAuditAidCurrentGapActionId: string;
+  latestAuditAidCurrentGapActionLabel: string;
+  latestAuditAidCurrentGapCanExecute: boolean;
+  latestAuditAidCurrentGapDeepLinkSearch: string;
+  latestAuditAidCurrentGapExecutableActionId: string;
+  latestAuditAidCurrentGapReadinessQuery: string;
+  latestAuditAidCurrentGapReadinessReason: P0CurrentGapActionReadinessReason;
+  latestAuditAidCurrentGapReadinessTitle: string;
+  latestAuditAidCurrentGapTargetWorkspaceId: ProductWorkAreaId | null;
+  latestAuditAidCurrentGapWorkspaceId: ProductWorkAreaId | null;
+  latestAuditAidBacklogExecutableCount: number;
+  latestAuditAidBacklogNotExecutableCount: number;
+  latestAuditAidBacklogReadinessLabel: string;
+  latestAuditAidBacklogReadinessQuery: string;
+  latestAuditAidBacklogReadinessRecorded: boolean;
+  latestAuditAidBacklogReadinessSummary: string;
+  latestAuditAidBacklogReadinessTitle: string;
+  latestAuditAidBacklogTotalCount: number;
   latestAuditAidEvidenceLabel: string;
   latestAuditAidEvidenceLink: string;
   latestAuditAidPreflightActionId: string;
@@ -1559,6 +1671,8 @@ export interface AuditEvidenceReportLedgerSummary {
   latestAuditAidPreflightAttention: number;
   latestAuditAidPreflightLabel: string;
   latestAuditAidPreflightState: string;
+  latestAuditAidPreparationEvidenceLabel: string;
+  latestAuditAidPreparationEvidenceRunId: string;
   latestAuditAidReportQuery: string;
   latestAuditAidRunId: string;
   latestAuditAidShortHash: string;
@@ -1573,6 +1687,363 @@ export interface AuditEvidenceReportLedgerSummary {
   total: number;
   unsigned: number;
   verified: number;
+}
+
+export interface LatestAuditAidCurrentGapActionDescriptor {
+  actionId: string;
+  actionLabel: string;
+  deepLinkSearch: string;
+  executableActionId: string;
+  query: string;
+  targetWorkspaceId: ProductWorkAreaId | null;
+  workspaceId: ProductWorkAreaId | null;
+}
+
+export interface P0CurrentGapActionDeepLinkState {
+  actionId: string;
+  auditReportQuery: string;
+  executableActionId: string;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+export type P0CurrentGapActionReadinessReason =
+  | "missing-action"
+  | "missing-workspace"
+  | "not-ready-report"
+  | "ready"
+  | "unknown-action";
+
+export interface P0CurrentGapActionReadiness {
+  actionId: string;
+  canExecute: boolean;
+  executableActionId: string;
+  reason: P0CurrentGapActionReadinessReason;
+  targetWorkspaceId: ProductWorkAreaId | null;
+  workspaceId: ProductWorkAreaId | null;
+}
+
+export function buildLatestAuditAidCurrentGapActionDescriptor(
+  summary: AuditEvidenceReportLedgerSummary
+): LatestAuditAidCurrentGapActionDescriptor | null {
+  const actionId = summary.latestAuditAidCurrentGapActionId.trim();
+  const actionLabel = summary.latestAuditAidCurrentGapActionLabel.trim();
+  const recordedDeepLinkSearch = buildP0CurrentGapActionUrlSearch(summary.latestAuditAidCurrentGapDeepLinkSearch);
+  const recordedDeepLinkState = resolveP0CurrentGapActionDeepLinkState(summary.latestAuditAidCurrentGapDeepLinkSearch);
+  const readiness = buildLatestAuditAidCurrentGapActionReadiness(summary);
+  if (!readiness.canExecute) {
+    return null;
+  }
+  const fallbackQuery = [
+    "p0_readiness_report",
+    summary.latestAuditAidRunId,
+    summary.latestAuditAidShortHash,
+    actionId,
+    readiness.targetWorkspaceId ?? ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const query = recordedDeepLinkState?.auditReportQuery || summary.latestAuditAidReportQuery || fallbackQuery;
+  const deepLinkParams = new URLSearchParams();
+  deepLinkParams.set("workspace", readiness.targetWorkspaceId ?? readiness.workspaceId ?? "audit");
+  if (query) {
+    deepLinkParams.set("auditReportQuery", query);
+  }
+  if (actionId) {
+    deepLinkParams.set("p0Action", actionId);
+  }
+  return {
+    actionId,
+    actionLabel: actionLabel || actionId,
+    deepLinkSearch: recordedDeepLinkSearch ?? buildP0CurrentGapActionUrlSearch(deepLinkParams) ?? deepLinkParams.toString(),
+    executableActionId: readiness.executableActionId,
+    query,
+    targetWorkspaceId: readiness.targetWorkspaceId,
+    workspaceId: readiness.workspaceId
+  };
+}
+
+export function buildLatestAuditAidCurrentGapActionReadiness(
+  summary: AuditEvidenceReportLedgerSummary
+): P0CurrentGapActionReadiness {
+  const recordedWorkspaceId = resolveP0CurrentGapActionLinkWorkspace(summary.latestAuditAidCurrentGapDeepLinkSearch);
+  const computedReadiness = buildP0CurrentGapActionReadiness({
+    actionId: summary.latestAuditAidCurrentGapActionId,
+    targetWorkspaceId:
+      summary.latestAuditAidCurrentGapTargetWorkspaceId ??
+      summary.latestAuditAidCurrentGapWorkspaceId ??
+      recordedWorkspaceId,
+    workspaceId: summary.latestAuditAidCurrentGapWorkspaceId ?? recordedWorkspaceId
+  });
+  if (!summary.latestAuditAidEventId) {
+    return computedReadiness;
+  }
+  return {
+    ...computedReadiness,
+    canExecute: summary.latestAuditAidCurrentGapCanExecute,
+    executableActionId: summary.latestAuditAidCurrentGapExecutableActionId || computedReadiness.executableActionId,
+    reason: summary.latestAuditAidCurrentGapReadinessReason
+  };
+}
+
+export function buildAuditEvidenceReportLedgerRowCurrentGapActionDescriptor(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): LatestAuditAidCurrentGapActionDescriptor | null {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return null;
+  }
+  const actionId = row.p0CurrentGapActionId.trim();
+  const actionLabel = row.p0CurrentGapActionLabel.trim();
+  const recordedDeepLinkSearch = buildP0CurrentGapActionUrlSearch(row.p0CurrentGapDeepLinkSearch);
+  const recordedDeepLinkState = resolveP0CurrentGapActionDeepLinkState(row.p0CurrentGapDeepLinkSearch);
+  const readiness = buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness(row);
+  if (!readiness.canExecute) {
+    return null;
+  }
+  const fallbackQuery = auditReportLedgerLatestAuditAidReportQuery(row);
+  const query = recordedDeepLinkState?.auditReportQuery || fallbackQuery;
+  const deepLinkParams = new URLSearchParams();
+  deepLinkParams.set("workspace", readiness.targetWorkspaceId ?? readiness.workspaceId ?? "audit");
+  if (query) {
+    deepLinkParams.set("auditReportQuery", query);
+  }
+  if (actionId) {
+    deepLinkParams.set("p0Action", actionId);
+  }
+  return {
+    actionId,
+    actionLabel: actionLabel || actionId,
+    deepLinkSearch: recordedDeepLinkSearch ?? buildP0CurrentGapActionUrlSearch(deepLinkParams) ?? deepLinkParams.toString(),
+    executableActionId: readiness.executableActionId,
+    query,
+    targetWorkspaceId: readiness.targetWorkspaceId,
+    workspaceId: readiness.workspaceId
+  };
+}
+
+export function buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): P0CurrentGapActionReadiness {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return {
+      actionId: row?.p0CurrentGapActionId?.trim() ?? "",
+      canExecute: false,
+      executableActionId: normalizeP0CurrentGapActionId(row?.p0CurrentGapActionId ?? ""),
+      reason: "not-ready-report",
+      targetWorkspaceId: null,
+      workspaceId: null
+    };
+  }
+  const recordedWorkspaceId = resolveP0CurrentGapActionLinkWorkspace(row.p0CurrentGapDeepLinkSearch);
+  const computedReadiness = buildP0CurrentGapActionReadiness({
+    actionId: row.p0CurrentGapActionId,
+    targetWorkspaceId: row.p0CurrentGapTargetWorkspaceId ?? row.p0CurrentGapWorkspaceId ?? recordedWorkspaceId,
+    workspaceId: row.p0CurrentGapWorkspaceId ?? recordedWorkspaceId
+  });
+  return {
+    ...computedReadiness,
+    canExecute: row.p0CurrentGapCanExecute,
+    executableActionId: row.p0CurrentGapExecutableActionId || computedReadiness.executableActionId,
+    reason: row.p0CurrentGapReadinessReason
+  };
+}
+
+export function buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report") {
+    return "";
+  }
+  if (!row.p0BacklogReadinessRecorded) {
+    return "P0 backlog readiness: not recorded";
+  }
+  const recordedSummary = row.p0BacklogReadinessSummary.trim();
+  if (recordedSummary) {
+    return `P0 backlog readiness: ${recordedSummary}`;
+  }
+  const executableCount = Math.max(0, row.p0BacklogExecutableCount);
+  const notExecutableCount = Math.max(0, row.p0BacklogNotExecutableCount);
+  const totalCount = Math.max(0, row.p0BacklogTotalCount, executableCount + notExecutableCount);
+  if (totalCount <= 0) {
+    return "P0 backlog readiness: 0/0 executable, 0 not executable · no open backlog";
+  }
+  const firstBacklogAction = row.p0FirstBacklogExecutableActionId.trim() || row.p0FirstBacklogReadinessReason;
+  return `P0 backlog readiness: ${executableCount}/${totalCount} executable, ${notExecutableCount} not executable · first ${firstBacklogAction} ${row.p0FirstBacklogReadinessReason}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const label = buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel(row);
+  if (!label) {
+    return "";
+  }
+  if (!row || row.reportKind !== "p0_readiness_report") {
+    return label;
+  }
+  if (!row.p0BacklogReadinessRecorded) {
+    return `${label} · source: legacy report`;
+  }
+  return `${label} · source: ${
+    row.p0BacklogReadinessSummary.trim() ? "metadata backlogReadinessSummary" : "derived backlog counters"
+  }`;
+}
+
+export function buildAuditEvidenceReportLedgerRowP0BacklogReadinessQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  return auditReportLedgerLatestAuditAidBacklogReadinessQuery(row);
+}
+
+export function buildAuditEvidenceReportLedgerRowCurrentGapReadinessQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  return auditReportLedgerLatestAuditAidCurrentGapReadinessQuery(row);
+}
+
+export function buildAuditEvidenceReportLedgerRowCurrentGapReadinessTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  const readiness = buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness(row);
+  const state = readiness.canExecute ? "executable" : "not executable";
+  const workspace = readiness.targetWorkspaceId ?? readiness.workspaceId;
+  return [
+    `P0 current-gap readiness: ${state}`,
+    readiness.executableActionId,
+    readiness.reason,
+    workspace ? `workspace ${workspace}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function resolveP0CurrentGapActionDeepLinkState(
+  search: string | URLSearchParams | null | undefined
+): P0CurrentGapActionDeepLinkState | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const actionId = params.get("p0Action")?.trim() ?? "";
+  const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
+  const executableActionId = normalizeP0CurrentGapActionId(actionId);
+  if (
+    !targetWorkspaceId ||
+    !auditReportQuery ||
+    !/^[A-Za-z0-9._:-]{1,120}$/u.test(actionId) ||
+    !isExecutableP0CurrentGapActionId(actionId)
+  ) {
+    return null;
+  }
+  return {
+    actionId,
+    auditReportQuery,
+    executableActionId,
+    targetWorkspaceId
+  };
+}
+
+export function buildP0CurrentGapActionUrlSearch(search: string | URLSearchParams | null | undefined): string | null {
+  const state = resolveP0CurrentGapActionDeepLinkState(search);
+  if (!state) {
+    return null;
+  }
+  const params = new URLSearchParams();
+  params.set("workspace", state.targetWorkspaceId);
+  params.set("auditReportQuery", state.auditReportQuery);
+  params.set("p0Action", state.actionId);
+  return params.toString();
+}
+
+export function normalizeP0CurrentGapActionId(actionId: string | null | undefined): string {
+  const normalized = (actionId ?? "").trim();
+  if (normalized === "run-ai-committee") {
+    return "run-ai-review";
+  }
+  return normalized;
+}
+
+export function isExecutableP0CurrentGapActionId(actionId: string | null | undefined): boolean {
+  switch (normalizeP0CurrentGapActionId(actionId)) {
+    case "certify-live-adapter":
+    case "fix-paper-handoff":
+    case "refresh-data":
+    case "refresh-watchlist-cache":
+    case "run-ai-review":
+    case "run-pipeline":
+    case "submit-paper-order":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function buildP0CurrentGapActionReadiness({
+  actionId,
+  targetWorkspaceId,
+  workspaceId
+}: {
+  actionId: string | null | undefined;
+  targetWorkspaceId: ProductWorkAreaId | null;
+  workspaceId: ProductWorkAreaId | null;
+}): P0CurrentGapActionReadiness {
+  const normalizedActionId = (actionId ?? "").trim();
+  const executableActionId = normalizeP0CurrentGapActionId(normalizedActionId);
+  const base = {
+    actionId: normalizedActionId,
+    executableActionId,
+    targetWorkspaceId,
+    workspaceId
+  };
+  if (!normalizedActionId) {
+    return {
+      ...base,
+      canExecute: false,
+      reason: "missing-action"
+    };
+  }
+  if (!isExecutableP0CurrentGapActionId(normalizedActionId)) {
+    return {
+      ...base,
+      canExecute: false,
+      reason: "unknown-action"
+    };
+  }
+  if (!targetWorkspaceId && !workspaceId) {
+    return {
+      ...base,
+      canExecute: false,
+      reason: "missing-workspace"
+    };
+  }
+  return {
+    ...base,
+    canExecute: true,
+    reason: "ready"
+  };
+}
+
+function resolveP0CurrentGapActionLinkWorkspace(search: string | URLSearchParams | null | undefined): ProductWorkAreaId | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  return auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
 }
 
 export interface MarketDataRefreshOverrideAuditLedgerRow {
@@ -1615,6 +2086,75 @@ export interface MarketDataRefreshOverrideAuditLedgerSummary {
   latestTimeframe: Timeframe | "";
   liveBlocked: number;
   recorded: number;
+  total: number;
+}
+
+export type PortfolioPaperOrderAuditEventKind = "batch" | "approval" | "simulation";
+
+export interface PortfolioPaperOrderAuditLedgerRow {
+  id: string;
+  actor: string;
+  adapterEvidenceId: string;
+  batchId: string;
+  boundaryLabel: string;
+  createdAt: string;
+  detail: string;
+  eventKind: PortfolioPaperOrderAuditEventKind;
+  eventType: string;
+  orderId: string;
+  portfolioName: string;
+  quantityLabel: string;
+  runId: string;
+  searchText: string;
+  simulationId: string;
+  source: string;
+  stage: string;
+  statusLabel: string;
+  summary: string;
+  symbol: string;
+  tone: "positive" | "risk" | "warning" | "neutral";
+  valueLabel: string;
+}
+
+export interface PortfolioPaperOrderAuditLedgerSummary {
+  approvals: number;
+  batches: number;
+  latestEventId: string;
+  liveBlocked: number;
+  simulations: number;
+  total: number;
+}
+
+export interface ExecutionAdapterPaperExecutionAuditLedgerRow {
+  id: string;
+  adapterId: string;
+  adapterOpsStateId: string;
+  blockedReasonsLabel: string;
+  boundaryLabel: string;
+  confirmationLabel: string;
+  createdAt: string;
+  detail: string;
+  eventType: string;
+  fillLabel: string;
+  manifestValidationId: string;
+  market: string;
+  paperFillRecorded: boolean;
+  route: string;
+  runId: string;
+  searchText: string;
+  source: string;
+  stage: string;
+  statusLabel: string;
+  summary: string;
+  symbol: string;
+  tone: "positive" | "risk" | "warning" | "neutral";
+}
+
+export interface ExecutionAdapterPaperExecutionAuditLedgerSummary {
+  blocked: number;
+  filled: number;
+  latestEventId: string;
+  liveBlocked: number;
   total: number;
 }
 
@@ -2012,10 +2552,11 @@ export interface PaperExecutionSnapshot {
   };
   orders: PaperExecutionSnapshotOrder[];
   gates: PaperExecutionSnapshotGate[];
+  preparationEvidence?: ResearchRunDataPreparationEvidence;
 }
 
 export interface PaperExecutionSummaryTile {
-  id: "account-sync" | "paper-positions" | "risk-gates";
+  id: "account-sync" | "paper-positions" | "preparation-evidence" | "risk-gates";
   label: string;
   value: string;
   detail: string;
@@ -2383,6 +2924,55 @@ export interface ExecutionAdapterSecretMaterializationRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterSecretManifestValidationStatus = "blocked" | "validated";
+
+export interface ExecutionAdapterSecretManifestValidationSnapshot {
+  schemaVersion: 1;
+  validationId: string;
+  materializationId: string;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSecretManifestValidationStatus;
+  operator: string;
+  recordedAt: string;
+  validationMode: string;
+  referenceName: string;
+  backend: string;
+  manifestPath: string;
+  fingerprint: string;
+  requiredEnvVars: string[];
+  coveredEnvVars: string[];
+  blockedReasons: string[];
+  manifestSummary: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSecretManifestValidationRow {
+  id: string;
+  materializationId: string;
+  referenceId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSecretManifestValidationStatus;
+  statusLabel: string;
+  referenceName: string;
+  backend: string;
+  manifestPath: string;
+  validationMode: string;
+  fingerprint: string;
+  envCoverageSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
 export type ExecutionAdapterEnvironmentBindingStatus = "blocked" | "binding_recorded";
 export type ExecutionAdapterEnvironmentBindingConfirmationStatus = "confirmed" | "missing";
 
@@ -2390,6 +2980,7 @@ export interface ExecutionAdapterEnvironmentBindingSnapshot {
   schemaVersion: 1;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2413,6 +3004,7 @@ export interface ExecutionAdapterEnvironmentBindingSnapshot {
 export interface ExecutionAdapterEnvironmentBindingRow {
   id: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2437,6 +3029,7 @@ export interface ExecutionAdapterRuntimeReloadPlanSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2463,6 +3056,7 @@ export interface ExecutionAdapterRuntimeReloadPlanRow {
   id: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2490,6 +3084,7 @@ export interface ExecutionAdapterRuntimeReloadExecutionSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2518,6 +3113,7 @@ export interface ExecutionAdapterRuntimeReloadExecutionRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2547,6 +3143,7 @@ export interface ExecutionAdapterRuntimeReloadAcceptanceSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2577,6 +3174,7 @@ export interface ExecutionAdapterRuntimeReloadAcceptanceRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2608,6 +3206,7 @@ export interface ExecutionAdapterOrchestrationDryRunSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2640,6 +3239,7 @@ export interface ExecutionAdapterOrchestrationDryRunRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2673,6 +3273,7 @@ export interface ExecutionAdapterOrchestrationExecutionSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2707,6 +3308,7 @@ export interface ExecutionAdapterOrchestrationExecutionRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2742,6 +3344,7 @@ export interface ExecutionAdapterHumanConfirmationSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2778,6 +3381,7 @@ export interface ExecutionAdapterHumanConfirmationRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2815,6 +3419,7 @@ export interface ExecutionAdapterSandboxProbePlanSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2853,6 +3458,7 @@ export interface ExecutionAdapterSandboxProbePlanRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2892,6 +3498,7 @@ export interface ExecutionAdapterSandboxProbeExecutionSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2932,6 +3539,7 @@ export interface ExecutionAdapterSandboxProbeExecutionRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -2973,6 +3581,7 @@ export interface ExecutionAdapterSandboxProbeReviewSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -3015,6 +3624,7 @@ export interface ExecutionAdapterSandboxProbeReviewRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -3058,6 +3668,7 @@ export interface ExecutionAdapterProductionRouteReviewSnapshot {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -3102,6 +3713,7 @@ export interface ExecutionAdapterProductionRouteReviewRow {
   planId: string;
   bindingId: string;
   materializationId: string;
+  manifestValidationId: string;
   adapterId: string;
   market: Market | "multi";
   route: "paper" | "live";
@@ -3122,6 +3734,670 @@ export interface ExecutionAdapterProductionRouteReviewRow {
   bindingMode: string;
   manifestPath: string;
   envVarSummary: string;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export type ExecutionAdapterSandboxOrderSchemaDryRunStatus = "blocked" | "schema_dry_run_recorded";
+export type ExecutionAdapterSandboxOrderSchemaDryRunConfirmationStatus = "confirmed" | "missing";
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunSnapshot {
+  schemaVersion: 1;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterSandboxOrderSchemaDryRunStatus;
+  operator: string;
+  recordedAt: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: string;
+    quantity: number;
+    price?: number;
+    timeInForce?: string;
+  };
+  orderSubmitted: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterSandboxOrderSchemaDryRunConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterSandboxOrderSchemaDryRunRow {
+  id: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterSandboxOrderSchemaDryRunStatus;
+  statusLabel: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  orderIntentSummary: string;
+  orderSubmitted: boolean;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export type ExecutionAdapterPaperOrderLifecycleStatus = "blocked" | "lifecycle_recorded";
+export type ExecutionAdapterPaperOrderLifecycleConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterPaperOrderLifecycleStepStatus = "blocked" | "recorded";
+
+export interface ExecutionAdapterPaperOrderLifecycleSnapshot {
+  schemaVersion: 1;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterPaperOrderLifecycleStatus;
+  operator: string;
+  recordedAt: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: string;
+    quantity: number;
+    price?: number;
+    timeInForce?: string;
+  };
+  lifecycleSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperOrderLifecycleStepStatus;
+  }>;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperOrderLifecycleConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterPaperOrderLifecycleRow {
+  id: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterPaperOrderLifecycleStatus;
+  statusLabel: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  orderIntentSummary: string;
+  lifecycleStepSummary: string;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export type ExecutionAdapterPaperRouteRunbookStatus = "blocked" | "runbook_recorded";
+export type ExecutionAdapterPaperRouteRunbookConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterPaperRouteRunbookStepStatus = "blocked" | "recorded";
+
+export interface ExecutionAdapterPaperRouteRunbookSnapshot {
+  schemaVersion: 1;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterPaperRouteRunbookStatus;
+  operator: string;
+  recordedAt: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: string;
+    quantity: number;
+    price?: number;
+    timeInForce?: string;
+  };
+  lifecycleSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperOrderLifecycleStepStatus;
+  }>;
+  runbookSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperRouteRunbookStepStatus;
+  }>;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperRouteRunbookConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterPaperRouteRunbookRow {
+  id: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterPaperRouteRunbookStatus;
+  statusLabel: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  orderIntentSummary: string;
+  lifecycleStepSummary: string;
+  runbookStepSummary: string;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export type ExecutionAdapterOpsStateStatus = "blocked" | "ops_state_recorded";
+export type ExecutionAdapterOpsStateConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterOpsStateStepStatus = "blocked" | "recorded";
+
+export interface ExecutionAdapterOpsStateSnapshot {
+  schemaVersion: 1;
+  adapterOpsStateId: string;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterOpsStateStatus;
+  operator: string;
+  recordedAt: string;
+  opsMode: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: string;
+    quantity: number;
+    price?: number;
+    timeInForce?: string;
+  };
+  lifecycleSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperOrderLifecycleStepStatus;
+  }>;
+  runbookSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperRouteRunbookStepStatus;
+  }>;
+  opsSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterOpsStateStepStatus;
+  }>;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterOpsStateConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterOpsStateRow {
+  id: string;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterOpsStateStatus;
+  statusLabel: string;
+  opsMode: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  orderIntentSummary: string;
+  lifecycleStepSummary: string;
+  runbookStepSummary: string;
+  opsStepSummary: string;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  confirmationSummary: string;
+  blockerSummary: string;
+  boundary: string;
+  auditEventId: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export type ExecutionAdapterPaperExecutionStatus = "blocked" | "paper_execution_recorded";
+export type ExecutionAdapterPaperExecutionConfirmationStatus = "confirmed" | "missing";
+export type ExecutionAdapterPaperExecutionStepStatus = "blocked" | "recorded";
+export type ExecutionAdapterPaperExecutionFillStatus = "blocked" | "filled";
+
+export interface ExecutionAdapterPaperExecutionSnapshot {
+  schemaVersion: 1;
+  adapterPaperExecutionId: string;
+  adapterOpsStateId: string;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: ExecutionAdapterPaperExecutionStatus;
+  operator: string;
+  recordedAt: string;
+  paperExecutionMode: string;
+  opsMode: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  requiredEnvVars: string[];
+  orderIntent: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: string;
+    quantity: number;
+    price?: number;
+    timeInForce?: string;
+  };
+  lifecycleSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperOrderLifecycleStepStatus;
+  }>;
+  runbookSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperRouteRunbookStepStatus;
+  }>;
+  opsSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterOpsStateStepStatus;
+  }>;
+  paperExecutionSteps: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperExecutionStepStatus;
+  }>;
+  simulatedFill: {
+    fillId: string;
+    status: ExecutionAdapterPaperExecutionFillStatus;
+    symbol: string;
+    side: "buy" | "sell";
+    type: string;
+    quantity: number;
+    price?: number;
+    timeInForce?: string;
+    source: string;
+    orderSubmitted: boolean;
+    liveOrderSubmitted: boolean;
+    routeExecuted: boolean;
+  };
+  paperFillRecorded: boolean;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  requiredConfirmations: Array<{
+    id: string;
+    label: string;
+    status: ExecutionAdapterPaperExecutionConfirmationStatus;
+  }>;
+  blockedReasons: string[];
+  metadata: Record<string, unknown>;
+  liveTradingAllowed: boolean;
+  paperOnly: boolean;
+}
+
+export interface ExecutionAdapterPaperExecutionRow {
+  id: string;
+  adapterOpsStateId: string;
+  paperRouteRunbookId: string;
+  paperOrderLifecycleId: string;
+  sandboxOrderSchemaDryRunId: string;
+  productionRouteReviewId: string;
+  sandboxProbeReviewId: string;
+  sandboxProbeExecutionId: string;
+  sandboxProbePlanId: string;
+  humanConfirmationId: string;
+  orchestrationExecutionId: string;
+  dryRunId: string;
+  acceptanceId: string;
+  executionId: string;
+  planId: string;
+  bindingId: string;
+  materializationId: string;
+  manifestValidationId: string;
+  adapterId: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  timestamp: string;
+  status: ExecutionAdapterPaperExecutionStatus;
+  statusLabel: string;
+  paperExecutionMode: string;
+  opsMode: string;
+  runbookMode: string;
+  lifecycleMode: string;
+  dryRunMode: string;
+  reviewMode: string;
+  sandboxReviewMode: string;
+  probeExecutionMode: string;
+  probeMode: string;
+  confirmationMode: string;
+  orchestrationExecutionMode: string;
+  orchestrationMode: string;
+  acceptanceMode: string;
+  executionMode: string;
+  reloadMode: string;
+  maintenanceWindowId: string;
+  bindingMode: string;
+  manifestPath: string;
+  envVarSummary: string;
+  orderIntentSummary: string;
+  simulatedSymbol: string;
+  simulatedSide: "buy" | "sell";
+  simulatedQuantity: number;
+  lifecycleStepSummary: string;
+  runbookStepSummary: string;
+  opsStepSummary: string;
+  paperExecutionStepSummary: string;
+  fillSummary: string;
+  paperFillRecorded: boolean;
+  orderSubmitted: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
   confirmationSummary: string;
   blockerSummary: string;
   boundary: string;
@@ -3163,6 +4439,19 @@ export interface ExecutionAdapterHealthProbeSnapshot {
   accountSyncState: string;
   blockedReasons: string[];
   metadata: Record<string, unknown>;
+  productionRouteReviewId?: string;
+  productionRouteReviewStatus?: "route_review_recorded";
+  routeReview?: {
+    productionRouteReviewId: string;
+    status: "route_review_recorded";
+    adapterId: string;
+    market: string;
+    route: "live";
+    maintenanceWindowId: string;
+    requiredEnvVars: string[];
+    liveTradingAllowed: false;
+    paperOnly: true;
+  };
   paperOnly: boolean;
   liveTradingAllowed: boolean;
   orderRoutingEnabled: boolean;
@@ -3180,6 +4469,7 @@ export interface ExecutionAdapterHealthProbeRow {
   marketSummary: string;
   credentialSummary: string;
   accountSyncSummary: string;
+  routeReviewSummary: string;
   checkSummary: string;
   blockerSummary: string;
   boundary: string;
@@ -3772,6 +5062,13 @@ export interface ResearchPipelinePreflightIssue {
   action?: ResearchContextReadinessAction;
 }
 
+export interface ResearchPipelineLockedPreparationEvidence {
+  runId: string;
+  label: string;
+  value: string;
+  detail: string;
+}
+
 export interface ResearchPipelinePreflight {
   status: ResearchContextReadinessStatus;
   canRun: boolean;
@@ -3779,6 +5076,12 @@ export interface ResearchPipelinePreflight {
   summary: string;
   primaryAction?: ResearchContextReadinessAction;
   issues: ResearchPipelinePreflightIssue[];
+  lockedPreparationEvidence: ResearchPipelineLockedPreparationEvidence | null;
+}
+
+export interface ResearchPipelinePreparationEvidenceSelection {
+  preflight: ResearchPipelinePreflight;
+  selectedCoverageRunId?: string | null;
 }
 
 export interface ResearchRunDataSnapshotBar {
@@ -4080,14 +5383,15 @@ const productDevelopmentStageDefinitions = [
   },
   {
     id: "market-research",
-    label: "Stage 1 · Market and Research",
+    label: "Stage 1 · A-share P0 Golden Path",
     status: "current",
-    workAreaIds: ["market", "research"],
-    focus: "Finish the reliable search, quote, K-line, cache, data-quality, and notes loop before expanding later work.",
+    workAreaIds: ["market", "research", "strategy", "backtest", "ai-review", "execution"],
+    focus:
+      "Ship the six-week personal/small-team A-share single-symbol loop: real data, chart, strategy, audited backtest, AI review, paper execution, and export.",
     exitCriteria: [
-      "A-share, US, and crypto symbols can be searched and selected from the UI.",
-      "The selected symbol and timeframe drive quotes, K-lines, cache status, chart, and research notes.",
-      "Every fallback, stale cache, incomplete source, and refresh failure is visible to the user."
+      "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
+      "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
+      "The run can be replayed and exported with data snapshot, preparation evidence, strategy revision, assumptions, AI review, and paper-only execution evidence."
     ]
   },
   {
@@ -4095,7 +5399,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 2 · Strategy and Backtest",
     status: "planned",
     workAreaIds: ["strategy", "backtest"],
-    focus: "Resume only after Stage 1 exits; build a maintainable strategy lab and reproducible backtest evidence loop.",
+    focus: "After the P0 loop is dependable, expand strategy templates, parameter scans, comparisons, and reusable reports.",
     exitCriteria: [
       "Strategy drafts are fully structured and versioned.",
       "Backtests are reproducible from strategy, data snapshot, and assumptions.",
@@ -4592,16 +5896,22 @@ export function buildP0PlatformActionOutcome(
     const orderCount = paperExecution.orders?.length ?? 0;
     const gateCount = paperExecution.gates?.length ?? 0;
     const passedGateCount = paperExecution.gates?.filter((gate) => gate.passed).length ?? 0;
+    const preparationEvidenceDetail = formatP0PaperExecutionPreparationEvidenceDetail(
+      paperExecution.preparationEvidence
+    );
+    const preparationEvidenceRunId = p0PaperExecutionPreparationEvidenceRunId(paperExecution.preparationEvidence);
     return {
       state: "paper_execution",
       label: "Paper execution recorded",
       detail: [
         paperExecution.executionId,
         `${orderCount} ${orderCount === 1 ? "order" : "orders"}`,
-        `${passedGateCount}/${gateCount} gates passed`
+        `${passedGateCount}/${gateCount} gates passed`,
+        ...(preparationEvidenceDetail ? [preparationEvidenceDetail] : [])
       ].join(" · "),
       evidenceId: paperExecution.executionId,
       runId: paperExecution.runId || null,
+      ...(preparationEvidenceRunId ? { preparationEvidenceRunId } : {}),
       targetWorkspaceId: "execution",
       tone: "positive",
       nextStep: "Review the execution handoff and promotion gates; live trading remains blocked."
@@ -4634,6 +5944,24 @@ export function buildP0PlatformActionOutcome(
     tone: "warning",
     nextStep: "Start with market data refresh and an audited research pipeline."
   };
+}
+
+function formatP0PaperExecutionPreparationEvidenceDetail(
+  evidence: P0PlatformActionOutcomePaperExecution["preparationEvidence"]
+): string | null {
+  const runId = p0PaperExecutionPreparationEvidenceRunId(evidence);
+  if (!runId) {
+    return null;
+  }
+  const rows = Number.isFinite(evidence?.upsertedRows) ? `${evidence?.upsertedRows} rows` : null;
+  const source = evidence?.quality?.source?.trim() || null;
+  return [`prep ${runId}`, rows, source].filter(Boolean).join(" · ");
+}
+
+function p0PaperExecutionPreparationEvidenceRunId(
+  evidence: P0PlatformActionOutcomePaperExecution["preparationEvidence"]
+): string | null {
+  return evidence?.runId?.trim() || null;
 }
 
 export function buildP0PaperExecutionPreflight(
@@ -4875,11 +6203,10 @@ function buildP0PaperExecutionLiveBoundaryGate(
 export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadinessReportInput): string {
   const generatedAt = input.generatedAt?.trim() || new Date().toISOString();
   const currentGap = input.summary.currentGap;
+  const currentGapLinkLine = buildP0CurrentGapReportLinkLine(input, generatedAt);
   const backlogLines = input.backlogItems.length
     ? input.backlogItems.map((item, index) => {
-        const action = item.actionLabel?.trim() || "No direct action";
-        const workspace = item.targetWorkspaceId || item.workspaceId;
-        return `${index + 1}. [${item.priority}] ${item.label} (${item.status}) - ${p0ReportText(item.detail)} Action: ${action}. Workspace: ${workspace}.`;
+        return `${index + 1}. [${item.priority}] ${item.label} (${item.status}) - ${p0ReportText(item.detail)}${p0ReadinessGapActionReportText(item)}`;
       })
     : ["No open P0 gaps in the current Golden Path status."];
   const evidenceLink = input.evidenceLink?.search?.trim()
@@ -4893,12 +6220,14 @@ export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadines
     `- Generated at: ${generatedAt}`,
     `- State: ${input.summary.headline}`,
     `- Progress: ${input.summary.passedSteps}/${input.summary.totalSteps} steps passed (${input.summary.progressPct}%)`,
+    buildP0BacklogReadinessReportLine(input.backlogItems),
     `- Open gaps: ${input.summary.openStepCount}`,
     `- Review steps: ${input.summary.reviewSteps}`,
     `- Blocked steps: ${input.summary.blockedSteps}`,
     currentGap
-      ? `- Current gap: ${currentGap.label} - ${p0ReportText(currentGap.detail)}`
+      ? `- Current gap: ${currentGap.label} - ${p0ReportText(currentGap.detail)}${p0ReadinessGapActionReportText(currentGap)}`
       : "- Current gap: none",
+    ...(currentGapLinkLine ? [currentGapLinkLine] : []),
     `- Live boundary: ${input.summary.liveBoundary.label} - ${p0ReportText(input.summary.liveBoundary.detail)}`,
     "",
     "## Open P0 Gaps",
@@ -4914,6 +6243,63 @@ export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadines
     "",
     "This report is an audit aid only. It does not authorize live trading or provide investment advice."
   ].join("\n");
+}
+
+function buildP0BacklogReadinessReportLine(backlogItems: readonly P0PlatformBacklogItem[]): string {
+  const readiness = backlogItems.map((item) =>
+    buildP0CurrentGapActionReadiness({
+      actionId: item.actionId,
+      targetWorkspaceId: auditReportLedgerProductWorkAreaId((item.targetWorkspaceId ?? item.workspaceId ?? "").trim()),
+      workspaceId: auditReportLedgerProductWorkAreaId((item.workspaceId ?? "").trim())
+    })
+  );
+  const total = backlogItems.length;
+  const executable = readiness.filter((item) => item.canExecute).length;
+  const notExecutable = Math.max(0, total - executable);
+  const firstReadiness = readiness[0] ?? null;
+  const firstAction =
+    firstReadiness?.executableActionId ||
+    backlogItems[0]?.actionId?.trim() ||
+    firstReadiness?.reason ||
+    "none";
+  const firstReason = firstReadiness?.reason ?? "none";
+  return `- Backlog readiness: ${executable}/${total} executable, ${notExecutable} not executable. First: ${firstAction} ${firstReason}.`;
+}
+
+function buildP0CurrentGapReportLinkLine(
+  input: P0PlatformReadinessReportInput,
+  generatedAt: string
+): string | null {
+  const gap = input.summary.currentGap;
+  const actionId = gap?.actionId?.trim() ?? "";
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId((gap?.targetWorkspaceId ?? gap?.workspaceId ?? "").trim());
+  if (!gap || !actionId || !targetWorkspaceId) {
+    return null;
+  }
+  const evidenceToken = input.outcome.runId?.trim() || input.outcome.evidenceId?.trim() || generatedAt;
+  const query = ["p0_readiness_report", evidenceToken, actionId, targetWorkspaceId].filter(Boolean).join(" ");
+  const params = new URLSearchParams();
+  params.set("workspace", targetWorkspaceId);
+  params.set("auditReportQuery", query);
+  params.set("p0Action", actionId);
+  const search = buildP0CurrentGapActionUrlSearch(params);
+  return search ? `- Current gap link: ${search}` : null;
+}
+
+function p0ReadinessGapActionReportText(gap: P0PlatformReadinessGap): string {
+  const action = gap.actionLabel?.trim() || "No direct action";
+  const workspace = gap.targetWorkspaceId || gap.workspaceId;
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId((gap.targetWorkspaceId ?? gap.workspaceId ?? "").trim());
+  const workspaceId = auditReportLedgerProductWorkAreaId((gap.workspaceId ?? "").trim());
+  const readiness = buildP0CurrentGapActionReadiness({
+    actionId: gap.actionId,
+    targetWorkspaceId,
+    workspaceId
+  });
+  const executableText = readiness.canExecute
+    ? `yes (${readiness.executableActionId})`
+    : `no (${readiness.reason})`;
+  return ` Action: ${p0ReportText(action)}. Workspace: ${workspace}. Executable: ${executableText}.`;
 }
 
 function buildP0PaperExecutionPreflightReportLines(
@@ -5010,7 +6396,10 @@ function p0PlatformReadinessDetail(
     return `${progress} · live gates reported ready`;
   }
   const gap = context.currentGap?.label ?? "Evidence";
-  return `${progress} · current gap: ${gap}`;
+  const action = context.currentGap?.actionLabel?.trim();
+  const workspace = context.currentGap?.targetWorkspaceId || context.currentGap?.workspaceId;
+  const actionDetail = action && workspace ? ` · action: ${action} -> ${workspace}` : "";
+  return `${progress} · current gap: ${gap}${actionDetail}`;
 }
 
 function p0ReportText(value: string | null | undefined): string {
@@ -5705,6 +7094,7 @@ export function buildAiReviewAuditTimelineItems({
   decisionCount = 0,
   dossier,
   marketCalendar = null,
+  paperExecution = null,
   preparationEvidence = null,
   records,
   roundCount = 0,
@@ -5718,6 +7108,7 @@ export function buildAiReviewAuditTimelineItems({
   decisionCount?: number;
   dossier: AiReviewDossier;
   marketCalendar?: ResearchContextMarketCalendar | null;
+  paperExecution?: PaperExecutionSnapshot | null;
   preparationEvidence?: ResearchRunDataPreparationEvidence | null;
   records: AiReviewRunRecord[];
   roundCount?: number;
@@ -5852,6 +7243,26 @@ export function buildAiReviewAuditTimelineItems({
         tone: preparationEvidence.quality.isComplete ? ("positive" as const) : ("warning" as const)
       } satisfies AiReviewAuditTimelineItem)
     : null;
+  const paperExecutionPreparationEvidence =
+    paperExecution?.runId === currentRunId ? (paperExecution.preparationEvidence ?? null) : null;
+  const paperExecutionPreparationItem =
+    paperExecution && paperExecutionPreparationEvidence
+      ? ({
+          id: `paper-preparation:${paperExecutionPreparationEvidence.runId}`,
+          kind: "paper-execution-preparation-evidence" as const,
+          label: "Paper execution preparation",
+          value: `${paperExecutionPreparationEvidence.upsertedRows} rows · ${paperExecutionPreparationEvidence.quality.source}`,
+          detail: `Paper ${paperExecution.executionId} · ${formatPreparationEvidenceDetail(paperExecutionPreparationEvidence)}`,
+          reference: paperExecutionPreparationEvidence.runId,
+          exportAnchor: `paperExecution:${paperExecution.executionId}:preparationEvidence:${paperExecutionPreparationEvidence.runId}`,
+          createdAt: paperExecutionPreparationEvidence.createdAt,
+          targetWorkspaceId: "execution" as const,
+          targetRecordId: paperExecution.executionId,
+          actionLabel: "Open paper evidence",
+          status: paperExecutionPreparationEvidence.quality.isComplete ? ("passed" as const) : ("review" as const),
+          tone: paperExecutionPreparationEvidence.quality.isComplete ? ("positive" as const) : ("warning" as const)
+        } satisfies AiReviewAuditTimelineItem)
+      : null;
   const calendarItem = marketCalendar
     ? ({
         id: `calendar:${marketCalendar.market}:${marketCalendar.tradingDay}`,
@@ -5912,6 +7323,7 @@ export function buildAiReviewAuditTimelineItems({
     ...(aiBoundaryItem ? [aiBoundaryItem] : []),
     ...(snapshotItem ? [snapshotItem] : []),
     ...(preparationItem ? [preparationItem] : []),
+    ...(paperExecutionPreparationItem ? [paperExecutionPreparationItem] : []),
     ...(calendarItem ? [calendarItem] : []),
     ...savedRecordItems,
     {
@@ -6028,6 +7440,7 @@ export function buildResearchRunExportPreviewRows({
   const marketCalendar = dataSnapshot?.marketCalendar ?? null;
   const researchNote = normalizedResearchNote(run?.researchNote);
   const activePaperExecution = run && paperExecution?.runId === run.runId ? paperExecution : null;
+  const activePaperPreparationEvidence = activePaperExecution?.preparationEvidence ?? null;
   const activePromotionCandidate =
     run && promotionCandidate?.runId && promotionCandidate.runId === run.runId ? promotionCandidate : null;
   const activeAiReviewRecords = run
@@ -6182,7 +7595,11 @@ export function buildResearchRunExportPreviewRows({
       anchor: activePaperExecution ? `paperExecution:${activePaperExecution.executionId}` : `paperExecution:${runId}:missing`,
       exportPath: "paperExecutions[]",
       detail: activePaperExecution
-        ? `${activePaperExecution.mode} · ${activePaperExecution.gates.filter((gate) => gate.passed).length}/${activePaperExecution.gates.length} gates passed`
+        ? [
+            activePaperExecution.mode,
+            `${activePaperExecution.gates.filter((gate) => gate.passed).length}/${activePaperExecution.gates.length} gates passed`,
+            ...(activePaperPreparationEvidence ? [`prep ${activePaperPreparationEvidence.runId}`] : [])
+          ].join(" · ")
         : run
           ? "Submit a paper order to attach execution evidence to the run package."
           : "Paper execution waits for an audited run.",
@@ -6250,6 +7667,48 @@ export function filterResearchRunExportPreviewRows(
   );
 }
 
+function collectPaperExecutionPreparationEvidenceRunIds(
+  executions: readonly PaperExecutionSnapshot[] | null | undefined
+): string[] {
+  return Array.from(
+    new Set(
+      (executions ?? [])
+        .map((execution) => execution.preparationEvidence?.runId)
+        .filter((runId): runId is string => Boolean(runId))
+    )
+  );
+}
+
+function formatAdapterPaperExecutionEvidenceDetail(
+  executions: readonly ExecutionAdapterPaperExecutionSnapshot[] | null | undefined
+): string {
+  const firstExecution = executions?.[0];
+  if (!firstExecution) {
+    return "No adapter paper execution evidence is attached.";
+  }
+  return [
+    firstExecution.adapterPaperExecutionId,
+    firstExecution.adapterId,
+    firstExecution.route,
+    firstExecution.simulatedFill.status
+  ].join(" · ");
+}
+
+function formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(
+  simulations: readonly PortfolioPaperOrderSimulationSnapshot[] | null | undefined
+): string {
+  const withAdapterEvidence = (simulations ?? []).filter((simulation) => simulation.adapterPaperExecutionId);
+  if (!withAdapterEvidence.length) {
+    return "";
+  }
+  const firstSimulation = withAdapterEvidence[0];
+  const evidence = firstSimulation?.adapterPaperExecutionEvidence ?? {};
+  const fillSummary = typeof evidence.fillSummary === "string" ? evidence.fillSummary : "adapter fill evidence";
+  return `${withAdapterEvidence.length} simulated fill${
+    withAdapterEvidence.length === 1 ? "" : "s"
+  } carries adapter paper execution evidence: ${firstSimulation.adapterPaperExecutionId} · ${fillSummary}`;
+}
+
 export function buildResearchRunExportBrowserRows(
   exportPackage: ResearchRunExportBrowserPackage | null | undefined
 ): ResearchRunExportBrowserRow[] {
@@ -6269,9 +7728,14 @@ export function buildResearchRunExportBrowserRows(
 
   const { artifactCounts } = exportPackage.manifest;
   const paperPackageCount = exportPackage.paperExecutions?.length ?? 0;
+  const paperPreparationEvidenceRunIds = collectPaperExecutionPreparationEvidenceRunIds(exportPackage.paperExecutions);
+  const adapterPaperExecutionPackageCount = exportPackage.adapterPaperExecutions?.length ?? 0;
+  const adapterPaperExecutionDetail = formatAdapterPaperExecutionEvidenceDetail(exportPackage.adapterPaperExecutions);
   const portfolioPaperOrderPackageCount = exportPackage.portfolioPaperOrderBatches?.length ?? 0;
   const portfolioPaperOrderApprovalPackageCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
   const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
+  const portfolioPaperOrderSimulationAdapterEvidenceDetail =
+    formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(exportPackage.portfolioPaperOrderSimulations);
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
   const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
   const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
@@ -6314,6 +7778,8 @@ export function buildResearchRunExportBrowserRows(
     exportPackage.manifest.dataHash.trim() !== "";
   const backtestIsReady = artifactCounts.trades > 0 && artifactCounts.equityPoints > 0;
   const paperCountMatches = (artifactCounts.paperExecutions ?? 0) === paperPackageCount;
+  const adapterPaperExecutionCountMatches =
+    (artifactCounts.adapterPaperExecutions ?? 0) === adapterPaperExecutionPackageCount;
   const portfolioPaperOrderCountMatches =
     (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount &&
     (artifactCounts.portfolioPaperOrderApprovals ?? 0) === portfolioPaperOrderApprovalPackageCount &&
@@ -6436,10 +7902,34 @@ export function buildResearchRunExportBrowserRows(
       status: paperCountMatches && paperPackageCount > 0 ? "ready" : paperCountMatches ? "missing" : "blocked",
       value: `${artifactCounts.paperExecutions ?? 0} manifest / ${paperPackageCount} package`,
       detail: paperCountMatches
-        ? "Manifest and package paper execution counts match."
+        ? [
+            "Manifest and package paper execution counts match",
+            ...(paperPreparationEvidenceRunIds.length ? [`prep ${paperPreparationEvidenceRunIds.join(", ")}`] : [])
+          ].join(" · ")
         : "Manifest paper execution count does not match the package payload.",
       exportPath: "paperExecutions[]",
       tone: paperCountMatches && paperPackageCount > 0 ? "positive" : paperCountMatches ? "neutral" : "risk"
+    },
+    {
+      id: "adapter-paper-executions",
+      label: "Adapter paper executions",
+      status:
+        adapterPaperExecutionCountMatches && adapterPaperExecutionPackageCount > 0
+          ? "ready"
+          : adapterPaperExecutionCountMatches
+            ? "missing"
+            : "blocked",
+      value: `${artifactCounts.adapterPaperExecutions ?? 0} manifest / ${adapterPaperExecutionPackageCount} package`,
+      detail: adapterPaperExecutionCountMatches
+        ? adapterPaperExecutionDetail
+        : "Manifest adapter paper execution count does not match the package payload.",
+      exportPath: "adapterPaperExecutions[]",
+      tone:
+        adapterPaperExecutionCountMatches && adapterPaperExecutionPackageCount > 0
+          ? "positive"
+          : adapterPaperExecutionCountMatches
+            ? "neutral"
+            : "risk"
     },
     {
       id: "portfolio-paper-orders",
@@ -6452,7 +7942,12 @@ export function buildResearchRunExportBrowserRows(
             : "blocked",
       value: `${artifactCounts.portfolioPaperOrderBatches ?? 0} batches / ${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals / ${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
       detail: portfolioPaperOrderCountMatches
-        ? "Portfolio paper order batch, approval, and simulated-fill counts match the package payload. portfolioPaperOrderBatches / portfolioPaperOrderApprovals / portfolioPaperOrderSimulations"
+        ? [
+            "Portfolio paper order batch, approval, and simulated-fill counts match the package payload. portfolioPaperOrderBatches / portfolioPaperOrderApprovals / portfolioPaperOrderSimulations",
+            portfolioPaperOrderSimulationAdapterEvidenceDetail
+          ]
+            .filter(Boolean)
+            .join(" · ")
         : `Portfolio paper order manifest count does not match the package payload: ${portfolioPaperOrderMismatchDetail.join(", ")}.`,
       exportPath: "portfolioPaperOrderBatches[] portfolioPaperOrderApprovals[] portfolioPaperOrderSimulations[]",
       tone:
@@ -6628,6 +8123,7 @@ export function buildResearchRunExportIndexRows(
     .map((exportPackage) => {
       const { artifactCounts } = exportPackage.manifest;
       const paperPackageCount = exportPackage.paperExecutions?.length ?? 0;
+      const adapterPaperExecutionPackageCount = exportPackage.adapterPaperExecutions?.length ?? 0;
       const portfolioPaperOrderPackageCount = exportPackage.portfolioPaperOrderBatches?.length ?? 0;
       const portfolioPaperOrderApprovalPackageCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
       const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
@@ -6638,6 +8134,10 @@ export function buildResearchRunExportIndexRows(
       const integrityHash = exportPackage.integrity?.hash ?? "";
       const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
       const preparationEvidenceArtifact = preparationEvidence ? `prep ${preparationEvidence.runId}` : null;
+      const paperPreparationEvidenceRunIds = collectPaperExecutionPreparationEvidenceRunIds(exportPackage.paperExecutions);
+      const paperPreparationEvidenceArtifact = paperPreparationEvidenceRunIds.length
+        ? `paper prep ${paperPreparationEvidenceRunIds.join(", ")}`
+        : null;
       const marketCalendar = exportPackage.researchRun?.dataSnapshot?.marketCalendar ?? null;
       const marketCalendarArtifact = marketCalendar ? `calendar ${marketCalendar.status}/${marketCalendar.session}` : null;
       const auditReport = exportPackage.auditReport;
@@ -6699,6 +8199,8 @@ export function buildResearchRunExportIndexRows(
         artifactCounts.bars > 0 &&
         exportPackage.manifest.dataHash.trim() !== "";
       const paperCountMatches = (artifactCounts.paperExecutions ?? 0) === paperPackageCount;
+      const adapterPaperExecutionCountMatches =
+        (artifactCounts.adapterPaperExecutions ?? 0) === adapterPaperExecutionPackageCount;
       const portfolioPaperOrderCountMatches =
         (artifactCounts.portfolioPaperOrderBatches ?? 0) === portfolioPaperOrderPackageCount &&
         (artifactCounts.portfolioPaperOrderApprovals ?? 0) === portfolioPaperOrderApprovalPackageCount &&
@@ -6709,6 +8211,7 @@ export function buildResearchRunExportIndexRows(
         integrityIsReady ? null : "Integrity missing",
         dataIsReady ? null : "Data snapshot mismatch",
         paperCountMatches ? null : "Paper execution count mismatch",
+        adapterPaperExecutionCountMatches ? null : "Adapter paper execution count mismatch",
         portfolioPaperOrderCountMatches ? null : "Portfolio paper order count mismatch",
         promotionCountMatches ? null : "Promotion candidate count mismatch",
         aiReviewCountMatches ? null : "AI review count mismatch",
@@ -6737,6 +8240,10 @@ export function buildResearchRunExportIndexRows(
           `${artifactCounts.trades} trades`,
           marketCalendarArtifact,
           preparationEvidenceArtifact,
+          paperPreparationEvidenceArtifact,
+          (artifactCounts.adapterPaperExecutions ?? 0) > 0
+            ? `${artifactCounts.adapterPaperExecutions ?? 0} adapter paper executions`
+            : null,
           `${artifactCounts.portfolioPaperOrderBatches ?? 0} portfolio batches`,
           `${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals`,
           `${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
@@ -6792,6 +8299,7 @@ function researchRunImportArtifactCountMismatches(
   exportPackage: ResearchRunExportBrowserPackage,
   actualCounts: {
     aiReviewRuns: number;
+    adapterPaperExecutions: number;
     paperExecutions: number;
     portfolioPaperOrderApprovals: number;
     portfolioPaperOrderBatches: number;
@@ -6805,6 +8313,7 @@ function researchRunImportArtifactCountMismatches(
     ["bars", artifactCounts.bars, exportPackage.manifest.dataRows],
     ["researchNotes", artifactCounts.researchNotes ?? 0, actualCounts.researchNotes],
     ["paperExecutions", artifactCounts.paperExecutions ?? 0, actualCounts.paperExecutions],
+    ["adapterPaperExecutions", artifactCounts.adapterPaperExecutions ?? 0, actualCounts.adapterPaperExecutions],
     [
       "portfolioPaperOrderBatches",
       artifactCounts.portfolioPaperOrderBatches ?? 0,
@@ -6904,9 +8413,19 @@ export function buildResearchRunImportDiffRows({
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
     : 0;
   const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
+  const packagePaperPreparationEvidenceRunIds = collectPaperExecutionPreparationEvidenceRunIds(exportPackage.paperExecutions);
+  const packageAdapterPaperExecutionCount = exportPackage.adapterPaperExecutions?.length ?? 0;
+  const packageAdapterPaperExecutionDetail = formatAdapterPaperExecutionEvidenceDetail(
+    exportPackage.adapterPaperExecutions
+  );
   const packagePortfolioPaperOrderCount = exportPackage.portfolioPaperOrderBatches?.length ?? 0;
   const packagePortfolioPaperOrderApprovalCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
   const packagePortfolioPaperOrderSimulationCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
+  const packagePortfolioPaperOrderHasLedger =
+    packagePortfolioPaperOrderCount + packagePortfolioPaperOrderApprovalCount + packagePortfolioPaperOrderSimulationCount >
+    0;
+  const packagePortfolioPaperOrderSimulationAdapterEvidenceDetail =
+    formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(exportPackage.portfolioPaperOrderSimulations);
   const currentPaperCount = currentRun && paperExecution?.runId === currentRun.runId ? 1 : 0;
   const auditSummary = exportPackage.auditEvidenceSummary;
   const auditSummaryMatchesPackage = auditSummary?.runId === exportPackage.manifest.runId;
@@ -6959,6 +8478,7 @@ export function buildResearchRunImportDiffRows({
     : "";
   const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
     aiReviewRuns: packageAiReviewCount,
+    adapterPaperExecutions: packageAdapterPaperExecutionCount,
     paperExecutions: packagePaperCount,
     portfolioPaperOrderApprovals: packagePortfolioPaperOrderApprovalCount,
     portfolioPaperOrderBatches: packagePortfolioPaperOrderCount,
@@ -7137,21 +8657,44 @@ export function buildResearchRunImportDiffRows({
       status: packagePaperCount > currentPaperCount ? "add" : packagePaperCount === currentPaperCount ? "same" : "change",
       current: `${currentPaperCount} saved`,
       incoming: `${packagePaperCount} saved / ${exportPackage.manifest.artifactCounts.paperExecutions ?? 0} manifest`,
-      detail: "Import will restore paper execution records attached to the package run.",
+      detail: [
+        "Import will restore paper execution records attached to the package run",
+        ...(packagePaperPreparationEvidenceRunIds.length
+          ? [`prep ${packagePaperPreparationEvidenceRunIds.join(", ")}`]
+          : [])
+      ].join(" · "),
       exportPath: "paperExecutions[]",
       tone: packagePaperCount > 0 ? "warning" : "neutral"
     },
     {
+      id: "adapter-paper-executions",
+      label: "Adapter paper executions",
+      status: packageAdapterPaperExecutionCount > 0 ? "add" : "same",
+      current: "0 saved",
+      incoming: `${packageAdapterPaperExecutionCount} saved / ${
+        exportPackage.manifest.artifactCounts.adapterPaperExecutions ?? 0
+      } manifest`,
+      detail:
+        packageAdapterPaperExecutionCount > 0
+          ? `Import will preserve adapter paper execution evidence: ${packageAdapterPaperExecutionDetail}`
+          : "Package does not include adapter paper execution evidence.",
+      exportPath: "adapterPaperExecutions[]",
+      tone: packageAdapterPaperExecutionCount > 0 ? "warning" : "neutral"
+    },
+    {
       id: "portfolio-paper-orders",
       label: "Portfolio paper orders",
-      status: packagePortfolioPaperOrderCount > 0 ? "add" : "same",
+      status: packagePortfolioPaperOrderHasLedger ? "add" : "same",
       current: "Not loaded in current preview",
-      incoming: `${packagePortfolioPaperOrderCount} batches / ${
-        exportPackage.manifest.artifactCounts.portfolioPaperOrderBatches ?? 0
-      } manifest`,
-      detail: "Import will restore Portfolio paper order batches bound to the package run.",
-      exportPath: "portfolioPaperOrderBatches[]",
-      tone: packagePortfolioPaperOrderCount > 0 ? "warning" : "neutral"
+      incoming: `${packagePortfolioPaperOrderCount} batches / ${packagePortfolioPaperOrderApprovalCount} approvals / ${packagePortfolioPaperOrderSimulationCount} fills`,
+      detail: [
+        "Import will restore Portfolio paper order ledger bound to the package run.",
+        packagePortfolioPaperOrderSimulationAdapterEvidenceDetail
+      ]
+        .filter(Boolean)
+        .join(" "),
+      exportPath: "portfolioPaperOrderBatches[] portfolioPaperOrderApprovals[] portfolioPaperOrderSimulations[]",
+      tone: packagePortfolioPaperOrderHasLedger ? "warning" : "neutral"
     },
     {
       id: "ai-review-runs",
@@ -7301,8 +8844,10 @@ export function buildAuditEvidenceSummary({
   const normalizedAuditQuery = auditQuery.trim();
   const normalizedPackageQuery = packageQuery.trim();
   const normalizedImportDiffQuery = importDiffQuery.trim();
-  const packageMatchedCount = filterResearchRunExportBrowserRows(packageRows, normalizedPackageQuery).length;
-  const importDiffMatchedCount = filterResearchRunImportDiffRows(importDiffRows, normalizedImportDiffQuery).length;
+  const packageMatchedRows = filterResearchRunExportBrowserRows(packageRows, normalizedPackageQuery);
+  const importDiffMatchedRows = filterResearchRunImportDiffRows(importDiffRows, normalizedImportDiffQuery);
+  const packageMatchedCount = packageMatchedRows.length;
+  const importDiffMatchedCount = importDiffMatchedRows.length;
   const packageReadyCount = packageRows.filter((row) => row.status === "ready").length;
   const packageMissingCount = packageRows.filter((row) => row.status === "missing").length;
   const packageBlockedCount = packageRows.filter((row) => row.status === "blocked").length;
@@ -7344,6 +8889,30 @@ export function buildAuditEvidenceSummary({
     normalizedPackageQuery ||
     "unknown";
   const focusQuery = normalizedPackageQuery || normalizedImportDiffQuery || normalizedAuditQuery || runId;
+  const matchedEvidenceFocus: AuditEvidenceMatchedEvidenceFocus[] = [
+    ...packageMatchedRows.map((row) => ({
+      area: "Export package" as const,
+      detail: row.detail,
+      exportPath: row.exportPath,
+      label: row.label
+    })),
+    ...importDiffMatchedRows.map((row) => ({
+      area: "Import diff" as const,
+      detail: row.detail,
+      exportPath: row.exportPath,
+      label: row.label
+    }))
+  ];
+  const matchedPackageEvidenceLine = packageMatchedRows.length
+    ? `Matched package evidence: ${packageMatchedRows
+        .map((row) => `${row.label} -> ${row.detail}`)
+        .join(" | ")}`
+    : null;
+  const matchedImportEvidenceLine = importDiffMatchedRows.length
+    ? `Matched import evidence: ${importDiffMatchedRows
+        .map((row) => `${row.label} -> ${row.detail}`)
+        .join(" | ")}`
+    : null;
   const copyLines = [
     "AIQT Audit Evidence Summary",
     `Run: ${runId}`,
@@ -7353,9 +8922,11 @@ export function buildAuditEvidenceSummary({
     `Deep link: ${deepLinkStatus}${deepLinkError ? ` (${deepLinkError})` : ""}`,
     `Package checks: ${packageReadyCount} ready / ${packageMissingCount} missing / ${packageBlockedCount} blocked / ${packageMatchedCount} of ${packageRows.length} matched`,
     `Import diff: ${importDiffChangeCount} changes / ${importDiffAddCount} adds / ${importDiffBlockedCount} blocked / ${importDiffMatchedCount} of ${importDiffRows.length} matched`,
+    matchedPackageEvidenceLine,
+    matchedImportEvidenceLine,
     `Import policy blockers: ${importPolicyBlockedCount} blocked / ${latestImportPolicyBlocker}`,
     `Import report verification: ${importVerificationVerifiedCount} verified / ${importVerificationInvalidCount} invalid / ${latestImportVerification}`
-  ];
+  ].filter((line): line is string => Boolean(line));
   return {
     auditQuery: normalizedAuditQuery,
     copyText: copyLines.join("\n"),
@@ -7373,6 +8944,7 @@ export function buildAuditEvidenceSummary({
     importVerificationBuckets,
     importVerificationInvalidCount,
     importVerificationVerifiedCount,
+    matchedEvidenceFocus,
     packageBlockedCount,
     packageMatchedCount,
     packageMissingCount,
@@ -7389,6 +8961,7 @@ export function buildAuditEvidenceReportMarkdown(
 ): string {
   const importVerificationBuckets = summary.importVerificationBuckets ?? [];
   const importPolicyBlockerBuckets = summary.importPolicyBlockerBuckets ?? [];
+  const matchedEvidenceFocus = summary.matchedEvidenceFocus ?? [];
   const deepLinkDetail = summary.deepLinkError
     ? `${summary.deepLinkStatus} (${summary.deepLinkError})`
     : summary.deepLinkStatus;
@@ -7442,6 +9015,17 @@ export function buildAuditEvidenceReportMarkdown(
         )
       ]
     : [];
+  const matchedEvidenceFocusSection = matchedEvidenceFocus.length
+    ? [
+        "",
+        "### Matched Evidence",
+        "",
+        markdownTable(
+          ["Area", "Label", "Detail"],
+          matchedEvidenceFocus.map((item) => [item.area, item.label, item.detail])
+        )
+      ]
+    : [];
 
   return [
     "# AIQuant Audit Evidence Report",
@@ -7461,6 +9045,7 @@ export function buildAuditEvidenceReportMarkdown(
         ["Current focus", summary.focusQuery || "none"]
       ]
     ),
+    ...matchedEvidenceFocusSection,
     "",
     "## Evidence Counts",
     "",
@@ -7506,6 +9091,7 @@ export function buildResearchRunImportAuditEvent({
   const runId = exportPackage?.manifest.runId ?? "unknown";
   const blockedCount = rows.filter((row) => row.status === "blocked").length;
   const blockedRows = researchRunImportAuditBlockedRows(rows);
+  const artifactRows = researchRunImportAuditArtifactRows(rows);
   const verifiedReportSignatures = researchRunImportVerifiedReportSignatures(rows);
   const changeCount = rows.filter(
     (row) => row.status === "add" || row.status === "change" || row.status === "replace"
@@ -7540,6 +9126,7 @@ export function buildResearchRunImportAuditEvent({
     recoveryHint: researchRunImportRecoveryHint(resolvedStage, rollbackTargetRunId, failure, normalizedUndoToken),
     blockedCount,
     blockedRows,
+    artifactRows,
     changeCount,
     exportPath: exportPackage ? `manifest:${runId}` : `import:file:${fileName || "unknown"}`,
     tone: researchRunImportAuditTone(resolvedStage),
@@ -7612,6 +9199,7 @@ export function buildResearchRunImportUndoAuditEvent({
       detail: null
     }, consumedUndoToken),
     tone: researchRunImportAuditTone("undone"),
+    artifactRows: [],
     verifiedReportSignatures: []
   };
 }
@@ -7642,6 +9230,7 @@ export function buildResearchRunImportUndoFailureAuditEvent({
     failureCategory: failure.category,
     recoveryHint: researchRunImportRecoveryHint("undo-failed", event.rollbackTargetRunId, failure, event.undoToken),
     tone: researchRunImportAuditTone("undo-failed"),
+    artifactRows: [],
     verifiedReportSignatures: []
   };
 }
@@ -7653,13 +9242,29 @@ export function buildResearchRunImportUndoConfirmation(
   if (event.stage !== "confirmed" || !undoToken) {
     return null;
   }
+  const artifactSummary = researchRunImportUndoArtifactSummary(event.artifactRows);
   return {
     undoToken,
     runId: event.runId,
     fileName: event.fileName,
     message: "Confirm import undo",
-    detail: `Undo import ${undoToken} will restore previous audited stores and cannot be repeated.`
+    detail: artifactSummary
+      ? `Undo import ${undoToken} will restore previous audited stores, ${artifactSummary}, and cannot be repeated.`
+      : `Undo import ${undoToken} will restore previous audited stores and cannot be repeated.`
   };
+}
+
+function researchRunImportUndoArtifactSummary(rows: ResearchRunImportAuditArtifactRow[]): string {
+  if (!rows.length) {
+    return "";
+  }
+  const artifactLabels = rows.map((row) => {
+    if (row.id === "adapter-paper-executions" || row.id === "portfolio-paper-orders") {
+      return `${row.label}: ${row.detail}`;
+    }
+    return row.label;
+  });
+  return `remove ${rows.length} imported artifact row${rows.length === 1 ? "" : "s"} (${artifactLabels.join("; ")})`;
 }
 
 export function mergeResearchRunImportAuditEvents(
@@ -7835,7 +9440,7 @@ export function filterResearchRunImportAuditEvents(
     if (!normalizedQuery) {
       return true;
     }
-    return [
+    const searchableText = [
       event.id,
       event.stage,
       event.runId,
@@ -7859,6 +9464,9 @@ export function filterResearchRunImportAuditEvents(
       event.blockedRows
         .map((row) => [row.id, row.label, row.incoming, row.detail, row.exportPath].join(" "))
         .join(" "),
+      event.artifactRows
+        .map((row) => [row.id, row.label, row.status, row.incoming, row.detail, row.exportPath].join(" "))
+        .join(" "),
       event.verifiedReportSignatures
         .map((row) => [row.id, row.label, row.incoming, row.detail, row.exportPath, row.source, row.status, row.reason].join(" "))
         .join(" "),
@@ -7867,9 +9475,72 @@ export function filterResearchRunImportAuditEvents(
       event.tone
     ]
       .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery);
+      .toLowerCase();
+    if (searchableText.includes(normalizedQuery)) {
+      return true;
+    }
+    const normalizedSearchableText = normalizeResearchRunImportAuditSearchText(searchableText);
+    const normalizedSearchQuery = normalizeResearchRunImportAuditSearchText(normalizedQuery);
+    return Boolean(
+      normalizedSearchQuery &&
+        normalizedSearchQuery
+          .split(" ")
+          .filter(Boolean)
+          .every((token) => normalizedSearchableText.includes(token))
+    );
   });
+}
+
+const researchRunImportAuditArtifactRowIds = new Set<ResearchRunImportDiffRow["id"]>([
+  "market-calendar",
+  "preparation-evidence",
+  "paper-executions",
+  "adapter-paper-executions",
+  "portfolio-paper-orders",
+  "ai-review-runs",
+  "audit-summary",
+  "audit-report",
+  "backtest-report"
+]);
+
+function researchRunImportAuditArtifactRows(rows: ResearchRunImportDiffRow[]): ResearchRunImportAuditArtifactRow[] {
+  return rows.flatMap((row) => {
+    if (!researchRunImportAuditArtifactRowIds.has(row.id) || row.status === "blocked" || row.status === "same") {
+      return [];
+    }
+    return [{
+      id: row.id,
+      label: row.label,
+      status: row.status,
+      detail: row.detail,
+      exportPath: row.exportPath,
+      incoming: row.incoming
+    }];
+  });
+}
+
+function normalizeResearchRunImportAuditSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-\u4e00-\u9fff]+/giu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+const auditReportLedgerProductWorkAreaIds: readonly ProductWorkAreaId[] = [
+  "market",
+  "research",
+  "strategy",
+  "backtest",
+  "ai-review",
+  "portfolio",
+  "execution",
+  "audit",
+  "settings"
+];
+
+function auditReportLedgerProductWorkAreaId(value: string): ProductWorkAreaId | null {
+  return auditReportLedgerProductWorkAreaIds.includes(value as ProductWorkAreaId) ? (value as ProductWorkAreaId) : null;
 }
 
 function auditReportLedgerEvidenceTargetWorkspaceId(search: string): ProductWorkAreaId | null {
@@ -7878,18 +9549,7 @@ function auditReportLedgerEvidenceTargetWorkspaceId(search: string): ProductWork
   }
   const workspaceMatch = search.match(/(?:^|[?&])workspace=([^&]+)/u);
   const workspaceId = workspaceMatch ? decodeURIComponent(workspaceMatch[1].replace(/\+/gu, " ")) : "";
-  const allowedWorkspaces: readonly ProductWorkAreaId[] = [
-    "market",
-    "research",
-    "strategy",
-    "backtest",
-    "ai-review",
-    "portfolio",
-    "execution",
-    "audit",
-    "settings"
-  ];
-  return allowedWorkspaces.includes(workspaceId as ProductWorkAreaId) ? (workspaceId as ProductWorkAreaId) : null;
+  return auditReportLedgerProductWorkAreaId(workspaceId);
 }
 
 function auditReportLedgerDecodedSearchText(value: string): string {
@@ -7933,6 +9593,62 @@ function auditReportLedgerLatestReportQuery(row: AuditEvidenceReportLedgerRow | 
     return "";
   }
   return [row.reportKind, row.runId, row.shortHash, row.fileName].filter(Boolean).join(" ");
+}
+
+function auditReportLedgerLatestAuditAidReportQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  const baseQuery = auditReportLedgerLatestReportQuery(row);
+  if (!row?.p0PreparationEvidenceRunId) {
+    return [baseQuery, row?.p0CurrentGapActionId, row?.p0CurrentGapTargetWorkspaceId ?? ""].filter(Boolean).join(" ");
+  }
+  return [baseQuery, row.p0PreparationEvidenceRunId, row.p0CurrentGapActionId, row.p0CurrentGapTargetWorkspaceId ?? ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function auditReportLedgerLatestAuditAidBacklogReadinessQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  const baseQuery = auditReportLedgerLatestAuditAidReportQuery(row);
+  if (!row || !baseQuery) {
+    return "";
+  }
+  return [
+    baseQuery,
+    "backlog",
+    row.p0BacklogReadinessRecorded ? "backlog-recorded" : "backlog-not-recorded",
+    `backlog total ${row.p0BacklogTotalCount}`,
+    `executable ${row.p0BacklogExecutableCount}`,
+    `not-executable ${row.p0BacklogNotExecutableCount}`,
+    row.p0FirstBacklogCanExecute ? "first-backlog-executable" : "first-backlog-not-executable",
+    row.p0FirstBacklogExecutableActionId,
+    row.p0FirstBacklogReadinessReason,
+    row.p0BacklogReadinessSummary.trim() ? "backlog-summary-recorded" : "backlog-summary-missing",
+    row.p0BacklogReadinessSummary
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function auditReportLedgerLatestAuditAidCurrentGapReadinessQuery(
+  row: AuditEvidenceReportLedgerRow | undefined
+): string {
+  const baseQuery = auditReportLedgerLatestAuditAidReportQuery(row);
+  if (!row || !baseQuery) {
+    return "";
+  }
+  const readiness = buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness(row);
+  return [
+    baseQuery,
+    "current-gap",
+    readiness.canExecute ? "current-gap-executable" : "current-gap-not-executable",
+    readiness.executableActionId,
+    readiness.reason,
+    readiness.targetWorkspaceId ?? readiness.workspaceId ?? ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function auditReportLedgerPreparationEvidenceLabel(runId: string): string {
+  return runId ? `prep ${runId}` : "";
 }
 
 export function buildMarketDataRefreshOverrideAuditLedgerRows(
@@ -8080,6 +9796,483 @@ export function filterMarketDataRefreshOverrideAuditLedgerRows(
   );
 }
 
+export function buildExecutionAdapterPaperExecutionAuditLedgerRows(
+  events: AuditEvidenceReportLedgerEventRecord[]
+): ExecutionAdapterPaperExecutionAuditLedgerRow[] {
+  return events
+    .filter((event) => event.eventType === "execution_adapter_paper_execution")
+    .map((event) => {
+      const metadata = event.metadata ?? {};
+      const fill = executionAdapterPaperExecutionAuditRecord(metadata, "simulatedFill");
+      const adapterId = auditReportLedgerMetadataText(metadata, "adapterId");
+      const adapterOpsStateId = auditReportLedgerMetadataText(metadata, "adapterOpsStateId");
+      const manifestValidationId = auditReportLedgerMetadataText(metadata, "manifestValidationId");
+      const market = auditReportLedgerMetadataText(metadata, "market");
+      const route = auditReportLedgerMetadataText(metadata, "route");
+      const status = auditReportLedgerMetadataText(metadata, "status");
+      const paperOnly = auditReportLedgerMetadataBoolean(metadata, "paperOnly");
+      const liveTradingAllowed = auditReportLedgerMetadataBoolean(metadata, "liveTradingAllowed");
+      const routeExecuted = auditReportLedgerMetadataBoolean(metadata, "routeExecuted");
+      const paperFillRecorded = auditReportLedgerMetadataBoolean(metadata, "paperFillRecorded");
+      const statusLabel = executionAdapterPaperExecutionAuditStatusLabel(status, paperFillRecorded);
+      const fillLabel = executionAdapterPaperExecutionAuditFillLabel(fill);
+      const confirmationLabel = executionAdapterPaperExecutionAuditConfirmationLabel(metadata);
+      const blockedReasonsLabel = executionAdapterPaperExecutionAuditBlockedReasonsLabel(metadata);
+      const boundaryLabel = executionAdapterPaperExecutionAuditBoundaryLabel(paperOnly, liveTradingAllowed, routeExecuted);
+      const symbol = executionAdapterPaperExecutionAuditText(fill, "symbol");
+      const tone = executionAdapterPaperExecutionAuditTone(status, paperFillRecorded, liveTradingAllowed, routeExecuted);
+      const searchText = [
+        event.eventId,
+        event.eventType,
+        event.runId ?? "",
+        event.stage,
+        event.source,
+        event.summary,
+        event.detail,
+        adapterId,
+        adapterOpsStateId,
+        manifestValidationId,
+        market,
+        route,
+        status,
+        statusLabel,
+        fillLabel,
+        confirmationLabel,
+        blockedReasonsLabel,
+        boundaryLabel,
+        symbol,
+        ...portfolioPaperOrderAuditMetadataSearchParts(metadata)
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return {
+        id: event.eventId,
+        adapterId,
+        adapterOpsStateId,
+        blockedReasonsLabel,
+        boundaryLabel,
+        confirmationLabel,
+        createdAt: event.createdAt,
+        detail: event.detail,
+        eventType: event.eventType,
+        fillLabel,
+        manifestValidationId,
+        market,
+        paperFillRecorded,
+        route,
+        runId: event.runId ?? "",
+        searchText,
+        source: event.source,
+        stage: event.stage,
+        statusLabel,
+        summary: event.summary,
+        symbol,
+        tone
+      };
+    });
+}
+
+export function buildExecutionAdapterPaperExecutionAuditLedgerSummary(
+  rows: ExecutionAdapterPaperExecutionAuditLedgerRow[]
+): ExecutionAdapterPaperExecutionAuditLedgerSummary {
+  const latestRow = rows.reduce<ExecutionAdapterPaperExecutionAuditLedgerRow | undefined>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
+
+  return {
+    blocked: rows.filter((row) => row.tone === "risk").length,
+    filled: rows.filter((row) => row.paperFillRecorded).length,
+    latestEventId: latestRow?.id ?? "",
+    liveBlocked: rows.filter((row) => row.boundaryLabel.includes("live blocked")).length,
+    total: rows.length
+  };
+}
+
+export function filterExecutionAdapterPaperExecutionAuditLedgerRows(
+  rows: ExecutionAdapterPaperExecutionAuditLedgerRow[],
+  query: string
+): ExecutionAdapterPaperExecutionAuditLedgerRow[] {
+  const queryTokens = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+  if (!queryTokens.length) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    queryTokens.every((token) =>
+      [
+        row.id,
+        row.adapterId,
+        row.adapterOpsStateId,
+        row.blockedReasonsLabel,
+        row.boundaryLabel,
+        row.confirmationLabel,
+        row.createdAt,
+        row.detail,
+        row.eventType,
+        row.fillLabel,
+        row.manifestValidationId,
+        row.market,
+        row.route,
+        row.runId,
+        row.searchText,
+        row.source,
+        row.stage,
+        row.statusLabel,
+        row.summary,
+        row.symbol,
+        row.tone
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(token)
+    )
+  );
+}
+
+function executionAdapterPaperExecutionAuditRecord(
+  metadata: Record<string, unknown>,
+  key: string
+): Record<string, unknown> {
+  const value = metadata[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function executionAdapterPaperExecutionAuditText(metadata: Record<string, unknown>, key: string): string {
+  const value = metadata[key];
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value) : "";
+}
+
+function executionAdapterPaperExecutionAuditStatusLabel(status: string, paperFillRecorded: boolean): string {
+  if (status === "paper_execution_recorded" && paperFillRecorded) {
+    return "Paper execution recorded";
+  }
+  if (status === "blocked") {
+    return "Paper execution blocked";
+  }
+  return status || "Paper execution pending";
+}
+
+function executionAdapterPaperExecutionAuditFillLabel(fill: Record<string, unknown>): string {
+  const status = executionAdapterPaperExecutionAuditText(fill, "status");
+  const side = executionAdapterPaperExecutionAuditText(fill, "side");
+  const quantity = executionAdapterPaperExecutionAuditText(fill, "quantity");
+  const symbol = executionAdapterPaperExecutionAuditText(fill, "symbol");
+  const price = executionAdapterPaperExecutionAuditText(fill, "price");
+  return [status, side, quantity, symbol, price ? `@ ${price}` : ""].filter(Boolean).join(" ");
+}
+
+function executionAdapterPaperExecutionAuditConfirmationLabel(metadata: Record<string, unknown>): string {
+  const required = auditReportLedgerMetadataStringList(metadata, "requiredConfirmationIds");
+  const confirmed = auditReportLedgerMetadataStringList(metadata, "confirmedConfirmationIds");
+  const missingCount = Math.max(0, required.length - confirmed.length);
+  return `${confirmed.length} confirmed / ${missingCount} missing`;
+}
+
+function executionAdapterPaperExecutionAuditBlockedReasonsLabel(metadata: Record<string, unknown>): string {
+  const reasons = auditReportLedgerMetadataStringList(metadata, "blockedReasons");
+  return reasons.length ? reasons.join(", ") : "No blockers";
+}
+
+function executionAdapterPaperExecutionAuditBoundaryLabel(
+  paperOnly: boolean,
+  liveTradingAllowed: boolean,
+  routeExecuted: boolean
+): string {
+  return [
+    paperOnly ? "paper only" : "paper boundary unknown",
+    liveTradingAllowed ? "live allowed" : "live blocked",
+    routeExecuted ? "route executed" : "no route executed"
+  ].join(" · ");
+}
+
+function executionAdapterPaperExecutionAuditTone(
+  status: string,
+  paperFillRecorded: boolean,
+  liveTradingAllowed: boolean,
+  routeExecuted: boolean
+): ExecutionAdapterPaperExecutionAuditLedgerRow["tone"] {
+  if (liveTradingAllowed || routeExecuted || status === "blocked") {
+    return "risk";
+  }
+  return status === "paper_execution_recorded" && paperFillRecorded ? "positive" : "warning";
+}
+
+const portfolioPaperOrderAuditEventKinds: Record<string, PortfolioPaperOrderAuditEventKind> = {
+  portfolio_paper_order_approval: "approval",
+  portfolio_paper_order_batch: "batch",
+  portfolio_paper_order_simulation: "simulation"
+};
+
+export function buildPortfolioPaperOrderAuditLedgerRows(
+  events: AuditEvidenceReportLedgerEventRecord[]
+): PortfolioPaperOrderAuditLedgerRow[] {
+  return events
+    .filter((event) => Boolean(portfolioPaperOrderAuditEventKinds[event.eventType]))
+    .map((event) => {
+      const eventKind = portfolioPaperOrderAuditEventKinds[event.eventType];
+      const batchId = auditReportLedgerMetadataText(event.metadata, "batchId");
+      const orderId = auditReportLedgerMetadataText(event.metadata, "orderId");
+      const simulationId = auditReportLedgerMetadataText(event.metadata, "simulationId");
+      const symbol = auditReportLedgerMetadataText(event.metadata, "symbol");
+      const portfolioName = auditReportLedgerMetadataText(event.metadata, "portfolioName");
+      const fillStatus = auditReportLedgerMetadataText(event.metadata, "fillStatus");
+      const routeRiskStatus =
+        auditReportLedgerMetadataText(event.metadata, "routeRiskStatus") ||
+        auditReportLedgerMetadataText(event.metadata, "routeGuardStatus");
+      const actor =
+        auditReportLedgerMetadataText(event.metadata, "approvedBy") ||
+        auditReportLedgerMetadataText(event.metadata, "reviewer") ||
+        auditReportLedgerMetadataText(event.metadata, "operator");
+      const paperOnly = auditReportLedgerMetadataBoolean(event.metadata, "paperOnly");
+      const liveTradingAllowed = portfolioPaperOrderAuditLiveTradingAllowed(event.metadata);
+      const boundaryLabel = portfolioPaperOrderAuditBoundaryLabel(paperOnly, liveTradingAllowed);
+      const approved = auditReportLedgerMetadataBoolean(event.metadata, "approved");
+      const adapterEvidenceId = auditReportLedgerMetadataText(event.metadata, "adapterPaperExecutionId");
+      const orderCount =
+        auditReportLedgerMetadataNumber(event.metadata, "orderCount") ||
+        auditReportLedgerMetadataNumber(event.metadata, "totalOrders");
+      const quantity = auditReportLedgerMetadataNumber(event.metadata, "quantity");
+      const notionalValue =
+        auditReportLedgerMetadataNumber(event.metadata, "notionalValue") ||
+        auditReportLedgerMetadataNumber(event.metadata, "totalNotionalValue");
+      const fillPrice = auditReportLedgerMetadataNumber(event.metadata, "fillPrice");
+      const side = auditReportLedgerMetadataText(event.metadata, "side");
+      const statusLabel = portfolioPaperOrderAuditStatusLabel(eventKind, approved, fillStatus);
+      const quantityLabel = portfolioPaperOrderAuditQuantityLabel(eventKind, approved, orderCount, side, quantity);
+      const valueLabel = portfolioPaperOrderAuditValueLabel(eventKind, notionalValue, symbol, orderId, fillPrice);
+      const tone = portfolioPaperOrderAuditTone(eventKind, {
+        approved,
+        fillStatus,
+        liveTradingAllowed,
+        paperOnly
+      });
+      const searchText = [
+        event.eventId,
+        event.eventType,
+        event.runId ?? "",
+        event.stage,
+        event.source,
+        event.summary,
+        event.detail,
+        statusLabel,
+        batchId,
+        orderId,
+        simulationId,
+        symbol,
+        portfolioName,
+        actor,
+        adapterEvidenceId,
+        quantityLabel,
+        valueLabel,
+        boundaryLabel,
+        fillStatus,
+        routeRiskStatus,
+        auditReportLedgerMetadataText(event.metadata, "approvalState"),
+        auditReportLedgerMetadataText(event.metadata, "orderState"),
+        auditReportLedgerMetadataText(event.metadata, "reason"),
+        ...portfolioPaperOrderAuditMetadataSearchParts(event.metadata)
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return {
+        id: event.eventId,
+        actor,
+        adapterEvidenceId,
+        batchId,
+        boundaryLabel,
+        createdAt: event.createdAt,
+        detail: event.detail,
+        eventKind,
+        eventType: event.eventType,
+        orderId,
+        portfolioName,
+        quantityLabel,
+        runId: event.runId ?? "",
+        searchText,
+        simulationId,
+        source: event.source,
+        stage: event.stage,
+        statusLabel,
+        summary: event.summary,
+        symbol,
+        tone,
+        valueLabel
+      };
+    });
+}
+
+export function buildPortfolioPaperOrderAuditLedgerSummary(
+  rows: PortfolioPaperOrderAuditLedgerRow[]
+): PortfolioPaperOrderAuditLedgerSummary {
+  const latestRow = rows.reduce<PortfolioPaperOrderAuditLedgerRow | undefined>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
+
+  return {
+    approvals: rows.filter((row) => row.eventKind === "approval").length,
+    batches: rows.filter((row) => row.eventKind === "batch").length,
+    latestEventId: latestRow?.id ?? "",
+    liveBlocked: rows.filter((row) => row.boundaryLabel.includes("live blocked")).length,
+    simulations: rows.filter((row) => row.eventKind === "simulation").length,
+    total: rows.length
+  };
+}
+
+export function filterPortfolioPaperOrderAuditLedgerRows(
+  rows: PortfolioPaperOrderAuditLedgerRow[],
+  query: string
+): PortfolioPaperOrderAuditLedgerRow[] {
+  const queryTokens = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+  if (!queryTokens.length) {
+    return rows;
+  }
+  return rows.filter((row) =>
+    queryTokens.every((token) =>
+      [
+        row.id,
+        row.actor,
+        row.adapterEvidenceId,
+        row.batchId,
+        row.boundaryLabel,
+        row.createdAt,
+        row.detail,
+        row.eventKind,
+        row.eventType,
+        row.orderId,
+        row.portfolioName,
+        row.quantityLabel,
+        row.runId,
+        row.searchText,
+        row.simulationId,
+        row.source,
+        row.stage,
+        row.statusLabel,
+        row.summary,
+        row.symbol,
+        row.tone,
+        row.valueLabel
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(token)
+    )
+  );
+}
+
+function portfolioPaperOrderAuditLiveTradingAllowed(metadata: Record<string, unknown>): boolean | null {
+  if (auditReportLedgerMetadataHas(metadata, "liveTradingAllowed")) {
+    return auditReportLedgerMetadataBoolean(metadata, "liveTradingAllowed");
+  }
+  if (auditReportLedgerMetadataBoolean(metadata, "liveExecutionBlocked")) {
+    return false;
+  }
+  return null;
+}
+
+function portfolioPaperOrderAuditBoundaryLabel(paperOnly: boolean, liveTradingAllowed: boolean | null): string {
+  const liveBoundary =
+    liveTradingAllowed === null ? "live boundary unknown" : liveTradingAllowed ? "live allowed" : "live blocked";
+  return `${paperOnly ? "paper only" : "paper boundary unknown"} · ${liveBoundary}`;
+}
+
+function portfolioPaperOrderAuditStatusLabel(
+  eventKind: PortfolioPaperOrderAuditEventKind,
+  approved: boolean,
+  fillStatus: string
+): string {
+  if (eventKind === "batch") {
+    return "Batch recorded";
+  }
+  if (eventKind === "approval") {
+    return approved ? "Approval recorded" : "Approval rejected";
+  }
+  return fillStatus === "filled" ? "Simulation filled" : "Simulation recorded";
+}
+
+function portfolioPaperOrderAuditQuantityLabel(
+  eventKind: PortfolioPaperOrderAuditEventKind,
+  approved: boolean,
+  orderCount: number,
+  side: string,
+  quantity: number
+): string {
+  if (eventKind === "batch") {
+    const formattedCount = portfolioPaperOrderAuditNumberLabel(orderCount);
+    return `${formattedCount} ${orderCount === 1 ? "order" : "orders"}`;
+  }
+  if (eventKind === "approval") {
+    return approved ? "approved" : "rejected";
+  }
+  return [side, portfolioPaperOrderAuditNumberLabel(quantity)].filter(Boolean).join(" ");
+}
+
+function portfolioPaperOrderAuditValueLabel(
+  eventKind: PortfolioPaperOrderAuditEventKind,
+  notionalValue: number,
+  symbol: string,
+  orderId: string,
+  fillPrice: number
+): string {
+  if (eventKind === "batch") {
+    return portfolioPaperOrderAuditNumberLabel(notionalValue);
+  }
+  if (eventKind === "approval") {
+    return symbol || orderId;
+  }
+  return portfolioPaperOrderAuditNumberLabel(fillPrice);
+}
+
+function portfolioPaperOrderAuditTone(
+  eventKind: PortfolioPaperOrderAuditEventKind,
+  {
+    approved,
+    fillStatus,
+    liveTradingAllowed,
+    paperOnly
+  }: { approved: boolean; fillStatus: string; liveTradingAllowed: boolean | null; paperOnly: boolean }
+): PortfolioPaperOrderAuditLedgerRow["tone"] {
+  if (liveTradingAllowed === true) {
+    return "risk";
+  }
+  if (eventKind === "approval") {
+    return approved ? "positive" : "risk";
+  }
+  if (eventKind === "simulation") {
+    return fillStatus === "filled" && paperOnly ? "positive" : "warning";
+  }
+  return paperOnly ? "warning" : "neutral";
+}
+
+function portfolioPaperOrderAuditNumberLabel(value: number): string {
+  return Number.isFinite(value)
+    ? value.toLocaleString("en-US", { maximumFractionDigits: 8 })
+    : "";
+}
+
+function portfolioPaperOrderAuditMetadataSearchParts(metadata: Record<string, unknown>): string[] {
+  return Object.entries(metadata)
+    .map(([key, value]) => {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        return `${key} ${String(value)}`;
+      }
+      if (Array.isArray(value)) {
+        return `${key} ${value.map((item) => String(item)).join(" ")}`;
+      }
+      if (value && typeof value === "object") {
+        return `${key} ${JSON.stringify(value)}`;
+      }
+      return key;
+    })
+    .filter(Boolean);
+}
+
 export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
@@ -8119,6 +10312,7 @@ export function buildAuditEvidenceReportLedgerRows(
           : reportKind === "backtest_report"
             ? "backtest-report.md"
             : "audit-evidence-report.md");
+      const shortHash = contentSha256 ? contentSha256.slice(0, 12) : "missing";
       const focusQuery =
         reportKind === "p0_readiness_report"
           ? [
@@ -8182,6 +10376,103 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "paperPreflightGateBlockedCount") : 0;
       const paperPreflightLiveBoundary =
         reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "paperPreflightLiveBoundary") : "";
+      const p0PreparationEvidenceRunId =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "latestEvidencePreparationRunId")
+          : "";
+      const p0BacklogReadinessRecorded =
+        reportKind === "p0_readiness_report" &&
+        [
+          "backlogCount",
+          "backlogExecutableCount",
+          "backlogNotExecutableCount",
+          "firstBacklogCanExecute",
+          "firstBacklogExecutableActionId",
+          "firstBacklogReadinessReason",
+          "firstBacklogStepId",
+          "backlogReadinessSummary"
+        ].some((key) => auditReportLedgerMetadataHas(event.metadata, key));
+      const p0BacklogReadinessSummary =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "backlogReadinessSummary") : "";
+      const p0BacklogExecutableCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "backlogExecutableCount") : 0;
+      const p0BacklogNotExecutableCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "backlogNotExecutableCount") : 0;
+      const p0BacklogTotalCount =
+        reportKind === "p0_readiness_report"
+          ? Math.max(
+              auditReportLedgerMetadataNumber(event.metadata, "backlogCount"),
+              p0BacklogExecutableCount + p0BacklogNotExecutableCount
+            )
+          : 0;
+      const p0FirstBacklogCanExecute =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataBoolean(event.metadata, "firstBacklogCanExecute") : false;
+      const p0FirstBacklogExecutableActionId =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "firstBacklogExecutableActionId") : "";
+      const p0FirstBacklogReadinessReason =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerP0ReadinessReason(
+              auditReportLedgerMetadataText(event.metadata, "firstBacklogReadinessReason"),
+              "missing-action"
+            )
+          : "not-ready-report";
+      const p0CurrentGapActionId =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "currentGapActionId") : "";
+      const p0CurrentGapActionLabel =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "currentGapActionLabel") : "";
+      const p0CurrentGapTargetWorkspaceId =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerProductWorkAreaId(auditReportLedgerMetadataText(event.metadata, "currentGapTargetWorkspaceId"))
+          : null;
+      const p0CurrentGapWorkspaceId =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerProductWorkAreaId(auditReportLedgerMetadataText(event.metadata, "currentGapWorkspaceId"))
+          : null;
+      const p0CurrentGapFallbackParams = new URLSearchParams();
+      p0CurrentGapFallbackParams.set("workspace", p0CurrentGapTargetWorkspaceId ?? p0CurrentGapWorkspaceId ?? "audit");
+      p0CurrentGapFallbackParams.set(
+        "auditReportQuery",
+        [
+          reportKind,
+          event.runId ?? "unknown",
+          shortHash,
+          fileName,
+          p0PreparationEvidenceRunId,
+          p0CurrentGapActionId,
+          p0CurrentGapTargetWorkspaceId ?? ""
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+      p0CurrentGapFallbackParams.set("p0Action", p0CurrentGapActionId);
+      const p0CurrentGapDeepLinkSearch =
+        reportKind === "p0_readiness_report"
+        ? buildP0CurrentGapActionUrlSearch(auditReportLedgerMetadataText(event.metadata, "currentGapDeepLinkSearch")) ??
+          buildP0CurrentGapActionUrlSearch(p0CurrentGapFallbackParams) ??
+          ""
+        : "";
+      const p0CurrentGapDeepLinkWorkspaceId = resolveP0CurrentGapActionLinkWorkspace(p0CurrentGapDeepLinkSearch);
+      const p0CurrentGapComputedReadiness = buildP0CurrentGapActionReadiness({
+        actionId: p0CurrentGapActionId,
+        targetWorkspaceId: p0CurrentGapTargetWorkspaceId ?? p0CurrentGapWorkspaceId ?? p0CurrentGapDeepLinkWorkspaceId,
+        workspaceId: p0CurrentGapWorkspaceId ?? p0CurrentGapDeepLinkWorkspaceId
+      });
+      const p0CurrentGapExecutableActionId =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "currentGapExecutableActionId") ||
+            p0CurrentGapComputedReadiness.executableActionId
+          : "";
+      const p0CurrentGapCanExecute =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerMetadataBoolean(event.metadata, "currentGapCanExecute", p0CurrentGapComputedReadiness.canExecute)
+          : false;
+      const p0CurrentGapReadinessReason =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerP0ReadinessReason(
+              auditReportLedgerMetadataText(event.metadata, "currentGapReadinessReason"),
+              p0CurrentGapComputedReadiness.reason
+            )
+          : "not-ready-report";
       const paperPreflightLabel = auditReportLedgerPaperPreflightLabel({
         actionLabel: paperPreflightActionLabel,
         blocked: paperPreflightGateBlockedCount,
@@ -8195,7 +10486,28 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p0_readiness_report"
           ? [
               auditReportLedgerMetadataText(event.metadata, "currentGapStepId"),
+              auditReportLedgerMetadataText(event.metadata, "currentGapLabel"),
               auditReportLedgerMetadataText(event.metadata, "currentGapStatus"),
+              p0CurrentGapWorkspaceId ?? "",
+              p0CurrentGapActionId,
+              p0CurrentGapActionLabel,
+              p0CurrentGapExecutableActionId,
+              "current-gap",
+              p0CurrentGapCanExecute ? "current-gap-executable" : "current-gap-not-executable",
+              p0CurrentGapCanExecute ? "executable" : "not-executable",
+              p0CurrentGapReadinessReason,
+              "backlog",
+              p0BacklogReadinessRecorded ? "backlog-recorded" : "backlog-not-recorded",
+              `backlog total ${p0BacklogTotalCount}`,
+              `executable ${p0BacklogExecutableCount}`,
+              `not-executable ${p0BacklogNotExecutableCount}`,
+              p0FirstBacklogCanExecute ? "first-backlog-executable" : "first-backlog-not-executable",
+              p0FirstBacklogExecutableActionId,
+              p0FirstBacklogReadinessReason,
+              p0BacklogReadinessSummary.trim() ? "backlog-summary-recorded" : "backlog-summary-missing",
+              p0BacklogReadinessSummary,
+              p0CurrentGapDeepLinkSearch,
+              p0CurrentGapTargetWorkspaceId ?? "",
               auditReportLedgerMetadataText(event.metadata, "firstBacklogStepId"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceState"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceLink"),
@@ -8205,6 +10517,7 @@ export function buildAuditEvidenceReportLedgerRows(
               paperPreflightActionLabel,
               paperPreflightLabel,
               paperPreflightLiveBoundary,
+              p0PreparationEvidenceRunId,
               auditReportLedgerMetadataText(event.metadata, "boundary")
             ]
               .filter(Boolean)
@@ -8227,7 +10540,7 @@ export function buildAuditEvidenceReportLedgerRows(
         createdAt: event.createdAt,
         fileName,
         contentSha256,
-        shortHash: contentSha256 ? contentSha256.slice(0, 12) : "missing",
+        shortHash,
         focusQuery,
         evidenceLinkDecodedSearch,
         evidenceLinkLabel: auditReportLedgerEvidenceLinkLabel(evidenceTargetWorkspaceId, evidenceLinkStatus),
@@ -8261,6 +10574,22 @@ export function buildAuditEvidenceReportLedgerRows(
         importVerificationDetail,
         importVerificationInvalid,
         importVerificationVerified,
+        p0BacklogExecutableCount,
+        p0BacklogNotExecutableCount,
+        p0BacklogReadinessRecorded,
+        p0BacklogReadinessSummary,
+        p0BacklogTotalCount,
+        p0CurrentGapActionId,
+        p0CurrentGapActionLabel,
+        p0CurrentGapCanExecute,
+        p0CurrentGapDeepLinkSearch,
+        p0CurrentGapExecutableActionId,
+        p0CurrentGapReadinessReason,
+        p0CurrentGapTargetWorkspaceId,
+        p0CurrentGapWorkspaceId,
+        p0FirstBacklogCanExecute,
+        p0FirstBacklogExecutableActionId,
+        p0FirstBacklogReadinessReason,
         paperPreflightActionId,
         paperPreflightActionLabel,
         paperPreflightGateBlockedCount,
@@ -8270,6 +10599,7 @@ export function buildAuditEvidenceReportLedgerRows(
         paperPreflightLabel,
         paperPreflightLiveBoundary,
         paperPreflightState,
+        p0PreparationEvidenceRunId,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
             ? "p0-readiness-report"
@@ -8352,7 +10682,8 @@ export function buildAuditEvidenceReportLedgerSummary(
   const attention = invalid + revoked;
   const signingAttention = signingInvalid + revoked;
   const auditAidRows = rows.filter((row) => row.reportKind === "p0_readiness_report");
-  const latestAuditAidRow = auditAidRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+  const actionableAuditAidRows = auditAidRows.filter((row) => row.status === "ready");
+  const latestAuditAidRow = actionableAuditAidRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
     if (!latest) {
       return row;
     }
@@ -8379,6 +10710,24 @@ export function buildAuditEvidenceReportLedgerSummary(
     importVerificationVerified,
     invalid,
     latestAuditAidEventId: latestAuditAidRow?.id ?? "",
+    latestAuditAidCurrentGapActionId: latestAuditAidRow?.p0CurrentGapActionId ?? "",
+    latestAuditAidCurrentGapActionLabel: latestAuditAidRow?.p0CurrentGapActionLabel ?? "",
+    latestAuditAidCurrentGapCanExecute: latestAuditAidRow?.p0CurrentGapCanExecute ?? false,
+    latestAuditAidCurrentGapDeepLinkSearch: latestAuditAidRow?.p0CurrentGapDeepLinkSearch ?? "",
+    latestAuditAidCurrentGapExecutableActionId: latestAuditAidRow?.p0CurrentGapExecutableActionId ?? "",
+    latestAuditAidCurrentGapReadinessQuery: auditReportLedgerLatestAuditAidCurrentGapReadinessQuery(latestAuditAidRow),
+    latestAuditAidCurrentGapReadinessReason: latestAuditAidRow?.p0CurrentGapReadinessReason ?? "not-ready-report",
+    latestAuditAidCurrentGapReadinessTitle: buildAuditEvidenceReportLedgerRowCurrentGapReadinessTitle(latestAuditAidRow),
+    latestAuditAidCurrentGapTargetWorkspaceId: latestAuditAidRow?.p0CurrentGapTargetWorkspaceId ?? null,
+    latestAuditAidCurrentGapWorkspaceId: latestAuditAidRow?.p0CurrentGapWorkspaceId ?? null,
+    latestAuditAidBacklogExecutableCount: latestAuditAidRow?.p0BacklogExecutableCount ?? 0,
+    latestAuditAidBacklogNotExecutableCount: latestAuditAidRow?.p0BacklogNotExecutableCount ?? 0,
+    latestAuditAidBacklogReadinessLabel: buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel(latestAuditAidRow),
+    latestAuditAidBacklogReadinessQuery: auditReportLedgerLatestAuditAidBacklogReadinessQuery(latestAuditAidRow),
+    latestAuditAidBacklogReadinessRecorded: latestAuditAidRow?.p0BacklogReadinessRecorded ?? false,
+    latestAuditAidBacklogReadinessSummary: latestAuditAidRow?.p0BacklogReadinessSummary ?? "",
+    latestAuditAidBacklogReadinessTitle: buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle(latestAuditAidRow),
+    latestAuditAidBacklogTotalCount: latestAuditAidRow?.p0BacklogTotalCount ?? 0,
     latestAuditAidEvidenceLabel: latestAuditAidRow?.evidenceLinkLabel || latestAuditAidRow?.focusQuery || "",
     latestAuditAidEvidenceLink:
       latestAuditAidRow?.evidenceLinkDecodedSearch || latestAuditAidRow?.evidenceLinkSearch || "",
@@ -8389,7 +10738,11 @@ export function buildAuditEvidenceReportLedgerSummary(
       : 0,
     latestAuditAidPreflightLabel: latestAuditAidRow?.paperPreflightLabel ?? "",
     latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
-    latestAuditAidReportQuery: auditReportLedgerLatestReportQuery(latestAuditAidRow),
+    latestAuditAidPreparationEvidenceLabel: auditReportLedgerPreparationEvidenceLabel(
+      latestAuditAidRow?.p0PreparationEvidenceRunId ?? ""
+    ),
+    latestAuditAidPreparationEvidenceRunId: latestAuditAidRow?.p0PreparationEvidenceRunId ?? "",
+    latestAuditAidReportQuery: auditReportLedgerLatestAuditAidReportQuery(latestAuditAidRow),
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
     latestAuditAidShortHash: latestAuditAidRow?.shortHash ?? "",
     latestHash: latestReadyRow?.contentSha256 ?? "",
@@ -8443,6 +10796,12 @@ export function filterAuditEvidenceReportLedgerRows(
       row.signatureLabel,
       row.signatureVerifiedAt,
       row.importVerificationDetail,
+      row.p0CurrentGapActionId,
+      row.p0CurrentGapActionLabel,
+      row.p0CurrentGapDeepLinkSearch,
+      row.p0CurrentGapTargetWorkspaceId ?? "",
+      row.p0CurrentGapWorkspaceId ?? "",
+      row.p0PreparationEvidenceRunId,
       row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),
@@ -8810,8 +11169,26 @@ function auditReportLedgerMetadataText(metadata: Record<string, unknown>, key: s
   return typeof value === "string" ? value : "";
 }
 
-function auditReportLedgerMetadataBoolean(metadata: Record<string, unknown>, key: string): boolean {
-  return metadata[key] === true;
+function auditReportLedgerMetadataHas(metadata: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(metadata, key);
+}
+
+function auditReportLedgerMetadataBoolean(metadata: Record<string, unknown>, key: string, fallback = false): boolean {
+  const value = metadata[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function auditReportLedgerP0ReadinessReason(
+  reason: string,
+  fallback: P0CurrentGapActionReadinessReason
+): P0CurrentGapActionReadinessReason {
+  return reason === "missing-action" ||
+    reason === "missing-workspace" ||
+    reason === "not-ready-report" ||
+    reason === "ready" ||
+    reason === "unknown-action"
+    ? reason
+    : fallback;
 }
 
 function auditReportLedgerMetadataStringList(metadata: Record<string, unknown>, key: string): string[] {
@@ -9209,6 +11586,9 @@ function auditTimelineExportPath(item: AiReviewAuditTimelineItem): string {
   }
   if (item.kind === "data-preparation-evidence") {
     return "researchRun.dataSnapshot.preparationEvidence";
+  }
+  if (item.kind === "paper-execution-preparation-evidence") {
+    return "paperExecutions[].preparationEvidence";
   }
   if (item.kind === "market-calendar-evidence") {
     return "researchRun.dataSnapshot.marketCalendar";
@@ -9684,6 +12064,7 @@ export function buildWatchlistCacheRefreshCoverageRow(
 }
 
 export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow[]): ResearchPipelinePreflight {
+  const lockedPreparationEvidence = buildLockedPreparationEvidence(rows);
   const issues = rows
     .flatMap<ResearchPipelinePreflightIssue>((row) =>
       row.status === "ready"
@@ -9709,7 +12090,8 @@ export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow
       requiresConfirmation: false,
       summary: `Fix ${blockedIssues.length} blocked research context ${blockedIssues.length === 1 ? "gate" : "gates"} before running the pipeline.`,
       primaryAction,
-      issues
+      issues,
+      lockedPreparationEvidence
     };
   }
 
@@ -9720,7 +12102,8 @@ export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow
       requiresConfirmation: true,
       summary: `Review ${issues.length} research context ${issues.length === 1 ? "gate" : "gates"} before running the pipeline.`,
       primaryAction,
-      issues
+      issues,
+      lockedPreparationEvidence
     };
   }
 
@@ -9729,7 +12112,37 @@ export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow
     canRun: true,
     requiresConfirmation: false,
     summary: "Research context is ready for pipeline run.",
-    issues: []
+    issues: [],
+    lockedPreparationEvidence
+  };
+}
+
+export function resolveResearchPipelinePreparationEvidenceRunId(
+  input: ResearchPipelinePreparationEvidenceSelection
+): string | null {
+  const lockedRunId = input.preflight.lockedPreparationEvidence?.runId.trim() ?? "";
+  return lockedRunId || null;
+}
+
+export function researchPipelineDataSnapshotLogLabel(
+  context: string,
+  preflight: ResearchPipelinePreflight | null | undefined
+): string {
+  const base = `Data snapshot prepared for ${context}`;
+  const lockedRunId = preflight?.lockedPreparationEvidence?.runId.trim() ?? "";
+  return lockedRunId ? `${base} · prep ${lockedRunId}` : base;
+}
+
+function buildLockedPreparationEvidence(rows: ResearchContextReadinessRow[]): ResearchPipelineLockedPreparationEvidence | null {
+  const refreshRow = rows.find((row) => row.id === "refresh");
+  if (!refreshRow || refreshRow.status !== "ready" || !refreshRow.evidenceRunId) {
+    return null;
+  }
+  return {
+    runId: refreshRow.evidenceRunId,
+    label: refreshRow.label,
+    value: refreshRow.value,
+    detail: refreshRow.detail
   };
 }
 
@@ -10187,6 +12600,37 @@ export function buildPortfolioPaperOrderApprovalRows(
         };
       })
     );
+}
+
+export function portfolioPaperOrderApprovalResultCarriesLockedLedgerState(
+  result: PortfolioPaperOrderApprovalLockedLedgerStateResult
+): boolean {
+  return (
+    result.error === "portfolio_paper_order_approval_locked_after_simulation" &&
+    result.approval === undefined &&
+    Boolean(result.approvals?.length) &&
+    Boolean(result.lifecycle?.length)
+  );
+}
+
+export function buildPortfolioPaperOrderApprovalLockedLedgerMessage(
+  result: PortfolioPaperOrderApprovalLockedLedgerStateResult
+): string {
+  if (
+    result.error !== "portfolio_paper_order_approval_locked_after_simulation" ||
+    !result.existingApproval ||
+    !result.existingSimulation
+  ) {
+    return result.error ?? "Portfolio paper order approval failed";
+  }
+  const simulation = result.existingSimulation;
+  const approval = result.existingApproval;
+  return [
+    `Approval locked: order ${simulation.orderId} already has filled simulation ${simulation.simulationId}`,
+    `${simulation.side} ${simulation.quantity} @ ${simulation.fillPrice.toFixed(2)}`,
+    `simulated ${simulation.simulatedAt}`,
+    `existing approval by ${approval.reviewer} at ${approval.reviewedAt}.`
+  ].join(" · ");
 }
 
 function portfolioPaperOrderLifecycleStateCounts(batch: PortfolioPaperOrderBatchSnapshot): Record<string, number> {
@@ -11133,6 +13577,13 @@ export function buildPaperExecutionSummaryTiles(
         tone: "neutral"
       },
       {
+        id: "preparation-evidence",
+        label: "Preparation evidence",
+        value: "Not locked",
+        detail: "Paper execution has not inherited a data preparation run yet.",
+        tone: "warning"
+      },
+      {
         id: "risk-gates",
         label: "Risk gates",
         value: workspace.execution.liveEnabled ? "live route enabled" : `${blockedGateCount} live gates blocked`,
@@ -11145,6 +13596,7 @@ export function buildPaperExecutionSummaryTiles(
   const paperPositions = Object.entries(execution.account.positions).filter(([, quantity]) => quantity > 0);
   const passedGates = execution.gates.filter((gate) => gate.passed).length;
   const blockedGates = execution.gates.length - passedGates;
+  const preparationEvidence = execution.preparationEvidence;
   return [
     {
       id: "account-sync",
@@ -11163,6 +13615,15 @@ export function buildPaperExecutionSummaryTiles(
       tone: paperPositions.length ? "positive" : "neutral"
     },
     {
+      id: "preparation-evidence",
+      label: "Preparation evidence",
+      value: preparationEvidence?.runId ?? "Not locked",
+      detail: preparationEvidence
+        ? formatPaperExecutionPreparationEvidenceTileDetail(preparationEvidence)
+        : "Paper execution has not inherited a data preparation run yet.",
+      tone: preparationEvidence ? (preparationEvidence.quality.isComplete ? "positive" : "warning") : "warning"
+    },
+    {
       id: "risk-gates",
       label: "Risk gates",
       value: `${passedGates} passed / ${blockedGates} blocked`,
@@ -11170,6 +13631,10 @@ export function buildPaperExecutionSummaryTiles(
       tone: blockedGates ? "warning" : "positive"
     }
   ];
+}
+
+function formatPaperExecutionPreparationEvidenceTileDetail(evidence: ResearchRunDataPreparationEvidence): string {
+  return `${evidence.upsertedRows} rows · ${evidence.quality.source} · ${evidence.symbol} ${evidence.timeframe}`;
 }
 
 export function buildPortfolioPaperOrderReplaySummaryTiles(
@@ -11281,6 +13746,7 @@ export function buildPortfolioPaperOrderLatestSimulationSummary(
   const timelineLabel = stateEvent
     ? `${stateEvent.label} · ${stateEvent.actor || stateEvent.source} · ${stateEvent.reason}`
     : "Simulation recorded · paper-simulator · State history pending.";
+  const adapterEvidenceLabel = portfolioReplayOrderAdapterEvidenceLabel(replayOrder);
 
   return {
     id: `portfolio-latest-simulation-${latest.simulationId}`,
@@ -11296,6 +13762,7 @@ export function buildPortfolioPaperOrderLatestSimulationSummary(
       positionAfter === undefined ? "-" : formatQuantity(positionAfter)
     }`,
     timelineLabel,
+    adapterEvidenceLabel,
     boundaryLabel: `${latest.paperOnly ? "Paper only" : "Live route"} · ${
       latest.liveExecutionBlocked ? "live blocked" : "live route open"
     }`,
@@ -11305,14 +13772,75 @@ export function buildPortfolioPaperOrderLatestSimulationSummary(
   };
 }
 
+function portfolioReplayOrderAdapterEvidenceLabel(
+  order: PortfolioPaperOrderReplayOrderSnapshot | null | undefined
+): string {
+  if (!order?.adapterPaperExecutionId) {
+    return "No adapter replay evidence";
+  }
+  const evidence = order.adapterPaperExecutionEvidence ?? {};
+  const fillSummary = typeof evidence.fillSummary === "string" ? evidence.fillSummary : "fill evidence recorded";
+  const manifestValidationId =
+    order.adapterManifestValidationId ||
+    (typeof evidence.manifestValidationId === "string" ? evidence.manifestValidationId : "");
+  return [
+    `Adapter ${order.adapterPaperExecutionId}`,
+    fillSummary,
+    manifestValidationId ? `manifest ${manifestValidationId}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function buildPortfolioPaperOrderSimulationRouteRiskRequest(
+  template: PortfolioPaperOrderRouteRiskTemplate,
+  replay: PortfolioPaperOrderReplaySnapshot | null | undefined
+): PortfolioPaperOrderSimulationRouteRiskRequest {
+  const initialCash = portfolioRouteRiskPositiveNumber(replay?.initialCash, 100_000);
+  const minCashBufferPct = portfolioRouteRiskPct(template.minCashBufferPct, 0);
+  const maxSymbolNotionalPct = portfolioRouteRiskPct(
+    template.maxSymbolNotionalPct,
+    defaultPortfolioPaperOrderRouteRiskTemplate.maxSymbolNotionalPct
+  );
+  const maxBatchNotionalPct = portfolioRouteRiskPct(
+    template.maxBatchNotionalPct,
+    defaultPortfolioPaperOrderRouteRiskTemplate.maxBatchNotionalPct
+  );
+  return {
+    initialCash: roundPortfolioRouteRiskNumber(initialCash),
+    minCashAfter: roundPortfolioRouteRiskNumber(initialCash * (minCashBufferPct / 100)),
+    maxSymbolNotional: roundPortfolioRouteRiskNumber(initialCash * (maxSymbolNotionalPct / 100)),
+    maxBatchNotional: roundPortfolioRouteRiskNumber(initialCash * (maxBatchNotionalPct / 100))
+  };
+}
+
 export function buildPortfolioPaperOrderSimulationRouteRows(
   approvalRows: PortfolioPaperOrderApprovalRow[] | null | undefined,
   simulations: PortfolioPaperOrderSimulationSnapshot[] | null | undefined,
-  stateRows: PortfolioPaperOrderStateHistoryRow[] | null | undefined
+  stateRows: PortfolioPaperOrderStateHistoryRow[] | null | undefined,
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[] | null | undefined = []
 ): PortfolioPaperOrderSimulationRouteRow[] {
   const simulationByOrder = new Map(
     [...(simulations ?? [])].map((simulation) => [`${simulation.batchId}:${simulation.orderId}`, simulation])
   );
+  const adapterPaperExecutionBySymbol = new Map<string, ExecutionAdapterPaperExecutionRow>();
+  for (const execution of [...(adapterPaperExecutionRows ?? [])].sort(
+    (left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id)
+  )) {
+    if (
+      execution.status !== "paper_execution_recorded" ||
+      !execution.paperFillRecorded ||
+      execution.orderSubmitted ||
+      execution.liveOrderSubmitted ||
+      execution.routeExecuted
+    ) {
+      continue;
+    }
+    const symbol = execution.simulatedSymbol.trim();
+    if (symbol && !adapterPaperExecutionBySymbol.has(symbol)) {
+      adapterPaperExecutionBySymbol.set(symbol, execution);
+    }
+  }
   const stateByOrder = new Map<string, PortfolioPaperOrderStateHistoryRow>();
   for (const row of [...(stateRows ?? [])].sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))) {
     const key = `${row.batchId}:${row.orderId}`;
@@ -11325,6 +13853,14 @@ export function buildPortfolioPaperOrderSimulationRouteRows(
     const key = `${row.batchId}:${row.orderId}`;
     const simulation = simulationByOrder.get(key) ?? null;
     const latestState = stateByOrder.get(key) ?? null;
+    const adapterPaperExecution = adapterPaperExecutionBySymbol.get(row.symbol) ?? null;
+    const adapterEvidenceLabel = adapterPaperExecution
+      ? [
+          `Adapter paper execution ${adapterPaperExecution.id}`,
+          adapterPaperExecution.fillSummary,
+          adapterPaperExecution.manifestValidationId
+        ].filter(Boolean).join(" · ")
+      : "No adapter paper execution evidence";
     const base = {
       id: `portfolio-simulation-route-${row.batchId}-${row.orderId}`,
       batchId: row.batchId,
@@ -11333,15 +13869,33 @@ export function buildPortfolioPaperOrderSimulationRouteRows(
       side: row.side,
       latestStateLabel: latestState ? `${latestState.label} · ${latestState.actor || latestState.source}` : "No timeline event yet",
       focusQuery: `${row.batchId} ${row.orderId} ${row.symbol} ${latestState?.state ?? row.state}`,
-      simulationId: simulation?.simulationId ?? null
+      stateEventId: latestState?.id ?? null,
+      simulationId: simulation?.simulationId ?? null,
+      adapterPaperExecutionId: adapterPaperExecution?.id ?? null,
+      adapterPaperExecutionEvidenceLabel: adapterEvidenceLabel,
+      adapterManifestValidationId: adapterPaperExecution?.manifestValidationId ?? null
     };
 
     if (simulation) {
+      const routeGuardDetail = portfolioPaperOrderSimulationRouteGuardDetail(simulation);
       return {
         ...base,
         routeState: "filled" as const,
         statusLabel: "Already simulated",
-        detail: `Filled by ${simulation.simulationId}; duplicate simulator route is blocked.`,
+        focusQuery: [
+          base.focusQuery,
+          simulation.simulationId,
+          simulation.fillStatus,
+          simulation.simulatedAt,
+          simulation.sourceRunId
+        ]
+          .filter((token): token is string => Boolean(token))
+          .join(" "),
+        detail: [
+          `Filled by ${simulation.simulationId} · ${simulation.side} ${simulation.quantity} @ ${simulation.fillPrice.toFixed(2)} · simulated ${simulation.simulatedAt}`,
+          routeGuardDetail,
+          "duplicate simulator route is blocked."
+        ].filter(Boolean).join("; "),
         canSimulate: false,
         tone: "neutral" as const
       };
@@ -11396,6 +13950,39 @@ export function buildPortfolioPaperOrderSimulationRouteRows(
   });
 }
 
+function portfolioPaperOrderSimulationRouteGuardDetail(
+  simulation: PortfolioPaperOrderSimulationSnapshot
+): string {
+  const routeRisk = simulation.routeRisk;
+  if (!routeRisk?.status) {
+    return "";
+  }
+  const cashAfter =
+    typeof routeRisk.cashAfter === "number" ? `; cash after ${formatAssumptionCurrency(routeRisk.cashAfter)}` : "";
+  if (routeRisk.status === "passed") {
+    return `route guard passed${cashAfter}`;
+  }
+  const reasons = Array.isArray(routeRisk.blockedReasons) ? routeRisk.blockedReasons.filter(Boolean).join(", ") : "";
+  return `route guard ${routeRisk.status}${reasons ? ` (${reasons})` : ""}${cashAfter}`;
+}
+
+function portfolioRouteRiskPositiveNumber(value: unknown, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function portfolioRouteRiskPct(value: unknown, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return fallback;
+  }
+  return Math.min(numeric, 100);
+}
+
+function roundPortfolioRouteRiskNumber(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
 export function buildPortfolioPaperOrderStateHistoryRows(
   histories: PortfolioPaperOrderStateHistorySnapshot[] | null | undefined,
   limit = 12
@@ -11417,12 +14004,58 @@ export function buildPortfolioPaperOrderStateHistoryRows(
           reason: event.reason,
           quantity: formatQuantity(order.quantity),
           notionalValue: order.notionalValue.toFixed(2),
+          focusQuery: portfolioStateHistoryFocusQuery(order, event),
+          adapterEvidenceLabel: portfolioStateHistoryAdapterEvidenceLabel(event.metadata),
           tone: portfolioPaperOrderStateTone(event.state)
         }))
       )
     )
     .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
     .slice(0, Math.max(1, limit));
+}
+
+function portfolioStateHistoryFocusQuery(
+  order: PortfolioPaperOrderStateHistoryOrderSnapshot,
+  event: PortfolioPaperOrderStateHistoryEventSnapshot
+): string {
+  const metadata = event.metadata ?? {};
+  const tokens = [
+    order.batchId,
+    order.orderId,
+    order.symbol,
+    event.state,
+    event.eventId,
+    typeof metadata.simulationId === "string" ? metadata.simulationId : "",
+    typeof metadata.adapterPaperExecutionId === "string" ? metadata.adapterPaperExecutionId : "",
+    typeof metadata.adapterManifestValidationId === "string" ? metadata.adapterManifestValidationId : ""
+  ];
+  return tokens.filter(Boolean).join(" ");
+}
+
+function portfolioStateHistoryAdapterEvidenceLabel(metadata: Record<string, unknown> | undefined): string {
+  const adapterPaperExecutionId =
+    typeof metadata?.adapterPaperExecutionId === "string" ? metadata.adapterPaperExecutionId : "";
+  if (!adapterPaperExecutionId) {
+    return "";
+  }
+  const evidence =
+    metadata?.adapterPaperExecutionEvidence && typeof metadata.adapterPaperExecutionEvidence === "object"
+      ? (metadata.adapterPaperExecutionEvidence as Record<string, unknown>)
+      : {};
+  const fillSummary = typeof evidence.fillSummary === "string" ? evidence.fillSummary : "fill evidence recorded";
+  const manifestValidationId =
+    typeof metadata?.adapterManifestValidationId === "string"
+      ? metadata.adapterManifestValidationId
+      : typeof evidence.manifestValidationId === "string"
+        ? evidence.manifestValidationId
+        : "";
+  return [
+    `Adapter ${adapterPaperExecutionId}`,
+    fillSummary,
+    manifestValidationId ? `manifest ${manifestValidationId}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function buildPaperPositionRows(
@@ -11759,6 +14392,43 @@ export function buildExecutionAdapterSecretMaterializationRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSecretManifestValidationRows(
+  validations: ExecutionAdapterSecretManifestValidationSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSecretManifestValidationRow[] {
+  return (validations ?? [])
+    .map((row) => ({
+      id: row.validationId,
+      materializationId: row.materializationId,
+      referenceId: row.referenceId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSecretManifestValidationStatusLabel(row.status),
+      referenceName: row.referenceName,
+      backend: row.backend,
+      manifestPath: row.manifestPath,
+      validationMode: row.validationMode,
+      fingerprint: row.fingerprint,
+      envCoverageSummary: executionAdapterSecretManifestValidationCoverageSummary(
+        row.requiredEnvVars,
+        row.coveredEnvVars
+      ),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveTradingAllowed
+        ? "Live trading allowed"
+        : row.paperOnly
+          ? "Paper only · live trading blocked"
+          : "Live trading blocked",
+      auditEventId: row.validationId,
+      tone: executionAdapterSecretManifestValidationTone(row.status)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function buildExecutionAdapterEnvironmentBindingRows(
   bindings: ExecutionAdapterEnvironmentBindingSnapshot[] | null | undefined,
   limit = 8
@@ -11767,6 +14437,7 @@ export function buildExecutionAdapterEnvironmentBindingRows(
     .map((row) => ({
       id: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -11799,6 +14470,7 @@ export function buildExecutionAdapterRuntimeReloadPlanRows(
       id: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -11834,6 +14506,7 @@ export function buildExecutionAdapterRuntimeReloadExecutionRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -11871,6 +14544,7 @@ export function buildExecutionAdapterRuntimeReloadAcceptanceRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -11910,6 +14584,7 @@ export function buildExecutionAdapterOrchestrationDryRunRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -11951,6 +14626,7 @@ export function buildExecutionAdapterOrchestrationExecutionRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -11994,6 +14670,7 @@ export function buildExecutionAdapterHumanConfirmationRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -12039,6 +14716,7 @@ export function buildExecutionAdapterSandboxProbePlanRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -12086,6 +14764,7 @@ export function buildExecutionAdapterSandboxProbeExecutionRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -12135,6 +14814,7 @@ export function buildExecutionAdapterSandboxProbeReviewRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -12186,6 +14866,7 @@ export function buildExecutionAdapterProductionRouteReviewRows(
       planId: row.planId,
       bindingId: row.bindingId,
       materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
       adapterId: row.adapterId,
       market: row.market,
       route: row.route,
@@ -12220,6 +14901,325 @@ export function buildExecutionAdapterProductionRouteReviewRows(
     .slice(0, Math.max(1, limit));
 }
 
+export function buildExecutionAdapterSandboxOrderSchemaDryRunRows(
+  dryRuns: ExecutionAdapterSandboxOrderSchemaDryRunSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterSandboxOrderSchemaDryRunRow[] {
+  return (dryRuns ?? [])
+    .map((row) => ({
+      id: row.sandboxOrderSchemaDryRunId,
+      productionRouteReviewId: row.productionRouteReviewId,
+      sandboxProbeReviewId: row.sandboxProbeReviewId,
+      sandboxProbeExecutionId: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterSandboxOrderSchemaDryRunStatusLabel(row.status),
+      dryRunMode: row.dryRunMode,
+      reviewMode: row.reviewMode,
+      sandboxReviewMode: row.sandboxReviewMode,
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      orderIntentSummary: executionAdapterSandboxOrderIntentSummary(row.orderIntent),
+      orderSubmitted: row.orderSubmitted,
+      confirmationSummary: executionAdapterSandboxOrderSchemaDryRunConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.orderSubmitted
+        ? "Order submission detected · blocked"
+        : row.liveTradingAllowed
+          ? "Live trading allowed"
+          : row.paperOnly
+            ? "No order submitted · paper only · live trading blocked"
+            : "No order submitted · live trading blocked",
+      auditEventId: row.sandboxOrderSchemaDryRunId,
+      tone: executionAdapterSandboxOrderSchemaDryRunTone(row.status, row.orderSubmitted)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
+export function buildExecutionAdapterPaperOrderLifecycleRows(
+  lifecycles: ExecutionAdapterPaperOrderLifecycleSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterPaperOrderLifecycleRow[] {
+  return (lifecycles ?? [])
+    .map((row) => ({
+      id: row.paperOrderLifecycleId,
+      sandboxOrderSchemaDryRunId: row.sandboxOrderSchemaDryRunId,
+      productionRouteReviewId: row.productionRouteReviewId,
+      sandboxProbeReviewId: row.sandboxProbeReviewId,
+      sandboxProbeExecutionId: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterPaperOrderLifecycleStatusLabel(row.status),
+      lifecycleMode: row.lifecycleMode,
+      dryRunMode: row.dryRunMode,
+      reviewMode: row.reviewMode,
+      sandboxReviewMode: row.sandboxReviewMode,
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      orderIntentSummary: executionAdapterSandboxOrderIntentSummary(row.orderIntent),
+      lifecycleStepSummary: executionAdapterPaperOrderLifecycleStepSummary(row.lifecycleSteps),
+      orderSubmitted: row.orderSubmitted,
+      liveOrderSubmitted: row.liveOrderSubmitted,
+      confirmationSummary: executionAdapterPaperOrderLifecycleConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: row.liveOrderSubmitted
+        ? "Live order submission detected · blocked"
+        : row.liveTradingAllowed
+          ? "Live trading allowed"
+          : row.paperOnly
+            ? "Paper lifecycle recorded · no live order submitted · live trading blocked"
+            : "No live order submitted · live trading blocked",
+      auditEventId: row.paperOrderLifecycleId,
+      tone: executionAdapterPaperOrderLifecycleTone(row.status, row.liveOrderSubmitted)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
+export function buildExecutionAdapterPaperRouteRunbookRows(
+  runbooks: ExecutionAdapterPaperRouteRunbookSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterPaperRouteRunbookRow[] {
+  return (runbooks ?? [])
+    .map((row) => ({
+      id: row.paperRouteRunbookId,
+      paperOrderLifecycleId: row.paperOrderLifecycleId,
+      sandboxOrderSchemaDryRunId: row.sandboxOrderSchemaDryRunId,
+      productionRouteReviewId: row.productionRouteReviewId,
+      sandboxProbeReviewId: row.sandboxProbeReviewId,
+      sandboxProbeExecutionId: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterPaperRouteRunbookStatusLabel(row.status),
+      runbookMode: row.runbookMode,
+      lifecycleMode: row.lifecycleMode,
+      dryRunMode: row.dryRunMode,
+      reviewMode: row.reviewMode,
+      sandboxReviewMode: row.sandboxReviewMode,
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      orderIntentSummary: executionAdapterSandboxOrderIntentSummary(row.orderIntent),
+      lifecycleStepSummary: executionAdapterPaperOrderLifecycleStepSummary(row.lifecycleSteps),
+      runbookStepSummary: executionAdapterPaperRouteRunbookStepSummary(row.runbookSteps),
+      orderSubmitted: row.orderSubmitted,
+      liveOrderSubmitted: row.liveOrderSubmitted,
+      routeExecuted: row.routeExecuted,
+      confirmationSummary: executionAdapterPaperRouteRunbookConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: executionAdapterPaperRouteRunbookBoundary(row),
+      auditEventId: row.paperRouteRunbookId,
+      tone: executionAdapterPaperRouteRunbookTone(row.status, row.routeExecuted)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
+export function buildExecutionAdapterOpsStateRows(
+  states: ExecutionAdapterOpsStateSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterOpsStateRow[] {
+  return (states ?? [])
+    .map((row) => ({
+      id: row.adapterOpsStateId,
+      paperRouteRunbookId: row.paperRouteRunbookId,
+      paperOrderLifecycleId: row.paperOrderLifecycleId,
+      sandboxOrderSchemaDryRunId: row.sandboxOrderSchemaDryRunId,
+      productionRouteReviewId: row.productionRouteReviewId,
+      sandboxProbeReviewId: row.sandboxProbeReviewId,
+      sandboxProbeExecutionId: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterOpsStateStatusLabel(row.status),
+      opsMode: row.opsMode,
+      runbookMode: row.runbookMode,
+      lifecycleMode: row.lifecycleMode,
+      dryRunMode: row.dryRunMode,
+      reviewMode: row.reviewMode,
+      sandboxReviewMode: row.sandboxReviewMode,
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      orderIntentSummary: executionAdapterSandboxOrderIntentSummary(row.orderIntent),
+      lifecycleStepSummary: executionAdapterPaperOrderLifecycleStepSummary(row.lifecycleSteps),
+      runbookStepSummary: executionAdapterPaperRouteRunbookStepSummary(row.runbookSteps),
+      opsStepSummary: executionAdapterOpsStateStepSummary(row.opsSteps),
+      orderSubmitted: row.orderSubmitted,
+      liveOrderSubmitted: row.liveOrderSubmitted,
+      routeExecuted: row.routeExecuted,
+      confirmationSummary: executionAdapterOpsStateConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: executionAdapterOpsStateBoundary(row),
+      auditEventId: row.adapterOpsStateId,
+      tone: executionAdapterOpsStateTone(row)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
+export function buildExecutionAdapterPaperExecutionRows(
+  executions: ExecutionAdapterPaperExecutionSnapshot[] | null | undefined,
+  limit = 8
+): ExecutionAdapterPaperExecutionRow[] {
+  return (executions ?? [])
+    .map((row) => ({
+      id: row.adapterPaperExecutionId,
+      adapterOpsStateId: row.adapterOpsStateId,
+      paperRouteRunbookId: row.paperRouteRunbookId,
+      paperOrderLifecycleId: row.paperOrderLifecycleId,
+      sandboxOrderSchemaDryRunId: row.sandboxOrderSchemaDryRunId,
+      productionRouteReviewId: row.productionRouteReviewId,
+      sandboxProbeReviewId: row.sandboxProbeReviewId,
+      sandboxProbeExecutionId: row.sandboxProbeExecutionId,
+      sandboxProbePlanId: row.sandboxProbePlanId,
+      humanConfirmationId: row.humanConfirmationId,
+      orchestrationExecutionId: row.orchestrationExecutionId,
+      dryRunId: row.dryRunId,
+      acceptanceId: row.acceptanceId,
+      executionId: row.executionId,
+      planId: row.planId,
+      bindingId: row.bindingId,
+      materializationId: row.materializationId,
+      manifestValidationId: row.manifestValidationId,
+      adapterId: row.adapterId,
+      market: row.market,
+      route: row.route,
+      timestamp: row.recordedAt,
+      status: row.status,
+      statusLabel: executionAdapterPaperExecutionStatusLabel(row.status),
+      paperExecutionMode: row.paperExecutionMode,
+      opsMode: row.opsMode,
+      runbookMode: row.runbookMode,
+      lifecycleMode: row.lifecycleMode,
+      dryRunMode: row.dryRunMode,
+      reviewMode: row.reviewMode,
+      sandboxReviewMode: row.sandboxReviewMode,
+      probeExecutionMode: row.probeExecutionMode,
+      probeMode: row.probeMode,
+      confirmationMode: row.confirmationMode,
+      orchestrationExecutionMode: row.orchestrationExecutionMode,
+      orchestrationMode: row.orchestrationMode,
+      acceptanceMode: row.acceptanceMode,
+      executionMode: row.executionMode,
+      reloadMode: row.reloadMode,
+      maintenanceWindowId: row.maintenanceWindowId,
+      bindingMode: row.bindingMode,
+      manifestPath: row.manifestPath,
+      envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
+      orderIntentSummary: executionAdapterSandboxOrderIntentSummary(row.orderIntent),
+      lifecycleStepSummary: executionAdapterPaperOrderLifecycleStepSummary(row.lifecycleSteps),
+      runbookStepSummary: executionAdapterPaperRouteRunbookStepSummary(row.runbookSteps),
+      opsStepSummary: executionAdapterOpsStateStepSummary(row.opsSteps),
+      paperExecutionStepSummary: executionAdapterPaperExecutionStepSummary(row.paperExecutionSteps),
+      fillSummary: executionAdapterPaperExecutionFillSummary(row.simulatedFill),
+      simulatedSymbol: row.simulatedFill.symbol,
+      simulatedSide: row.simulatedFill.side,
+      simulatedQuantity: row.simulatedFill.quantity,
+      paperFillRecorded: row.paperFillRecorded,
+      orderSubmitted: row.orderSubmitted,
+      liveOrderSubmitted: row.liveOrderSubmitted,
+      routeExecuted: row.routeExecuted,
+      confirmationSummary: executionAdapterPaperExecutionConfirmationSummary(row.requiredConfirmations),
+      blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
+      boundary: executionAdapterPaperExecutionBoundary(row),
+      auditEventId: row.adapterPaperExecutionId,
+      tone: executionAdapterPaperExecutionTone(row)
+    }))
+    .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))
+    .slice(0, Math.max(1, limit));
+}
+
 export function buildExecutionAdapterHealthProbeRows(
   probe: ExecutionAdapterHealthProbeSnapshot | null | undefined
 ): ExecutionAdapterHealthProbeRow[] {
@@ -12239,6 +15239,7 @@ export function buildExecutionAdapterHealthProbeRows(
       marketSummary: `${formatAssumptionCurrency(probe.marketCount)} markets`,
       credentialSummary: executionAdapterHealthProbeCredentialSummary(probe.credentials),
       accountSyncSummary: probe.accountSyncState,
+      routeReviewSummary: executionAdapterHealthProbeRouteReviewSummary(probe),
       checkSummary: executionAdapterHealthProbeCheckSummary(probe.checks),
       blockerSummary: executionAdapterSecretReferenceBlockerSummary(probe.blockedReasons),
       boundary:
@@ -12562,6 +15563,50 @@ function latestPromotionSandboxProbeExecutionRow(
   );
 }
 
+function latestPromotionAdapterPaperExecutionRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterPaperExecutionRow[],
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterPaperExecutionRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 function buildPromotionAdapterCertificationStage(
   certifiedLiveAdapters: number,
   latestCertification: ExecutionAdapterCertificationRow | null,
@@ -12575,6 +15620,7 @@ function buildPromotionAdapterCertificationStage(
   latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
   latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
   latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestAdapterPaperExecution: ExecutionAdapterPaperExecutionRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
 ): PromotionQueueStage {
@@ -12587,17 +15633,29 @@ function buildPromotionAdapterCertificationStage(
   const environmentBindingDetail = latestEnvironmentBinding
     ? `Latest environment binding ${latestEnvironmentBinding.auditEventId}: ${latestEnvironmentBinding.statusLabel} · ${latestEnvironmentBinding.confirmationSummary} · ${latestEnvironmentBinding.blockerSummary} · ${latestEnvironmentBinding.bindingMode} · ${latestEnvironmentBinding.envVarSummary} · ${latestEnvironmentBinding.boundary}. ${promotionEnvironmentBindingNextStep(latestEnvironmentBinding)}`
     : "";
+  const runtimeReloadPlanValidationDetail = latestRuntimeReloadPlan?.manifestValidationId
+    ? ` · ${latestRuntimeReloadPlan.manifestValidationId}`
+    : "";
   const runtimeReloadPlanDetail = latestRuntimeReloadPlan
-    ? `Latest runtime reload plan ${latestRuntimeReloadPlan.auditEventId}: ${latestRuntimeReloadPlan.statusLabel} · ${latestRuntimeReloadPlan.confirmationSummary} · ${latestRuntimeReloadPlan.blockerSummary} · ${latestRuntimeReloadPlan.reloadMode} · ${latestRuntimeReloadPlan.maintenanceWindowId} · ${latestRuntimeReloadPlan.boundary}. ${promotionRuntimeReloadPlanNextStep(latestRuntimeReloadPlan)}`
+    ? `Latest runtime reload plan ${latestRuntimeReloadPlan.auditEventId}: ${latestRuntimeReloadPlan.statusLabel} · ${latestRuntimeReloadPlan.confirmationSummary} · ${latestRuntimeReloadPlan.blockerSummary} · ${latestRuntimeReloadPlan.reloadMode} · ${latestRuntimeReloadPlan.maintenanceWindowId}${runtimeReloadPlanValidationDetail} · ${latestRuntimeReloadPlan.boundary}. ${promotionRuntimeReloadPlanNextStep(latestRuntimeReloadPlan)}`
+    : "";
+  const runtimeReloadExecutionValidationDetail = latestRuntimeReloadExecution?.manifestValidationId
+    ? ` · ${latestRuntimeReloadExecution.manifestValidationId}`
     : "";
   const runtimeReloadExecutionDetail = latestRuntimeReloadExecution
-    ? `Latest runtime reload execution ${latestRuntimeReloadExecution.auditEventId}: ${latestRuntimeReloadExecution.statusLabel} · ${latestRuntimeReloadExecution.confirmationSummary} · ${latestRuntimeReloadExecution.blockerSummary} · ${latestRuntimeReloadExecution.executionMode} · ${latestRuntimeReloadExecution.reloadMode} · ${latestRuntimeReloadExecution.maintenanceWindowId} · ${latestRuntimeReloadExecution.boundary}. ${promotionRuntimeReloadExecutionNextStep(latestRuntimeReloadExecution)}`
+    ? `Latest runtime reload execution ${latestRuntimeReloadExecution.auditEventId}: ${latestRuntimeReloadExecution.statusLabel} · ${latestRuntimeReloadExecution.confirmationSummary} · ${latestRuntimeReloadExecution.blockerSummary} · ${latestRuntimeReloadExecution.executionMode} · ${latestRuntimeReloadExecution.reloadMode} · ${latestRuntimeReloadExecution.maintenanceWindowId}${runtimeReloadExecutionValidationDetail} · ${latestRuntimeReloadExecution.boundary}. ${promotionRuntimeReloadExecutionNextStep(latestRuntimeReloadExecution)}`
+    : "";
+  const runtimeReloadAcceptanceValidationDetail = latestRuntimeReloadAcceptance?.manifestValidationId
+    ? ` · ${latestRuntimeReloadAcceptance.manifestValidationId}`
     : "";
   const runtimeReloadAcceptanceDetail = latestRuntimeReloadAcceptance
-    ? `Latest runtime reload acceptance ${latestRuntimeReloadAcceptance.auditEventId}: ${latestRuntimeReloadAcceptance.statusLabel} · ${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.blockerSummary} · ${latestRuntimeReloadAcceptance.acceptanceMode} · ${latestRuntimeReloadAcceptance.executionMode} · ${latestRuntimeReloadAcceptance.reloadMode} · ${latestRuntimeReloadAcceptance.maintenanceWindowId} · ${latestRuntimeReloadAcceptance.boundary}. ${promotionRuntimeReloadAcceptanceNextStep(latestRuntimeReloadAcceptance)}`
+    ? `Latest runtime reload acceptance ${latestRuntimeReloadAcceptance.auditEventId}: ${latestRuntimeReloadAcceptance.statusLabel} · ${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.blockerSummary} · ${latestRuntimeReloadAcceptance.acceptanceMode} · ${latestRuntimeReloadAcceptance.executionMode} · ${latestRuntimeReloadAcceptance.reloadMode} · ${latestRuntimeReloadAcceptance.maintenanceWindowId}${runtimeReloadAcceptanceValidationDetail} · ${latestRuntimeReloadAcceptance.boundary}. ${promotionRuntimeReloadAcceptanceNextStep(latestRuntimeReloadAcceptance)}`
     : "";
   const sandboxProbeExecutionDetail = latestSandboxProbeExecution
     ? `Latest sandbox probe execution ${latestSandboxProbeExecution.auditEventId}: ${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.confirmationSummary} · ${latestSandboxProbeExecution.blockerSummary} · ${latestSandboxProbeExecution.probeExecutionMode} · ${latestSandboxProbeExecution.probeMode} · ${latestSandboxProbeExecution.boundary}. ${promotionSandboxProbeExecutionNextStep(latestSandboxProbeExecution)}`
+    : "";
+  const adapterPaperExecutionDetail = latestAdapterPaperExecution
+    ? `Latest adapter paper execution ${latestAdapterPaperExecution.auditEventId}: ${latestAdapterPaperExecution.statusLabel} · ${latestAdapterPaperExecution.fillSummary} · ${latestAdapterPaperExecution.confirmationSummary} · ${latestAdapterPaperExecution.blockerSummary} · ${latestAdapterPaperExecution.paperExecutionMode} · ${latestAdapterPaperExecution.boundary}. ${promotionAdapterPaperExecutionNextStep(latestAdapterPaperExecution)}`
     : "";
   if (!latestCertification) {
     const liveAdapterDetail = liveAdapterCertified
@@ -12606,7 +15664,9 @@ function buildPromotionAdapterCertificationStage(
     return {
       id: "adapter-certification",
       label: "Adapter certification",
-      value: latestSandboxProbeExecution
+      value: latestAdapterPaperExecution
+        ? `${latestAdapterPaperExecution.statusLabel} · ${latestAdapterPaperExecution.adapterId}`
+        : latestSandboxProbeExecution
         ? `${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.adapterId}`
         : certifiedLiveAdapters === 1
           ? "1 certified live adapter"
@@ -12619,13 +15679,18 @@ function buildPromotionAdapterCertificationStage(
         runtimeReloadPlanDetail,
         runtimeReloadExecutionDetail,
         runtimeReloadAcceptanceDetail,
-        sandboxProbeExecutionDetail
+        sandboxProbeExecutionDetail,
+        adapterPaperExecutionDetail
       ]
         .filter(Boolean)
         .join(" "),
       status: liveAdapterCertified ? "passed" : "blocked",
       tone: liveAdapterCertified
         ? "positive"
+        : latestAdapterPaperExecution?.status === "paper_execution_recorded" && latestAdapterPaperExecution.paperFillRecorded
+          ? "warning"
+        : latestAdapterPaperExecution
+          ? latestAdapterPaperExecution.tone
         : latestSandboxProbeExecution?.status === "probe_execution_recorded"
           ? "warning"
         : latestSandboxProbeExecution
@@ -12658,7 +15723,7 @@ function buildPromotionAdapterCertificationStage(
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestSandboxProbeExecution?.statusLabel ?? latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    value: `${latestAdapterPaperExecution?.statusLabel ?? latestSandboxProbeExecution?.statusLabel ?? latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
     detail: [
       secretReferenceDetail,
       secretMaterializationDetail,
@@ -12667,6 +15732,7 @@ function buildPromotionAdapterCertificationStage(
       runtimeReloadExecutionDetail,
       runtimeReloadAcceptanceDetail,
       sandboxProbeExecutionDetail,
+      adapterPaperExecutionDetail,
       certificationDetail,
       applyDetail,
       restartEvidenceDetail,
@@ -12678,6 +15744,10 @@ function buildPromotionAdapterCertificationStage(
     status: liveAdapterCertified ? "passed" : "blocked",
     tone: liveAdapterCertified
       ? "positive"
+      : latestAdapterPaperExecution?.status === "paper_execution_recorded" && latestAdapterPaperExecution.paperFillRecorded
+        ? "warning"
+      : latestAdapterPaperExecution
+        ? latestAdapterPaperExecution.tone
       : latestSandboxProbeExecution?.status === "probe_execution_recorded"
         ? "warning"
       : latestSandboxProbeExecution
@@ -12760,6 +15830,13 @@ function promotionSandboxProbeExecutionNextStep(execution: ExecutionAdapterSandb
   return "Resolve sandbox probe execution blockers before treating sandbox evidence as reviewed.";
 }
 
+function promotionAdapterPaperExecutionNextStep(execution: ExecutionAdapterPaperExecutionRow): string {
+  if (execution.status === "paper_execution_recorded" && execution.paperFillRecorded) {
+    return "Adapter paper execution is recorded with a simulated fill; live routing remains blocked until adapter certification policy explicitly allows production routing.";
+  }
+  return "Resolve adapter paper execution blockers before treating the paper route as reviewed.";
+}
+
 export function buildPromotionReadiness(
   workspace: TerminalWorkspace,
   execution: PaperExecutionSnapshot | null | undefined,
@@ -12775,7 +15852,8 @@ export function buildPromotionReadiness(
   runtimeReloadExecutionRows: ExecutionAdapterRuntimeReloadExecutionRow[] = [],
   runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[] = [],
   humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[] = [],
-  sandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[] = []
+  sandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[] = [],
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -12836,6 +15914,17 @@ export function buildPromotionReadiness(
   const latestSandboxProbeExecution = latestPromotionSandboxProbeExecutionRow(
     workspace,
     sandboxProbeExecutionRows,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
+  const latestAdapterPaperExecution = latestPromotionAdapterPaperExecutionRow(
+    workspace,
+    adapterPaperExecutionRows,
+    latestSandboxProbeExecution,
     latestHumanConfirmation,
     latestRuntimeReloadAcceptance,
     latestRuntimeReloadExecution,
@@ -12920,6 +16009,7 @@ export function buildPromotionReadiness(
     latestRuntimeReloadExecution,
     latestRuntimeReloadAcceptance,
     latestSandboxProbeExecution,
+    latestAdapterPaperExecution,
     liveAdapterCertified,
     adapterGatePassed
   );
@@ -14669,6 +17759,34 @@ function executionAdapterSecretMaterializationConfirmationSummary(
   return `${confirmed} confirmed / ${missing} missing`;
 }
 
+function executionAdapterSecretManifestValidationTone(
+  status: ExecutionAdapterSecretManifestValidationStatus
+): "positive" | "warning" | "neutral" | "risk" {
+  return status === "validated" ? "positive" : "risk";
+}
+
+function executionAdapterSecretManifestValidationStatusLabel(
+  status: ExecutionAdapterSecretManifestValidationStatus
+): string {
+  return (
+    {
+      blocked: "Blocked",
+      validated: "Validated"
+    } satisfies Record<ExecutionAdapterSecretManifestValidationStatus, string>
+  )[status];
+}
+
+function executionAdapterSecretManifestValidationCoverageSummary(
+  requiredEnvVars: string[],
+  coveredEnvVars: string[]
+): string {
+  if (!requiredEnvVars.length) {
+    return "No env vars";
+  }
+  const covered = requiredEnvVars.filter((name) => coveredEnvVars.includes(name)).length;
+  return `${covered}/${requiredEnvVars.length} env vars covered`;
+}
+
 function executionAdapterEnvironmentBindingTone(
   status: ExecutionAdapterEnvironmentBindingStatus
 ): "positive" | "warning" | "neutral" | "risk" {
@@ -14940,6 +18058,227 @@ function executionAdapterProductionRouteReviewConfirmationSummary(
   return `${confirmed} confirmed / ${missing} missing`;
 }
 
+function executionAdapterSandboxOrderSchemaDryRunTone(
+  status: ExecutionAdapterSandboxOrderSchemaDryRunStatus,
+  orderSubmitted: boolean
+): "positive" | "warning" | "neutral" | "risk" {
+  if (orderSubmitted) {
+    return "risk";
+  }
+  return status === "schema_dry_run_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterSandboxOrderSchemaDryRunStatusLabel(
+  status: ExecutionAdapterSandboxOrderSchemaDryRunStatus
+): string {
+  return (
+    {
+      schema_dry_run_recorded: "Schema dry-run recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterSandboxOrderSchemaDryRunStatus, string>
+  )[status];
+}
+
+function executionAdapterSandboxOrderSchemaDryRunConfirmationSummary(
+  confirmations: ExecutionAdapterSandboxOrderSchemaDryRunSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterPaperOrderLifecycleTone(
+  status: ExecutionAdapterPaperOrderLifecycleStatus,
+  liveOrderSubmitted: boolean
+): "positive" | "warning" | "neutral" | "risk" {
+  if (liveOrderSubmitted) {
+    return "risk";
+  }
+  return status === "lifecycle_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterPaperOrderLifecycleStatusLabel(status: ExecutionAdapterPaperOrderLifecycleStatus): string {
+  return (
+    {
+      lifecycle_recorded: "Lifecycle recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterPaperOrderLifecycleStatus, string>
+  )[status];
+}
+
+function executionAdapterPaperOrderLifecycleConfirmationSummary(
+  confirmations: ExecutionAdapterPaperOrderLifecycleSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterPaperOrderLifecycleStepSummary(
+  steps: ExecutionAdapterPaperOrderLifecycleSnapshot["lifecycleSteps"]
+): string {
+  const recorded = steps.filter((step) => step.status === "recorded").length;
+  const blocked = steps.filter((step) => step.status === "blocked").length;
+  return `${recorded} recorded / ${blocked} blocked`;
+}
+
+function executionAdapterPaperRouteRunbookTone(
+  status: ExecutionAdapterPaperRouteRunbookStatus,
+  routeExecuted: boolean
+): "positive" | "warning" | "neutral" | "risk" {
+  if (routeExecuted) {
+    return "risk";
+  }
+  return status === "runbook_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterPaperRouteRunbookStatusLabel(status: ExecutionAdapterPaperRouteRunbookStatus): string {
+  return (
+    {
+      runbook_recorded: "Runbook recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterPaperRouteRunbookStatus, string>
+  )[status];
+}
+
+function executionAdapterPaperRouteRunbookConfirmationSummary(
+  confirmations: ExecutionAdapterPaperRouteRunbookSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterPaperRouteRunbookStepSummary(
+  steps: ExecutionAdapterPaperRouteRunbookSnapshot["runbookSteps"]
+): string {
+  const recorded = steps.filter((step) => step.status === "recorded").length;
+  const blocked = steps.filter((step) => step.status === "blocked").length;
+  return `${recorded} recorded / ${blocked} blocked`;
+}
+
+function executionAdapterPaperRouteRunbookBoundary(row: ExecutionAdapterPaperRouteRunbookSnapshot): string {
+  if (row.routeExecuted) {
+    return "Route execution detected · blocked";
+  }
+  if (row.liveTradingAllowed) {
+    return "Live trading allowed";
+  }
+  return row.paperOnly
+    ? "Paper route runbook recorded · no route executed · live trading blocked"
+    : "No route executed · live trading blocked";
+}
+
+function executionAdapterOpsStateTone(row: ExecutionAdapterOpsStateSnapshot): "positive" | "warning" | "neutral" | "risk" {
+  if (row.routeExecuted || row.liveTradingAllowed) {
+    return "risk";
+  }
+  return row.status === "ops_state_recorded" ? "positive" : "risk";
+}
+
+function executionAdapterOpsStateStatusLabel(status: ExecutionAdapterOpsStateStatus): string {
+  return (
+    {
+      ops_state_recorded: "Ops state recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterOpsStateStatus, string>
+  )[status];
+}
+
+function executionAdapterOpsStateConfirmationSummary(
+  confirmations: ExecutionAdapterOpsStateSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterOpsStateStepSummary(steps: ExecutionAdapterOpsStateSnapshot["opsSteps"]): string {
+  const recorded = steps.filter((step) => step.status === "recorded").length;
+  const blocked = steps.filter((step) => step.status === "blocked").length;
+  return `${recorded} recorded / ${blocked} blocked`;
+}
+
+function executionAdapterOpsStateBoundary(row: ExecutionAdapterOpsStateSnapshot): string {
+  if (row.routeExecuted) {
+    return "Route execution detected · blocked";
+  }
+  if (row.liveTradingAllowed) {
+    return "Live trading allowed";
+  }
+  return row.paperOnly
+    ? "Adapter ops state recorded · no route executed · live trading blocked"
+    : "No route executed · live trading blocked";
+}
+
+function executionAdapterPaperExecutionTone(
+  row: ExecutionAdapterPaperExecutionSnapshot
+): "positive" | "warning" | "neutral" | "risk" {
+  if (row.orderSubmitted || row.liveOrderSubmitted || row.routeExecuted || row.liveTradingAllowed) {
+    return "risk";
+  }
+  return row.status === "paper_execution_recorded" && row.paperFillRecorded ? "positive" : "risk";
+}
+
+function executionAdapterPaperExecutionStatusLabel(status: ExecutionAdapterPaperExecutionStatus): string {
+  return (
+    {
+      paper_execution_recorded: "Paper execution recorded",
+      blocked: "Blocked"
+    } satisfies Record<ExecutionAdapterPaperExecutionStatus, string>
+  )[status];
+}
+
+function executionAdapterPaperExecutionConfirmationSummary(
+  confirmations: ExecutionAdapterPaperExecutionSnapshot["requiredConfirmations"]
+): string {
+  const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
+  const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
+  return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterPaperExecutionStepSummary(
+  steps: ExecutionAdapterPaperExecutionSnapshot["paperExecutionSteps"]
+): string {
+  const recorded = steps.filter((step) => step.status === "recorded").length;
+  const blocked = steps.filter((step) => step.status === "blocked").length;
+  return `${recorded} recorded / ${blocked} blocked`;
+}
+
+function executionAdapterPaperExecutionFillSummary(
+  fill: ExecutionAdapterPaperExecutionSnapshot["simulatedFill"]
+): string {
+  const quantity = formatExecutionAdapterOrderNumber(fill.quantity);
+  const base = `${fill.status} ${fill.side} ${quantity} ${fill.symbol}`;
+  return typeof fill.price === "number" ? `${base} @ ${formatExecutionAdapterOrderNumber(fill.price)}` : base;
+}
+
+function executionAdapterPaperExecutionBoundary(row: ExecutionAdapterPaperExecutionSnapshot): string {
+  if (row.orderSubmitted || row.liveOrderSubmitted || row.routeExecuted) {
+    return "Route or order execution detected · blocked";
+  }
+  if (row.liveTradingAllowed) {
+    return "Live trading allowed";
+  }
+  return row.paperOnly && row.paperFillRecorded
+    ? "Paper execution recorded · simulated fill only · live route blocked"
+    : "Simulated fill missing · live route blocked";
+}
+
+function executionAdapterSandboxOrderIntentSummary(
+  orderIntent: ExecutionAdapterSandboxOrderSchemaDryRunSnapshot["orderIntent"]
+): string {
+  const quantity = formatExecutionAdapterOrderNumber(orderIntent.quantity);
+  const base = `${orderIntent.side} ${quantity} ${orderIntent.symbol} · ${orderIntent.type}`;
+  return typeof orderIntent.price === "number" ? `${base} @ ${formatExecutionAdapterOrderNumber(orderIntent.price)}` : base;
+}
+
+function formatExecutionAdapterOrderNumber(value: number): string {
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: 8
+  });
+}
+
 function executionAdapterHealthProbeTone(
   status: ExecutionAdapterHealthProbeStatus
 ): "positive" | "warning" | "neutral" | "risk" {
@@ -14965,6 +18304,14 @@ function executionAdapterHealthProbeCredentialSummary(
   const apiKey = credentials.apiKeyConfigured ? `API key ${credentials.apiKeySource ?? "configured"}` : "API key missing";
   const secret = credentials.secretConfigured ? `secret ${credentials.secretSource ?? "configured"}` : "secret missing";
   return `${apiKey} · ${secret}`;
+}
+
+function executionAdapterHealthProbeRouteReviewSummary(probe: ExecutionAdapterHealthProbeSnapshot): string {
+  if (!probe.routeReview) {
+    return "No production route review bound";
+  }
+  const envVarCount = probe.routeReview.requiredEnvVars.length;
+  return `Route review · ${probe.routeReview.maintenanceWindowId} · ${envVarCount} env vars`;
 }
 
 function executionAdapterHealthProbeCheckSummary(checks: ExecutionAdapterHealthProbeSnapshot["checks"]): string {
@@ -15096,6 +18443,7 @@ export function buildWorkflowStages(workspace: TerminalWorkspace, runState?: Wor
 
 function buildWorkflowStageArtifacts(workspace: TerminalWorkspace, stageId: string): WorkflowStageArtifact[] {
   if (stageId === "data") {
+    const preparationEvidence = workspace.researchRun?.dataSnapshot?.preparationEvidence ?? null;
     return [
       {
         label: "Instrument",
@@ -15116,7 +18464,17 @@ function buildWorkflowStageArtifacts(workspace: TerminalWorkspace, stageId: stri
           ? `Bound to audited run ${workspace.researchRun.runId}.`
           : "Run Pipeline to bind an audited data snapshot.",
         tone: workspace.researchRun ? "positive" : "warning"
-      }
+      },
+      ...(preparationEvidence
+        ? [
+            {
+              label: "Preparation evidence",
+              value: preparationEvidence.runId,
+              detail: `${preparationEvidence.upsertedRows} rows cached · ${preparationEvidence.quality.source}`,
+              tone: preparationEvidence.quality.isComplete ? ("positive" as const) : ("warning" as const)
+            }
+          ]
+        : [])
     ];
   }
 
@@ -16215,6 +19573,20 @@ export function resolveResearchContextUrlState(
     symbol,
     timeframe
   };
+}
+
+export function buildResearchContextDeepLink(
+  href: string,
+  workspace: Pick<TerminalWorkspace, "selectedInstrument" | "selectedTimeframe">,
+  workAreaId: "market" | "research" = "research"
+): string {
+  const url = new URL(href);
+  url.search = "";
+  url.searchParams.set("workspace", workAreaId);
+  url.searchParams.set("market", workspace.selectedInstrument.market);
+  url.searchParams.set("symbol", workspace.selectedInstrument.symbol);
+  url.searchParams.set("timeframe", workspace.selectedTimeframe);
+  return url.toString();
 }
 
 export function workspaceWithResearchContextUrlState(

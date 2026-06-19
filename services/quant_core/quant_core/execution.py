@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,7 @@ class PaperExecutionRecord:
     account: PaperAccount
     orders: list[OrderResult]
     gates: list[dict[str, Any]]
+    preparation_evidence: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,10 @@ class PortfolioPaperOrderSimulation:
     fill_status: str
     reason: str
     approved_by: str | None
+    route_risk: dict[str, Any] = field(default_factory=dict)
+    adapter_paper_execution_id: str = ""
+    adapter_manifest_validation_id: str = ""
+    adapter_paper_execution_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,7 @@ class ExecutionAdapterCertificationApplyResult:
     required_confirmations: list[dict[str, Any]]
     blocked_reasons: list[str]
     metadata: dict[str, Any]
+    manifest_validation_id: str = ""
     live_trading_allowed: bool = False
 
 
@@ -180,6 +186,30 @@ class ExecutionAdapterSecretMaterializationResult:
 
 
 @dataclass(frozen=True)
+class ExecutionAdapterSecretManifestValidationResult:
+    validation_id: str
+    materialization_id: str
+    reference_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    validation_mode: str
+    reference_name: str
+    backend: str
+    manifest_path: str
+    fingerprint: str
+    required_env_vars: list[str]
+    covered_env_vars: list[str]
+    blocked_reasons: list[str]
+    manifest_summary: dict[str, Any]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
+@dataclass(frozen=True)
 class ExecutionAdapterEnvironmentBindingResult:
     binding_id: str
     materialization_id: str
@@ -195,6 +225,7 @@ class ExecutionAdapterEnvironmentBindingResult:
     required_confirmations: list[dict[str, Any]]
     blocked_reasons: list[str]
     metadata: dict[str, Any]
+    manifest_validation_id: str = ""
     live_trading_allowed: bool = False
 
 
@@ -203,6 +234,7 @@ class ExecutionAdapterRuntimeReloadPlanResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -226,6 +258,7 @@ class ExecutionAdapterRuntimeReloadExecutionResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -251,6 +284,7 @@ class ExecutionAdapterRuntimeReloadAcceptanceResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -278,6 +312,7 @@ class ExecutionAdapterOrchestrationDryRunResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -307,6 +342,7 @@ class ExecutionAdapterOrchestrationExecutionResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -338,6 +374,7 @@ class ExecutionAdapterHumanConfirmationResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -371,6 +408,7 @@ class ExecutionAdapterSandboxProbePlanResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -406,6 +444,7 @@ class ExecutionAdapterSandboxProbeExecutionResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -443,6 +482,7 @@ class ExecutionAdapterSandboxProbeReviewResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -482,6 +522,7 @@ class ExecutionAdapterProductionRouteReviewResult:
     plan_id: str
     binding_id: str
     materialization_id: str
+    manifest_validation_id: str
     adapter_id: str
     market: str
     route: str
@@ -502,6 +543,257 @@ class ExecutionAdapterProductionRouteReviewResult:
     binding_mode: str
     manifest_path: str
     required_env_vars: list[str]
+    required_confirmations: list[dict[str, Any]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterSandboxOrderSchemaDryRunResult:
+    sandbox_order_schema_dry_run_id: str
+    production_route_review_id: str
+    sandbox_probe_review_id: str
+    sandbox_probe_execution_id: str
+    sandbox_probe_plan_id: str
+    human_confirmation_id: str
+    orchestration_execution_id: str
+    dry_run_id: str
+    acceptance_id: str
+    execution_id: str
+    plan_id: str
+    binding_id: str
+    materialization_id: str
+    manifest_validation_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    dry_run_mode: str
+    review_mode: str
+    sandbox_review_mode: str
+    probe_execution_mode: str
+    probe_mode: str
+    confirmation_mode: str
+    orchestration_execution_mode: str
+    orchestration_mode: str
+    acceptance_mode: str
+    execution_mode: str
+    reload_mode: str
+    maintenance_window_id: str
+    binding_mode: str
+    manifest_path: str
+    required_env_vars: list[str]
+    order_intent: dict[str, Any]
+    required_confirmations: list[dict[str, Any]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterPaperOrderLifecycleResult:
+    paper_order_lifecycle_id: str
+    sandbox_order_schema_dry_run_id: str
+    production_route_review_id: str
+    sandbox_probe_review_id: str
+    sandbox_probe_execution_id: str
+    sandbox_probe_plan_id: str
+    human_confirmation_id: str
+    orchestration_execution_id: str
+    dry_run_id: str
+    acceptance_id: str
+    execution_id: str
+    plan_id: str
+    binding_id: str
+    materialization_id: str
+    manifest_validation_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    lifecycle_mode: str
+    dry_run_mode: str
+    review_mode: str
+    sandbox_review_mode: str
+    probe_execution_mode: str
+    probe_mode: str
+    confirmation_mode: str
+    orchestration_execution_mode: str
+    orchestration_mode: str
+    acceptance_mode: str
+    execution_mode: str
+    reload_mode: str
+    maintenance_window_id: str
+    binding_mode: str
+    manifest_path: str
+    required_env_vars: list[str]
+    order_intent: dict[str, Any]
+    lifecycle_steps: list[dict[str, Any]]
+    required_confirmations: list[dict[str, Any]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterPaperRouteRunbookResult:
+    paper_route_runbook_id: str
+    paper_order_lifecycle_id: str
+    sandbox_order_schema_dry_run_id: str
+    production_route_review_id: str
+    sandbox_probe_review_id: str
+    sandbox_probe_execution_id: str
+    sandbox_probe_plan_id: str
+    human_confirmation_id: str
+    orchestration_execution_id: str
+    dry_run_id: str
+    acceptance_id: str
+    execution_id: str
+    plan_id: str
+    binding_id: str
+    materialization_id: str
+    manifest_validation_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    runbook_mode: str
+    lifecycle_mode: str
+    dry_run_mode: str
+    review_mode: str
+    sandbox_review_mode: str
+    probe_execution_mode: str
+    probe_mode: str
+    confirmation_mode: str
+    orchestration_execution_mode: str
+    orchestration_mode: str
+    acceptance_mode: str
+    execution_mode: str
+    reload_mode: str
+    maintenance_window_id: str
+    binding_mode: str
+    manifest_path: str
+    required_env_vars: list[str]
+    order_intent: dict[str, Any]
+    lifecycle_steps: list[dict[str, Any]]
+    runbook_steps: list[dict[str, Any]]
+    required_confirmations: list[dict[str, Any]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterOpsStateResult:
+    adapter_ops_state_id: str
+    paper_route_runbook_id: str
+    paper_order_lifecycle_id: str
+    sandbox_order_schema_dry_run_id: str
+    production_route_review_id: str
+    sandbox_probe_review_id: str
+    sandbox_probe_execution_id: str
+    sandbox_probe_plan_id: str
+    human_confirmation_id: str
+    orchestration_execution_id: str
+    dry_run_id: str
+    acceptance_id: str
+    execution_id: str
+    plan_id: str
+    binding_id: str
+    materialization_id: str
+    manifest_validation_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    ops_mode: str
+    runbook_mode: str
+    lifecycle_mode: str
+    dry_run_mode: str
+    review_mode: str
+    sandbox_review_mode: str
+    probe_execution_mode: str
+    probe_mode: str
+    confirmation_mode: str
+    orchestration_execution_mode: str
+    orchestration_mode: str
+    acceptance_mode: str
+    execution_mode: str
+    reload_mode: str
+    maintenance_window_id: str
+    binding_mode: str
+    manifest_path: str
+    required_env_vars: list[str]
+    order_intent: dict[str, Any]
+    lifecycle_steps: list[dict[str, Any]]
+    runbook_steps: list[dict[str, Any]]
+    ops_steps: list[dict[str, Any]]
+    required_confirmations: list[dict[str, Any]]
+    blocked_reasons: list[str]
+    metadata: dict[str, Any]
+    live_trading_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class ExecutionAdapterPaperExecutionResult:
+    adapter_paper_execution_id: str
+    adapter_ops_state_id: str
+    paper_route_runbook_id: str
+    paper_order_lifecycle_id: str
+    sandbox_order_schema_dry_run_id: str
+    production_route_review_id: str
+    sandbox_probe_review_id: str
+    sandbox_probe_execution_id: str
+    sandbox_probe_plan_id: str
+    human_confirmation_id: str
+    orchestration_execution_id: str
+    dry_run_id: str
+    acceptance_id: str
+    execution_id: str
+    plan_id: str
+    binding_id: str
+    materialization_id: str
+    manifest_validation_id: str
+    adapter_id: str
+    market: str
+    route: str
+    status: str
+    operator: str
+    recorded_at: datetime
+    paper_execution_mode: str
+    ops_mode: str
+    runbook_mode: str
+    lifecycle_mode: str
+    dry_run_mode: str
+    review_mode: str
+    sandbox_review_mode: str
+    probe_execution_mode: str
+    probe_mode: str
+    confirmation_mode: str
+    orchestration_execution_mode: str
+    orchestration_mode: str
+    acceptance_mode: str
+    execution_mode: str
+    reload_mode: str
+    maintenance_window_id: str
+    binding_mode: str
+    manifest_path: str
+    required_env_vars: list[str]
+    order_intent: dict[str, Any]
+    lifecycle_steps: list[dict[str, Any]]
+    runbook_steps: list[dict[str, Any]]
+    ops_steps: list[dict[str, Any]]
+    paper_execution_steps: list[dict[str, Any]]
+    simulated_fill: dict[str, Any]
     required_confirmations: list[dict[str, Any]]
     blocked_reasons: list[str]
     metadata: dict[str, Any]
@@ -584,10 +876,17 @@ class PaperExecutionStore:
                     mode text not null,
                     account_json text not null,
                     orders_json text not null,
-                    gates_json text not null
+                    gates_json text not null,
+                    preparation_evidence_json text
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("pragma table_info(paper_executions)").fetchall()
+            }
+            if "preparation_evidence_json" not in columns:
+                connection.execute("alter table paper_executions add column preparation_evidence_json text")
             connection.execute(
                 """
                 create index if not exists idx_paper_executions_run_id_created_at
@@ -610,16 +909,18 @@ class PaperExecutionStore:
                     mode,
                     account_json,
                     orders_json,
-                    gates_json
+                    gates_json,
+                    preparation_evidence_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(execution_id) do update set
                     run_id = excluded.run_id,
                     created_at = excluded.created_at,
                     mode = excluded.mode,
                     account_json = excluded.account_json,
                     orders_json = excluded.orders_json,
-                    gates_json = excluded.gates_json
+                    gates_json = excluded.gates_json,
+                    preparation_evidence_json = excluded.preparation_evidence_json
                 """,
                 (
                     execution.execution_id,
@@ -629,6 +930,9 @@ class PaperExecutionStore:
                     json.dumps(_account_to_payload(execution.account), ensure_ascii=False, sort_keys=True),
                     json.dumps([_order_to_payload(order) for order in execution.orders], ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_gates(execution.gates), ensure_ascii=False, sort_keys=True),
+                    json.dumps(execution.preparation_evidence, ensure_ascii=False, sort_keys=True)
+                    if execution.preparation_evidence
+                    else None,
                 ),
             )
             connection.commit()
@@ -640,7 +944,7 @@ class PaperExecutionStore:
         try:
             rows = connection.execute(
                 """
-                select execution_id, run_id, created_at, mode, account_json, orders_json, gates_json
+                select execution_id, run_id, created_at, mode, account_json, orders_json, gates_json, preparation_evidence_json
                 from paper_executions
                 where run_id = ?
                 order by created_at desc
@@ -657,7 +961,7 @@ class PaperExecutionStore:
         try:
             rows = connection.execute(
                 """
-                select execution_id, run_id, created_at, mode, account_json, orders_json, gates_json
+                select execution_id, run_id, created_at, mode, account_json, orders_json, gates_json, preparation_evidence_json
                 from paper_executions
                 where run_id = ?
                 order by created_at desc
@@ -1079,10 +1383,34 @@ class PortfolioPaperOrderSimulationStore:
                     order_state text not null,
                     fill_status text not null,
                     reason text not null,
-                    approved_by text
+                    approved_by text,
+                    route_risk_json text not null default '{}',
+                    adapter_paper_execution_id text not null default '',
+                    adapter_manifest_validation_id text not null default '',
+                    adapter_paper_execution_evidence_json text not null default '{}'
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("pragma table_info(portfolio_paper_order_simulations)").fetchall()
+            }
+            if "route_risk_json" not in columns:
+                connection.execute(
+                    "alter table portfolio_paper_order_simulations add column route_risk_json text not null default '{}'"
+                )
+            if "adapter_paper_execution_id" not in columns:
+                connection.execute(
+                    "alter table portfolio_paper_order_simulations add column adapter_paper_execution_id text not null default ''"
+                )
+            if "adapter_manifest_validation_id" not in columns:
+                connection.execute(
+                    "alter table portfolio_paper_order_simulations add column adapter_manifest_validation_id text not null default ''"
+                )
+            if "adapter_paper_execution_evidence_json" not in columns:
+                connection.execute(
+                    "alter table portfolio_paper_order_simulations add column adapter_paper_execution_evidence_json text not null default '{}'"
+                )
             connection.execute(
                 """
                 create unique index if not exists idx_portfolio_paper_order_simulations_order
@@ -1120,9 +1448,13 @@ class PortfolioPaperOrderSimulationStore:
                     order_state,
                     fill_status,
                     reason,
-                    approved_by
+                    approved_by,
+                    route_risk_json,
+                    adapter_paper_execution_id,
+                    adapter_manifest_validation_id,
+                    adapter_paper_execution_evidence_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(base_run_id, batch_id, order_id) do update set
                     simulation_id = excluded.simulation_id,
                     simulated_at = excluded.simulated_at,
@@ -1136,7 +1468,11 @@ class PortfolioPaperOrderSimulationStore:
                     order_state = excluded.order_state,
                     fill_status = excluded.fill_status,
                     reason = excluded.reason,
-                    approved_by = excluded.approved_by
+                    approved_by = excluded.approved_by,
+                    route_risk_json = excluded.route_risk_json,
+                    adapter_paper_execution_id = excluded.adapter_paper_execution_id,
+                    adapter_manifest_validation_id = excluded.adapter_manifest_validation_id,
+                    adapter_paper_execution_evidence_json = excluded.adapter_paper_execution_evidence_json
                 """,
                 (
                     simulation.simulation_id,
@@ -1155,6 +1491,10 @@ class PortfolioPaperOrderSimulationStore:
                     simulation.fill_status,
                     simulation.reason,
                     simulation.approved_by,
+                    json.dumps(simulation.route_risk, ensure_ascii=False),
+                    simulation.adapter_paper_execution_id,
+                    simulation.adapter_manifest_validation_id,
+                    json.dumps(simulation.adapter_paper_execution_evidence, ensure_ascii=False),
                 ),
             )
             connection.commit()
@@ -1168,7 +1508,9 @@ class PortfolioPaperOrderSimulationStore:
             rows = connection.execute(
                 """
                 select simulation_id, base_run_id, batch_id, order_id, simulated_at, mode, symbol, source_run_id,
-                       side, quantity, fill_price, notional_value, order_state, fill_status, reason, approved_by
+                       side, quantity, fill_price, notional_value, order_state, fill_status, reason, approved_by,
+                       route_risk_json, adapter_paper_execution_id, adapter_manifest_validation_id,
+                       adapter_paper_execution_evidence_json
                 from portfolio_paper_order_simulations
                 where base_run_id = ? and batch_id = ?
                 order by simulated_at desc
@@ -1185,7 +1527,9 @@ class PortfolioPaperOrderSimulationStore:
             rows = connection.execute(
                 """
                 select simulation_id, base_run_id, batch_id, order_id, simulated_at, mode, symbol, source_run_id,
-                       side, quantity, fill_price, notional_value, order_state, fill_status, reason, approved_by
+                       side, quantity, fill_price, notional_value, order_state, fill_status, reason, approved_by,
+                       route_risk_json, adapter_paper_execution_id, adapter_manifest_validation_id,
+                       adapter_paper_execution_evidence_json
                 from portfolio_paper_order_simulations
                 where base_run_id = ?
                 order by simulated_at desc
@@ -1241,6 +1585,7 @@ def create_paper_execution_from_audit(audit: Any, *, created_at: datetime | None
                 "reason": "Live execution is blocked; this record is paper-only.",
             },
         ],
+        preparation_evidence=_paper_preparation_evidence_from_audit(audit),
     )
 
 
@@ -1257,7 +1602,7 @@ def validate_paper_execution_handoff(audit: Any) -> None:
 
 
 def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[str, Any]:
-    return {
+    payload = {
         "executionId": execution.execution_id,
         "runId": execution.run_id,
         "createdAt": execution.created_at.isoformat(),
@@ -1266,6 +1611,9 @@ def paper_execution_record_to_payload(execution: PaperExecutionRecord) -> dict[s
         "orders": [_order_to_payload(order) for order in execution.orders],
         "gates": _normalize_gates(execution.gates),
     }
+    if execution.preparation_evidence:
+        payload["preparationEvidence"] = dict(execution.preparation_evidence)
+    return payload
 
 
 def create_portfolio_paper_order_batch(
@@ -1380,10 +1728,46 @@ def portfolio_paper_order_payload_to_approval(payload: dict[str, Any]) -> Portfo
     )
 
 
+def _normalize_portfolio_paper_order_adapter_evidence(
+    adapter_paper_execution_id: str,
+    adapter_manifest_validation_id: str,
+    adapter_paper_execution_evidence: dict[str, Any] | None,
+) -> tuple[str, str, dict[str, Any]]:
+    normalized_execution_id = str(adapter_paper_execution_id or "").strip()
+    normalized_manifest_validation_id = str(adapter_manifest_validation_id or "").strip()
+    redacted_evidence = _redact_secret_fields(
+        adapter_paper_execution_evidence if isinstance(adapter_paper_execution_evidence, dict) else {}
+    )
+    evidence_execution_id = str(redacted_evidence.get("adapterPaperExecutionId") or "").strip()
+    if evidence_execution_id:
+        if normalized_execution_id and evidence_execution_id != normalized_execution_id:
+            raise ValueError("portfolio_paper_order_simulation_adapter_execution_id_mismatch")
+        normalized_execution_id = evidence_execution_id
+    evidence_manifest_validation_id = str(
+        redacted_evidence.get("adapterManifestValidationId") or redacted_evidence.get("manifestValidationId") or ""
+    ).strip()
+    if evidence_manifest_validation_id:
+        if normalized_manifest_validation_id and evidence_manifest_validation_id != normalized_manifest_validation_id:
+            raise ValueError("portfolio_paper_order_simulation_adapter_manifest_validation_id_mismatch")
+        normalized_manifest_validation_id = evidence_manifest_validation_id
+    if bool(redacted_evidence.get("orderSubmitted")):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_submitted")
+    if bool(redacted_evidence.get("liveOrderSubmitted")):
+        raise ValueError("portfolio_paper_order_simulation_adapter_live_order_submitted")
+    if bool(redacted_evidence.get("routeExecuted")):
+        raise ValueError("portfolio_paper_order_simulation_adapter_route_executed")
+    return normalized_execution_id, normalized_manifest_validation_id, redacted_evidence
+
+
 def create_portfolio_paper_order_simulation(
     *,
     batch: PortfolioPaperOrderBatch,
     lifecycle_row: dict[str, Any],
+    existing_simulations: list[PortfolioPaperOrderSimulation] | None = None,
+    route_risk: dict[str, Any] | None = None,
+    adapter_paper_execution_id: str = "",
+    adapter_manifest_validation_id: str = "",
+    adapter_paper_execution_evidence: dict[str, Any] | None = None,
     simulated_at: datetime | str | None = None,
 ) -> PortfolioPaperOrderSimulation:
     order_id = str(lifecycle_row.get("orderId") or "").strip()
@@ -1400,6 +1784,27 @@ def create_portfolio_paper_order_simulation(
     notional_value = _strict_positive_number(lifecycle_row.get("notionalValue"))
     if quantity is None or notional_value is None:
         raise ValueError("portfolio_paper_order_simulation_quantity_notional_required")
+    route_guard = build_portfolio_paper_order_simulation_route_risk(
+        lifecycle_row,
+        base_run_id=batch.base_run_id,
+        batch_id=batch.batch_id,
+        existing_simulations=existing_simulations,
+        route_risk=route_risk,
+    )
+    if route_guard["status"] == "blocked":
+        raise ValueError(
+            "portfolio_paper_order_simulation_route_risk_blocked:"
+            + ",".join(str(reason) for reason in route_guard["blockedReasons"])
+        )
+    (
+        normalized_adapter_paper_execution_id,
+        normalized_adapter_manifest_validation_id,
+        normalized_adapter_paper_execution_evidence,
+    ) = _normalize_portfolio_paper_order_adapter_evidence(
+        adapter_paper_execution_id,
+        adapter_manifest_validation_id,
+        adapter_paper_execution_evidence,
+    )
     simulated = (
         _parse_payload_datetime(simulated_at, "portfolio_paper_order_simulation_simulated_at_invalid")
         if simulated_at is not None
@@ -1423,7 +1828,117 @@ def create_portfolio_paper_order_simulation(
         fill_status="filled",
         reason="Paper-only simulation filled the approved portfolio order; live execution remains blocked.",
         approved_by=str(lifecycle_row.get("approvedBy") or "").strip() or None,
+        route_risk=route_guard,
+        adapter_paper_execution_id=normalized_adapter_paper_execution_id,
+        adapter_manifest_validation_id=normalized_adapter_manifest_validation_id,
+        adapter_paper_execution_evidence=normalized_adapter_paper_execution_evidence,
     )
+
+
+def build_portfolio_paper_order_simulation_route_risk(
+    lifecycle_row: dict[str, Any],
+    *,
+    base_run_id: str,
+    batch_id: str,
+    existing_simulations: list[PortfolioPaperOrderSimulation] | None = None,
+    route_risk: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    controls = route_risk if isinstance(route_risk, dict) else {}
+    initial_cash = _positive_number(controls.get("initialCash"), 100_000)
+    min_cash_after = _positive_number(controls.get("minCashAfter"), 0)
+    max_symbol_notional = _strict_positive_number(controls.get("maxSymbolNotional"))
+    max_batch_notional = _strict_positive_number(controls.get("maxBatchNotional"))
+    side = str(lifecycle_row.get("side") or "")
+    symbol = str(lifecycle_row.get("symbol") or "")
+    order_id = str(lifecycle_row.get("orderId") or "")
+    quantity = _positive_number(lifecycle_row.get("quantity"), 0)
+    notional_value = _positive_number(lifecycle_row.get("notionalValue"), 0)
+    existing = [
+        simulation
+        for simulation in existing_simulations or []
+        if simulation.base_run_id == base_run_id
+        and simulation.order_state == "filled"
+        and simulation.fill_status == "filled"
+    ]
+    replay = build_portfolio_paper_order_replay(existing, base_run_id=base_run_id, initial_cash=initial_cash)
+    cash_before = _positive_number(replay.get("account", {}).get("cash"), initial_cash)
+    cash_after = cash_before - notional_value if side == "buy" else cash_before + notional_value
+    replay_positions = replay.get("account", {}).get("positions", {})
+    symbol_position_before = _positive_number(
+        replay_positions.get(symbol) if isinstance(replay_positions, dict) else 0,
+        0,
+    )
+    symbol_position_after = symbol_position_before + quantity if side == "buy" else symbol_position_before - quantity
+    existing_symbol_notional = sum(
+        simulation.notional_value
+        for simulation in existing
+        if simulation.symbol == symbol and simulation.side == side
+    )
+    existing_batch_notional = sum(
+        simulation.notional_value
+        for simulation in existing
+        if simulation.batch_id == batch_id
+    )
+    symbol_notional_after = existing_symbol_notional + notional_value
+    batch_notional_after = existing_batch_notional + notional_value
+    checks = [
+        {
+            "id": "cash_after_below_minimum",
+            "label": "Cash after route",
+            "passed": side != "buy" or cash_after >= min_cash_after,
+            "value": _round_number(cash_after),
+            "limit": _round_number(min_cash_after),
+        },
+        {
+            "id": "insufficient_symbol_position",
+            "label": "Sell position coverage",
+            "passed": side != "sell" or quantity <= symbol_position_before,
+            "value": _round_number(quantity),
+            "limit": _round_number(symbol_position_before),
+        },
+        {
+            "id": "symbol_notional_limit_exceeded",
+            "label": "Symbol notional limit",
+            "passed": max_symbol_notional is None or symbol_notional_after <= max_symbol_notional,
+            "value": _round_number(symbol_notional_after),
+            "limit": _round_number(max_symbol_notional or 0),
+        },
+        {
+            "id": "batch_notional_limit_exceeded",
+            "label": "Batch notional limit",
+            "passed": max_batch_notional is None or batch_notional_after <= max_batch_notional,
+            "value": _round_number(batch_notional_after),
+            "limit": _round_number(max_batch_notional or 0),
+        },
+    ]
+    blocked_reasons = [str(check["id"]) for check in checks if not bool(check["passed"])]
+    return {
+        "schemaVersion": 1,
+        "mode": "portfolio_paper_simulation_route_guard",
+        "status": "blocked" if blocked_reasons else "passed",
+        "baseRunId": base_run_id,
+        "batchId": batch_id,
+        "orderId": order_id,
+        "symbol": symbol,
+        "side": side,
+        "orderNotional": _round_number(notional_value),
+        "cashBefore": _round_number(cash_before),
+        "cashAfter": _round_number(cash_after),
+        "symbolPositionBefore": _round_number(symbol_position_before),
+        "symbolPositionAfter": _round_number(symbol_position_after),
+        "symbolNotionalAfter": _round_number(symbol_notional_after),
+        "batchNotionalAfter": _round_number(batch_notional_after),
+        "limits": {
+            "initialCash": _round_number(initial_cash),
+            "minCashAfter": _round_number(min_cash_after),
+            "maxSymbolNotional": _round_number(max_symbol_notional or 0),
+            "maxBatchNotional": _round_number(max_batch_notional or 0),
+        },
+        "checks": checks,
+        "blockedReasons": blocked_reasons,
+        "paperOnly": True,
+        "liveExecutionBlocked": True,
+    }
 
 
 def portfolio_paper_order_simulation_to_payload(simulation: PortfolioPaperOrderSimulation) -> dict[str, Any]:
@@ -1444,6 +1959,10 @@ def portfolio_paper_order_simulation_to_payload(simulation: PortfolioPaperOrderS
         "fillStatus": simulation.fill_status,
         "reason": simulation.reason,
         "approvedBy": simulation.approved_by,
+        "routeRisk": simulation.route_risk,
+        "adapterPaperExecutionId": simulation.adapter_paper_execution_id,
+        "adapterManifestValidationId": simulation.adapter_manifest_validation_id,
+        "adapterPaperExecutionEvidence": simulation.adapter_paper_execution_evidence,
         "paperOnly": True,
         "liveExecutionBlocked": True,
     }
@@ -1470,6 +1989,14 @@ def portfolio_paper_order_payload_to_simulation(payload: dict[str, Any]) -> Port
         fill_status=str(payload.get("fillStatus") or ""),
         reason=str(payload.get("reason") or ""),
         approved_by=str(payload.get("approvedBy") or "").strip() or None,
+        route_risk=payload.get("routeRisk") if isinstance(payload.get("routeRisk"), dict) else {},
+        adapter_paper_execution_id=str(payload.get("adapterPaperExecutionId") or "").strip(),
+        adapter_manifest_validation_id=str(payload.get("adapterManifestValidationId") or "").strip(),
+        adapter_paper_execution_evidence=_redact_secret_fields(
+            payload.get("adapterPaperExecutionEvidence")
+            if isinstance(payload.get("adapterPaperExecutionEvidence"), dict)
+            else {}
+        ),
     )
 
 
@@ -1549,6 +2076,9 @@ def build_portfolio_paper_order_replay(
                 "cashAfter": _round_number(cash),
                 "positionAfter": _round_number(positions.get(symbol, 0.0)),
                 "replayState": replay_state,
+                "adapterPaperExecutionId": simulation.adapter_paper_execution_id,
+                "adapterManifestValidationId": simulation.adapter_manifest_validation_id,
+                "adapterPaperExecutionEvidence": _redact_secret_fields(simulation.adapter_paper_execution_evidence),
                 "paperOnly": True,
                 "liveExecutionBlocked": True,
             }
@@ -1711,6 +2241,11 @@ def build_portfolio_paper_order_state_history(
                         "fillPrice": _round_number(simulation.fill_price),
                         "fillStatus": simulation.fill_status,
                         "orderState": simulation.order_state,
+                        "adapterPaperExecutionId": simulation.adapter_paper_execution_id,
+                        "adapterManifestValidationId": simulation.adapter_manifest_validation_id,
+                        "adapterPaperExecutionEvidence": _redact_secret_fields(
+                            simulation.adapter_paper_execution_evidence
+                        ),
                     },
                 )
             )
@@ -3115,11 +3650,331 @@ def _execution_adapter_secret_materialization_confirmation_specs() -> list[tuple
     ]
 
 
+def build_execution_adapter_secret_manifest_validation(
+    materialization: dict[str, Any],
+    *,
+    adapter_id: str = "",
+    manifest_path: str = "",
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    validation_id: str | None = None,
+) -> ExecutionAdapterSecretManifestValidationResult:
+    if not isinstance(materialization, dict):
+        raise ValueError("execution_adapter_secret_materialization_required")
+
+    materialization_id = str(materialization.get("materializationId") or "").strip()
+    reference_id = str(materialization.get("referenceId") or "").strip()
+    materialization_adapter_id = str(materialization.get("adapterId") or "").strip()
+    requested_adapter_id = str(adapter_id or materialization_adapter_id).strip()
+    market = str(materialization.get("market") or "").strip()
+    route = str(materialization.get("route") or "").strip()
+    reference_name = str(materialization.get("referenceName") or "").strip()
+    backend = str(materialization.get("backend") or "").strip()
+    normalized_manifest_path = str(manifest_path or materialization.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in materialization.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if not materialization_id:
+        raise ValueError("execution_adapter_secret_manifest_validation_materialization_id_required")
+    if not reference_id:
+        raise ValueError("execution_adapter_secret_manifest_validation_reference_id_required")
+    if not materialization_adapter_id:
+        raise ValueError("execution_adapter_secret_manifest_validation_adapter_id_required")
+    if not requested_adapter_id:
+        raise ValueError("execution_adapter_secret_manifest_validation_adapter_id_required")
+    if requested_adapter_id != materialization_adapter_id:
+        raise ValueError("execution_adapter_secret_manifest_validation_adapter_mismatch")
+    if not market:
+        raise ValueError("execution_adapter_secret_manifest_validation_market_required")
+    if route not in {"paper", "live"}:
+        raise ValueError("execution_adapter_secret_manifest_validation_route_invalid")
+    if not reference_name:
+        raise ValueError("execution_adapter_secret_manifest_validation_reference_name_required")
+    if not backend:
+        raise ValueError("execution_adapter_secret_manifest_validation_backend_required")
+    if not normalized_manifest_path:
+        raise ValueError("execution_adapter_secret_manifest_validation_manifest_path_required")
+    if not required_env_vars:
+        raise ValueError("execution_adapter_secret_manifest_validation_required_env_vars_required")
+
+    blocked_reasons: list[str] = []
+    fingerprint = ""
+    covered_env_vars: list[str] = []
+    manifest_exists = False
+    manifest_json_valid = False
+    resolved_path = _resolve_execution_adapter_secret_manifest_path(normalized_manifest_path)
+    if str(materialization.get("status") or "") != "manifest_recorded":
+        blocked_reasons.append("secret_manifest_validation_materialization_not_recorded")
+    if route != "live":
+        blocked_reasons.append("secret_manifest_validation_route_not_live")
+    if resolved_path is None:
+        blocked_reasons.append("secret_manifest_path_invalid")
+    else:
+        try:
+            manifest_payload = json.loads(resolved_path.read_text(encoding="utf-8"))
+            manifest_exists = True
+            manifest_json_valid = isinstance(manifest_payload, dict)
+            if not isinstance(manifest_payload, dict):
+                blocked_reasons.append("secret_manifest_invalid_json")
+            else:
+                fingerprint = _execution_adapter_secret_manifest_fingerprint(manifest_payload)
+                covered_env_vars = _execution_adapter_secret_manifest_env_vars(manifest_payload)
+                if not fingerprint:
+                    blocked_reasons.append("secret_manifest_fingerprint_missing")
+                missing_env_vars = [name for name in required_env_vars if name not in set(covered_env_vars)]
+                if missing_env_vars:
+                    blocked_reasons.append("secret_manifest_required_env_vars_missing")
+        except FileNotFoundError:
+            blocked_reasons.append("secret_manifest_file_missing")
+        except OSError:
+            blocked_reasons.append("secret_manifest_file_unreadable")
+        except json.JSONDecodeError:
+            manifest_exists = True
+            blocked_reasons.append("secret_manifest_invalid_json")
+
+    recorded = _coerce_optional_datetime(
+        recorded_at,
+        error_code="execution_adapter_secret_manifest_validation_recorded_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return ExecutionAdapterSecretManifestValidationResult(
+        validation_id=str(
+            validation_id or f"execution-adapter-secret-manifest-validation-{materialization_id}-{uuid4()}"
+        ),
+        materialization_id=materialization_id,
+        reference_id=reference_id,
+        adapter_id=materialization_adapter_id,
+        market=market,
+        route=route,
+        status="blocked" if unique_blocked_reasons else "validated",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        recorded_at=recorded or datetime.now(timezone.utc),
+        validation_mode="local_secret_store_manifest_readonly",
+        reference_name=reference_name,
+        backend=backend,
+        manifest_path=normalized_manifest_path,
+        fingerprint=fingerprint,
+        required_env_vars=required_env_vars,
+        covered_env_vars=covered_env_vars,
+        blocked_reasons=unique_blocked_reasons,
+        manifest_summary={
+            "manifestExists": manifest_exists,
+            "manifestJsonValid": manifest_json_valid,
+            "requiredEnvVarCount": len(required_env_vars),
+            "coveredEnvVarCount": len([name for name in required_env_vars if name in set(covered_env_vars)]),
+            "rawValuesReturned": False,
+        },
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_secret_manifest_validation_to_payload(
+    result: ExecutionAdapterSecretManifestValidationResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "validationId": result.validation_id,
+        "materializationId": result.materialization_id,
+        "referenceId": result.reference_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "validationMode": result.validation_mode,
+        "referenceName": result.reference_name,
+        "backend": result.backend,
+        "manifestPath": result.manifest_path,
+        "fingerprint": result.fingerprint,
+        "requiredEnvVars": list(result.required_env_vars),
+        "coveredEnvVars": list(result.covered_env_vars),
+        "blockedReasons": list(result.blocked_reasons),
+        "manifestSummary": result.manifest_summary,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_secret_manifest_validation_payload_from_audit_event(
+    event: Any,
+) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_secret_manifest_validation":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    validation_id = str(metadata.get("validationId") or getattr(event, "event_id", "")).strip()
+    materialization_id = str(metadata.get("materializationId") or "").strip()
+    reference_id = str(metadata.get("referenceId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    market = str(metadata.get("market") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    operator = str(metadata.get("operator") or "local-operator").strip() or "local-operator"
+    validation_mode = str(metadata.get("validationMode") or "local_secret_store_manifest_readonly").strip()
+    reference_name = str(metadata.get("referenceName") or "").strip()
+    backend = str(metadata.get("backend") or "").strip()
+    manifest_path = str(metadata.get("manifestPath") or "").strip()
+    fingerprint = str(metadata.get("fingerprint") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in metadata.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    covered_env_vars = [
+        str(item).strip()
+        for item in metadata.get("coveredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+    manifest_summary = metadata.get("manifestSummary") if isinstance(metadata.get("manifestSummary"), dict) else {}
+    if (
+        not validation_id
+        or not materialization_id
+        or not reference_id
+        or not adapter_id
+        or not market
+        or not validation_mode
+        or not reference_name
+        or not backend
+        or not manifest_path
+        or not required_env_vars
+    ):
+        return None
+    if route not in {"paper", "live"}:
+        return None
+    if status not in {"blocked", "validated"}:
+        return None
+
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    return {
+        "schemaVersion": 1,
+        "validationId": validation_id,
+        "materializationId": materialization_id,
+        "referenceId": reference_id,
+        "adapterId": adapter_id,
+        "market": market,
+        "route": route,
+        "status": status,
+        "operator": operator,
+        "recordedAt": recorded_at_value,
+        "validationMode": validation_mode,
+        "referenceName": reference_name,
+        "backend": backend,
+        "manifestPath": manifest_path,
+        "fingerprint": fingerprint,
+        "requiredEnvVars": required_env_vars,
+        "coveredEnvVars": covered_env_vars,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "manifestSummary": _redact_secret_fields(manifest_summary),
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_secret_manifest_validation_to_audit_event_payload(
+    result: ExecutionAdapterSecretManifestValidationResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "eventId": result.validation_id,
+        "eventType": "execution_adapter_secret_manifest_validation",
+        "runId": "",
+        "createdAt": result.recorded_at.isoformat(),
+        "stage": "execution-adapter-secret-manifest-validation",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} secret manifest validated as {result.status}.",
+        "detail": "Secret manifest validation reads local metadata only; raw secret values and live trading remain blocked.",
+        "metadata": _redact_secret_fields(
+            {
+                "validationId": result.validation_id,
+                "materializationId": result.materialization_id,
+                "referenceId": result.reference_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "validationMode": result.validation_mode,
+                "referenceName": result.reference_name,
+                "backend": result.backend,
+                "manifestPath": result.manifest_path,
+                "fingerprint": result.fingerprint,
+                "requiredEnvVars": list(result.required_env_vars),
+                "coveredEnvVars": list(result.covered_env_vars),
+                "blockedReasons": list(result.blocked_reasons),
+                "manifestSummary": result.manifest_summary,
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def _resolve_execution_adapter_secret_manifest_path(manifest_path: str) -> Path | None:
+    normalized = str(manifest_path or "").strip()
+    if normalized.startswith("local-secret-store://"):
+        suffix = normalized.removeprefix("local-secret-store://").replace("\\", "/").strip("/")
+        parts = [part for part in suffix.split("/") if part]
+        if not parts or any(part in {".", ".."} for part in parts):
+            return None
+        path = Path("data") / "secret-store"
+        for part in parts:
+            path = path / part
+        return path if path.suffix else path.with_suffix(".json")
+    if normalized.startswith("file://"):
+        normalized = normalized.removeprefix("file://")
+    path = Path(normalized)
+    if any(part == ".." for part in path.parts):
+        return None
+    return path
+
+
+def _execution_adapter_secret_manifest_fingerprint(manifest: dict[str, Any]) -> str:
+    for key in ("fingerprint", "secretFingerprint", "secretFingerprintSha256", "manifestFingerprint"):
+        value = manifest.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    metadata = manifest.get("metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get("fingerprint")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _execution_adapter_secret_manifest_env_vars(manifest: dict[str, Any]) -> list[str]:
+    env_vars: list[str] = []
+    for key in ("requiredEnvVars", "envVars", "providedEnvVars"):
+        value = manifest.get(key)
+        if isinstance(value, list):
+            env_vars.extend(str(item).strip() for item in value if isinstance(item, str) and item.strip())
+    for key in ("env", "secrets", "secretRefs"):
+        value = manifest.get(key)
+        if isinstance(value, dict):
+            env_vars.extend(str(item).strip() for item in value.keys() if str(item).strip())
+    return list(dict.fromkeys(env_vars))
+
+
 def build_execution_adapter_environment_binding(
     materialization: dict[str, Any],
     *,
     adapter_id: str = "",
     binding_mode: str = "",
+    manifest_validation: dict[str, Any] | None = None,
     confirmations: dict[str, Any] | None = None,
     operator: str = "local-operator",
     metadata: dict[str, Any] | None = None,
@@ -3138,6 +3993,7 @@ def build_execution_adapter_environment_binding(
     route = str(materialization.get("route") or "").strip()
     manifest_path = str(materialization.get("manifestPath") or "").strip()
     normalized_binding_mode = str(binding_mode or "container_env_reference").strip()
+    manifest_validation_id = ""
     required_env_vars = [
         str(item).strip()
         for item in materialization.get("requiredEnvVars", [])
@@ -3163,6 +4019,39 @@ def build_execution_adapter_environment_binding(
         raise ValueError("execution_adapter_environment_binding_required_env_vars_required")
 
     blocked_reasons = []
+    if manifest_validation is not None:
+        if not isinstance(manifest_validation, dict):
+            raise ValueError("execution_adapter_secret_manifest_validation_required")
+        manifest_validation_id = str(manifest_validation.get("validationId") or "").strip()
+        validation_materialization_id = str(manifest_validation.get("materializationId") or "").strip()
+        validation_adapter_id = str(manifest_validation.get("adapterId") or "").strip()
+        validation_manifest_path = str(manifest_validation.get("manifestPath") or "").strip()
+        validation_required_env_vars = [
+            str(item).strip()
+            for item in manifest_validation.get("requiredEnvVars", [])
+            if isinstance(item, str) and item.strip()
+        ]
+        validation_covered_env_vars = {
+            str(item).strip()
+            for item in manifest_validation.get("coveredEnvVars", [])
+            if isinstance(item, str) and item.strip()
+        }
+        if not manifest_validation_id:
+            raise ValueError("execution_adapter_environment_binding_manifest_validation_id_required")
+        if validation_materialization_id != materialization_id:
+            raise ValueError("execution_adapter_environment_binding_manifest_validation_materialization_mismatch")
+        if validation_adapter_id != materialization_adapter_id:
+            raise ValueError("execution_adapter_environment_binding_manifest_validation_adapter_mismatch")
+        if validation_manifest_path and validation_manifest_path != manifest_path:
+            raise ValueError("execution_adapter_environment_binding_manifest_validation_path_mismatch")
+        if validation_required_env_vars and validation_required_env_vars != required_env_vars:
+            raise ValueError("execution_adapter_environment_binding_manifest_validation_env_vars_mismatch")
+        if str(manifest_validation.get("status") or "") != "validated":
+            blocked_reasons.append("environment_binding_manifest_validation_not_validated")
+        missing_validated_env_vars = [name for name in required_env_vars if name not in validation_covered_env_vars]
+        if missing_validated_env_vars:
+            blocked_reasons.append("environment_binding_manifest_validation_env_vars_missing")
+
     required_confirmations = []
     for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_environment_binding_confirmation_specs():
         confirmed = bool(confirmations.get(payload_key))
@@ -3202,6 +4091,7 @@ def build_execution_adapter_environment_binding(
         required_confirmations=required_confirmations,
         blocked_reasons=unique_blocked_reasons,
         metadata=_redact_secret_fields(metadata or {}),
+        manifest_validation_id=manifest_validation_id,
         live_trading_allowed=False,
     )
 
@@ -3213,6 +4103,7 @@ def execution_adapter_environment_binding_to_payload(
         "schemaVersion": 1,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -3238,6 +4129,7 @@ def execution_adapter_environment_binding_payload_from_audit_event(event: Any) -
         return None
     binding_id = str(metadata.get("bindingId") or getattr(event, "event_id", "")).strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -3297,6 +4189,7 @@ def execution_adapter_environment_binding_payload_from_audit_event(event: Any) -
         "schemaVersion": 1,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -3335,6 +4228,7 @@ def execution_adapter_environment_binding_to_audit_event_payload(
             {
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -3404,6 +4298,7 @@ def build_execution_adapter_runtime_reload_plan(
 
     binding_id = str(environment_binding.get("bindingId") or "").strip()
     materialization_id = str(environment_binding.get("materializationId") or "").strip()
+    manifest_validation_id = str(environment_binding.get("manifestValidationId") or "").strip()
     binding_adapter_id = str(environment_binding.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or binding_adapter_id).strip()
     market = str(environment_binding.get("market") or "").strip()
@@ -3485,6 +4380,7 @@ def build_execution_adapter_runtime_reload_plan(
         required_confirmations=required_confirmations,
         blocked_reasons=unique_blocked_reasons,
         metadata=_redact_secret_fields(metadata or {}),
+        manifest_validation_id=manifest_validation_id,
         live_trading_allowed=False,
     )
 
@@ -3497,6 +4393,7 @@ def execution_adapter_runtime_reload_plan_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -3525,6 +4422,7 @@ def execution_adapter_runtime_reload_plan_payload_from_audit_event(event: Any) -
     plan_id = str(metadata.get("planId") or getattr(event, "event_id", "")).strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -3578,6 +4476,7 @@ def execution_adapter_runtime_reload_plan_payload_from_audit_event(event: Any) -
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -3620,6 +4519,7 @@ def execution_adapter_runtime_reload_plan_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -3698,6 +4598,7 @@ def build_execution_adapter_runtime_reload_execution(
     plan_id = str(runtime_reload_plan.get("planId") or "").strip()
     binding_id = str(runtime_reload_plan.get("bindingId") or "").strip()
     materialization_id = str(runtime_reload_plan.get("materializationId") or "").strip()
+    manifest_validation_id = str(runtime_reload_plan.get("manifestValidationId") or "").strip()
     plan_adapter_id = str(runtime_reload_plan.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or plan_adapter_id).strip()
     market = str(runtime_reload_plan.get("market") or "").strip()
@@ -3771,6 +4672,7 @@ def build_execution_adapter_runtime_reload_execution(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=plan_adapter_id,
         market=market,
         route=route,
@@ -3799,6 +4701,7 @@ def execution_adapter_runtime_reload_execution_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -3829,6 +4732,7 @@ def execution_adapter_runtime_reload_execution_payload_from_audit_event(event: A
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -3884,6 +4788,7 @@ def execution_adapter_runtime_reload_execution_payload_from_audit_event(event: A
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -3928,6 +4833,7 @@ def execution_adapter_runtime_reload_execution_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -4008,6 +4914,7 @@ def build_execution_adapter_runtime_reload_acceptance(
     plan_id = str(runtime_reload_execution.get("planId") or "").strip()
     binding_id = str(runtime_reload_execution.get("bindingId") or "").strip()
     materialization_id = str(runtime_reload_execution.get("materializationId") or "").strip()
+    manifest_validation_id = str(runtime_reload_execution.get("manifestValidationId") or "").strip()
     execution_adapter_id = str(runtime_reload_execution.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
     market = str(runtime_reload_execution.get("market") or "").strip()
@@ -4087,6 +4994,7 @@ def build_execution_adapter_runtime_reload_acceptance(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=execution_adapter_id,
         market=market,
         route=route,
@@ -4117,6 +5025,7 @@ def execution_adapter_runtime_reload_acceptance_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -4149,6 +5058,7 @@ def execution_adapter_runtime_reload_acceptance_payload_from_audit_event(event: 
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -4206,6 +5116,7 @@ def execution_adapter_runtime_reload_acceptance_payload_from_audit_event(event: 
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -4252,6 +5163,7 @@ def execution_adapter_runtime_reload_acceptance_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -4334,6 +5246,7 @@ def build_execution_adapter_orchestration_dry_run(
     plan_id = str(runtime_reload_acceptance.get("planId") or "").strip()
     binding_id = str(runtime_reload_acceptance.get("bindingId") or "").strip()
     materialization_id = str(runtime_reload_acceptance.get("materializationId") or "").strip()
+    manifest_validation_id = str(runtime_reload_acceptance.get("manifestValidationId") or "").strip()
     acceptance_adapter_id = str(runtime_reload_acceptance.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or acceptance_adapter_id).strip()
     market = str(runtime_reload_acceptance.get("market") or "").strip()
@@ -4419,6 +5332,7 @@ def build_execution_adapter_orchestration_dry_run(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=acceptance_adapter_id,
         market=market,
         route=route,
@@ -4451,6 +5365,7 @@ def execution_adapter_orchestration_dry_run_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -4485,6 +5400,7 @@ def execution_adapter_orchestration_dry_run_payload_from_audit_event(event: Any)
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -4546,6 +5462,7 @@ def execution_adapter_orchestration_dry_run_payload_from_audit_event(event: Any)
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -4594,6 +5511,7 @@ def execution_adapter_orchestration_dry_run_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -4678,6 +5596,7 @@ def build_execution_adapter_orchestration_execution(
     plan_id = str(orchestration_dry_run.get("planId") or "").strip()
     binding_id = str(orchestration_dry_run.get("bindingId") or "").strip()
     materialization_id = str(orchestration_dry_run.get("materializationId") or "").strip()
+    manifest_validation_id = str(orchestration_dry_run.get("manifestValidationId") or "").strip()
     dry_run_adapter_id = str(orchestration_dry_run.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or dry_run_adapter_id).strip()
     market = str(orchestration_dry_run.get("market") or "").strip()
@@ -4774,6 +5693,7 @@ def build_execution_adapter_orchestration_execution(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=dry_run_adapter_id,
         market=market,
         route=route,
@@ -4808,6 +5728,7 @@ def execution_adapter_orchestration_execution_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -4846,6 +5767,7 @@ def execution_adapter_orchestration_execution_payload_from_audit_event(event: An
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -4919,6 +5841,7 @@ def execution_adapter_orchestration_execution_payload_from_audit_event(event: An
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -4969,6 +5892,7 @@ def execution_adapter_orchestration_execution_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -5055,6 +5979,7 @@ def build_execution_adapter_human_confirmation(
     plan_id = str(orchestration_execution.get("planId") or "").strip()
     binding_id = str(orchestration_execution.get("bindingId") or "").strip()
     materialization_id = str(orchestration_execution.get("materializationId") or "").strip()
+    manifest_validation_id = str(orchestration_execution.get("manifestValidationId") or "").strip()
     execution_adapter_id = str(orchestration_execution.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
     market = str(orchestration_execution.get("market") or "").strip()
@@ -5156,6 +6081,7 @@ def build_execution_adapter_human_confirmation(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=execution_adapter_id,
         market=market,
         route=route,
@@ -5192,6 +6118,7 @@ def execution_adapter_human_confirmation_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -5230,6 +6157,7 @@ def execution_adapter_human_confirmation_payload_from_audit_event(event: Any) ->
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -5304,6 +6232,7 @@ def execution_adapter_human_confirmation_payload_from_audit_event(event: Any) ->
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -5356,6 +6285,7 @@ def execution_adapter_human_confirmation_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -5444,6 +6374,7 @@ def build_execution_adapter_sandbox_probe_plan(
     plan_id = str(human_confirmation.get("planId") or "").strip()
     binding_id = str(human_confirmation.get("bindingId") or "").strip()
     materialization_id = str(human_confirmation.get("materializationId") or "").strip()
+    manifest_validation_id = str(human_confirmation.get("manifestValidationId") or "").strip()
     confirmation_adapter_id = str(human_confirmation.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or confirmation_adapter_id).strip()
     market = str(human_confirmation.get("market") or "").strip()
@@ -5551,6 +6482,7 @@ def build_execution_adapter_sandbox_probe_plan(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=confirmation_adapter_id,
         market=market,
         route=route,
@@ -5589,6 +6521,7 @@ def execution_adapter_sandbox_probe_plan_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -5629,6 +6562,7 @@ def execution_adapter_sandbox_probe_plan_payload_from_audit_event(event: Any) ->
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -5706,6 +6640,7 @@ def execution_adapter_sandbox_probe_plan_payload_from_audit_event(event: Any) ->
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -5760,6 +6695,7 @@ def execution_adapter_sandbox_probe_plan_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -5850,6 +6786,7 @@ def build_execution_adapter_sandbox_probe_execution(
     plan_id = str(sandbox_probe_plan.get("planId") or "").strip()
     binding_id = str(sandbox_probe_plan.get("bindingId") or "").strip()
     materialization_id = str(sandbox_probe_plan.get("materializationId") or "").strip()
+    manifest_validation_id = str(sandbox_probe_plan.get("manifestValidationId") or "").strip()
     plan_adapter_id = str(sandbox_probe_plan.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or plan_adapter_id).strip()
     market = str(sandbox_probe_plan.get("market") or "").strip()
@@ -5963,6 +6900,7 @@ def build_execution_adapter_sandbox_probe_execution(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=plan_adapter_id,
         market=market,
         route=route,
@@ -6003,6 +6941,7 @@ def execution_adapter_sandbox_probe_execution_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -6045,6 +6984,7 @@ def execution_adapter_sandbox_probe_execution_payload_from_audit_event(event: An
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -6125,6 +7065,7 @@ def execution_adapter_sandbox_probe_execution_payload_from_audit_event(event: An
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -6181,6 +7122,7 @@ def execution_adapter_sandbox_probe_execution_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -6273,6 +7215,7 @@ def build_execution_adapter_sandbox_probe_review(
     plan_id = str(sandbox_probe_execution.get("planId") or "").strip()
     binding_id = str(sandbox_probe_execution.get("bindingId") or "").strip()
     materialization_id = str(sandbox_probe_execution.get("materializationId") or "").strip()
+    manifest_validation_id = str(sandbox_probe_execution.get("manifestValidationId") or "").strip()
     execution_adapter_id = str(sandbox_probe_execution.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
     market = str(sandbox_probe_execution.get("market") or "").strip()
@@ -6392,6 +7335,7 @@ def build_execution_adapter_sandbox_probe_review(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=execution_adapter_id,
         market=market,
         route=route,
@@ -6434,6 +7378,7 @@ def execution_adapter_sandbox_probe_review_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -6478,6 +7423,7 @@ def execution_adapter_sandbox_probe_review_payload_from_audit_event(event: Any) 
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -6561,6 +7507,7 @@ def execution_adapter_sandbox_probe_review_payload_from_audit_event(event: Any) 
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -6619,6 +7566,7 @@ def execution_adapter_sandbox_probe_review_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -6713,6 +7661,7 @@ def build_execution_adapter_production_route_review(
     plan_id = str(sandbox_probe_review.get("planId") or "").strip()
     binding_id = str(sandbox_probe_review.get("bindingId") or "").strip()
     materialization_id = str(sandbox_probe_review.get("materializationId") or "").strip()
+    manifest_validation_id = str(sandbox_probe_review.get("manifestValidationId") or "").strip()
     execution_adapter_id = str(sandbox_probe_review.get("adapterId") or "").strip()
     requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
     market = str(sandbox_probe_review.get("market") or "").strip()
@@ -6838,6 +7787,7 @@ def build_execution_adapter_production_route_review(
         plan_id=plan_id,
         binding_id=binding_id,
         materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
         adapter_id=execution_adapter_id,
         market=market,
         route=route,
@@ -6882,6 +7832,7 @@ def execution_adapter_production_route_review_to_payload(
         "planId": result.plan_id,
         "bindingId": result.binding_id,
         "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
         "adapterId": result.adapter_id,
         "market": result.market,
         "route": result.route,
@@ -6928,6 +7879,7 @@ def execution_adapter_production_route_review_payload_from_audit_event(event: An
     plan_id = str(metadata.get("planId") or "").strip()
     binding_id = str(metadata.get("bindingId") or "").strip()
     materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
     adapter_id = str(metadata.get("adapterId") or "").strip()
     market = str(metadata.get("market") or "").strip()
     route = str(metadata.get("route") or "").strip()
@@ -7014,6 +7966,7 @@ def execution_adapter_production_route_review_payload_from_audit_event(event: An
         "planId": plan_id,
         "bindingId": binding_id,
         "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
         "adapterId": adapter_id,
         "market": market,
         "route": route,
@@ -7074,6 +8027,7 @@ def execution_adapter_production_route_review_to_audit_event_payload(
                 "planId": result.plan_id,
                 "bindingId": result.binding_id,
                 "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
                 "adapterId": result.adapter_id,
                 "market": result.market,
                 "route": result.route,
@@ -7140,6 +8094,2520 @@ def _execution_adapter_production_route_review_specs() -> list[tuple[str, str, s
             "production_route_review_rollback_owner_not_recorded",
         ),
     ]
+
+
+def build_execution_adapter_sandbox_order_schema_dry_run(
+    production_route_review: dict[str, Any],
+    *,
+    adapter_id: str = "",
+    dry_run_mode: str = "",
+    order_intent: dict[str, Any] | None = None,
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    sandbox_order_schema_dry_run_id: str | None = None,
+) -> ExecutionAdapterSandboxOrderSchemaDryRunResult:
+    if not isinstance(production_route_review, dict):
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_route_review_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    production_route_review_id = str(production_route_review.get("productionRouteReviewId") or "").strip()
+    sandbox_probe_review_id = str(production_route_review.get("sandboxProbeReviewId") or "").strip()
+    sandbox_probe_execution_id = str(production_route_review.get("sandboxProbeExecutionId") or "").strip()
+    sandbox_probe_plan_id = str(production_route_review.get("sandboxProbePlanId") or "").strip()
+    human_confirmation_id = str(production_route_review.get("humanConfirmationId") or "").strip()
+    orchestration_execution_id = str(production_route_review.get("orchestrationExecutionId") or "").strip()
+    orchestration_dry_run_id = str(production_route_review.get("dryRunId") or "").strip()
+    acceptance_id = str(production_route_review.get("acceptanceId") or "").strip()
+    execution_id = str(production_route_review.get("executionId") or "").strip()
+    plan_id = str(production_route_review.get("planId") or "").strip()
+    binding_id = str(production_route_review.get("bindingId") or "").strip()
+    materialization_id = str(production_route_review.get("materializationId") or "").strip()
+    manifest_validation_id = str(production_route_review.get("manifestValidationId") or "").strip()
+    execution_adapter_id = str(production_route_review.get("adapterId") or "").strip()
+    requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
+    market = str(production_route_review.get("market") or "").strip()
+    route = str(production_route_review.get("route") or "").strip()
+    normalized_dry_run_mode = str(dry_run_mode or "manual_sandbox_order_schema_dry_run").strip()
+    review_mode = str(production_route_review.get("reviewMode") or "").strip()
+    sandbox_review_mode = str(production_route_review.get("sandboxReviewMode") or "").strip()
+    probe_execution_mode = str(production_route_review.get("probeExecutionMode") or "").strip()
+    probe_mode = str(production_route_review.get("probeMode") or "").strip()
+    confirmation_mode = str(production_route_review.get("confirmationMode") or "").strip()
+    orchestration_execution_mode = str(production_route_review.get("orchestrationExecutionMode") or "").strip()
+    orchestration_mode = str(production_route_review.get("orchestrationMode") or "").strip()
+    acceptance_mode = str(production_route_review.get("acceptanceMode") or "").strip()
+    execution_mode = str(production_route_review.get("executionMode") or "").strip()
+    reload_mode = str(production_route_review.get("reloadMode") or "").strip()
+    maintenance_window_id = str(production_route_review.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(production_route_review.get("bindingMode") or "").strip()
+    manifest_path = str(production_route_review.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in production_route_review.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not production_route_review_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_route_review_id_required")
+    if not sandbox_probe_review_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_probe_review_id_required")
+    if not sandbox_probe_execution_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_probe_execution_id_required")
+    if not sandbox_probe_plan_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_probe_plan_id_required")
+    if not human_confirmation_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_human_confirmation_id_required")
+    if not orchestration_execution_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_orchestration_execution_id_required")
+    if not orchestration_dry_run_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_orchestration_dry_run_id_required")
+    if not acceptance_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_acceptance_id_required")
+    if not execution_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_execution_id_required")
+    if not plan_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_reload_plan_id_required")
+    if not binding_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_binding_id_required")
+    if not materialization_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_materialization_id_required")
+    if not execution_adapter_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_adapter_id_required")
+    if not requested_adapter_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_adapter_id_required")
+    if requested_adapter_id != execution_adapter_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_adapter_mismatch")
+    if not market:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_market_required")
+    if route not in {"paper", "live"}:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_route_invalid")
+    if not normalized_dry_run_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_mode_required")
+    if not review_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_review_mode_required")
+    if not sandbox_review_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_sandbox_review_mode_required")
+    if not probe_execution_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_probe_execution_mode_required")
+    if not probe_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_probe_mode_required")
+    if not confirmation_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_confirmation_mode_required")
+    if not orchestration_execution_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_orchestration_execution_mode_required")
+    if not orchestration_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_orchestration_mode_required")
+    if not acceptance_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_acceptance_mode_required")
+    if not execution_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_reload_execution_mode_required")
+    if not reload_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_reload_mode_required")
+    if not maintenance_window_id:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_window_required")
+    if not binding_mode:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_binding_mode_required")
+    if not manifest_path:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_manifest_path_required")
+    if not required_env_vars:
+        raise ValueError("execution_adapter_sandbox_order_schema_dry_run_required_env_vars_required")
+
+    safe_order_intent = _redact_secret_fields(order_intent if isinstance(order_intent, dict) else {})
+    blocked_reasons = []
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_sandbox_order_schema_dry_run_specs():
+        confirmed = bool(confirmations.get(payload_key))
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(production_route_review.get("status") or "") != "route_review_recorded":
+        blocked_reasons.append("sandbox_order_schema_dry_run_route_review_not_recorded")
+    if route != "live":
+        blocked_reasons.append("sandbox_order_schema_dry_run_route_not_live")
+    if not _sandbox_order_schema_intent_is_valid(safe_order_intent):
+        blocked_reasons.append("sandbox_order_schema_dry_run_order_intent_missing")
+
+    recorded = _coerce_optional_datetime(
+        recorded_at,
+        error_code="execution_adapter_sandbox_order_schema_dry_run_recorded_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return ExecutionAdapterSandboxOrderSchemaDryRunResult(
+        sandbox_order_schema_dry_run_id=str(
+            sandbox_order_schema_dry_run_id
+            or f"execution-adapter-sandbox-order-schema-dry-run-{production_route_review_id}-{uuid4()}"
+        ),
+        production_route_review_id=production_route_review_id,
+        sandbox_probe_review_id=sandbox_probe_review_id,
+        sandbox_probe_execution_id=sandbox_probe_execution_id,
+        sandbox_probe_plan_id=sandbox_probe_plan_id,
+        human_confirmation_id=human_confirmation_id,
+        orchestration_execution_id=orchestration_execution_id,
+        dry_run_id=orchestration_dry_run_id,
+        acceptance_id=acceptance_id,
+        execution_id=execution_id,
+        plan_id=plan_id,
+        binding_id=binding_id,
+        materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
+        adapter_id=execution_adapter_id,
+        market=market,
+        route=route,
+        status="blocked" if unique_blocked_reasons else "schema_dry_run_recorded",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        recorded_at=recorded or datetime.now(timezone.utc),
+        dry_run_mode=normalized_dry_run_mode,
+        review_mode=review_mode,
+        sandbox_review_mode=sandbox_review_mode,
+        probe_execution_mode=probe_execution_mode,
+        probe_mode=probe_mode,
+        confirmation_mode=confirmation_mode,
+        orchestration_execution_mode=orchestration_execution_mode,
+        orchestration_mode=orchestration_mode,
+        acceptance_mode=acceptance_mode,
+        execution_mode=execution_mode,
+        reload_mode=reload_mode,
+        maintenance_window_id=maintenance_window_id,
+        binding_mode=binding_mode,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        order_intent=safe_order_intent,
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_sandbox_order_schema_dry_run_to_payload(
+    result: ExecutionAdapterSandboxOrderSchemaDryRunResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+        "productionRouteReviewId": result.production_route_review_id,
+        "sandboxProbeReviewId": result.sandbox_probe_review_id,
+        "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+        "sandboxProbePlanId": result.sandbox_probe_plan_id,
+        "humanConfirmationId": result.human_confirmation_id,
+        "orchestrationExecutionId": result.orchestration_execution_id,
+        "dryRunId": result.dry_run_id,
+        "acceptanceId": result.acceptance_id,
+        "executionId": result.execution_id,
+        "planId": result.plan_id,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "dryRunMode": result.dry_run_mode,
+        "reviewMode": result.review_mode,
+        "sandboxReviewMode": result.sandbox_review_mode,
+        "probeExecutionMode": result.probe_execution_mode,
+        "probeMode": result.probe_mode,
+        "confirmationMode": result.confirmation_mode,
+        "orchestrationExecutionMode": result.orchestration_execution_mode,
+        "orchestrationMode": result.orchestration_mode,
+        "acceptanceMode": result.acceptance_mode,
+        "executionMode": result.execution_mode,
+        "reloadMode": result.reload_mode,
+        "maintenanceWindowId": result.maintenance_window_id,
+        "bindingMode": result.binding_mode,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": list(result.required_env_vars),
+        "orderIntent": result.order_intent,
+        "orderSubmitted": False,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_sandbox_order_schema_dry_run_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_sandbox_order_schema_dry_run":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    schema_dry_run_id = str(metadata.get("sandboxOrderSchemaDryRunId") or getattr(event, "event_id", "")).strip()
+    production_route_review_id = str(metadata.get("productionRouteReviewId") or "").strip()
+    sandbox_probe_review_id = str(metadata.get("sandboxProbeReviewId") or "").strip()
+    sandbox_probe_execution_id = str(metadata.get("sandboxProbeExecutionId") or "").strip()
+    sandbox_probe_plan_id = str(metadata.get("sandboxProbePlanId") or "").strip()
+    human_confirmation_id = str(metadata.get("humanConfirmationId") or "").strip()
+    orchestration_execution_id = str(metadata.get("orchestrationExecutionId") or "").strip()
+    orchestration_dry_run_id = str(metadata.get("dryRunId") or "").strip()
+    acceptance_id = str(metadata.get("acceptanceId") or "").strip()
+    execution_id = str(metadata.get("executionId") or "").strip()
+    plan_id = str(metadata.get("planId") or "").strip()
+    binding_id = str(metadata.get("bindingId") or "").strip()
+    materialization_id = str(metadata.get("materializationId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    market = str(metadata.get("market") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    if (
+        not schema_dry_run_id
+        or not production_route_review_id
+        or not sandbox_probe_review_id
+        or not sandbox_probe_execution_id
+        or not sandbox_probe_plan_id
+        or not human_confirmation_id
+        or not orchestration_execution_id
+        or not orchestration_dry_run_id
+        or not acceptance_id
+        or not execution_id
+        or not plan_id
+        or not binding_id
+        or not materialization_id
+        or not adapter_id
+    ):
+        return None
+    if route not in {"paper", "live"}:
+        return None
+    if status not in {"blocked", "schema_dry_run_recorded"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _execution_adapter_sandbox_order_schema_dry_run_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    order_intent = metadata.get("orderIntent") if isinstance(metadata.get("orderIntent"), dict) else {}
+
+    return {
+        "schemaVersion": 1,
+        "sandboxOrderSchemaDryRunId": schema_dry_run_id,
+        "productionRouteReviewId": production_route_review_id,
+        "sandboxProbeReviewId": sandbox_probe_review_id,
+        "sandboxProbeExecutionId": sandbox_probe_execution_id,
+        "sandboxProbePlanId": sandbox_probe_plan_id,
+        "humanConfirmationId": human_confirmation_id,
+        "orchestrationExecutionId": orchestration_execution_id,
+        "dryRunId": orchestration_dry_run_id,
+        "acceptanceId": acceptance_id,
+        "executionId": execution_id,
+        "planId": plan_id,
+        "bindingId": binding_id,
+        "materializationId": materialization_id,
+        "manifestValidationId": manifest_validation_id,
+        "adapterId": adapter_id,
+        "market": market,
+        "route": route,
+        "status": status,
+        "operator": str(metadata.get("operator") or "local-operator").strip() or "local-operator",
+        "recordedAt": recorded_at_value,
+        "dryRunMode": str(metadata.get("dryRunMode") or "manual_sandbox_order_schema_dry_run").strip(),
+        "reviewMode": str(metadata.get("reviewMode") or "").strip(),
+        "sandboxReviewMode": str(metadata.get("sandboxReviewMode") or "").strip(),
+        "probeExecutionMode": str(metadata.get("probeExecutionMode") or "").strip(),
+        "probeMode": str(metadata.get("probeMode") or "").strip(),
+        "confirmationMode": str(metadata.get("confirmationMode") or "").strip(),
+        "orchestrationExecutionMode": str(metadata.get("orchestrationExecutionMode") or "").strip(),
+        "orchestrationMode": str(metadata.get("orchestrationMode") or "").strip(),
+        "acceptanceMode": str(metadata.get("acceptanceMode") or "").strip(),
+        "executionMode": str(metadata.get("executionMode") or "").strip(),
+        "reloadMode": str(metadata.get("reloadMode") or "").strip(),
+        "maintenanceWindowId": str(metadata.get("maintenanceWindowId") or "").strip(),
+        "bindingMode": str(metadata.get("bindingMode") or "").strip(),
+        "manifestPath": str(metadata.get("manifestPath") or "").strip(),
+        "requiredEnvVars": [
+            str(name).strip()
+            for name in metadata.get("requiredEnvVars", [])
+            if isinstance(name, str) and name.strip()
+        ],
+        "orderIntent": _redact_secret_fields(order_intent),
+        "orderSubmitted": False,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_sandbox_order_schema_dry_run_to_audit_event_payload(
+    result: ExecutionAdapterSandboxOrderSchemaDryRunResult,
+) -> dict[str, Any]:
+    status_label = "blocked" if result.status == "blocked" else "recorded"
+    return {
+        "schemaVersion": 1,
+        "eventId": result.sandbox_order_schema_dry_run_id,
+        "eventType": "execution_adapter_sandbox_order_schema_dry_run",
+        "runId": "",
+        "createdAt": result.recorded_at.isoformat(),
+        "stage": "execution-adapter-sandbox-order-schema-dry-run",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} sandbox order schema dry-run {status_label} as {result.status}.",
+        "detail": "Sandbox order schema dry-run records order intent validation only; no order is submitted.",
+        "metadata": _redact_secret_fields(
+            {
+                "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+                "productionRouteReviewId": result.production_route_review_id,
+                "sandboxProbeReviewId": result.sandbox_probe_review_id,
+                "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+                "sandboxProbePlanId": result.sandbox_probe_plan_id,
+                "humanConfirmationId": result.human_confirmation_id,
+                "orchestrationExecutionId": result.orchestration_execution_id,
+                "dryRunId": result.dry_run_id,
+                "acceptanceId": result.acceptance_id,
+                "executionId": result.execution_id,
+                "planId": result.plan_id,
+                "bindingId": result.binding_id,
+                "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "recordedAt": result.recorded_at.isoformat(),
+                "dryRunMode": result.dry_run_mode,
+                "reviewMode": result.review_mode,
+                "sandboxReviewMode": result.sandbox_review_mode,
+                "probeExecutionMode": result.probe_execution_mode,
+                "probeMode": result.probe_mode,
+                "confirmationMode": result.confirmation_mode,
+                "orchestrationExecutionMode": result.orchestration_execution_mode,
+                "orchestrationMode": result.orchestration_mode,
+                "acceptanceMode": result.acceptance_mode,
+                "executionMode": result.execution_mode,
+                "reloadMode": result.reload_mode,
+                "maintenanceWindowId": result.maintenance_window_id,
+                "bindingMode": result.binding_mode,
+                "manifestPath": result.manifest_path,
+                "requiredEnvVars": list(result.required_env_vars),
+                "orderIntent": result.order_intent,
+                "orderSubmitted": False,
+                "blockedReasons": result.blocked_reasons,
+                "requiredConfirmationIds": [item["id"] for item in result.required_confirmations],
+                "confirmedConfirmationIds": [
+                    item["id"] for item in result.required_confirmations if item.get("status") == "confirmed"
+                ],
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def build_execution_adapter_paper_order_lifecycle(
+    schema_dry_run: dict[str, Any],
+    *,
+    adapter_id: str = "",
+    lifecycle_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    paper_order_lifecycle_id: str | None = None,
+) -> ExecutionAdapterPaperOrderLifecycleResult:
+    if not isinstance(schema_dry_run, dict):
+        raise ValueError("execution_adapter_paper_order_lifecycle_schema_dry_run_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    schema_dry_run_id = str(schema_dry_run.get("sandboxOrderSchemaDryRunId") or "").strip()
+    production_route_review_id = str(schema_dry_run.get("productionRouteReviewId") or "").strip()
+    sandbox_probe_review_id = str(schema_dry_run.get("sandboxProbeReviewId") or "").strip()
+    sandbox_probe_execution_id = str(schema_dry_run.get("sandboxProbeExecutionId") or "").strip()
+    sandbox_probe_plan_id = str(schema_dry_run.get("sandboxProbePlanId") or "").strip()
+    human_confirmation_id = str(schema_dry_run.get("humanConfirmationId") or "").strip()
+    orchestration_execution_id = str(schema_dry_run.get("orchestrationExecutionId") or "").strip()
+    orchestration_dry_run_id = str(schema_dry_run.get("dryRunId") or "").strip()
+    acceptance_id = str(schema_dry_run.get("acceptanceId") or "").strip()
+    execution_id = str(schema_dry_run.get("executionId") or "").strip()
+    plan_id = str(schema_dry_run.get("planId") or "").strip()
+    binding_id = str(schema_dry_run.get("bindingId") or "").strip()
+    materialization_id = str(schema_dry_run.get("materializationId") or "").strip()
+    manifest_validation_id = str(schema_dry_run.get("manifestValidationId") or "").strip()
+    execution_adapter_id = str(schema_dry_run.get("adapterId") or "").strip()
+    requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
+    market = str(schema_dry_run.get("market") or "").strip()
+    route = str(schema_dry_run.get("route") or "").strip()
+    normalized_lifecycle_mode = str(lifecycle_mode or "manual_paper_order_lifecycle_adapter").strip()
+    dry_run_mode = str(schema_dry_run.get("dryRunMode") or "").strip()
+    review_mode = str(schema_dry_run.get("reviewMode") or "").strip()
+    sandbox_review_mode = str(schema_dry_run.get("sandboxReviewMode") or "").strip()
+    probe_execution_mode = str(schema_dry_run.get("probeExecutionMode") or "").strip()
+    probe_mode = str(schema_dry_run.get("probeMode") or "").strip()
+    confirmation_mode = str(schema_dry_run.get("confirmationMode") or "").strip()
+    orchestration_execution_mode = str(schema_dry_run.get("orchestrationExecutionMode") or "").strip()
+    orchestration_mode = str(schema_dry_run.get("orchestrationMode") or "").strip()
+    acceptance_mode = str(schema_dry_run.get("acceptanceMode") or "").strip()
+    execution_mode = str(schema_dry_run.get("executionMode") or "").strip()
+    reload_mode = str(schema_dry_run.get("reloadMode") or "").strip()
+    maintenance_window_id = str(schema_dry_run.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(schema_dry_run.get("bindingMode") or "").strip()
+    manifest_path = str(schema_dry_run.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in schema_dry_run.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not schema_dry_run_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_schema_dry_run_id_required")
+    if not production_route_review_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_route_review_id_required")
+    if not sandbox_probe_review_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_probe_review_id_required")
+    if not sandbox_probe_execution_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_probe_execution_id_required")
+    if not sandbox_probe_plan_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_probe_plan_id_required")
+    if not human_confirmation_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_human_confirmation_id_required")
+    if not orchestration_execution_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_orchestration_execution_id_required")
+    if not orchestration_dry_run_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_orchestration_dry_run_id_required")
+    if not acceptance_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_acceptance_id_required")
+    if not execution_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_execution_id_required")
+    if not plan_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_reload_plan_id_required")
+    if not binding_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_binding_id_required")
+    if not materialization_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_materialization_id_required")
+    if not execution_adapter_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_adapter_id_required")
+    if requested_adapter_id != execution_adapter_id:
+        raise ValueError("execution_adapter_paper_order_lifecycle_adapter_mismatch")
+    if not market:
+        raise ValueError("execution_adapter_paper_order_lifecycle_market_required")
+    if route not in {"paper", "live"}:
+        raise ValueError("execution_adapter_paper_order_lifecycle_route_invalid")
+    if not normalized_lifecycle_mode:
+        raise ValueError("execution_adapter_paper_order_lifecycle_mode_required")
+    if not required_env_vars:
+        raise ValueError("execution_adapter_paper_order_lifecycle_required_env_vars_required")
+
+    order_intent = _redact_secret_fields(schema_dry_run.get("orderIntent") if isinstance(schema_dry_run.get("orderIntent"), dict) else {})
+    blocked_reasons = []
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_paper_order_lifecycle_specs():
+        confirmed = bool(confirmations.get(payload_key))
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(schema_dry_run.get("status") or "") != "schema_dry_run_recorded":
+        blocked_reasons.append("paper_order_lifecycle_schema_dry_run_not_recorded")
+    if bool(schema_dry_run.get("orderSubmitted")):
+        blocked_reasons.append("paper_order_lifecycle_schema_dry_run_order_submitted")
+    if not _sandbox_order_schema_intent_is_valid(order_intent):
+        blocked_reasons.append("paper_order_lifecycle_order_intent_invalid")
+
+    recorded = _coerce_optional_datetime(
+        recorded_at,
+        error_code="execution_adapter_paper_order_lifecycle_recorded_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return ExecutionAdapterPaperOrderLifecycleResult(
+        paper_order_lifecycle_id=str(
+            paper_order_lifecycle_id
+            or f"execution-adapter-paper-order-lifecycle-{schema_dry_run_id}-{uuid4()}"
+        ),
+        sandbox_order_schema_dry_run_id=schema_dry_run_id,
+        production_route_review_id=production_route_review_id,
+        sandbox_probe_review_id=sandbox_probe_review_id,
+        sandbox_probe_execution_id=sandbox_probe_execution_id,
+        sandbox_probe_plan_id=sandbox_probe_plan_id,
+        human_confirmation_id=human_confirmation_id,
+        orchestration_execution_id=orchestration_execution_id,
+        dry_run_id=orchestration_dry_run_id,
+        acceptance_id=acceptance_id,
+        execution_id=execution_id,
+        plan_id=plan_id,
+        binding_id=binding_id,
+        materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
+        adapter_id=execution_adapter_id,
+        market=market,
+        route=route,
+        status="blocked" if unique_blocked_reasons else "lifecycle_recorded",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        recorded_at=recorded or datetime.now(timezone.utc),
+        lifecycle_mode=normalized_lifecycle_mode,
+        dry_run_mode=dry_run_mode,
+        review_mode=review_mode,
+        sandbox_review_mode=sandbox_review_mode,
+        probe_execution_mode=probe_execution_mode,
+        probe_mode=probe_mode,
+        confirmation_mode=confirmation_mode,
+        orchestration_execution_mode=orchestration_execution_mode,
+        orchestration_mode=orchestration_mode,
+        acceptance_mode=acceptance_mode,
+        execution_mode=execution_mode,
+        reload_mode=reload_mode,
+        maintenance_window_id=maintenance_window_id,
+        binding_mode=binding_mode,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        order_intent=order_intent,
+        lifecycle_steps=_execution_adapter_paper_order_lifecycle_steps("blocked" if unique_blocked_reasons else "recorded"),
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_paper_order_lifecycle_to_payload(
+    result: ExecutionAdapterPaperOrderLifecycleResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+        "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+        "productionRouteReviewId": result.production_route_review_id,
+        "sandboxProbeReviewId": result.sandbox_probe_review_id,
+        "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+        "sandboxProbePlanId": result.sandbox_probe_plan_id,
+        "humanConfirmationId": result.human_confirmation_id,
+        "orchestrationExecutionId": result.orchestration_execution_id,
+        "dryRunId": result.dry_run_id,
+        "acceptanceId": result.acceptance_id,
+        "executionId": result.execution_id,
+        "planId": result.plan_id,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "lifecycleMode": result.lifecycle_mode,
+        "dryRunMode": result.dry_run_mode,
+        "reviewMode": result.review_mode,
+        "sandboxReviewMode": result.sandbox_review_mode,
+        "probeExecutionMode": result.probe_execution_mode,
+        "probeMode": result.probe_mode,
+        "confirmationMode": result.confirmation_mode,
+        "orchestrationExecutionMode": result.orchestration_execution_mode,
+        "orchestrationMode": result.orchestration_mode,
+        "acceptanceMode": result.acceptance_mode,
+        "executionMode": result.execution_mode,
+        "reloadMode": result.reload_mode,
+        "maintenanceWindowId": result.maintenance_window_id,
+        "bindingMode": result.binding_mode,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": list(result.required_env_vars),
+        "orderIntent": result.order_intent,
+        "lifecycleSteps": result.lifecycle_steps,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_paper_order_lifecycle_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_paper_order_lifecycle":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    paper_order_lifecycle_id = str(metadata.get("paperOrderLifecycleId") or getattr(event, "event_id", "")).strip()
+    schema_dry_run_id = str(metadata.get("sandboxOrderSchemaDryRunId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    if not paper_order_lifecycle_id or not schema_dry_run_id or not adapter_id:
+        return None
+    if status not in {"blocked", "lifecycle_recorded"} or route not in {"paper", "live"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _execution_adapter_paper_order_lifecycle_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    order_intent = metadata.get("orderIntent") if isinstance(metadata.get("orderIntent"), dict) else {}
+    lifecycle_steps = metadata.get("lifecycleSteps") if isinstance(metadata.get("lifecycleSteps"), list) else []
+
+    return {
+        "schemaVersion": 1,
+        "paperOrderLifecycleId": paper_order_lifecycle_id,
+        "sandboxOrderSchemaDryRunId": schema_dry_run_id,
+        "productionRouteReviewId": str(metadata.get("productionRouteReviewId") or "").strip(),
+        "sandboxProbeReviewId": str(metadata.get("sandboxProbeReviewId") or "").strip(),
+        "sandboxProbeExecutionId": str(metadata.get("sandboxProbeExecutionId") or "").strip(),
+        "sandboxProbePlanId": str(metadata.get("sandboxProbePlanId") or "").strip(),
+        "humanConfirmationId": str(metadata.get("humanConfirmationId") or "").strip(),
+        "orchestrationExecutionId": str(metadata.get("orchestrationExecutionId") or "").strip(),
+        "dryRunId": str(metadata.get("dryRunId") or "").strip(),
+        "acceptanceId": str(metadata.get("acceptanceId") or "").strip(),
+        "executionId": str(metadata.get("executionId") or "").strip(),
+        "planId": str(metadata.get("planId") or "").strip(),
+        "bindingId": str(metadata.get("bindingId") or "").strip(),
+        "materializationId": str(metadata.get("materializationId") or "").strip(),
+        "manifestValidationId": manifest_validation_id,
+        "adapterId": adapter_id,
+        "market": str(metadata.get("market") or "").strip(),
+        "route": route,
+        "status": status,
+        "operator": str(metadata.get("operator") or "local-operator").strip() or "local-operator",
+        "recordedAt": recorded_at_value,
+        "lifecycleMode": str(metadata.get("lifecycleMode") or "manual_paper_order_lifecycle_adapter").strip(),
+        "dryRunMode": str(metadata.get("dryRunMode") or "").strip(),
+        "reviewMode": str(metadata.get("reviewMode") or "").strip(),
+        "sandboxReviewMode": str(metadata.get("sandboxReviewMode") or "").strip(),
+        "probeExecutionMode": str(metadata.get("probeExecutionMode") or "").strip(),
+        "probeMode": str(metadata.get("probeMode") or "").strip(),
+        "confirmationMode": str(metadata.get("confirmationMode") or "").strip(),
+        "orchestrationExecutionMode": str(metadata.get("orchestrationExecutionMode") or "").strip(),
+        "orchestrationMode": str(metadata.get("orchestrationMode") or "").strip(),
+        "acceptanceMode": str(metadata.get("acceptanceMode") or "").strip(),
+        "executionMode": str(metadata.get("executionMode") or "").strip(),
+        "reloadMode": str(metadata.get("reloadMode") or "").strip(),
+        "maintenanceWindowId": str(metadata.get("maintenanceWindowId") or "").strip(),
+        "bindingMode": str(metadata.get("bindingMode") or "").strip(),
+        "manifestPath": str(metadata.get("manifestPath") or "").strip(),
+        "requiredEnvVars": [
+            str(name).strip()
+            for name in metadata.get("requiredEnvVars", [])
+            if isinstance(name, str) and name.strip()
+        ],
+        "orderIntent": _redact_secret_fields(order_intent),
+        "lifecycleSteps": [
+            _redact_secret_fields(item)
+            for item in lifecycle_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_paper_order_lifecycle_to_audit_event_payload(
+    result: ExecutionAdapterPaperOrderLifecycleResult,
+) -> dict[str, Any]:
+    status_label = "blocked" if result.status == "blocked" else "recorded"
+    return {
+        "schemaVersion": 1,
+        "eventId": result.paper_order_lifecycle_id,
+        "eventType": "execution_adapter_paper_order_lifecycle",
+        "runId": "",
+        "createdAt": result.recorded_at.isoformat(),
+        "stage": "execution-adapter-paper-order-lifecycle",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} paper order lifecycle {status_label} as {result.status}.",
+        "detail": "Paper order lifecycle adapter records local paper-only transitions; no live order is submitted.",
+        "metadata": _redact_secret_fields(
+            {
+                "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+                "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+                "productionRouteReviewId": result.production_route_review_id,
+                "sandboxProbeReviewId": result.sandbox_probe_review_id,
+                "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+                "sandboxProbePlanId": result.sandbox_probe_plan_id,
+                "humanConfirmationId": result.human_confirmation_id,
+                "orchestrationExecutionId": result.orchestration_execution_id,
+                "dryRunId": result.dry_run_id,
+                "acceptanceId": result.acceptance_id,
+                "executionId": result.execution_id,
+                "planId": result.plan_id,
+                "bindingId": result.binding_id,
+                "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "recordedAt": result.recorded_at.isoformat(),
+                "lifecycleMode": result.lifecycle_mode,
+                "dryRunMode": result.dry_run_mode,
+                "reviewMode": result.review_mode,
+                "sandboxReviewMode": result.sandbox_review_mode,
+                "probeExecutionMode": result.probe_execution_mode,
+                "probeMode": result.probe_mode,
+                "confirmationMode": result.confirmation_mode,
+                "orchestrationExecutionMode": result.orchestration_execution_mode,
+                "orchestrationMode": result.orchestration_mode,
+                "acceptanceMode": result.acceptance_mode,
+                "executionMode": result.execution_mode,
+                "reloadMode": result.reload_mode,
+                "maintenanceWindowId": result.maintenance_window_id,
+                "bindingMode": result.binding_mode,
+                "manifestPath": result.manifest_path,
+                "requiredEnvVars": list(result.required_env_vars),
+                "orderIntent": result.order_intent,
+                "lifecycleSteps": result.lifecycle_steps,
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "blockedReasons": result.blocked_reasons,
+                "requiredConfirmationIds": [item["id"] for item in result.required_confirmations],
+                "confirmedConfirmationIds": [
+                    item["id"] for item in result.required_confirmations if item.get("status") == "confirmed"
+                ],
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def build_execution_adapter_paper_route_runbook(
+    paper_order_lifecycle: dict[str, Any],
+    *,
+    adapter_id: str = "",
+    runbook_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    paper_route_runbook_id: str | None = None,
+) -> ExecutionAdapterPaperRouteRunbookResult:
+    if not isinstance(paper_order_lifecycle, dict):
+        raise ValueError("execution_adapter_paper_route_runbook_lifecycle_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    paper_order_lifecycle_id = str(paper_order_lifecycle.get("paperOrderLifecycleId") or "").strip()
+    schema_dry_run_id = str(paper_order_lifecycle.get("sandboxOrderSchemaDryRunId") or "").strip()
+    production_route_review_id = str(paper_order_lifecycle.get("productionRouteReviewId") or "").strip()
+    sandbox_probe_review_id = str(paper_order_lifecycle.get("sandboxProbeReviewId") or "").strip()
+    sandbox_probe_execution_id = str(paper_order_lifecycle.get("sandboxProbeExecutionId") or "").strip()
+    sandbox_probe_plan_id = str(paper_order_lifecycle.get("sandboxProbePlanId") or "").strip()
+    human_confirmation_id = str(paper_order_lifecycle.get("humanConfirmationId") or "").strip()
+    orchestration_execution_id = str(paper_order_lifecycle.get("orchestrationExecutionId") or "").strip()
+    orchestration_dry_run_id = str(paper_order_lifecycle.get("dryRunId") or "").strip()
+    acceptance_id = str(paper_order_lifecycle.get("acceptanceId") or "").strip()
+    execution_id = str(paper_order_lifecycle.get("executionId") or "").strip()
+    plan_id = str(paper_order_lifecycle.get("planId") or "").strip()
+    binding_id = str(paper_order_lifecycle.get("bindingId") or "").strip()
+    materialization_id = str(paper_order_lifecycle.get("materializationId") or "").strip()
+    manifest_validation_id = str(paper_order_lifecycle.get("manifestValidationId") or "").strip()
+    execution_adapter_id = str(paper_order_lifecycle.get("adapterId") or "").strip()
+    requested_adapter_id = str(adapter_id or execution_adapter_id).strip()
+    market = str(paper_order_lifecycle.get("market") or "").strip()
+    route = str(paper_order_lifecycle.get("route") or "").strip()
+    normalized_runbook_mode = str(runbook_mode or "manual_paper_route_runbook").strip()
+    lifecycle_mode = str(paper_order_lifecycle.get("lifecycleMode") or "").strip()
+    dry_run_mode = str(paper_order_lifecycle.get("dryRunMode") or "").strip()
+    review_mode = str(paper_order_lifecycle.get("reviewMode") or "").strip()
+    sandbox_review_mode = str(paper_order_lifecycle.get("sandboxReviewMode") or "").strip()
+    probe_execution_mode = str(paper_order_lifecycle.get("probeExecutionMode") or "").strip()
+    probe_mode = str(paper_order_lifecycle.get("probeMode") or "").strip()
+    confirmation_mode = str(paper_order_lifecycle.get("confirmationMode") or "").strip()
+    orchestration_execution_mode = str(paper_order_lifecycle.get("orchestrationExecutionMode") or "").strip()
+    orchestration_mode = str(paper_order_lifecycle.get("orchestrationMode") or "").strip()
+    acceptance_mode = str(paper_order_lifecycle.get("acceptanceMode") or "").strip()
+    execution_mode = str(paper_order_lifecycle.get("executionMode") or "").strip()
+    reload_mode = str(paper_order_lifecycle.get("reloadMode") or "").strip()
+    maintenance_window_id = str(paper_order_lifecycle.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(paper_order_lifecycle.get("bindingMode") or "").strip()
+    manifest_path = str(paper_order_lifecycle.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in paper_order_lifecycle.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not paper_order_lifecycle_id:
+        raise ValueError("execution_adapter_paper_route_runbook_lifecycle_id_required")
+    if not schema_dry_run_id:
+        raise ValueError("execution_adapter_paper_route_runbook_schema_dry_run_id_required")
+    if not production_route_review_id:
+        raise ValueError("execution_adapter_paper_route_runbook_route_review_id_required")
+    if not sandbox_probe_review_id:
+        raise ValueError("execution_adapter_paper_route_runbook_probe_review_id_required")
+    if not sandbox_probe_execution_id:
+        raise ValueError("execution_adapter_paper_route_runbook_probe_execution_id_required")
+    if not sandbox_probe_plan_id:
+        raise ValueError("execution_adapter_paper_route_runbook_probe_plan_id_required")
+    if not human_confirmation_id:
+        raise ValueError("execution_adapter_paper_route_runbook_human_confirmation_id_required")
+    if not orchestration_execution_id:
+        raise ValueError("execution_adapter_paper_route_runbook_orchestration_execution_id_required")
+    if not orchestration_dry_run_id:
+        raise ValueError("execution_adapter_paper_route_runbook_orchestration_dry_run_id_required")
+    if not acceptance_id:
+        raise ValueError("execution_adapter_paper_route_runbook_acceptance_id_required")
+    if not execution_id:
+        raise ValueError("execution_adapter_paper_route_runbook_execution_id_required")
+    if not plan_id:
+        raise ValueError("execution_adapter_paper_route_runbook_reload_plan_id_required")
+    if not binding_id:
+        raise ValueError("execution_adapter_paper_route_runbook_binding_id_required")
+    if not materialization_id:
+        raise ValueError("execution_adapter_paper_route_runbook_materialization_id_required")
+    if not execution_adapter_id:
+        raise ValueError("execution_adapter_paper_route_runbook_adapter_id_required")
+    if requested_adapter_id != execution_adapter_id:
+        raise ValueError("execution_adapter_paper_route_runbook_adapter_mismatch")
+    if not market:
+        raise ValueError("execution_adapter_paper_route_runbook_market_required")
+    if route not in {"paper", "live"}:
+        raise ValueError("execution_adapter_paper_route_runbook_route_invalid")
+    if not normalized_runbook_mode:
+        raise ValueError("execution_adapter_paper_route_runbook_mode_required")
+    if not required_env_vars:
+        raise ValueError("execution_adapter_paper_route_runbook_required_env_vars_required")
+
+    order_intent = _redact_secret_fields(
+        paper_order_lifecycle.get("orderIntent") if isinstance(paper_order_lifecycle.get("orderIntent"), dict) else {}
+    )
+    lifecycle_steps = [
+        _redact_secret_fields(item)
+        for item in paper_order_lifecycle.get("lifecycleSteps", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+    blocked_reasons = []
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_paper_route_runbook_specs():
+        confirmed = bool(confirmations.get(payload_key))
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(paper_order_lifecycle.get("status") or "") != "lifecycle_recorded":
+        blocked_reasons.append("paper_route_runbook_lifecycle_not_recorded")
+    if bool(paper_order_lifecycle.get("orderSubmitted")) or bool(paper_order_lifecycle.get("liveOrderSubmitted")):
+        blocked_reasons.append("paper_route_runbook_prior_order_submission_detected")
+    if not _sandbox_order_schema_intent_is_valid(order_intent):
+        blocked_reasons.append("paper_route_runbook_order_intent_invalid")
+
+    recorded = _coerce_optional_datetime(
+        recorded_at,
+        error_code="execution_adapter_paper_route_runbook_recorded_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return ExecutionAdapterPaperRouteRunbookResult(
+        paper_route_runbook_id=str(
+            paper_route_runbook_id
+            or f"execution-adapter-paper-route-runbook-{paper_order_lifecycle_id}-{uuid4()}"
+        ),
+        paper_order_lifecycle_id=paper_order_lifecycle_id,
+        sandbox_order_schema_dry_run_id=schema_dry_run_id,
+        production_route_review_id=production_route_review_id,
+        sandbox_probe_review_id=sandbox_probe_review_id,
+        sandbox_probe_execution_id=sandbox_probe_execution_id,
+        sandbox_probe_plan_id=sandbox_probe_plan_id,
+        human_confirmation_id=human_confirmation_id,
+        orchestration_execution_id=orchestration_execution_id,
+        dry_run_id=orchestration_dry_run_id,
+        acceptance_id=acceptance_id,
+        execution_id=execution_id,
+        plan_id=plan_id,
+        binding_id=binding_id,
+        materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
+        adapter_id=execution_adapter_id,
+        market=market,
+        route=route,
+        status="blocked" if unique_blocked_reasons else "runbook_recorded",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        recorded_at=recorded or datetime.now(timezone.utc),
+        runbook_mode=normalized_runbook_mode,
+        lifecycle_mode=lifecycle_mode,
+        dry_run_mode=dry_run_mode,
+        review_mode=review_mode,
+        sandbox_review_mode=sandbox_review_mode,
+        probe_execution_mode=probe_execution_mode,
+        probe_mode=probe_mode,
+        confirmation_mode=confirmation_mode,
+        orchestration_execution_mode=orchestration_execution_mode,
+        orchestration_mode=orchestration_mode,
+        acceptance_mode=acceptance_mode,
+        execution_mode=execution_mode,
+        reload_mode=reload_mode,
+        maintenance_window_id=maintenance_window_id,
+        binding_mode=binding_mode,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        order_intent=order_intent,
+        lifecycle_steps=lifecycle_steps,
+        runbook_steps=_execution_adapter_paper_route_runbook_steps(
+            "blocked" if unique_blocked_reasons else "recorded"
+        ),
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_paper_route_runbook_to_payload(
+    result: ExecutionAdapterPaperRouteRunbookResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "paperRouteRunbookId": result.paper_route_runbook_id,
+        "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+        "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+        "productionRouteReviewId": result.production_route_review_id,
+        "sandboxProbeReviewId": result.sandbox_probe_review_id,
+        "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+        "sandboxProbePlanId": result.sandbox_probe_plan_id,
+        "humanConfirmationId": result.human_confirmation_id,
+        "orchestrationExecutionId": result.orchestration_execution_id,
+        "dryRunId": result.dry_run_id,
+        "acceptanceId": result.acceptance_id,
+        "executionId": result.execution_id,
+        "planId": result.plan_id,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "runbookMode": result.runbook_mode,
+        "lifecycleMode": result.lifecycle_mode,
+        "dryRunMode": result.dry_run_mode,
+        "reviewMode": result.review_mode,
+        "sandboxReviewMode": result.sandbox_review_mode,
+        "probeExecutionMode": result.probe_execution_mode,
+        "probeMode": result.probe_mode,
+        "confirmationMode": result.confirmation_mode,
+        "orchestrationExecutionMode": result.orchestration_execution_mode,
+        "orchestrationMode": result.orchestration_mode,
+        "acceptanceMode": result.acceptance_mode,
+        "executionMode": result.execution_mode,
+        "reloadMode": result.reload_mode,
+        "maintenanceWindowId": result.maintenance_window_id,
+        "bindingMode": result.binding_mode,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": list(result.required_env_vars),
+        "orderIntent": result.order_intent,
+        "lifecycleSteps": result.lifecycle_steps,
+        "runbookSteps": result.runbook_steps,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_paper_route_runbook_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_paper_route_runbook":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    paper_route_runbook_id = str(metadata.get("paperRouteRunbookId") or getattr(event, "event_id", "")).strip()
+    paper_order_lifecycle_id = str(metadata.get("paperOrderLifecycleId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    if not paper_route_runbook_id or not paper_order_lifecycle_id or not adapter_id:
+        return None
+    if status not in {"blocked", "runbook_recorded"} or route not in {"paper", "live"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _execution_adapter_paper_route_runbook_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    order_intent = metadata.get("orderIntent") if isinstance(metadata.get("orderIntent"), dict) else {}
+    lifecycle_steps = metadata.get("lifecycleSteps") if isinstance(metadata.get("lifecycleSteps"), list) else []
+    runbook_steps = metadata.get("runbookSteps") if isinstance(metadata.get("runbookSteps"), list) else []
+
+    return {
+        "schemaVersion": 1,
+        "paperRouteRunbookId": paper_route_runbook_id,
+        "paperOrderLifecycleId": paper_order_lifecycle_id,
+        "sandboxOrderSchemaDryRunId": str(metadata.get("sandboxOrderSchemaDryRunId") or "").strip(),
+        "productionRouteReviewId": str(metadata.get("productionRouteReviewId") or "").strip(),
+        "sandboxProbeReviewId": str(metadata.get("sandboxProbeReviewId") or "").strip(),
+        "sandboxProbeExecutionId": str(metadata.get("sandboxProbeExecutionId") or "").strip(),
+        "sandboxProbePlanId": str(metadata.get("sandboxProbePlanId") or "").strip(),
+        "humanConfirmationId": str(metadata.get("humanConfirmationId") or "").strip(),
+        "orchestrationExecutionId": str(metadata.get("orchestrationExecutionId") or "").strip(),
+        "dryRunId": str(metadata.get("dryRunId") or "").strip(),
+        "acceptanceId": str(metadata.get("acceptanceId") or "").strip(),
+        "executionId": str(metadata.get("executionId") or "").strip(),
+        "planId": str(metadata.get("planId") or "").strip(),
+        "bindingId": str(metadata.get("bindingId") or "").strip(),
+        "materializationId": str(metadata.get("materializationId") or "").strip(),
+        "manifestValidationId": manifest_validation_id,
+        "adapterId": adapter_id,
+        "market": str(metadata.get("market") or "").strip(),
+        "route": route,
+        "status": status,
+        "operator": str(metadata.get("operator") or "local-operator").strip() or "local-operator",
+        "recordedAt": recorded_at_value,
+        "runbookMode": str(metadata.get("runbookMode") or "manual_paper_route_runbook").strip(),
+        "lifecycleMode": str(metadata.get("lifecycleMode") or "").strip(),
+        "dryRunMode": str(metadata.get("dryRunMode") or "").strip(),
+        "reviewMode": str(metadata.get("reviewMode") or "").strip(),
+        "sandboxReviewMode": str(metadata.get("sandboxReviewMode") or "").strip(),
+        "probeExecutionMode": str(metadata.get("probeExecutionMode") or "").strip(),
+        "probeMode": str(metadata.get("probeMode") or "").strip(),
+        "confirmationMode": str(metadata.get("confirmationMode") or "").strip(),
+        "orchestrationExecutionMode": str(metadata.get("orchestrationExecutionMode") or "").strip(),
+        "orchestrationMode": str(metadata.get("orchestrationMode") or "").strip(),
+        "acceptanceMode": str(metadata.get("acceptanceMode") or "").strip(),
+        "executionMode": str(metadata.get("executionMode") or "").strip(),
+        "reloadMode": str(metadata.get("reloadMode") or "").strip(),
+        "maintenanceWindowId": str(metadata.get("maintenanceWindowId") or "").strip(),
+        "bindingMode": str(metadata.get("bindingMode") or "").strip(),
+        "manifestPath": str(metadata.get("manifestPath") or "").strip(),
+        "requiredEnvVars": [
+            str(name).strip()
+            for name in metadata.get("requiredEnvVars", [])
+            if isinstance(name, str) and name.strip()
+        ],
+        "orderIntent": _redact_secret_fields(order_intent),
+        "lifecycleSteps": [
+            _redact_secret_fields(item)
+            for item in lifecycle_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "runbookSteps": [
+            _redact_secret_fields(item)
+            for item in runbook_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_paper_route_runbook_to_audit_event_payload(
+    result: ExecutionAdapterPaperRouteRunbookResult,
+) -> dict[str, Any]:
+    status_label = "blocked" if result.status == "blocked" else "recorded"
+    return {
+        "schemaVersion": 1,
+        "eventId": result.paper_route_runbook_id,
+        "eventType": "execution_adapter_paper_route_runbook",
+        "runId": "",
+        "createdAt": result.recorded_at.isoformat(),
+        "stage": "execution-adapter-paper-route-runbook",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} paper route runbook {status_label} as {result.status}.",
+        "detail": "Paper route runbook records the controlled simulation plan only; no route is executed.",
+        "metadata": _redact_secret_fields(
+            {
+                "paperRouteRunbookId": result.paper_route_runbook_id,
+                "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+                "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+                "productionRouteReviewId": result.production_route_review_id,
+                "sandboxProbeReviewId": result.sandbox_probe_review_id,
+                "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+                "sandboxProbePlanId": result.sandbox_probe_plan_id,
+                "humanConfirmationId": result.human_confirmation_id,
+                "orchestrationExecutionId": result.orchestration_execution_id,
+                "dryRunId": result.dry_run_id,
+                "acceptanceId": result.acceptance_id,
+                "executionId": result.execution_id,
+                "planId": result.plan_id,
+                "bindingId": result.binding_id,
+                "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "recordedAt": result.recorded_at.isoformat(),
+                "runbookMode": result.runbook_mode,
+                "lifecycleMode": result.lifecycle_mode,
+                "dryRunMode": result.dry_run_mode,
+                "reviewMode": result.review_mode,
+                "sandboxReviewMode": result.sandbox_review_mode,
+                "probeExecutionMode": result.probe_execution_mode,
+                "probeMode": result.probe_mode,
+                "confirmationMode": result.confirmation_mode,
+                "orchestrationExecutionMode": result.orchestration_execution_mode,
+                "orchestrationMode": result.orchestration_mode,
+                "acceptanceMode": result.acceptance_mode,
+                "executionMode": result.execution_mode,
+                "reloadMode": result.reload_mode,
+                "maintenanceWindowId": result.maintenance_window_id,
+                "bindingMode": result.binding_mode,
+                "manifestPath": result.manifest_path,
+                "requiredEnvVars": list(result.required_env_vars),
+                "orderIntent": result.order_intent,
+                "lifecycleSteps": result.lifecycle_steps,
+                "runbookSteps": result.runbook_steps,
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "blockedReasons": result.blocked_reasons,
+                "requiredConfirmationIds": [item["id"] for item in result.required_confirmations],
+                "confirmedConfirmationIds": [
+                    item["id"] for item in result.required_confirmations if item.get("status") == "confirmed"
+                ],
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def _execution_adapter_paper_route_runbook_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "paper-lifecycle-accepted",
+            "paperLifecycleAccepted",
+            "Paper order lifecycle was accepted as runbook input",
+            "paper_route_runbook_lifecycle_not_accepted",
+        ),
+        (
+            "paper-account-snapshot-captured",
+            "paperAccountSnapshotCaptured",
+            "Paper account snapshot was captured before simulation",
+            "paper_route_runbook_account_snapshot_missing",
+        ),
+        (
+            "risk-controls-verified",
+            "riskControlsVerified",
+            "Risk controls were verified before simulated routing",
+            "paper_route_runbook_risk_controls_not_verified",
+        ),
+        (
+            "replay-plan-recorded",
+            "replayPlanRecorded",
+            "Replay plan was recorded before simulation",
+            "paper_route_runbook_replay_plan_missing",
+        ),
+        (
+            "operator-confirmed-no-live-routing",
+            "operatorConfirmedNoLiveRouting",
+            "Operator confirmed no live route will be executed",
+            "paper_route_runbook_no_live_route_boundary_missing",
+        ),
+    ]
+
+
+def _execution_adapter_paper_route_runbook_steps(status: str) -> list[dict[str, Any]]:
+    normalized_status = "recorded" if status == "recorded" else "blocked"
+    return [
+        {"id": "lifecycle-evidence-linked", "label": "Paper lifecycle evidence linked", "status": normalized_status},
+        {"id": "paper-account-snapshot-bound", "label": "Paper account snapshot bound", "status": normalized_status},
+        {"id": "risk-controls-verified", "label": "Risk controls verified", "status": normalized_status},
+        {"id": "replay-plan-recorded", "label": "Replay plan recorded", "status": normalized_status},
+    ]
+
+
+def build_execution_adapter_ops_state(
+    paper_route_runbook: dict[str, Any],
+    *,
+    adapter_id: str = "",
+    ops_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    adapter_ops_state_id: str | None = None,
+) -> ExecutionAdapterOpsStateResult:
+    if not isinstance(paper_route_runbook, dict):
+        raise ValueError("execution_adapter_ops_state_runbook_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    paper_route_runbook_id = str(paper_route_runbook.get("paperRouteRunbookId") or "").strip()
+    paper_order_lifecycle_id = str(paper_route_runbook.get("paperOrderLifecycleId") or "").strip()
+    schema_dry_run_id = str(paper_route_runbook.get("sandboxOrderSchemaDryRunId") or "").strip()
+    production_route_review_id = str(paper_route_runbook.get("productionRouteReviewId") or "").strip()
+    sandbox_probe_review_id = str(paper_route_runbook.get("sandboxProbeReviewId") or "").strip()
+    sandbox_probe_execution_id = str(paper_route_runbook.get("sandboxProbeExecutionId") or "").strip()
+    sandbox_probe_plan_id = str(paper_route_runbook.get("sandboxProbePlanId") or "").strip()
+    human_confirmation_id = str(paper_route_runbook.get("humanConfirmationId") or "").strip()
+    orchestration_execution_id = str(paper_route_runbook.get("orchestrationExecutionId") or "").strip()
+    orchestration_dry_run_id = str(paper_route_runbook.get("dryRunId") or "").strip()
+    acceptance_id = str(paper_route_runbook.get("acceptanceId") or "").strip()
+    execution_id = str(paper_route_runbook.get("executionId") or "").strip()
+    plan_id = str(paper_route_runbook.get("planId") or "").strip()
+    binding_id = str(paper_route_runbook.get("bindingId") or "").strip()
+    materialization_id = str(paper_route_runbook.get("materializationId") or "").strip()
+    manifest_validation_id = str(paper_route_runbook.get("manifestValidationId") or "").strip()
+    runbook_adapter_id = str(paper_route_runbook.get("adapterId") or "").strip()
+    requested_adapter_id = str(adapter_id or runbook_adapter_id).strip()
+    market = str(paper_route_runbook.get("market") or "").strip()
+    route = str(paper_route_runbook.get("route") or "").strip()
+    normalized_ops_mode = str(ops_mode or "manual_adapter_ops_state").strip()
+    runbook_mode = str(paper_route_runbook.get("runbookMode") or "").strip()
+    lifecycle_mode = str(paper_route_runbook.get("lifecycleMode") or "").strip()
+    dry_run_mode = str(paper_route_runbook.get("dryRunMode") or "").strip()
+    review_mode = str(paper_route_runbook.get("reviewMode") or "").strip()
+    sandbox_review_mode = str(paper_route_runbook.get("sandboxReviewMode") or "").strip()
+    probe_execution_mode = str(paper_route_runbook.get("probeExecutionMode") or "").strip()
+    probe_mode = str(paper_route_runbook.get("probeMode") or "").strip()
+    confirmation_mode = str(paper_route_runbook.get("confirmationMode") or "").strip()
+    orchestration_execution_mode = str(paper_route_runbook.get("orchestrationExecutionMode") or "").strip()
+    orchestration_mode = str(paper_route_runbook.get("orchestrationMode") or "").strip()
+    acceptance_mode = str(paper_route_runbook.get("acceptanceMode") or "").strip()
+    execution_mode = str(paper_route_runbook.get("executionMode") or "").strip()
+    reload_mode = str(paper_route_runbook.get("reloadMode") or "").strip()
+    maintenance_window_id = str(paper_route_runbook.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(paper_route_runbook.get("bindingMode") or "").strip()
+    manifest_path = str(paper_route_runbook.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in paper_route_runbook.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not paper_route_runbook_id:
+        raise ValueError("execution_adapter_ops_state_runbook_id_required")
+    if not paper_order_lifecycle_id:
+        raise ValueError("execution_adapter_ops_state_lifecycle_id_required")
+    if not schema_dry_run_id:
+        raise ValueError("execution_adapter_ops_state_schema_dry_run_id_required")
+    if not production_route_review_id:
+        raise ValueError("execution_adapter_ops_state_route_review_id_required")
+    if not sandbox_probe_review_id:
+        raise ValueError("execution_adapter_ops_state_probe_review_id_required")
+    if not sandbox_probe_execution_id:
+        raise ValueError("execution_adapter_ops_state_probe_execution_id_required")
+    if not sandbox_probe_plan_id:
+        raise ValueError("execution_adapter_ops_state_probe_plan_id_required")
+    if not human_confirmation_id:
+        raise ValueError("execution_adapter_ops_state_human_confirmation_id_required")
+    if not orchestration_execution_id:
+        raise ValueError("execution_adapter_ops_state_orchestration_execution_id_required")
+    if not orchestration_dry_run_id:
+        raise ValueError("execution_adapter_ops_state_orchestration_dry_run_id_required")
+    if not acceptance_id:
+        raise ValueError("execution_adapter_ops_state_acceptance_id_required")
+    if not execution_id:
+        raise ValueError("execution_adapter_ops_state_execution_id_required")
+    if not plan_id:
+        raise ValueError("execution_adapter_ops_state_reload_plan_id_required")
+    if not binding_id:
+        raise ValueError("execution_adapter_ops_state_binding_id_required")
+    if not materialization_id:
+        raise ValueError("execution_adapter_ops_state_materialization_id_required")
+    if not runbook_adapter_id:
+        raise ValueError("execution_adapter_ops_state_adapter_id_required")
+    if requested_adapter_id != runbook_adapter_id:
+        raise ValueError("execution_adapter_ops_state_adapter_mismatch")
+    if not market:
+        raise ValueError("execution_adapter_ops_state_market_required")
+    if route not in {"paper", "live"}:
+        raise ValueError("execution_adapter_ops_state_route_invalid")
+    if not normalized_ops_mode:
+        raise ValueError("execution_adapter_ops_state_mode_required")
+    if not required_env_vars:
+        raise ValueError("execution_adapter_ops_state_required_env_vars_required")
+
+    order_intent = _redact_secret_fields(
+        paper_route_runbook.get("orderIntent") if isinstance(paper_route_runbook.get("orderIntent"), dict) else {}
+    )
+    lifecycle_steps = [
+        _redact_secret_fields(item)
+        for item in paper_route_runbook.get("lifecycleSteps", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+    runbook_steps = [
+        _redact_secret_fields(item)
+        for item in paper_route_runbook.get("runbookSteps", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+
+    blocked_reasons = []
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_ops_state_specs():
+        confirmed = bool(confirmations.get(payload_key))
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(paper_route_runbook.get("status") or "") != "runbook_recorded":
+        blocked_reasons.append("adapter_ops_paper_route_runbook_not_recorded")
+    if (
+        bool(paper_route_runbook.get("orderSubmitted"))
+        or bool(paper_route_runbook.get("liveOrderSubmitted"))
+        or bool(paper_route_runbook.get("routeExecuted"))
+    ):
+        blocked_reasons.append("adapter_ops_prior_route_or_order_execution_detected")
+    if not _sandbox_order_schema_intent_is_valid(order_intent):
+        blocked_reasons.append("adapter_ops_order_intent_invalid")
+
+    recorded = _coerce_optional_datetime(
+        recorded_at,
+        error_code="execution_adapter_ops_state_recorded_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    return ExecutionAdapterOpsStateResult(
+        adapter_ops_state_id=str(
+            adapter_ops_state_id or f"execution-adapter-ops-state-{paper_route_runbook_id}-{uuid4()}"
+        ),
+        paper_route_runbook_id=paper_route_runbook_id,
+        paper_order_lifecycle_id=paper_order_lifecycle_id,
+        sandbox_order_schema_dry_run_id=schema_dry_run_id,
+        production_route_review_id=production_route_review_id,
+        sandbox_probe_review_id=sandbox_probe_review_id,
+        sandbox_probe_execution_id=sandbox_probe_execution_id,
+        sandbox_probe_plan_id=sandbox_probe_plan_id,
+        human_confirmation_id=human_confirmation_id,
+        orchestration_execution_id=orchestration_execution_id,
+        dry_run_id=orchestration_dry_run_id,
+        acceptance_id=acceptance_id,
+        execution_id=execution_id,
+        plan_id=plan_id,
+        binding_id=binding_id,
+        materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
+        adapter_id=runbook_adapter_id,
+        market=market,
+        route=route,
+        status="blocked" if unique_blocked_reasons else "ops_state_recorded",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        recorded_at=recorded or datetime.now(timezone.utc),
+        ops_mode=normalized_ops_mode,
+        runbook_mode=runbook_mode,
+        lifecycle_mode=lifecycle_mode,
+        dry_run_mode=dry_run_mode,
+        review_mode=review_mode,
+        sandbox_review_mode=sandbox_review_mode,
+        probe_execution_mode=probe_execution_mode,
+        probe_mode=probe_mode,
+        confirmation_mode=confirmation_mode,
+        orchestration_execution_mode=orchestration_execution_mode,
+        orchestration_mode=orchestration_mode,
+        acceptance_mode=acceptance_mode,
+        execution_mode=execution_mode,
+        reload_mode=reload_mode,
+        maintenance_window_id=maintenance_window_id,
+        binding_mode=binding_mode,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        order_intent=order_intent,
+        lifecycle_steps=lifecycle_steps,
+        runbook_steps=runbook_steps,
+        ops_steps=_execution_adapter_ops_state_steps("blocked" if unique_blocked_reasons else "recorded"),
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_ops_state_to_payload(result: ExecutionAdapterOpsStateResult) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "adapterOpsStateId": result.adapter_ops_state_id,
+        "paperRouteRunbookId": result.paper_route_runbook_id,
+        "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+        "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+        "productionRouteReviewId": result.production_route_review_id,
+        "sandboxProbeReviewId": result.sandbox_probe_review_id,
+        "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+        "sandboxProbePlanId": result.sandbox_probe_plan_id,
+        "humanConfirmationId": result.human_confirmation_id,
+        "orchestrationExecutionId": result.orchestration_execution_id,
+        "dryRunId": result.dry_run_id,
+        "acceptanceId": result.acceptance_id,
+        "executionId": result.execution_id,
+        "planId": result.plan_id,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "opsMode": result.ops_mode,
+        "runbookMode": result.runbook_mode,
+        "lifecycleMode": result.lifecycle_mode,
+        "dryRunMode": result.dry_run_mode,
+        "reviewMode": result.review_mode,
+        "sandboxReviewMode": result.sandbox_review_mode,
+        "probeExecutionMode": result.probe_execution_mode,
+        "probeMode": result.probe_mode,
+        "confirmationMode": result.confirmation_mode,
+        "orchestrationExecutionMode": result.orchestration_execution_mode,
+        "orchestrationMode": result.orchestration_mode,
+        "acceptanceMode": result.acceptance_mode,
+        "executionMode": result.execution_mode,
+        "reloadMode": result.reload_mode,
+        "maintenanceWindowId": result.maintenance_window_id,
+        "bindingMode": result.binding_mode,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": list(result.required_env_vars),
+        "orderIntent": result.order_intent,
+        "lifecycleSteps": result.lifecycle_steps,
+        "runbookSteps": result.runbook_steps,
+        "opsSteps": result.ops_steps,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_ops_state_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_ops_state":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    adapter_ops_state_id = str(metadata.get("adapterOpsStateId") or getattr(event, "event_id", "")).strip()
+    paper_route_runbook_id = str(metadata.get("paperRouteRunbookId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    if not adapter_ops_state_id or not paper_route_runbook_id or not adapter_id:
+        return None
+    if status not in {"blocked", "ops_state_recorded"} or route not in {"paper", "live"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _execution_adapter_ops_state_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    order_intent = metadata.get("orderIntent") if isinstance(metadata.get("orderIntent"), dict) else {}
+    lifecycle_steps = metadata.get("lifecycleSteps") if isinstance(metadata.get("lifecycleSteps"), list) else []
+    runbook_steps = metadata.get("runbookSteps") if isinstance(metadata.get("runbookSteps"), list) else []
+    ops_steps = metadata.get("opsSteps") if isinstance(metadata.get("opsSteps"), list) else []
+
+    return {
+        "schemaVersion": 1,
+        "adapterOpsStateId": adapter_ops_state_id,
+        "paperRouteRunbookId": paper_route_runbook_id,
+        "paperOrderLifecycleId": str(metadata.get("paperOrderLifecycleId") or "").strip(),
+        "sandboxOrderSchemaDryRunId": str(metadata.get("sandboxOrderSchemaDryRunId") or "").strip(),
+        "productionRouteReviewId": str(metadata.get("productionRouteReviewId") or "").strip(),
+        "sandboxProbeReviewId": str(metadata.get("sandboxProbeReviewId") or "").strip(),
+        "sandboxProbeExecutionId": str(metadata.get("sandboxProbeExecutionId") or "").strip(),
+        "sandboxProbePlanId": str(metadata.get("sandboxProbePlanId") or "").strip(),
+        "humanConfirmationId": str(metadata.get("humanConfirmationId") or "").strip(),
+        "orchestrationExecutionId": str(metadata.get("orchestrationExecutionId") or "").strip(),
+        "dryRunId": str(metadata.get("dryRunId") or "").strip(),
+        "acceptanceId": str(metadata.get("acceptanceId") or "").strip(),
+        "executionId": str(metadata.get("executionId") or "").strip(),
+        "planId": str(metadata.get("planId") or "").strip(),
+        "bindingId": str(metadata.get("bindingId") or "").strip(),
+        "materializationId": str(metadata.get("materializationId") or "").strip(),
+        "manifestValidationId": manifest_validation_id,
+        "adapterId": adapter_id,
+        "market": str(metadata.get("market") or "").strip(),
+        "route": route,
+        "status": status,
+        "operator": str(metadata.get("operator") or "local-operator").strip() or "local-operator",
+        "recordedAt": recorded_at_value,
+        "opsMode": str(metadata.get("opsMode") or "manual_adapter_ops_state").strip(),
+        "runbookMode": str(metadata.get("runbookMode") or "").strip(),
+        "lifecycleMode": str(metadata.get("lifecycleMode") or "").strip(),
+        "dryRunMode": str(metadata.get("dryRunMode") or "").strip(),
+        "reviewMode": str(metadata.get("reviewMode") or "").strip(),
+        "sandboxReviewMode": str(metadata.get("sandboxReviewMode") or "").strip(),
+        "probeExecutionMode": str(metadata.get("probeExecutionMode") or "").strip(),
+        "probeMode": str(metadata.get("probeMode") or "").strip(),
+        "confirmationMode": str(metadata.get("confirmationMode") or "").strip(),
+        "orchestrationExecutionMode": str(metadata.get("orchestrationExecutionMode") or "").strip(),
+        "orchestrationMode": str(metadata.get("orchestrationMode") or "").strip(),
+        "acceptanceMode": str(metadata.get("acceptanceMode") or "").strip(),
+        "executionMode": str(metadata.get("executionMode") or "").strip(),
+        "reloadMode": str(metadata.get("reloadMode") or "").strip(),
+        "maintenanceWindowId": str(metadata.get("maintenanceWindowId") or "").strip(),
+        "bindingMode": str(metadata.get("bindingMode") or "").strip(),
+        "manifestPath": str(metadata.get("manifestPath") or "").strip(),
+        "requiredEnvVars": [
+            str(name).strip()
+            for name in metadata.get("requiredEnvVars", [])
+            if isinstance(name, str) and name.strip()
+        ],
+        "orderIntent": _redact_secret_fields(order_intent),
+        "lifecycleSteps": [
+            _redact_secret_fields(item)
+            for item in lifecycle_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "runbookSteps": [
+            _redact_secret_fields(item)
+            for item in runbook_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "opsSteps": [
+            _redact_secret_fields(item)
+            for item in ops_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_ops_state_to_audit_event_payload(
+    result: ExecutionAdapterOpsStateResult,
+) -> dict[str, Any]:
+    status_label = "blocked" if result.status == "blocked" else "recorded"
+    return {
+        "schemaVersion": 1,
+        "eventId": result.adapter_ops_state_id,
+        "eventType": "execution_adapter_ops_state",
+        "runId": "",
+        "createdAt": result.recorded_at.isoformat(),
+        "stage": "execution-adapter-ops-state",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} adapter ops state {status_label} as {result.status}.",
+        "detail": "Adapter ops state records monitoring, kill-switch and reconciliation readiness only; live trading remains disabled.",
+        "metadata": _redact_secret_fields(
+            {
+                "adapterOpsStateId": result.adapter_ops_state_id,
+                "paperRouteRunbookId": result.paper_route_runbook_id,
+                "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+                "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+                "productionRouteReviewId": result.production_route_review_id,
+                "sandboxProbeReviewId": result.sandbox_probe_review_id,
+                "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+                "sandboxProbePlanId": result.sandbox_probe_plan_id,
+                "humanConfirmationId": result.human_confirmation_id,
+                "orchestrationExecutionId": result.orchestration_execution_id,
+                "dryRunId": result.dry_run_id,
+                "acceptanceId": result.acceptance_id,
+                "executionId": result.execution_id,
+                "planId": result.plan_id,
+                "bindingId": result.binding_id,
+                "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "recordedAt": result.recorded_at.isoformat(),
+                "opsMode": result.ops_mode,
+                "runbookMode": result.runbook_mode,
+                "lifecycleMode": result.lifecycle_mode,
+                "dryRunMode": result.dry_run_mode,
+                "reviewMode": result.review_mode,
+                "sandboxReviewMode": result.sandbox_review_mode,
+                "probeExecutionMode": result.probe_execution_mode,
+                "probeMode": result.probe_mode,
+                "confirmationMode": result.confirmation_mode,
+                "orchestrationExecutionMode": result.orchestration_execution_mode,
+                "orchestrationMode": result.orchestration_mode,
+                "acceptanceMode": result.acceptance_mode,
+                "executionMode": result.execution_mode,
+                "reloadMode": result.reload_mode,
+                "maintenanceWindowId": result.maintenance_window_id,
+                "bindingMode": result.binding_mode,
+                "manifestPath": result.manifest_path,
+                "requiredEnvVars": list(result.required_env_vars),
+                "orderIntent": result.order_intent,
+                "lifecycleSteps": result.lifecycle_steps,
+                "runbookSteps": result.runbook_steps,
+                "opsSteps": result.ops_steps,
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "blockedReasons": result.blocked_reasons,
+                "requiredConfirmationIds": [item["id"] for item in result.required_confirmations],
+                "confirmedConfirmationIds": [
+                    item["id"] for item in result.required_confirmations if item.get("status") == "confirmed"
+                ],
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def build_execution_adapter_paper_execution(
+    adapter_ops_state: dict[str, Any],
+    *,
+    adapter_id: str = "",
+    paper_execution_mode: str = "",
+    confirmations: dict[str, Any] | None = None,
+    operator: str = "local-operator",
+    metadata: dict[str, Any] | None = None,
+    recorded_at: datetime | str | None = None,
+    adapter_paper_execution_id: str | None = None,
+) -> ExecutionAdapterPaperExecutionResult:
+    if not isinstance(adapter_ops_state, dict):
+        raise ValueError("execution_adapter_paper_execution_ops_state_required")
+    if not isinstance(confirmations, dict):
+        confirmations = {}
+
+    adapter_ops_state_id = str(adapter_ops_state.get("adapterOpsStateId") or "").strip()
+    paper_route_runbook_id = str(adapter_ops_state.get("paperRouteRunbookId") or "").strip()
+    paper_order_lifecycle_id = str(adapter_ops_state.get("paperOrderLifecycleId") or "").strip()
+    schema_dry_run_id = str(adapter_ops_state.get("sandboxOrderSchemaDryRunId") or "").strip()
+    production_route_review_id = str(adapter_ops_state.get("productionRouteReviewId") or "").strip()
+    sandbox_probe_review_id = str(adapter_ops_state.get("sandboxProbeReviewId") or "").strip()
+    sandbox_probe_execution_id = str(adapter_ops_state.get("sandboxProbeExecutionId") or "").strip()
+    sandbox_probe_plan_id = str(adapter_ops_state.get("sandboxProbePlanId") or "").strip()
+    human_confirmation_id = str(adapter_ops_state.get("humanConfirmationId") or "").strip()
+    orchestration_execution_id = str(adapter_ops_state.get("orchestrationExecutionId") or "").strip()
+    orchestration_dry_run_id = str(adapter_ops_state.get("dryRunId") or "").strip()
+    acceptance_id = str(adapter_ops_state.get("acceptanceId") or "").strip()
+    execution_id = str(adapter_ops_state.get("executionId") or "").strip()
+    plan_id = str(adapter_ops_state.get("planId") or "").strip()
+    binding_id = str(adapter_ops_state.get("bindingId") or "").strip()
+    materialization_id = str(adapter_ops_state.get("materializationId") or "").strip()
+    manifest_validation_id = str(adapter_ops_state.get("manifestValidationId") or "").strip()
+    ops_adapter_id = str(adapter_ops_state.get("adapterId") or "").strip()
+    requested_adapter_id = str(adapter_id or ops_adapter_id).strip()
+    market = str(adapter_ops_state.get("market") or "").strip()
+    route = str(adapter_ops_state.get("route") or "").strip()
+    normalized_paper_execution_mode = str(
+        paper_execution_mode or "manual_adapter_paper_execution"
+    ).strip()
+    ops_mode = str(adapter_ops_state.get("opsMode") or "").strip()
+    runbook_mode = str(adapter_ops_state.get("runbookMode") or "").strip()
+    lifecycle_mode = str(adapter_ops_state.get("lifecycleMode") or "").strip()
+    dry_run_mode = str(adapter_ops_state.get("dryRunMode") or "").strip()
+    review_mode = str(adapter_ops_state.get("reviewMode") or "").strip()
+    sandbox_review_mode = str(adapter_ops_state.get("sandboxReviewMode") or "").strip()
+    probe_execution_mode = str(adapter_ops_state.get("probeExecutionMode") or "").strip()
+    probe_mode = str(adapter_ops_state.get("probeMode") or "").strip()
+    confirmation_mode = str(adapter_ops_state.get("confirmationMode") or "").strip()
+    orchestration_execution_mode = str(adapter_ops_state.get("orchestrationExecutionMode") or "").strip()
+    orchestration_mode = str(adapter_ops_state.get("orchestrationMode") or "").strip()
+    acceptance_mode = str(adapter_ops_state.get("acceptanceMode") or "").strip()
+    execution_mode = str(adapter_ops_state.get("executionMode") or "").strip()
+    reload_mode = str(adapter_ops_state.get("reloadMode") or "").strip()
+    maintenance_window_id = str(adapter_ops_state.get("maintenanceWindowId") or "").strip()
+    binding_mode = str(adapter_ops_state.get("bindingMode") or "").strip()
+    manifest_path = str(adapter_ops_state.get("manifestPath") or "").strip()
+    required_env_vars = [
+        str(item).strip()
+        for item in adapter_ops_state.get("requiredEnvVars", [])
+        if isinstance(item, str) and item.strip()
+    ]
+
+    if not adapter_ops_state_id:
+        raise ValueError("execution_adapter_paper_execution_ops_state_id_required")
+    if not paper_route_runbook_id:
+        raise ValueError("execution_adapter_paper_execution_runbook_id_required")
+    if not paper_order_lifecycle_id:
+        raise ValueError("execution_adapter_paper_execution_lifecycle_id_required")
+    if not schema_dry_run_id:
+        raise ValueError("execution_adapter_paper_execution_schema_dry_run_id_required")
+    if not production_route_review_id:
+        raise ValueError("execution_adapter_paper_execution_route_review_id_required")
+    if not sandbox_probe_review_id:
+        raise ValueError("execution_adapter_paper_execution_probe_review_id_required")
+    if not sandbox_probe_execution_id:
+        raise ValueError("execution_adapter_paper_execution_probe_execution_id_required")
+    if not sandbox_probe_plan_id:
+        raise ValueError("execution_adapter_paper_execution_probe_plan_id_required")
+    if not human_confirmation_id:
+        raise ValueError("execution_adapter_paper_execution_human_confirmation_id_required")
+    if not orchestration_execution_id:
+        raise ValueError("execution_adapter_paper_execution_orchestration_execution_id_required")
+    if not orchestration_dry_run_id:
+        raise ValueError("execution_adapter_paper_execution_orchestration_dry_run_id_required")
+    if not acceptance_id:
+        raise ValueError("execution_adapter_paper_execution_acceptance_id_required")
+    if not execution_id:
+        raise ValueError("execution_adapter_paper_execution_execution_id_required")
+    if not plan_id:
+        raise ValueError("execution_adapter_paper_execution_reload_plan_id_required")
+    if not binding_id:
+        raise ValueError("execution_adapter_paper_execution_binding_id_required")
+    if not materialization_id:
+        raise ValueError("execution_adapter_paper_execution_materialization_id_required")
+    if not ops_adapter_id:
+        raise ValueError("execution_adapter_paper_execution_adapter_id_required")
+    if requested_adapter_id != ops_adapter_id:
+        raise ValueError("execution_adapter_paper_execution_adapter_mismatch")
+    if not market:
+        raise ValueError("execution_adapter_paper_execution_market_required")
+    if route not in {"paper", "live"}:
+        raise ValueError("execution_adapter_paper_execution_route_invalid")
+    if not normalized_paper_execution_mode:
+        raise ValueError("execution_adapter_paper_execution_mode_required")
+    if not required_env_vars:
+        raise ValueError("execution_adapter_paper_execution_required_env_vars_required")
+
+    order_intent = _redact_secret_fields(
+        adapter_ops_state.get("orderIntent") if isinstance(adapter_ops_state.get("orderIntent"), dict) else {}
+    )
+    lifecycle_steps = [
+        _redact_secret_fields(item)
+        for item in adapter_ops_state.get("lifecycleSteps", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+    runbook_steps = [
+        _redact_secret_fields(item)
+        for item in adapter_ops_state.get("runbookSteps", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+    ops_steps = [
+        _redact_secret_fields(item)
+        for item in adapter_ops_state.get("opsSteps", [])
+        if isinstance(item, dict) and str(item.get("id") or "").strip()
+    ]
+
+    blocked_reasons = []
+    required_confirmations = []
+    for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_paper_execution_specs():
+        confirmed = bool(confirmations.get(payload_key))
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmed else "missing",
+            }
+        )
+        if not confirmed:
+            blocked_reasons.append(blocked_reason)
+
+    if str(adapter_ops_state.get("status") or "") != "ops_state_recorded":
+        blocked_reasons.append("adapter_paper_execution_ops_state_not_recorded")
+    if (
+        bool(adapter_ops_state.get("orderSubmitted"))
+        or bool(adapter_ops_state.get("liveOrderSubmitted"))
+        or bool(adapter_ops_state.get("routeExecuted"))
+    ):
+        blocked_reasons.append("adapter_paper_execution_prior_route_or_order_execution_detected")
+    if bool(adapter_ops_state.get("liveTradingAllowed")):
+        blocked_reasons.append("adapter_paper_execution_live_trading_enabled_detected")
+    if not _sandbox_order_schema_intent_is_valid(order_intent):
+        blocked_reasons.append("adapter_paper_execution_order_intent_invalid")
+
+    recorded = _coerce_optional_datetime(
+        recorded_at,
+        error_code="execution_adapter_paper_execution_recorded_at_invalid",
+        fallback=datetime.now(timezone.utc),
+    )
+    unique_blocked_reasons = list(dict.fromkeys(blocked_reasons))
+    paper_execution_id = str(
+        adapter_paper_execution_id
+        or f"execution-adapter-paper-execution-{adapter_ops_state_id}-{uuid4()}"
+    )
+    return ExecutionAdapterPaperExecutionResult(
+        adapter_paper_execution_id=paper_execution_id,
+        adapter_ops_state_id=adapter_ops_state_id,
+        paper_route_runbook_id=paper_route_runbook_id,
+        paper_order_lifecycle_id=paper_order_lifecycle_id,
+        sandbox_order_schema_dry_run_id=schema_dry_run_id,
+        production_route_review_id=production_route_review_id,
+        sandbox_probe_review_id=sandbox_probe_review_id,
+        sandbox_probe_execution_id=sandbox_probe_execution_id,
+        sandbox_probe_plan_id=sandbox_probe_plan_id,
+        human_confirmation_id=human_confirmation_id,
+        orchestration_execution_id=orchestration_execution_id,
+        dry_run_id=orchestration_dry_run_id,
+        acceptance_id=acceptance_id,
+        execution_id=execution_id,
+        plan_id=plan_id,
+        binding_id=binding_id,
+        materialization_id=materialization_id,
+        manifest_validation_id=manifest_validation_id,
+        adapter_id=ops_adapter_id,
+        market=market,
+        route=route,
+        status="blocked" if unique_blocked_reasons else "paper_execution_recorded",
+        operator=str(operator or "local-operator").strip() or "local-operator",
+        recorded_at=recorded or datetime.now(timezone.utc),
+        paper_execution_mode=normalized_paper_execution_mode,
+        ops_mode=ops_mode,
+        runbook_mode=runbook_mode,
+        lifecycle_mode=lifecycle_mode,
+        dry_run_mode=dry_run_mode,
+        review_mode=review_mode,
+        sandbox_review_mode=sandbox_review_mode,
+        probe_execution_mode=probe_execution_mode,
+        probe_mode=probe_mode,
+        confirmation_mode=confirmation_mode,
+        orchestration_execution_mode=orchestration_execution_mode,
+        orchestration_mode=orchestration_mode,
+        acceptance_mode=acceptance_mode,
+        execution_mode=execution_mode,
+        reload_mode=reload_mode,
+        maintenance_window_id=maintenance_window_id,
+        binding_mode=binding_mode,
+        manifest_path=manifest_path,
+        required_env_vars=required_env_vars,
+        order_intent=order_intent,
+        lifecycle_steps=lifecycle_steps,
+        runbook_steps=runbook_steps,
+        ops_steps=ops_steps,
+        paper_execution_steps=_execution_adapter_paper_execution_steps(
+            "blocked" if unique_blocked_reasons else "recorded"
+        ),
+        simulated_fill=_execution_adapter_paper_execution_simulated_fill(
+            order_intent,
+            adapter_paper_execution_id=paper_execution_id,
+            blocked=bool(unique_blocked_reasons),
+        ),
+        required_confirmations=required_confirmations,
+        blocked_reasons=unique_blocked_reasons,
+        metadata=_redact_secret_fields(metadata or {}),
+        live_trading_allowed=False,
+    )
+
+
+def execution_adapter_paper_execution_to_payload(
+    result: ExecutionAdapterPaperExecutionResult,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "adapterPaperExecutionId": result.adapter_paper_execution_id,
+        "adapterOpsStateId": result.adapter_ops_state_id,
+        "paperRouteRunbookId": result.paper_route_runbook_id,
+        "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+        "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+        "productionRouteReviewId": result.production_route_review_id,
+        "sandboxProbeReviewId": result.sandbox_probe_review_id,
+        "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+        "sandboxProbePlanId": result.sandbox_probe_plan_id,
+        "humanConfirmationId": result.human_confirmation_id,
+        "orchestrationExecutionId": result.orchestration_execution_id,
+        "dryRunId": result.dry_run_id,
+        "acceptanceId": result.acceptance_id,
+        "executionId": result.execution_id,
+        "planId": result.plan_id,
+        "bindingId": result.binding_id,
+        "materializationId": result.materialization_id,
+        "manifestValidationId": result.manifest_validation_id,
+        "adapterId": result.adapter_id,
+        "market": result.market,
+        "route": result.route,
+        "status": result.status,
+        "operator": result.operator,
+        "recordedAt": result.recorded_at.isoformat(),
+        "paperExecutionMode": result.paper_execution_mode,
+        "opsMode": result.ops_mode,
+        "runbookMode": result.runbook_mode,
+        "lifecycleMode": result.lifecycle_mode,
+        "dryRunMode": result.dry_run_mode,
+        "reviewMode": result.review_mode,
+        "sandboxReviewMode": result.sandbox_review_mode,
+        "probeExecutionMode": result.probe_execution_mode,
+        "probeMode": result.probe_mode,
+        "confirmationMode": result.confirmation_mode,
+        "orchestrationExecutionMode": result.orchestration_execution_mode,
+        "orchestrationMode": result.orchestration_mode,
+        "acceptanceMode": result.acceptance_mode,
+        "executionMode": result.execution_mode,
+        "reloadMode": result.reload_mode,
+        "maintenanceWindowId": result.maintenance_window_id,
+        "bindingMode": result.binding_mode,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVars": list(result.required_env_vars),
+        "orderIntent": result.order_intent,
+        "lifecycleSteps": result.lifecycle_steps,
+        "runbookSteps": result.runbook_steps,
+        "opsSteps": result.ops_steps,
+        "paperExecutionSteps": result.paper_execution_steps,
+        "simulatedFill": result.simulated_fill,
+        "paperFillRecorded": result.status == "paper_execution_recorded",
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "requiredConfirmations": result.required_confirmations,
+        "blockedReasons": result.blocked_reasons,
+        "metadata": result.metadata,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_paper_execution_payload_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "execution_adapter_paper_execution":
+        return None
+    metadata = getattr(event, "metadata", {})
+    if not isinstance(metadata, dict):
+        return None
+    adapter_paper_execution_id = str(
+        metadata.get("adapterPaperExecutionId") or getattr(event, "event_id", "")
+    ).strip()
+    adapter_ops_state_id = str(metadata.get("adapterOpsStateId") or "").strip()
+    adapter_id = str(metadata.get("adapterId") or "").strip()
+    manifest_validation_id = str(metadata.get("manifestValidationId") or "").strip()
+    status = str(metadata.get("status") or "").strip()
+    route = str(metadata.get("route") or "").strip()
+    if not adapter_paper_execution_id or not adapter_ops_state_id or not adapter_id:
+        return None
+    if status not in {"blocked", "paper_execution_recorded"} or route not in {"paper", "live"}:
+        return None
+
+    confirmed_ids = {
+        str(item)
+        for item in metadata.get("confirmedConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_ids = {
+        str(item)
+        for item in metadata.get("requiredConfirmationIds", [])
+        if isinstance(item, str) and item.strip()
+    }
+    required_confirmations = []
+    for confirmation_id, _payload_key, label, _blocked_reason in _execution_adapter_paper_execution_specs():
+        if required_ids and confirmation_id not in required_ids:
+            continue
+        required_confirmations.append(
+            {
+                "id": confirmation_id,
+                "label": label,
+                "status": "confirmed" if confirmation_id in confirmed_ids else "missing",
+            }
+        )
+    recorded_at = getattr(event, "created_at", None)
+    recorded_at_value = (
+        recorded_at.isoformat() if isinstance(recorded_at, datetime) else datetime.now(timezone.utc).isoformat()
+    )
+    order_intent = metadata.get("orderIntent") if isinstance(metadata.get("orderIntent"), dict) else {}
+    lifecycle_steps = metadata.get("lifecycleSteps") if isinstance(metadata.get("lifecycleSteps"), list) else []
+    runbook_steps = metadata.get("runbookSteps") if isinstance(metadata.get("runbookSteps"), list) else []
+    ops_steps = metadata.get("opsSteps") if isinstance(metadata.get("opsSteps"), list) else []
+    paper_execution_steps = (
+        metadata.get("paperExecutionSteps") if isinstance(metadata.get("paperExecutionSteps"), list) else []
+    )
+    simulated_fill = metadata.get("simulatedFill") if isinstance(metadata.get("simulatedFill"), dict) else {}
+
+    return {
+        "schemaVersion": 1,
+        "adapterPaperExecutionId": adapter_paper_execution_id,
+        "adapterOpsStateId": adapter_ops_state_id,
+        "paperRouteRunbookId": str(metadata.get("paperRouteRunbookId") or "").strip(),
+        "paperOrderLifecycleId": str(metadata.get("paperOrderLifecycleId") or "").strip(),
+        "sandboxOrderSchemaDryRunId": str(metadata.get("sandboxOrderSchemaDryRunId") or "").strip(),
+        "productionRouteReviewId": str(metadata.get("productionRouteReviewId") or "").strip(),
+        "sandboxProbeReviewId": str(metadata.get("sandboxProbeReviewId") or "").strip(),
+        "sandboxProbeExecutionId": str(metadata.get("sandboxProbeExecutionId") or "").strip(),
+        "sandboxProbePlanId": str(metadata.get("sandboxProbePlanId") or "").strip(),
+        "humanConfirmationId": str(metadata.get("humanConfirmationId") or "").strip(),
+        "orchestrationExecutionId": str(metadata.get("orchestrationExecutionId") or "").strip(),
+        "dryRunId": str(metadata.get("dryRunId") or "").strip(),
+        "acceptanceId": str(metadata.get("acceptanceId") or "").strip(),
+        "executionId": str(metadata.get("executionId") or "").strip(),
+        "planId": str(metadata.get("planId") or "").strip(),
+        "bindingId": str(metadata.get("bindingId") or "").strip(),
+        "materializationId": str(metadata.get("materializationId") or "").strip(),
+        "manifestValidationId": manifest_validation_id,
+        "adapterId": adapter_id,
+        "market": str(metadata.get("market") or "").strip(),
+        "route": route,
+        "status": status,
+        "operator": str(metadata.get("operator") or "local-operator").strip() or "local-operator",
+        "recordedAt": recorded_at_value,
+        "paperExecutionMode": str(metadata.get("paperExecutionMode") or "manual_adapter_paper_execution").strip(),
+        "opsMode": str(metadata.get("opsMode") or "manual_adapter_ops_state").strip(),
+        "runbookMode": str(metadata.get("runbookMode") or "").strip(),
+        "lifecycleMode": str(metadata.get("lifecycleMode") or "").strip(),
+        "dryRunMode": str(metadata.get("dryRunMode") or "").strip(),
+        "reviewMode": str(metadata.get("reviewMode") or "").strip(),
+        "sandboxReviewMode": str(metadata.get("sandboxReviewMode") or "").strip(),
+        "probeExecutionMode": str(metadata.get("probeExecutionMode") or "").strip(),
+        "probeMode": str(metadata.get("probeMode") or "").strip(),
+        "confirmationMode": str(metadata.get("confirmationMode") or "").strip(),
+        "orchestrationExecutionMode": str(metadata.get("orchestrationExecutionMode") or "").strip(),
+        "orchestrationMode": str(metadata.get("orchestrationMode") or "").strip(),
+        "acceptanceMode": str(metadata.get("acceptanceMode") or "").strip(),
+        "executionMode": str(metadata.get("executionMode") or "").strip(),
+        "reloadMode": str(metadata.get("reloadMode") or "").strip(),
+        "maintenanceWindowId": str(metadata.get("maintenanceWindowId") or "").strip(),
+        "bindingMode": str(metadata.get("bindingMode") or "").strip(),
+        "manifestPath": str(metadata.get("manifestPath") or "").strip(),
+        "requiredEnvVars": [
+            str(name).strip()
+            for name in metadata.get("requiredEnvVars", [])
+            if isinstance(name, str) and name.strip()
+        ],
+        "orderIntent": _redact_secret_fields(order_intent),
+        "lifecycleSteps": [
+            _redact_secret_fields(item)
+            for item in lifecycle_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "runbookSteps": [
+            _redact_secret_fields(item)
+            for item in runbook_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "opsSteps": [
+            _redact_secret_fields(item)
+            for item in ops_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "paperExecutionSteps": [
+            _redact_secret_fields(item)
+            for item in paper_execution_steps
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ],
+        "simulatedFill": _redact_secret_fields(simulated_fill),
+        "paperFillRecorded": status == "paper_execution_recorded",
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "requiredConfirmations": required_confirmations,
+        "blockedReasons": [
+            str(reason)
+            for reason in metadata.get("blockedReasons", [])
+            if isinstance(reason, str) and reason.strip()
+        ],
+        "metadata": _redact_secret_fields(metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}),
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+
+
+def execution_adapter_paper_execution_to_audit_event_payload(
+    result: ExecutionAdapterPaperExecutionResult,
+) -> dict[str, Any]:
+    status_label = "blocked" if result.status == "blocked" else "recorded"
+    return {
+        "schemaVersion": 1,
+        "eventId": result.adapter_paper_execution_id,
+        "eventType": "execution_adapter_paper_execution",
+        "runId": "",
+        "createdAt": result.recorded_at.isoformat(),
+        "stage": "execution-adapter-paper-execution",
+        "source": "execution-adapter-ledger",
+        "summary": f"{result.adapter_id} adapter paper execution {status_label} as {result.status}.",
+        "detail": "Adapter paper execution records local simulated fill evidence only; no live route or order submission is allowed.",
+        "metadata": _redact_secret_fields(
+            {
+                "adapterPaperExecutionId": result.adapter_paper_execution_id,
+                "adapterOpsStateId": result.adapter_ops_state_id,
+                "paperRouteRunbookId": result.paper_route_runbook_id,
+                "paperOrderLifecycleId": result.paper_order_lifecycle_id,
+                "sandboxOrderSchemaDryRunId": result.sandbox_order_schema_dry_run_id,
+                "productionRouteReviewId": result.production_route_review_id,
+                "sandboxProbeReviewId": result.sandbox_probe_review_id,
+                "sandboxProbeExecutionId": result.sandbox_probe_execution_id,
+                "sandboxProbePlanId": result.sandbox_probe_plan_id,
+                "humanConfirmationId": result.human_confirmation_id,
+                "orchestrationExecutionId": result.orchestration_execution_id,
+                "dryRunId": result.dry_run_id,
+                "acceptanceId": result.acceptance_id,
+                "executionId": result.execution_id,
+                "planId": result.plan_id,
+                "bindingId": result.binding_id,
+                "materializationId": result.materialization_id,
+                "manifestValidationId": result.manifest_validation_id,
+                "adapterId": result.adapter_id,
+                "market": result.market,
+                "route": result.route,
+                "status": result.status,
+                "operator": result.operator,
+                "recordedAt": result.recorded_at.isoformat(),
+                "paperExecutionMode": result.paper_execution_mode,
+                "opsMode": result.ops_mode,
+                "runbookMode": result.runbook_mode,
+                "lifecycleMode": result.lifecycle_mode,
+                "dryRunMode": result.dry_run_mode,
+                "reviewMode": result.review_mode,
+                "sandboxReviewMode": result.sandbox_review_mode,
+                "probeExecutionMode": result.probe_execution_mode,
+                "probeMode": result.probe_mode,
+                "confirmationMode": result.confirmation_mode,
+                "orchestrationExecutionMode": result.orchestration_execution_mode,
+                "orchestrationMode": result.orchestration_mode,
+                "acceptanceMode": result.acceptance_mode,
+                "executionMode": result.execution_mode,
+                "reloadMode": result.reload_mode,
+                "maintenanceWindowId": result.maintenance_window_id,
+                "bindingMode": result.binding_mode,
+                "manifestPath": result.manifest_path,
+                "requiredEnvVars": list(result.required_env_vars),
+                "orderIntent": result.order_intent,
+                "lifecycleSteps": result.lifecycle_steps,
+                "runbookSteps": result.runbook_steps,
+                "opsSteps": result.ops_steps,
+                "paperExecutionSteps": result.paper_execution_steps,
+                "simulatedFill": result.simulated_fill,
+                "paperFillRecorded": result.status == "paper_execution_recorded",
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "blockedReasons": result.blocked_reasons,
+                "requiredConfirmationIds": [item["id"] for item in result.required_confirmations],
+                "confirmedConfirmationIds": [
+                    item["id"] for item in result.required_confirmations if item.get("status") == "confirmed"
+                ],
+                "metadata": result.metadata,
+                "liveTradingAllowed": False,
+                "paperOnly": True,
+            }
+        ),
+    }
+
+
+def _execution_adapter_ops_state_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "paper-route-runbook-accepted",
+            "paperRouteRunbookAccepted",
+            "Paper route runbook was accepted as ops input",
+            "adapter_ops_paper_route_runbook_not_accepted",
+        ),
+        (
+            "monitoring-channel-ready",
+            "monitoringChannelReady",
+            "Monitoring channel is ready",
+            "adapter_ops_monitoring_channel_missing",
+        ),
+        (
+            "kill-switch-drill-recorded",
+            "killSwitchDrillRecorded",
+            "Kill-switch drill was recorded",
+            "adapter_ops_kill_switch_drill_missing",
+        ),
+        (
+            "paper-account-reconciled",
+            "paperAccountReconciled",
+            "Paper account was reconciled",
+            "adapter_ops_paper_account_reconciliation_missing",
+        ),
+        (
+            "operator-confirmed-live-trading-disabled",
+            "operatorConfirmedLiveTradingDisabled",
+            "Operator confirmed live trading remains disabled",
+            "adapter_ops_live_trading_disabled_boundary_missing",
+        ),
+    ]
+
+
+def _execution_adapter_ops_state_steps(status: str) -> list[dict[str, Any]]:
+    normalized_status = "recorded" if status == "recorded" else "blocked"
+    return [
+        {"id": "paper-route-runbook-linked", "label": "Paper route runbook linked", "status": normalized_status},
+        {"id": "monitoring-channel-ready", "label": "Monitoring channel ready", "status": normalized_status},
+        {"id": "kill-switch-drill-recorded", "label": "Kill-switch drill recorded", "status": normalized_status},
+        {"id": "paper-account-reconciled", "label": "Paper account reconciled", "status": normalized_status},
+    ]
+
+
+def _execution_adapter_paper_execution_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "ops-state-accepted",
+            "opsStateAccepted",
+            "Adapter ops state was accepted as paper execution input",
+            "adapter_paper_execution_ops_state_not_accepted",
+        ),
+        (
+            "paper-account-synced",
+            "paperAccountSynced",
+            "Paper account snapshot was synced",
+            "adapter_paper_execution_account_not_synced",
+        ),
+        (
+            "risk-budget-bound",
+            "riskBudgetBound",
+            "Risk budget was bound before paper fill",
+            "adapter_paper_execution_risk_budget_not_bound",
+        ),
+        (
+            "simulated-fill-generated",
+            "simulatedFillGenerated",
+            "Simulated fill was generated locally",
+            "adapter_paper_execution_fill_not_generated",
+        ),
+        (
+            "operator-confirmed-no-live-routing",
+            "operatorConfirmedNoLiveRouting",
+            "Operator confirmed no live route was touched",
+            "adapter_paper_execution_no_live_route_boundary_missing",
+        ),
+    ]
+
+
+def _execution_adapter_paper_execution_steps(status: str) -> list[dict[str, Any]]:
+    normalized_status = "recorded" if status == "recorded" else "blocked"
+    return [
+        {"id": "ops-state-linked", "label": "Adapter ops state linked", "status": normalized_status},
+        {"id": "paper-account-synced", "label": "Paper account synced", "status": normalized_status},
+        {"id": "risk-budget-bound", "label": "Risk budget bound", "status": normalized_status},
+        {"id": "simulated-fill-recorded", "label": "Simulated fill recorded", "status": normalized_status},
+    ]
+
+
+def _execution_adapter_paper_execution_simulated_fill(
+    order_intent: dict[str, Any],
+    *,
+    adapter_paper_execution_id: str,
+    blocked: bool,
+) -> dict[str, Any]:
+    return _redact_secret_fields(
+        {
+            "fillId": f"paper-fill-{adapter_paper_execution_id}",
+            "status": "blocked" if blocked else "filled",
+            "symbol": str(order_intent.get("symbol") or "").strip(),
+            "side": str(order_intent.get("side") or "").strip(),
+            "type": str(order_intent.get("type") or "").strip(),
+            "quantity": order_intent.get("quantity"),
+            "price": order_intent.get("price"),
+            "timeInForce": str(order_intent.get("timeInForce") or "").strip(),
+            "source": "local-paper-ledger",
+            "orderSubmitted": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+        }
+    )
+
+
+def _execution_adapter_paper_order_lifecycle_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "schema-dry-run-accepted",
+            "schemaDryRunAccepted",
+            "Sandbox order schema dry-run was accepted as lifecycle input",
+            "paper_order_lifecycle_schema_dry_run_not_accepted",
+        ),
+        (
+            "paper-router-locked",
+            "paperRouterLocked",
+            "Paper router remained locked to local simulation",
+            "paper_order_lifecycle_router_not_locked",
+        ),
+        (
+            "risk-limits-bound",
+            "riskLimitsBound",
+            "Risk limits were bound before paper lifecycle",
+            "paper_order_lifecycle_risk_limits_not_bound",
+        ),
+        (
+            "simulated-lifecycle-generated",
+            "simulatedLifecycleGenerated",
+            "Simulated lifecycle was generated without routing",
+            "paper_order_lifecycle_not_generated",
+        ),
+        (
+            "operator-confirmed-no-live-order-submitted",
+            "operatorConfirmedNoLiveOrderSubmitted",
+            "Operator confirmed no live order was submitted",
+            "paper_order_lifecycle_no_live_order_boundary_missing",
+        ),
+    ]
+
+
+def _execution_adapter_paper_order_lifecycle_steps(status: str) -> list[dict[str, Any]]:
+    normalized_status = "recorded" if status == "recorded" else "blocked"
+    return [
+        {"id": "intent-validated", "label": "Order intent validated", "status": normalized_status},
+        {"id": "paper-router-locked", "label": "Paper router locked", "status": normalized_status},
+        {"id": "risk-limits-bound", "label": "Risk limits bound", "status": normalized_status},
+        {"id": "simulated-lifecycle-recorded", "label": "Simulated lifecycle recorded", "status": normalized_status},
+    ]
+
+
+def _execution_adapter_sandbox_order_schema_dry_run_specs() -> list[tuple[str, str, str, str]]:
+    return [
+        (
+            "production-route-review-accepted",
+            "productionRouteReviewAccepted",
+            "Production route review was accepted as schema dry-run input",
+            "sandbox_order_schema_dry_run_route_review_not_accepted",
+        ),
+        (
+            "health-probe-bound",
+            "healthProbeBound",
+            "Latest sandbox health probe was bound before schema dry-run",
+            "sandbox_order_schema_dry_run_health_probe_not_bound",
+        ),
+        (
+            "order-intent-schema-validated",
+            "orderIntentSchemaValidated",
+            "Order intent schema was validated without submission",
+            "sandbox_order_schema_dry_run_order_intent_not_validated",
+        ),
+        (
+            "sandbox-endpoint-still-locked",
+            "sandboxEndpointStillLocked",
+            "Sandbox/testnet endpoint remains locked",
+            "sandbox_order_schema_dry_run_endpoint_not_locked",
+        ),
+        (
+            "operator-confirmed-no-order-submitted",
+            "operatorConfirmedNoOrderSubmitted",
+            "Operator confirmed no sandbox, paper, or live order was submitted",
+            "sandbox_order_schema_dry_run_no_order_boundary_missing",
+        ),
+    ]
+
+
+def _sandbox_order_schema_intent_is_valid(order_intent: dict[str, Any]) -> bool:
+    symbol = str(order_intent.get("symbol") or "").strip()
+    side = str(order_intent.get("side") or "").strip().lower()
+    order_type = str(order_intent.get("type") or "").strip().lower()
+    quantity = order_intent.get("quantity")
+    price = order_intent.get("price")
+    return (
+        bool(symbol)
+        and side in {"buy", "sell"}
+        and bool(order_type)
+        and isinstance(quantity, (int, float))
+        and not isinstance(quantity, bool)
+        and math.isfinite(float(quantity))
+        and float(quantity) > 0
+        and (
+            order_type == "market"
+            or (
+                isinstance(price, (int, float))
+                and not isinstance(price, bool)
+                and math.isfinite(float(price))
+                and float(price) > 0
+            )
+        )
+    )
 
 
 def portfolio_paper_order_approvals_to_map(
@@ -7243,6 +10711,12 @@ def portfolio_paper_order_simulation_to_audit_event_payload(
             "fillStatus": simulation.fill_status,
             "approvalState": lifecycle_row.get("state"),
             "approvedBy": simulation.approved_by,
+            "routeRiskStatus": simulation.route_risk.get("status"),
+            "routeRiskBlockedReasons": simulation.route_risk.get("blockedReasons", []),
+            "routeRisk": simulation.route_risk,
+            "adapterPaperExecutionId": simulation.adapter_paper_execution_id,
+            "adapterManifestValidationId": simulation.adapter_manifest_validation_id,
+            "adapterPaperExecutionEvidence": simulation.adapter_paper_execution_evidence,
             "paperOnly": True,
             "liveExecutionBlocked": True,
         },
@@ -7450,7 +10924,16 @@ def paper_execution_payload_to_record(payload: dict[str, Any]) -> PaperExecution
         ),
         orders=[_payload_to_order(order) for order in orders_payload],
         gates=_normalize_gates(gates_payload),
+        preparation_evidence=dict(payload["preparationEvidence"])
+        if isinstance(payload.get("preparationEvidence"), dict)
+        else None,
     )
+
+
+def _paper_preparation_evidence_from_audit(audit: Any) -> dict[str, Any] | None:
+    snapshot = getattr(audit, "data_snapshot", None)
+    preparation_evidence = snapshot.get("preparationEvidence") if isinstance(snapshot, dict) else None
+    return dict(preparation_evidence) if isinstance(preparation_evidence, dict) else None
 
 
 def _latest_close(audit: Any) -> float:
@@ -7554,6 +11037,7 @@ def _count_label(count: int, singular: str) -> str:
 
 def _row_to_paper_execution(row: sqlite3.Row | tuple[Any, ...]) -> PaperExecutionRecord:
     account_payload = json.loads(row[4])
+    preparation_evidence = json.loads(row[7]) if len(row) > 7 and row[7] else None
     return PaperExecutionRecord(
         execution_id=row[0],
         run_id=row[1],
@@ -7566,6 +11050,7 @@ def _row_to_paper_execution(row: sqlite3.Row | tuple[Any, ...]) -> PaperExecutio
         ),
         orders=[_payload_to_order(order) for order in json.loads(row[5])],
         gates=_normalize_gates(json.loads(row[6])),
+        preparation_evidence=dict(preparation_evidence) if isinstance(preparation_evidence, dict) else None,
     )
 
 
@@ -7612,6 +11097,14 @@ def _row_to_portfolio_paper_order_approval(row: sqlite3.Row | tuple[Any, ...]) -
     )
 
 
+def _json_object_from_text(value: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
 def _row_to_portfolio_paper_order_simulation(row: sqlite3.Row | tuple[Any, ...]) -> PortfolioPaperOrderSimulation:
     return PortfolioPaperOrderSimulation(
         simulation_id=str(row[0]),
@@ -7630,6 +11123,10 @@ def _row_to_portfolio_paper_order_simulation(row: sqlite3.Row | tuple[Any, ...])
         fill_status=str(row[13]),
         reason=str(row[14]),
         approved_by=str(row[15]).strip() if row[15] is not None else None,
+        route_risk=_json_object_from_text(str(row[16]) if len(row) > 16 else "{}"),
+        adapter_paper_execution_id=str(row[17]).strip() if len(row) > 17 and row[17] is not None else "",
+        adapter_manifest_validation_id=str(row[18]).strip() if len(row) > 18 and row[18] is not None else "",
+        adapter_paper_execution_evidence=_json_object_from_text(str(row[19]) if len(row) > 19 else "{}"),
     )
 
 

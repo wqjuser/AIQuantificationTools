@@ -31,6 +31,7 @@ import {
   buildPortfolioPaperOrdersUrl,
   buildPortfolioPaperOrderReplayUrl,
   buildPortfolioPaperOrderStateHistoryUrl,
+  buildPortfolioPaperOrderBatchSimulationsUrl,
   buildPortfolioPaperOrderSimulationsUrl,
   buildAuditEventsUrl,
   buildAuditReportSignUrl,
@@ -59,6 +60,8 @@ import {
   buildExecutionAdapterControlledRestartEvidenceUrl,
   buildExecutionAdapterRestartAcceptanceHistoryUrl,
   buildExecutionAdapterRestartAcceptanceUrl,
+  buildExecutionAdapterSecretManifestValidationHistoryUrl,
+  buildExecutionAdapterSecretManifestValidationUrl,
   buildExecutionAdapterSecretMaterializationHistoryUrl,
   buildExecutionAdapterSecretMaterializationUrl,
   buildExecutionAdapterEnvironmentBindingHistoryUrl,
@@ -79,6 +82,16 @@ import {
   buildExecutionAdapterSandboxProbeReviewUrl,
   buildExecutionAdapterProductionRouteReviewHistoryUrl,
   buildExecutionAdapterProductionRouteReviewUrl,
+  buildExecutionAdapterPaperOrderLifecycleHistoryUrl,
+  buildExecutionAdapterPaperOrderLifecycleUrl,
+  buildExecutionAdapterPaperExecutionHistoryUrl,
+  buildExecutionAdapterPaperExecutionUrl,
+  buildExecutionAdapterOpsStateHistoryUrl,
+  buildExecutionAdapterOpsStateUrl,
+  buildExecutionAdapterPaperRouteRunbookHistoryUrl,
+  buildExecutionAdapterPaperRouteRunbookUrl,
+  buildExecutionAdapterSandboxOrderSchemaDryRunHistoryUrl,
+  buildExecutionAdapterSandboxOrderSchemaDryRunUrl,
   buildExecutionAdapterHealthProbeUrl,
   buildExecutionAdapterRuntimeReloadExecutionHistoryUrl,
   buildExecutionAdapterRuntimeReloadExecutionUrl,
@@ -115,6 +128,7 @@ import {
   loadExecutionAdapterCertificationApplies,
   loadExecutionAdapterControlledRestartEvidence,
   loadExecutionAdapterRestartAcceptances,
+  loadExecutionAdapterSecretManifestValidations,
   loadExecutionAdapterSecretMaterializations,
   loadExecutionAdapterEnvironmentBindings,
   loadExecutionAdapterRuntimeReloadAcceptances,
@@ -125,6 +139,11 @@ import {
   loadExecutionAdapterSandboxProbePlans,
   loadExecutionAdapterSandboxProbeReviews,
   loadExecutionAdapterProductionRouteReviews,
+  loadExecutionAdapterPaperOrderLifecycles,
+  loadExecutionAdapterPaperExecutions,
+  loadExecutionAdapterOpsStates,
+  loadExecutionAdapterPaperRouteRunbooks,
+  loadExecutionAdapterSandboxOrderSchemaDryRuns,
   loadExecutionAdapterHealthProbe,
   loadExecutionAdapterRuntimeReloadExecutions,
   loadExecutionAdapterRuntimeReloadPlans,
@@ -133,11 +152,13 @@ import {
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   recordPortfolioPaperOrderApproval,
+  recordPortfolioPaperOrderBatchSimulation,
   recordPortfolioPaperOrderSimulation,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
   recordExecutionAdapterControlledRestartEvidence,
   recordExecutionAdapterRestartAcceptance,
+  recordExecutionAdapterSecretManifestValidation,
   recordExecutionAdapterSecretMaterialization,
   recordExecutionAdapterEnvironmentBinding,
   recordExecutionAdapterRuntimeReloadAcceptance,
@@ -148,6 +169,11 @@ import {
   recordExecutionAdapterSandboxProbePlan,
   recordExecutionAdapterSandboxProbeReview,
   recordExecutionAdapterProductionRouteReview,
+  recordExecutionAdapterPaperOrderLifecycle,
+  recordExecutionAdapterPaperExecution,
+  recordExecutionAdapterOpsState,
+  recordExecutionAdapterPaperRouteRunbook,
+  recordExecutionAdapterSandboxOrderSchemaDryRun,
   recordExecutionAdapterRuntimeReloadExecution,
   recordExecutionAdapterRuntimeReloadPlan,
   recordExecutionAdapterSecretReference,
@@ -750,10 +776,11 @@ describe("terminal workspace API client", () => {
     expect(
       buildExecutionAdapterHealthProbeUrl("http://127.0.0.1:8765/", {
         adapterId: "ccxt live/1",
-        exchange: "binance-usdm"
+        exchange: "binance-usdm",
+        productionRouteReviewId: "execution-adapter-production-route-review/1"
       })
     ).toBe(
-      "http://127.0.0.1:8765/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt+live%2F1&exchange=binance-usdm"
+      "http://127.0.0.1:8765/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt+live%2F1&exchange=binance-usdm&productionRouteReviewId=execution-adapter-production-route-review%2F1"
     );
   });
 
@@ -1193,6 +1220,87 @@ describe("terminal workspace API client", () => {
     expect(calls[1].url).toBe("/api/portfolio/paper-orders?baseRunId=portfolio-run-1&limit=20");
   });
 
+  test("reuses an existing portfolio paper order batch when the core reports a duplicate", async () => {
+    const order = {
+      timestamp: "2026-05-27T08:00:00+00:00",
+      eventType: "portfolio_paper_order" as const,
+      orderId: "portfolio-paper-run-a-buy",
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy" as const,
+      notionalValue: 2400,
+      quantity: 2400,
+      status: "pending_review" as const,
+      riskStatus: "review" as const,
+      reason: "Duplicate clicks should reuse the existing batch."
+    };
+    const existingBatch = {
+      batchId: "portfolio-paper-batch-existing",
+      baseRunId: "portfolio-run-1",
+      portfolioName: "A-share core basket",
+      createdAt: "2026-05-27T08:05:00+00:00",
+      mode: "portfolio_paper_order_review" as const,
+      source: "portfolio_backtest",
+      summary: {
+        totalOrders: 1,
+        totalNotionalValue: 2400,
+        statusCounts: { pending_review: 1 },
+        riskStatusCounts: { review: 1 }
+      },
+      orders: [order]
+    };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-existing",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy" as const,
+        quantity: 2400,
+        notionalValue: 2400,
+        originalStatus: "pending_review" as const,
+        riskStatus: "review" as const,
+        state: "awaiting_operator_review" as const,
+        routable: false,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: null,
+        reviewedAt: null,
+        reason: "portfolio paper order candidate requires operator review before staging"
+      }
+    ];
+    const fetcher = async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: "portfolio_paper_order_batch_already_recorded",
+        detail: "portfolio-paper-batch-existing",
+        existingBatch,
+        portfolioPaperOrderLifecycle: lifecycle
+      })
+    });
+
+    const result = await recordPortfolioPaperOrderBatch(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orders: [order]
+      },
+      fetcher
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.error).toBeUndefined();
+    expect(result.batch?.batchId).toBe("portfolio-paper-batch-existing");
+    expect(result.lifecycle?.map((row) => `${row.orderId}:${row.state}`)).toEqual([
+      "portfolio-paper-run-a-buy:awaiting_operator_review"
+    ]);
+    expect(result.auditEvent).toBeUndefined();
+  });
+
   test("records and loads portfolio paper order approvals from the Python core", async () => {
     const approval = {
       approvalId: "portfolio-paper-order-approval-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
@@ -1307,6 +1415,95 @@ describe("terminal workspace API client", () => {
     );
   });
 
+  test("returns current approvals and lifecycle when portfolio paper order approval is locked after simulation", async () => {
+    const approval = {
+      approvalId: "portfolio-paper-order-approval-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      reviewedAt: "2026-05-27T08:45:00+00:00",
+      approved: true,
+      reviewer: "operator-a",
+      reason: "Approved for paper simulation only."
+    };
+    const simulation = {
+      simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      mode: "portfolio_paper_order_simulation" as const,
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy" as const,
+      quantity: 2400,
+      fillPrice: 9.2,
+      notionalValue: 22080,
+      orderState: "filled" as const,
+      fillStatus: "filled" as const,
+      reason: "Paper-only simulation filled the approved portfolio order.",
+      approvedBy: "operator-a",
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy" as const,
+        quantity: 2400,
+        notionalValue: 22080,
+        originalStatus: "pending_review" as const,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      }
+    ];
+
+    const result = await recordPortfolioPaperOrderApproval(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        approved: false,
+        reviewer: "operator-b",
+        reason: "Attempted reversal after simulated fill."
+      },
+      async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: "portfolio_paper_order_approval_locked_after_simulation",
+          detail: "portfolio-paper-run-a-buy",
+          existingApproval: approval,
+          existingSimulation: simulation,
+          approvals: [approval],
+          portfolioPaperOrderLifecycle: lifecycle
+        })
+      })
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.error).toBe("portfolio_paper_order_approval_locked_after_simulation");
+    expect(result.approval).toBeUndefined();
+    expect(result.approvals).toEqual([approval]);
+    expect(result.existingApproval).toEqual(approval);
+    expect(result.existingSimulation).toEqual(simulation);
+    expect(result.lifecycle?.map((row) => `${row.orderId}:${row.state}`)).toEqual([
+      "portfolio-paper-run-a-buy:ready_for_simulation"
+    ]);
+  });
+
   test("records and loads portfolio paper order simulations from the Python core", async () => {
     const simulation = {
       simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
@@ -1325,6 +1522,20 @@ describe("terminal workspace API client", () => {
       fillStatus: "filled",
       reason: "Paper-only simulation filled the approved portfolio order.",
       approvedBy: "operator-a",
+      routeRisk: {
+        status: "passed",
+        cashAfter: 77920,
+        blockedReasons: []
+      },
+      adapterPaperExecutionId: "execution-adapter-paper-execution-portfolio-simulation",
+      adapterManifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+      adapterPaperExecutionEvidence: {
+        fillSummary: "filled buy 2400 600000 @ 9.2",
+        manifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+        paperFillRecorded: true,
+        liveOrderSubmitted: false,
+        privateKey: "[redacted]"
+      },
       paperOnly: true,
       liveExecutionBlocked: true
     };
@@ -1367,6 +1578,16 @@ describe("terminal workspace API client", () => {
         orderState: "filled",
         fillStatus: "filled",
         approvalState: "ready_for_simulation",
+        routeRiskStatus: "passed",
+        adapterPaperExecutionId: "execution-adapter-paper-execution-portfolio-simulation",
+        adapterManifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+        adapterPaperExecutionEvidence: {
+          fillSummary: "filled buy 2400 600000 @ 9.2",
+          manifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+          paperFillRecorded: true,
+          liveOrderSubmitted: false,
+          privateKey: "[redacted]"
+        },
         paperOnly: true,
         liveExecutionBlocked: true
       }
@@ -1389,7 +1610,22 @@ describe("terminal workspace API client", () => {
         baseRunId: "portfolio-run-1",
         batchId: "portfolio-paper-batch-1",
         orderId: "portfolio-paper-run-a-buy",
-        simulatedAt: "2026-05-27T08:46:00+00:00"
+        simulatedAt: "2026-05-27T08:46:00+00:00",
+        routeRisk: {
+          initialCash: 100000,
+          minCashAfter: 0,
+          maxSymbolNotional: 20000,
+          maxBatchNotional: 60000
+        },
+        adapterPaperExecutionId: "execution-adapter-paper-execution-portfolio-simulation",
+        adapterManifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+        adapterPaperExecutionEvidence: {
+          fillSummary: "filled buy 2400 600000 @ 9.2",
+          manifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+          paperFillRecorded: true,
+          liveOrderSubmitted: false,
+          privateKey: "[redacted]"
+        }
       },
       fetcher
     );
@@ -1403,11 +1639,22 @@ describe("terminal workspace API client", () => {
     expect(recordResult.source).toBe("core");
     expect(recordResult.simulation?.orderState).toBe("filled");
     expect(recordResult.simulation?.fillPrice).toBe(9.2);
+    expect(recordResult.simulation?.routeRisk?.status).toBe("passed");
+    expect(recordResult.simulation?.adapterPaperExecutionId).toBe(
+      "execution-adapter-paper-execution-portfolio-simulation"
+    );
+    expect(recordResult.simulation?.adapterPaperExecutionEvidence?.privateKey).toBe("[redacted]");
     expect(recordResult.lifecycle?.map((row) => row.state)).toEqual(["ready_for_simulation"]);
     expect(recordResult.auditEvent?.metadata.approvalState).toBe("ready_for_simulation");
+    expect(recordResult.auditEvent?.metadata.adapterPaperExecutionId).toBe(
+      "execution-adapter-paper-execution-portfolio-simulation"
+    );
     expect(historyResult.source).toBe("core");
     expect(historyResult.simulations[0].simulationId).toBe(
       "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy"
+    );
+    expect(historyResult.simulations[0].adapterManifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-portfolio-simulation"
     );
     expect(calls[0]).toMatchObject({ url: "/api/portfolio/paper-order-simulations" });
     expect(calls[0].init?.method).toBe("POST");
@@ -1415,11 +1662,341 @@ describe("terminal workspace API client", () => {
       baseRunId: "portfolio-run-1",
       batchId: "portfolio-paper-batch-1",
       orderId: "portfolio-paper-run-a-buy",
-      simulatedAt: "2026-05-27T08:46:00+00:00"
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      routeRisk: {
+        initialCash: 100000,
+        minCashAfter: 0,
+        maxSymbolNotional: 20000,
+        maxBatchNotional: 60000
+      },
+      adapterPaperExecutionId: "execution-adapter-paper-execution-portfolio-simulation",
+      adapterManifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+      adapterPaperExecutionEvidence: {
+        fillSummary: "filled buy 2400 600000 @ 9.2",
+        manifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+        paperFillRecorded: true,
+        liveOrderSubmitted: false,
+        privateKey: "[redacted]"
+      }
     });
     expect(calls[1].url).toBe(
       "/api/portfolio/paper-order-simulations?baseRunId=portfolio-run-1&batchId=portfolio-paper-batch-1"
     );
+  });
+
+  test("rejects portfolio paper order simulation evidence that leaks adapter secrets", async () => {
+    const leakedSimulation = {
+      simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      mode: "portfolio_paper_order_simulation",
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy",
+      quantity: 2400,
+      fillPrice: 9.2,
+      notionalValue: 22080,
+      orderState: "filled",
+      fillStatus: "filled",
+      reason: "Paper-only simulation filled the approved portfolio order.",
+      approvedBy: "operator-a",
+      adapterPaperExecutionId: "execution-adapter-paper-execution-portfolio-simulation",
+      adapterManifestValidationId: "execution-adapter-secret-manifest-validation-portfolio-simulation",
+      adapterPaperExecutionEvidence: {
+        fillSummary: "filled buy 2400 600000 @ 9.2",
+        privateKey: "raw-private-key-should-not-leak"
+      },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const result = await recordPortfolioPaperOrderSimulation(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy"
+      },
+      async () => ({
+        ok: true,
+        json: async () => ({
+          simulation: leakedSimulation,
+          simulations: [leakedSimulation]
+        })
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid portfolio paper order simulation contract");
+    expect(result.simulation).toBeUndefined();
+  });
+
+  test("reuses an existing portfolio paper order simulation when the core reports a duplicate", async () => {
+    const simulation = {
+      simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      mode: "portfolio_paper_order_simulation" as const,
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy" as const,
+      quantity: 2400,
+      fillPrice: 9.2,
+      notionalValue: 22080,
+      orderState: "filled" as const,
+      fillStatus: "filled" as const,
+      reason: "Paper-only simulation filled the approved portfolio order.",
+      approvedBy: "operator-a",
+      routeRisk: { status: "passed", cashAfter: 77920, blockedReasons: [] },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy" as const,
+        quantity: 2400,
+        notionalValue: 22080,
+        originalStatus: "pending_review" as const,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      }
+    ];
+    const fetcher = async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: "portfolio_paper_order_simulation_already_recorded",
+        detail: "portfolio-paper-run-a-buy",
+        existingSimulation: simulation,
+        simulations: [simulation],
+        portfolioPaperOrderLifecycle: lifecycle
+      })
+    });
+
+    const result = await recordPortfolioPaperOrderSimulation(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        simulatedAt: "2026-05-27T08:50:00+00:00"
+      },
+      fetcher
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.error).toBeUndefined();
+    expect(result.simulation?.simulationId).toBe(
+      "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy"
+    );
+    expect(result.simulations).toHaveLength(1);
+    expect(result.lifecycle?.map((row) => `${row.orderId}:${row.state}`)).toEqual([
+      "portfolio-paper-run-a-buy:ready_for_simulation"
+    ]);
+    expect(result.auditEvent).toBeUndefined();
+  });
+
+  test("records portfolio paper order batch simulations from the Python core", async () => {
+    const simulation = {
+      simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderId: "portfolio-paper-run-a-buy",
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      mode: "portfolio_paper_order_simulation",
+      symbol: "600000",
+      sourceRunId: "run-a",
+      side: "buy",
+      quantity: 2400,
+      fillPrice: 9.2,
+      notionalValue: 22080,
+      orderState: "filled",
+      fillStatus: "filled",
+      reason: "Paper-only simulation filled the approved portfolio order.",
+      approvedBy: "operator-a",
+      routeRisk: {
+        status: "passed",
+        cashAfter: 77920,
+        blockedReasons: []
+      },
+      adapterPaperExecutionId: "execution-adapter-paper-execution-batch-a",
+      adapterManifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+      adapterPaperExecutionEvidence: {
+        fillSummary: "filled buy 2400 600000 @ 9.2",
+        manifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+        paperFillRecorded: true,
+        liveOrderSubmitted: false,
+        privateKey: "[redacted]"
+      },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const lifecycle = [
+      {
+        batchId: "portfolio-paper-batch-1",
+        baseRunId: "portfolio-run-1",
+        portfolioName: "A-share core basket",
+        orderId: "portfolio-paper-run-a-buy",
+        symbol: "600000",
+        sourceRunId: "run-a",
+        side: "buy",
+        quantity: 2400,
+        notionalValue: 22080,
+        originalStatus: "pending_review",
+        riskStatus: "passed",
+        state: "ready_for_simulation",
+        routable: true,
+        paperOnly: true,
+        liveExecutionBlocked: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T08:45:00+00:00",
+        reason: "Approved for paper simulation only."
+      }
+    ];
+    const auditEvent = {
+      schemaVersion: 1 as const,
+      eventId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+      eventType: "portfolio_paper_order_simulation",
+      runId: "portfolio-run-1",
+      createdAt: "2026-05-27T08:46:00+00:00",
+      stage: "portfolio-paper-order-simulation",
+      source: "paper-simulator",
+      summary: "Paper simulation filled portfolio-paper-run-a-buy.",
+      detail: "Paper-only simulation filled the approved portfolio order.",
+      metadata: {
+        simulationId: "portfolio-paper-order-simulation-portfolio-paper-batch-1-portfolio-paper-run-a-buy",
+        batchId: "portfolio-paper-batch-1",
+        orderId: "portfolio-paper-run-a-buy",
+        orderState: "filled",
+        fillStatus: "filled",
+        approvalState: "ready_for_simulation",
+        routeRiskStatus: "passed",
+        adapterPaperExecutionId: "execution-adapter-paper-execution-batch-a",
+        adapterManifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+        paperOnly: true,
+        liveExecutionBlocked: true
+      }
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        json: async () => ({
+          batchSimulation: {
+            schemaVersion: 1,
+            mode: "portfolio_paper_order_batch_simulation",
+            status: "partial",
+            baseRunId: "portfolio-run-1",
+            batchId: "portfolio-paper-batch-1",
+            requestedCount: 2,
+            filledCount: 1,
+            blockedCount: 1,
+            skippedCount: 0,
+            filledOrderIds: ["portfolio-paper-run-a-buy"],
+            blockedOrders: [
+              {
+                orderId: "portfolio-paper-run-b-buy",
+                symbol: "000300",
+                side: "buy",
+                detail: "portfolio_paper_order_simulation_route_risk_blocked:batch_notional_limit_exceeded"
+              }
+            ],
+            skippedOrders: [],
+            paperOnly: true,
+            liveExecutionBlocked: true
+          },
+          simulations: [simulation],
+          createdSimulations: [simulation],
+          portfolioPaperOrderLifecycle: lifecycle,
+          auditEvents: [auditEvent]
+        })
+      };
+    };
+
+    expect(buildPortfolioPaperOrderBatchSimulationsUrl("/")).toBe("/api/portfolio/paper-order-simulations/batch");
+    const result = await recordPortfolioPaperOrderBatchSimulation(
+      "/",
+      {
+        baseRunId: "portfolio-run-1",
+        batchId: "portfolio-paper-batch-1",
+        orderIds: ["portfolio-paper-run-a-buy", "portfolio-paper-run-b-buy"],
+        simulatedAt: "2026-05-27T08:46:00+00:00",
+        routeRisk: {
+          initialCash: 100000,
+          minCashAfter: 0,
+          maxSymbolNotional: 20000,
+          maxBatchNotional: 25000
+        },
+        adapterPaperExecutionEvidenceByOrderId: {
+          "portfolio-paper-run-a-buy": {
+            adapterPaperExecutionId: "execution-adapter-paper-execution-batch-a",
+            adapterManifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+            adapterPaperExecutionEvidence: {
+              fillSummary: "filled buy 2400 600000 @ 9.2",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+              paperFillRecorded: true,
+              liveOrderSubmitted: false,
+              privateKey: "[redacted]"
+            }
+          }
+        }
+      },
+      fetcher
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.batchSimulation?.status).toBe("partial");
+    expect(result.batchSimulation?.filledCount).toBe(1);
+    expect(result.batchSimulation?.blockedOrders[0].orderId).toBe("portfolio-paper-run-b-buy");
+    expect(result.createdSimulations[0].orderId).toBe("portfolio-paper-run-a-buy");
+    expect(result.createdSimulations[0].adapterPaperExecutionId).toBe("execution-adapter-paper-execution-batch-a");
+    expect(result.createdSimulations[0].adapterPaperExecutionEvidence?.privateKey).toBe("[redacted]");
+    expect(result.auditEvents[0].eventType).toBe("portfolio_paper_order_simulation");
+    expect(result.auditEvents[0].metadata.adapterPaperExecutionId).toBe("execution-adapter-paper-execution-batch-a");
+    expect(result.lifecycle?.map((row) => row.state)).toEqual(["ready_for_simulation"]);
+    expect(calls[0]).toMatchObject({ url: "/api/portfolio/paper-order-simulations/batch" });
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      orderIds: ["portfolio-paper-run-a-buy", "portfolio-paper-run-b-buy"],
+      simulatedAt: "2026-05-27T08:46:00+00:00",
+      routeRisk: {
+        initialCash: 100000,
+        minCashAfter: 0,
+        maxSymbolNotional: 20000,
+        maxBatchNotional: 25000
+      },
+      adapterPaperExecutionEvidenceByOrderId: {
+        "portfolio-paper-run-a-buy": {
+          adapterPaperExecutionId: "execution-adapter-paper-execution-batch-a",
+          adapterManifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+          adapterPaperExecutionEvidence: {
+            fillSummary: "filled buy 2400 600000 @ 9.2",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-batch-a",
+            paperFillRecorded: true,
+            liveOrderSubmitted: false,
+            privateKey: "[redacted]"
+          }
+        }
+      }
+    });
   });
 
   test("loads portfolio paper order replay account snapshots", async () => {
@@ -1454,6 +2031,15 @@ describe("terminal workspace API client", () => {
           cashAfter: 40800,
           positionAfter: 1000,
           replayState: "applied" as const,
+          adapterPaperExecutionId: "execution-adapter-paper-execution-replay",
+          adapterManifestValidationId: "execution-adapter-secret-manifest-validation-replay",
+          adapterPaperExecutionEvidence: {
+            fillSummary: "filled buy 1000 600000 @ 9.2",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-replay",
+            paperFillRecorded: true,
+            liveOrderSubmitted: false,
+            privateKey: "[redacted]"
+          },
           paperOnly: true,
           liveExecutionBlocked: true
         }
@@ -1487,6 +2073,64 @@ describe("terminal workspace API client", () => {
     expect(result.replay?.account.cash).toBe(40800);
     expect(result.replay?.positions[0].symbol).toBe("600000");
     expect(result.replay?.orders[0].replayState).toBe("applied");
+    expect(result.replay?.orders[0].adapterPaperExecutionId).toBe("execution-adapter-paper-execution-replay");
+    expect(result.replay?.orders[0].adapterPaperExecutionEvidence?.privateKey).toBe("[redacted]");
+  });
+
+  test("rejects portfolio paper order replay evidence that leaks adapter secrets", async () => {
+    const replay = {
+      schemaVersion: 1 as const,
+      baseRunId: "portfolio-run-1",
+      generatedAt: "2026-05-27T09:00:00+00:00",
+      mode: "portfolio_paper_order_replay" as const,
+      initialCash: 50000,
+      account: { cash: 40800, positions: { "600000": 1000 }, equity: 50000 },
+      positions: [],
+      orders: [
+        {
+          simulationId: "sim-replay-api",
+          batchId: "portfolio-paper-batch-1",
+          orderId: "portfolio-paper-run-a-buy",
+          simulatedAt: "2026-05-27T08:46:00+00:00",
+          symbol: "600000",
+          side: "buy" as const,
+          quantity: 1000,
+          fillPrice: 9.2,
+          notionalValue: 9200,
+          cashAfter: 40800,
+          positionAfter: 1000,
+          replayState: "applied" as const,
+          adapterPaperExecutionId: "execution-adapter-paper-execution-replay",
+          adapterManifestValidationId: "execution-adapter-secret-manifest-validation-replay",
+          adapterPaperExecutionEvidence: {
+            fillSummary: "filled buy 1000 600000 @ 9.2",
+            privateKey: "raw-private-key-should-not-leak"
+          },
+          paperOnly: true,
+          liveExecutionBlocked: true
+        }
+      ],
+      summary: {
+        filledOrders: 1,
+        buyNotional: 9200,
+        sellNotional: 0,
+        netNotional: 9200,
+        realizedPnl: 0,
+        unrealizedPnl: 0,
+        positionCount: 1,
+        warnings: []
+      },
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const result = await loadPortfolioPaperOrderReplay("/", "portfolio-run-1", async () => ({
+      ok: true,
+      json: async () => ({ replay })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid portfolio paper order replay contract");
+    expect(result.replay).toBeUndefined();
   });
 
   test("loads portfolio paper order state history timelines", async () => {
@@ -1565,7 +2209,21 @@ describe("terminal workspace API client", () => {
               reason: "Filled.",
               paperOnly: true,
               liveExecutionBlocked: true,
-              metadata: { simulationId: "sim-state", fillPrice: 9.2, fillStatus: "filled", orderState: "filled" }
+              metadata: {
+                simulationId: "sim-state",
+                fillPrice: 9.2,
+                fillStatus: "filled",
+                orderState: "filled",
+                adapterPaperExecutionId: "execution-adapter-paper-execution-state",
+                adapterManifestValidationId: "execution-adapter-secret-manifest-validation-state",
+                adapterPaperExecutionEvidence: {
+                  fillSummary: "filled buy 1000 600000 @ 9.2",
+                  manifestValidationId: "execution-adapter-secret-manifest-validation-state",
+                  paperFillRecorded: true,
+                  liveOrderSubmitted: false,
+                  privateKey: "[redacted]"
+                }
+              }
             },
             {
               eventId: "portfolio-paper-batch-1:portfolio-paper-run-a-buy:live_blocked:5",
@@ -1611,6 +2269,86 @@ describe("terminal workspace API client", () => {
       "simulation_filled",
       "live_blocked"
     ]);
+    expect(result.stateHistory?.orders[0].events[2].metadata?.adapterPaperExecutionId).toBe(
+      "execution-adapter-paper-execution-state"
+    );
+    expect(
+      (result.stateHistory?.orders[0].events[2].metadata?.adapterPaperExecutionEvidence as Record<string, unknown>)
+        ?.privateKey
+    ).toBe("[redacted]");
+  });
+
+  test("rejects portfolio paper order state history metadata that leaks adapter secrets", async () => {
+    const stateHistory = {
+      schemaVersion: 1 as const,
+      baseRunId: "portfolio-run-1",
+      batchId: "portfolio-paper-batch-1",
+      portfolioName: "A-share state basket",
+      generatedAt: "2026-05-27T09:00:00+00:00",
+      mode: "portfolio_paper_order_state_history" as const,
+      summary: {
+        orderCount: 1,
+        eventCount: 1,
+        approvedOrders: 1,
+        rejectedOrders: 0,
+        filledOrders: 1,
+        liveBlockedEvents: 0,
+        stateCounts: { simulation_filled: 1 }
+      },
+      orders: [
+        {
+          batchId: "portfolio-paper-batch-1",
+          baseRunId: "portfolio-run-1",
+          portfolioName: "A-share state basket",
+          orderId: "portfolio-paper-run-a-buy",
+          symbol: "600000",
+          sourceRunId: "run-a",
+          side: "buy" as const,
+          quantity: 1000,
+          notionalValue: 9200,
+          originalStatus: "pending_review" as const,
+          riskStatus: "passed" as const,
+          currentState: "simulation_filled",
+          currentStateLabel: "Paper simulation filled",
+          paperOnly: true,
+          liveExecutionBlocked: true,
+          events: [
+            {
+              eventId: "portfolio-paper-batch-1:portfolio-paper-run-a-buy:simulation_filled:4",
+              batchId: "portfolio-paper-batch-1",
+              baseRunId: "portfolio-run-1",
+              orderId: "portfolio-paper-run-a-buy",
+              timestamp: "2026-05-27T08:46:00+00:00",
+              state: "simulation_filled",
+              label: "Paper simulation filled",
+              actor: "operator-a",
+              source: "paper-simulator",
+              reason: "Filled.",
+              metadata: {
+                simulationId: "sim-state",
+                adapterPaperExecutionEvidence: {
+                  privateKey: "raw-private-key-should-not-leak"
+                }
+              },
+              paperOnly: true,
+              liveExecutionBlocked: true
+            }
+          ]
+        }
+      ],
+      paperOnly: true,
+      liveExecutionBlocked: true
+    };
+    const result = await loadPortfolioPaperOrderStateHistory(
+      "/",
+      "portfolio-run-1",
+      "portfolio-paper-batch-1",
+      async () => ({ ok: true, json: async () => ({ stateHistory }) })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid portfolio paper order state history contract");
+    expect(result.stateHistory).toBeUndefined();
   });
 
   test("loads golden path status from the Python core", async () => {
@@ -2290,7 +3028,8 @@ describe("terminal workspace API client", () => {
       "http://127.0.0.1:8765/",
       {
         adapterId: "ccxt-live",
-        exchange: "binance"
+        exchange: "binance",
+        productionRouteReviewId: "execution-adapter-production-route-review-ccxt-live"
       },
       async (url) => {
         calls.push(url);
@@ -2343,7 +3082,24 @@ describe("terminal workspace API client", () => {
               serverTimeMs: 1780000000000,
               accountSyncState: "credentials_missing",
               blockedReasons: [],
-              metadata: { readOnly: true },
+              metadata: {
+                readOnly: true,
+                productionRouteReviewId: "execution-adapter-production-route-review-ccxt-live",
+                productionRouteReviewStatus: "route_review_recorded"
+              },
+              productionRouteReviewId: "execution-adapter-production-route-review-ccxt-live",
+              productionRouteReviewStatus: "route_review_recorded",
+              routeReview: {
+                productionRouteReviewId: "execution-adapter-production-route-review-ccxt-live",
+                status: "route_review_recorded",
+                adapterId: "ccxt-live",
+                market: "crypto",
+                route: "live",
+                maintenanceWindowId: "window-ccxt-health-route-review",
+                requiredEnvVars: ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                liveTradingAllowed: false,
+                paperOnly: true
+              },
               paperOnly: true,
               liveTradingAllowed: false,
               orderRoutingEnabled: false
@@ -2396,7 +3152,7 @@ describe("terminal workspace API client", () => {
     );
 
     expect(calls).toEqual([
-      "http://127.0.0.1:8765/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt-live&exchange=binance"
+      "http://127.0.0.1:8765/api/execution/adapter-health/ccxt-sandbox?adapterId=ccxt-live&exchange=binance&productionRouteReviewId=execution-adapter-production-route-review-ccxt-live"
     ]);
     expect(cleanResult.source).toBe("core");
     expect(cleanResult.adapterHealthProbe?.adapterId).toBe("ccxt-live");
@@ -2404,6 +3160,10 @@ describe("terminal workspace API client", () => {
     expect(cleanResult.adapterHealthProbe?.paperOnly).toBe(true);
     expect(cleanResult.adapterHealthProbe?.liveTradingAllowed).toBe(false);
     expect(cleanResult.adapterHealthProbe?.orderRoutingEnabled).toBe(false);
+    expect(cleanResult.adapterHealthProbe?.productionRouteReviewId).toBe(
+      "execution-adapter-production-route-review-ccxt-live"
+    );
+    expect(cleanResult.adapterHealthProbe?.routeReview?.maintenanceWindowId).toBe("window-ccxt-health-route-review");
     expect(rejectedResult.source).toBe("fallback");
     expect(rejectedResult.adapterHealthProbe).toBeUndefined();
   });
@@ -3479,6 +4239,188 @@ describe("terminal workspace API client", () => {
     expect(JSON.stringify(rejected)).not.toContain("secret-materialization-private-key-should-not-leak");
   });
 
+  test("records secret manifest validation without returning raw secrets", async () => {
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : undefined
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterSecretManifestValidation: {
+            schemaVersion: 1,
+            validationId: "execution-adapter-secret-manifest-validation-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            referenceId: "execution-adapter-secret-reference-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "validated",
+            operator: "settings-panel",
+            recordedAt: "2026-06-09T08:12:00+00:00",
+            validationMode: "local_secret_store_manifest_readonly",
+            referenceName: "us-live/alpaca-sandbox",
+            backend: "local-secret-store",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            fingerprint: "sha256:validated-manifest",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            coveredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            blockedReasons: [],
+            manifestSummary: {
+              manifestExists: true,
+              manifestJsonValid: true,
+              requiredEnvVarCount: 2,
+              coveredEnvVarCount: 2,
+              rawValuesReturned: false
+            },
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-secret-manifest-validation-us-live",
+            eventType: "execution_adapter_secret_manifest_validation",
+            runId: "",
+            createdAt: "2026-06-09T08:12:00+00:00",
+            stage: "execution-adapter-secret-manifest-validation",
+            source: "execution-adapter-ledger",
+            summary: "us-live secret manifest validated as validated.",
+            detail: "Secret manifest validation is paper-only.",
+            metadata: {
+              validationId: "execution-adapter-secret-manifest-validation-us-live",
+              adapterId: "us-live",
+              status: "validated",
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterSecretManifestValidationUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-secret-manifest-validations"
+    );
+
+    const result = await recordExecutionAdapterSecretManifestValidation(
+      "/",
+      {
+        adapterId: "us-live",
+        materializationId: "execution-adapter-secret-materialization-us-live",
+        operator: "settings-panel",
+        manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-secret-manifest-validations"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      operator: "settings-panel",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterSecretManifestValidation?.status).toBe("validated");
+    expect(result.adapterSecretManifestValidation?.fingerprint).toBe("sha256:validated-manifest");
+    expect(result.adapterSecretManifestValidation?.coveredEnvVars).toEqual(["ALPACA_API_KEY", "ALPACA_API_SECRET"]);
+    expect(result.adapterSecretManifestValidation?.liveTradingAllowed).toBe(false);
+    expect(result.adapterSecretManifestValidation?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_secret_manifest_validation");
+  });
+
+  test("loads secret manifest validation history and rejects unredacted summaries", async () => {
+    const calls: string[] = [];
+    const validation = {
+      schemaVersion: 1,
+      validationId: "execution-adapter-secret-manifest-validation-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      referenceId: "execution-adapter-secret-reference-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "validated",
+      operator: "settings-panel",
+      recordedAt: "2026-06-09T08:12:00+00:00",
+      validationMode: "local_secret_store_manifest_readonly",
+      referenceName: "us-live/alpaca-sandbox",
+      backend: "local-secret-store",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      fingerprint: "sha256:validated-manifest",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      coveredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      blockedReasons: [],
+      manifestSummary: {
+        manifestExists: true,
+        manifestJsonValid: true,
+        requiredEnvVarCount: 2,
+        coveredEnvVarCount: 2,
+        rawValuesReturned: false
+      },
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterSecretManifestValidations(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterSecretManifestValidations: [validation] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterSecretManifestValidationHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-secret-manifest-validations?adapterId=us-live&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-secret-manifest-validations?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterSecretManifestValidations).toHaveLength(1);
+    expect(result.adapterSecretManifestValidations[0].status).toBe("validated");
+    expect(result.adapterSecretManifestValidations[0].liveTradingAllowed).toBe(false);
+
+    const rejected = await loadExecutionAdapterSecretManifestValidations(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterSecretManifestValidations: [
+            {
+              ...validation,
+              manifestSummary: { secret: "secret-manifest-summary-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterSecretManifestValidations).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("secret-manifest-summary-should-not-leak");
+  });
+
   test("records environment binding evidence after secret materialization without enabling live trading", async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     const fetcher = async (url: string, init?: RequestInit) => {
@@ -3495,6 +4437,7 @@ describe("terminal workspace API client", () => {
             schemaVersion: 1,
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -3561,7 +4504,7 @@ describe("terminal workspace API client", () => {
       "/",
       {
         adapterId: "us-live",
-        materializationId: "execution-adapter-secret-materialization-us-live",
+        manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
         operator: "settings-panel",
         bindingMode: "container_env_reference",
         confirmations: {
@@ -3580,7 +4523,7 @@ describe("terminal workspace API client", () => {
     ]);
     expect(calls[0]?.body).toEqual({
       adapterId: "us-live",
-      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       operator: "settings-panel",
       bindingMode: "container_env_reference",
       confirmations: {
@@ -3594,6 +4537,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterEnvironmentBinding?.status).toBe("binding_recorded");
     expect(result.adapterEnvironmentBinding?.materializationId).toBe("execution-adapter-secret-materialization-us-live");
+    expect(result.adapterEnvironmentBinding?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterEnvironmentBinding?.liveTradingAllowed).toBe(false);
     expect(result.adapterEnvironmentBinding?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_environment_binding");
@@ -3605,6 +4551,7 @@ describe("terminal workspace API client", () => {
       schemaVersion: 1,
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -3692,6 +4639,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -3747,6 +4695,7 @@ describe("terminal workspace API client", () => {
             detail: "Runtime reload plan is paper-only.",
             metadata: {
               planId: "execution-adapter-runtime-reload-plan-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "plan_recorded",
               liveTradingAllowed: false,
@@ -3802,6 +4751,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterRuntimeReloadPlan?.status).toBe("plan_recorded");
     expect(result.adapterRuntimeReloadPlan?.bindingId).toBe("execution-adapter-environment-binding-us-live");
+    expect(result.adapterRuntimeReloadPlan?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterRuntimeReloadPlan?.liveTradingAllowed).toBe(false);
     expect(result.adapterRuntimeReloadPlan?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_runtime_reload_plan");
@@ -3814,6 +4766,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -3861,6 +4814,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterRuntimeReloadPlans).toHaveLength(1);
     expect(result.adapterRuntimeReloadPlans[0].status).toBe("plan_recorded");
+    expect(result.adapterRuntimeReloadPlans[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterRuntimeReloadPlans[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterRuntimeReloadPlans(
@@ -3904,6 +4860,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -3961,6 +4918,7 @@ describe("terminal workspace API client", () => {
             metadata: {
               executionId: "execution-adapter-runtime-reload-execution-us-live",
               planId: "execution-adapter-runtime-reload-plan-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "execution_recorded",
               liveTradingAllowed: false,
@@ -4014,6 +4972,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterRuntimeReloadExecution?.status).toBe("execution_recorded");
     expect(result.adapterRuntimeReloadExecution?.planId).toBe("execution-adapter-runtime-reload-plan-us-live");
+    expect(result.adapterRuntimeReloadExecution?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterRuntimeReloadExecution?.liveTradingAllowed).toBe(false);
     expect(result.adapterRuntimeReloadExecution?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_runtime_reload_execution");
@@ -4027,6 +4988,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -4075,6 +5037,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterRuntimeReloadExecutions).toHaveLength(1);
     expect(result.adapterRuntimeReloadExecutions[0].status).toBe("execution_recorded");
+    expect(result.adapterRuntimeReloadExecutions[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterRuntimeReloadExecutions[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterRuntimeReloadExecutions(
@@ -4119,6 +5084,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -4178,6 +5144,7 @@ describe("terminal workspace API client", () => {
               acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
               executionId: "execution-adapter-runtime-reload-execution-us-live",
               planId: "execution-adapter-runtime-reload-plan-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "acceptance_recorded",
               liveTradingAllowed: false,
@@ -4233,6 +5200,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterRuntimeReloadAcceptance?.executionId).toBe(
       "execution-adapter-runtime-reload-execution-us-live"
     );
+    expect(result.adapterRuntimeReloadAcceptance?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterRuntimeReloadAcceptance?.liveTradingAllowed).toBe(false);
     expect(result.adapterRuntimeReloadAcceptance?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_runtime_reload_acceptance");
@@ -4247,6 +5217,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -4296,6 +5267,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterRuntimeReloadAcceptances).toHaveLength(1);
     expect(result.adapterRuntimeReloadAcceptances[0].status).toBe("acceptance_recorded");
+    expect(result.adapterRuntimeReloadAcceptances[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterRuntimeReloadAcceptances[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterRuntimeReloadAcceptances(
@@ -4341,6 +5315,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -4400,6 +5375,7 @@ describe("terminal workspace API client", () => {
             metadata: {
               dryRunId: "execution-adapter-orchestration-dry-run-us-live",
               acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "dry_run_recorded",
               liveTradingAllowed: false,
@@ -4455,6 +5431,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterOrchestrationDryRun?.acceptanceId).toBe(
       "execution-adapter-runtime-reload-acceptance-us-live"
     );
+    expect(result.adapterOrchestrationDryRun?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterOrchestrationDryRun?.liveTradingAllowed).toBe(false);
     expect(result.adapterOrchestrationDryRun?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_orchestration_dry_run");
@@ -4470,6 +5449,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -4520,6 +5500,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterOrchestrationDryRuns).toHaveLength(1);
     expect(result.adapterOrchestrationDryRuns[0].status).toBe("dry_run_recorded");
+    expect(result.adapterOrchestrationDryRuns[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterOrchestrationDryRuns[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterOrchestrationDryRuns(
@@ -4566,6 +5549,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -4606,6 +5590,7 @@ describe("terminal workspace API client", () => {
             metadata: {
               orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
               dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "execution_recorded",
               liveTradingAllowed: false,
@@ -4659,6 +5644,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterOrchestrationExecution?.status).toBe("execution_recorded");
     expect(result.adapterOrchestrationExecution?.dryRunId).toBe("execution-adapter-orchestration-dry-run-us-live");
+    expect(result.adapterOrchestrationExecution?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterOrchestrationExecution?.liveTradingAllowed).toBe(false);
     expect(result.adapterOrchestrationExecution?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_orchestration_execution");
@@ -4675,6 +5663,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -4722,6 +5711,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterOrchestrationExecutions).toHaveLength(1);
     expect(result.adapterOrchestrationExecutions[0].status).toBe("execution_recorded");
+    expect(result.adapterOrchestrationExecutions[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterOrchestrationExecutions[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterOrchestrationExecutions(
@@ -4769,6 +5761,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -4826,6 +5819,7 @@ describe("terminal workspace API client", () => {
             metadata: {
               humanConfirmationId: "execution-adapter-human-confirmation-us-live",
               orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "confirmation_recorded",
               liveTradingAllowed: false,
@@ -4881,6 +5875,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterHumanConfirmation?.orchestrationExecutionId).toBe(
       "execution-adapter-orchestration-execution-us-live"
     );
+    expect(result.adapterHumanConfirmation?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterHumanConfirmation?.liveTradingAllowed).toBe(false);
     expect(result.adapterHumanConfirmation?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_human_confirmation");
@@ -4898,6 +5895,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -4950,6 +5948,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterHumanConfirmations).toHaveLength(1);
     expect(result.adapterHumanConfirmations[0].status).toBe("confirmation_recorded");
+    expect(result.adapterHumanConfirmations[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterHumanConfirmations[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterHumanConfirmations(
@@ -4998,6 +5999,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -5037,6 +6039,7 @@ describe("terminal workspace API client", () => {
             metadata: {
               sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
               humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "probe_plan_recorded",
               liveTradingAllowed: false,
@@ -5092,6 +6095,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterSandboxProbePlan?.humanConfirmationId).toBe(
       "execution-adapter-human-confirmation-us-live"
     );
+    expect(result.adapterSandboxProbePlan?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterSandboxProbePlan?.liveTradingAllowed).toBe(false);
     expect(result.adapterSandboxProbePlan?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_probe_plan");
@@ -5110,6 +6116,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -5159,6 +6166,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterSandboxProbePlans).toHaveLength(1);
     expect(result.adapterSandboxProbePlans[0].status).toBe("probe_plan_recorded");
+    expect(result.adapterSandboxProbePlans[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterSandboxProbePlans[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterSandboxProbePlans(
@@ -5208,6 +6218,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -5248,6 +6259,7 @@ describe("terminal workspace API client", () => {
             metadata: {
               sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
               sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               adapterId: "us-live",
               status: "probe_execution_recorded",
               liveTradingAllowed: false,
@@ -5303,6 +6315,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterSandboxProbeExecution?.sandboxProbePlanId).toBe(
       "execution-adapter-sandbox-probe-plan-us-live"
     );
+    expect(result.adapterSandboxProbeExecution?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterSandboxProbeExecution?.liveTradingAllowed).toBe(false);
     expect(result.adapterSandboxProbeExecution?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_probe_execution");
@@ -5322,6 +6337,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -5372,6 +6388,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterSandboxProbeExecutions).toHaveLength(1);
     expect(result.adapterSandboxProbeExecutions[0].status).toBe("probe_execution_recorded");
+    expect(result.adapterSandboxProbeExecutions[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterSandboxProbeExecutions[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterSandboxProbeExecutions(
@@ -5422,6 +6441,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -5467,6 +6487,7 @@ describe("terminal workspace API client", () => {
               sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
               sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
               adapterId: "us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               status: "probe_review_recorded",
               liveTradingAllowed: false,
               paperOnly: true
@@ -5521,6 +6542,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterSandboxProbeReview?.sandboxProbeExecutionId).toBe(
       "execution-adapter-sandbox-probe-execution-us-live"
     );
+    expect(result.adapterSandboxProbeReview?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterSandboxProbeReview?.liveTradingAllowed).toBe(false);
     expect(result.adapterSandboxProbeReview?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_probe_review");
@@ -5541,6 +6565,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -5592,6 +6617,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterSandboxProbeReviews).toHaveLength(1);
     expect(result.adapterSandboxProbeReviews[0].status).toBe("probe_review_recorded");
+    expect(result.adapterSandboxProbeReviews[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterSandboxProbeReviews[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterSandboxProbeReviews(
@@ -5643,6 +6671,7 @@ describe("terminal workspace API client", () => {
             planId: "execution-adapter-runtime-reload-plan-us-live",
             bindingId: "execution-adapter-environment-binding-us-live",
             materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
             adapterId: "us-live",
             market: "us",
             route: "live",
@@ -5689,6 +6718,7 @@ describe("terminal workspace API client", () => {
               productionRouteReviewId: "execution-adapter-production-route-review-us-live",
               sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
               adapterId: "us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
               status: "route_review_recorded",
               liveTradingAllowed: false,
               paperOnly: true
@@ -5743,6 +6773,9 @@ describe("terminal workspace API client", () => {
     expect(result.adapterProductionRouteReview?.sandboxProbeReviewId).toBe(
       "execution-adapter-sandbox-probe-review-us-live"
     );
+    expect(result.adapterProductionRouteReview?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterProductionRouteReview?.liveTradingAllowed).toBe(false);
     expect(result.adapterProductionRouteReview?.paperOnly).toBe(true);
     expect(result.auditEvent?.eventType).toBe("execution_adapter_production_route_review");
@@ -5764,6 +6797,7 @@ describe("terminal workspace API client", () => {
       planId: "execution-adapter-runtime-reload-plan-us-live",
       bindingId: "execution-adapter-environment-binding-us-live",
       materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
       adapterId: "us-live",
       market: "us",
       route: "live",
@@ -5816,6 +6850,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.adapterProductionRouteReviews).toHaveLength(1);
     expect(result.adapterProductionRouteReviews[0].status).toBe("route_review_recorded");
+    expect(result.adapterProductionRouteReviews[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
     expect(result.adapterProductionRouteReviews[0].liveTradingAllowed).toBe(false);
 
     const rejected = await loadExecutionAdapterProductionRouteReviews(
@@ -5839,6 +6876,1424 @@ describe("terminal workspace API client", () => {
     expect(rejected.source).toBe("fallback");
     expect(rejected.adapterProductionRouteReviews).toEqual([]);
     expect(JSON.stringify(rejected)).not.toContain("production-route-review-token-should-not-leak");
+  });
+
+  test("records adapter sandbox order schema dry-run without enabling live routing", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterSandboxOrderSchemaDryRun: {
+            schemaVersion: 1,
+            sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+            productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+            sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "schema_dry_run_recorded",
+            operator: "schema-runner",
+            recordedAt: "2026-06-09T10:32:00+00:00",
+            dryRunMode: "manual_sandbox_order_schema_dry_run",
+            reviewMode: "manual_production_route_review",
+            sandboxReviewMode: "manual_sandbox_probe_review",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            orderIntent: {
+              symbol: "AAPL",
+              side: "buy",
+              type: "limit",
+              quantity: 10,
+              price: 191.2
+            },
+            orderSubmitted: false,
+            requiredConfirmations: [
+              { id: "production-route-review-accepted", label: "Route review accepted", status: "confirmed" },
+              { id: "health-probe-bound", label: "Health probe bound", status: "confirmed" },
+              { id: "order-intent-schema-validated", label: "Order intent schema validated", status: "confirmed" },
+              { id: "sandbox-endpoint-still-locked", label: "Sandbox endpoint locked", status: "confirmed" },
+              { id: "operator-confirmed-no-order-submitted", label: "No order submitted", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+            eventType: "execution_adapter_sandbox_order_schema_dry_run",
+            runId: "",
+            createdAt: "2026-06-09T10:32:00+00:00",
+            stage: "execution-adapter-sandbox-order-schema-dry-run",
+            source: "execution-adapter-ledger",
+            summary: "us-live sandbox order schema dry-run recorded as schema_dry_run_recorded.",
+            detail: "Sandbox order schema dry-run is paper-only.",
+            metadata: {
+              sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+              productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+              adapterId: "us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+              status: "schema_dry_run_recorded",
+              orderSubmitted: false,
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterSandboxOrderSchemaDryRunUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-order-schema-dry-runs"
+    );
+
+    const result = await recordExecutionAdapterSandboxOrderSchemaDryRun(
+      "/",
+      {
+        adapterId: "us-live",
+        productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+        operator: "schema-runner",
+        dryRunMode: "manual_sandbox_order_schema_dry_run",
+        orderIntent: {
+          symbol: "AAPL",
+          side: "buy",
+          type: "limit",
+          quantity: 10,
+          price: 191.2
+        },
+        confirmations: {
+          productionRouteReviewAccepted: true,
+          healthProbeBound: true,
+          orderIntentSchemaValidated: true,
+          sandboxEndpointStillLocked: true,
+          operatorConfirmedNoOrderSubmitted: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-sandbox-order-schema-dry-runs"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      operator: "schema-runner",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      orderIntent: {
+        symbol: "AAPL",
+        side: "buy",
+        type: "limit",
+        quantity: 10,
+        price: 191.2
+      },
+      confirmations: {
+        productionRouteReviewAccepted: true,
+        healthProbeBound: true,
+        orderIntentSchemaValidated: true,
+        sandboxEndpointStillLocked: true,
+        operatorConfirmedNoOrderSubmitted: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterSandboxOrderSchemaDryRun?.status).toBe("schema_dry_run_recorded");
+    expect(result.adapterSandboxOrderSchemaDryRun?.productionRouteReviewId).toBe(
+      "execution-adapter-production-route-review-us-live"
+    );
+    expect(result.adapterSandboxOrderSchemaDryRun?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterSandboxOrderSchemaDryRun?.orderSubmitted).toBe(false);
+    expect(result.adapterSandboxOrderSchemaDryRun?.liveTradingAllowed).toBe(false);
+    expect(result.adapterSandboxOrderSchemaDryRun?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_order_schema_dry_run");
+  });
+
+  test("loads adapter sandbox order schema dry-run history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const schemaDryRun = {
+      schemaVersion: 1,
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "schema_dry_run_recorded",
+      operator: "schema-runner",
+      recordedAt: "2026-06-09T10:32:00+00:00",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      reviewMode: "manual_production_route_review",
+      sandboxReviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+      orderSubmitted: false,
+      requiredConfirmations: [
+        { id: "production-route-review-accepted", label: "Route review accepted", status: "confirmed" }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterSandboxOrderSchemaDryRuns(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterSandboxOrderSchemaDryRuns: [schemaDryRun] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterSandboxOrderSchemaDryRunHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-order-schema-dry-runs?adapterId=us-live&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-sandbox-order-schema-dry-runs?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterSandboxOrderSchemaDryRuns).toHaveLength(1);
+    expect(result.adapterSandboxOrderSchemaDryRuns[0].status).toBe("schema_dry_run_recorded");
+    expect(result.adapterSandboxOrderSchemaDryRuns[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterSandboxOrderSchemaDryRuns[0].orderSubmitted).toBe(false);
+
+    const rejected = await loadExecutionAdapterSandboxOrderSchemaDryRuns(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterSandboxOrderSchemaDryRuns: [
+            {
+              ...schemaDryRun,
+              metadata: { token: "schema-dry-run-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterSandboxOrderSchemaDryRuns).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("schema-dry-run-token-should-not-leak");
+  });
+
+  test("records adapter paper order lifecycle without submitting live orders", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterPaperOrderLifecycle: {
+            schemaVersion: 1,
+            paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+            sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+            productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+            sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "lifecycle_recorded",
+            operator: "paper-lifecycle-runner",
+            recordedAt: "2026-06-09T11:12:00+00:00",
+            lifecycleMode: "manual_paper_order_lifecycle_adapter",
+            dryRunMode: "manual_sandbox_order_schema_dry_run",
+            reviewMode: "manual_production_route_review",
+            sandboxReviewMode: "manual_sandbox_probe_review",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+            lifecycleSteps: [
+              { id: "intent-validated", label: "Order intent validated", status: "recorded" },
+              { id: "paper-router-locked", label: "Paper router locked", status: "recorded" },
+              { id: "risk-limits-bound", label: "Risk limits bound", status: "recorded" },
+              { id: "simulated-lifecycle-recorded", label: "Simulated lifecycle recorded", status: "recorded" }
+            ],
+            orderSubmitted: false,
+            liveOrderSubmitted: false,
+            requiredConfirmations: [
+              { id: "schema-dry-run-accepted", label: "Schema dry-run accepted", status: "confirmed" },
+              { id: "paper-router-locked", label: "Paper router locked", status: "confirmed" },
+              { id: "risk-limits-bound", label: "Risk limits bound", status: "confirmed" },
+              { id: "simulated-lifecycle-generated", label: "Simulated lifecycle generated", status: "confirmed" },
+              { id: "operator-confirmed-no-live-order-submitted", label: "No live order submitted", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-paper-order-lifecycle-us-live",
+            eventType: "execution_adapter_paper_order_lifecycle",
+            runId: "",
+            createdAt: "2026-06-09T11:12:00+00:00",
+            stage: "execution-adapter-paper-order-lifecycle",
+            source: "execution-adapter-ledger",
+            summary: "us-live paper order lifecycle recorded as lifecycle_recorded.",
+            detail: "Paper order lifecycle adapter records local transitions only.",
+            metadata: {
+              paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+              sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+              adapterId: "us-live",
+              status: "lifecycle_recorded",
+              liveOrderSubmitted: false,
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterPaperOrderLifecycleUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-paper-order-lifecycles"
+    );
+
+    const result = await recordExecutionAdapterPaperOrderLifecycle(
+      "/",
+      {
+        adapterId: "us-live",
+        sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+        operator: "paper-lifecycle-runner",
+        lifecycleMode: "manual_paper_order_lifecycle_adapter",
+        confirmations: {
+          schemaDryRunAccepted: true,
+          paperRouterLocked: true,
+          riskLimitsBound: true,
+          simulatedLifecycleGenerated: true,
+          operatorConfirmedNoLiveOrderSubmitted: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-paper-order-lifecycles"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      operator: "paper-lifecycle-runner",
+      lifecycleMode: "manual_paper_order_lifecycle_adapter",
+      confirmations: {
+        schemaDryRunAccepted: true,
+        paperRouterLocked: true,
+        riskLimitsBound: true,
+        simulatedLifecycleGenerated: true,
+        operatorConfirmedNoLiveOrderSubmitted: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterPaperOrderLifecycle?.status).toBe("lifecycle_recorded");
+    expect(result.adapterPaperOrderLifecycle?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterPaperOrderLifecycle?.orderSubmitted).toBe(false);
+    expect(result.adapterPaperOrderLifecycle?.liveOrderSubmitted).toBe(false);
+    expect(result.adapterPaperOrderLifecycle?.paperOnly).toBe(true);
+    expect(result.adapterPaperOrderLifecycle?.liveTradingAllowed).toBe(false);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_paper_order_lifecycle");
+  });
+
+  test("loads adapter paper order lifecycle history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const lifecycle = {
+      schemaVersion: 1,
+      paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "lifecycle_recorded",
+      operator: "paper-lifecycle-runner",
+      recordedAt: "2026-06-09T11:12:00+00:00",
+      lifecycleMode: "manual_paper_order_lifecycle_adapter",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      reviewMode: "manual_production_route_review",
+      sandboxReviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+      lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+      orderSubmitted: false,
+      liveOrderSubmitted: false,
+      requiredConfirmations: [{ id: "schema-dry-run-accepted", label: "Schema dry-run accepted", status: "confirmed" }],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterPaperOrderLifecycles(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterPaperOrderLifecycles: [lifecycle] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterPaperOrderLifecycleHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-paper-order-lifecycles?adapterId=us-live&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-paper-order-lifecycles?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterPaperOrderLifecycles).toHaveLength(1);
+    expect(result.adapterPaperOrderLifecycles[0].status).toBe("lifecycle_recorded");
+    expect(result.adapterPaperOrderLifecycles[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterPaperOrderLifecycles[0].liveOrderSubmitted).toBe(false);
+
+    const missingValidation = await loadExecutionAdapterPaperOrderLifecycles(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => {
+        const { manifestValidationId: _manifestValidationId, ...missingValidationLifecycle } = lifecycle;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterPaperOrderLifecycles: [missingValidationLifecycle] })
+        };
+      },
+      5
+    );
+
+    expect(missingValidation.source).toBe("fallback");
+    expect(missingValidation.adapterPaperOrderLifecycles).toEqual([]);
+
+    const rejected = await loadExecutionAdapterPaperOrderLifecycles(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterPaperOrderLifecycles: [
+            {
+              ...lifecycle,
+              metadata: { token: "paper-lifecycle-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterPaperOrderLifecycles).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("paper-lifecycle-token-should-not-leak");
+  });
+
+  test("records adapter paper route runbook without executing routes", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterPaperRouteRunbook: {
+            schemaVersion: 1,
+            paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+            paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+            sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+            productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+            sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "runbook_recorded",
+            operator: "paper-route-runbook-runner",
+            recordedAt: "2026-06-09T11:22:00+00:00",
+            runbookMode: "manual_paper_route_runbook",
+            lifecycleMode: "manual_paper_order_lifecycle_adapter",
+            dryRunMode: "manual_sandbox_order_schema_dry_run",
+            reviewMode: "manual_production_route_review",
+            sandboxReviewMode: "manual_sandbox_probe_review",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+            lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+            runbookSteps: [
+              { id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" },
+              { id: "paper-account-snapshot-bound", label: "Paper account snapshot bound", status: "recorded" },
+              { id: "risk-controls-verified", label: "Risk controls verified", status: "recorded" },
+              { id: "replay-plan-recorded", label: "Replay plan recorded", status: "recorded" }
+            ],
+            orderSubmitted: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            requiredConfirmations: [
+              { id: "paper-lifecycle-accepted", label: "Paper lifecycle accepted", status: "confirmed" },
+              { id: "paper-account-snapshot-captured", label: "Paper account snapshot captured", status: "confirmed" },
+              { id: "risk-controls-verified", label: "Risk controls verified", status: "confirmed" },
+              { id: "replay-plan-recorded", label: "Replay plan recorded", status: "confirmed" },
+              { id: "operator-confirmed-no-live-routing", label: "No live routing", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-paper-route-runbook-us-live",
+            eventType: "execution_adapter_paper_route_runbook",
+            runId: "",
+            createdAt: "2026-06-09T11:22:00+00:00",
+            stage: "execution-adapter-paper-route-runbook",
+            source: "execution-adapter-ledger",
+            summary: "us-live paper route runbook recorded as runbook_recorded.",
+            detail: "Paper route runbook records the controlled simulation plan only.",
+            metadata: {
+              paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+              paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+              adapterId: "us-live",
+              status: "runbook_recorded",
+              routeExecuted: false,
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterPaperRouteRunbookUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-paper-route-runbooks"
+    );
+
+    const result = await recordExecutionAdapterPaperRouteRunbook(
+      "/",
+      {
+        adapterId: "us-live",
+        paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+        operator: "paper-route-runbook-runner",
+        runbookMode: "manual_paper_route_runbook",
+        confirmations: {
+          paperLifecycleAccepted: true,
+          paperAccountSnapshotCaptured: true,
+          riskControlsVerified: true,
+          replayPlanRecorded: true,
+          operatorConfirmedNoLiveRouting: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-paper-route-runbooks"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+      operator: "paper-route-runbook-runner",
+      runbookMode: "manual_paper_route_runbook",
+      confirmations: {
+        paperLifecycleAccepted: true,
+        paperAccountSnapshotCaptured: true,
+        riskControlsVerified: true,
+        replayPlanRecorded: true,
+        operatorConfirmedNoLiveRouting: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterPaperRouteRunbook?.status).toBe("runbook_recorded");
+    expect(result.adapterPaperRouteRunbook?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterPaperRouteRunbook?.orderSubmitted).toBe(false);
+    expect(result.adapterPaperRouteRunbook?.liveOrderSubmitted).toBe(false);
+    expect(result.adapterPaperRouteRunbook?.routeExecuted).toBe(false);
+    expect(result.adapterPaperRouteRunbook?.paperOnly).toBe(true);
+    expect(result.adapterPaperRouteRunbook?.liveTradingAllowed).toBe(false);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_paper_route_runbook");
+  });
+
+  test("loads adapter paper route runbook history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const runbook = {
+      schemaVersion: 1,
+      paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+      paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "runbook_recorded",
+      operator: "paper-route-runbook-runner",
+      recordedAt: "2026-06-09T11:22:00+00:00",
+      runbookMode: "manual_paper_route_runbook",
+      lifecycleMode: "manual_paper_order_lifecycle_adapter",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      reviewMode: "manual_production_route_review",
+      sandboxReviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+      lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+      runbookSteps: [{ id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" }],
+      orderSubmitted: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      requiredConfirmations: [{ id: "paper-lifecycle-accepted", label: "Paper lifecycle accepted", status: "confirmed" }],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterPaperRouteRunbooks(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterPaperRouteRunbooks: [runbook] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterPaperRouteRunbookHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-paper-route-runbooks?adapterId=us-live&limit=5"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-paper-route-runbooks?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterPaperRouteRunbooks).toHaveLength(1);
+    expect(result.adapterPaperRouteRunbooks[0].status).toBe("runbook_recorded");
+    expect(result.adapterPaperRouteRunbooks[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterPaperRouteRunbooks[0].routeExecuted).toBe(false);
+
+    const missingValidation = await loadExecutionAdapterPaperRouteRunbooks(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => {
+        const { manifestValidationId: _manifestValidationId, ...missingValidationRunbook } = runbook;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterPaperRouteRunbooks: [missingValidationRunbook] })
+        };
+      },
+      5
+    );
+
+    expect(missingValidation.source).toBe("fallback");
+    expect(missingValidation.adapterPaperRouteRunbooks).toEqual([]);
+
+    const rejected = await loadExecutionAdapterPaperRouteRunbooks(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterPaperRouteRunbooks: [
+            {
+              ...runbook,
+              metadata: { token: "paper-route-runbook-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterPaperRouteRunbooks).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("paper-route-runbook-token-should-not-leak");
+  });
+
+  test("records adapter ops state without live enablement", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterOpsState: {
+            schemaVersion: 1,
+            adapterOpsStateId: "execution-adapter-ops-state-us-live",
+            paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+            paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+            sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+            productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+            sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "ops_state_recorded",
+            operator: "adapter-ops-runner",
+            recordedAt: "2026-06-09T11:24:00+00:00",
+            opsMode: "manual_adapter_ops_state",
+            runbookMode: "manual_paper_route_runbook",
+            lifecycleMode: "manual_paper_order_lifecycle_adapter",
+            dryRunMode: "manual_sandbox_order_schema_dry_run",
+            reviewMode: "manual_production_route_review",
+            sandboxReviewMode: "manual_sandbox_probe_review",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+            lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+            runbookSteps: [{ id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" }],
+            opsSteps: [
+              { id: "paper-route-runbook-linked", label: "Paper route runbook linked", status: "recorded" },
+              { id: "monitoring-channel-ready", label: "Monitoring channel ready", status: "recorded" },
+              { id: "kill-switch-drill-recorded", label: "Kill switch drill recorded", status: "recorded" },
+              { id: "paper-account-reconciled", label: "Paper account reconciled", status: "recorded" }
+            ],
+            orderSubmitted: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            requiredConfirmations: [
+              { id: "paper-route-runbook-accepted", label: "Paper route runbook accepted", status: "confirmed" },
+              { id: "monitoring-channel-ready", label: "Monitoring channel ready", status: "confirmed" },
+              { id: "kill-switch-drill-recorded", label: "Kill switch drill recorded", status: "confirmed" },
+              { id: "paper-account-reconciled", label: "Paper account reconciled", status: "confirmed" },
+              { id: "operator-confirmed-live-trading-disabled", label: "Live trading disabled", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-ops-state-us-live",
+            eventType: "execution_adapter_ops_state",
+            runId: "",
+            createdAt: "2026-06-09T11:24:00+00:00",
+            stage: "execution-adapter-ops-state",
+            source: "execution-adapter-ledger",
+            summary: "us-live adapter ops state recorded as ops_state_recorded.",
+            detail: "Adapter ops state records monitoring and kill-switch readiness only.",
+            metadata: {
+              adapterOpsStateId: "execution-adapter-ops-state-us-live",
+              paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+              adapterId: "us-live",
+              status: "ops_state_recorded",
+              routeExecuted: false,
+              liveTradingAllowed: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterOpsStateUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-ops-states"
+    );
+
+    const result = await recordExecutionAdapterOpsState(
+      "/",
+      {
+        adapterId: "us-live",
+        paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+        operator: "adapter-ops-runner",
+        opsMode: "manual_adapter_ops_state",
+        confirmations: {
+          paperRouteRunbookAccepted: true,
+          monitoringChannelReady: true,
+          killSwitchDrillRecorded: true,
+          paperAccountReconciled: true,
+          operatorConfirmedLiveTradingDisabled: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual(["POST /api/execution/adapter-ops-states"]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+      operator: "adapter-ops-runner",
+      opsMode: "manual_adapter_ops_state",
+      confirmations: {
+        paperRouteRunbookAccepted: true,
+        monitoringChannelReady: true,
+        killSwitchDrillRecorded: true,
+        paperAccountReconciled: true,
+        operatorConfirmedLiveTradingDisabled: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterOpsState?.status).toBe("ops_state_recorded");
+    expect(result.adapterOpsState?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterOpsState?.orderSubmitted).toBe(false);
+    expect(result.adapterOpsState?.liveOrderSubmitted).toBe(false);
+    expect(result.adapterOpsState?.routeExecuted).toBe(false);
+    expect(result.adapterOpsState?.paperOnly).toBe(true);
+    expect(result.adapterOpsState?.liveTradingAllowed).toBe(false);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_ops_state");
+  });
+
+  test("loads adapter ops state history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const opsState = {
+      schemaVersion: 1,
+      adapterOpsStateId: "execution-adapter-ops-state-us-live",
+      paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+      paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "ops_state_recorded",
+      operator: "adapter-ops-runner",
+      recordedAt: "2026-06-09T11:24:00+00:00",
+      opsMode: "manual_adapter_ops_state",
+      runbookMode: "manual_paper_route_runbook",
+      lifecycleMode: "manual_paper_order_lifecycle_adapter",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      reviewMode: "manual_production_route_review",
+      sandboxReviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+      lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+      runbookSteps: [{ id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" }],
+      opsSteps: [{ id: "paper-route-runbook-linked", label: "Paper route runbook linked", status: "recorded" }],
+      orderSubmitted: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      requiredConfirmations: [
+        { id: "paper-route-runbook-accepted", label: "Paper route runbook accepted", status: "confirmed" }
+      ],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterOpsStates(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterOpsStates: [opsState] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterOpsStateHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-ops-states?adapterId=us-live&limit=5");
+    expect(calls).toEqual(["http://127.0.0.1:8765/api/execution/adapter-ops-states?adapterId=us-live&limit=5"]);
+    expect(result.source).toBe("core");
+    expect(result.adapterOpsStates).toHaveLength(1);
+    expect(result.adapterOpsStates[0].status).toBe("ops_state_recorded");
+    expect(result.adapterOpsStates[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterOpsStates[0].routeExecuted).toBe(false);
+
+    const missingValidation = await loadExecutionAdapterOpsStates(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => {
+        const { manifestValidationId: _manifestValidationId, ...missingValidationOpsState } = opsState;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterOpsStates: [missingValidationOpsState] })
+        };
+      },
+      5
+    );
+
+    expect(missingValidation.source).toBe("fallback");
+    expect(missingValidation.adapterOpsStates).toEqual([]);
+
+    const rejected = await loadExecutionAdapterOpsStates(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterOpsStates: [
+            {
+              ...opsState,
+              metadata: { token: "adapter-ops-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterOpsStates).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("adapter-ops-token-should-not-leak");
+  });
+
+  test("records adapter paper execution without live routing", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null
+      });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          adapterPaperExecution: {
+            schemaVersion: 1,
+            adapterPaperExecutionId: "execution-adapter-paper-execution-us-live",
+            adapterOpsStateId: "execution-adapter-ops-state-us-live",
+            paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+            paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+            sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+            productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+            sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+            sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+            sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+            humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+            orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+            dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+            acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+            executionId: "execution-adapter-runtime-reload-execution-us-live",
+            planId: "execution-adapter-runtime-reload-plan-us-live",
+            bindingId: "execution-adapter-environment-binding-us-live",
+            materializationId: "execution-adapter-secret-materialization-us-live",
+            manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+            adapterId: "us-live",
+            market: "us",
+            route: "live",
+            status: "paper_execution_recorded",
+            operator: "paper-execution-runner",
+            recordedAt: "2026-06-09T11:25:00+00:00",
+            paperExecutionMode: "manual_adapter_paper_execution",
+            opsMode: "manual_adapter_ops_state",
+            runbookMode: "manual_paper_route_runbook",
+            lifecycleMode: "manual_paper_order_lifecycle_adapter",
+            dryRunMode: "manual_sandbox_order_schema_dry_run",
+            reviewMode: "manual_production_route_review",
+            sandboxReviewMode: "manual_sandbox_probe_review",
+            probeExecutionMode: "manual_readonly_sandbox_probe",
+            probeMode: "manual_sandbox_probe_plan",
+            confirmationMode: "manual_final_human_confirmation",
+            orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+            orchestrationMode: "manual_adapter_orchestration_dry_run",
+            acceptanceMode: "manual_runtime_reload_acceptance",
+            executionMode: "manual_controlled_reload",
+            reloadMode: "manual_container_reload_plan",
+            maintenanceWindowId: "window-us-live-1",
+            bindingMode: "container_env_reference",
+            manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+            requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+            orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+            lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+            runbookSteps: [{ id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" }],
+            opsSteps: [{ id: "paper-route-runbook-linked", label: "Paper route runbook linked", status: "recorded" }],
+            paperExecutionSteps: [
+              { id: "ops-state-linked", label: "Adapter ops state linked", status: "recorded" },
+              { id: "paper-account-synced", label: "Paper account synced", status: "recorded" },
+              { id: "risk-budget-bound", label: "Risk budget bound", status: "recorded" },
+              { id: "simulated-fill-recorded", label: "Simulated fill recorded", status: "recorded" }
+            ],
+            simulatedFill: {
+              fillId: "paper-fill-execution-adapter-paper-execution-us-live",
+              status: "filled",
+              symbol: "AAPL",
+              side: "buy",
+              type: "limit",
+              quantity: 10,
+              price: 191.2,
+              timeInForce: "GTC",
+              source: "local-paper-ledger",
+              orderSubmitted: false,
+              liveOrderSubmitted: false,
+              routeExecuted: false
+            },
+            paperFillRecorded: true,
+            orderSubmitted: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            requiredConfirmations: [
+              { id: "ops-state-accepted", label: "Ops state accepted", status: "confirmed" },
+              { id: "paper-account-synced", label: "Paper account synced", status: "confirmed" },
+              { id: "risk-budget-bound", label: "Risk budget bound", status: "confirmed" },
+              { id: "simulated-fill-generated", label: "Simulated fill generated", status: "confirmed" },
+              { id: "operator-confirmed-no-live-routing", label: "No live routing", status: "confirmed" }
+            ],
+            blockedReasons: [],
+            metadata: { source: "settings-panel" },
+            liveTradingAllowed: false,
+            paperOnly: true
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "execution-adapter-paper-execution-us-live",
+            eventType: "execution_adapter_paper_execution",
+            runId: "",
+            createdAt: "2026-06-09T11:25:00+00:00",
+            stage: "execution-adapter-paper-execution",
+            source: "execution-adapter-ledger",
+            summary: "us-live adapter paper execution recorded as paper_execution_recorded.",
+            detail: "Adapter paper execution records local simulated fill evidence only.",
+            metadata: {
+              adapterPaperExecutionId: "execution-adapter-paper-execution-us-live",
+              adapterOpsStateId: "execution-adapter-ops-state-us-live",
+              manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+              adapterId: "us-live",
+              status: "paper_execution_recorded",
+              orderSubmitted: false,
+              liveOrderSubmitted: false,
+              routeExecuted: false,
+              paperOnly: true
+            }
+          }
+        })
+      };
+    };
+
+    expect(buildExecutionAdapterPaperExecutionUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/execution/adapter-paper-executions"
+    );
+
+    const result = await recordExecutionAdapterPaperExecution(
+      "/",
+      {
+        adapterId: "us-live",
+        adapterOpsStateId: "execution-adapter-ops-state-us-live",
+        operator: "paper-execution-runner",
+        paperExecutionMode: "manual_adapter_paper_execution",
+        confirmations: {
+          opsStateAccepted: true,
+          paperAccountSynced: true,
+          riskBudgetBound: true,
+          simulatedFillGenerated: true,
+          operatorConfirmedNoLiveRouting: true
+        },
+        metadata: { source: "settings-panel" }
+      },
+      fetcher
+    );
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      "POST /api/execution/adapter-paper-executions"
+    ]);
+    expect(calls[0]?.body).toEqual({
+      adapterId: "us-live",
+      adapterOpsStateId: "execution-adapter-ops-state-us-live",
+      operator: "paper-execution-runner",
+      paperExecutionMode: "manual_adapter_paper_execution",
+      confirmations: {
+        opsStateAccepted: true,
+        paperAccountSynced: true,
+        riskBudgetBound: true,
+        simulatedFillGenerated: true,
+        operatorConfirmedNoLiveRouting: true
+      },
+      metadata: { source: "settings-panel" }
+    });
+    expect(result.source).toBe("core");
+    expect(result.adapterPaperExecution?.status).toBe("paper_execution_recorded");
+    expect(result.adapterPaperExecution?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterPaperExecution?.simulatedFill.status).toBe("filled");
+    expect(result.adapterPaperExecution?.paperFillRecorded).toBe(true);
+    expect(result.adapterPaperExecution?.orderSubmitted).toBe(false);
+    expect(result.adapterPaperExecution?.liveOrderSubmitted).toBe(false);
+    expect(result.adapterPaperExecution?.routeExecuted).toBe(false);
+    expect(result.adapterPaperExecution?.paperOnly).toBe(true);
+    expect(result.auditEvent?.eventType).toBe("execution_adapter_paper_execution");
+  });
+
+  test("loads adapter paper execution history and rejects unredacted metadata", async () => {
+    const calls: string[] = [];
+    const paperExecution = {
+      schemaVersion: 1,
+      adapterPaperExecutionId: "execution-adapter-paper-execution-us-live",
+      adapterOpsStateId: "execution-adapter-ops-state-us-live",
+      paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+      paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "paper_execution_recorded",
+      operator: "paper-execution-runner",
+      recordedAt: "2026-06-09T11:25:00+00:00",
+      paperExecutionMode: "manual_adapter_paper_execution",
+      opsMode: "manual_adapter_ops_state",
+      runbookMode: "manual_paper_route_runbook",
+      lifecycleMode: "manual_paper_order_lifecycle_adapter",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      reviewMode: "manual_production_route_review",
+      sandboxReviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+      lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+      runbookSteps: [{ id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" }],
+      opsSteps: [{ id: "paper-route-runbook-linked", label: "Paper route runbook linked", status: "recorded" }],
+      paperExecutionSteps: [{ id: "ops-state-linked", label: "Adapter ops state linked", status: "recorded" }],
+      simulatedFill: {
+        fillId: "paper-fill-execution-adapter-paper-execution-us-live",
+        status: "filled",
+        symbol: "AAPL",
+        side: "buy",
+        type: "limit",
+        quantity: 10,
+        price: 191.2,
+        timeInForce: "GTC",
+        source: "local-paper-ledger",
+        orderSubmitted: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false
+      },
+      paperFillRecorded: true,
+      orderSubmitted: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      requiredConfirmations: [{ id: "ops-state-accepted", label: "Ops state accepted", status: "confirmed" }],
+      blockedReasons: [],
+      metadata: { source: "settings-panel", token: "[redacted]" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await loadExecutionAdapterPaperExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ adapterPaperExecutions: [paperExecution] })
+        };
+      },
+      5
+    );
+
+    expect(buildExecutionAdapterPaperExecutionHistoryUrl("http://127.0.0.1:8765/", {
+      adapterId: "us-live",
+      limit: 5
+    })).toBe("http://127.0.0.1:8765/api/execution/adapter-paper-executions?adapterId=us-live&limit=5");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/execution/adapter-paper-executions?adapterId=us-live&limit=5"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.adapterPaperExecutions).toHaveLength(1);
+    expect(result.adapterPaperExecutions[0].status).toBe("paper_execution_recorded");
+    expect(result.adapterPaperExecutions[0].manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-us-live"
+    );
+    expect(result.adapterPaperExecutions[0].paperFillRecorded).toBe(true);
+
+    const rejected = await loadExecutionAdapterPaperExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          adapterPaperExecutions: [
+            {
+              ...paperExecution,
+              metadata: { token: "adapter-paper-execution-token-should-not-leak" }
+            }
+          ]
+        })
+      }),
+      5
+    );
+
+    expect(rejected.source).toBe("fallback");
+    expect(rejected.adapterPaperExecutions).toEqual([]);
+    expect(JSON.stringify(rejected)).not.toContain("adapter-paper-execution-token-should-not-leak");
+
+    const { manifestValidationId: _manifestValidationId, ...missingValidationPaperExecution } = paperExecution;
+    const missingValidation = await loadExecutionAdapterPaperExecutions(
+      "http://127.0.0.1:8765/",
+      "us-live",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ adapterPaperExecutions: [missingValidationPaperExecution] })
+      }),
+      5
+    );
+
+    expect(missingValidation.source).toBe("fallback");
+    expect(missingValidation.adapterPaperExecutions).toEqual([]);
   });
 
   test("loads audit signing key registry without exposing secrets", async () => {
@@ -7304,6 +9759,38 @@ describe("terminal workspace API client", () => {
                 rows: 3
               }
             },
+            watchlistRefresh: {
+              runId: "cache-refresh-single-600000",
+              createdAt: "2026-06-15T09:30:00+08:00",
+              timeframe: "1d",
+              requestedLimit: 240,
+              overrideAuditEventId: "market-data-refresh-override-client",
+              summary: {
+                totalSymbols: 1,
+                refreshed: 1,
+                skipped: 0,
+                failed: 0,
+                upsertedRows: 3
+              },
+              items: [
+                {
+                  market: "ashare",
+                  symbol: "600000",
+                  name: "600000",
+                  timeframe: "1d",
+                  requestedLimit: 240,
+                  upsertedRows: 3,
+                  status: "refreshed",
+                  error: null,
+                  quality: {
+                    source: "tencent",
+                    isComplete: true,
+                    warnings: [],
+                    rows: 3
+                  }
+                }
+              ]
+            },
             settings: {
               schemaVersion: 1,
               generatedAt: "2026-05-31T09:00:00+08:00",
@@ -7380,6 +9867,9 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.refresh?.overrideAuditEventId).toBe("market-data-refresh-override-client");
     expect(result.refresh?.upsertedRows).toBe(3);
+    expect(result.watchlistRefresh?.runId).toBe("cache-refresh-single-600000");
+    expect(result.watchlistRefresh?.summary.totalSymbols).toBe(1);
+    expect(result.watchlistRefresh?.items[0]?.symbol).toBe("600000");
     expect(result.settings?.cache.rowCount).toBe(3);
   });
 
@@ -8851,6 +11341,7 @@ describe("terminal workspace API client", () => {
                 decisions: 0,
                 aiRisks: 1,
                 paperExecutions: 1,
+                adapterPaperExecutions: 1,
                 portfolioPaperOrderBatches: 1,
                 promotionCandidates: 1,
                 researchNotes: 1,
@@ -8946,6 +11437,85 @@ describe("terminal workspace API client", () => {
                     reason: "filled_immediately"
                   }
                 ]
+              }
+            ],
+            adapterPaperExecutions: [
+              {
+                schemaVersion: 1,
+                adapterPaperExecutionId: "execution-adapter-paper-exported",
+                adapterOpsStateId: "execution-adapter-ops-state-exported",
+                paperRouteRunbookId: "execution-adapter-paper-route-runbook-exported",
+                paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-exported",
+                sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-exported",
+                productionRouteReviewId: "execution-adapter-production-route-review-exported",
+                sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-exported",
+                sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-exported",
+                sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-exported",
+                humanConfirmationId: "execution-adapter-human-confirmation-exported",
+                orchestrationExecutionId: "execution-adapter-orchestration-execution-exported",
+                dryRunId: "execution-adapter-orchestration-dry-run-exported",
+                acceptanceId: "execution-adapter-runtime-reload-acceptance-exported",
+                executionId: "execution-adapter-runtime-reload-execution-exported",
+                planId: "execution-adapter-runtime-reload-plan-exported",
+                bindingId: "execution-adapter-environment-binding-exported",
+                materializationId: "execution-adapter-secret-materialization-exported",
+                manifestValidationId: "execution-adapter-secret-manifest-validation-exported",
+                adapterId: "ashare-live",
+                market: "ashare",
+                route: "live",
+                status: "paper_execution_recorded",
+                operator: "local-operator",
+                recordedAt: "2026-05-26T08:22:00+00:00",
+                paperExecutionMode: "manual_adapter_paper_execution",
+                opsMode: "manual_adapter_ops_state",
+                runbookMode: "manual_paper_route_runbook",
+                lifecycleMode: "manual_paper_order_lifecycle_adapter",
+                dryRunMode: "manual_sandbox_order_schema_dry_run",
+                reviewMode: "manual_production_route_review",
+                sandboxReviewMode: "manual_sandbox_probe_review",
+                probeExecutionMode: "manual_readonly_sandbox_probe",
+                probeMode: "manual_sandbox_probe_plan",
+                confirmationMode: "manual_final_human_confirmation",
+                orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+                orchestrationMode: "manual_adapter_orchestration_dry_run",
+                acceptanceMode: "manual_runtime_reload_acceptance",
+                executionMode: "manual_controlled_reload",
+                reloadMode: "manual_container_reload_plan",
+                maintenanceWindowId: "window-adapter-paper-exported",
+                bindingMode: "container_env_reference",
+                manifestPath: "local-secret-store://ashare-live/sandbox",
+                requiredEnvVars: ["ASHARE_API_KEY", "ASHARE_API_SECRET"],
+                orderIntent: { symbol: "600000", side: "buy", type: "limit", quantity: 2100, price: 9.21 },
+                lifecycleSteps: [],
+                runbookSteps: [],
+                opsSteps: [],
+                paperExecutionSteps: [
+                  { id: "simulated-fill-recorded", label: "Simulated fill recorded", status: "recorded" }
+                ],
+                simulatedFill: {
+                  fillId: "paper-fill-exported",
+                  status: "filled",
+                  symbol: "600000",
+                  side: "buy",
+                  type: "limit",
+                  quantity: 2100,
+                  price: 9.21,
+                  source: "local-paper-ledger",
+                  orderSubmitted: false,
+                  liveOrderSubmitted: false,
+                  routeExecuted: false
+                },
+                paperFillRecorded: true,
+                orderSubmitted: false,
+                liveOrderSubmitted: false,
+                routeExecuted: false,
+                requiredConfirmations: [
+                  { id: "operator-confirmed-no-live-routing", label: "No live routing", status: "confirmed" }
+                ],
+                blockedReasons: [],
+                metadata: { source: "export-package" },
+                liveTradingAllowed: false,
+                paperOnly: true
               }
             ],
             portfolioPaperOrderBatches: [
@@ -9090,6 +11660,7 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.manifest.dataHash).toBe("snapshot-detail");
     expect(result.exportPackage?.manifest.artifactCounts.bars).toBe(2);
     expect(result.exportPackage?.manifest.artifactCounts.paperExecutions).toBe(1);
+    expect(result.exportPackage?.manifest.artifactCounts.adapterPaperExecutions).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.portfolioPaperOrderBatches).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.promotionCandidates).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.researchNotes).toBe(1);
@@ -9098,6 +11669,13 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
+    expect(result.exportPackage?.adapterPaperExecutions?.[0]?.adapterPaperExecutionId).toBe(
+      "execution-adapter-paper-exported"
+    );
+    expect(result.exportPackage?.adapterPaperExecutions?.[0]?.manifestValidationId).toBe(
+      "execution-adapter-secret-manifest-validation-exported"
+    );
+    expect(result.exportPackage?.adapterPaperExecutions?.[0]?.simulatedFill.orderSubmitted).toBe(false);
     expect(result.exportPackage?.portfolioPaperOrderBatches?.[0]?.batchId).toBe("portfolio-paper-batch-exported");
     expect(result.exportPackage?.promotionCandidate?.status).toBe("certification_pending");
     expect(result.exportPackage?.aiReviewRuns?.[0]?.aiReviewId).toBe("ai-review:run-new:rev123");
@@ -9117,6 +11695,91 @@ describe("terminal workspace API client", () => {
           manifest: { runId: "run-new" },
           researchRun: { runId: "run-new" },
           executionHandoff: { liveTradingAllowed: true }
+        }
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.exportPackage).toBeUndefined();
+    expect(result.error).toBe("Invalid research run export contract");
+  });
+
+  test("returns fallback when research run export adapter paper executions are malformed", async () => {
+    const result = await loadResearchRunExport("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      json: async () => ({
+        export: {
+          kind: "aiqt.researchRun.export",
+          packageVersion: 1,
+          exportedAt: "2026-05-26T08:05:00+00:00",
+          manifest: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyRevision: "rev123",
+            dataHash: "snapshot-detail",
+            dataRows: 1,
+            executionMode: "paper_only",
+            paperOnly: true,
+            liveTradingAllowed: false,
+            artifactCounts: {
+              bars: 1,
+              trades: 0,
+              equityPoints: 0,
+              decisions: 0,
+              aiRisks: 0,
+              adapterPaperExecutions: 1
+            }
+          },
+          researchRun: {
+            runId: "run-new",
+            createdAt: "2026-05-26T08:00:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            strategyName: "SMA trend demo",
+            strategyRevision: "rev123",
+            dataRows: 1,
+            metrics: { total_return_pct: 0, trade_count: 0 },
+            decisions: [],
+            executionMode: "paper_only",
+            dataSnapshot: {
+              source: "tencent",
+              isComplete: true,
+              warnings: [],
+              rows: 1,
+              start: "2026-05-26T08:00:00+00:00",
+              end: "2026-05-26T08:00:00+00:00",
+              hash: "snapshot-detail",
+              bars: [
+                {
+                  timestamp: "2026-05-26T08:00:00+00:00",
+                  timestampMs: 1779782400000,
+                  open: 9.1,
+                  high: 9.3,
+                  low: 9,
+                  close: 9.2,
+                  volume: 1200000
+                }
+              ]
+            }
+          },
+          executionHandoff: {
+            mode: "paper_only",
+            paperOnly: true,
+            liveTradingAllowed: false,
+            requiredGates: [
+              {
+                id: "adapter-certified",
+                label: "Adapter certified",
+                passed: false,
+                reason: "No certified live adapter is bound to this audited run."
+              }
+            ]
+          },
+          adapterPaperExecutions: [{ adapterPaperExecutionId: "broken-adapter-paper-execution" }]
         }
       })
     }));
@@ -10008,7 +12671,18 @@ describe("terminal workspace API client", () => {
         status: "review",
         summary: { liveTradingAllowed: false }
       },
-      paperExecution: null,
+      paperExecution: {
+        executionId: "paper-p0-readiness",
+        runId: "run-p0-readiness",
+        mode: "paper",
+        orders: [{ orderId: "paper-order-1" }],
+        gates: [{ passed: true }, { passed: true }, { passed: false }],
+        preparationEvidence: {
+          runId: "cache-refresh-p0-readiness",
+          upsertedRows: 240,
+          quality: { source: "tencent" }
+        }
+      },
       statusLabel: "Golden Path audit run loaded"
     });
     const evidenceLink = buildP0PlatformActionOutcomeEvidenceLink(outcome);
@@ -10099,10 +12773,26 @@ describe("terminal workspace API client", () => {
         currentGapStepId: "backtest-report",
         currentGapLabel: "Backtest report",
         currentGapStatus: "review",
-        latestEvidenceState: "audit_run",
-        latestEvidenceId: "run-p0-readiness",
-        latestEvidenceLink: "workspace=audit&runId=run-p0-readiness&exportPath=manifest%3Arun-p0-readiness",
+        currentGapWorkspaceId: "backtest",
+        currentGapActionId: "run-pipeline",
+        currentGapActionLabel: "Run research pipeline",
+        currentGapTargetWorkspaceId: "research",
+        currentGapCanExecute: true,
+        currentGapDeepLinkSearch:
+          "workspace=research&auditReportQuery=p0_readiness_report+run-p0-readiness+run-pipeline+research&p0Action=run-pipeline",
+        currentGapExecutableActionId: "run-pipeline",
+        currentGapReadinessReason: "ready",
+        latestEvidenceState: "paper_execution",
+        latestEvidenceId: "paper-p0-readiness",
+        latestEvidenceLink: "workspace=execution&paperExecution=paper-p0-readiness&runId=run-p0-readiness",
+        latestEvidencePreparationRunId: "cache-refresh-p0-readiness",
         backlogCount: 2,
+        backlogExecutableCount: 2,
+        backlogNotExecutableCount: 0,
+        backlogReadinessSummary: "2/2 executable, 0 not executable · first run-pipeline ready",
+        firstBacklogCanExecute: true,
+        firstBacklogExecutableActionId: "run-pipeline",
+        firstBacklogReadinessReason: "ready",
         firstBacklogStepId: "backtest-report",
         paperPreflightActionId: "submit-paper-order",
         paperPreflightActionLabel: "Submit paper order",
@@ -10122,6 +12812,7 @@ describe("terminal workspace API client", () => {
     expect(event.eventId).toBe(`p0-readiness-report-run-p0-readiness-${String(event.metadata.contentSha256).slice(0, 16)}`);
     expect(event.detail).toContain("run-p0-readiness-p0-readiness-report.md");
     expect(event.detail).toContain("2/5 steps");
+    expect(event.detail).toContain("backlog 2/2 executable, 0 not executable");
     expect(event.detail).not.toContain(markdown);
   });
 
@@ -12000,7 +14691,21 @@ describe("terminal workspace API client", () => {
                   timestamp: "2026-05-26T08:20:00+00:00"
                 }
               ],
-              gates: []
+              gates: [],
+              preparationEvidence: {
+                kind: "watchlist_cache_refresh",
+                runId: "cache-refresh-paper-latest",
+                createdAt: "2026-05-26T08:10:00+00:00",
+                market: "ashare",
+                symbol: "600000",
+                name: "浦发银行",
+                timeframe: "1d",
+                status: "refreshed",
+                requestedLimit: 500,
+                upsertedRows: 240,
+                quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+                error: null
+              }
             },
             {
               executionId: "paper-older",
@@ -12020,6 +14725,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.execution?.executionId).toBe("paper-latest");
     expect(result.execution?.orders[0]?.orderId).toBe("order-latest");
+    expect(result.execution?.preparationEvidence?.runId).toBe("cache-refresh-paper-latest");
   });
 
   test("returns core without execution when a run has no paper execution history", async () => {
@@ -12043,6 +14749,44 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.execution).toBeUndefined();
     expect(result.error).toBe("Invalid paper execution contract");
+  });
+
+  test("returns fallback when paper execution preparation evidence is malformed", async () => {
+    const result = await loadLatestResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        executions: [
+          {
+            executionId: "paper-bad-prep",
+            runId: "run-new",
+            createdAt: "2026-05-26T08:20:00+00:00",
+            mode: "paper_only",
+            account: { cash: 80680, positions: { "600000": 2100 }, equity: 100000 },
+            orders: [],
+            gates: [],
+            preparationEvidence: {
+              kind: "watchlist_cache_refresh",
+              runId: "cache-refresh-bad",
+              createdAt: "2026-05-26T08:10:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              name: "浦发银行",
+              timeframe: "1d",
+              status: "refreshed",
+              requestedLimit: 500,
+              upsertedRows: 240,
+              quality: "not-a-quality-object",
+              error: null
+            }
+          }
+        ]
+      })
+    }));
+
+    expect(result.source).toBe("fallback");
+    expect(result.execution).toBeUndefined();
+    expect(result.error).toBe("Invalid paper execution history contract");
   });
 
   test("surfaces core paper execution gate rejections without treating them as offline fallback", async () => {
