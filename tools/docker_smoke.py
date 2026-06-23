@@ -5,10 +5,11 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 def compose_up_args(build: bool = True) -> list[str]:
@@ -38,8 +39,288 @@ def validate_health_payload(payload: Any) -> str:
     return f"health status={payload['status']} service={payload['service']}"
 
 
+def build_p0_pipeline_payload(market: str, symbol: str, timeframe: str) -> dict[str, Any]:
+    return {
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "limit": 240,
+        "strategyConfig": {
+            "name": "SMA trend",
+            "entry": {"type": "sma_cross", "window": 20},
+            "exit": {"type": "sma_break", "window": 20},
+            "position": {"maxPositionPct": 20},
+            "risk": {"stopLossPct": 8, "maxDrawdownPct": 12},
+        },
+        "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+    }
+
+
+def build_p0_ai_review_payload(run_id: str, market: str, symbol: str, timeframe: str) -> dict[str, Any]:
+    return {
+        "runId": run_id,
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+    }
+
+
+def build_p0_paper_simulation_payload(
+    run_id: str,
+    market: str,
+    symbol: str,
+    timeframe: str,
+    *,
+    quantity: int,
+) -> dict[str, Any]:
+    return {
+        "runId": run_id,
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "quantity": max(1, int(quantity)),
+        "route": "paper",
+        "liveTradingAllowed": False,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+    }
+
+
+def _require_dict(payload: Any, label: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Invalid {label} response: body is not an object")
+    return payload
+
+
+def _require_paper_boundary(payload: dict[str, Any], label: str) -> None:
+    if payload.get("paperOnly") is not True:
+        raise RuntimeError(f"Invalid {label} response: paperOnly is not true")
+    if payload.get("liveTradingAllowed") is not False:
+        raise RuntimeError(f"Invalid {label} response: liveTradingAllowed is not false")
+
+
+def validate_p0_pipeline_payload(payload: Any) -> tuple[str, str]:
+    response = _require_dict(payload, "P0 pipeline")
+    if response.get("status") != "audited_run_created":
+        raise RuntimeError("Invalid P0 pipeline response: status is not audited_run_created")
+    _require_paper_boundary(response, "P0 pipeline")
+    run_id = str(response.get("runId") or "").strip()
+    if not run_id:
+        raise RuntimeError("Invalid P0 pipeline response: runId is missing")
+    if not isinstance(response.get("metrics"), dict):
+        raise RuntimeError("Invalid P0 pipeline response: metrics are missing")
+    return run_id, f"p0 pipeline run={run_id}"
+
+
+def validate_p0_ai_review_payload(payload: Any, run_id: str) -> str:
+    response = _require_dict(payload, "P0 AI review")
+    if response.get("status") != "ai_review_saved":
+        raise RuntimeError("Invalid P0 AI review response: status is not ai_review_saved")
+    _require_paper_boundary(response, "P0 AI review")
+    if response.get("directTradingInstructionBlocked") is not True:
+        raise RuntimeError("Invalid P0 AI review response: direct trading instructions are not blocked")
+    if not isinstance(response.get("aiReview"), dict):
+        raise RuntimeError("Invalid P0 AI review response: aiReview is missing")
+    mode = response.get("mode") or "unknown"
+    return f"p0 ai-review run={run_id} mode={mode}"
+
+
+def validate_p0_paper_simulation_payload(payload: Any, run_id: str) -> str:
+    response = _require_dict(payload, "P0 paper simulation")
+    if response.get("status") != "paper_simulation_created":
+        raise RuntimeError("Invalid P0 paper simulation response: status is not paper_simulation_created")
+    _require_paper_boundary(response, "P0 paper simulation")
+    if response.get("liveOrderSubmitted") is not False or response.get("routeExecuted") is not False:
+        raise RuntimeError("Invalid P0 paper simulation response: live order route was not blocked")
+    audit_event = response.get("auditEvent")
+    if not isinstance(audit_event, dict) or audit_event.get("eventType") != "p0_paper_simulation":
+        raise RuntimeError("Invalid P0 paper simulation response: p0_paper_simulation audit event is missing")
+    export_readiness = response.get("exportReadiness")
+    if not isinstance(export_readiness, dict) or export_readiness.get("ready") is not True:
+        raise RuntimeError("Invalid P0 paper simulation response: export readiness is not ready")
+    return f"p0 paper-simulation run={run_id} liveBlocked=True"
+
+
+def _p0_export_package_from_payload(payload: Any) -> dict[str, Any]:
+    response = _require_dict(payload, "P0 export")
+    export_package = response.get("export", response)
+    if not isinstance(export_package, dict):
+        raise RuntimeError("Invalid P0 export response: export package is not an object")
+    return export_package
+
+
+def validate_p0_export_payload(payload: Any, run_id: str) -> str:
+    export_package = _p0_export_package_from_payload(payload)
+    manifest = export_package.get("manifest")
+    audit_events = export_package.get("auditEvents")
+    completeness = export_package.get("p0PackageCompleteness")
+    if not isinstance(manifest, dict) or not isinstance(audit_events, list) or not isinstance(completeness, dict):
+        raise RuntimeError("Invalid P0 export response: missing manifest, auditEvents, or p0PackageCompleteness")
+    if str(manifest.get("runId") or "").strip() != run_id:
+        raise RuntimeError("Invalid P0 export response: manifest runId does not match the accepted run")
+    counts = manifest.get("artifactCounts")
+    expected_audit_events = int(counts.get("auditEvents", -1)) if isinstance(counts, dict) else -1
+    if expected_audit_events != len(audit_events):
+        raise RuntimeError("Invalid P0 export response: auditEvents count does not match manifest")
+    if not any(isinstance(event, dict) and event.get("eventType") == "p0_paper_simulation" for event in audit_events):
+        raise RuntimeError("Invalid P0 export response: p0_paper_simulation audit event is missing")
+    if completeness.get("ready") is not True or completeness.get("status") != "complete":
+        raise RuntimeError("Invalid P0 export response: P0 package completeness is not complete")
+    if completeness.get("paperOnly") is not True:
+        raise RuntimeError("Invalid P0 export response: P0 package is not paper-only")
+    if completeness.get("liveTradingAllowed") is not False or completeness.get("liveBlockedBoundary") is not True:
+        raise RuntimeError("Invalid P0 export response: live-blocked boundary is not enforced")
+    passed = int(completeness.get("passed", 0))
+    total = int(completeness.get("total", 0))
+    return f"p0 export run={run_id} completeness={passed}/{total} auditEvents={len(audit_events)} liveBlocked=True"
+
+
+def validate_p0_import_payload(payload: Any, run_id: str) -> str:
+    response = _require_dict(payload, "P0 import")
+    run = response.get("run")
+    if not isinstance(run, dict):
+        raise RuntimeError("Invalid P0 import response: run is missing")
+    if str(run.get("runId") or "").strip() != run_id:
+        raise RuntimeError("Invalid P0 import response: imported runId does not match")
+    if str(run.get("executionMode") or "").strip() != "paper_only":
+        raise RuntimeError("Invalid P0 import response: imported run is not paper-only")
+    data_snapshot = run.get("dataSnapshot")
+    bars = data_snapshot.get("bars") if isinstance(data_snapshot, dict) else None
+    if not isinstance(bars, list) or not bars:
+        raise RuntimeError("Invalid P0 import response: imported data snapshot is missing bars")
+    if run.get("liveTradingAllowed") is True:
+        raise RuntimeError("Invalid P0 import response: liveTradingAllowed is true")
+    undo_token = str(response.get("undoToken") or "").strip()
+    undo = response.get("undo")
+    if not undo_token or not isinstance(undo, dict):
+        raise RuntimeError("Invalid P0 import response: undo evidence is missing")
+    return f"p0 import run={run_id} undo={undo_token}"
+
+
+def _p0_acceptance_check_id(summary: str) -> str:
+    if summary.startswith("p0 imported-export"):
+        return "imported-export"
+    if summary.startswith("p0 paper-simulation"):
+        return "paper-simulation"
+    if summary.startswith("p0 ai-review"):
+        return "ai-review"
+    if summary.startswith("p0 pipeline"):
+        return "pipeline"
+    if summary.startswith("p0 export"):
+        return "export"
+    if summary.startswith("p0 import"):
+        return "import"
+    return "unknown"
+
+
+def build_p0_acceptance_manifest(
+    *,
+    base_url: str,
+    import_base_url: str | None,
+    market: str,
+    symbol: str,
+    timeframe: str,
+    run_id: str,
+    summaries: Sequence[str],
+) -> dict[str, Any]:
+    checks = [
+        {
+            "id": _p0_acceptance_check_id(summary),
+            "status": "passed",
+            "summary": summary,
+        }
+        for summary in summaries
+    ]
+    return {
+        "kind": "aiqt.p0AcceptanceManifest",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if checks and all(check["status"] == "passed" for check in checks) else "blocked",
+        "baseUrl": base_url,
+        "importBaseUrl": import_base_url or base_url,
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "runId": run_id,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "liveBlockedBoundary": True,
+        "checkCount": len(checks),
+        "checks": checks,
+    }
+
+
+def write_p0_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"p0 acceptance report={path}")
+    return path
+
+
+def validate_p0_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "P0 acceptance manifest")
+    if payload.get("kind") != "aiqt.p0AcceptanceManifest" or payload.get("schemaVersion") != 1:
+        raise RuntimeError("Invalid P0 acceptance manifest: kind or schemaVersion is invalid")
+    if payload.get("status") != "passed":
+        raise RuntimeError("Invalid P0 acceptance manifest: status is not passed")
+    run_id = str(payload.get("runId") or "").strip()
+    if not run_id:
+        raise RuntimeError("Invalid P0 acceptance manifest: runId is missing")
+    if payload.get("paperOnly") is not True:
+        raise RuntimeError("Invalid P0 acceptance manifest: paperOnly is not true")
+    if payload.get("liveTradingAllowed") is not False or payload.get("liveBlockedBoundary") is not True:
+        raise RuntimeError("Invalid P0 acceptance manifest: live-blocked boundary is not enforced")
+    checks = payload.get("checks")
+    if not isinstance(checks, list) or not checks:
+        raise RuntimeError("Invalid P0 acceptance manifest: checks are missing")
+    check_ids = []
+    for check in checks:
+        if not isinstance(check, dict):
+            raise RuntimeError("Invalid P0 acceptance manifest: check is not an object")
+        check_id = str(check.get("id") or "").strip()
+        if not check_id or check.get("status") != "passed":
+            raise RuntimeError("Invalid P0 acceptance manifest: check is not passed")
+        check_ids.append(check_id)
+    required = {"pipeline", "ai-review", "paper-simulation", "export"}
+    missing = sorted(required.difference(check_ids))
+    if missing:
+        raise RuntimeError(f"Invalid P0 acceptance manifest: missing required checks {', '.join(missing)}")
+    if "imported-export" in check_ids and "import" not in check_ids:
+        raise RuntimeError("Invalid P0 acceptance manifest: imported-export check requires import check")
+    check_count = int(payload.get("checkCount", len(checks)))
+    if check_count != len(checks):
+        raise RuntimeError("Invalid P0 acceptance manifest: checkCount does not match checks")
+    return f"p0 acceptance manifest run={run_id} checks={len(checks)} liveBlocked=True"
+
+
+def load_p0_acceptance_report(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Invalid P0 acceptance manifest: report file not found {path}") from error
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"Invalid P0 acceptance manifest: report is not valid JSON {path}") from error
+    return _require_dict(payload, "P0 acceptance manifest")
+
+
 def request_json(url: str, timeout_seconds: int) -> Any:
     with urlopen(url, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_json(url: str, payload: dict[str, Any], timeout_seconds: int) -> Any:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+        },
+    )
+    with urlopen(request, timeout=timeout_seconds) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -95,7 +376,112 @@ def run_command(args: Sequence[str], cwd: Path, check: bool = True) -> subproces
     return result
 
 
-def run_smoke(repo_root: Path, base_url: str, timeout_seconds: int, build: bool, down: bool) -> None:
+def run_p0_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    market: str,
+    symbol: str,
+    timeframe: str,
+    quantity: int,
+    import_check: bool = False,
+    import_base_url: str | None = None,
+    report_path: Path | None = None,
+) -> list[str]:
+    summaries: list[str] = []
+
+    pipeline_payload = post_json(
+        join_url(base_url, "/api/p0/pipeline"),
+        build_p0_pipeline_payload(market, symbol, timeframe),
+        timeout_seconds=timeout_seconds,
+    )
+    run_id, pipeline_summary = validate_p0_pipeline_payload(pipeline_payload)
+    summaries.append(pipeline_summary)
+
+    ai_review_payload = post_json(
+        join_url(base_url, "/api/p0/ai-reviews"),
+        build_p0_ai_review_payload(run_id, market, symbol, timeframe),
+        timeout_seconds=timeout_seconds,
+    )
+    summaries.append(validate_p0_ai_review_payload(ai_review_payload, run_id))
+
+    paper_payload = post_json(
+        join_url(base_url, "/api/p0/paper-simulations"),
+        build_p0_paper_simulation_payload(run_id, market, symbol, timeframe, quantity=quantity),
+        timeout_seconds=timeout_seconds,
+    )
+    summaries.append(validate_p0_paper_simulation_payload(paper_payload, run_id))
+
+    export_payload = request_json(join_url(base_url, f"/api/research/runs/{run_id}/export"), timeout_seconds)
+    summaries.append(validate_p0_export_payload(export_payload, run_id))
+    if import_check:
+        summaries.extend(
+            run_p0_import_acceptance(
+                import_base_url or base_url,
+                export_package=_p0_export_package_from_payload(export_payload),
+                run_id=run_id,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+    for summary in summaries:
+        print(summary)
+    if report_path is not None:
+        write_p0_acceptance_report(
+            report_path,
+            build_p0_acceptance_manifest(
+                base_url=base_url,
+                import_base_url=import_base_url,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                run_id=run_id,
+                summaries=summaries,
+            ),
+        )
+    return summaries
+
+
+def run_p0_import_acceptance(
+    import_base_url: str,
+    *,
+    export_package: dict[str, Any],
+    run_id: str,
+    timeout_seconds: int,
+) -> list[str]:
+    import_payload = post_json(
+        join_url(import_base_url, "/api/research/runs/import"),
+        export_package,
+        timeout_seconds=timeout_seconds,
+    )
+    import_summary = validate_p0_import_payload(import_payload, run_id)
+    imported_export_payload = request_json(
+        join_url(import_base_url, f"/api/research/runs/{run_id}/export"),
+        timeout_seconds,
+    )
+    imported_export_summary = validate_p0_export_payload(imported_export_payload, run_id).replace(
+        "p0 export",
+        "p0 imported-export",
+        1,
+    )
+    return [import_summary, imported_export_summary]
+
+
+def run_smoke(
+    repo_root: Path,
+    base_url: str,
+    timeout_seconds: int,
+    build: bool,
+    down: bool,
+    *,
+    p0_acceptance: bool = False,
+    p0_market: str = "ashare",
+    p0_symbol: str = "600000",
+    p0_timeframe: str = "1d",
+    p0_quantity: int = 2100,
+    p0_import_check: bool = False,
+    p0_import_base_url: str | None = None,
+    p0_acceptance_report: Path | None = None,
+) -> None:
     try:
         run_command(["docker", "compose", "config"], cwd=repo_root)
         run_command(compose_up_args(build=build), cwd=repo_root)
@@ -110,6 +496,18 @@ def run_smoke(repo_root: Path, base_url: str, timeout_seconds: int, build: bool,
 
         workspace_payload = wait_for_json(join_url(base_url, "/api/workspace"), timeout_seconds)
         print(validate_workspace_payload(workspace_payload))
+        if p0_acceptance:
+            run_p0_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                market=p0_market,
+                symbol=p0_symbol,
+                timeframe=p0_timeframe,
+                quantity=p0_quantity,
+                import_check=p0_import_check,
+                import_base_url=p0_import_base_url,
+                report_path=p0_acceptance_report,
+            )
     finally:
         if down:
             run_command(["docker", "compose", "down"], cwd=repo_root, check=False)
@@ -121,11 +519,24 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=90, help="Seconds to wait for services to become reachable.")
     parser.add_argument("--no-build", action="store_true", help="Start Compose without rebuilding images.")
     parser.add_argument("--down", action="store_true", help="Run docker compose down after the smoke test.")
+    parser.add_argument("--p0-acceptance", action="store_true", help="Run the P0 pipeline, AI review, paper simulation, and export acceptance smoke.")
+    parser.add_argument("--p0-market", default="ashare", help="P0 acceptance market.")
+    parser.add_argument("--p0-symbol", default="600000", help="P0 acceptance symbol.")
+    parser.add_argument("--p0-timeframe", default="1d", help="P0 acceptance timeframe.")
+    parser.add_argument("--p0-quantity", type=int, default=2100, help="P0 paper simulation quantity.")
+    parser.add_argument("--p0-import-check", action="store_true", help="Import the exported P0 package and revalidate the imported export.")
+    parser.add_argument("--p0-import-base-url", default=None, help="Optional clean service URL used as the P0 import target.")
+    parser.add_argument("--p0-acceptance-report", default=None, help="Optional path for a JSON P0 acceptance manifest.")
+    parser.add_argument("--validate-p0-acceptance-report", default=None, help="Validate an existing P0 acceptance manifest and exit.")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.validate_p0_acceptance_report:
+        manifest = load_p0_acceptance_report(Path(args.validate_p0_acceptance_report))
+        print(validate_p0_acceptance_manifest(manifest))
+        return 0
     repo_root = Path(__file__).resolve().parents[1]
     run_smoke(
         repo_root=repo_root,
@@ -133,6 +544,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_seconds=max(1, args.timeout),
         build=not args.no_build,
         down=args.down,
+        p0_acceptance=args.p0_acceptance,
+        p0_market=args.p0_market,
+        p0_symbol=args.p0_symbol,
+        p0_timeframe=args.p0_timeframe,
+        p0_quantity=max(1, args.p0_quantity),
+        p0_import_check=args.p0_import_check,
+        p0_import_base_url=args.p0_import_base_url,
+        p0_acceptance_report=Path(args.p0_acceptance_report) if args.p0_acceptance_report else None,
     )
     return 0
 

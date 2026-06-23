@@ -388,6 +388,146 @@ def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, 
     return {"runs": [research_run_audit_to_payload(audit) for audit in audits]}
 
 
+def build_p0_package_completeness(payload: dict[str, Any]) -> dict[str, Any]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        export_package = {}
+    manifest = _dict_or_empty(export_package.get("manifest"))
+    research_run = _dict_or_empty(export_package.get("researchRun"))
+    data_snapshot = _dict_or_empty(research_run.get("dataSnapshot"))
+    strategy_config = _dict_or_empty(research_run.get("strategyConfig"))
+    handoff = _dict_or_empty(export_package.get("executionHandoff"))
+    counts = _dict_or_empty(manifest.get("artifactCounts"))
+    paper_executions = _list_of_dicts(export_package.get("paperExecutions"))
+    ai_review_runs = _list_of_dicts(export_package.get("aiReviewRuns"))
+    audit_events = _list_of_dicts(export_package.get("auditEvents"))
+    bars = data_snapshot.get("bars")
+    paper_only = bool(manifest.get("paperOnly")) and bool(handoff.get("paperOnly"))
+    live_trading_allowed = bool(manifest.get("liveTradingAllowed")) or bool(handoff.get("liveTradingAllowed"))
+    run_id = str(manifest.get("runId") or research_run.get("runId") or "").strip()
+    symbol = str(manifest.get("symbol") or research_run.get("symbol") or "").strip()
+    timeframe = str(manifest.get("timeframe") or research_run.get("timeframe") or "").strip()
+    market = str(manifest.get("market") or research_run.get("market") or "").strip()
+    strategy_revision = str(manifest.get("strategyRevision") or research_run.get("strategyRevision") or "").strip()
+    p0_audit_events = [event for event in audit_events if str(event.get("eventType") or "") == "p0_paper_simulation"]
+    paper_replay_ready = any(_paper_execution_has_replay(execution, symbol=symbol) for execution in paper_executions)
+    ai_review_ready = any(_ai_review_payload_is_ready(review, run_id=run_id, strategy_revision=strategy_revision) for review in ai_review_runs)
+    audit_reference_ready = bool(p0_audit_events) or isinstance(export_package.get("auditEvidenceSummary"), dict) or isinstance(
+        export_package.get("auditReport"),
+        dict,
+    )
+
+    criteria = [
+        _p0_package_criterion(
+            "market-context",
+            "Market context",
+            bool(run_id and market and symbol and timeframe),
+            "manifest.runId",
+            f"{market or 'missing'} {symbol or 'missing'} {timeframe or 'missing'}",
+            "Package manifest must identify run, market, symbol, and timeframe.",
+        ),
+        _p0_package_criterion(
+            "data-snapshot",
+            "Data snapshot summary",
+            isinstance(bars, list)
+            and len(bars) > 0
+            and int(_number_or_default(counts.get("bars"), -1)) == len(bars)
+            and str(manifest.get("dataHash") or "").strip() != "",
+            "researchRun.dataSnapshot",
+            f"{len(bars) if isinstance(bars, list) else 0} bars · {manifest.get('dataHash') or 'missing hash'}",
+            "Portable package needs hashed OHLCV bars that match artifact counts.",
+        ),
+        _p0_package_criterion(
+            "strategy-revision",
+            "Strategy revision",
+            bool(strategy_revision)
+            and bool(strategy_config)
+            and str(strategy_config.get("revision") or strategy_revision) == strategy_revision,
+            "researchRun.strategyConfig.revision",
+            strategy_revision or "missing revision",
+            "Structured strategy config must be bound to the audited revision.",
+        ),
+        _p0_package_criterion(
+            "audited-backtest",
+            "Audited backtest run",
+            int(_number_or_default(counts.get("trades"), 0)) > 0
+            and int(_number_or_default(counts.get("equityPoints"), 0)) > 0
+            and str(research_run.get("executionMode") or manifest.get("executionMode") or "") == "paper_only",
+            "researchRun.backtestTrades",
+            f"{counts.get('trades', 0)} trades · {counts.get('equityPoints', 0)} equity",
+            "Backtest trade ledger and equity replay must be present.",
+        ),
+        _p0_package_criterion(
+            "ai-review",
+            "AI review record",
+            ai_review_ready and int(_number_or_default(counts.get("aiReviewRuns"), 0)) == len(ai_review_runs),
+            "aiReviewRuns[]",
+            f"{len(ai_review_runs)} AI review records",
+            "AI review must be evidence-bound, ready, and count-consistent.",
+        ),
+        _p0_package_criterion(
+            "paper-simulation",
+            "Paper simulation record",
+            len(paper_executions) > 0
+            and int(_number_or_default(counts.get("paperExecutions"), 0)) == len(paper_executions)
+            and bool(p0_audit_events),
+            "paperExecutions[]",
+            f"{len(paper_executions)} paper executions · {len(p0_audit_events)} P0 audit events",
+            "Paper simulation must include execution evidence and its P0 audit event.",
+        ),
+        _p0_package_criterion(
+            "replay-summary",
+            "Replay summary",
+            paper_replay_ready,
+            "paperExecutions[].account",
+            "account replay available" if paper_replay_ready else "missing account replay",
+            "Paper execution must carry account, positions, and order replay state.",
+        ),
+        _p0_package_criterion(
+            "audit-report-references",
+            "Audit report references",
+            audit_reference_ready and int(_number_or_default(counts.get("auditEvents"), 0)) == len(audit_events),
+            "auditEvents[]",
+            f"{len(audit_events)} run-bound audit events",
+            "Package must carry audit references that can be searched after import.",
+        ),
+        _p0_package_criterion(
+            "live-blocked-boundary",
+            "Live trading boundary",
+            paper_only and not live_trading_allowed,
+            "executionHandoff.liveTradingAllowed",
+            "paper-only · live blocked" if paper_only and not live_trading_allowed else "live boundary unsafe",
+            "P0 package must never enable live order routing.",
+        ),
+    ]
+    passed = sum(1 for criterion in criteria if criterion["status"] == "passed")
+    blocked = sum(1 for criterion in criteria if criterion["status"] == "blocked")
+    review = sum(1 for criterion in criteria if criterion["status"] == "review")
+    total = len(criteria)
+    status = "complete" if blocked == 0 and review == 0 else "review" if blocked == 0 else "blocked"
+    return {
+        "kind": "aiqt.p0PackageCompleteness",
+        "schemaVersion": 1,
+        "runId": run_id,
+        "ready": status == "complete",
+        "status": status,
+        "passed": passed,
+        "review": review,
+        "blocked": blocked,
+        "total": total,
+        "progressPct": round((passed / total) * 100) if total else 0,
+        "paperOnly": paper_only,
+        "liveTradingAllowed": live_trading_allowed,
+        "liveBlockedBoundary": paper_only and not live_trading_allowed,
+        "summary": (
+            f"P0 package complete: {passed}/{total} criteria passed."
+            if status == "complete"
+            else f"P0 package incomplete: {passed}/{total} criteria passed, {blocked} blocked."
+        ),
+        "criteria": criteria,
+    }
+
+
 def research_run_export_to_payload(
     audit: ResearchRunAudit,
     *,
@@ -399,6 +539,7 @@ def research_run_export_to_payload(
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
+    audit_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     exported = exported_at or datetime.now(timezone.utc)
     run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
@@ -424,6 +565,7 @@ def research_run_export_to_payload(
     )
     normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
     ai_review_run_payloads = _normalize_ai_review_run_payloads(ai_review_runs, run_id=audit.run_id)
+    audit_event_payloads = _normalize_audit_event_payloads(audit_events, run_id=audit.run_id)
     artifact_counts = {
         "bars": len(data_snapshot.get("bars", [])) if isinstance(data_snapshot, dict) else 0,
         "trades": len(run_payload.get("backtestTrades", [])),
@@ -438,6 +580,7 @@ def research_run_export_to_payload(
         "promotionCandidates": 1 if normalized_promotion_candidate else 0,
         "researchNotes": 1 if _research_note_has_body(research_note) else 0,
         "aiReviewRuns": len(ai_review_run_payloads),
+        "auditEvents": len(audit_event_payloads),
     }
     export_package = {
         "kind": "aiqt.researchRun.export",
@@ -465,6 +608,7 @@ def research_run_export_to_payload(
         "portfolioPaperOrderSimulations": portfolio_paper_order_simulation_payloads,
         "promotionCandidate": normalized_promotion_candidate,
         "aiReviewRuns": ai_review_run_payloads,
+        "auditEvents": audit_event_payloads,
         "executionHandoff": {
             "mode": audit.execution_mode,
             "paperOnly": True,
@@ -491,6 +635,7 @@ def research_run_export_to_payload(
             ],
         },
     }
+    export_package["p0PackageCompleteness"] = build_p0_package_completeness(export_package)
     export_package["integrity"] = {"algorithm": "sha256", "hash": _export_package_hash(export_package)}
     return export_package
 
@@ -589,6 +734,18 @@ def research_run_import_ai_review_runs(payload: dict[str, Any], *, run_id: str |
     return _normalize_ai_review_run_payloads(raw_reviews, run_id=run_id)
 
 
+def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_events = export_package.get("auditEvents", [])
+    if raw_events is None:
+        return []
+    if not isinstance(raw_events, list):
+        raise ValueError("audit_events_must_be_array")
+    return _normalize_audit_event_payloads(raw_events, run_id=run_id, strict=True)
+
+
 def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
@@ -627,6 +784,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         base_run_id=run_id,
     )
     ai_review_runs = research_run_import_ai_review_runs(export_package, run_id=run_id)
+    audit_events = research_run_import_audit_events(export_package, run_id=run_id)
     promotion_candidate = _normalize_promotion_candidate(export_package.get("promotionCandidate"), run_id=run_id)
     data_snapshot = research_run.get("dataSnapshot")
     if not isinstance(data_snapshot, dict):
@@ -642,6 +800,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         portfolio_paper_order_approvals=portfolio_paper_order_approvals,
         portfolio_paper_order_simulations=portfolio_paper_order_simulations,
         ai_review_runs=ai_review_runs,
+        audit_events=audit_events,
         promotion_candidate=promotion_candidate,
     )
 
@@ -776,6 +935,7 @@ def _validate_manifest_consistency(
     portfolio_paper_order_approvals: list[dict[str, Any]] | None = None,
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
+    audit_events: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
 ) -> None:
     for manifest_key, run_key, error_code in [
@@ -831,6 +991,8 @@ def _validate_manifest_consistency(
         expected_counts["promotionCandidates"] = 1 if promotion_candidate else 0
     if "aiReviewRuns" in counts or ai_review_runs:
         expected_counts["aiReviewRuns"] = len(ai_review_runs or [])
+    if "auditEvents" in counts or audit_events:
+        expected_counts["auditEvents"] = len(audit_events or [])
     research_note = _normalize_research_note(
         _dict_or_empty(research_run.get("researchNote")),
         audit_fields={
@@ -891,6 +1053,48 @@ def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, dict)]
 
 
+def _p0_package_criterion(
+    criterion_id: str,
+    label: str,
+    passed: bool,
+    evidence_path: str,
+    evidence: str,
+    missing_detail: str,
+) -> dict[str, Any]:
+    return {
+        "id": criterion_id,
+        "label": label,
+        "status": "passed" if passed else "blocked",
+        "detail": evidence if passed else missing_detail,
+        "evidence": evidence,
+        "evidencePath": evidence_path,
+    }
+
+
+def _paper_execution_has_replay(execution: dict[str, Any], *, symbol: str) -> bool:
+    account = _dict_or_empty(execution.get("account"))
+    orders = _list_of_dicts(execution.get("orders"))
+    positions = account.get("positions")
+    return (
+        bool(orders)
+        and isinstance(positions, dict)
+        and symbol in positions
+        and _number_or_default(account.get("cash"), -1) >= 0
+        and _number_or_default(account.get("equity"), -1) >= 0
+    )
+
+
+def _ai_review_payload_is_ready(review: dict[str, Any], *, run_id: str, strategy_revision: str) -> bool:
+    record = _dict_or_empty(review.get("record"))
+    return (
+        str(review.get("runId") or record.get("runId") or "") == run_id
+        and str(record.get("status") or "") == "ready"
+        and str(record.get("strategyRevision") or strategy_revision) == strategy_revision
+        and bool(_list_of_dicts(record.get("citations")))
+        and bool(str(record.get("boundary") or "").strip())
+    )
+
+
 def _normalize_paper_execution_payloads(value: list[dict[str, Any]] | None, *, run_id: str) -> list[dict[str, Any]]:
     normalized = []
     for item in value or []:
@@ -908,6 +1112,71 @@ def _normalize_paper_execution_payloads(value: list[dict[str, Any]] | None, *, r
                 "account": _dict_or_empty(item.get("account")),
                 "orders": _list_of_dicts(item.get("orders")),
                 "gates": _list_of_dicts(item.get("gates")),
+            }
+        )
+    return normalized
+
+
+def _normalize_audit_event_payloads(
+    value: list[dict[str, Any]] | None,
+    *,
+    run_id: str | None = None,
+    strict: bool = False,
+) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        if strict:
+            raise ValueError("audit_events_must_be_array")
+        return []
+    expected_run_id = str(run_id or "").strip()
+    normalized = []
+    for item in value:
+        if not isinstance(item, dict):
+            if strict:
+                raise ValueError("audit_event_must_be_object")
+            continue
+        event_run_id = str(item.get("runId") or "").strip()
+        if expected_run_id and event_run_id != expected_run_id:
+            if strict:
+                raise ValueError("audit_event_run_id_mismatch")
+            continue
+        event_id = str(item.get("eventId") or "").strip()
+        event_type = str(item.get("eventType") or "").strip()
+        created_at = str(item.get("createdAt") or "").strip()
+        stage = str(item.get("stage") or "").strip()
+        source = str(item.get("source") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        detail = str(item.get("detail") or "").strip()
+        if strict:
+            if int(_number_or_default(item.get("schemaVersion"), 0)) != 1:
+                raise ValueError("unsupported_audit_event_schema_version")
+            if not event_id:
+                raise ValueError("audit_event_id_required")
+            if not event_type:
+                raise ValueError("audit_event_type_required")
+            if not created_at:
+                raise ValueError("audit_event_created_at_required")
+            if not stage:
+                raise ValueError("audit_event_stage_required")
+            if not source:
+                raise ValueError("audit_event_source_required")
+            if not summary:
+                raise ValueError("audit_event_summary_required")
+            if not detail:
+                raise ValueError("audit_event_detail_required")
+        normalized.append(
+            {
+                "schemaVersion": 1,
+                "eventId": event_id,
+                "eventType": event_type,
+                "runId": event_run_id or None,
+                "createdAt": created_at,
+                "stage": stage,
+                "source": source,
+                "summary": summary,
+                "detail": detail,
+                "metadata": _dict_or_empty(item.get("metadata")),
             }
         )
     return normalized

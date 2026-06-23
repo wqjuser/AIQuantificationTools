@@ -1732,9 +1732,20 @@ def _normalize_portfolio_paper_order_adapter_evidence(
     adapter_paper_execution_id: str,
     adapter_manifest_validation_id: str,
     adapter_paper_execution_evidence: dict[str, Any] | None,
+    *,
+    expected_symbol: str = "",
+    expected_side: str = "",
+    expected_quantity: float | None = None,
+    expected_price: float | None = None,
+    expected_notional: float | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     normalized_execution_id = str(adapter_paper_execution_id or "").strip()
     normalized_manifest_validation_id = str(adapter_manifest_validation_id or "").strip()
+    normalized_expected_symbol = str(expected_symbol or "").strip()
+    normalized_expected_side = str(expected_side or "").strip().lower()
+    normalized_expected_quantity = _strict_positive_number(expected_quantity)
+    normalized_expected_price = _strict_positive_number(expected_price)
+    normalized_expected_notional = _strict_positive_number(expected_notional)
     redacted_evidence = _redact_secret_fields(
         adapter_paper_execution_evidence if isinstance(adapter_paper_execution_evidence, dict) else {}
     )
@@ -1750,12 +1761,223 @@ def _normalize_portfolio_paper_order_adapter_evidence(
         if normalized_manifest_validation_id and evidence_manifest_validation_id != normalized_manifest_validation_id:
             raise ValueError("portfolio_paper_order_simulation_adapter_manifest_validation_id_mismatch")
         normalized_manifest_validation_id = evidence_manifest_validation_id
+    if normalized_execution_id and not normalized_manifest_validation_id:
+        raise ValueError("portfolio_paper_order_simulation_adapter_manifest_validation_id_required")
+    evidence_event_type = str(redacted_evidence.get("eventType") or "").strip()
+    if normalized_execution_id and evidence_event_type and evidence_event_type != "execution_adapter_paper_execution":
+        raise ValueError("portfolio_paper_order_simulation_adapter_event_type_mismatch")
+    evidence_status = str(redacted_evidence.get("status") or "").strip()
+    if normalized_execution_id and evidence_status and evidence_status != "paper_execution_recorded":
+        raise ValueError("portfolio_paper_order_simulation_adapter_paper_fill_not_recorded")
+    evidence_paper_execution_mode = str(redacted_evidence.get("paperExecutionMode") or "").strip()
+    if (
+        normalized_execution_id
+        and evidence_paper_execution_mode
+        and evidence_paper_execution_mode != "manual_adapter_paper_execution"
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_paper_execution_mode_invalid")
+    blocked_reasons = redacted_evidence.get("blockedReasons")
+    if (
+        normalized_execution_id
+        and isinstance(blocked_reasons, list)
+        and any(str(reason or "").strip() for reason in blocked_reasons)
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_blocked_reasons_present")
+    paper_execution_steps = redacted_evidence.get("paperExecutionSteps")
+    if normalized_execution_id and isinstance(paper_execution_steps, list):
+        step_entries = [step for step in paper_execution_steps if isinstance(step, dict)]
+        for step in paper_execution_steps:
+            if not isinstance(step, dict):
+                continue
+            step_status = str(step.get("status") or "").strip()
+            if step_status and step_status != "recorded":
+                raise ValueError("portfolio_paper_order_simulation_adapter_steps_not_recorded")
+        if step_entries:
+            expected_step_ids = {step["id"] for step in _execution_adapter_paper_execution_steps("recorded")}
+            evidence_step_ids = {
+                str(step.get("id") or "").strip()
+                for step in step_entries
+                if str(step.get("id") or "").strip()
+            }
+            if not expected_step_ids.issubset(evidence_step_ids):
+                raise ValueError("portfolio_paper_order_simulation_adapter_steps_missing")
+    required_confirmations = redacted_evidence.get("requiredConfirmations")
+    if normalized_execution_id and isinstance(required_confirmations, list):
+        confirmation_entries = [confirmation for confirmation in required_confirmations if isinstance(confirmation, dict)]
+        for confirmation in required_confirmations:
+            if not isinstance(confirmation, dict):
+                continue
+            confirmation_status = str(confirmation.get("status") or "").strip()
+            if confirmation_status and confirmation_status != "confirmed":
+                raise ValueError("portfolio_paper_order_simulation_adapter_confirmations_not_confirmed")
+        if confirmation_entries:
+            expected_confirmation_ids = {spec[0] for spec in _execution_adapter_paper_execution_specs()}
+            evidence_confirmation_ids = {
+                str(confirmation.get("id") or "").strip()
+                for confirmation in confirmation_entries
+                if str(confirmation.get("id") or "").strip()
+            }
+            if not expected_confirmation_ids.issubset(evidence_confirmation_ids):
+                raise ValueError("portfolio_paper_order_simulation_adapter_confirmations_missing")
+    if normalized_execution_id and redacted_evidence.get("paperFillRecorded") is False:
+        raise ValueError("portfolio_paper_order_simulation_adapter_paper_fill_not_recorded")
+    simulated_fill = redacted_evidence.get("simulatedFill")
+    simulated_fill_status = (
+        str(simulated_fill.get("status") or "").strip()
+        if isinstance(simulated_fill, dict)
+        else ""
+    )
+    if normalized_execution_id and simulated_fill_status and simulated_fill_status != "filled":
+        raise ValueError("portfolio_paper_order_simulation_adapter_simulated_fill_not_filled")
+    simulated_fill_symbol = (
+        str(simulated_fill.get("symbol") or "").strip()
+        if isinstance(simulated_fill, dict)
+        else ""
+    )
+    order_intent = redacted_evidence.get("orderIntent")
+    if normalized_execution_id and isinstance(order_intent, dict) and bool(order_intent.get("liveTradingAllowed")):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_intent_live_trading_allowed")
+    order_intent_symbol = (
+        str(order_intent.get("symbol") or "").strip()
+        if isinstance(order_intent, dict)
+        else ""
+    )
+    if (
+        normalized_execution_id
+        and normalized_expected_symbol
+        and order_intent_symbol
+        and order_intent_symbol != normalized_expected_symbol
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_intent_symbol_mismatch")
+    evidence_symbol = str(
+        redacted_evidence.get("simulatedSymbol") or redacted_evidence.get("symbol") or simulated_fill_symbol
+    ).strip()
+    if normalized_execution_id and normalized_expected_symbol and evidence_symbol and evidence_symbol != normalized_expected_symbol:
+        raise ValueError("portfolio_paper_order_simulation_adapter_symbol_mismatch")
+    simulated_fill_side = (
+        str(simulated_fill.get("side") or "").strip().lower()
+        if isinstance(simulated_fill, dict)
+        else ""
+    )
+    order_intent_side = (
+        str(order_intent.get("side") or "").strip().lower()
+        if isinstance(order_intent, dict)
+        else ""
+    )
+    if (
+        normalized_execution_id
+        and normalized_expected_side
+        and order_intent_side
+        and order_intent_side != normalized_expected_side
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_intent_side_mismatch")
+    evidence_side = str(
+        redacted_evidence.get("simulatedSide") or redacted_evidence.get("side") or simulated_fill_side
+    ).strip().lower()
+    if normalized_execution_id and normalized_expected_side and evidence_side and evidence_side != normalized_expected_side:
+        raise ValueError("portfolio_paper_order_simulation_adapter_side_mismatch")
+    simulated_fill_quantity = (
+        _strict_positive_number(simulated_fill.get("quantity"))
+        if isinstance(simulated_fill, dict)
+        else None
+    )
+    order_intent_quantity = (
+        _strict_positive_number(order_intent.get("quantity"))
+        if isinstance(order_intent, dict)
+        else None
+    )
+    if (
+        normalized_execution_id
+        and normalized_expected_quantity is not None
+        and order_intent_quantity is not None
+        and not math.isclose(float(order_intent_quantity), float(normalized_expected_quantity), rel_tol=0.0, abs_tol=1e-6)
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_intent_quantity_mismatch")
+    evidence_quantity = _strict_positive_number(redacted_evidence.get("simulatedQuantity") or redacted_evidence.get("quantity"))
+    if evidence_quantity is None:
+        evidence_quantity = simulated_fill_quantity
+    if (
+        normalized_execution_id
+        and normalized_expected_quantity is not None
+        and evidence_quantity is not None
+        and not math.isclose(float(evidence_quantity), float(normalized_expected_quantity), rel_tol=0.0, abs_tol=1e-6)
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_quantity_mismatch")
+    simulated_fill_price = (
+        _strict_positive_number(simulated_fill.get("price"))
+        if isinstance(simulated_fill, dict)
+        else None
+    )
+    order_intent_price = (
+        _strict_positive_number(order_intent.get("price"))
+        if isinstance(order_intent, dict)
+        else None
+    )
+    if (
+        normalized_execution_id
+        and normalized_expected_price is not None
+        and order_intent_price is not None
+        and not math.isclose(float(order_intent_price), float(normalized_expected_price), rel_tol=0.0, abs_tol=1e-6)
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_intent_price_mismatch")
+    evidence_price = _strict_positive_number(
+        redacted_evidence.get("simulatedPrice") or redacted_evidence.get("price") or redacted_evidence.get("fillPrice")
+    )
+    if evidence_price is None:
+        evidence_price = simulated_fill_price
+    if (
+        normalized_execution_id
+        and normalized_expected_price is not None
+        and evidence_price is not None
+        and not math.isclose(float(evidence_price), float(normalized_expected_price), rel_tol=0.0, abs_tol=1e-6)
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_price_mismatch")
+    simulated_fill_notional = (
+        _strict_positive_number(simulated_fill.get("notionalValue") or simulated_fill.get("notional"))
+        if isinstance(simulated_fill, dict)
+        else None
+    )
+    order_intent_notional = (
+        _strict_positive_number(order_intent.get("notionalValue") or order_intent.get("notional"))
+        if isinstance(order_intent, dict)
+        else None
+    )
+    if (
+        normalized_execution_id
+        and normalized_expected_notional is not None
+        and order_intent_notional is not None
+        and not math.isclose(
+            float(order_intent_notional),
+            float(normalized_expected_notional),
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_order_intent_notional_mismatch")
+    evidence_notional = _strict_positive_number(
+        redacted_evidence.get("simulatedNotional")
+        or redacted_evidence.get("notionalValue")
+        or redacted_evidence.get("notional")
+    )
+    if evidence_notional is None:
+        evidence_notional = simulated_fill_notional
+    if (
+        normalized_execution_id
+        and normalized_expected_notional is not None
+        and evidence_notional is not None
+        and not math.isclose(float(evidence_notional), float(normalized_expected_notional), rel_tol=0.0, abs_tol=1e-6)
+    ):
+        raise ValueError("portfolio_paper_order_simulation_adapter_notional_mismatch")
+    if normalized_execution_id and redacted_evidence.get("paperOnly") is False:
+        raise ValueError("portfolio_paper_order_simulation_adapter_not_paper_only")
     if bool(redacted_evidence.get("orderSubmitted")):
         raise ValueError("portfolio_paper_order_simulation_adapter_order_submitted")
     if bool(redacted_evidence.get("liveOrderSubmitted")):
         raise ValueError("portfolio_paper_order_simulation_adapter_live_order_submitted")
     if bool(redacted_evidence.get("routeExecuted")):
         raise ValueError("portfolio_paper_order_simulation_adapter_route_executed")
+    if bool(redacted_evidence.get("liveTradingAllowed")):
+        raise ValueError("portfolio_paper_order_simulation_adapter_live_trading_allowed")
     return normalized_execution_id, normalized_manifest_validation_id, redacted_evidence
 
 
@@ -1796,6 +2018,7 @@ def create_portfolio_paper_order_simulation(
             "portfolio_paper_order_simulation_route_risk_blocked:"
             + ",".join(str(reason) for reason in route_guard["blockedReasons"])
         )
+    fill_price = round(notional_value / quantity, 6)
     (
         normalized_adapter_paper_execution_id,
         normalized_adapter_manifest_validation_id,
@@ -1804,13 +2027,17 @@ def create_portfolio_paper_order_simulation(
         adapter_paper_execution_id,
         adapter_manifest_validation_id,
         adapter_paper_execution_evidence,
+        expected_symbol=str(lifecycle_row.get("symbol") or ""),
+        expected_side=side,
+        expected_quantity=quantity,
+        expected_price=fill_price,
+        expected_notional=notional_value,
     )
     simulated = (
         _parse_payload_datetime(simulated_at, "portfolio_paper_order_simulation_simulated_at_invalid")
         if simulated_at is not None
         else datetime.now(timezone.utc)
     )
-    fill_price = round(notional_value / quantity, 6)
     return PortfolioPaperOrderSimulation(
         simulation_id=f"portfolio-paper-order-simulation-{batch.batch_id}-{order_id}",
         base_run_id=batch.base_run_id,
@@ -3621,6 +3848,66 @@ def execution_adapter_secret_materialization_to_audit_event_payload(
     }
 
 
+def materialize_execution_adapter_secret_manifest(
+    result: ExecutionAdapterSecretMaterializationResult,
+    *,
+    secret_store_root: str | Path | None = None,
+) -> dict[str, Any]:
+    if result.status != "manifest_recorded":
+        return {"written": False, "reason": "materialization_not_recorded", "rawSecretValuesStored": False}
+    if result.backend != "local-secret-store":
+        return {"written": False, "reason": "backend_not_local_secret_store", "rawSecretValuesStored": False}
+
+    resolved_path = _resolve_execution_adapter_secret_manifest_path(
+        result.manifest_path,
+        secret_store_root=secret_store_root,
+    )
+    if resolved_path is None:
+        return {"written": False, "reason": "manifest_path_invalid", "rawSecretValuesStored": False}
+
+    fingerprint = _execution_adapter_secret_manifest_fingerprint(result.metadata)
+    if not fingerprint:
+        return {"written": False, "reason": "fingerprint_missing", "rawSecretValuesStored": False}
+
+    manifest = {
+        "schemaVersion": 1,
+        "kind": "aiqt.executionAdapterSecretManifest",
+        "adapterId": result.adapter_id,
+        "referenceId": result.reference_id,
+        "materializationId": result.materialization_id,
+        "market": result.market,
+        "route": result.route,
+        "backend": result.backend,
+        "referenceName": result.reference_name,
+        "manifestPath": result.manifest_path,
+        "fingerprint": fingerprint,
+        "requiredEnvVars": list(result.required_env_vars),
+        "secretRefs": {name: {"backend": result.backend, "valueStoredOutsideManifest": True} for name in result.required_env_vars},
+        "metadata": {
+            "source": result.metadata.get("source", ""),
+            "operator": result.operator,
+            "recordedAt": result.recorded_at.isoformat(),
+        },
+        "rawSecretValuesStored": False,
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+    try:
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return {"written": False, "reason": "manifest_file_write_failed", "rawSecretValuesStored": False}
+    return {
+        "written": True,
+        "manifestPath": result.manifest_path,
+        "requiredEnvVarCount": len(result.required_env_vars),
+        "rawSecretValuesStored": False,
+    }
+
+
 def _execution_adapter_secret_materialization_confirmation_specs() -> list[tuple[str, str, str, str]]:
     return [
         (
@@ -3659,6 +3946,7 @@ def build_execution_adapter_secret_manifest_validation(
     metadata: dict[str, Any] | None = None,
     recorded_at: datetime | str | None = None,
     validation_id: str | None = None,
+    secret_store_root: str | Path | None = None,
 ) -> ExecutionAdapterSecretManifestValidationResult:
     if not isinstance(materialization, dict):
         raise ValueError("execution_adapter_secret_materialization_required")
@@ -3705,7 +3993,10 @@ def build_execution_adapter_secret_manifest_validation(
     covered_env_vars: list[str] = []
     manifest_exists = False
     manifest_json_valid = False
-    resolved_path = _resolve_execution_adapter_secret_manifest_path(normalized_manifest_path)
+    resolved_path = _resolve_execution_adapter_secret_manifest_path(
+        normalized_manifest_path,
+        secret_store_root=secret_store_root,
+    )
     if str(materialization.get("status") or "") != "manifest_recorded":
         blocked_reasons.append("secret_manifest_validation_materialization_not_recorded")
     if route != "live":
@@ -3924,14 +4215,18 @@ def execution_adapter_secret_manifest_validation_to_audit_event_payload(
     }
 
 
-def _resolve_execution_adapter_secret_manifest_path(manifest_path: str) -> Path | None:
+def _resolve_execution_adapter_secret_manifest_path(
+    manifest_path: str,
+    *,
+    secret_store_root: str | Path | None = None,
+) -> Path | None:
     normalized = str(manifest_path or "").strip()
     if normalized.startswith("local-secret-store://"):
         suffix = normalized.removeprefix("local-secret-store://").replace("\\", "/").strip("/")
         parts = [part for part in suffix.split("/") if part]
         if not parts or any(part in {".", ".."} for part in parts):
             return None
-        path = Path("data") / "secret-store"
+        path = Path(secret_store_root) if secret_store_root else Path("data") / "secret-store"
         for part in parts:
             path = path / part
         return path if path.suffix else path.with_suffix(".json")
@@ -4353,6 +4648,8 @@ def build_execution_adapter_runtime_reload_plan(
 
     if str(environment_binding.get("status") or "") != "binding_recorded":
         blocked_reasons.append("runtime_reload_environment_binding_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("runtime_reload_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("runtime_reload_route_not_live")
 
@@ -4658,6 +4955,8 @@ def build_execution_adapter_runtime_reload_execution(
 
     if str(runtime_reload_plan.get("status") or "") != "plan_recorded":
         blocked_reasons.append("runtime_reload_execution_plan_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("runtime_reload_execution_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("runtime_reload_execution_route_not_live")
 
@@ -4979,6 +5278,8 @@ def build_execution_adapter_runtime_reload_acceptance(
 
     if str(runtime_reload_execution.get("status") or "") != "execution_recorded":
         blocked_reasons.append("runtime_reload_acceptance_execution_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("runtime_reload_acceptance_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("runtime_reload_acceptance_route_not_live")
 
@@ -5316,6 +5617,8 @@ def build_execution_adapter_orchestration_dry_run(
 
     if str(runtime_reload_acceptance.get("status") or "") != "acceptance_recorded":
         blocked_reasons.append("orchestration_dry_run_acceptance_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("orchestration_dry_run_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("orchestration_dry_run_route_not_live")
 
@@ -5673,6 +5976,8 @@ def build_execution_adapter_orchestration_execution(
 
     if str(orchestration_dry_run.get("status") or "") != "dry_run_recorded":
         blocked_reasons.append("orchestration_execution_dry_run_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("orchestration_execution_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("orchestration_execution_route_not_live")
 
@@ -6060,6 +6365,8 @@ def build_execution_adapter_human_confirmation(
 
     if str(orchestration_execution.get("status") or "") != "execution_recorded":
         blocked_reasons.append("human_confirmation_orchestration_execution_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("human_confirmation_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("human_confirmation_route_not_live")
 
@@ -6460,6 +6767,8 @@ def build_execution_adapter_sandbox_probe_plan(
 
     if str(human_confirmation.get("status") or "") != "confirmation_recorded":
         blocked_reasons.append("sandbox_probe_human_confirmation_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("sandbox_probe_plan_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("sandbox_probe_route_not_live")
 
@@ -6877,6 +7186,8 @@ def build_execution_adapter_sandbox_probe_execution(
 
     if str(sandbox_probe_plan.get("status") or "") != "probe_plan_recorded":
         blocked_reasons.append("sandbox_probe_execution_plan_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("sandbox_probe_execution_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("sandbox_probe_execution_route_not_live")
 
@@ -7311,6 +7622,8 @@ def build_execution_adapter_sandbox_probe_review(
 
     if str(sandbox_probe_execution.get("status") or "") != "probe_execution_recorded":
         blocked_reasons.append("sandbox_probe_review_execution_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("sandbox_probe_review_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("sandbox_probe_review_route_not_live")
 
@@ -7762,6 +8075,8 @@ def build_execution_adapter_production_route_review(
 
     if str(sandbox_probe_review.get("status") or "") != "probe_review_recorded":
         blocked_reasons.append("production_route_review_sandbox_review_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("production_route_review_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("production_route_review_route_not_live")
 
@@ -8232,6 +8547,8 @@ def build_execution_adapter_sandbox_order_schema_dry_run(
 
     if str(production_route_review.get("status") or "") != "route_review_recorded":
         blocked_reasons.append("sandbox_order_schema_dry_run_route_review_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("sandbox_order_schema_dry_run_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("sandbox_order_schema_dry_run_route_not_live")
     if not _sandbox_order_schema_intent_is_valid(safe_order_intent):
@@ -8643,6 +8960,8 @@ def build_execution_adapter_paper_order_lifecycle(
 
     if str(schema_dry_run.get("status") or "") != "schema_dry_run_recorded":
         blocked_reasons.append("paper_order_lifecycle_schema_dry_run_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("paper_order_lifecycle_manifest_validation_missing")
     if bool(schema_dry_run.get("orderSubmitted")):
         blocked_reasons.append("paper_order_lifecycle_schema_dry_run_order_submitted")
     if not _sandbox_order_schema_intent_is_valid(order_intent):
@@ -9056,6 +9375,8 @@ def build_execution_adapter_paper_route_runbook(
 
     if str(paper_order_lifecycle.get("status") or "") != "lifecycle_recorded":
         blocked_reasons.append("paper_route_runbook_lifecycle_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("paper_route_runbook_manifest_validation_missing")
     if bool(paper_order_lifecycle.get("orderSubmitted")) or bool(paper_order_lifecycle.get("liveOrderSubmitted")):
         blocked_reasons.append("paper_route_runbook_prior_order_submission_detected")
     if not _sandbox_order_schema_intent_is_valid(order_intent):
@@ -9546,6 +9867,8 @@ def build_execution_adapter_ops_state(
 
     if str(paper_route_runbook.get("status") or "") != "runbook_recorded":
         blocked_reasons.append("adapter_ops_paper_route_runbook_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("adapter_ops_state_manifest_validation_missing")
     if (
         bool(paper_route_runbook.get("orderSubmitted"))
         or bool(paper_route_runbook.get("liveOrderSubmitted"))
@@ -10018,6 +10341,8 @@ def build_execution_adapter_paper_execution(
 
     if str(adapter_ops_state.get("status") or "") != "ops_state_recorded":
         blocked_reasons.append("adapter_paper_execution_ops_state_not_recorded")
+    if not manifest_validation_id:
+        blocked_reasons.append("adapter_paper_execution_manifest_validation_missing")
     if (
         bool(adapter_ops_state.get("orderSubmitted"))
         or bool(adapter_ops_state.get("liveOrderSubmitted"))

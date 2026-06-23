@@ -155,6 +155,7 @@ export interface GoldenPathWorkspaceContext {
 export type P0PlatformReadinessState = "unknown" | "blocked" | "review" | "paper_ready" | "live_ready";
 
 export interface P0PlatformReadinessSource extends GoldenPathRunbookSource {
+  latestRunId?: string | null;
   status?: "ready" | "review" | "blocked";
   nextAction?: {
     id: string;
@@ -207,6 +208,96 @@ export interface P0PlatformReadinessSummary {
     label: string;
     detail: string;
   };
+}
+
+export type P0AcceptanceSummaryState = "passed" | "missing" | "invalid";
+export type P0AcceptanceSummaryTone = "positive" | "warning" | "risk";
+
+export interface P0AcceptanceSummarySource {
+  kind: string;
+  schemaVersion: number;
+  status: P0AcceptanceSummaryState;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
+export interface P0AcceptanceSummary {
+  state: P0AcceptanceSummaryState;
+  tone: P0AcceptanceSummaryTone;
+  headline: string;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  sourcePath: string;
+  runId: string | null;
+  checkCount: number;
+  requiredCheckCount: number;
+  liveTradingAllowed: false;
+  reportedLiveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export type P0CompletionCriterionId =
+  | "product-workspaces"
+  | "golden-path"
+  | "data-quality"
+  | "strategy-versioning"
+  | "audited-backtest"
+  | "ai-evidence"
+  | "paper-execution"
+  | "replay"
+  | "export-import"
+  | "automated-tests";
+
+export type P0CompletionCriterionStatus = "passed" | "review" | "blocked";
+
+export interface P0CompletionCriterion {
+  id: P0CompletionCriterionId;
+  label: string;
+  status: P0CompletionCriterionStatus;
+  detail: string;
+  evidence: string;
+  actionLabel: string | null;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+export interface P0CompletionChecklistInput {
+  goldenPath?: P0PlatformReadinessSource | null;
+  summary: P0PlatformReadinessSummary;
+  outcome: P0PlatformActionOutcome;
+  paperPreflight?: P0PaperExecutionPreflight | null;
+  productWorkAreaCount: number;
+  strategyVersionReady?: boolean;
+  replayReady?: boolean;
+  exportImportReady?: boolean;
+  automatedTestsVerified?: boolean;
+}
+
+export interface P0CompletionChecklist {
+  total: number;
+  passed: number;
+  review: number;
+  blocked: number;
+  progressPct: number;
+  headline: string;
+  detail: string;
+  criteria: P0CompletionCriterion[];
+  openCriteria: P0CompletionCriterion[];
+  currentGap: P0CompletionCriterion | null;
 }
 
 export type P0PlatformActionOutcomeState = "waiting" | "audit_run" | "paper_execution" | "live_ready";
@@ -310,12 +401,52 @@ export interface P0PaperExecutionPreflight {
   gates: P0PaperExecutionPreflightGate[];
 }
 
+export type P0GoldenPathJourneyStepId =
+  | "data"
+  | "strategy"
+  | "backtest"
+  | "ai-review"
+  | "paper-simulation"
+  | "replay"
+  | "export";
+
+export type P0GoldenPathJourneyStepState = "done" | "current" | "blocked" | "ready";
+
+export interface P0GoldenPathJourneyStep {
+  id: P0GoldenPathJourneyStepId;
+  label: string;
+  state: P0GoldenPathJourneyStepState;
+  workspaceId: ProductWorkAreaId;
+  evidenceId: string;
+  nextActionId: string;
+  detail: string;
+}
+
+export interface P0GoldenPathJourney {
+  steps: P0GoldenPathJourneyStep[];
+  currentStepId: P0GoldenPathJourneyStepId;
+  nextActionId: string;
+  nextActionTargetWorkspaceId: ProductWorkAreaId;
+  liveTradingAllowed: false;
+  liveBoundaryLabel: string;
+  detail: string;
+}
+
+export interface P0GoldenPathJourneyInput {
+  goldenPath?: P0PlatformReadinessSource | null;
+  summary?: P0PlatformReadinessSummary | null;
+  outcome?: P0PlatformActionOutcome | null;
+  paperPreflight?: P0PaperExecutionPreflight | null;
+  completionChecklist?: P0CompletionChecklist | null;
+}
+
 export interface P0PlatformReadinessReportInput {
   summary: P0PlatformReadinessSummary;
   backlogItems: readonly P0PlatformBacklogItem[];
   outcome: P0PlatformActionOutcome;
   evidenceLink?: P0PlatformActionOutcomeEvidenceLink | null;
   paperPreflight?: P0PaperExecutionPreflight | null;
+  completionChecklist?: P0CompletionChecklist | null;
   generatedAt?: string;
 }
 
@@ -817,7 +948,21 @@ export interface ResearchRunExportBrowserManifest {
     promotionCandidates?: number;
     researchNotes?: number;
     aiReviewRuns?: number;
+    auditEvents?: number;
   };
+}
+
+export interface ResearchRunExportAuditEventSnapshot {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: string;
+  runId: string | null;
+  createdAt: string;
+  stage: string;
+  source: string;
+  summary: string;
+  detail: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface PortfolioPaperOrderBatchSnapshot {
@@ -1207,6 +1352,31 @@ export interface ResearchRunExportBrowserPackage {
   portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulationSnapshot[];
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
+  auditEvents?: ResearchRunExportAuditEventSnapshot[];
+  p0PackageCompleteness?: {
+    kind: "aiqt.p0PackageCompleteness";
+    schemaVersion: 1;
+    runId: string;
+    ready: boolean;
+    status: "complete" | "review" | "blocked";
+    passed: number;
+    review: number;
+    blocked: number;
+    total: number;
+    progressPct: number;
+    paperOnly: boolean;
+    liveTradingAllowed: boolean;
+    liveBlockedBoundary: boolean;
+    summary: string;
+    criteria: Array<{
+      id: string;
+      label: string;
+      status: "passed" | "review" | "blocked";
+      detail: string;
+      evidence: string;
+      evidencePath: string;
+    }>;
+  };
   auditEvidenceSummary?: {
     kind: "aiqt.auditEvidenceSummary";
     schemaVersion: 1;
@@ -1293,6 +1463,8 @@ export interface ResearchRunExportBrowserRow {
     | "portfolio-paper-orders"
     | "promotion-candidate"
     | "ai-reviews"
+    | "audit-events"
+    | "p0-completeness"
     | "audit-summary"
     | "audit-report"
     | "execution-handoff";
@@ -1598,6 +1770,19 @@ export interface AuditEvidenceReportLedgerRow {
   p0BacklogReadinessRecorded: boolean;
   p0BacklogReadinessSummary: string;
   p0BacklogTotalCount: number;
+  p0CompletionBlockedCount: number;
+  p0CompletionCurrentCriterionActionLabel: string;
+  p0CompletionCurrentCriterionId: string;
+  p0CompletionCurrentCriterionLabel: string;
+  p0CompletionCurrentCriterionStatus: P0CompletionCriterionStatus | "";
+  p0CompletionCurrentCriterionTargetWorkspaceId: ProductWorkAreaId | null;
+  p0CompletionOpenCriterionIds: string;
+  p0CompletionPassedCount: number;
+  p0CompletionProgressPct: number;
+  p0CompletionReadinessRecorded: boolean;
+  p0CompletionReviewCount: number;
+  p0CompletionSummary: string;
+  p0CompletionTotalCount: number;
   p0CurrentGapActionId: string;
   p0CurrentGapActionLabel: string;
   p0CurrentGapCanExecute: boolean;
@@ -1619,6 +1804,25 @@ export interface AuditEvidenceReportLedgerRow {
   paperPreflightLiveBoundary: string;
   paperPreflightState: string;
   p0PreparationEvidenceRunId: string;
+  researchContextMarket: string;
+  researchContextLinkDecodedSearch: string;
+  researchContextLinkLabel: string;
+  researchContextLinkSearch: string;
+  researchContextNextAction: string;
+  researchContextPreflightStatus: string;
+  researchContextPreparationEvidenceRunId: string;
+  researchContextSymbol: string;
+  researchContextTimeframe: string;
+  preLiveRunbookAdapterId: string;
+  preLiveRunbookCompletedSteps: number;
+  preLiveRunbookEvidenceIds: string[];
+  preLiveRunbookMarket: string;
+  preLiveRunbookNextStep: string;
+  preLiveRunbookNextStepId: string;
+  preLiveRunbookStatus: string;
+  preLiveRunbookSymbol: string;
+  preLiveRunbookTimeframe: string;
+  preLiveRunbookTotalSteps: number;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
   statusLabel: string;
@@ -1633,7 +1837,13 @@ export interface AuditEvidenceReportLedgerRow {
   signatureLabel: string;
   signatureVerifiedAt: string;
   detail: string;
-  reportKind: "audit_evidence_report" | "backtest_report" | "portfolio_report" | "p0_readiness_report";
+  reportKind:
+    | "audit_evidence_report"
+    | "backtest_report"
+    | "portfolio_report"
+    | "p0_readiness_report"
+    | "pre_live_runbook_report"
+    | "research_context_readiness_report";
   searchText: string;
   tone: "ai" | "positive" | "risk";
 }
@@ -1664,18 +1874,47 @@ export interface AuditEvidenceReportLedgerSummary {
   latestAuditAidBacklogReadinessSummary: string;
   latestAuditAidBacklogReadinessTitle: string;
   latestAuditAidBacklogTotalCount: number;
+  latestAuditAidCompletionLabel: string;
+  latestAuditAidCompletionQuery: string;
+  latestAuditAidCompletionCurrentCriterionActionLabel: string;
+  latestAuditAidCompletionCurrentCriterionId: string;
+  latestAuditAidCompletionCurrentCriterionLabel: string;
+  latestAuditAidCompletionCurrentCriterionStatus: P0CompletionCriterionStatus | "";
+  latestAuditAidCompletionCurrentCriterionTargetWorkspaceId: ProductWorkAreaId | null;
+  latestAuditAidCompletionRecorded: boolean;
+  latestAuditAidCompletionTitle: string;
   latestAuditAidEvidenceLabel: string;
   latestAuditAidEvidenceLink: string;
   latestAuditAidPreflightActionId: string;
   latestAuditAidPreflightActionLabel: string;
   latestAuditAidPreflightAttention: number;
   latestAuditAidPreflightLabel: string;
+  latestAuditAidPreflightQuery: string;
   latestAuditAidPreflightState: string;
+  latestAuditAidProgressLabel: string;
+  latestAuditAidProgressQuery: string;
   latestAuditAidPreparationEvidenceLabel: string;
   latestAuditAidPreparationEvidenceRunId: string;
   latestAuditAidReportQuery: string;
   latestAuditAidRunId: string;
   latestAuditAidShortHash: string;
+  latestPreLiveRunbookAdapterId: string;
+  latestPreLiveRunbookContextLabel: string;
+  latestPreLiveRunbookEvidenceCount: number;
+  latestPreLiveRunbookEvidenceLabel: string;
+  latestPreLiveRunbookEventId: string;
+  latestPreLiveRunbookGateLabel: string;
+  latestPreLiveRunbookQuery: string;
+  latestPreLiveRunbookShortHash: string;
+  latestPreLiveRunbookStatus: string;
+  latestResearchContextReportEventId: string;
+  latestResearchContextReportLabel: string;
+  latestResearchContextReportLinkSearch: string;
+  latestResearchContextReportPreflightStatus: string;
+  latestResearchContextReportPreparationEvidenceRunId: string;
+  latestResearchContextReportQuery: string;
+  latestResearchContextReportRunId: string;
+  latestResearchContextReportShortHash: string;
   latestHash: string;
   latestReportKind: AuditEvidenceReportLedgerRow["reportKind"] | "";
   latestReportLabel: string;
@@ -1687,6 +1926,20 @@ export interface AuditEvidenceReportLedgerSummary {
   total: number;
   unsigned: number;
   verified: number;
+}
+
+export type PreLiveRunbookAuditCoverageStatus = "matched" | "missing" | "stale";
+
+export interface PreLiveRunbookAuditCoverage {
+  currentGateLabel: string;
+  detail: string;
+  gateLabel: string;
+  latestEventId: string;
+  mismatchLabel: string;
+  query: string;
+  shortHash: string;
+  status: PreLiveRunbookAuditCoverageStatus;
+  statusLabel: string;
 }
 
 export interface LatestAuditAidCurrentGapActionDescriptor {
@@ -1703,6 +1956,11 @@ export interface P0CurrentGapActionDeepLinkState {
   actionId: string;
   auditReportQuery: string;
   executableActionId: string;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+export interface P0CompletionGapDeepLinkState {
+  auditReportQuery: string;
   targetWorkspaceId: ProductWorkAreaId;
 }
 
@@ -1897,6 +2155,87 @@ export function buildAuditEvidenceReportLedgerRowP0BacklogReadinessQuery(
   return auditReportLedgerLatestAuditAidBacklogReadinessQuery(row);
 }
 
+export function buildAuditEvidenceReportLedgerRowP0CompletionLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report") {
+    return "";
+  }
+  if (!row.p0CompletionReadinessRecorded) {
+    return "P0 completion: not recorded";
+  }
+  const recordedSummary = row.p0CompletionSummary.trim();
+  if (recordedSummary) {
+    return `P0 completion: ${recordedSummary}`;
+  }
+  const currentCriterion = row.p0CompletionCurrentCriterionId || row.p0CompletionCurrentCriterionLabel || "none";
+  const currentStatus = row.p0CompletionCurrentCriterionStatus || "unknown";
+  return `P0 completion: ${row.p0CompletionPassedCount}/${row.p0CompletionTotalCount} passed, ${row.p0CompletionReviewCount} review, ${row.p0CompletionBlockedCount} blocked · current ${currentCriterion} ${currentStatus}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowP0CompletionTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const label = buildAuditEvidenceReportLedgerRowP0CompletionLabel(row);
+  if (!label) {
+    return "";
+  }
+  if (!row || row.reportKind !== "p0_readiness_report") {
+    return label;
+  }
+  if (!row.p0CompletionReadinessRecorded) {
+    return `${label} · source: legacy report`;
+  }
+  return `${label} · source: ${
+    row.p0CompletionSummary.trim() ? "metadata completionSummary" : "derived completion counters"
+  }`;
+}
+
+export function buildAuditEvidenceReportLedgerRowP0CompletionQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  return auditReportLedgerLatestAuditAidCompletionQuery(row);
+}
+
+export function buildAuditEvidenceReportLedgerRowP0ReadinessReportQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  return auditReportLedgerLatestAuditAidReportQuery(row);
+}
+
+export function buildAuditEvidenceReportLedgerRowP0ProgressQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  const baseQuery = auditReportLedgerLatestAuditAidBaseQuery(row);
+  const progressQuery = [
+    "p0-progress-focus",
+    row.focusQuery ? "p0-state" : "",
+    row.focusQuery,
+    row.packageTotal > 0 ? `p0-progress ${row.packageMatched}/${row.packageTotal}` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [baseQuery, progressQuery].filter(Boolean).join(" ");
+}
+
+export function buildAuditEvidenceReportLedgerRowP0PreflightQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || row.status !== "ready") {
+    return "";
+  }
+  return auditReportLedgerLatestAuditAidPreflightQuery(row);
+}
+
 export function buildAuditEvidenceReportLedgerRowCurrentGapReadinessQuery(
   row: AuditEvidenceReportLedgerRow | null | undefined
 ): string {
@@ -1964,6 +2303,42 @@ export function buildP0CurrentGapActionUrlSearch(search: string | URLSearchParam
   params.set("workspace", state.targetWorkspaceId);
   params.set("auditReportQuery", state.auditReportQuery);
   params.set("p0Action", state.actionId);
+  return params.toString();
+}
+
+export function resolveP0CompletionGapDeepLinkState(
+  search: string | URLSearchParams | null | undefined
+): P0CompletionGapDeepLinkState | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
+  const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
+  if (!targetWorkspaceId || !auditReportQuery || !auditReportQuery.includes("p0-completion-focus")) {
+    return null;
+  }
+  return {
+    auditReportQuery,
+    targetWorkspaceId
+  };
+}
+
+export function buildP0CompletionGapUrlSearch(input: {
+  auditReportQuery: string | null | undefined;
+  targetWorkspaceId: ProductWorkAreaId | string | null | undefined;
+}): string | null {
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
+  const auditReportQuery = input.auditReportQuery?.trim() ?? "";
+  if (!targetWorkspaceId || !auditReportQuery || !auditReportQuery.includes("p0-completion-focus")) {
+    return null;
+  }
+  const params = new URLSearchParams();
+  params.set("workspace", targetWorkspaceId);
+  params.set("auditReportQuery", auditReportQuery);
   return params.toString();
 }
 
@@ -4514,6 +4889,258 @@ export interface PromotionReadiness {
   stages: PromotionQueueStage[];
 }
 
+export type ExecutionAdapterPreLiveRunbookStatus = "blocked" | "in_progress" | "paper_rehearsal_ready";
+export type ExecutionAdapterPreLiveRunbookStepStatus = "passed" | "review" | "blocked";
+export type ExecutionAdapterPreLiveRunbookStepId =
+  | "adapter-state"
+  | "adapter-certification"
+  | "secret-manifest"
+  | "runtime-acceptance"
+  | "human-confirmation"
+  | "route-review-health"
+  | "paper-rehearsal";
+
+export interface ExecutionAdapterPreLiveRunbookStep {
+  id: ExecutionAdapterPreLiveRunbookStepId;
+  label: string;
+  value: string;
+  detail: string;
+  evidenceId: string | null;
+  evidenceTimestamp: string | null;
+  nextStep: string;
+  status: ExecutionAdapterPreLiveRunbookStepStatus;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export interface ExecutionAdapterPreLiveRunbookSummary {
+  adapterId: string;
+  boundary: string;
+  completedSteps: number;
+  headline: string;
+  market: Market;
+  nextStep: string;
+  nextStepId: ExecutionAdapterPreLiveRunbookStepId | null;
+  rows: ExecutionAdapterPreLiveRunbookStep[];
+  status: ExecutionAdapterPreLiveRunbookStatus;
+  summary: string;
+  totalSteps: number;
+}
+
+type ExecutionAdapterPreLiveRunbookInputRow<T> = T;
+
+type ExecutionAdapterPreLiveLedgerInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterLedgerRow,
+    | "adapterId"
+    | "gateSummary"
+    | "id"
+    | "label"
+    | "liveTradingAllowed"
+    | "market"
+    | "reason"
+    | "route"
+    | "state"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveCertificationInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterCertificationRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "checkSummary"
+    | "id"
+    | "market"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveSecretManifestInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterSecretManifestValidationRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "envCoverageSummary"
+    | "id"
+    | "market"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveRuntimeAcceptanceInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterRuntimeReloadAcceptanceRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "confirmationSummary"
+    | "id"
+    | "market"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveHumanConfirmationInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterHumanConfirmationRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "confirmationSummary"
+    | "id"
+    | "market"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveProductionRouteReviewInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterProductionRouteReviewRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "confirmationSummary"
+    | "id"
+    | "market"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveHealthProbeInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterHealthProbeRow,
+    | "adapterId"
+    | "boundary"
+    | "checkSummary"
+    | "id"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveSandboxOrderSchemaDryRunInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterSandboxOrderSchemaDryRunRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "id"
+    | "market"
+    | "orderSubmitted"
+    | "orderIntentSummary"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLivePaperOrderLifecycleInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterPaperOrderLifecycleRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "id"
+    | "lifecycleStepSummary"
+    | "liveOrderSubmitted"
+    | "market"
+    | "route"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLivePaperRouteRunbookInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterPaperRouteRunbookRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "id"
+    | "market"
+    | "route"
+    | "routeExecuted"
+    | "runbookStepSummary"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLiveOpsStateInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterOpsStateRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "id"
+    | "market"
+    | "opsStepSummary"
+    | "route"
+    | "routeExecuted"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+type ExecutionAdapterPreLivePaperExecutionInputRow = ExecutionAdapterPreLiveRunbookInputRow<
+  Pick<
+    ExecutionAdapterPaperExecutionRow,
+    | "adapterId"
+    | "auditEventId"
+    | "boundary"
+    | "fillSummary"
+    | "id"
+    | "liveOrderSubmitted"
+    | "market"
+    | "orderSubmitted"
+    | "paperFillRecorded"
+    | "route"
+    | "routeExecuted"
+    | "status"
+    | "statusLabel"
+    | "timestamp"
+  >
+>;
+
+export interface ExecutionAdapterPreLiveRunbookInput {
+  workspace: TerminalWorkspace;
+  adapterLedgerRows?: ReadonlyArray<ExecutionAdapterPreLiveLedgerInputRow>;
+  certificationRows?: ReadonlyArray<ExecutionAdapterPreLiveCertificationInputRow>;
+  secretManifestValidationRows?: ReadonlyArray<ExecutionAdapterPreLiveSecretManifestInputRow>;
+  runtimeReloadAcceptanceRows?: ReadonlyArray<ExecutionAdapterPreLiveRuntimeAcceptanceInputRow>;
+  humanConfirmationRows?: ReadonlyArray<ExecutionAdapterPreLiveHumanConfirmationInputRow>;
+  productionRouteReviewRows?: ReadonlyArray<ExecutionAdapterPreLiveProductionRouteReviewInputRow>;
+  healthProbeRows?: ReadonlyArray<ExecutionAdapterPreLiveHealthProbeInputRow>;
+  sandboxOrderSchemaDryRunRows?: ReadonlyArray<ExecutionAdapterPreLiveSandboxOrderSchemaDryRunInputRow>;
+  paperOrderLifecycleRows?: ReadonlyArray<ExecutionAdapterPreLivePaperOrderLifecycleInputRow>;
+  paperRouteRunbookRows?: ReadonlyArray<ExecutionAdapterPreLivePaperRouteRunbookInputRow>;
+  opsStateRows?: ReadonlyArray<ExecutionAdapterPreLiveOpsStateInputRow>;
+  paperExecutionRows?: ReadonlyArray<ExecutionAdapterPreLivePaperExecutionInputRow>;
+}
+
 export interface ModuleNewsEvent {
   id: string;
   source: string;
@@ -5077,6 +5704,44 @@ export interface ResearchPipelinePreflight {
   primaryAction?: ResearchContextReadinessAction;
   issues: ResearchPipelinePreflightIssue[];
   lockedPreparationEvidence: ResearchPipelineLockedPreparationEvidence | null;
+}
+
+export interface ResearchContextReadinessReportInput {
+  workspace: Pick<TerminalWorkspace, "selectedInstrument" | "selectedTimeframe">;
+  rows: readonly ResearchContextReadinessRow[];
+  evidenceRows?: readonly ResearchContextEvidenceRow[];
+  preflight?: ResearchPipelinePreflight | null;
+  generatedAt?: string | null;
+  contextLink?: string | null;
+}
+
+export interface ResearchContextReadinessReportFileNameInput {
+  workspace: Pick<TerminalWorkspace, "selectedInstrument" | "selectedTimeframe">;
+  generatedAt?: string | null;
+}
+
+export interface ResearchContextReadinessReportArchive {
+  fileName: string;
+  contentMarkdown: string;
+  contentSha256: {
+    algorithm: "sha256";
+    hash: string;
+  };
+  generatedAt: string;
+  context: {
+    market: Market;
+    symbol: string;
+    timeframe: Timeframe;
+  };
+  preflightStatus: ResearchContextReadinessStatus;
+  nextAction: ResearchContextReadinessAction | "none";
+  lockedPreparationEvidenceRunId: string | null;
+  readinessCounts: {
+    ready: number;
+    review: number;
+    blocked: number;
+  };
+  contextLink: string | null;
 }
 
 export interface ResearchPipelinePreparationEvidenceSelection {
@@ -5767,6 +6432,114 @@ export function buildGoldenPathWorkspaceContext(
   };
 }
 
+export function buildP0AcceptanceSummary(
+  acceptance: P0AcceptanceSummarySource | null | undefined
+): P0AcceptanceSummary {
+  if (!acceptance || acceptance.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "P0 acceptance manifest missing",
+      detail:
+        acceptance?.reason ||
+        "Run npm run docker:smoke:p0 -- --no-build --down to generate data/p0-acceptance.json.",
+      actionLabel: "Run P0 acceptance smoke",
+      targetWorkspaceId: "audit",
+      sourcePath: acceptance?.sourcePath || "data/p0-acceptance.json",
+      runId: acceptance?.runId ?? null,
+      checkCount: acceptance?.checkCount ?? 0,
+      requiredCheckCount: acceptance?.requiredCheckCount ?? 4,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(acceptance?.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(acceptance?.liveBlockedBoundary)
+    };
+  }
+
+  if (acceptance.status === "invalid" || acceptance.liveTradingAllowed || !acceptance.liveBlockedBoundary) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "P0 acceptance manifest invalid",
+      detail: `P0 acceptance evidence is invalid: ${
+        acceptance.reason || acceptance.summary || "unknown validation failure"
+      }. Live trading remains blocked.`,
+      actionLabel: "Review acceptance manifest",
+      targetWorkspaceId: "audit",
+      sourcePath: acceptance.sourcePath,
+      runId: acceptance.runId,
+      checkCount: acceptance.checkCount,
+      requiredCheckCount: acceptance.requiredCheckCount,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
+    };
+  }
+
+  const context = [acceptance.market, acceptance.symbol, acceptance.timeframe].filter(Boolean).join(" ");
+  const runLabel = acceptance.runId ? `Run ${acceptance.runId}` : "Latest P0 run";
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P0 acceptance passed",
+    detail: `${runLabel} · ${context || "unknown context"} · ${acceptance.checkCount} checks · live blocked.`,
+    actionLabel: "Open acceptance manifest",
+    targetWorkspaceId: "audit",
+    sourcePath: acceptance.sourcePath,
+    runId: acceptance.runId,
+    checkCount: acceptance.checkCount,
+    requiredCheckCount: acceptance.requiredCheckCount,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+    liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
+  };
+}
+
+export function buildP0AcceptanceReviewMarkdown({
+  acceptance,
+  summary
+}: {
+  acceptance: P0AcceptanceSummarySource | null | undefined;
+  summary: P0AcceptanceSummary;
+}): string {
+  const checkIds =
+    acceptance?.checkIds.length
+      ? acceptance.checkIds
+      : summary.state === "missing"
+        ? ["p0_acceptance_manifest_missing"]
+        : ["p0_acceptance_manifest_invalid"];
+  const context = [acceptance?.market, acceptance?.symbol, acceptance?.timeframe].filter(Boolean).join(" ") || "n/a";
+  const generatedAt = acceptance?.generatedAt || "n/a";
+  const reason = acceptance?.reason || acceptance?.summary || summary.detail;
+
+  return [
+    "# P0 Acceptance Review",
+    "",
+    "## Summary",
+    `- Status: ${summary.state}`,
+    `- Headline: ${summary.headline}`,
+    `- Detail: ${summary.detail}`,
+    `- Source: ${summary.sourcePath}`,
+    `- Generated at: ${generatedAt}`,
+    `- Run: ${summary.runId || "n/a"}`,
+    `- Context: ${context}`,
+    `- Checks: ${summary.checkCount}/${summary.requiredCheckCount}`,
+    "",
+    "## Execution Boundary",
+    `- paperOnly: ${Boolean(acceptance?.paperOnly)}`,
+    `- liveTradingAllowed: ${summary.reportedLiveTradingAllowed}`,
+    `- liveBlockedBoundary: ${summary.liveBlockedBoundary}`,
+    "- Platform decision: live trading remains blocked.",
+    "",
+    "## Manifest Checks",
+    ...checkIds.map((checkId) => `- ${checkId}`),
+    "",
+    "## Review Notes",
+    `- Reason: ${reason}`,
+    "- This review is audit evidence only and does not authorize live trading.",
+    ""
+  ].join("\n");
+}
+
 export function buildP0PlatformReadinessSummary(
   goldenPath: P0PlatformReadinessSource | null | undefined
 ): P0PlatformReadinessSummary {
@@ -5885,6 +6658,289 @@ export function buildP0PlatformBacklogItems(
     .sort((left, right) => p0PlatformBacklogPriorityRank(left.priority) - p0PlatformBacklogPriorityRank(right.priority))
     .slice(0, limit)
     .map((item, index) => ({ ...item, rank: index + 1 }));
+}
+
+export function buildP0GoldenPathJourney(input: P0GoldenPathJourneyInput | null | undefined): P0GoldenPathJourney {
+  const source = input ?? {};
+  const goldenPath = source.goldenPath;
+  const runbook = Array.isArray(goldenPath?.runbook) ? goldenPath.runbook : [];
+  const criteria = Array.isArray(source.completionChecklist?.criteria) ? source.completionChecklist.criteria : [];
+  const summaryComplete = p0GoldenPathSummaryComplete(goldenPath, source.summary);
+  const rawSteps = p0GoldenPathJourneyDefinitions.map((definition) => {
+    const criterion = criteria.find((item) => definition.criteria.includes(item.id));
+    const runbookItem = p0GoldenPathRunbookItem(runbook, definition.runbookKeys);
+    const passed =
+      summaryComplete ||
+      criterion?.status === "passed" ||
+      Boolean(runbookItem?.passed) ||
+      p0GoldenPathStepHasEvidence(definition.id, source);
+    const detail =
+      criterion?.detail?.trim() ||
+      runbookItem?.blocker?.trim() ||
+      runbookItem?.detail?.trim() ||
+      definition.detail;
+    const evidenceId =
+      criterion?.evidence?.trim() ||
+      runbookItem?.stepId?.trim() ||
+      p0GoldenPathStepEvidenceId(definition.id, source);
+    const actionId = runbookItem?.actionId?.trim() || p0GoldenPathNextActionIdForStep(definition.id, source);
+    const actionTargetWorkspaceId = p0GoldenPathActionTargetWorkspaceId(
+      runbookItem?.targetWorkspace || goldenPath?.nextAction?.targetWorkspace,
+      definition.workspaceId
+    );
+
+    return {
+      actionId,
+      actionTargetWorkspaceId,
+      definition,
+      detail,
+      evidenceId,
+      passed
+    };
+  });
+  const firstOpenIndex = rawSteps.findIndex((step) => !step.passed);
+  const currentIndex = firstOpenIndex >= 0 ? firstOpenIndex : rawSteps.length - 1;
+  const currentRawStep = rawSteps[currentIndex] ?? rawSteps[0];
+  const steps: P0GoldenPathJourneyStep[] = rawSteps.map((step, index) => ({
+    id: step.definition.id,
+    label: step.definition.label,
+    state: p0GoldenPathJourneyStepState({
+      hasAction: Boolean(step.actionId),
+      index,
+      currentIndex,
+      passed: step.passed
+    }),
+    workspaceId: step.definition.workspaceId,
+    evidenceId: step.evidenceId,
+    nextActionId: index === currentIndex ? step.actionId : "",
+    detail: step.detail
+  }));
+  const currentStep = steps[currentIndex] ?? steps[0];
+  const nextActionId = currentStep?.nextActionId ?? "";
+
+  return {
+    steps,
+    currentStepId: currentStep?.id ?? "data",
+    nextActionId,
+    nextActionTargetWorkspaceId: nextActionId ? currentRawStep.actionTargetWorkspaceId : (currentStep?.workspaceId ?? "research"),
+    liveTradingAllowed: false,
+    liveBoundaryLabel: "Paper-only P0 journey",
+    detail: nextActionId
+      ? `${currentStep?.label ?? "P0"} is current · action: ${nextActionId}`
+      : `${currentStep?.label ?? "P0"} is current · live trading remains blocked`
+  };
+}
+
+export function buildP0CompletionChecklist(input: P0CompletionChecklistInput): P0CompletionChecklist {
+  const runbook = Array.isArray(input.goldenPath?.runbook) ? input.goldenPath.runbook : [];
+  const dataQualityStep = p0CompletionRunbookStep(runbook, ["market-data", "data-quality", "watchlist-cache"]);
+  const strategyStep = p0CompletionRunbookStep(runbook, ["strategy-config", "strategy-version", "strategy"]);
+  const backtestStep = p0CompletionRunbookStep(runbook, ["backtest-report", "audited-backtest", "research-run"]);
+  const aiStep = p0CompletionRunbookStep(runbook, ["ai-review", "agent-review"]);
+  const paperStep = p0CompletionRunbookStep(runbook, ["paper-execution", "paper-order"]);
+  const latestRunId = input.goldenPath?.latestRunId?.trim() || input.outcome.runId?.trim() || null;
+  const hasAuditEvidence =
+    input.outcome.state === "audit_run" ||
+    input.outcome.state === "paper_execution" ||
+    input.outcome.state === "live_ready" ||
+    Boolean(latestRunId) ||
+    Boolean(backtestStep?.passed);
+  const paperRecorded = input.paperPreflight?.state === "recorded" || input.outcome.state === "paper_execution";
+  const paperReady = paperRecorded || input.paperPreflight?.state === "ready";
+  const strategyReady = Boolean(input.strategyVersionReady || strategyStep?.passed);
+
+  const criteria: P0CompletionCriterion[] = [
+    {
+      id: "product-workspaces",
+      label: "Clear product workspaces",
+      status: input.productWorkAreaCount >= 8 ? "passed" : "blocked",
+      detail:
+        input.productWorkAreaCount >= 8
+          ? `${input.productWorkAreaCount} product workspaces are available.`
+          : "Product workspaces are not fully wired yet.",
+      evidence: `${input.productWorkAreaCount} workspaces`,
+      actionLabel: input.productWorkAreaCount >= 8 ? null : "Review workspace map",
+      targetWorkspaceId: "research"
+    },
+    {
+      id: "golden-path",
+      label: "Golden path can run through",
+      status:
+        input.summary.state === "paper_ready" || input.summary.state === "live_ready"
+          ? "passed"
+          : input.summary.totalSteps > 0
+            ? "review"
+            : "blocked",
+      detail:
+        input.summary.totalSteps > 0
+          ? input.summary.detail
+          : "Golden path evidence has not been loaded.",
+      evidence: `${input.summary.passedSteps}/${input.summary.totalSteps} steps`,
+      actionLabel: input.summary.currentGap?.actionLabel ?? "Open golden path",
+      targetWorkspaceId: p0CompletionWorkspaceId(input.summary.currentGap?.targetWorkspaceId ?? input.summary.currentGap?.workspaceId, "research")
+    },
+    p0CompletionCriterionFromStep({
+      actionLabel: dataQualityStep?.actionLabel ?? null,
+      detail: dataQualityStep?.detail ?? "Market data quality evidence is missing.",
+      evidence: dataQualityStep?.detail ?? "no market-data step",
+      id: "data-quality",
+      label: "Market data quality is visible",
+      status: p0CompletionStatusFromStep(dataQualityStep),
+      targetWorkspaceId: p0CompletionWorkspaceId(dataQualityStep?.targetWorkspace ?? dataQualityStep?.workspaceId, "market")
+    }),
+    {
+      id: "strategy-versioning",
+      label: "Strategy config is structured and versioned",
+      status: strategyReady ? "passed" : hasAuditEvidence ? "review" : "blocked",
+      detail: strategyReady
+        ? strategyStep?.detail ?? "Structured strategy version is available."
+        : hasAuditEvidence
+          ? "Audited evidence exists; verify the structured strategy revision is bound."
+          : "Save a structured strategy version before the audited run.",
+      evidence: strategyStep?.detail ?? latestRunId ?? "no strategy revision",
+      actionLabel: strategyReady ? null : "Open strategy lab",
+      targetWorkspaceId: "strategy"
+    },
+    {
+      id: "audited-backtest",
+      label: "Backtest run is reproducible and audited",
+      status: hasAuditEvidence ? "passed" : "blocked",
+      detail: hasAuditEvidence
+        ? backtestStep?.detail ?? input.outcome.detail
+        : "Run an audited research/backtest pipeline before AI or execution.",
+      evidence: latestRunId ?? backtestStep?.detail ?? "no audited run",
+      actionLabel: hasAuditEvidence ? null : "Run pipeline",
+      targetWorkspaceId: hasAuditEvidence ? "audit" : "research"
+    },
+    {
+      id: "ai-evidence",
+      label: "AI review is bound to audit evidence",
+      status: aiStep?.passed ? "passed" : hasAuditEvidence ? "review" : "blocked",
+      detail: aiStep?.passed
+        ? aiStep.detail
+        : hasAuditEvidence
+          ? aiStep?.blocker ?? aiStep?.detail ?? "Run AI review from audited evidence."
+          : "AI review waits for audited backtest evidence.",
+      evidence: aiStep?.detail ?? latestRunId ?? "no AI review",
+      actionLabel: aiStep?.passed ? null : aiStep?.actionLabel ?? "Run AI review",
+      targetWorkspaceId: p0CompletionWorkspaceId(aiStep?.targetWorkspace ?? aiStep?.workspaceId, "ai-review")
+    },
+    {
+      id: "paper-execution",
+      label: "Paper execution cannot bypass audit evidence",
+      status: paperRecorded ? "passed" : paperReady ? "review" : "blocked",
+      detail: paperRecorded
+        ? input.paperPreflight?.detail ?? input.outcome.detail
+        : paperReady
+          ? input.paperPreflight?.detail ?? "Paper order is ready for operator confirmation."
+          : paperStep?.blocker ?? paperStep?.detail ?? "Paper execution is not recorded yet.",
+      evidence: input.outcome.state === "paper_execution" ? input.outcome.evidenceId ?? "paper execution" : input.paperPreflight?.headline ?? paperStep?.detail ?? "no paper execution",
+      actionLabel: paperRecorded ? null : input.paperPreflight?.primaryActionLabel ?? paperStep?.actionLabel ?? "Submit paper order",
+      targetWorkspaceId: "execution"
+    },
+    {
+      id: "replay",
+      label: "Replay restores chart, strategy, backtest, AI, and execution state",
+      status: input.replayReady ? "passed" : input.outcome.evidenceId ? "review" : "blocked",
+      detail: input.replayReady
+        ? "Replay state is available for the current evidence chain."
+        : input.outcome.evidenceId
+          ? "Evidence exists; verify replay coverage before release."
+          : "No evidence chain is available to replay.",
+      evidence: input.outcome.evidenceId ?? "no replay evidence",
+      actionLabel: input.replayReady ? null : "Open audit replay",
+      targetWorkspaceId: "audit"
+    },
+    {
+      id: "export-import",
+      label: "Export/import can reproduce key results",
+      status: input.exportImportReady ? "passed" : input.outcome.evidenceId ? "review" : "blocked",
+      detail: input.exportImportReady
+        ? "Export/import evidence is available for this run."
+        : input.outcome.evidenceId
+          ? "Run export/import verification for the current evidence chain."
+          : "Create an audited run before export/import verification.",
+      evidence: input.outcome.evidenceId ?? "no export evidence",
+      actionLabel: input.exportImportReady ? null : "Open export evidence",
+      targetWorkspaceId: "audit"
+    },
+    {
+      id: "automated-tests",
+      label: "Automated tests cover backend contracts and frontend flows",
+      status: input.automatedTestsVerified ? "passed" : "review",
+      detail: input.automatedTestsVerified
+        ? "Automated tests were verified for the current build."
+        : "Run the full test/build suite before calling P0 complete.",
+      evidence: input.automatedTestsVerified ? "verified" : "not verified in runtime",
+      actionLabel: input.automatedTestsVerified ? null : "Run tests",
+      targetWorkspaceId: "settings"
+    }
+  ];
+  const passed = criteria.filter((item) => item.status === "passed").length;
+  const review = criteria.filter((item) => item.status === "review").length;
+  const blocked = criteria.filter((item) => item.status === "blocked").length;
+  const total = criteria.length;
+  const progressPct = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const openCriteria = criteria.filter((item) => item.status !== "passed");
+  const currentGap = criteria.find((item) => item.status === "blocked") ?? criteria.find((item) => item.status === "review") ?? null;
+  const headline = blocked > 0 ? "P0 completion not ready" : review > 0 ? "P0 completion needs review" : "P0 completion ready";
+  const detail =
+    blocked > 0 || review > 0
+      ? `${passed}/${total} completion criteria passed · ${review} need review · ${blocked} blocked`
+      : `${passed}/${total} completion criteria passed · ready for personal/team paper workflow`;
+
+  return {
+    total,
+    passed,
+    review,
+    blocked,
+    progressPct,
+    headline,
+    detail,
+    criteria,
+    openCriteria,
+    currentGap
+  };
+}
+
+function p0CompletionRunbookStep(
+  runbook: readonly GoldenPathRunbookSourceItem[],
+  preferredStepIds: readonly string[]
+): GoldenPathRunbookSourceItem | null {
+  const preferred = runbook.find((item) => preferredStepIds.includes(item.stepId));
+  if (preferred) {
+    return preferred;
+  }
+  const preferredTokens = preferredStepIds.map((id) => id.replace(/-/gu, " "));
+  return (
+    runbook.find((item) => {
+      const haystack = `${item.stepId} ${item.label}`.replace(/-/gu, " ").toLowerCase();
+      return preferredTokens.some((token) => haystack.includes(token.toLowerCase()));
+    }) ?? null
+  );
+}
+
+function p0CompletionStatusFromStep(
+  step: GoldenPathRunbookSourceItem | null | undefined
+): P0CompletionCriterionStatus {
+  if (!step) {
+    return "blocked";
+  }
+  if (step.passed) {
+    return "passed";
+  }
+  return step.status === "review" ? "review" : "blocked";
+}
+
+function p0CompletionCriterionFromStep(criterion: P0CompletionCriterion): P0CompletionCriterion {
+  return criterion;
+}
+
+function p0CompletionWorkspaceId(
+  value: string | null | undefined,
+  fallback: ProductWorkAreaId
+): ProductWorkAreaId {
+  return auditReportLedgerProductWorkAreaId(value?.trim() ?? "") ?? fallback;
 }
 
 export function buildP0PlatformActionOutcome(
@@ -6229,6 +7285,7 @@ export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadines
       : "- Current gap: none",
     ...(currentGapLinkLine ? [currentGapLinkLine] : []),
     `- Live boundary: ${input.summary.liveBoundary.label} - ${p0ReportText(input.summary.liveBoundary.detail)}`,
+    ...buildP0CompletionChecklistReportLines(input.completionChecklist),
     "",
     "## Open P0 Gaps",
     "",
@@ -6243,6 +7300,36 @@ export function buildP0PlatformReadinessReportMarkdown(input: P0PlatformReadines
     "",
     "This report is an audit aid only. It does not authorize live trading or provide investment advice."
   ].join("\n");
+}
+
+function buildP0CompletionChecklistReportLines(
+  checklist: P0CompletionChecklist | null | undefined
+): string[] {
+  if (!checklist) {
+    return [];
+  }
+  const currentGapLine = checklist.currentGap
+    ? `- Current completion gap: ${checklist.currentGap.label} (${checklist.currentGap.status}) - ${p0ReportText(checklist.currentGap.detail)}`
+    : "- Current completion gap: none";
+  return [
+    "",
+    "## P0 Completion Checklist",
+    "",
+    `- Completion: ${checklist.passed}/${checklist.total} passed, ${checklist.review} review, ${checklist.blocked} blocked.`,
+    currentGapLine,
+    "",
+    ...checklist.criteria.map((criterion, index) => {
+      const action = criterion.actionLabel
+        ? ` Next: ${p0ReportText(criterion.actionLabel)} -> ${criterion.targetWorkspaceId}.`
+        : "";
+      return `${index + 1}. ${criterion.label} [${criterion.status}] - ${p0ReportSentence(criterion.detail)} Evidence: ${p0ReportSentence(criterion.evidence)}${action}`;
+    })
+  ];
+}
+
+function p0ReportSentence(value: string | null | undefined): string {
+  const text = p0ReportText(value);
+  return /[.!?。！？]$/u.test(text) ? text : `${text}.`;
 }
 
 function buildP0BacklogReadinessReportLine(backlogItems: readonly P0PlatformBacklogItem[]): string {
@@ -6330,6 +7417,155 @@ function p0PlatformBacklogPriority(item: GoldenPathRunbookSourceItem): P0Platfor
     return "current";
   }
   return item.status === "review" ? "review" : "blocked";
+}
+
+const p0GoldenPathJourneyDefinitions: readonly {
+  id: P0GoldenPathJourneyStepId;
+  label: string;
+  workspaceId: ProductWorkAreaId;
+  criteria: readonly P0CompletionCriterionId[];
+  runbookKeys: readonly string[];
+  detail: string;
+}[] = [
+  {
+    id: "data",
+    label: "Data readiness",
+    workspaceId: "market",
+    criteria: ["data-quality"],
+    runbookKeys: ["market-data", "data-quality", "watchlist-cache"],
+    detail: "Prepare A-share data and cache evidence."
+  },
+  {
+    id: "strategy",
+    label: "Strategy draft",
+    workspaceId: "strategy",
+    criteria: ["strategy-versioning"],
+    runbookKeys: ["strategy-config", "strategy-version", "strategy"],
+    detail: "Save a structured strategy version."
+  },
+  {
+    id: "backtest",
+    label: "Audited backtest",
+    workspaceId: "backtest",
+    criteria: ["audited-backtest"],
+    runbookKeys: ["backtest-report", "audited-backtest", "research-run"],
+    detail: "Run an audited backtest and bind a run id."
+  },
+  {
+    id: "ai-review",
+    label: "AI review",
+    workspaceId: "ai-review",
+    criteria: ["ai-evidence"],
+    runbookKeys: ["ai-review", "agent-review"],
+    detail: "Run an evidence-bound AI review."
+  },
+  {
+    id: "paper-simulation",
+    label: "Paper simulation",
+    workspaceId: "execution",
+    criteria: ["paper-execution"],
+    runbookKeys: ["paper-execution", "paper-order", "paper-simulation"],
+    detail: "Submit a paper-only simulated order."
+  },
+  {
+    id: "replay",
+    label: "Replay",
+    workspaceId: "execution",
+    criteria: ["replay"],
+    runbookKeys: ["replay", "paper-replay", "account-replay"],
+    detail: "Replay cash, position, and order state."
+  },
+  {
+    id: "export",
+    label: "Export package",
+    workspaceId: "audit",
+    criteria: ["export-import"],
+    runbookKeys: ["export-import", "export", "package"],
+    detail: "Export or verify the portable P0 evidence package."
+  }
+];
+
+function p0GoldenPathRunbookItem(
+  runbook: readonly GoldenPathRunbookSourceItem[],
+  keys: readonly string[]
+): GoldenPathRunbookSourceItem | null {
+  return (
+    runbook.find((item) => keys.some((key) => item.stepId === key || item.stepId.includes(key))) ??
+    runbook.find((item) => keys.some((key) => item.label.toLowerCase().includes(key.replaceAll("-", " ")))) ??
+    null
+  );
+}
+
+function p0GoldenPathStepHasEvidence(
+  stepId: P0GoldenPathJourneyStepId,
+  source: P0GoldenPathJourneyInput
+): boolean {
+  if (stepId === "paper-simulation") {
+    return source.paperPreflight?.state === "recorded" || source.outcome?.state === "paper_execution";
+  }
+  if (stepId === "backtest") {
+    return source.outcome?.state === "audit_run" || source.outcome?.state === "paper_execution" || Boolean(source.outcome?.runId);
+  }
+  return false;
+}
+
+function p0GoldenPathStepEvidenceId(
+  stepId: P0GoldenPathJourneyStepId,
+  source: P0GoldenPathJourneyInput
+): string {
+  if (stepId === "paper-simulation") {
+    return source.outcome?.evidenceId?.trim() || "";
+  }
+  if (stepId === "backtest" || stepId === "ai-review") {
+    return source.outcome?.runId?.trim() || source.goldenPath?.latestRunId?.trim() || "";
+  }
+  return "";
+}
+
+function p0GoldenPathSummaryComplete(
+  goldenPath: P0PlatformReadinessSource | null | undefined,
+  summary: P0PlatformReadinessSummary | null | undefined
+): boolean {
+  const totalSteps = Math.max(summary?.totalSteps ?? goldenPath?.summary?.totalSteps ?? 0, 0);
+  const passedSteps = Math.max(summary?.passedSteps ?? goldenPath?.summary?.passedSteps ?? 0, 0);
+  const blockedSteps = Math.max(summary?.blockedSteps ?? goldenPath?.summary?.blockedSteps ?? 0, 0);
+  const reviewSteps = Math.max(summary?.reviewSteps ?? goldenPath?.summary?.reviewSteps ?? 0, 0);
+  return totalSteps > 0 && passedSteps >= totalSteps && blockedSteps === 0 && reviewSteps === 0;
+}
+
+function p0GoldenPathNextActionIdForStep(
+  stepId: P0GoldenPathJourneyStepId,
+  source: P0GoldenPathJourneyInput
+): string {
+  const nextAction = source.goldenPath?.nextAction;
+  if (!nextAction?.id) {
+    return "";
+  }
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(nextAction.targetWorkspace?.trim() ?? "");
+  const definition = p0GoldenPathJourneyDefinitions.find((item) => item.id === stepId);
+  return targetWorkspaceId && definition?.workspaceId === targetWorkspaceId ? nextAction.id.trim() : "";
+}
+
+function p0GoldenPathActionTargetWorkspaceId(
+  value: string | null | undefined,
+  fallback: ProductWorkAreaId
+): ProductWorkAreaId {
+  return auditReportLedgerProductWorkAreaId(value?.trim() ?? "") ?? fallback;
+}
+
+function p0GoldenPathJourneyStepState(input: {
+  currentIndex: number;
+  hasAction: boolean;
+  index: number;
+  passed: boolean;
+}): P0GoldenPathJourneyStepState {
+  if (input.index === input.currentIndex) {
+    return "current";
+  }
+  if (input.passed) {
+    return "done";
+  }
+  return input.hasAction ? "ready" : "blocked";
 }
 
 function p0PlatformBacklogPriorityRank(priority: P0PlatformBacklogPriority): number {
@@ -7737,6 +8973,10 @@ export function buildResearchRunExportBrowserRows(
   const portfolioPaperOrderSimulationAdapterEvidenceDetail =
     formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(exportPackage.portfolioPaperOrderSimulations);
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
+  const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
+  const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
+    (event) => event.eventType === "p0_paper_simulation"
+  );
   const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
   const preparationEvidence = exportPackage.researchRun?.dataSnapshot?.preparationEvidence ?? null;
   const marketCalendar = exportPackage.researchRun?.dataSnapshot?.marketCalendar ?? null;
@@ -7800,6 +9040,16 @@ export function buildResearchRunExportBrowserRows(
   ].filter(Boolean);
   const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
   const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
+  const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
+  const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
+  const p0CompletenessIsReady =
+    p0PackageCompleteness?.kind === "aiqt.p0PackageCompleteness" &&
+    p0PackageCompleteness.schemaVersion === 1 &&
+    p0PackageCompleteness.runId === exportPackage.manifest.runId &&
+    p0PackageCompleteness.ready &&
+    p0PackageCompleteness.status === "complete" &&
+    !p0PackageCompleteness.liveTradingAllowed &&
+    p0PackageCompleteness.liveBlockedBoundary;
 
   return [
     {
@@ -7977,6 +9227,41 @@ export function buildResearchRunExportBrowserRows(
       exportPath: "aiReviewRuns[]",
       tone: aiReviewCountMatches && aiReviewPackageCount > 0 ? "ai" : aiReviewCountMatches ? "neutral" : "risk"
     },
+    {
+      id: "audit-events",
+      label: "Audit events",
+      status:
+        auditEventCountMatches && auditEventPackageCount > 0
+          ? "ready"
+          : auditEventCountMatches
+            ? "missing"
+            : "blocked",
+      value: `${artifactCounts.auditEvents ?? 0} manifest / ${auditEventPackageCount} package`,
+      detail: auditEventCountMatches
+        ? `${p0PaperSimulationAuditEvents.length} P0 paper simulation event${
+            p0PaperSimulationAuditEvents.length === 1 ? "" : "s"
+          }${
+            p0PaperSimulationAuditEvents[0]?.eventType ? ` · ${p0PaperSimulationAuditEvents[0].eventType}` : ""
+          }${
+            p0PaperSimulationAuditEvents[0]?.eventId ? ` · ${p0PaperSimulationAuditEvents[0].eventId}` : ""
+          }`
+        : "Manifest audit event count does not match the package payload.",
+      exportPath: "auditEvents[]",
+      tone: auditEventCountMatches && auditEventPackageCount > 0 ? "ai" : auditEventCountMatches ? "neutral" : "risk"
+    },
+    ...(p0PackageCompleteness
+      ? ([
+          {
+            id: "p0-completeness",
+            label: "P0 package completeness",
+            status: p0CompletenessIsReady ? "ready" : p0PackageCompleteness.blocked > 0 ? "blocked" : "missing",
+            value: `${p0PackageCompleteness.passed}/${p0PackageCompleteness.total} · ${p0PackageCompleteness.status}`,
+            detail: p0PackageCompleteness.summary,
+            exportPath: "p0PackageCompleteness",
+            tone: p0CompletenessIsReady ? "positive" : p0PackageCompleteness.blocked > 0 ? "risk" : "warning"
+          }
+        ] satisfies ResearchRunExportBrowserRow[])
+      : []),
     ...(auditSummary
       ? ([
           {
@@ -8128,6 +9413,7 @@ export function buildResearchRunExportIndexRows(
       const portfolioPaperOrderApprovalPackageCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
       const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
       const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
+      const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
       const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
       const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
       const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
@@ -8207,6 +9493,7 @@ export function buildResearchRunExportIndexRows(
         (artifactCounts.portfolioPaperOrderSimulations ?? 0) === portfolioPaperOrderSimulationPackageCount;
       const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
       const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
+      const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
       const mismatchReasons = [
         integrityIsReady ? null : "Integrity missing",
         dataIsReady ? null : "Data snapshot mismatch",
@@ -8215,6 +9502,7 @@ export function buildResearchRunExportIndexRows(
         portfolioPaperOrderCountMatches ? null : "Portfolio paper order count mismatch",
         promotionCountMatches ? null : "Promotion candidate count mismatch",
         aiReviewCountMatches ? null : "AI review count mismatch",
+        auditEventCountMatches ? null : "Audit event count mismatch",
         auditReport && !auditReportIsReady ? "Audit report mismatch" : null,
         backtestReport && !backtestReportIsReady ? "Backtest report mismatch" : null
       ].filter((reason): reason is string => Boolean(reason));
@@ -8248,6 +9536,7 @@ export function buildResearchRunExportIndexRows(
           `${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals`,
           `${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
           `${artifactCounts.aiReviewRuns ?? 0} AI`,
+          (artifactCounts.auditEvents ?? 0) > 0 ? `${artifactCounts.auditEvents ?? 0} audit events` : null,
           reportArtifactLabels.length ? `${reportArtifactLabels.length} reports` : null,
           ...reportArtifactLabels
         ]
@@ -8306,6 +9595,7 @@ function researchRunImportArtifactCountMismatches(
     portfolioPaperOrderSimulations: number;
     promotionCandidates: number;
     researchNotes: number;
+    auditEvents: number;
   }
 ): string[] {
   const { artifactCounts } = exportPackage.manifest;
@@ -8330,7 +9620,8 @@ function researchRunImportArtifactCountMismatches(
       actualCounts.portfolioPaperOrderSimulations
     ],
     ["promotionCandidates", artifactCounts.promotionCandidates ?? 0, actualCounts.promotionCandidates],
-    ["aiReviewRuns", artifactCounts.aiReviewRuns ?? 0, actualCounts.aiReviewRuns]
+    ["aiReviewRuns", artifactCounts.aiReviewRuns ?? 0, actualCounts.aiReviewRuns],
+    ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents]
   ];
 
   return pairs
@@ -8409,6 +9700,7 @@ export function buildResearchRunImportDiffRows({
     exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
   const packageAiReviewCount = exportPackage.aiReviewRuns?.length ?? 0;
   const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
+  const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
     : 0;
@@ -8484,7 +9776,8 @@ export function buildResearchRunImportDiffRows({
     portfolioPaperOrderBatches: packagePortfolioPaperOrderCount,
     portfolioPaperOrderSimulations: packagePortfolioPaperOrderSimulationCount,
     promotionCandidates: exportPackage.promotionCandidate ? 1 : 0,
-    researchNotes: incomingNote ? 1 : 0
+    researchNotes: incomingNote ? 1 : 0,
+    auditEvents: packageAuditEventCount
   });
 
   return [
@@ -9560,6 +10853,39 @@ function auditReportLedgerDecodedSearchText(value: string): string {
   }
 }
 
+function auditReportLedgerUrlSearch(value: string): string {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return "";
+  }
+  try {
+    const url = new URL(trimmedValue);
+    return url.searchParams.toString();
+  } catch {
+    const queryText = trimmedValue.includes("?") ? trimmedValue.slice(trimmedValue.indexOf("?") + 1) : trimmedValue;
+    const cleanQueryText = queryText.split("#", 1)[0].replace(/^\?/u, "");
+    return new URLSearchParams(cleanQueryText).toString();
+  }
+}
+
+function auditReportLedgerResearchContextLabel({
+  fallbackMarket,
+  fallbackSymbol,
+  fallbackTimeframe,
+  search
+}: {
+  fallbackMarket: string;
+  fallbackSymbol: string;
+  fallbackTimeframe: string;
+  search: string;
+}): string {
+  const urlState = resolveResearchContextUrlState(search);
+  const market = urlState?.market ?? fallbackMarket;
+  const symbol = urlState?.symbol ?? fallbackSymbol;
+  const timeframe = urlState?.timeframe ?? fallbackTimeframe;
+  return market && symbol && timeframe ? `Research context · ${market} ${symbol} ${timeframe}` : "";
+}
+
 function auditReportLedgerEvidenceLinkLabel(
   workspaceId: ProductWorkAreaId | null,
   status: string
@@ -9582,7 +10908,9 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
       audit_evidence_report: "Audit evidence report",
       backtest_report: "Backtest report",
       p0_readiness_report: "P0 readiness report",
+      pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
+      research_context_readiness_report: "Research context readiness report",
       "": ""
     } satisfies Record<AuditEvidenceReportLedgerRow["reportKind"] | "", string>
   )[kind];
@@ -9595,18 +10923,113 @@ function auditReportLedgerLatestReportQuery(row: AuditEvidenceReportLedgerRow | 
   return [row.reportKind, row.runId, row.shortHash, row.fileName].filter(Boolean).join(" ");
 }
 
-function auditReportLedgerLatestAuditAidReportQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+function auditReportLedgerLatestAuditAidBaseQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
   const baseQuery = auditReportLedgerLatestReportQuery(row);
-  if (!row?.p0PreparationEvidenceRunId) {
-    return [baseQuery, row?.p0CurrentGapActionId, row?.p0CurrentGapTargetWorkspaceId ?? ""].filter(Boolean).join(" ");
-  }
-  return [baseQuery, row.p0PreparationEvidenceRunId, row.p0CurrentGapActionId, row.p0CurrentGapTargetWorkspaceId ?? ""]
+  return [
+    baseQuery,
+    row?.p0PreparationEvidenceRunId,
+    row?.p0CurrentGapActionId,
+    row?.p0CurrentGapTargetWorkspaceId ?? ""
+  ]
     .filter(Boolean)
     .join(" ");
 }
 
+function auditReportLedgerLatestAuditAidReportQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  const baseQuery = auditReportLedgerLatestAuditAidBaseQuery(row);
+  const progressQuery =
+    row?.reportKind === "p0_readiness_report"
+      ? [
+          row.focusQuery ? "p0-state" : "",
+          row.focusQuery,
+          row.packageTotal > 0 ? `p0-progress ${row.packageMatched}/${row.packageTotal}` : ""
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : "";
+  const preflightQuery = auditReportLedgerLatestAuditAidPreflightTerms(row);
+  return [baseQuery, progressQuery, preflightQuery].filter(Boolean).join(" ");
+}
+
+function auditReportLedgerLatestAuditAidPreflightTerms(row: AuditEvidenceReportLedgerRow | undefined): string {
+  if (!row || row.reportKind !== "p0_readiness_report" || !(row.paperPreflightState || row.paperPreflightGateTotal > 0)) {
+    return "";
+  }
+  return [
+    "preflight",
+    row.paperPreflightState,
+    row.paperPreflightActionId,
+    `attention ${row.paperPreflightGateReviewCount + row.paperPreflightGateBlockedCount}`,
+    `gates ${row.paperPreflightGatePassedCount}/${row.paperPreflightGateReviewCount}/${row.paperPreflightGateBlockedCount}`,
+    row.paperPreflightLiveBoundary
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function auditReportLedgerLatestAuditAidPreflightQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  const preflightTerms = auditReportLedgerLatestAuditAidPreflightTerms(row);
+  if (!preflightTerms) {
+    return "";
+  }
+  return [auditReportLedgerLatestAuditAidBaseQuery(row), "p0-preflight-focus", preflightTerms]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function buildAuditEvidenceReportLedgerRowResearchContextReportQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row) {
+    return "";
+  }
+  return [
+    row.reportKind,
+    row.runId,
+    row.shortHash,
+    row.focusQuery
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "pre_live_runbook_report") {
+    return "";
+  }
+  return [
+    row.reportKind,
+    row.preLiveRunbookAdapterId,
+    row.preLiveRunbookMarket,
+    row.preLiveRunbookSymbol,
+    row.preLiveRunbookTimeframe,
+    row.preLiveRunbookStatus,
+    `${row.preLiveRunbookCompletedSteps}/${row.preLiveRunbookTotalSteps}`,
+    auditReportLedgerPreLiveRunbookEvidenceLabel(row.preLiveRunbookEvidenceIds.length),
+    row.preLiveRunbookEvidenceIds.join(" "),
+    row.shortHash
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function auditReportLedgerLatestResearchContextReportQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  return buildAuditEvidenceReportLedgerRowResearchContextReportQuery(row);
+}
+
+export type ResearchContextReportCoverageStatus = "matched" | "context-mismatch" | "missing";
+
+export interface ResearchContextReportCoverage {
+  latestMatchingReport: AuditEvidenceReportLedgerRow | null;
+  latestOtherReport: AuditEvidenceReportLedgerRow | null;
+  readyReportCount: number;
+  status: ResearchContextReportCoverageStatus;
+}
+
 function auditReportLedgerLatestAuditAidBacklogReadinessQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
-  const baseQuery = auditReportLedgerLatestAuditAidReportQuery(row);
+  const baseQuery = auditReportLedgerLatestAuditAidBaseQuery(row);
   if (!row || !baseQuery) {
     return "";
   }
@@ -9627,10 +11050,37 @@ function auditReportLedgerLatestAuditAidBacklogReadinessQuery(row: AuditEvidence
     .join(" ");
 }
 
+function auditReportLedgerLatestAuditAidCompletionQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
+  const baseQuery = auditReportLedgerLatestAuditAidBaseQuery(row);
+  if (!row || !baseQuery) {
+    return "";
+  }
+  return [
+    baseQuery,
+    "p0-completion-focus",
+    "completion",
+    row.p0CompletionReadinessRecorded ? "completion-recorded" : "completion-not-recorded",
+    `completion ${row.p0CompletionPassedCount}/${row.p0CompletionTotalCount}`,
+    `completion-progress ${row.p0CompletionProgressPct}`,
+    `completion-review ${row.p0CompletionReviewCount}`,
+    `completion-blocked ${row.p0CompletionBlockedCount}`,
+    row.p0CompletionCurrentCriterionId,
+    row.p0CompletionCurrentCriterionLabel,
+    row.p0CompletionCurrentCriterionStatus,
+    row.p0CompletionCurrentCriterionActionLabel,
+    row.p0CompletionCurrentCriterionTargetWorkspaceId ?? "",
+    row.p0CompletionOpenCriterionIds,
+    row.p0CompletionSummary.trim() ? "completion-summary-recorded" : "completion-summary-missing",
+    row.p0CompletionSummary
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function auditReportLedgerLatestAuditAidCurrentGapReadinessQuery(
   row: AuditEvidenceReportLedgerRow | undefined
 ): string {
-  const baseQuery = auditReportLedgerLatestAuditAidReportQuery(row);
+  const baseQuery = auditReportLedgerLatestAuditAidBaseQuery(row);
   if (!row || !baseQuery) {
     return "";
   }
@@ -9649,6 +11099,21 @@ function auditReportLedgerLatestAuditAidCurrentGapReadinessQuery(
 
 function auditReportLedgerPreparationEvidenceLabel(runId: string): string {
   return runId ? `prep ${runId}` : "";
+}
+
+export function buildAuditEvidenceReportLedgerRowP0ProgressLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p0_readiness_report") {
+    return "";
+  }
+  const progress = row.packageTotal > 0 ? `${row.packageMatched}/${row.packageTotal}` : "";
+  const focusSuffix = row.runId ? ` ${row.runId}` : "";
+  const focusText = row.focusQuery.endsWith(focusSuffix)
+    ? row.focusQuery.slice(0, -focusSuffix.length).trim()
+    : row.focusQuery.trim();
+  const focus = focusText.replace(/^(\S+)\s+(\d+%)\s+(.+)$/u, "$1 $2 · $3");
+  return [progress ? `P0 progress ${progress}` : "P0 progress", focus].filter(Boolean).join(" · ");
 }
 
 export function buildMarketDataRefreshOverrideAuditLedgerRows(
@@ -10282,12 +11747,18 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "audit_evidence_report" ||
         event.eventType === "backtest_report" ||
         event.eventType === "portfolio_report" ||
-        event.eventType === "p0_readiness_report"
+        event.eventType === "p0_readiness_report" ||
+        event.eventType === "pre_live_runbook_report" ||
+        event.eventType === "research_context_readiness_report"
     )
     .map((event) => {
       const reportKind: AuditEvidenceReportLedgerRow["reportKind"] =
         event.eventType === "p0_readiness_report"
           ? "p0_readiness_report"
+          : event.eventType === "pre_live_runbook_report"
+          ? "pre_live_runbook_report"
+          : event.eventType === "research_context_readiness_report"
+          ? "research_context_readiness_report"
           : event.eventType === "portfolio_report"
           ? "portfolio_report"
           : event.eventType === "backtest_report"
@@ -10298,6 +11769,10 @@ export function buildAuditEvidenceReportLedgerRows(
         auditReportLedgerMetadataText(event.metadata, "artifactKind") ||
         (reportKind === "p0_readiness_report"
           ? "aiqt.p0ReadinessReport"
+          : reportKind === "pre_live_runbook_report"
+          ? "aiqt.preLiveRunbookReport"
+          : reportKind === "research_context_readiness_report"
+          ? "aiqt.researchContextReadinessReport"
           : reportKind === "portfolio_report"
           ? "aiqt.portfolioReport"
           : reportKind === "backtest_report"
@@ -10307,6 +11782,10 @@ export function buildAuditEvidenceReportLedgerRows(
         auditReportLedgerMetadataText(event.metadata, "fileName") ||
         (reportKind === "p0_readiness_report"
           ? "p0-readiness-report.md"
+          : reportKind === "pre_live_runbook_report"
+          ? "pre-live-runbook-report.md"
+          : reportKind === "research_context_readiness_report"
+          ? "research-context-readiness-report.md"
           : reportKind === "portfolio_report"
           ? "portfolio-report.md"
           : reportKind === "backtest_report"
@@ -10322,6 +11801,30 @@ export function buildAuditEvidenceReportLedgerRows(
                 : "",
               auditReportLedgerMetadataText(event.metadata, "currentGapLabel"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceId")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "pre_live_runbook_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "adapterId"),
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "status"),
+              `${auditReportLedgerMetadataNumber(event.metadata, "completedSteps")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalSteps"
+              )}`
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "research_context_readiness_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "preflightStatus"),
+              auditReportLedgerMetadataText(event.metadata, "lockedPreparationEvidenceRunId")
             ]
               .filter(Boolean)
               .join(" ")
@@ -10349,15 +11852,24 @@ export function buildAuditEvidenceReportLedgerRows(
       const signatureStatus = status === "ready" ? auditReportLedgerSignatureStatus(signature) : "invalid";
       const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
       const importVerificationVerified =
-        reportKind === "backtest_report" || reportKind === "p0_readiness_report"
+        reportKind === "backtest_report" ||
+        reportKind === "p0_readiness_report" ||
+        reportKind === "pre_live_runbook_report" ||
+        reportKind === "research_context_readiness_report"
           ? 0
           : auditReportLedgerMetadataNumber(event.metadata, "importVerificationVerified");
       const importVerificationInvalid =
-        reportKind === "backtest_report" || reportKind === "p0_readiness_report"
+        reportKind === "backtest_report" ||
+        reportKind === "p0_readiness_report" ||
+        reportKind === "pre_live_runbook_report" ||
+        reportKind === "research_context_readiness_report"
           ? 0
           : auditReportLedgerMetadataNumber(event.metadata, "importVerificationInvalid");
       const importVerificationDetail =
-        reportKind === "backtest_report" || reportKind === "p0_readiness_report"
+        reportKind === "backtest_report" ||
+        reportKind === "p0_readiness_report" ||
+        reportKind === "pre_live_runbook_report" ||
+        reportKind === "research_context_readiness_report"
           ? ""
           : auditReportLedgerImportVerificationDetail(event.metadata, importVerificationVerified, importVerificationInvalid);
       const paperPreflightState =
@@ -10405,6 +11917,54 @@ export function buildAuditEvidenceReportLedgerRows(
               p0BacklogExecutableCount + p0BacklogNotExecutableCount
             )
           : 0;
+      const p0CompletionReadinessRecorded =
+        reportKind === "p0_readiness_report" &&
+        [
+          "completionBlockedCount",
+          "completionCurrentCriterionId",
+          "completionCurrentCriterionLabel",
+          "completionCurrentCriterionStatus",
+          "completionOpenCriterionIds",
+          "completionPassedCount",
+          "completionProgressPct",
+          "completionReviewCount",
+          "completionSummary",
+          "completionTotalCount"
+        ].some((key) => auditReportLedgerMetadataHas(event.metadata, key));
+      const p0CompletionBlockedCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "completionBlockedCount") : 0;
+      const p0CompletionCurrentCriterionActionLabel =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "completionCurrentCriterionActionLabel")
+          : "";
+      const p0CompletionCurrentCriterionId =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "completionCurrentCriterionId") : "";
+      const p0CompletionCurrentCriterionLabel =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "completionCurrentCriterionLabel") : "";
+      const p0CompletionCurrentCriterionStatus =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerP0CompletionCriterionStatus(
+              auditReportLedgerMetadataText(event.metadata, "completionCurrentCriterionStatus")
+            )
+          : "";
+      const p0CompletionCurrentCriterionTargetWorkspaceId =
+        reportKind === "p0_readiness_report"
+          ? auditReportLedgerProductWorkAreaId(
+              auditReportLedgerMetadataText(event.metadata, "completionCurrentCriterionTargetWorkspaceId")
+            )
+          : null;
+      const p0CompletionOpenCriterionIds =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "completionOpenCriterionIds") : "";
+      const p0CompletionPassedCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "completionPassedCount") : 0;
+      const p0CompletionProgressPct =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "completionProgressPct") : 0;
+      const p0CompletionReviewCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "completionReviewCount") : 0;
+      const p0CompletionSummary =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "completionSummary") : "";
+      const p0CompletionTotalCount =
+        reportKind === "p0_readiness_report" ? auditReportLedgerMetadataNumber(event.metadata, "completionTotalCount") : 0;
       const p0FirstBacklogCanExecute =
         reportKind === "p0_readiness_report" ? auditReportLedgerMetadataBoolean(event.metadata, "firstBacklogCanExecute") : false;
       const p0FirstBacklogExecutableActionId =
@@ -10506,18 +12066,126 @@ export function buildAuditEvidenceReportLedgerRows(
               p0FirstBacklogReadinessReason,
               p0BacklogReadinessSummary.trim() ? "backlog-summary-recorded" : "backlog-summary-missing",
               p0BacklogReadinessSummary,
+              "p0-completion-focus",
+              "completion",
+              p0CompletionReadinessRecorded ? "completion-recorded" : "completion-not-recorded",
+              `completion ${p0CompletionPassedCount}/${p0CompletionTotalCount}`,
+              `completion-progress ${p0CompletionProgressPct}`,
+              `completion-review ${p0CompletionReviewCount}`,
+              `completion-blocked ${p0CompletionBlockedCount}`,
+              p0CompletionCurrentCriterionId,
+              p0CompletionCurrentCriterionLabel,
+              p0CompletionCurrentCriterionStatus,
+              p0CompletionCurrentCriterionActionLabel,
+              p0CompletionCurrentCriterionTargetWorkspaceId ?? "",
+              p0CompletionOpenCriterionIds,
+              p0CompletionSummary.trim() ? "completion-summary-recorded" : "completion-summary-missing",
+              p0CompletionSummary,
               p0CurrentGapDeepLinkSearch,
               p0CurrentGapTargetWorkspaceId ?? "",
               auditReportLedgerMetadataText(event.metadata, "firstBacklogStepId"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceState"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceLink"),
               auditReportLedgerMetadataText(event.metadata, "liveBoundary"),
+              "p0-progress-focus",
+              focusQuery ? "p0-state" : "",
+              focusQuery,
+              auditReportLedgerMetadataNumber(event.metadata, "totalSteps") > 0
+                ? `p0-progress ${auditReportLedgerMetadataNumber(event.metadata, "passedSteps")}/${auditReportLedgerMetadataNumber(
+                    event.metadata,
+                    "totalSteps"
+                  )}`
+                : "",
+              paperPreflightState || paperPreflightGateTotal > 0 ? "p0-preflight-focus" : "",
               paperPreflightState,
               paperPreflightActionId,
               paperPreflightActionLabel,
               paperPreflightLabel,
+              `preflight attention ${paperPreflightGateReviewCount + paperPreflightGateBlockedCount}`,
               paperPreflightLiveBoundary,
               p0PreparationEvidenceRunId,
+              auditReportLedgerMetadataText(event.metadata, "boundary")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
+      const preLiveRunbookSearchText =
+        reportKind === "pre_live_runbook_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "adapterId"),
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "status"),
+              auditReportLedgerMetadataText(event.metadata, "nextStepId"),
+              auditReportLedgerMetadataText(event.metadata, "nextStep"),
+              `${auditReportLedgerMetadataNumber(event.metadata, "completedSteps")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalSteps"
+              )}`,
+              auditReportLedgerPreLiveRunbookEvidenceLabel(
+                auditReportLedgerMetadataStringList(event.metadata, "evidenceIds").length
+              ),
+              auditReportLedgerMetadataStringList(event.metadata, "evidenceIds").join(" "),
+              auditReportLedgerMetadataText(event.metadata, "boundary")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
+      const researchContextMarket =
+        reportKind === "research_context_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "market") : "";
+      const researchContextSymbol =
+        reportKind === "research_context_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "symbol") : "";
+      const researchContextTimeframe =
+        reportKind === "research_context_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "timeframe") : "";
+      const researchContextPreflightStatus =
+        reportKind === "research_context_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "preflightStatus")
+          : "";
+      const researchContextNextAction =
+        reportKind === "research_context_readiness_report" ? auditReportLedgerMetadataText(event.metadata, "nextAction") : "";
+      const researchContextPreparationEvidenceRunId =
+        reportKind === "research_context_readiness_report"
+          ? auditReportLedgerMetadataText(event.metadata, "lockedPreparationEvidenceRunId")
+          : "";
+      const researchContextRecordedLink = auditReportLedgerMetadataText(event.metadata, "contextLink");
+      const researchContextFallbackParams = new URLSearchParams();
+      if (reportKind === "research_context_readiness_report" && researchContextMarket && researchContextSymbol && researchContextTimeframe) {
+        researchContextFallbackParams.set("workspace", "research");
+        researchContextFallbackParams.set("market", researchContextMarket);
+        researchContextFallbackParams.set("symbol", researchContextSymbol);
+        researchContextFallbackParams.set("timeframe", researchContextTimeframe);
+        if (researchContextPreparationEvidenceRunId) {
+          researchContextFallbackParams.set("watchlistRefreshRun", researchContextPreparationEvidenceRunId);
+        }
+      }
+      const researchContextLinkSearch =
+        reportKind === "research_context_readiness_report"
+          ? auditReportLedgerUrlSearch(researchContextRecordedLink) || researchContextFallbackParams.toString()
+          : "";
+      const researchContextLinkDecodedSearch = auditReportLedgerDecodedSearchText(researchContextLinkSearch);
+      const researchContextLinkLabel =
+        reportKind === "research_context_readiness_report"
+          ? auditReportLedgerResearchContextLabel({
+              fallbackMarket: researchContextMarket,
+              fallbackSymbol: researchContextSymbol,
+              fallbackTimeframe: researchContextTimeframe,
+              search: researchContextLinkSearch
+            })
+          : "";
+      const researchContextSearchText =
+        reportKind === "research_context_readiness_report"
+          ? [
+              researchContextMarket,
+              researchContextSymbol,
+              researchContextTimeframe,
+              researchContextPreflightStatus,
+              researchContextNextAction,
+              researchContextPreparationEvidenceRunId,
+              researchContextLinkSearch,
+              researchContextLinkDecodedSearch,
+              researchContextLinkLabel,
+              researchContextRecordedLink ? "research-context-link-recorded" : "research-context-link-derived",
               auditReportLedgerMetadataText(event.metadata, "boundary")
             ]
               .filter(Boolean)
@@ -10533,6 +12201,26 @@ export function buildAuditEvidenceReportLedgerRows(
           : "";
       const evidenceTargetWorkspaceId = auditReportLedgerEvidenceTargetWorkspaceId(evidenceLinkSearch);
       const evidenceLinkDecodedSearch = auditReportLedgerDecodedSearchText(evidenceLinkSearch);
+      const preLiveRunbookAdapterId =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "adapterId") : "";
+      const preLiveRunbookMarket =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "market") : "";
+      const preLiveRunbookSymbol =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "symbol") : "";
+      const preLiveRunbookTimeframe =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "timeframe") : "";
+      const preLiveRunbookStatus =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "status") : "";
+      const preLiveRunbookCompletedSteps =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataNumber(event.metadata, "completedSteps") : 0;
+      const preLiveRunbookTotalSteps =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps") : 0;
+      const preLiveRunbookNextStep =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "nextStep") : "";
+      const preLiveRunbookNextStepId =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "nextStepId") : "";
+      const preLiveRunbookEvidenceIds =
+        reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "evidenceIds") : [];
       return {
         id: event.eventId,
         artifactKind,
@@ -10550,6 +12238,10 @@ export function buildAuditEvidenceReportLedgerRows(
         packageMatched:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "passedSteps")
+            : reportKind === "pre_live_runbook_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "completedSteps")
+            : reportKind === "research_context_readiness_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "readinessReadyCount")
             : reportKind === "portfolio_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "legCount")
             : reportKind === "backtest_report"
@@ -10558,17 +12250,31 @@ export function buildAuditEvidenceReportLedgerRows(
         packageTotal:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps")
+            : reportKind === "pre_live_runbook_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps")
+            : reportKind === "research_context_readiness_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "readinessReadyCount") +
+              auditReportLedgerMetadataNumber(event.metadata, "readinessReviewCount") +
+              auditReportLedgerMetadataNumber(event.metadata, "readinessBlockedCount")
             : reportKind === "portfolio_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "equityRows")
             : reportKind === "backtest_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "dataRows")
             : auditReportLedgerMetadataNumber(event.metadata, "packageTotal"),
         importDiffBlocked:
-          reportKind === "backtest_report" || reportKind === "portfolio_report" || reportKind === "p0_readiness_report"
+          reportKind === "backtest_report" ||
+          reportKind === "portfolio_report" ||
+          reportKind === "p0_readiness_report" ||
+          reportKind === "pre_live_runbook_report" ||
+          reportKind === "research_context_readiness_report"
             ? 0
             : auditReportLedgerMetadataNumber(event.metadata, "importDiffBlocked"),
         importDiffTotal:
-          reportKind === "backtest_report" || reportKind === "portfolio_report" || reportKind === "p0_readiness_report"
+          reportKind === "backtest_report" ||
+          reportKind === "portfolio_report" ||
+          reportKind === "p0_readiness_report" ||
+          reportKind === "pre_live_runbook_report" ||
+          reportKind === "research_context_readiness_report"
             ? 0
             : auditReportLedgerMetadataNumber(event.metadata, "importDiffTotal"),
         importVerificationDetail,
@@ -10579,6 +12285,19 @@ export function buildAuditEvidenceReportLedgerRows(
         p0BacklogReadinessRecorded,
         p0BacklogReadinessSummary,
         p0BacklogTotalCount,
+        p0CompletionBlockedCount,
+        p0CompletionCurrentCriterionActionLabel,
+        p0CompletionCurrentCriterionId,
+        p0CompletionCurrentCriterionLabel,
+        p0CompletionCurrentCriterionStatus,
+        p0CompletionCurrentCriterionTargetWorkspaceId,
+        p0CompletionOpenCriterionIds,
+        p0CompletionPassedCount,
+        p0CompletionProgressPct,
+        p0CompletionReadinessRecorded,
+        p0CompletionReviewCount,
+        p0CompletionSummary,
+        p0CompletionTotalCount,
         p0CurrentGapActionId,
         p0CurrentGapActionLabel,
         p0CurrentGapCanExecute,
@@ -10600,9 +12319,32 @@ export function buildAuditEvidenceReportLedgerRows(
         paperPreflightLiveBoundary,
         paperPreflightState,
         p0PreparationEvidenceRunId,
+        researchContextMarket,
+        researchContextLinkDecodedSearch,
+        researchContextLinkLabel,
+        researchContextLinkSearch,
+        researchContextNextAction,
+        researchContextPreflightStatus,
+        researchContextPreparationEvidenceRunId,
+        researchContextSymbol,
+        researchContextTimeframe,
+        preLiveRunbookAdapterId,
+        preLiveRunbookCompletedSteps,
+        preLiveRunbookEvidenceIds,
+        preLiveRunbookMarket,
+        preLiveRunbookNextStep,
+        preLiveRunbookNextStepId,
+        preLiveRunbookStatus,
+        preLiveRunbookSymbol,
+        preLiveRunbookTimeframe,
+        preLiveRunbookTotalSteps,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
             ? "p0-readiness-report"
+            : reportKind === "pre_live_runbook_report"
+            ? "pre-live-runbook-report"
+            : reportKind === "research_context_readiness_report"
+            ? "research-context-readiness-report"
             : reportKind === "portfolio_report"
             ? "portfolio-report"
             : reportKind === "backtest_report"
@@ -10612,7 +12354,11 @@ export function buildAuditEvidenceReportLedgerRows(
         statusLabel:
           status === "ready"
             ? reportKind === "p0_readiness_report"
-              ? "P0 readiness report hash recorded"
+            ? "P0 readiness report hash recorded"
+            : reportKind === "pre_live_runbook_report"
+              ? "Pre-live runbook report hash recorded"
+            : reportKind === "research_context_readiness_report"
+              ? "Research context readiness report hash recorded"
               : reportKind === "portfolio_report"
               ? "Portfolio report hash recorded"
               : reportKind === "backtest_report"
@@ -10631,7 +12377,7 @@ export function buildAuditEvidenceReportLedgerRows(
         signatureVerifiedAt: auditReportLedgerMetadataText(signature, "verifiedAt"),
         detail: event.detail,
         reportKind,
-        searchText: p0SearchText,
+        searchText: [p0SearchText, preLiveRunbookSearchText, researchContextSearchText].filter(Boolean).join(" "),
         tone: auditReportLedgerSignatureTone(signatureStatus)
       };
     });
@@ -10668,7 +12414,12 @@ function auditReportLedgerPaperPreflightLabel({
 export function buildAuditEvidenceReportLedgerSummary(
   rows: AuditEvidenceReportLedgerRow[]
 ): AuditEvidenceReportLedgerSummary {
-  const signingEligibleRows = rows.filter((row) => row.reportKind !== "p0_readiness_report");
+  const signingEligibleRows = rows.filter(
+    (row) =>
+      row.reportKind !== "p0_readiness_report" &&
+      row.reportKind !== "pre_live_runbook_report" &&
+      row.reportKind !== "research_context_readiness_report"
+  );
   const readyRows = rows.filter((row) => row.status === "ready");
   const ready = readyRows.length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
@@ -10681,14 +12432,36 @@ export function buildAuditEvidenceReportLedgerSummary(
   const importVerificationInvalid = rows.reduce((total, row) => total + row.importVerificationInvalid, 0);
   const attention = invalid + revoked;
   const signingAttention = signingInvalid + revoked;
-  const auditAidRows = rows.filter((row) => row.reportKind === "p0_readiness_report");
-  const actionableAuditAidRows = auditAidRows.filter((row) => row.status === "ready");
+  const auditAidRows = rows.filter(
+    (row) =>
+      row.reportKind === "p0_readiness_report" ||
+      row.reportKind === "pre_live_runbook_report" ||
+      row.reportKind === "research_context_readiness_report"
+  );
+  const p0AuditAidRows = rows.filter((row) => row.reportKind === "p0_readiness_report");
+  const actionableAuditAidRows = p0AuditAidRows.filter((row) => row.status === "ready");
   const latestAuditAidRow = actionableAuditAidRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
     if (!latest) {
       return row;
     }
     return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
   }, undefined);
+  const latestResearchContextReportRow = rows
+    .filter((row) => row.reportKind === "research_context_readiness_report" && row.status === "ready")
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    }, undefined);
+  const latestPreLiveRunbookRow = rows
+    .filter((row) => row.reportKind === "pre_live_runbook_report" && row.status === "ready")
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    }, undefined);
   const latestReadyRow = readyRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
     if (!latest) {
       return row;
@@ -10728,6 +12501,17 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidBacklogReadinessSummary: latestAuditAidRow?.p0BacklogReadinessSummary ?? "",
     latestAuditAidBacklogReadinessTitle: buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle(latestAuditAidRow),
     latestAuditAidBacklogTotalCount: latestAuditAidRow?.p0BacklogTotalCount ?? 0,
+    latestAuditAidCompletionLabel: buildAuditEvidenceReportLedgerRowP0CompletionLabel(latestAuditAidRow),
+    latestAuditAidCompletionQuery: auditReportLedgerLatestAuditAidCompletionQuery(latestAuditAidRow),
+    latestAuditAidCompletionCurrentCriterionActionLabel:
+      latestAuditAidRow?.p0CompletionCurrentCriterionActionLabel ?? "",
+    latestAuditAidCompletionCurrentCriterionId: latestAuditAidRow?.p0CompletionCurrentCriterionId ?? "",
+    latestAuditAidCompletionCurrentCriterionLabel: latestAuditAidRow?.p0CompletionCurrentCriterionLabel ?? "",
+    latestAuditAidCompletionCurrentCriterionStatus: latestAuditAidRow?.p0CompletionCurrentCriterionStatus ?? "",
+    latestAuditAidCompletionCurrentCriterionTargetWorkspaceId:
+      latestAuditAidRow?.p0CompletionCurrentCriterionTargetWorkspaceId ?? null,
+    latestAuditAidCompletionRecorded: latestAuditAidRow?.p0CompletionReadinessRecorded ?? false,
+    latestAuditAidCompletionTitle: buildAuditEvidenceReportLedgerRowP0CompletionTitle(latestAuditAidRow),
     latestAuditAidEvidenceLabel: latestAuditAidRow?.evidenceLinkLabel || latestAuditAidRow?.focusQuery || "",
     latestAuditAidEvidenceLink:
       latestAuditAidRow?.evidenceLinkDecodedSearch || latestAuditAidRow?.evidenceLinkSearch || "",
@@ -10737,7 +12521,10 @@ export function buildAuditEvidenceReportLedgerSummary(
       ? latestAuditAidRow.paperPreflightGateReviewCount + latestAuditAidRow.paperPreflightGateBlockedCount
       : 0,
     latestAuditAidPreflightLabel: latestAuditAidRow?.paperPreflightLabel ?? "",
+    latestAuditAidPreflightQuery: auditReportLedgerLatestAuditAidPreflightQuery(latestAuditAidRow),
     latestAuditAidPreflightState: latestAuditAidRow?.paperPreflightState ?? "",
+    latestAuditAidProgressLabel: buildAuditEvidenceReportLedgerRowP0ProgressLabel(latestAuditAidRow),
+    latestAuditAidProgressQuery: buildAuditEvidenceReportLedgerRowP0ProgressQuery(latestAuditAidRow),
     latestAuditAidPreparationEvidenceLabel: auditReportLedgerPreparationEvidenceLabel(
       latestAuditAidRow?.p0PreparationEvidenceRunId ?? ""
     ),
@@ -10745,6 +12532,39 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidReportQuery: auditReportLedgerLatestAuditAidReportQuery(latestAuditAidRow),
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
     latestAuditAidShortHash: latestAuditAidRow?.shortHash ?? "",
+    latestPreLiveRunbookAdapterId: latestPreLiveRunbookRow?.preLiveRunbookAdapterId ?? "",
+    latestPreLiveRunbookContextLabel: latestPreLiveRunbookRow
+      ? [
+          latestPreLiveRunbookRow.preLiveRunbookMarket,
+          latestPreLiveRunbookRow.preLiveRunbookSymbol,
+          latestPreLiveRunbookRow.preLiveRunbookTimeframe
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : "",
+    latestPreLiveRunbookEvidenceCount: latestPreLiveRunbookRow?.preLiveRunbookEvidenceIds.length ?? 0,
+    latestPreLiveRunbookEvidenceLabel: latestPreLiveRunbookRow
+      ? auditReportLedgerPreLiveRunbookEvidenceLabel(latestPreLiveRunbookRow.preLiveRunbookEvidenceIds.length)
+      : "",
+    latestPreLiveRunbookEventId: latestPreLiveRunbookRow?.id ?? "",
+    latestPreLiveRunbookGateLabel: latestPreLiveRunbookRow
+      ? `${latestPreLiveRunbookRow.preLiveRunbookCompletedSteps}/${latestPreLiveRunbookRow.preLiveRunbookTotalSteps} gates`
+      : "",
+    latestPreLiveRunbookQuery: buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(latestPreLiveRunbookRow),
+    latestPreLiveRunbookShortHash: latestPreLiveRunbookRow?.shortHash ?? "",
+    latestPreLiveRunbookStatus: latestPreLiveRunbookRow?.preLiveRunbookStatus ?? "",
+    latestResearchContextReportEventId: latestResearchContextReportRow?.id ?? "",
+    latestResearchContextReportLabel: latestResearchContextReportRow?.researchContextLinkLabel ?? "",
+    latestResearchContextReportLinkSearch:
+      latestResearchContextReportRow?.researchContextLinkDecodedSearch ||
+      latestResearchContextReportRow?.researchContextLinkSearch ||
+      "",
+    latestResearchContextReportPreflightStatus: latestResearchContextReportRow?.researchContextPreflightStatus ?? "",
+    latestResearchContextReportPreparationEvidenceRunId:
+      latestResearchContextReportRow?.researchContextPreparationEvidenceRunId ?? "",
+    latestResearchContextReportQuery: auditReportLedgerLatestResearchContextReportQuery(latestResearchContextReportRow),
+    latestResearchContextReportRunId: latestResearchContextReportRow?.runId ?? "",
+    latestResearchContextReportShortHash: latestResearchContextReportRow?.shortHash ?? "",
     latestHash: latestReadyRow?.contentSha256 ?? "",
     latestReportKind: latestReadyRow?.reportKind ?? "",
     latestReportLabel: auditReportLedgerReportKindLabel(latestReadyRow?.reportKind ?? ""),
@@ -10757,6 +12577,201 @@ export function buildAuditEvidenceReportLedgerSummary(
     unsigned,
     verified
   };
+}
+
+function auditReportLedgerPreLiveRunbookEvidenceLabel(count: number): string {
+  return `${count} evidence ${count === 1 ? "id" : "ids"}`;
+}
+
+export function buildLatestResearchContextReportForContext(
+  rows: AuditEvidenceReportLedgerRow[],
+  context: { market: Market; symbol: string; timeframe: Timeframe }
+): AuditEvidenceReportLedgerRow | null {
+  return buildResearchContextReportCoverageForContext(rows, context).latestMatchingReport;
+}
+
+export function buildPreLiveRunbookAuditCoverage(
+  rows: AuditEvidenceReportLedgerRow[],
+  runbook: ExecutionAdapterPreLiveRunbookSummary,
+  workspace: TerminalWorkspace
+): PreLiveRunbookAuditCoverage {
+  const market = runbook.market;
+  const symbol = workspace.selectedInstrument.symbol;
+  const timeframe = workspace.selectedTimeframe;
+  const currentGateLabel = `${runbook.completedSteps}/${runbook.totalSteps} gates`;
+  const latest = rows
+    .filter(
+      (row) =>
+        row.reportKind === "pre_live_runbook_report" &&
+        row.status === "ready" &&
+        row.preLiveRunbookAdapterId === runbook.adapterId &&
+        row.preLiveRunbookMarket === market &&
+        row.preLiveRunbookSymbol === symbol &&
+        row.preLiveRunbookTimeframe === timeframe
+    )
+    .sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt))[0];
+
+  if (!latest) {
+    return {
+      currentGateLabel,
+      detail: `No audited pre-live runbook report is recorded for ${runbook.adapterId} ${market} ${symbol} ${timeframe}.`,
+      gateLabel: "",
+      latestEventId: "",
+      mismatchLabel: "",
+      query: "",
+      shortHash: "",
+      status: "missing",
+      statusLabel: "Not audited"
+    };
+  }
+
+  const query = [
+    latest.reportKind,
+    latest.preLiveRunbookAdapterId,
+    latest.preLiveRunbookMarket,
+    latest.preLiveRunbookSymbol,
+    latest.preLiveRunbookTimeframe,
+    latest.preLiveRunbookStatus,
+    latest.shortHash
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const currentEvidenceIds = normalizedPreLiveRunbookEvidenceIds(
+    runbook.rows.map((row) => row.evidenceId ?? "")
+  );
+  const auditedEvidenceIds = normalizedPreLiveRunbookEvidenceIds(latest.preLiveRunbookEvidenceIds);
+  const evidenceIdsMatch = samePreLiveRunbookEvidenceIds(auditedEvidenceIds, currentEvidenceIds);
+  const matchesCurrent =
+    latest.preLiveRunbookCompletedSteps === runbook.completedSteps &&
+    latest.preLiveRunbookTotalSteps === runbook.totalSteps &&
+    latest.preLiveRunbookStatus === runbook.status &&
+    latest.preLiveRunbookNextStepId === (runbook.nextStepId ?? "") &&
+    evidenceIdsMatch;
+  const mismatchLabel = matchesCurrent ? "" : buildPreLiveRunbookAuditMismatchLabel(latest, runbook);
+  const gateStateMatches =
+    latest.preLiveRunbookCompletedSteps === runbook.completedSteps &&
+    latest.preLiveRunbookTotalSteps === runbook.totalSteps &&
+    latest.preLiveRunbookStatus === runbook.status &&
+    latest.preLiveRunbookNextStepId === (runbook.nextStepId ?? "");
+
+  return {
+    currentGateLabel,
+    detail: matchesCurrent
+      ? "Latest audited runbook matches the current adapter context and gate state."
+      : !gateStateMatches && !evidenceIdsMatch
+        ? "Latest audited runbook is for this adapter context, but its gate state and evidence set differ from the current screen."
+        : !evidenceIdsMatch
+          ? "Latest audited runbook is for this adapter context, but its evidence set differs from the current screen."
+          : "Latest audited runbook is for this adapter context, but its gate state differs from the current screen.",
+    gateLabel: `${latest.preLiveRunbookCompletedSteps}/${latest.preLiveRunbookTotalSteps} gates`,
+    latestEventId: latest.id,
+    mismatchLabel,
+    query,
+    shortHash: latest.shortHash,
+    status: matchesCurrent ? "matched" : "stale",
+    statusLabel: matchesCurrent ? "Audited" : "Needs re-audit"
+  };
+}
+
+function normalizedPreLiveRunbookEvidenceIds(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function samePreLiveRunbookEvidenceIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function buildPreLiveRunbookEvidenceIdDiffLabel(
+  auditedEvidenceIds: readonly string[],
+  currentEvidenceIds: readonly string[]
+): string {
+  const removed = auditedEvidenceIds.filter((id) => !currentEvidenceIds.includes(id));
+  const added = currentEvidenceIds.filter((id) => !auditedEvidenceIds.includes(id));
+  return [
+    `evidence ids ${auditedEvidenceIds.length} -> ${currentEvidenceIds.length} changed`,
+    removed.length ? `removed ${removed.join(",")}` : "",
+    added.length ? `added ${added.join(",")}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function buildPreLiveRunbookAuditMismatchLabel(
+  latest: AuditEvidenceReportLedgerRow,
+  runbook: ExecutionAdapterPreLiveRunbookSummary
+): string {
+  const mismatches: string[] = [];
+  if (latest.preLiveRunbookStatus !== runbook.status) {
+    mismatches.push(`status ${latest.preLiveRunbookStatus || "unknown"} -> ${runbook.status}`);
+  }
+
+  const latestNextStepId = latest.preLiveRunbookNextStepId || "ready";
+  const currentNextStepId = runbook.nextStepId ?? "ready";
+  if (latestNextStepId !== currentNextStepId) {
+    mismatches.push(`next step ${latestNextStepId} -> ${currentNextStepId}`);
+  }
+
+  if (
+    latest.preLiveRunbookCompletedSteps !== runbook.completedSteps ||
+    latest.preLiveRunbookTotalSteps !== runbook.totalSteps
+  ) {
+    mismatches.push(
+      `gates ${latest.preLiveRunbookCompletedSteps}/${latest.preLiveRunbookTotalSteps} -> ${runbook.completedSteps}/${runbook.totalSteps}`
+    );
+  }
+
+  const currentEvidenceIds = normalizedPreLiveRunbookEvidenceIds(
+    runbook.rows.map((row) => row.evidenceId ?? "")
+  );
+  const auditedEvidenceIds = normalizedPreLiveRunbookEvidenceIds(latest.preLiveRunbookEvidenceIds);
+  if (!samePreLiveRunbookEvidenceIds(auditedEvidenceIds, currentEvidenceIds)) {
+    mismatches.push(buildPreLiveRunbookEvidenceIdDiffLabel(auditedEvidenceIds, currentEvidenceIds));
+  }
+
+  return mismatches.join(" · ");
+}
+
+export function buildResearchContextReportCoverageForContext(
+  rows: AuditEvidenceReportLedgerRow[],
+  context: { market: Market; symbol: string; timeframe: Timeframe }
+): ResearchContextReportCoverage {
+  const readyReports = rows.filter(
+    (row) => row.reportKind === "research_context_readiness_report" && row.status === "ready"
+  );
+  const latestMatchingReport = latestAuditEvidenceReportLedgerRow(
+    readyReports.filter(
+      (row) =>
+        row.researchContextMarket === context.market &&
+        row.researchContextSymbol === context.symbol &&
+        row.researchContextTimeframe === context.timeframe
+    )
+  );
+  const latestOtherReport = latestAuditEvidenceReportLedgerRow(
+    readyReports.filter(
+      (row) =>
+        row.researchContextMarket !== context.market ||
+        row.researchContextSymbol !== context.symbol ||
+        row.researchContextTimeframe !== context.timeframe
+    )
+  );
+
+  return {
+    latestMatchingReport,
+    latestOtherReport,
+    readyReportCount: readyReports.length,
+    status: latestMatchingReport ? "matched" : readyReports.length > 0 ? "context-mismatch" : "missing"
+  };
+}
+
+function latestAuditEvidenceReportLedgerRow(
+  rows: AuditEvidenceReportLedgerRow[]
+): AuditEvidenceReportLedgerRow | null {
+  return rows.reduce<AuditEvidenceReportLedgerRow | null>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, null);
 }
 
 export function filterAuditEvidenceReportLedgerRows(
@@ -10802,6 +12817,12 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p0CurrentGapTargetWorkspaceId ?? "",
       row.p0CurrentGapWorkspaceId ?? "",
       row.p0PreparationEvidenceRunId,
+      row.researchContextLinkDecodedSearch,
+      row.researchContextLinkLabel,
+      row.researchContextLinkSearch,
+      row.researchContextNextAction,
+      row.researchContextPreflightStatus,
+      row.researchContextPreparationEvidenceRunId,
       row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),
@@ -11176,6 +13197,10 @@ function auditReportLedgerMetadataHas(metadata: Record<string, unknown>, key: st
 function auditReportLedgerMetadataBoolean(metadata: Record<string, unknown>, key: string, fallback = false): boolean {
   const value = metadata[key];
   return typeof value === "boolean" ? value : fallback;
+}
+
+function auditReportLedgerP0CompletionCriterionStatus(value: string): P0CompletionCriterionStatus | "" {
+  return value === "passed" || value === "review" || value === "blocked" ? value : "";
 }
 
 function auditReportLedgerP0ReadinessReason(
@@ -11958,6 +13983,11 @@ export function resolveWatchlistCacheRefreshRunSelection(
   return runs.find((run) => run.runId === selectedRunId) ?? runs[0] ?? null;
 }
 
+function normalizeWatchlistCacheRefreshRunId(runId: string | null | undefined): string | null {
+  const trimmedRunId = runId?.trim() ?? "";
+  return /^[A-Za-z0-9._:-]{1,120}$/.test(trimmedRunId) ? trimmedRunId : null;
+}
+
 export function resolveWatchlistCacheRefreshRunIdFromUrl(search: string | URLSearchParams | null | undefined): string | null {
   if (!search) {
     return null;
@@ -11966,8 +13996,7 @@ export function resolveWatchlistCacheRefreshRunIdFromUrl(search: string | URLSea
     search instanceof URLSearchParams
       ? search
       : new URLSearchParams(search.startsWith("?") ? search : `?${search}`);
-  const runId = params.get("watchlistRefreshRun")?.trim() ?? "";
-  return /^[A-Za-z0-9._:-]{1,120}$/.test(runId) ? runId : null;
+  return normalizeWatchlistCacheRefreshRunId(params.get("watchlistRefreshRun"));
 }
 
 export function buildWatchlistCacheRefreshItemRows(
@@ -12117,6 +14146,126 @@ export function buildResearchPipelinePreflight(rows: ResearchContextReadinessRow
   };
 }
 
+export function buildResearchContextReadinessReportMarkdown(input: ResearchContextReadinessReportInput): string {
+  const rows = [...input.rows];
+  const evidenceRows = [...(input.evidenceRows ?? [])];
+  const preflight = input.preflight ?? buildResearchPipelinePreflight(rows);
+  const generatedAt = input.generatedAt?.trim() || new Date().toISOString();
+  const context = strategyContextLabel(
+    input.workspace.selectedInstrument.market,
+    input.workspace.selectedInstrument.symbol,
+    input.workspace.selectedTimeframe
+  );
+  const readyCount = rows.filter((row) => row.status === "ready").length;
+  const reviewCount = rows.filter((row) => row.status === "review").length;
+  const blockedCount = rows.filter((row) => row.status === "blocked").length;
+  const readinessTable = markdownTable(
+    ["Gate", "Status", "Value", "Detail", "Action"],
+    rows.map((row) => [row.label, row.status, row.value, row.detail, row.action ?? "-"])
+  );
+  const evidenceSection = evidenceRows.length
+    ? [
+        "## Evidence",
+        "",
+        markdownTable(
+          ["Evidence", "Status", "Value", "Detail"],
+          evidenceRows.map((row) => [row.label, row.status, row.value, row.detail])
+        )
+      ].join("\n")
+    : "## Evidence\n\nNo additional research evidence rows are attached.";
+  const lockedPreparationEvidence = preflight.lockedPreparationEvidence?.runId ?? "none";
+  const contextLink = input.contextLink?.trim();
+  const nextAction = preflight.primaryAction ?? "none";
+  const openIssuesSection = preflight.issues.length
+    ? [
+        "## Open Issues",
+        "",
+        markdownTable(
+          ["Gate", "Status", "Value", "Action", "Detail"],
+          preflight.issues.map((issue) => [
+            issue.label,
+            issue.status,
+            issue.value,
+            issue.action ?? "review",
+            issue.detail
+          ])
+        )
+      ].join("\n")
+    : "## Open Issues\n\nNo open research context issues.";
+
+  return [
+    "# AIQuant Research Context Readiness",
+    "",
+    `Generated at: \`${generatedAt}\``,
+    `Context: \`${context}\``,
+    ...(contextLink ? [`Context link: ${contextLink}`] : []),
+    `Preflight: \`${preflight.status}\` · ${preflight.summary}`,
+    `Next action: \`${nextAction}\``,
+    `Readiness gates: \`${readyCount} ready / ${reviewCount} review / ${blockedCount} blocked\``,
+    `Locked preparation evidence: \`${lockedPreparationEvidence}\``,
+    "",
+    "## Readiness Gates",
+    "",
+    readinessTable,
+    "",
+    openIssuesSection,
+    "",
+    evidenceSection,
+    "",
+    "Boundary: This report is research context evidence only; it does not route orders, provide investment advice, or unlock live trading."
+  ].join("\n");
+}
+
+export function buildResearchContextReadinessReportFileName(
+  input: ResearchContextReadinessReportFileNameInput
+): string {
+  const market = safeResearchContextReportFileNameToken(input.workspace.selectedInstrument.market);
+  const symbol = safeResearchContextReportFileNameToken(input.workspace.selectedInstrument.symbol);
+  const timeframe = safeResearchContextReportFileNameToken(input.workspace.selectedTimeframe);
+  const timestamp = researchContextReadinessReportTimestampToken(input.generatedAt);
+
+  return ["aiquant", "research", "context", market, symbol, timeframe, timestamp].join("-") + ".md";
+}
+
+export async function buildResearchContextReadinessReportArchive(
+  input: ResearchContextReadinessReportInput
+): Promise<ResearchContextReadinessReportArchive> {
+  const rows = [...input.rows];
+  const generatedAt = input.generatedAt?.trim() || new Date().toISOString();
+  const preflight = input.preflight ?? buildResearchPipelinePreflight(rows);
+  const contentMarkdown = buildResearchContextReadinessReportMarkdown({
+    ...input,
+    generatedAt,
+    preflight,
+    rows
+  });
+  const readinessCounts = {
+    ready: rows.filter((row) => row.status === "ready").length,
+    review: rows.filter((row) => row.status === "review").length,
+    blocked: rows.filter((row) => row.status === "blocked").length
+  };
+
+  return {
+    fileName: buildResearchContextReadinessReportFileName({ generatedAt, workspace: input.workspace }),
+    contentMarkdown,
+    contentSha256: {
+      algorithm: "sha256",
+      hash: await sha256TextHex(contentMarkdown)
+    },
+    generatedAt,
+    context: {
+      market: input.workspace.selectedInstrument.market,
+      symbol: input.workspace.selectedInstrument.symbol,
+      timeframe: input.workspace.selectedTimeframe
+    },
+    preflightStatus: preflight.status,
+    nextAction: preflight.primaryAction ?? "none",
+    lockedPreparationEvidenceRunId: preflight.lockedPreparationEvidence?.runId ?? null,
+    readinessCounts,
+    contextLink: input.contextLink?.trim() || null
+  };
+}
+
 export function resolveResearchPipelinePreparationEvidenceRunId(
   input: ResearchPipelinePreparationEvidenceSelection
 ): string | null {
@@ -12151,6 +14300,31 @@ function readinessTone(status: ResearchContextReadinessStatus): "positive" | "wa
     return "positive";
   }
   return status === "review" ? "warning" : "risk";
+}
+
+function researchContextReadinessReportTimestampToken(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  const generatedAt = trimmed ? new Date(trimmed) : new Date();
+  if (Number.isNaN(generatedAt.getTime())) {
+    return "report";
+  }
+
+  return generatedAt.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function safeResearchContextReportFileNameToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "unknown";
+}
+
+async function sha256TextHex(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function isReviewRequiredKlineSource(source: string): boolean {
@@ -15252,6 +17426,514 @@ export function buildExecutionAdapterHealthProbeRows(
   ];
 }
 
+export function buildExecutionAdapterPreLiveRunbookSummary(
+  input: ExecutionAdapterPreLiveRunbookInput
+): ExecutionAdapterPreLiveRunbookSummary {
+  const { workspace } = input;
+  const market = workspace.selectedInstrument.market;
+  const fallbackAdapterId = `${market}-live`;
+  const latestCertificationCandidate = latestPreLiveScopedRow(workspace, input.certificationRows ?? []);
+  const latestPaperExecutionCandidate = latestPreLiveScopedRow(workspace, input.paperExecutionRows ?? []);
+  const latestOpsStateCandidate = latestPreLiveScopedRow(workspace, input.opsStateRows ?? []);
+  const latestRunbookCandidate = latestPreLiveScopedRow(workspace, input.paperRouteRunbookRows ?? []);
+  const latestRouteReviewCandidate = latestPreLiveScopedRow(workspace, input.productionRouteReviewRows ?? []);
+  const latestLedgerCandidate = latestPreLiveScopedRow(workspace, input.adapterLedgerRows ?? []);
+  const adapterId =
+    latestPaperExecutionCandidate?.adapterId ??
+    latestOpsStateCandidate?.adapterId ??
+    latestRunbookCandidate?.adapterId ??
+    latestRouteReviewCandidate?.adapterId ??
+    latestCertificationCandidate?.adapterId ??
+    latestLedgerCandidate?.adapterId ??
+    fallbackAdapterId;
+
+  const latestLedger = latestPreLiveScopedRow(workspace, input.adapterLedgerRows ?? [], adapterId);
+  const latestCertification = latestPreLiveScopedRow(workspace, input.certificationRows ?? [], adapterId);
+  const latestSecretManifestValidation = latestPreLiveScopedRow(
+    workspace,
+    input.secretManifestValidationRows ?? [],
+    adapterId
+  );
+  const latestRuntimeReloadAcceptance = latestPreLiveScopedRow(
+    workspace,
+    input.runtimeReloadAcceptanceRows ?? [],
+    adapterId
+  );
+  const latestHumanConfirmation = latestPreLiveScopedRow(workspace, input.humanConfirmationRows ?? [], adapterId);
+  const latestProductionRouteReview = latestPreLiveScopedRow(
+    workspace,
+    input.productionRouteReviewRows ?? [],
+    adapterId
+  );
+  const latestHealthProbe = latestPreLiveHealthProbeRow(input.healthProbeRows ?? [], adapterId);
+  const latestSandboxOrderSchemaDryRun = latestPreLiveScopedRow(
+    workspace,
+    input.sandboxOrderSchemaDryRunRows ?? [],
+    adapterId
+  );
+  const latestPaperOrderLifecycle = latestPreLiveScopedRow(
+    workspace,
+    input.paperOrderLifecycleRows ?? [],
+    adapterId
+  );
+  const latestPaperRouteRunbook = latestPreLiveScopedRow(workspace, input.paperRouteRunbookRows ?? [], adapterId);
+  const latestOpsState = latestPreLiveScopedRow(workspace, input.opsStateRows ?? [], adapterId);
+  const latestPaperExecution = latestPreLiveScopedRow(workspace, input.paperExecutionRows ?? [], adapterId);
+
+  const rows: ExecutionAdapterPreLiveRunbookStep[] = [
+    latestLedger && !latestLedger.liveTradingAllowed
+      ? preLiveStep({
+          detail: `${latestLedger.reason} · ${latestLedger.gateSummary}`,
+          evidenceId: latestLedger.id,
+          evidenceTimestamp: latestLedger.timestamp,
+          id: "adapter-state",
+          label: "Adapter state ledger",
+          nextStep: "Continue paper-only certification chain",
+          status: "passed",
+          value: latestLedger.label
+        })
+      : preLiveStep({
+          detail: latestLedger?.liveTradingAllowed
+            ? "Live trading is already allowed; pre-live runbook refuses to treat this as paper-only evidence."
+            : `Settings has not loaded a live adapter state ledger for ${adapterId}.`,
+          evidenceId: latestLedger?.id ?? null,
+          evidenceTimestamp: latestLedger?.timestamp ?? null,
+          id: "adapter-state",
+          label: "Adapter state ledger",
+          nextStep: "Refresh adapter state ledger in Settings",
+          status: "blocked",
+          value: latestLedger?.label ?? "No adapter state"
+        }),
+    latestCertification?.status === "passed"
+      ? preLiveStep({
+          detail: `${latestCertification.checkSummary} · ${latestCertification.boundary}`,
+          evidenceId: latestCertification.auditEventId,
+          evidenceTimestamp: latestCertification.timestamp,
+          id: "adapter-certification",
+          label: "Adapter certification",
+          nextStep: "Validate local secret-store manifest",
+          status: "passed",
+          value: latestCertification.statusLabel
+        })
+      : preLiveStep({
+          detail: latestCertification
+            ? `${latestCertification.checkSummary} · ${latestCertification.boundary}`
+            : `No live adapter certification evidence is bound for ${adapterId}.`,
+          evidenceId: latestCertification?.auditEventId ?? null,
+          evidenceTimestamp: latestCertification?.timestamp ?? null,
+          id: "adapter-certification",
+          label: "Adapter certification",
+          nextStep: "Record adapter certification evidence",
+          status: latestCertification?.status === "review" ? "review" : "blocked",
+          value: latestCertification?.statusLabel ?? "No certification"
+        }),
+    latestSecretManifestValidation?.status === "validated"
+      ? preLiveStep({
+          detail: `${latestSecretManifestValidation.envCoverageSummary} · ${latestSecretManifestValidation.boundary}`,
+          evidenceId: latestSecretManifestValidation.auditEventId,
+          evidenceTimestamp: latestSecretManifestValidation.timestamp,
+          id: "secret-manifest",
+          label: "Secret manifest validation",
+          nextStep: "Record runtime reload final acceptance",
+          status: "passed",
+          value: latestSecretManifestValidation.statusLabel
+        })
+      : preLiveStep({
+          detail: latestSecretManifestValidation
+            ? `${latestSecretManifestValidation.envCoverageSummary} · ${latestSecretManifestValidation.boundary}`
+            : "No validated local secret-store manifest is bound.",
+          evidenceId: latestSecretManifestValidation?.auditEventId ?? null,
+          evidenceTimestamp: latestSecretManifestValidation?.timestamp ?? null,
+          id: "secret-manifest",
+          label: "Secret manifest validation",
+          nextStep: "Validate local secret-store manifest",
+          status: "blocked",
+          value: latestSecretManifestValidation?.statusLabel ?? "No manifest validation"
+        }),
+    latestRuntimeReloadAcceptance?.status === "acceptance_recorded"
+      ? preLiveStep({
+          detail: `${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.boundary}`,
+          evidenceId: latestRuntimeReloadAcceptance.auditEventId,
+          evidenceTimestamp: latestRuntimeReloadAcceptance.timestamp,
+          id: "runtime-acceptance",
+          label: "Runtime reload acceptance",
+          nextStep: "Record final human confirmation",
+          status: "passed",
+          value: latestRuntimeReloadAcceptance.statusLabel
+        })
+      : preLiveStep({
+          detail: latestRuntimeReloadAcceptance
+            ? `${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.boundary}`
+            : "Runtime reload final acceptance has not been recorded.",
+          evidenceId: latestRuntimeReloadAcceptance?.auditEventId ?? null,
+          evidenceTimestamp: latestRuntimeReloadAcceptance?.timestamp ?? null,
+          id: "runtime-acceptance",
+          label: "Runtime reload acceptance",
+          nextStep: "Record runtime reload final acceptance",
+          status: "blocked",
+          value: latestRuntimeReloadAcceptance?.statusLabel ?? "No runtime acceptance"
+        }),
+    latestHumanConfirmation?.status === "confirmation_recorded"
+      ? preLiveStep({
+          detail: `${latestHumanConfirmation.confirmationSummary} · ${latestHumanConfirmation.boundary}`,
+          evidenceId: latestHumanConfirmation.auditEventId,
+          evidenceTimestamp: latestHumanConfirmation.timestamp,
+          id: "human-confirmation",
+          label: "Final human confirmation",
+          nextStep: "Record production route review and read-only health probe",
+          status: "passed",
+          value: latestHumanConfirmation.statusLabel
+        })
+      : preLiveStep({
+          detail: latestHumanConfirmation
+            ? `${latestHumanConfirmation.confirmationSummary} · ${latestHumanConfirmation.boundary}`
+            : "Final human confirmation has not been recorded.",
+          evidenceId: latestHumanConfirmation?.auditEventId ?? null,
+          evidenceTimestamp: latestHumanConfirmation?.timestamp ?? null,
+          id: "human-confirmation",
+          label: "Final human confirmation",
+          nextStep: "Record final human confirmation",
+          status: "blocked",
+          value: latestHumanConfirmation?.statusLabel ?? "No human confirmation"
+        }),
+    preLiveRouteReviewHealthStep(latestProductionRouteReview, latestHealthProbe),
+    preLivePaperRehearsalStep({
+      latestOpsState,
+      latestPaperExecution,
+      latestPaperOrderLifecycle,
+      latestPaperRouteRunbook,
+      latestSandboxOrderSchemaDryRun
+    })
+  ];
+  const completedSteps = rows.filter((row) => row.status === "passed").length;
+  const next = rows.find((row) => row.status !== "passed") ?? null;
+  const status: ExecutionAdapterPreLiveRunbookStatus =
+    completedSteps === rows.length ? "paper_rehearsal_ready" : next?.status === "review" ? "in_progress" : "blocked";
+  return {
+    adapterId,
+    boundary: "Paper-only rehearsal · live routing remains blocked",
+    completedSteps,
+    headline:
+      status === "paper_rehearsal_ready"
+        ? "Paper rehearsal complete"
+        : status === "in_progress"
+          ? "Pre-live runbook in progress"
+          : "Pre-live runbook blocked",
+    market,
+    nextStep: next?.nextStep ?? "Review paper rehearsal evidence before any separate live-route enablement",
+    nextStepId: next?.id ?? null,
+    rows,
+    status,
+    summary:
+      status === "paper_rehearsal_ready"
+        ? `${adapterId} has a complete paper-only pre-live rehearsal chain. Live routing is still blocked.`
+        : `${adapterId} has ${completedSteps}/${rows.length} pre-live runbook gates complete.`,
+    totalSteps: rows.length
+  };
+}
+
+export interface ExecutionAdapterPreLiveRunbookMarkdownOptions {
+  generatedAt?: string | null;
+}
+
+export function buildExecutionAdapterPreLiveRunbookMarkdown(
+  runbook: ExecutionAdapterPreLiveRunbookSummary,
+  options: ExecutionAdapterPreLiveRunbookMarkdownOptions = {}
+): string {
+  const generatedAt = options.generatedAt?.trim() || new Date().toISOString();
+  const gateRows = runbook.rows.map((row) => [
+    row.label,
+    row.status,
+    row.value,
+    row.evidenceId ?? "not recorded",
+    row.nextStep
+  ]);
+  const detailRows = runbook.rows.flatMap((row) => [
+    `### ${row.label}`,
+    "",
+    `- Status: ${row.status}`,
+    `- Value: ${row.value}`,
+    `- Evidence: ${row.evidenceId ?? "not recorded"}`,
+    `- Evidence timestamp: ${row.evidenceTimestamp ?? "not recorded"}`,
+    `- Detail: ${row.detail}`,
+    `- Next step: ${row.nextStep}`,
+    ""
+  ]);
+
+  return [
+    "# AIQuant Pre-live Runbook",
+    "",
+    `- Generated at: ${generatedAt}`,
+    `- Adapter: \`${runbook.adapterId}\``,
+    `- Market: \`${runbook.market}\``,
+    `- Status: \`${runbook.status}\``,
+    `- Completed gates: ${runbook.completedSteps}/${runbook.totalSteps}`,
+    `- Next step: ${runbook.nextStep}`,
+    `- Boundary: ${runbook.boundary}`,
+    "",
+    "## Summary",
+    "",
+    runbook.headline,
+    "",
+    runbook.summary,
+    "",
+    "## Gate Evidence",
+    "",
+    markdownTable(["Gate", "Status", "Value", "Evidence", "Next step"], gateRows),
+    "",
+    "## Details",
+    "",
+    ...detailRows,
+    "This runbook is audit evidence only. It does not authorize live trading, submit orders, or provide investment advice."
+  ].join("\n").trimEnd();
+}
+
+function preLiveRouteReviewHealthStep(
+  latestProductionRouteReview:
+    | Pick<
+        ExecutionAdapterProductionRouteReviewRow,
+        "auditEventId" | "boundary" | "confirmationSummary" | "id" | "status" | "statusLabel" | "timestamp"
+      >
+    | null,
+  latestHealthProbe:
+    | Pick<ExecutionAdapterHealthProbeRow, "boundary" | "checkSummary" | "id" | "status" | "statusLabel" | "timestamp">
+    | null
+): ExecutionAdapterPreLiveRunbookStep {
+  if (!latestProductionRouteReview || latestProductionRouteReview.status !== "route_review_recorded") {
+    return preLiveStep({
+      detail: latestProductionRouteReview
+        ? `${latestProductionRouteReview.confirmationSummary} · ${latestProductionRouteReview.boundary}`
+        : "Production route review has not been recorded.",
+      evidenceId: latestProductionRouteReview?.auditEventId ?? null,
+      evidenceTimestamp: latestProductionRouteReview?.timestamp ?? null,
+      id: "route-review-health",
+      label: "Route review and read-only health",
+      nextStep: "Record production route review",
+      status: "blocked",
+      value: latestProductionRouteReview?.statusLabel ?? "No route review"
+    });
+  }
+  if (!latestHealthProbe) {
+    return preLiveStep({
+      detail: `${latestProductionRouteReview.statusLabel} · ${latestProductionRouteReview.boundary}`,
+      evidenceId: latestProductionRouteReview.auditEventId,
+      evidenceTimestamp: latestProductionRouteReview.timestamp,
+      id: "route-review-health",
+      label: "Route review and read-only health",
+      nextStep: "Run read-only adapter health probe",
+      status: "review",
+      value: "Route review recorded · health probe missing"
+    });
+  }
+  const status: ExecutionAdapterPreLiveRunbookStepStatus = latestHealthProbe.status === "ready" ? "passed" : "review";
+  return preLiveStep({
+    detail: `${latestProductionRouteReview.statusLabel} · ${latestHealthProbe.statusLabel} · ${latestHealthProbe.boundary}`,
+    evidenceId: latestProductionRouteReview.auditEventId,
+    evidenceTimestamp:
+      latestHealthProbe.timestamp > latestProductionRouteReview.timestamp
+        ? latestHealthProbe.timestamp
+        : latestProductionRouteReview.timestamp,
+    id: "route-review-health",
+    label: "Route review and read-only health",
+    nextStep: status === "passed" ? "Record sandbox order schema dry-run" : "Resolve read-only health probe review items",
+    status,
+    value: status === "passed" ? "Route review + health ready" : latestHealthProbe.statusLabel
+  });
+}
+
+function preLivePaperRehearsalStep({
+  latestOpsState,
+  latestPaperExecution,
+  latestPaperOrderLifecycle,
+  latestPaperRouteRunbook,
+  latestSandboxOrderSchemaDryRun
+}: {
+  latestOpsState:
+    | Pick<ExecutionAdapterOpsStateRow, "auditEventId" | "boundary" | "id" | "opsStepSummary" | "status" | "statusLabel" | "timestamp">
+    | null;
+  latestPaperExecution:
+    | Pick<
+        ExecutionAdapterPaperExecutionRow,
+        | "auditEventId"
+        | "boundary"
+        | "fillSummary"
+        | "id"
+        | "liveOrderSubmitted"
+        | "orderSubmitted"
+        | "paperFillRecorded"
+        | "routeExecuted"
+        | "status"
+        | "statusLabel"
+        | "timestamp"
+      >
+    | null;
+  latestPaperOrderLifecycle:
+    | Pick<
+        ExecutionAdapterPaperOrderLifecycleRow,
+        "auditEventId" | "boundary" | "id" | "lifecycleStepSummary" | "liveOrderSubmitted" | "status" | "statusLabel" | "timestamp"
+      >
+    | null;
+  latestPaperRouteRunbook:
+    | Pick<
+        ExecutionAdapterPaperRouteRunbookRow,
+        "auditEventId" | "boundary" | "id" | "routeExecuted" | "runbookStepSummary" | "status" | "statusLabel" | "timestamp"
+      >
+    | null;
+  latestSandboxOrderSchemaDryRun:
+    | Pick<
+        ExecutionAdapterSandboxOrderSchemaDryRunRow,
+        "auditEventId" | "boundary" | "id" | "orderIntentSummary" | "orderSubmitted" | "status" | "statusLabel" | "timestamp"
+      >
+    | null;
+}): ExecutionAdapterPreLiveRunbookStep {
+  if (
+    latestPaperExecution?.status === "paper_execution_recorded" &&
+    latestPaperExecution.paperFillRecorded &&
+    !latestPaperExecution.orderSubmitted &&
+    !latestPaperExecution.liveOrderSubmitted &&
+    !latestPaperExecution.routeExecuted
+  ) {
+    return preLiveStep({
+      detail: `${latestPaperExecution.fillSummary} · ${latestPaperExecution.boundary}`,
+      evidenceId: latestPaperExecution.auditEventId,
+      evidenceTimestamp: latestPaperExecution.timestamp,
+      id: "paper-rehearsal",
+      label: "Paper route rehearsal",
+      nextStep: "Review paper rehearsal evidence before any separate live-route enablement",
+      status: "passed",
+      value: latestPaperExecution.statusLabel
+    });
+  }
+  if (latestPaperExecution) {
+    return preLiveStep({
+      detail: `${latestPaperExecution.fillSummary} · ${latestPaperExecution.boundary}`,
+      evidenceId: latestPaperExecution.auditEventId,
+      evidenceTimestamp: latestPaperExecution.timestamp,
+      id: "paper-rehearsal",
+      label: "Paper route rehearsal",
+      nextStep: "Regenerate adapter paper execution without order submission or route execution",
+      status: "blocked",
+      value: latestPaperExecution.statusLabel
+    });
+  }
+  if (latestOpsState?.status === "ops_state_recorded") {
+    return preLiveStep({
+      detail: `${latestOpsState.opsStepSummary} · ${latestOpsState.boundary}`,
+      evidenceId: latestOpsState.auditEventId,
+      evidenceTimestamp: latestOpsState.timestamp,
+      id: "paper-rehearsal",
+      label: "Paper route rehearsal",
+      nextStep: "Record adapter paper execution",
+      status: "review",
+      value: latestOpsState.statusLabel
+    });
+  }
+  if (latestPaperRouteRunbook?.status === "runbook_recorded" && !latestPaperRouteRunbook.routeExecuted) {
+    return preLiveStep({
+      detail: `${latestPaperRouteRunbook.runbookStepSummary} · ${latestPaperRouteRunbook.boundary}`,
+      evidenceId: latestPaperRouteRunbook.auditEventId,
+      evidenceTimestamp: latestPaperRouteRunbook.timestamp,
+      id: "paper-rehearsal",
+      label: "Paper route rehearsal",
+      nextStep: "Record adapter ops state",
+      status: "review",
+      value: latestPaperRouteRunbook.statusLabel
+    });
+  }
+  if (latestPaperOrderLifecycle?.status === "lifecycle_recorded" && !latestPaperOrderLifecycle.liveOrderSubmitted) {
+    return preLiveStep({
+      detail: `${latestPaperOrderLifecycle.lifecycleStepSummary} · ${latestPaperOrderLifecycle.boundary}`,
+      evidenceId: latestPaperOrderLifecycle.auditEventId,
+      evidenceTimestamp: latestPaperOrderLifecycle.timestamp,
+      id: "paper-rehearsal",
+      label: "Paper route rehearsal",
+      nextStep: "Record paper route runbook",
+      status: "blocked",
+      value: latestPaperOrderLifecycle.statusLabel
+    });
+  }
+  if (latestSandboxOrderSchemaDryRun?.status === "schema_dry_run_recorded" && !latestSandboxOrderSchemaDryRun.orderSubmitted) {
+    return preLiveStep({
+      detail: `${latestSandboxOrderSchemaDryRun.orderIntentSummary} · ${latestSandboxOrderSchemaDryRun.boundary}`,
+      evidenceId: latestSandboxOrderSchemaDryRun.auditEventId,
+      evidenceTimestamp: latestSandboxOrderSchemaDryRun.timestamp,
+      id: "paper-rehearsal",
+      label: "Paper route rehearsal",
+      nextStep: "Record paper order lifecycle",
+      status: "blocked",
+      value: latestSandboxOrderSchemaDryRun.statusLabel
+    });
+  }
+  return preLiveStep({
+    detail: "No sandbox order schema dry-run is bound to the paper rehearsal chain.",
+    evidenceId: null,
+    evidenceTimestamp: null,
+    id: "paper-rehearsal",
+    label: "Paper route rehearsal",
+    nextStep: "Record sandbox order schema dry-run",
+    status: "blocked",
+    value: "No paper rehearsal evidence"
+  });
+}
+
+function preLiveStep({
+  detail,
+  evidenceId,
+  evidenceTimestamp,
+  id,
+  label,
+  nextStep,
+  status,
+  value
+}: Omit<ExecutionAdapterPreLiveRunbookStep, "tone">): ExecutionAdapterPreLiveRunbookStep {
+  return {
+    detail,
+    evidenceId,
+    evidenceTimestamp,
+    id,
+    label,
+    nextStep,
+    status,
+    tone: status === "passed" ? "positive" : status === "review" ? "warning" : "risk",
+    value
+  };
+}
+
+function latestPreLiveScopedRow<
+  T extends {
+    adapterId: string;
+    id: string;
+    market: Market | "multi";
+    route: "paper" | "live";
+    timestamp: string;
+  }
+>(workspace: TerminalWorkspace, rows: ReadonlyArray<T>, adapterId?: string): T | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          (!adapterId || row.adapterId === adapterId)
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPreLiveHealthProbeRow<
+  T extends {
+    adapterId: string;
+    id: string;
+    timestamp: string;
+  }
+>(rows: ReadonlyArray<T>, adapterId: string): T | null {
+  return (
+    rows
+      .filter((row) => row.adapterId === adapterId)
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
 export function createDefaultExecutionAdapterCertificationApplyConfirmations(): ExecutionAdapterCertificationApplyConfirmations {
   return {
     secretReferenceStored: false,
@@ -15566,6 +18248,12 @@ function latestPromotionSandboxProbeExecutionRow(
 function latestPromotionAdapterPaperExecutionRow(
   workspace: TerminalWorkspace,
   rows: ExecutionAdapterPaperExecutionRow[],
+  latestAdapterOpsState: ExecutionAdapterOpsStateRow | null,
+  latestPaperRouteRunbook: ExecutionAdapterPaperRouteRunbookRow | null,
+  latestPaperOrderLifecycle: ExecutionAdapterPaperOrderLifecycleRow | null,
+  latestSandboxOrderSchemaDryRun: ExecutionAdapterSandboxOrderSchemaDryRunRow | null,
+  latestProductionRouteReview: ExecutionAdapterProductionRouteReviewRow | null,
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
   latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
   latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
   latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
@@ -15574,6 +18262,369 @@ function latestPromotionAdapterPaperExecutionRow(
   latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
   latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
 ): ExecutionAdapterPaperExecutionRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestAdapterOpsState ||
+            (row.adapterId === latestAdapterOpsState.adapterId &&
+              row.adapterOpsStateId === latestAdapterOpsState.id &&
+              row.paperRouteRunbookId === latestAdapterOpsState.paperRouteRunbookId)) &&
+          (!latestPaperRouteRunbook ||
+            (row.adapterId === latestPaperRouteRunbook.adapterId &&
+              row.paperRouteRunbookId === latestPaperRouteRunbook.id &&
+              row.paperOrderLifecycleId === latestPaperRouteRunbook.paperOrderLifecycleId)) &&
+          (!latestPaperOrderLifecycle ||
+            (row.adapterId === latestPaperOrderLifecycle.adapterId &&
+              row.paperOrderLifecycleId === latestPaperOrderLifecycle.id &&
+              row.sandboxOrderSchemaDryRunId === latestPaperOrderLifecycle.sandboxOrderSchemaDryRunId)) &&
+          (!latestSandboxOrderSchemaDryRun ||
+            (row.adapterId === latestSandboxOrderSchemaDryRun.adapterId &&
+              row.sandboxOrderSchemaDryRunId === latestSandboxOrderSchemaDryRun.id &&
+              row.productionRouteReviewId === latestSandboxOrderSchemaDryRun.productionRouteReviewId)) &&
+          (!latestProductionRouteReview ||
+            (row.adapterId === latestProductionRouteReview.adapterId &&
+              row.productionRouteReviewId === latestProductionRouteReview.id &&
+              row.sandboxProbeReviewId === latestProductionRouteReview.sandboxProbeReviewId)) &&
+          (!latestSandboxProbeReview ||
+            (row.adapterId === latestSandboxProbeReview.adapterId &&
+              row.sandboxProbeReviewId === latestSandboxProbeReview.id &&
+              row.sandboxProbeExecutionId === latestSandboxProbeReview.sandboxProbeExecutionId)) &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionAdapterOpsStateRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterOpsStateRow[],
+  latestPaperRouteRunbook: ExecutionAdapterPaperRouteRunbookRow | null,
+  latestPaperOrderLifecycle: ExecutionAdapterPaperOrderLifecycleRow | null,
+  latestSandboxOrderSchemaDryRun: ExecutionAdapterSandboxOrderSchemaDryRunRow | null,
+  latestProductionRouteReview: ExecutionAdapterProductionRouteReviewRow | null,
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterOpsStateRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestPaperRouteRunbook ||
+            (row.adapterId === latestPaperRouteRunbook.adapterId &&
+              row.paperRouteRunbookId === latestPaperRouteRunbook.id &&
+              row.paperOrderLifecycleId === latestPaperRouteRunbook.paperOrderLifecycleId)) &&
+          (!latestPaperOrderLifecycle ||
+            (row.adapterId === latestPaperOrderLifecycle.adapterId &&
+              row.paperOrderLifecycleId === latestPaperOrderLifecycle.id &&
+              row.sandboxOrderSchemaDryRunId === latestPaperOrderLifecycle.sandboxOrderSchemaDryRunId)) &&
+          (!latestSandboxOrderSchemaDryRun ||
+            (row.adapterId === latestSandboxOrderSchemaDryRun.adapterId &&
+              row.sandboxOrderSchemaDryRunId === latestSandboxOrderSchemaDryRun.id &&
+              row.productionRouteReviewId === latestSandboxOrderSchemaDryRun.productionRouteReviewId)) &&
+          (!latestProductionRouteReview ||
+            (row.adapterId === latestProductionRouteReview.adapterId &&
+              row.productionRouteReviewId === latestProductionRouteReview.id &&
+              row.sandboxProbeReviewId === latestProductionRouteReview.sandboxProbeReviewId)) &&
+          (!latestSandboxProbeReview ||
+            (row.adapterId === latestSandboxProbeReview.adapterId &&
+              row.sandboxProbeReviewId === latestSandboxProbeReview.id &&
+              row.sandboxProbeExecutionId === latestSandboxProbeReview.sandboxProbeExecutionId)) &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionPaperRouteRunbookRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterPaperRouteRunbookRow[],
+  latestPaperOrderLifecycle: ExecutionAdapterPaperOrderLifecycleRow | null,
+  latestSandboxOrderSchemaDryRun: ExecutionAdapterSandboxOrderSchemaDryRunRow | null,
+  latestProductionRouteReview: ExecutionAdapterProductionRouteReviewRow | null,
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterPaperRouteRunbookRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestPaperOrderLifecycle ||
+            (row.adapterId === latestPaperOrderLifecycle.adapterId &&
+              row.paperOrderLifecycleId === latestPaperOrderLifecycle.id &&
+              row.sandboxOrderSchemaDryRunId === latestPaperOrderLifecycle.sandboxOrderSchemaDryRunId)) &&
+          (!latestSandboxOrderSchemaDryRun ||
+            (row.adapterId === latestSandboxOrderSchemaDryRun.adapterId &&
+              row.sandboxOrderSchemaDryRunId === latestSandboxOrderSchemaDryRun.id &&
+              row.productionRouteReviewId === latestSandboxOrderSchemaDryRun.productionRouteReviewId)) &&
+          (!latestProductionRouteReview ||
+            (row.adapterId === latestProductionRouteReview.adapterId &&
+              row.productionRouteReviewId === latestProductionRouteReview.id &&
+              row.sandboxProbeReviewId === latestProductionRouteReview.sandboxProbeReviewId)) &&
+          (!latestSandboxProbeReview ||
+            (row.adapterId === latestSandboxProbeReview.adapterId &&
+              row.sandboxProbeReviewId === latestSandboxProbeReview.id &&
+              row.sandboxProbeExecutionId === latestSandboxProbeReview.sandboxProbeExecutionId)) &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionPaperOrderLifecycleRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterPaperOrderLifecycleRow[],
+  latestSandboxOrderSchemaDryRun: ExecutionAdapterSandboxOrderSchemaDryRunRow | null,
+  latestProductionRouteReview: ExecutionAdapterProductionRouteReviewRow | null,
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterPaperOrderLifecycleRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSandboxOrderSchemaDryRun ||
+            (row.adapterId === latestSandboxOrderSchemaDryRun.adapterId &&
+              row.sandboxOrderSchemaDryRunId === latestSandboxOrderSchemaDryRun.id &&
+              row.productionRouteReviewId === latestSandboxOrderSchemaDryRun.productionRouteReviewId)) &&
+          (!latestProductionRouteReview ||
+            (row.adapterId === latestProductionRouteReview.adapterId &&
+              row.productionRouteReviewId === latestProductionRouteReview.id &&
+              row.sandboxProbeReviewId === latestProductionRouteReview.sandboxProbeReviewId)) &&
+          (!latestSandboxProbeReview ||
+            (row.adapterId === latestSandboxProbeReview.adapterId &&
+              row.sandboxProbeReviewId === latestSandboxProbeReview.id &&
+              row.sandboxProbeExecutionId === latestSandboxProbeReview.sandboxProbeExecutionId)) &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionSandboxOrderSchemaDryRunRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterSandboxOrderSchemaDryRunRow[],
+  latestProductionRouteReview: ExecutionAdapterProductionRouteReviewRow | null,
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterSandboxOrderSchemaDryRunRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestProductionRouteReview ||
+            (row.adapterId === latestProductionRouteReview.adapterId &&
+              row.productionRouteReviewId === latestProductionRouteReview.id &&
+              row.sandboxProbeReviewId === latestProductionRouteReview.sandboxProbeReviewId)) &&
+          (!latestSandboxProbeReview ||
+            (row.adapterId === latestSandboxProbeReview.adapterId &&
+              row.sandboxProbeReviewId === latestSandboxProbeReview.id &&
+              row.sandboxProbeExecutionId === latestSandboxProbeReview.sandboxProbeExecutionId)) &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionProductionRouteReviewRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterProductionRouteReviewRow[],
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterProductionRouteReviewRow | null {
+  return (
+    rows
+      .filter(
+        (row) =>
+          row.route === "live" &&
+          (row.market === workspace.selectedInstrument.market || row.market === "multi") &&
+          row.adapterId !== "paper-local" &&
+          (!latestSandboxProbeReview ||
+            (row.adapterId === latestSandboxProbeReview.adapterId &&
+              row.sandboxProbeReviewId === latestSandboxProbeReview.id &&
+              row.sandboxProbeExecutionId === latestSandboxProbeReview.sandboxProbeExecutionId)) &&
+          (!latestSandboxProbeExecution ||
+            (row.adapterId === latestSandboxProbeExecution.adapterId &&
+              row.sandboxProbeExecutionId === latestSandboxProbeExecution.id &&
+              row.humanConfirmationId === latestSandboxProbeExecution.humanConfirmationId)) &&
+          (!latestHumanConfirmation ||
+            (row.adapterId === latestHumanConfirmation.adapterId &&
+              row.humanConfirmationId === latestHumanConfirmation.id &&
+              row.orchestrationExecutionId === latestHumanConfirmation.orchestrationExecutionId)) &&
+          (!latestRuntimeReloadAcceptance ||
+            (row.adapterId === latestRuntimeReloadAcceptance.adapterId &&
+              row.acceptanceId === latestRuntimeReloadAcceptance.id)) &&
+          (!latestRuntimeReloadExecution ||
+            (row.adapterId === latestRuntimeReloadExecution.adapterId &&
+              row.executionId === latestRuntimeReloadExecution.id)) &&
+          (!latestRuntimeReloadPlan ||
+            (row.adapterId === latestRuntimeReloadPlan.adapterId && row.planId === latestRuntimeReloadPlan.id)) &&
+          (!latestEnvironmentBinding ||
+            (row.adapterId === latestEnvironmentBinding.adapterId && row.bindingId === latestEnvironmentBinding.id)) &&
+          (!latestSecretMaterialization ||
+            (row.adapterId === latestSecretMaterialization.adapterId &&
+              row.materializationId === latestSecretMaterialization.id))
+      )
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function latestPromotionSandboxProbeReviewRow(
+  workspace: TerminalWorkspace,
+  rows: ExecutionAdapterSandboxProbeReviewRow[],
+  latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestHumanConfirmation: ExecutionAdapterHumanConfirmationRow | null,
+  latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
+  latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
+  latestRuntimeReloadPlan: ExecutionAdapterRuntimeReloadPlanRow | null,
+  latestEnvironmentBinding: ExecutionAdapterEnvironmentBindingRow | null,
+  latestSecretMaterialization: ExecutionAdapterSecretMaterializationRow | null
+): ExecutionAdapterSandboxProbeReviewRow | null {
   return (
     rows
       .filter(
@@ -15620,6 +18671,12 @@ function buildPromotionAdapterCertificationStage(
   latestRuntimeReloadExecution: ExecutionAdapterRuntimeReloadExecutionRow | null,
   latestRuntimeReloadAcceptance: ExecutionAdapterRuntimeReloadAcceptanceRow | null,
   latestSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionRow | null,
+  latestSandboxProbeReview: ExecutionAdapterSandboxProbeReviewRow | null,
+  latestProductionRouteReview: ExecutionAdapterProductionRouteReviewRow | null,
+  latestSandboxOrderSchemaDryRun: ExecutionAdapterSandboxOrderSchemaDryRunRow | null,
+  latestPaperOrderLifecycle: ExecutionAdapterPaperOrderLifecycleRow | null,
+  latestPaperRouteRunbook: ExecutionAdapterPaperRouteRunbookRow | null,
+  latestAdapterOpsState: ExecutionAdapterOpsStateRow | null,
   latestAdapterPaperExecution: ExecutionAdapterPaperExecutionRow | null,
   liveAdapterCertified: boolean,
   adapterGatePassed: boolean
@@ -15651,11 +18708,53 @@ function buildPromotionAdapterCertificationStage(
   const runtimeReloadAcceptanceDetail = latestRuntimeReloadAcceptance
     ? `Latest runtime reload acceptance ${latestRuntimeReloadAcceptance.auditEventId}: ${latestRuntimeReloadAcceptance.statusLabel} · ${latestRuntimeReloadAcceptance.confirmationSummary} · ${latestRuntimeReloadAcceptance.blockerSummary} · ${latestRuntimeReloadAcceptance.acceptanceMode} · ${latestRuntimeReloadAcceptance.executionMode} · ${latestRuntimeReloadAcceptance.reloadMode} · ${latestRuntimeReloadAcceptance.maintenanceWindowId}${runtimeReloadAcceptanceValidationDetail} · ${latestRuntimeReloadAcceptance.boundary}. ${promotionRuntimeReloadAcceptanceNextStep(latestRuntimeReloadAcceptance)}`
     : "";
+  const sandboxProbeExecutionValidationDetail = latestSandboxProbeExecution?.manifestValidationId
+    ? ` · manifest ${latestSandboxProbeExecution.manifestValidationId}`
+    : "";
   const sandboxProbeExecutionDetail = latestSandboxProbeExecution
-    ? `Latest sandbox probe execution ${latestSandboxProbeExecution.auditEventId}: ${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.confirmationSummary} · ${latestSandboxProbeExecution.blockerSummary} · ${latestSandboxProbeExecution.probeExecutionMode} · ${latestSandboxProbeExecution.probeMode} · ${latestSandboxProbeExecution.boundary}. ${promotionSandboxProbeExecutionNextStep(latestSandboxProbeExecution)}`
+    ? `Latest sandbox probe execution ${latestSandboxProbeExecution.auditEventId}: ${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.confirmationSummary} · ${latestSandboxProbeExecution.blockerSummary} · ${latestSandboxProbeExecution.probeExecutionMode} · ${latestSandboxProbeExecution.probeMode}${sandboxProbeExecutionValidationDetail} · ${latestSandboxProbeExecution.boundary}. ${promotionSandboxProbeExecutionNextStep(latestSandboxProbeExecution)}`
+    : "";
+  const sandboxProbeReviewValidationDetail = latestSandboxProbeReview?.manifestValidationId
+    ? ` · manifest ${latestSandboxProbeReview.manifestValidationId}`
+    : "";
+  const sandboxProbeReviewDetail = latestSandboxProbeReview
+    ? `Latest sandbox probe review ${latestSandboxProbeReview.auditEventId}: ${latestSandboxProbeReview.statusLabel} · ${latestSandboxProbeReview.confirmationSummary} · ${latestSandboxProbeReview.blockerSummary} · ${latestSandboxProbeReview.reviewMode} · ${latestSandboxProbeReview.probeExecutionMode}${sandboxProbeReviewValidationDetail} · ${latestSandboxProbeReview.boundary}. ${promotionSandboxProbeReviewNextStep(latestSandboxProbeReview)}`
+    : "";
+  const productionRouteReviewValidationDetail = latestProductionRouteReview?.manifestValidationId
+    ? ` · manifest ${latestProductionRouteReview.manifestValidationId}`
+    : "";
+  const productionRouteReviewDetail = latestProductionRouteReview
+    ? `Latest production route review ${latestProductionRouteReview.auditEventId}: ${latestProductionRouteReview.statusLabel} · ${latestProductionRouteReview.confirmationSummary} · ${latestProductionRouteReview.blockerSummary} · ${latestProductionRouteReview.reviewMode} · ${latestProductionRouteReview.sandboxReviewMode}${productionRouteReviewValidationDetail} · ${latestProductionRouteReview.boundary}. ${promotionProductionRouteReviewNextStep(latestProductionRouteReview)}`
+    : "";
+  const sandboxOrderSchemaDryRunValidationDetail = latestSandboxOrderSchemaDryRun?.manifestValidationId
+    ? ` · manifest ${latestSandboxOrderSchemaDryRun.manifestValidationId}`
+    : "";
+  const sandboxOrderSchemaDryRunDetail = latestSandboxOrderSchemaDryRun
+    ? `Latest sandbox order schema dry-run ${latestSandboxOrderSchemaDryRun.auditEventId}: ${latestSandboxOrderSchemaDryRun.statusLabel} · ${latestSandboxOrderSchemaDryRun.orderIntentSummary} · ${latestSandboxOrderSchemaDryRun.confirmationSummary} · ${latestSandboxOrderSchemaDryRun.blockerSummary} · ${latestSandboxOrderSchemaDryRun.dryRunMode} · ${latestSandboxOrderSchemaDryRun.reviewMode}${sandboxOrderSchemaDryRunValidationDetail} · ${latestSandboxOrderSchemaDryRun.boundary}. ${promotionSandboxOrderSchemaDryRunNextStep(latestSandboxOrderSchemaDryRun)}`
+    : "";
+  const paperOrderLifecycleValidationDetail = latestPaperOrderLifecycle?.manifestValidationId
+    ? ` · manifest ${latestPaperOrderLifecycle.manifestValidationId}`
+    : "";
+  const paperOrderLifecycleDetail = latestPaperOrderLifecycle
+    ? `Latest paper order lifecycle ${latestPaperOrderLifecycle.auditEventId}: ${latestPaperOrderLifecycle.statusLabel} · ${latestPaperOrderLifecycle.orderIntentSummary} · ${latestPaperOrderLifecycle.lifecycleStepSummary} · ${latestPaperOrderLifecycle.confirmationSummary} · ${latestPaperOrderLifecycle.blockerSummary} · ${latestPaperOrderLifecycle.lifecycleMode} · ${latestPaperOrderLifecycle.dryRunMode}${paperOrderLifecycleValidationDetail} · ${latestPaperOrderLifecycle.boundary}. ${promotionPaperOrderLifecycleNextStep(latestPaperOrderLifecycle)}`
+    : "";
+  const paperRouteRunbookValidationDetail = latestPaperRouteRunbook?.manifestValidationId
+    ? ` · manifest ${latestPaperRouteRunbook.manifestValidationId}`
+    : "";
+  const paperRouteRunbookDetail = latestPaperRouteRunbook
+    ? `Latest paper route runbook ${latestPaperRouteRunbook.auditEventId}: ${latestPaperRouteRunbook.statusLabel} · ${latestPaperRouteRunbook.orderIntentSummary} · ${latestPaperRouteRunbook.runbookStepSummary} · ${latestPaperRouteRunbook.confirmationSummary} · ${latestPaperRouteRunbook.blockerSummary} · ${latestPaperRouteRunbook.runbookMode} · ${latestPaperRouteRunbook.lifecycleMode}${paperRouteRunbookValidationDetail} · ${latestPaperRouteRunbook.boundary}. ${promotionPaperRouteRunbookNextStep(latestPaperRouteRunbook)}`
+    : "";
+  const adapterOpsStateValidationDetail = latestAdapterOpsState?.manifestValidationId
+    ? ` · manifest ${latestAdapterOpsState.manifestValidationId}`
+    : "";
+  const adapterOpsStateDetail = latestAdapterOpsState
+    ? `Latest adapter ops state ${latestAdapterOpsState.auditEventId}: ${latestAdapterOpsState.statusLabel} · ${latestAdapterOpsState.orderIntentSummary} · ${latestAdapterOpsState.opsStepSummary} · ${latestAdapterOpsState.confirmationSummary} · ${latestAdapterOpsState.blockerSummary} · ${latestAdapterOpsState.opsMode} · ${latestAdapterOpsState.runbookMode}${adapterOpsStateValidationDetail} · ${latestAdapterOpsState.boundary}. ${promotionAdapterOpsStateNextStep(latestAdapterOpsState)}`
+    : "";
+  const adapterPaperExecutionValidationDetail = latestAdapterPaperExecution?.manifestValidationId
+    ? ` · manifest ${latestAdapterPaperExecution.manifestValidationId}`
     : "";
   const adapterPaperExecutionDetail = latestAdapterPaperExecution
-    ? `Latest adapter paper execution ${latestAdapterPaperExecution.auditEventId}: ${latestAdapterPaperExecution.statusLabel} · ${latestAdapterPaperExecution.fillSummary} · ${latestAdapterPaperExecution.confirmationSummary} · ${latestAdapterPaperExecution.blockerSummary} · ${latestAdapterPaperExecution.paperExecutionMode} · ${latestAdapterPaperExecution.boundary}. ${promotionAdapterPaperExecutionNextStep(latestAdapterPaperExecution)}`
+    ? `Latest adapter paper execution ${latestAdapterPaperExecution.auditEventId}: ${latestAdapterPaperExecution.statusLabel} · ${latestAdapterPaperExecution.fillSummary} · ${latestAdapterPaperExecution.confirmationSummary} · ${latestAdapterPaperExecution.blockerSummary} · ${latestAdapterPaperExecution.paperExecutionMode}${adapterPaperExecutionValidationDetail} · ${latestAdapterPaperExecution.boundary}. ${promotionAdapterPaperExecutionNextStep(latestAdapterPaperExecution)}`
     : "";
   if (!latestCertification) {
     const liveAdapterDetail = liveAdapterCertified
@@ -15666,6 +18765,18 @@ function buildPromotionAdapterCertificationStage(
       label: "Adapter certification",
       value: latestAdapterPaperExecution
         ? `${latestAdapterPaperExecution.statusLabel} · ${latestAdapterPaperExecution.adapterId}`
+        : latestAdapterOpsState
+        ? `${latestAdapterOpsState.statusLabel} · ${latestAdapterOpsState.adapterId}`
+        : latestPaperRouteRunbook
+        ? `${latestPaperRouteRunbook.statusLabel} · ${latestPaperRouteRunbook.adapterId}`
+        : latestPaperOrderLifecycle
+        ? `${latestPaperOrderLifecycle.statusLabel} · ${latestPaperOrderLifecycle.adapterId}`
+        : latestSandboxOrderSchemaDryRun
+        ? `${latestSandboxOrderSchemaDryRun.statusLabel} · ${latestSandboxOrderSchemaDryRun.adapterId}`
+        : latestProductionRouteReview
+        ? `${latestProductionRouteReview.statusLabel} · ${latestProductionRouteReview.adapterId}`
+        : latestSandboxProbeReview
+        ? `${latestSandboxProbeReview.statusLabel} · ${latestSandboxProbeReview.adapterId}`
         : latestSandboxProbeExecution
         ? `${latestSandboxProbeExecution.statusLabel} · ${latestSandboxProbeExecution.adapterId}`
         : certifiedLiveAdapters === 1
@@ -15680,6 +18791,12 @@ function buildPromotionAdapterCertificationStage(
         runtimeReloadExecutionDetail,
         runtimeReloadAcceptanceDetail,
         sandboxProbeExecutionDetail,
+        sandboxProbeReviewDetail,
+        productionRouteReviewDetail,
+        sandboxOrderSchemaDryRunDetail,
+        paperOrderLifecycleDetail,
+        paperRouteRunbookDetail,
+        adapterOpsStateDetail,
         adapterPaperExecutionDetail
       ]
         .filter(Boolean)
@@ -15691,6 +18808,36 @@ function buildPromotionAdapterCertificationStage(
           ? "warning"
         : latestAdapterPaperExecution
           ? latestAdapterPaperExecution.tone
+        : latestAdapterOpsState?.status === "ops_state_recorded" &&
+            !latestAdapterOpsState.routeExecuted &&
+            !latestAdapterOpsState.liveOrderSubmitted
+          ? "warning"
+        : latestAdapterOpsState
+          ? latestAdapterOpsState.tone
+        : latestPaperRouteRunbook?.status === "runbook_recorded" &&
+            !latestPaperRouteRunbook.routeExecuted &&
+            !latestPaperRouteRunbook.liveOrderSubmitted
+          ? "warning"
+        : latestPaperRouteRunbook
+          ? latestPaperRouteRunbook.tone
+        : latestPaperOrderLifecycle?.status === "lifecycle_recorded" &&
+            !latestPaperOrderLifecycle.orderSubmitted &&
+            !latestPaperOrderLifecycle.liveOrderSubmitted
+          ? "warning"
+        : latestPaperOrderLifecycle
+          ? latestPaperOrderLifecycle.tone
+        : latestSandboxOrderSchemaDryRun?.status === "schema_dry_run_recorded" && !latestSandboxOrderSchemaDryRun.orderSubmitted
+          ? "warning"
+        : latestSandboxOrderSchemaDryRun
+          ? latestSandboxOrderSchemaDryRun.tone
+        : latestProductionRouteReview?.status === "route_review_recorded"
+          ? "warning"
+        : latestProductionRouteReview
+          ? latestProductionRouteReview.tone
+        : latestSandboxProbeReview?.status === "probe_review_recorded"
+          ? "warning"
+        : latestSandboxProbeReview
+          ? latestSandboxProbeReview.tone
         : latestSandboxProbeExecution?.status === "probe_execution_recorded"
           ? "warning"
         : latestSandboxProbeExecution
@@ -15723,7 +18870,7 @@ function buildPromotionAdapterCertificationStage(
   return {
     id: "adapter-certification",
     label: "Adapter certification",
-    value: `${latestAdapterPaperExecution?.statusLabel ?? latestSandboxProbeExecution?.statusLabel ?? latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
+    value: `${latestAdapterPaperExecution?.statusLabel ?? latestAdapterOpsState?.statusLabel ?? latestPaperRouteRunbook?.statusLabel ?? latestPaperOrderLifecycle?.statusLabel ?? latestSandboxOrderSchemaDryRun?.statusLabel ?? latestProductionRouteReview?.statusLabel ?? latestSandboxProbeReview?.statusLabel ?? latestSandboxProbeExecution?.statusLabel ?? latestRestartAcceptance?.statusLabel ?? latestRestartEvidence?.statusLabel ?? latestRuntimeReloadAcceptance?.statusLabel ?? latestRuntimeReloadExecution?.statusLabel ?? latestApply?.statusLabel ?? latestCertification.statusLabel} · ${latestCertification.adapterId}`,
     detail: [
       secretReferenceDetail,
       secretMaterializationDetail,
@@ -15732,6 +18879,12 @@ function buildPromotionAdapterCertificationStage(
       runtimeReloadExecutionDetail,
       runtimeReloadAcceptanceDetail,
       sandboxProbeExecutionDetail,
+      sandboxProbeReviewDetail,
+      productionRouteReviewDetail,
+      sandboxOrderSchemaDryRunDetail,
+      paperOrderLifecycleDetail,
+      paperRouteRunbookDetail,
+      adapterOpsStateDetail,
       adapterPaperExecutionDetail,
       certificationDetail,
       applyDetail,
@@ -15748,6 +18901,36 @@ function buildPromotionAdapterCertificationStage(
         ? "warning"
       : latestAdapterPaperExecution
         ? latestAdapterPaperExecution.tone
+      : latestAdapterOpsState?.status === "ops_state_recorded" &&
+          !latestAdapterOpsState.routeExecuted &&
+          !latestAdapterOpsState.liveOrderSubmitted
+        ? "warning"
+      : latestAdapterOpsState
+        ? latestAdapterOpsState.tone
+      : latestPaperRouteRunbook?.status === "runbook_recorded" &&
+          !latestPaperRouteRunbook.routeExecuted &&
+          !latestPaperRouteRunbook.liveOrderSubmitted
+        ? "warning"
+      : latestPaperRouteRunbook
+        ? latestPaperRouteRunbook.tone
+      : latestPaperOrderLifecycle?.status === "lifecycle_recorded" &&
+          !latestPaperOrderLifecycle.orderSubmitted &&
+          !latestPaperOrderLifecycle.liveOrderSubmitted
+        ? "warning"
+      : latestPaperOrderLifecycle
+        ? latestPaperOrderLifecycle.tone
+      : latestSandboxOrderSchemaDryRun?.status === "schema_dry_run_recorded" && !latestSandboxOrderSchemaDryRun.orderSubmitted
+        ? "warning"
+      : latestSandboxOrderSchemaDryRun
+        ? latestSandboxOrderSchemaDryRun.tone
+      : latestProductionRouteReview?.status === "route_review_recorded"
+        ? "warning"
+      : latestProductionRouteReview
+        ? latestProductionRouteReview.tone
+      : latestSandboxProbeReview?.status === "probe_review_recorded"
+        ? "warning"
+      : latestSandboxProbeReview
+        ? latestSandboxProbeReview.tone
       : latestSandboxProbeExecution?.status === "probe_execution_recorded"
         ? "warning"
       : latestSandboxProbeExecution
@@ -15830,6 +19013,48 @@ function promotionSandboxProbeExecutionNextStep(execution: ExecutionAdapterSandb
   return "Resolve sandbox probe execution blockers before treating sandbox evidence as reviewed.";
 }
 
+function promotionSandboxProbeReviewNextStep(review: ExecutionAdapterSandboxProbeReviewRow): string {
+  if (review.status === "probe_review_recorded") {
+    return "Sandbox probe review is recorded; live routing remains blocked until production route policy review and certification allow it.";
+  }
+  return "Resolve sandbox probe review blockers before treating sandbox evidence as production-route ready.";
+}
+
+function promotionProductionRouteReviewNextStep(review: ExecutionAdapterProductionRouteReviewRow): string {
+  if (review.status === "route_review_recorded") {
+    return "Production route review is recorded; live routing remains blocked until sandbox order schema dry-run, paper route runbook, and certification allow it.";
+  }
+  return "Resolve production route review blockers before preparing sandbox order schema dry-runs.";
+}
+
+function promotionSandboxOrderSchemaDryRunNextStep(dryRun: ExecutionAdapterSandboxOrderSchemaDryRunRow): string {
+  if (dryRun.status === "schema_dry_run_recorded" && !dryRun.orderSubmitted) {
+    return "Sandbox order schema dry-run is recorded; live routing remains blocked until paper order lifecycle, route runbook, and certification allow it.";
+  }
+  return "Resolve sandbox order schema dry-run blockers before preparing paper order lifecycle evidence.";
+}
+
+function promotionPaperOrderLifecycleNextStep(lifecycle: ExecutionAdapterPaperOrderLifecycleRow): string {
+  if (lifecycle.status === "lifecycle_recorded" && !lifecycle.orderSubmitted && !lifecycle.liveOrderSubmitted) {
+    return "Paper order lifecycle is recorded; live routing remains blocked until paper route runbook, ops state, and certification allow it.";
+  }
+  return "Resolve paper order lifecycle blockers before preparing route runbook evidence.";
+}
+
+function promotionPaperRouteRunbookNextStep(runbook: ExecutionAdapterPaperRouteRunbookRow): string {
+  if (runbook.status === "runbook_recorded" && !runbook.routeExecuted && !runbook.liveOrderSubmitted) {
+    return "Paper route runbook is recorded; live routing remains blocked until adapter ops state, paper execution, and certification allow it.";
+  }
+  return "Resolve paper route runbook blockers before preparing adapter ops state evidence.";
+}
+
+function promotionAdapterOpsStateNextStep(opsState: ExecutionAdapterOpsStateRow): string {
+  if (opsState.status === "ops_state_recorded" && !opsState.routeExecuted && !opsState.liveOrderSubmitted) {
+    return "Adapter ops state is recorded; live routing remains blocked until paper execution and certification allow it.";
+  }
+  return "Resolve adapter ops state blockers before preparing paper execution evidence.";
+}
+
 function promotionAdapterPaperExecutionNextStep(execution: ExecutionAdapterPaperExecutionRow): string {
   if (execution.status === "paper_execution_recorded" && execution.paperFillRecorded) {
     return "Adapter paper execution is recorded with a simulated fill; live routing remains blocked until adapter certification policy explicitly allows production routing.";
@@ -15853,7 +19078,13 @@ export function buildPromotionReadiness(
   runtimeReloadAcceptanceRows: ExecutionAdapterRuntimeReloadAcceptanceRow[] = [],
   humanConfirmationRows: ExecutionAdapterHumanConfirmationRow[] = [],
   sandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[] = [],
-  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[] = []
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[] = [],
+  sandboxProbeReviewRows: ExecutionAdapterSandboxProbeReviewRow[] = [],
+  productionRouteReviewRows: ExecutionAdapterProductionRouteReviewRow[] = [],
+  sandboxOrderSchemaDryRunRows: ExecutionAdapterSandboxOrderSchemaDryRunRow[] = [],
+  paperOrderLifecycleRows: ExecutionAdapterPaperOrderLifecycleRow[] = [],
+  paperRouteRunbookRows: ExecutionAdapterPaperRouteRunbookRow[] = [],
+  adapterOpsStateRows: ExecutionAdapterOpsStateRow[] = []
 ): PromotionReadiness {
   const approval = buildRiskApprovalSummary(workspace);
   const auditBinding = buildResearchRunContextBinding(workspace);
@@ -15921,9 +19152,96 @@ export function buildPromotionReadiness(
     latestEnvironmentBinding,
     latestSecretMaterialization
   );
+  const latestSandboxProbeReview = latestPromotionSandboxProbeReviewRow(
+    workspace,
+    sandboxProbeReviewRows,
+    latestSandboxProbeExecution,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
+  const latestProductionRouteReview = latestPromotionProductionRouteReviewRow(
+    workspace,
+    productionRouteReviewRows,
+    latestSandboxProbeReview,
+    latestSandboxProbeExecution,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
+  const latestSandboxOrderSchemaDryRun = latestPromotionSandboxOrderSchemaDryRunRow(
+    workspace,
+    sandboxOrderSchemaDryRunRows,
+    latestProductionRouteReview,
+    latestSandboxProbeReview,
+    latestSandboxProbeExecution,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
+  const latestPaperOrderLifecycle = latestPromotionPaperOrderLifecycleRow(
+    workspace,
+    paperOrderLifecycleRows,
+    latestSandboxOrderSchemaDryRun,
+    latestProductionRouteReview,
+    latestSandboxProbeReview,
+    latestSandboxProbeExecution,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
+  const latestPaperRouteRunbook = latestPromotionPaperRouteRunbookRow(
+    workspace,
+    paperRouteRunbookRows,
+    latestPaperOrderLifecycle,
+    latestSandboxOrderSchemaDryRun,
+    latestProductionRouteReview,
+    latestSandboxProbeReview,
+    latestSandboxProbeExecution,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
+  const latestAdapterOpsState = latestPromotionAdapterOpsStateRow(
+    workspace,
+    adapterOpsStateRows,
+    latestPaperRouteRunbook,
+    latestPaperOrderLifecycle,
+    latestSandboxOrderSchemaDryRun,
+    latestProductionRouteReview,
+    latestSandboxProbeReview,
+    latestSandboxProbeExecution,
+    latestHumanConfirmation,
+    latestRuntimeReloadAcceptance,
+    latestRuntimeReloadExecution,
+    latestRuntimeReloadPlan,
+    latestEnvironmentBinding,
+    latestSecretMaterialization
+  );
   const latestAdapterPaperExecution = latestPromotionAdapterPaperExecutionRow(
     workspace,
     adapterPaperExecutionRows,
+    latestAdapterOpsState,
+    latestPaperRouteRunbook,
+    latestPaperOrderLifecycle,
+    latestSandboxOrderSchemaDryRun,
+    latestProductionRouteReview,
+    latestSandboxProbeReview,
     latestSandboxProbeExecution,
     latestHumanConfirmation,
     latestRuntimeReloadAcceptance,
@@ -16009,17 +19327,26 @@ export function buildPromotionReadiness(
     latestRuntimeReloadExecution,
     latestRuntimeReloadAcceptance,
     latestSandboxProbeExecution,
-    latestAdapterPaperExecution,
-    liveAdapterCertified,
+    latestSandboxProbeReview,
+      latestProductionRouteReview,
+      latestSandboxOrderSchemaDryRun,
+      latestPaperOrderLifecycle,
+      latestPaperRouteRunbook,
+      latestAdapterOpsState,
+      latestAdapterPaperExecution,
+      liveAdapterCertified,
     adapterGatePassed
   );
 
+  const humanConfirmationValidationDetail = latestHumanConfirmation?.manifestValidationId
+    ? ` · manifest ${latestHumanConfirmation.manifestValidationId}`
+    : "";
   const humanStage: PromotionQueueStage = latestHumanConfirmation
     ? {
         id: "human-confirmation",
         label: "Human confirmation",
         value: `${latestHumanConfirmation.statusLabel} · ${latestHumanConfirmation.adapterId}`,
-        detail: `Latest human confirmation ${latestHumanConfirmation.auditEventId}: ${latestHumanConfirmation.statusLabel} · ${latestHumanConfirmation.confirmationSummary} · ${latestHumanConfirmation.blockerSummary} · ${latestHumanConfirmation.boundary}.`,
+        detail: `Latest human confirmation ${latestHumanConfirmation.auditEventId}: ${latestHumanConfirmation.statusLabel} · ${latestHumanConfirmation.confirmationSummary} · ${latestHumanConfirmation.blockerSummary}${humanConfirmationValidationDetail} · ${latestHumanConfirmation.boundary}.`,
         status: latestHumanConfirmation.status === "confirmation_recorded" ? "passed" : "blocked",
         tone: latestHumanConfirmation.tone
       }
@@ -19578,7 +22905,8 @@ export function resolveResearchContextUrlState(
 export function buildResearchContextDeepLink(
   href: string,
   workspace: Pick<TerminalWorkspace, "selectedInstrument" | "selectedTimeframe">,
-  workAreaId: "market" | "research" = "research"
+  workAreaId: "market" | "research" = "research",
+  options: { watchlistRefreshRunId?: string | null } = {}
 ): string {
   const url = new URL(href);
   url.search = "";
@@ -19586,6 +22914,10 @@ export function buildResearchContextDeepLink(
   url.searchParams.set("market", workspace.selectedInstrument.market);
   url.searchParams.set("symbol", workspace.selectedInstrument.symbol);
   url.searchParams.set("timeframe", workspace.selectedTimeframe);
+  const watchlistRefreshRunId = normalizeWatchlistCacheRefreshRunId(options.watchlistRefreshRunId);
+  if (watchlistRefreshRunId) {
+    url.searchParams.set("watchlistRefreshRun", watchlistRefreshRunId);
+  }
   return url.toString();
 }
 

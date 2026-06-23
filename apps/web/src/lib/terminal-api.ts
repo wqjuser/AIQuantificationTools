@@ -5,6 +5,7 @@ import {
   buildBacktestRunComparisonMatrixRows,
   buildPortfolioBacktestDiagnosticRows,
   buildP0CurrentGapActionUrlSearch,
+  buildStrategyRuleDraft,
   isExecutableP0CurrentGapActionId,
   normalizeP0CurrentGapActionId,
   resolveBacktestAssumptions,
@@ -20,12 +21,18 @@ import {
   type AiReviewRunRecord,
   type AuditEvidenceSummary,
   type BacktestAssumptions,
+  type ExecutionAdapterPreLiveRunbookSummary,
+  type P0AcceptanceSummary,
+  type P0AcceptanceSummarySource,
   type P0PlatformActionOutcome,
   type P0PlatformActionOutcomeEvidenceLink,
   type P0PlatformBacklogItem,
+  type P0CompletionChecklist,
   type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
+  type ResearchContextReadinessReportArchive,
   type ResearchRunDataPreparationEvidence,
+  type StrategyRuleDraft,
   type StrategyReadinessGate,
   type StrategySnapshot
 } from "./terminal-workbench";
@@ -115,6 +122,7 @@ export interface ResearchRunExportManifest {
     promotionCandidates?: number;
     researchNotes?: number;
     aiReviewRuns?: number;
+    auditEvents?: number;
   };
 }
 
@@ -228,6 +236,33 @@ export interface ResearchRunExportBacktestReport {
   boundary: "historical audited evidence only; no investment advice";
 }
 
+export interface ResearchRunExportP0PackageCriterion {
+  id: string;
+  label: string;
+  status: "passed" | "review" | "blocked";
+  detail: string;
+  evidence: string;
+  evidencePath: string;
+}
+
+export interface ResearchRunExportP0PackageCompleteness {
+  kind: "aiqt.p0PackageCompleteness";
+  schemaVersion: 1;
+  runId: string;
+  ready: boolean;
+  status: "complete" | "review" | "blocked";
+  passed: number;
+  review: number;
+  blocked: number;
+  total: number;
+  progressPct: number;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  summary: string;
+  criteria: ResearchRunExportP0PackageCriterion[];
+}
+
 export interface ResearchRunExportPackage {
   kind: "aiqt.researchRun.export";
   packageVersion: number;
@@ -243,6 +278,8 @@ export interface ResearchRunExportPackage {
   portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulation[];
   promotionCandidate?: PromotionCandidateRecord | null;
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
+  auditEvents?: AuditEventRecord[];
+  p0PackageCompleteness?: ResearchRunExportP0PackageCompleteness;
   auditEvidenceSummary?: ResearchRunExportAuditEvidenceSummary;
   auditReport?: ResearchRunExportAuditReport;
   backtestReport?: ResearchRunExportBacktestReport;
@@ -368,6 +405,162 @@ export interface AiReviewRunRecordResult {
 export interface AiReviewRunHistoryResult {
   aiReviews: AiReviewRunRecordEnvelope[];
   pagination?: AiReviewRunHistoryPagination;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P0AiReviewRunParams {
+  runId: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+}
+
+export interface P0AiReviewRunResult {
+  aiReview?: AiReviewRunRecordEnvelope;
+  source: WorkspaceSource;
+  statusLabel: string;
+  error?: string;
+  mode?: "local_evidence_review";
+  paperOnly?: boolean;
+  liveTradingAllowed?: boolean;
+  directTradingInstructionBlocked?: boolean;
+}
+
+export interface P0PaperSimulationParams {
+  runId: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+}
+
+export interface P0PaperSimulationFill {
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  fillPrice: number;
+  status: "filled" | "rejected";
+  filledAt: string;
+  reason: string;
+}
+
+export interface P0PaperSimulationAccountReplay {
+  mode: "single_run_paper_replay";
+  runId: string;
+  symbol: string;
+  initialCash: number;
+  cashAfter: number;
+  positionAfter: number;
+  equityAfter: number;
+  ordersApplied: number;
+  paperOnly: true;
+  liveTradingAllowed: false;
+}
+
+export interface P0PaperSimulationGate {
+  id: string;
+  label: string;
+  status: "passed" | "blocked" | "review";
+  detail: string;
+}
+
+export interface P0PaperSimulationExportReadiness {
+  ready: boolean;
+  requiredArtifacts: string[];
+  paperExecutionId: string;
+  auditEventId: string;
+  detail: string;
+}
+
+export interface P0PaperSimulationResponse {
+  status: "paper_simulation_created";
+  runId: string;
+  paperOnly: true;
+  liveTradingAllowed: false;
+  orderSubmitted?: false;
+  liveOrderSubmitted?: false;
+  routeExecuted?: false;
+  paperOrderRecorded?: true;
+  simulatedFillRecorded?: true;
+  liveRouteBlockedReason: string;
+  execution: PaperExecutionRecord;
+  simulatedFill: P0PaperSimulationFill;
+  accountReplay: P0PaperSimulationAccountReplay;
+  gates?: P0PaperSimulationGate[];
+  aiReview?: AiReviewRunRecordEnvelope;
+  promotion?: PromotionCandidateRecord;
+  auditEvent: AuditEventRecord;
+  exportReadiness: P0PaperSimulationExportReadiness;
+}
+
+export interface P0PaperSimulationRunResult {
+  simulation?: P0PaperSimulationResponse;
+  execution?: PaperExecutionRecord;
+  simulatedFill?: P0PaperSimulationFill;
+  accountReplay?: P0PaperSimulationAccountReplay;
+  auditEvent?: AuditEventRecord;
+  exportReadiness?: P0PaperSimulationExportReadiness;
+  promotion?: PromotionCandidateRecord;
+  source: WorkspaceSource;
+  statusLabel: string;
+  error?: string;
+  paperOnly?: boolean;
+  liveTradingAllowed?: boolean;
+  orderSubmitted?: boolean;
+  liveOrderSubmitted?: boolean;
+  routeExecuted?: boolean;
+  liveRouteBlockedReason?: string;
+}
+
+export interface P0AcceptanceManifestCheck {
+  id: string;
+  status: string;
+  summary: string;
+}
+
+export interface P0AcceptanceManifest {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string;
+  status: string;
+  baseUrl: string;
+  importBaseUrl?: string | null;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  runId: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  checkCount: number;
+  checks: P0AcceptanceManifestCheck[];
+}
+
+export interface P0AcceptanceStatus {
+  kind: "aiqt.p0AcceptanceStatus";
+  schemaVersion: 1;
+  status: "passed" | "missing" | "invalid";
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: ResearchTimeframe | null;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: P0AcceptanceManifest | null;
+}
+
+export interface P0AcceptanceLatestResult {
+  acceptance?: P0AcceptanceStatus;
   source: WorkspaceSource;
   error?: string;
 }
@@ -996,6 +1189,42 @@ export interface MarketKlinesResult {
   timeframe: ResearchTimeframe;
   bars: MarketKlineBar[];
   quality: MarketKlineQuality;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export type MarketDataReadinessState = "ready" | "stale" | "blocked";
+export type MarketDataReadinessCacheState = "fresh" | "stale" | "empty";
+export type MarketDataReadinessProviderHealthState = "healthy" | "degraded";
+
+export interface MarketDataReadinessRepairAction {
+  id: string;
+  label: string;
+  target: string;
+  method: "GET" | "POST";
+}
+
+export interface MarketDataReadiness {
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  state: MarketDataReadinessState;
+  source: string;
+  cacheState: MarketDataReadinessCacheState;
+  barCount: number;
+  latestBarAt: string | null;
+  startBarAt: string | null;
+  ageHours: number | null;
+  providerHealthState: MarketDataReadinessProviderHealthState;
+  blockingReasons: string[];
+  repairActions: MarketDataReadinessRepairAction[];
+  latestRefreshRunId: string | null;
+  latestProviderErrorId: string | null;
+  dataQualityWarnings: string[];
+}
+
+export interface MarketDataReadinessResult {
+  readiness?: MarketDataReadiness;
   source: WorkspaceSource;
   error?: string;
 }
@@ -3697,6 +3926,54 @@ export interface TerminalResearchParams {
   watchlistRefreshRunId?: string | null;
 }
 
+export type P0PipelineConditionConfig =
+  | { type: "sma_cross" | "sma_break" | "sma_above" | "sma_below"; window: number }
+  | { type: "rsi_below" | "rsi_above"; window: number; threshold: number };
+
+export interface P0PipelineStrategyConfig {
+  name: string;
+  entry: P0PipelineConditionConfig;
+  exit: P0PipelineConditionConfig;
+  position: {
+    maxPositionPct: number;
+  };
+  risk: {
+    stopLossPct: number;
+    takeProfitPct: number;
+    maxDrawdownPct: number;
+  };
+}
+
+export interface P0PipelineRequest {
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  limit: number;
+  strategyConfig: P0PipelineStrategyConfig;
+  assumptions: BacktestAssumptions;
+}
+
+export interface P0PipelineResponse {
+  status: "audited_run_created";
+  runId: string;
+  strategyRevisionId: string;
+  dataSnapshotId: string;
+  metrics: {
+    totalReturnPct: number;
+    maxDrawdownPct: number;
+    tradeCount: number;
+  };
+  paperOnly: true;
+  liveTradingAllowed: false;
+  orderSubmitted?: false;
+  liveOrderSubmitted?: false;
+  routeExecuted?: false;
+}
+
+export interface P0PipelineRunResult extends WorkspaceLoadResult {
+  pipeline?: P0PipelineResponse;
+}
+
 export interface MarketKlinesParams extends TerminalResearchParams {
   end?: string;
 }
@@ -3768,6 +4045,22 @@ export function buildResearchRunUrl(
       url.searchParams.set("slippageBps", String(assumptions.slippageBps));
     }
   });
+}
+
+export function buildP0PipelineUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p0/pipeline");
+}
+
+export function buildP0AiReviewUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p0/ai-reviews");
+}
+
+export function buildP0PaperSimulationUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p0/paper-simulations");
+}
+
+export function buildP0AcceptanceLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p0/acceptance/latest");
 }
 
 export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
@@ -4012,6 +4305,19 @@ export function buildMarketKlinesUrl(
     if (end?.trim()) {
       url.searchParams.set("end", end.trim());
     }
+  });
+}
+
+export function buildMarketDataReadinessUrl(
+  baseUrl: string,
+  market: Market,
+  symbol: string,
+  timeframe: ResearchTimeframe
+): string {
+  return buildApiUrl(baseUrl, "api/market/data-readiness", (url) => {
+    url.searchParams.set("market", market);
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("timeframe", timeframe);
   });
 }
 
@@ -5131,6 +5437,66 @@ export function buildAuditEvidenceReportAuditEvent(
   };
 }
 
+export async function buildP0AcceptanceReviewAuditEvent({
+  acceptance,
+  generatedAt = new Date().toISOString(),
+  markdown,
+  summary
+}: {
+  acceptance: P0AcceptanceSummarySource | null | undefined;
+  generatedAt?: string;
+  markdown: string;
+  summary: P0AcceptanceSummary;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const runId = summary.runId?.trim() || acceptance?.runId?.trim() || "p0-acceptance";
+  const safeRunId = sanitizeDownloadFileName(runId);
+  const fileName = `${safeRunId}-p0-acceptance-review.md`;
+  const checkIds =
+    acceptance?.checkIds.length
+      ? acceptance.checkIds
+      : summary.state === "missing"
+        ? ["p0_acceptance_manifest_missing"]
+        : ["p0_acceptance_manifest_invalid"];
+
+  return {
+    schemaVersion: 1,
+    eventId: `p0-acceptance-review-${safeRunId}-${shortHash}`,
+    eventType: "p0_acceptance_review",
+    runId,
+    createdAt: generatedAt,
+    stage: summary.state,
+    source: "web",
+    summary: "P0 acceptance review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${summary.checkCount}/${
+      summary.requiredCheckCount
+    } checks · live blocked ${summary.liveBlockedBoundary}`,
+    metadata: {
+      artifactKind: "aiqt.p0AcceptanceReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state: summary.state,
+      sourcePath: summary.sourcePath,
+      manifestGeneratedAt: acceptance?.generatedAt ?? "",
+      manifestAvailable: Boolean(acceptance?.available),
+      market: acceptance?.market ?? "",
+      symbol: acceptance?.symbol ?? "",
+      timeframe: acceptance?.timeframe ?? "",
+      checkCount: summary.checkCount,
+      requiredCheckCount: summary.requiredCheckCount,
+      checkIds,
+      paperOnly: Boolean(acceptance?.paperOnly),
+      reportedLiveTradingAllowed: summary.reportedLiveTradingAllowed,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: summary.liveBlockedBoundary,
+      boundary: "P0 acceptance audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
 export function buildMarketDataRefreshOverrideAuditEvent({
   actionScope = "manual_cache_refresh",
   createdAt = new Date().toISOString(),
@@ -5206,9 +5572,11 @@ export async function buildP0PlatformReadinessReportAuditEvent({
   markdown,
   outcome,
   paperPreflight = null,
-  summary
+  summary,
+  completionChecklist = null
 }: {
   backlogItems: readonly P0PlatformBacklogItem[];
+  completionChecklist?: P0CompletionChecklist | null;
   evidenceLink?: P0PlatformActionOutcomeEvidenceLink | null;
   generatedAt?: string;
   markdown: string;
@@ -5236,6 +5604,7 @@ export async function buildP0PlatformReadinessReportAuditEvent({
     firstBacklogItem,
     firstBacklogReadiness
   );
+  const completionSummary = buildP0ReportCompletionSummary(completionChecklist);
   const paperPreflightGates = paperPreflight?.gates ?? [];
   const paperPreflightLiveBoundary = paperPreflightGates.find((gate) => gate.id === "live-boundary");
   const currentGapTargetWorkspaceId = currentGap?.targetWorkspaceId || currentGap?.workspaceId || "";
@@ -5261,7 +5630,7 @@ export async function buildP0PlatformReadinessReportAuditEvent({
     summary: "P0 readiness report generated",
     detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${summary.passedSteps}/${
       summary.totalSteps
-    } steps · current gap ${currentGap?.label ?? "none"} · backlog ${backlogReadinessSummary}`,
+    } steps · current gap ${currentGap?.label ?? "none"} · backlog ${backlogReadinessSummary} · completion ${completionSummary}`,
     metadata: {
       artifactKind: "aiqt.p0ReadinessReport",
       fileName,
@@ -5286,6 +5655,18 @@ export async function buildP0PlatformReadinessReportAuditEvent({
       currentGapDeepLinkSearch,
       currentGapExecutableActionId: currentGapReadiness.executableActionId,
       currentGapReadinessReason: currentGapReadiness.reason,
+      completionBlockedCount: completionChecklist?.blocked ?? 0,
+      completionCurrentCriterionActionLabel: completionChecklist?.currentGap?.actionLabel ?? "",
+      completionCurrentCriterionId: completionChecklist?.currentGap?.id ?? "",
+      completionCurrentCriterionLabel: completionChecklist?.currentGap?.label ?? "",
+      completionCurrentCriterionStatus: completionChecklist?.currentGap?.status ?? "",
+      completionCurrentCriterionTargetWorkspaceId: completionChecklist?.currentGap?.targetWorkspaceId ?? "",
+      completionOpenCriterionIds: completionChecklist?.openCriteria.map((criterion) => criterion.id).join(",") ?? "",
+      completionPassedCount: completionChecklist?.passed ?? 0,
+      completionProgressPct: completionChecklist?.progressPct ?? 0,
+      completionReviewCount: completionChecklist?.review ?? 0,
+      completionSummary,
+      completionTotalCount: completionChecklist?.total ?? 0,
       latestEvidenceState: outcome.state,
       latestEvidenceId: outcome.evidenceId ?? outcome.runId ?? "",
       latestEvidenceLink: evidenceLink?.search ?? "",
@@ -5329,6 +5710,16 @@ function buildP0ReportBacklogReadinessSummary(
   return `${executableCount}/${backlogCount} executable, ${notExecutableCount} not executable · first ${firstAction} ${firstReason}`;
 }
 
+function buildP0ReportCompletionSummary(checklist: P0CompletionChecklist | null | undefined): string {
+  if (!checklist) {
+    return "not recorded";
+  }
+  const current = checklist.currentGap
+    ? `current ${checklist.currentGap.id} ${checklist.currentGap.status}`
+    : "current none";
+  return `${checklist.passed}/${checklist.total} passed, ${checklist.review} review, ${checklist.blocked} blocked · ${current}`;
+}
+
 function buildP0ReportActionReadiness(actionId: string | null | undefined, workspaceId: string | null | undefined): {
   canExecute: boolean;
   executableActionId: string;
@@ -5346,6 +5737,122 @@ function buildP0ReportActionReadiness(actionId: string | null | undefined, works
     return { canExecute: false, executableActionId, reason: "missing-workspace" };
   }
   return { canExecute: true, executableActionId, reason: "ready" };
+}
+
+export function buildResearchContextReadinessReportAuditEvent(
+  archive: ResearchContextReadinessReportArchive
+): AuditEventRecord {
+  const shortHash = archive.contentSha256.hash.slice(0, 16);
+  const contextTokens = [
+    sanitizeDownloadFileName(archive.context.market),
+    sanitizeDownloadFileName(archive.context.symbol),
+    sanitizeDownloadFileName(archive.context.timeframe)
+  ];
+  const runId = archive.lockedPreparationEvidenceRunId?.trim() || null;
+
+  return {
+    schemaVersion: 1,
+    eventId: `research-context-readiness-report-${contextTokens.join("-")}-${shortHash}`,
+    eventType: "research_context_readiness_report",
+    runId,
+    createdAt: archive.generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: "Research context readiness report generated",
+    detail: `${archive.fileName} · sha256 ${archive.contentSha256.hash.slice(0, 12)} · ${archive.context.market.toUpperCase()} ${
+      archive.context.symbol
+    } ${archive.context.timeframe} · preflight ${archive.preflightStatus} · ready ${archive.readinessCounts.ready}/${
+      archive.readinessCounts.review
+    }/${archive.readinessCounts.blocked} · prep ${runId ?? "none"}`,
+    metadata: {
+      artifactKind: "aiqt.researchContextReadinessReport",
+      fileName: archive.fileName,
+      format: "text/markdown",
+      contentSha256: archive.contentSha256.hash,
+      contentSha256Algorithm: archive.contentSha256.algorithm,
+      market: archive.context.market,
+      symbol: archive.context.symbol,
+      timeframe: archive.context.timeframe,
+      preflightStatus: archive.preflightStatus,
+      nextAction: archive.nextAction,
+      lockedPreparationEvidenceRunId: archive.lockedPreparationEvidenceRunId ?? "",
+      readinessReadyCount: archive.readinessCounts.ready,
+      readinessReviewCount: archive.readinessCounts.review,
+      readinessBlockedCount: archive.readinessCounts.blocked,
+      contextLink: archive.contextLink ?? "",
+      liveTradingAllowed: false,
+      boundary: "research context readiness evidence only; no order routing, investment advice, or live trading authorization"
+    }
+  };
+}
+
+export async function buildExecutionAdapterPreLiveRunbookAuditEvent({
+  generatedAt = new Date().toISOString(),
+  markdown,
+  runbook,
+  workspace
+}: {
+  generatedAt?: string;
+  markdown: string;
+  runbook: ExecutionAdapterPreLiveRunbookSummary;
+  workspace: TerminalWorkspace;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const symbol = workspace.selectedInstrument.symbol;
+  const timeframe = workspace.selectedTimeframe;
+  const safeAdapterId = sanitizeDownloadFileName(runbook.adapterId);
+  const safeSymbol = sanitizeDownloadFileName(symbol);
+  const safeTimeframe = sanitizeDownloadFileName(timeframe);
+  const fileName = `${safeAdapterId}-${safeSymbol}-${safeTimeframe}-pre-live-runbook.md`;
+  const evidenceIds = runbook.rows.map((row) => row.evidenceId).filter((id): id is string => Boolean(id));
+  const reviewSteps = runbook.rows.filter((row) => row.status === "review").length;
+  const blockedSteps = runbook.rows.filter((row) => row.status === "blocked").length;
+
+  return {
+    schemaVersion: 1,
+    eventId: `pre-live-runbook-report-${safeAdapterId}-${safeSymbol}-${safeTimeframe}-${shortHash}`,
+    eventType: "pre_live_runbook_report",
+    runId: null,
+    createdAt: generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: `Pre-live runbook report generated for ${runbook.adapterId}`,
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${runbook.completedSteps}/${
+      runbook.totalSteps
+    } gates · ${runbook.status} · next ${runbook.nextStepId ?? "review"}`,
+    metadata: {
+      adapterId: runbook.adapterId,
+      artifactKind: "aiqt.preLiveRunbookReport",
+      boundary: "Pre-live runbook audit evidence only; no live trading authorization, order submission, or investment advice",
+      completedSteps: runbook.completedSteps,
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      evidenceIds,
+      fileName,
+      format: "text/markdown",
+      gateRows: runbook.rows.map((row) => ({
+        detail: row.detail,
+        evidenceId: row.evidenceId ?? "",
+        evidenceTimestamp: row.evidenceTimestamp ?? "",
+        id: row.id,
+        label: row.label,
+        nextStep: row.nextStep,
+        status: row.status,
+        value: row.value
+      })),
+      liveTradingAllowed: false,
+      market: runbook.market,
+      nextStep: runbook.nextStep,
+      nextStepId: runbook.nextStepId ?? "",
+      reviewSteps,
+      blockedSteps,
+      status: runbook.status,
+      symbol,
+      timeframe,
+      totalSteps: runbook.totalSteps
+    }
+  };
 }
 
 export async function buildBacktestReportAuditEvent({
@@ -5938,6 +6445,145 @@ export async function saveAiReviewRunRecord(
       error: error instanceof Error ? error.message : "Unknown AI review run record save error"
     };
   }
+}
+
+export async function runP0AiReview(
+  baseUrl: string,
+  params: P0AiReviewRunParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P0AiReviewRunResult> {
+  try {
+    const response = await fetcher(buildP0AiReviewUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      return {
+        source: isCoreErrorPayload(payload) ? "core" : "fallback",
+        statusLabel: "P0 AI review failed",
+        error: coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`
+      };
+    }
+    if (!isP0AiReviewRunPayload(payload)) {
+      throw new Error("Invalid P0 AI review contract");
+    }
+    return {
+      aiReview: payload.aiReview,
+      source: "core",
+      statusLabel: "P0 AI review saved",
+      mode: payload.mode,
+      paperOnly: payload.paperOnly,
+      liveTradingAllowed: payload.liveTradingAllowed,
+      directTradingInstructionBlocked: payload.directTradingInstructionBlocked
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      statusLabel: "P0 AI review failed",
+      error: error instanceof Error ? error.message : "Unknown P0 AI review error"
+    };
+  }
+}
+
+export async function runP0PaperSimulation(
+  baseUrl: string,
+  params: P0PaperSimulationParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P0PaperSimulationRunResult> {
+  try {
+    const response = await fetcher(buildP0PaperSimulationUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      return {
+        source: isCoreErrorPayload(payload) ? "core" : "fallback",
+        statusLabel: "P0 paper simulation failed",
+        error: coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`
+      };
+    }
+    if (!isP0PaperSimulationPayload(payload)) {
+      throw new Error("Invalid P0 paper simulation contract");
+    }
+    return {
+      simulation: payload,
+      execution: payload.execution,
+      simulatedFill: payload.simulatedFill,
+      accountReplay: payload.accountReplay,
+      auditEvent: payload.auditEvent,
+      exportReadiness: payload.exportReadiness,
+      promotion: payload.promotion,
+      source: "core",
+      statusLabel: "P0 paper simulation created",
+      paperOnly: payload.paperOnly,
+      liveTradingAllowed: payload.liveTradingAllowed,
+      orderSubmitted: payload.orderSubmitted ?? false,
+      liveOrderSubmitted: payload.liveOrderSubmitted ?? false,
+      routeExecuted: payload.routeExecuted ?? false,
+      liveRouteBlockedReason: payload.liveRouteBlockedReason
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      statusLabel: "P0 paper simulation failed",
+      error: error instanceof Error ? error.message : "Unknown P0 paper simulation error"
+    };
+  }
+}
+
+export async function loadP0AcceptanceLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P0AcceptanceLatestResult> {
+  try {
+    const response = await fetcher(buildP0AcceptanceLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP0AcceptanceLatestPayload(payload)) {
+      throw new Error("Invalid P0 acceptance status contract");
+    }
+    return {
+      acceptance: payload.acceptance,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P0 acceptance readback error";
+    return {
+      acceptance: buildMissingP0AcceptanceStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingP0AcceptanceStatus(reason: string): P0AcceptanceStatus {
+  return {
+    kind: "aiqt.p0AcceptanceStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/p0-acceptance.json",
+    summary: "P0 acceptance manifest is missing.",
+    reason,
+    generatedAt: null,
+    runId: null,
+    market: null,
+    symbol: null,
+    timeframe: null,
+    checkCount: 0,
+    requiredCheckCount: 4,
+    checkIds: [],
+    paperOnly: false,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
 }
 
 export async function loadResearchRunAiReviews(
@@ -7797,6 +8443,13 @@ export async function recordExecutionAdapterPaperExecution(
       };
     }
     if (!response.ok) {
+      if (isExecutionAdapterPaperExecutionDuplicatePayload(payload)) {
+        return {
+          adapterPaperExecution: payload.existingAdapterPaperExecution,
+          source: "core",
+          error: payload.error
+        };
+      }
       const detail = coreErrorDetail(payload);
       if (detail) {
         return {
@@ -9062,6 +9715,34 @@ export async function loadMarketKlines(
   }
 }
 
+export async function loadMarketDataReadiness(
+  baseUrl: string,
+  params: TerminalResearchParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketDataReadinessResult> {
+  try {
+    const response = await fetcher(
+      buildMarketDataReadinessUrl(baseUrl, params.market, params.symbol, params.timeframe)
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isMarketDataReadinessPayload(payload)) {
+      throw new Error("Invalid market data readiness contract");
+    }
+    return {
+      readiness: payload,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown market data readiness load error"
+    };
+  }
+}
+
 export async function loadMarketCalendarStatus(
   baseUrl: string,
   market: Market,
@@ -9184,6 +9865,116 @@ export async function loadMarketSearch(
   }
 }
 
+export function buildP0PipelineRequest(
+  params: TerminalResearchParams,
+  currentWorkspace: TerminalWorkspace
+): P0PipelineRequest {
+  const draft = buildStrategyRuleDraft(currentWorkspace);
+  return {
+    market: params.market,
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    limit: Math.max(1, Math.min(params.limit ?? 500, 500)),
+    strategyConfig: p0PipelineStrategyConfigFromDraft(draft),
+    assumptions: resolveBacktestAssumptions(currentWorkspace)
+  };
+}
+
+export async function runP0Pipeline(
+  baseUrl: string,
+  params: TerminalResearchParams,
+  currentWorkspace: TerminalWorkspace,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P0PipelineRunResult> {
+  try {
+    const response = await fetcher(buildP0PipelineUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildP0PipelineRequest(params, currentWorkspace))
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (!isP0PipelineResponsePayload(payload)) {
+      throw new Error("Invalid P0 pipeline contract");
+    }
+    const detail = await loadResearchRunDetail(baseUrl, payload.runId, fetcher);
+    if (detail.source !== "core" || !detail.run) {
+      throw new Error(detail.error ?? "P0 pipeline audit run detail unavailable");
+    }
+    return {
+      workspace: workspaceWithPrimaryWorkflows(workspaceFromResearchRunAudit(currentWorkspace, detail.run)),
+      source: "core",
+      statusLabel: "P0 pipeline run complete",
+      pipeline: payload
+    };
+  } catch (error) {
+    return {
+      workspace: currentWorkspace,
+      source: "fallback",
+      statusLabel: "P0 pipeline run failed",
+      error: error instanceof Error ? error.message : "Unknown P0 pipeline error"
+    };
+  }
+}
+
+function p0PipelineStrategyConfigFromDraft(draft: StrategyRuleDraft): P0PipelineStrategyConfig {
+  return {
+    name: draft.name.trim() || "SMA trend",
+    entry: p0PipelineConditionFromDraft(draft.entryKind, draft.entryWindow, draft.entryThreshold, "entry"),
+    exit: p0PipelineConditionFromDraft(draft.exitKind, draft.exitWindow, draft.exitThreshold, "exit"),
+    position: {
+      maxPositionPct: normalizeP0PipelinePercent(draft.positionPct)
+    },
+    risk: {
+      stopLossPct: normalizeP0PipelinePercent(draft.stopLossPct),
+      takeProfitPct: normalizeP0PipelinePercent(draft.takeProfitPct),
+      maxDrawdownPct: normalizeP0PipelinePercent(draft.maxDrawdownPct)
+    }
+  };
+}
+
+function p0PipelineConditionFromDraft(
+  kind: StrategyRuleDraft["entryKind"],
+  window: number,
+  threshold: number,
+  role: "entry" | "exit"
+): P0PipelineConditionConfig {
+  const normalizedWindow = Math.max(1, Math.min(Math.round(window), 250));
+  if (kind === "rsi_below") {
+    return {
+      type: "rsi_below",
+      window: normalizedWindow,
+      threshold: normalizeP0PipelinePercent(threshold, 0, 100)
+    };
+  }
+  if (kind === "rsi_above") {
+    return {
+      type: "rsi_above",
+      window: normalizedWindow,
+      threshold: normalizeP0PipelinePercent(threshold, 0, 100)
+    };
+  }
+  if (kind === "close_below_sma") {
+    return {
+      type: role === "entry" ? "sma_below" : "sma_break",
+      window: normalizedWindow
+    };
+  }
+  return {
+    type: role === "entry" ? "sma_cross" : "sma_above",
+    window: normalizedWindow
+  };
+}
+
+function normalizeP0PipelinePercent(value: number, minimum = 0, maximum = 500): number {
+  if (!Number.isFinite(value)) {
+    return minimum;
+  }
+  return Math.max(minimum, Math.min(Number(value.toFixed(4)), maximum));
+}
+
 export async function runTerminalResearch(
   baseUrl: string,
   params: TerminalResearchParams,
@@ -9270,6 +10061,105 @@ function isResearchRunDetailPayload(value: unknown): value is { run: ResearchRun
   }
   const payload = value as { run?: unknown };
   return isResearchRunAudit(payload.run);
+}
+
+function isP0PipelineResponsePayload(value: unknown): value is P0PipelineResponse {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P0PipelineResponse>;
+  const metrics = payload.metrics as Partial<P0PipelineResponse["metrics"]> | undefined;
+  return (
+    payload.status === "audited_run_created" &&
+    typeof payload.runId === "string" &&
+    payload.runId.length > 0 &&
+    typeof payload.strategyRevisionId === "string" &&
+    payload.strategyRevisionId.length > 0 &&
+    typeof payload.dataSnapshotId === "string" &&
+    payload.dataSnapshotId.length > 0 &&
+    Boolean(metrics) &&
+    typeof metrics?.totalReturnPct === "number" &&
+    typeof metrics?.maxDrawdownPct === "number" &&
+    typeof metrics?.tradeCount === "number" &&
+    payload.paperOnly === true &&
+    payload.liveTradingAllowed === false &&
+    (payload.orderSubmitted === undefined || payload.orderSubmitted === false) &&
+    (payload.liveOrderSubmitted === undefined || payload.liveOrderSubmitted === false) &&
+    (payload.routeExecuted === undefined || payload.routeExecuted === false)
+  );
+}
+
+function isP0AcceptanceLatestPayload(value: unknown): value is { acceptance: P0AcceptanceStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { acceptance?: unknown };
+  return isP0AcceptanceStatusPayload(payload.acceptance);
+}
+
+function isP0AcceptanceStatusPayload(value: unknown): value is P0AcceptanceStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P0AcceptanceStatus>;
+  const validStatus = payload.status === "passed" || payload.status === "missing" || payload.status === "invalid";
+  const validMarket = payload.market === null || isMarket(payload.market);
+  const validTimeframe = payload.timeframe === null || isTimeframe(payload.timeframe);
+  return (
+    payload.kind === "aiqt.p0AcceptanceStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    (payload.runId === null || typeof payload.runId === "string") &&
+    validMarket &&
+    (payload.symbol === null || typeof payload.symbol === "string") &&
+    validTimeframe &&
+    typeof payload.checkCount === "number" &&
+    typeof payload.requiredCheckCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isP0AcceptanceManifestPayload(payload.manifest))
+  );
+}
+
+function isP0AcceptanceManifestPayload(value: unknown): value is P0AcceptanceManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P0AcceptanceManifest>;
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    typeof payload.generatedAt === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.baseUrl === "string" &&
+    (payload.importBaseUrl === undefined || payload.importBaseUrl === null || typeof payload.importBaseUrl === "string") &&
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isTimeframe(payload.timeframe) &&
+    typeof payload.runId === "string" &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isP0AcceptanceManifestCheckPayload)
+  );
+}
+
+function isP0AcceptanceManifestCheckPayload(value: unknown): value is P0AcceptanceManifestCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<P0AcceptanceManifestCheck>;
+  return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
 }
 
 function isResearchRunExportPayload(value: unknown): value is { export: ResearchRunExportPackage } {
@@ -9374,6 +10264,126 @@ function isAiReviewRunRecordPayload(value: unknown): value is { aiReview: AiRevi
   }
   const payload = value as { aiReview?: unknown };
   return isAiReviewRunRecordEnvelope(payload.aiReview);
+}
+
+function isP0AiReviewRunPayload(value: unknown): value is {
+  status: "ai_review_saved";
+  mode: "local_evidence_review";
+  aiReview: AiReviewRunRecordEnvelope;
+  paperOnly: true;
+  liveTradingAllowed: false;
+  directTradingInstructionBlocked: true;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    status?: unknown;
+    mode?: unknown;
+    aiReview?: unknown;
+    paperOnly?: unknown;
+    liveTradingAllowed?: unknown;
+    directTradingInstructionBlocked?: unknown;
+  };
+  return (
+    payload.status === "ai_review_saved" &&
+    payload.mode === "local_evidence_review" &&
+    isAiReviewRunRecordEnvelope(payload.aiReview) &&
+    payload.paperOnly === true &&
+    payload.liveTradingAllowed === false &&
+    payload.directTradingInstructionBlocked === true
+  );
+}
+
+function isP0PaperSimulationPayload(value: unknown): value is P0PaperSimulationResponse {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P0PaperSimulationResponse>;
+  return (
+    payload.status === "paper_simulation_created" &&
+    typeof payload.runId === "string" &&
+    payload.runId.length > 0 &&
+    payload.paperOnly === true &&
+    payload.liveTradingAllowed === false &&
+    (payload.orderSubmitted === undefined || payload.orderSubmitted === false) &&
+    (payload.liveOrderSubmitted === undefined || payload.liveOrderSubmitted === false) &&
+    (payload.routeExecuted === undefined || payload.routeExecuted === false) &&
+    typeof payload.liveRouteBlockedReason === "string" &&
+    payload.liveRouteBlockedReason.length > 0 &&
+    isPaperExecutionRecord(payload.execution) &&
+    isP0PaperSimulationFill(payload.simulatedFill) &&
+    isP0PaperSimulationAccountReplay(payload.accountReplay) &&
+    (payload.gates === undefined || (Array.isArray(payload.gates) && payload.gates.every(isP0PaperSimulationGate))) &&
+    (payload.aiReview === undefined || isAiReviewRunRecordEnvelope(payload.aiReview)) &&
+    (payload.promotion === undefined || isPromotionCandidateRecord(payload.promotion)) &&
+    isAuditEventRecord(payload.auditEvent) &&
+    isP0PaperSimulationExportReadiness(payload.exportReadiness)
+  );
+}
+
+function isP0PaperSimulationFill(value: unknown): value is P0PaperSimulationFill {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const fill = value as Partial<P0PaperSimulationFill>;
+  return (
+    typeof fill.orderId === "string" &&
+    typeof fill.symbol === "string" &&
+    (fill.side === "buy" || fill.side === "sell") &&
+    typeof fill.quantity === "number" &&
+    typeof fill.fillPrice === "number" &&
+    (fill.status === "filled" || fill.status === "rejected") &&
+    typeof fill.filledAt === "string" &&
+    typeof fill.reason === "string"
+  );
+}
+
+function isP0PaperSimulationAccountReplay(value: unknown): value is P0PaperSimulationAccountReplay {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const replay = value as Partial<P0PaperSimulationAccountReplay>;
+  return (
+    replay.mode === "single_run_paper_replay" &&
+    typeof replay.runId === "string" &&
+    typeof replay.symbol === "string" &&
+    typeof replay.initialCash === "number" &&
+    typeof replay.cashAfter === "number" &&
+    typeof replay.positionAfter === "number" &&
+    typeof replay.equityAfter === "number" &&
+    typeof replay.ordersApplied === "number" &&
+    replay.paperOnly === true &&
+    replay.liveTradingAllowed === false
+  );
+}
+
+function isP0PaperSimulationGate(value: unknown): value is P0PaperSimulationGate {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const gate = value as Partial<P0PaperSimulationGate>;
+  return (
+    typeof gate.id === "string" &&
+    typeof gate.label === "string" &&
+    (gate.status === "passed" || gate.status === "blocked" || gate.status === "review") &&
+    typeof gate.detail === "string"
+  );
+}
+
+function isP0PaperSimulationExportReadiness(value: unknown): value is P0PaperSimulationExportReadiness {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const readiness = value as Partial<P0PaperSimulationExportReadiness>;
+  return (
+    typeof readiness.ready === "boolean" &&
+    Array.isArray(readiness.requiredArtifacts) &&
+    readiness.requiredArtifacts.every((item) => typeof item === "string") &&
+    typeof readiness.paperExecutionId === "string" &&
+    typeof readiness.auditEventId === "string" &&
+    typeof readiness.detail === "string"
+  );
 }
 
 function isAiReviewRunHistoryPayload(value: unknown): value is {
@@ -11432,6 +12442,25 @@ function isExecutionAdapterPaperExecutionRecordPayload(
   return (
     isExecutionAdapterPaperExecutionResult(payload.adapterPaperExecution) &&
     (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
+  );
+}
+
+function isExecutionAdapterPaperExecutionDuplicatePayload(
+  value: unknown
+): value is {
+  error: "execution_adapter_paper_execution_already_recorded";
+  existingAdapterPaperExecution: ExecutionAdapterPaperExecutionResult;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    error?: unknown;
+    existingAdapterPaperExecution?: unknown;
+  };
+  return (
+    payload.error === "execution_adapter_paper_execution_already_recorded" &&
+    isExecutionAdapterPaperExecutionResult(payload.existingAdapterPaperExecution)
   );
 }
 
@@ -13572,6 +14601,10 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
       isPromotionCandidateRecord(exportPackage.promotionCandidate)) &&
     (exportPackage.aiReviewRuns === undefined ||
       (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope))) &&
+    (exportPackage.auditEvents === undefined ||
+      (Array.isArray(exportPackage.auditEvents) && exportPackage.auditEvents.every(isAuditEventRecord))) &&
+    (exportPackage.p0PackageCompleteness === undefined ||
+      isResearchRunExportP0PackageCompleteness(exportPackage.p0PackageCompleteness)) &&
     (exportPackage.auditEvidenceSummary === undefined ||
       isResearchRunExportAuditEvidenceSummary(exportPackage.auditEvidenceSummary)) &&
     (exportPackage.auditReport === undefined || isResearchRunExportAuditReport(exportPackage.auditReport)) &&
@@ -13866,7 +14899,54 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
       typeof counts.portfolioPaperOrderSimulations === "number") &&
     (counts?.promotionCandidates === undefined || typeof counts.promotionCandidates === "number") &&
     (counts?.researchNotes === undefined || typeof counts.researchNotes === "number") &&
-    (counts?.aiReviewRuns === undefined || typeof counts.aiReviewRuns === "number")
+    (counts?.aiReviewRuns === undefined || typeof counts.aiReviewRuns === "number") &&
+    (counts?.auditEvents === undefined || typeof counts.auditEvents === "number")
+  );
+}
+
+function isResearchRunExportP0PackageCompleteness(
+  value: unknown
+): value is ResearchRunExportP0PackageCompleteness {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const completeness = value as Partial<ResearchRunExportP0PackageCompleteness>;
+  return (
+    completeness.kind === "aiqt.p0PackageCompleteness" &&
+    completeness.schemaVersion === 1 &&
+    typeof completeness.runId === "string" &&
+    typeof completeness.ready === "boolean" &&
+    (completeness.status === "complete" ||
+      completeness.status === "review" ||
+      completeness.status === "blocked") &&
+    typeof completeness.passed === "number" &&
+    typeof completeness.review === "number" &&
+    typeof completeness.blocked === "number" &&
+    typeof completeness.total === "number" &&
+    typeof completeness.progressPct === "number" &&
+    typeof completeness.paperOnly === "boolean" &&
+    typeof completeness.liveTradingAllowed === "boolean" &&
+    typeof completeness.liveBlockedBoundary === "boolean" &&
+    typeof completeness.summary === "string" &&
+    Array.isArray(completeness.criteria) &&
+    completeness.criteria.every(isResearchRunExportP0PackageCriterion)
+  );
+}
+
+function isResearchRunExportP0PackageCriterion(
+  value: unknown
+): value is ResearchRunExportP0PackageCriterion {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const criterion = value as Partial<ResearchRunExportP0PackageCriterion>;
+  return (
+    typeof criterion.id === "string" &&
+    typeof criterion.label === "string" &&
+    (criterion.status === "passed" || criterion.status === "review" || criterion.status === "blocked") &&
+    typeof criterion.detail === "string" &&
+    typeof criterion.evidence === "string" &&
+    typeof criterion.evidencePath === "string"
   );
 }
 
@@ -13939,6 +15019,50 @@ function isMarketKlineBar(value: unknown): value is MarketKlineBar {
     typeof bar.low === "number" &&
     typeof bar.close === "number" &&
     typeof bar.volume === "number"
+  );
+}
+
+function isMarketDataReadinessPayload(value: unknown): value is MarketDataReadiness {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<MarketDataReadiness>;
+  return (
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isTimeframe(payload.timeframe) &&
+    (payload.state === "ready" || payload.state === "stale" || payload.state === "blocked") &&
+    typeof payload.source === "string" &&
+    (payload.cacheState === "fresh" || payload.cacheState === "stale" || payload.cacheState === "empty") &&
+    typeof payload.barCount === "number" &&
+    Number.isFinite(payload.barCount) &&
+    payload.barCount >= 0 &&
+    (payload.latestBarAt === null || typeof payload.latestBarAt === "string") &&
+    (payload.startBarAt === null || typeof payload.startBarAt === "string") &&
+    (payload.ageHours === null ||
+      (typeof payload.ageHours === "number" && Number.isFinite(payload.ageHours) && payload.ageHours >= 0)) &&
+    (payload.providerHealthState === "healthy" || payload.providerHealthState === "degraded") &&
+    Array.isArray(payload.blockingReasons) &&
+    payload.blockingReasons.every((reason) => typeof reason === "string") &&
+    Array.isArray(payload.repairActions) &&
+    payload.repairActions.every(isMarketDataReadinessRepairAction) &&
+    (payload.latestRefreshRunId === null || typeof payload.latestRefreshRunId === "string") &&
+    (payload.latestProviderErrorId === null || typeof payload.latestProviderErrorId === "string") &&
+    Array.isArray(payload.dataQualityWarnings) &&
+    payload.dataQualityWarnings.every((warning) => typeof warning === "string")
+  );
+}
+
+function isMarketDataReadinessRepairAction(value: unknown): value is MarketDataReadinessRepairAction {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const action = value as Partial<MarketDataReadinessRepairAction>;
+  return (
+    typeof action.id === "string" &&
+    typeof action.label === "string" &&
+    typeof action.target === "string" &&
+    (action.method === "GET" || action.method === "POST")
   );
 }
 

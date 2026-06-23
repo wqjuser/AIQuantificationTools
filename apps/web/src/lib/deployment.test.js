@@ -29,7 +29,12 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run build");
     expect(workflow).toContain("docker compose config");
     expect(workflow).toContain("docker compose build");
-    expect(workflow).toContain("python tools/docker_smoke.py --no-build --down");
+    expect(workflow).toContain("npm run docker:smoke -- --no-build --down");
+    expect(workflow).toContain("npm run docker:smoke:p0 -- --no-build --down");
+    expect(workflow).toContain("npm run docker:smoke:p0:validate");
+    expect(workflow).toContain("actions/upload-artifact@v5");
+    expect(workflow).toContain("p0-acceptance-manifest");
+    expect(workflow).toContain("data/p0-acceptance.json");
   });
 
   test("exposes Docker lifecycle and smoke test commands from the root package", () => {
@@ -38,6 +43,12 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:up"]).toBe("docker compose up --build");
     expect(packageJson.scripts["docker:down"]).toBe("docker compose down");
     expect(packageJson.scripts["docker:smoke"]).toBe("python tools/docker_smoke.py");
+    expect(packageJson.scripts["docker:smoke:p0"]).toBe(
+      "python tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json",
+    );
+    expect(packageJson.scripts["docker:smoke:p0:validate"]).toBe(
+      "python tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+    );
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 

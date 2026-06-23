@@ -43,6 +43,7 @@ import {
   loadAuditSigningKeyRotationAcceptances,
   recordAuditSigningKeyRotationAcceptance,
   loadResearchRunAiReviews,
+  loadMarketDataReadiness,
   loadMarketKlines,
   loadMarketCalendarStatus,
   loadMarketSearch,
@@ -57,6 +58,7 @@ import {
   loadResearchRunHistory,
   loadResearchRunPromotion,
   loadResearchNote,
+  loadP0AcceptanceLatest,
   loadPlatformSettings,
   loadWatchlistCacheRefreshRuns,
   loadExecutionAdapterLedger,
@@ -107,8 +109,10 @@ import {
   normalizeResearchRunExportPackagePayload,
   buildAuditEvidenceReportAuditEvent,
   buildBacktestReportAuditEvent,
+  buildExecutionAdapterPreLiveRunbookAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
+  buildResearchContextReadinessReportAuditEvent,
   buildMarketDataRefreshOverrideAuditEvent,
   buildAuditSigningKeyRotationApplyAuditEvent,
   buildAuditSigningKeyRotationPlanAuditEvent,
@@ -116,11 +120,15 @@ import {
   withResearchRunExportAuditEvidenceArtifacts,
   withVerifiedResearchRunExportPackageReportSignatures,
   withResearchRunExportReportSignatures,
+  buildP0AcceptanceReviewAuditEvent,
   MarketCalendarResult,
   MarketCalendarStatus,
+  MarketDataReadinessResult,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
+  P0PaperSimulationResponse,
+  P0AcceptanceLatestResult,
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
   AiReviewRunHistoryPagination,
@@ -182,6 +190,9 @@ import {
   PortfolioPaperOrderStateHistory,
   PortfolioPaperOrderSimulation,
   resolveQuantCoreBaseUrl,
+  runP0AiReview,
+  runP0PaperSimulation,
+  runP0Pipeline,
   runTerminalResearch,
   ResearchRunExportAuditReport,
   ResearchRunExportPackage,
@@ -196,12 +207,10 @@ import {
   recordPortfolioPaperOrderApproval,
   recordPortfolioPaperOrderBatchSimulation,
   recordPortfolioPaperOrderSimulation,
-  saveAiReviewRunRecord,
   saveStrategySnapshot,
   StrategyLibraryItem,
   StrategyLibraryResult,
   StrategyValidationResult,
-  submitResearchRunPaperExecution,
   validateStrategySnapshot,
   verifyAuditReportEvent,
   WorkspaceLoadResult
@@ -224,6 +233,8 @@ import {
   buildAuditEvidenceSummary,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
+  buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
+  buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery,
   buildAuditEvidenceReportLedgerRowCurrentGapActionDescriptor,
   buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness,
   buildAuditEvidenceReportLedgerRowCurrentGapReadinessQuery,
@@ -231,8 +242,16 @@ import {
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessQuery,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle,
+  buildAuditEvidenceReportLedgerRowP0CompletionLabel,
+  buildAuditEvidenceReportLedgerRowP0CompletionQuery,
+  buildAuditEvidenceReportLedgerRowP0CompletionTitle,
+  buildAuditEvidenceReportLedgerRowP0ProgressLabel,
+  buildAuditEvidenceReportLedgerRowP0ProgressQuery,
+  buildAuditEvidenceReportLedgerRowP0PreflightQuery,
+  buildAuditEvidenceReportLedgerRowP0ReadinessReportQuery,
   buildLatestAuditAidCurrentGapActionDescriptor,
   buildLatestAuditAidCurrentGapActionReadiness,
+  buildResearchContextReportCoverageForContext,
   buildMarketDataRefreshOverrideAuditLedgerRows,
   buildMarketDataRefreshOverrideAuditLedgerSummary,
   buildExecutionAdapterPaperExecutionAuditLedgerRows,
@@ -277,9 +296,17 @@ import {
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
+  buildExecutionAdapterPreLiveRunbookMarkdown,
+  buildExecutionAdapterPreLiveRunbookSummary,
+  buildPreLiveRunbookAuditCoverage,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
+  buildP0AcceptanceReviewMarkdown,
+  buildP0AcceptanceSummary,
+  buildP0CompletionChecklist,
+  buildP0CompletionGapUrlSearch,
+  buildP0GoldenPathJourney,
   buildP0PaperExecutionPreflight,
   buildP0CurrentGapActionUrlSearch,
   buildP0PlatformActionOutcome,
@@ -313,6 +340,7 @@ import {
   defaultPortfolioPaperOrderRouteRiskTemplate,
   buildPromotionReadiness,
   buildResearchContextEvidenceRows,
+  buildResearchContextReadinessReportArchive,
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
   buildResearchRunContextBinding,
@@ -354,6 +382,7 @@ import {
   mergeResearchRunImportAuditEvents,
   mergeStrategyReadinessGatesWithLocalAudit,
   researchPipelineDataSnapshotLogLabel,
+  resolveP0CompletionGapDeepLinkState,
   resolveP0CurrentGapActionDeepLinkState,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -421,8 +450,15 @@ import {
   ExecutionAdapterRuntimeReloadPlanRow,
   ExecutionAdapterCertificationRow,
   ExecutionAdapterLedgerRow,
+  ExecutionAdapterPreLiveRunbookSummary,
+  ExecutionAdapterPreLiveRunbookStep,
+  PreLiveRunbookAuditCoverage,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
+  P0CompletionChecklist,
+  P0CompletionCriterion,
+  P0AcceptanceSummary,
+  P0GoldenPathJourney,
   P0PlatformActionOutcome,
   P0PlatformBacklogItem,
   P0PaperExecutionPreflightGate,
@@ -511,12 +547,16 @@ const quantCoreBaseUrl = resolveQuantCoreBaseUrl({
 });
 const initialP0CurrentGapActionDeepLinkState =
   typeof window === "undefined" ? null : resolveP0CurrentGapActionDeepLinkState(window.location.search);
+const initialP0CompletionGapDeepLinkState =
+  typeof window === "undefined" ? null : resolveP0CompletionGapDeepLinkState(window.location.search);
 
 const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildInitialTerminalWorkspace(),
   source: "fallback",
   statusLabel: initialP0CurrentGapActionDeepLinkState
     ? `P0 next-step link loaded: ${initialP0CurrentGapActionDeepLinkState.actionId} -> ${initialP0CurrentGapActionDeepLinkState.targetWorkspaceId}`
+    : initialP0CompletionGapDeepLinkState
+      ? `P0 completion gap link loaded -> ${initialP0CompletionGapDeepLinkState.targetWorkspaceId}`
     : "Offline snapshot"
 };
 const initialRunHistoryState: ResearchRunHistoryResult = {
@@ -535,6 +575,10 @@ const initialKlinesState: MarketKlinesResult = {
     rows: 0
   },
   source: "fallback"
+};
+const initialMarketDataReadinessState: MarketDataReadinessResult = {
+  source: "fallback",
+  error: "Market data readiness not loaded"
 };
 function buildFallbackMarketCalendarState(market: Market, error?: string): MarketCalendarResult {
   return {
@@ -607,6 +651,9 @@ const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerS
   state: "idle"
 };
 const initialGoldenPathStatusState: GoldenPathStatusResult = {
+  source: "fallback"
+};
+const initialP0AcceptanceLatestState: P0AcceptanceLatestResult = {
   source: "fallback"
 };
 const initialPortfolioBacktestState: PortfolioBacktestResult = {
@@ -1772,6 +1819,9 @@ export function App() {
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
+  const [p0AcceptanceLatestState, setP0AcceptanceLatestState] = useState<P0AcceptanceLatestResult>(
+    initialP0AcceptanceLatestState
+  );
   const [portfolioBacktestState, setPortfolioBacktestState] =
     useState<PortfolioBacktestResult>(initialPortfolioBacktestState);
   const [portfolioPaperOrderBatches, setPortfolioPaperOrderBatches] = useState<PortfolioPaperOrderBatch[]>([]);
@@ -1788,6 +1838,9 @@ export function App() {
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
+  const [marketDataReadinessState, setMarketDataReadinessState] = useState<MarketDataReadinessResult>(
+    initialMarketDataReadinessState
+  );
   const [marketCalendarState, setMarketCalendarState] = useState<MarketCalendarResult>(() =>
     buildFallbackMarketCalendarState(workspace.selectedInstrument.market)
   );
@@ -1822,6 +1875,7 @@ export function App() {
   const [simulatingPortfolioPaperOrderId, setSimulatingPortfolioPaperOrderId] = useState<string | null>(null);
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
+  const [isLoadingP0Acceptance, setIsLoadingP0Acceptance] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
@@ -1857,6 +1911,7 @@ export function App() {
   );
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
+  const [p0PaperSimulationRecord, setP0PaperSimulationRecord] = useState<P0PaperSimulationResponse | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
   const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
@@ -1901,11 +1956,16 @@ export function App() {
   const [focusedImportAuditEventId, setFocusedImportAuditEventId] = useState<string | null>(() => resolveInitialImportAuditEventId());
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId] = useState<string | null>(null);
+  const [copiedP0AcceptanceReview, setCopiedP0AcceptanceReview] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
+  const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
+  const [isRecordingPreLiveRunbook, setIsRecordingPreLiveRunbook] = useState(false);
   const [savingP0ReadinessReport, setSavingP0ReadinessReport] = useState(false);
+  const [savingP0AcceptanceReview, setSavingP0AcceptanceReview] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [copiedResearchContextLink, setCopiedResearchContextLink] = useState(false);
+  const [copiedResearchContextReadinessReport, setCopiedResearchContextReadinessReport] = useState(false);
   const [importAuditEvidenceDeepLinkStatus, setImportAuditEvidenceDeepLinkStatus] =
     useState<ImportAuditEvidenceDeepLinkStatus | null>(
       initialImportAuditEvidenceDeepLink ? { ...initialImportAuditEvidenceDeepLink, status: "idle", error: null } : null
@@ -1959,6 +2019,8 @@ export function App() {
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
   const researchContextLinkCopyResetTimerRef = useRef<number | null>(null);
+  const researchContextReadinessReportCopyResetTimerRef = useRef<number | null>(null);
+  const preLiveRunbookCopyResetTimerRef = useRef<number | null>(null);
   const initialImportAuditEvidenceDeepLinkRef = useRef(initialImportAuditEvidenceDeepLink);
   const initialPaperExecutionDeepLinkRef = useRef(initialPaperExecutionDeepLink);
   const klinesStateRef = useRef(initialKlinesState);
@@ -2009,6 +2071,10 @@ export function App() {
   const riskApprovalSummary = buildRiskApprovalSummary(workspace);
   const activePaperExecutionRecord =
     paperExecutionRecord?.runId && paperExecutionRecord.runId === currentResearchRunId ? paperExecutionRecord : null;
+  const activeP0PaperSimulationRecord =
+    p0PaperSimulationRecord?.runId && p0PaperSimulationRecord.runId === currentResearchRunId
+      ? p0PaperSimulationRecord
+      : null;
   const activePromotionCandidateRecord =
     promotionCandidateRecord?.runId && promotionCandidateRecord.runId === currentResearchRunId ? promotionCandidateRecord : null;
   const activeAiReviewRunRecords = currentResearchRunId
@@ -2111,6 +2177,52 @@ export function App() {
   const researchRunExportIndexRows = buildResearchRunExportIndexRows(indexedExportPackages);
   const auditEvidenceReportLedgerRows = buildAuditEvidenceReportLedgerRows(auditEvidenceReportEvents);
   const auditEvidenceReportLedgerSummary = buildAuditEvidenceReportLedgerSummary(auditEvidenceReportLedgerRows);
+  const researchContextReportCoverage = useMemo(
+    () =>
+      buildResearchContextReportCoverageForContext(auditEvidenceReportLedgerRows, {
+        market: workspace.selectedInstrument.market,
+        symbol: workspace.selectedInstrument.symbol,
+        timeframe: workspace.selectedTimeframe
+      }),
+    [
+      auditEvidenceReportLedgerRows,
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
+    ]
+  );
+  const latestResearchContextReadinessReport = useMemo(() => {
+    const row = researchContextReportCoverage.latestMatchingReport;
+    if (!row) {
+      return null;
+    }
+    return {
+      linkSearch: row.researchContextLinkDecodedSearch || row.researchContextLinkSearch,
+      preflightStatus: row.researchContextPreflightStatus,
+      preparationEvidenceRunId: row.researchContextPreparationEvidenceRunId,
+      query: buildAuditEvidenceReportLedgerRowResearchContextReportQuery(row),
+      runId: row.runId,
+      shortHash: row.shortHash
+    };
+  }, [
+    researchContextReportCoverage.latestMatchingReport
+  ]);
+  const latestOtherResearchContextReadinessReport = useMemo(() => {
+    const row = researchContextReportCoverage.latestOtherReport;
+    if (!row) {
+      return null;
+    }
+    return {
+      contextLabel: [row.researchContextMarket, row.researchContextSymbol, row.researchContextTimeframe]
+        .filter(Boolean)
+        .join(" · "),
+      query: buildAuditEvidenceReportLedgerRowResearchContextReportQuery(row),
+      runId: row.runId,
+      shortHash: row.shortHash
+    };
+  }, [
+    researchContextReportCoverage.latestOtherReport
+  ]);
   const latestAuditAidCurrentGapAction = buildLatestAuditAidCurrentGapActionDescriptor(auditEvidenceReportLedgerSummary);
   const latestAuditAidCurrentGapActionReadiness =
     buildLatestAuditAidCurrentGapActionReadiness(auditEvidenceReportLedgerSummary);
@@ -2170,7 +2282,27 @@ export function App() {
   const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
     activePromotionCandidateRecord ??
-    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows);
+    buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows);
+  const executionAdapterPreLiveRunbook = buildExecutionAdapterPreLiveRunbookSummary({
+    adapterLedgerRows: executionAdapterLedgerRows,
+    certificationRows: executionAdapterCertificationRows,
+    healthProbeRows: executionAdapterHealthProbeRows,
+    humanConfirmationRows: executionAdapterHumanConfirmationRows,
+    opsStateRows: executionAdapterOpsStateRows,
+    paperExecutionRows: executionAdapterPaperExecutionRows,
+    paperOrderLifecycleRows: executionAdapterPaperOrderLifecycleRows,
+    paperRouteRunbookRows: executionAdapterPaperRouteRunbookRows,
+    productionRouteReviewRows: executionAdapterProductionRouteReviewRows,
+    runtimeReloadAcceptanceRows: executionAdapterRuntimeReloadAcceptanceRows,
+    sandboxOrderSchemaDryRunRows: executionAdapterSandboxOrderSchemaDryRunRows,
+    secretManifestValidationRows: executionAdapterSecretManifestValidationRows,
+    workspace
+  });
+  const executionAdapterPreLiveRunbookAuditCoverage = buildPreLiveRunbookAuditCoverage(
+    auditEvidenceReportLedgerRows,
+    executionAdapterPreLiveRunbook,
+    workspace
+  );
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
   const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
     (context) =>
@@ -2262,10 +2394,88 @@ export function App() {
     statusLabel
   });
   const p0ActionOutcomeEvidenceLink = buildP0PlatformActionOutcomeEvidenceLink(p0PlatformActionOutcome);
+  const p0AcceptanceSummary = useMemo(
+    () => buildP0AcceptanceSummary(p0AcceptanceLatestState.acceptance),
+    [p0AcceptanceLatestState.acceptance]
+  );
+  const p0AcceptanceReviewMarkdown = useMemo(
+    () =>
+      buildP0AcceptanceReviewMarkdown({
+        acceptance: p0AcceptanceLatestState.acceptance ?? null,
+        summary: p0AcceptanceSummary
+      }),
+    [p0AcceptanceLatestState.acceptance, p0AcceptanceSummary]
+  );
+  const p0PortablePackageReady = useMemo(() => {
+    const matchesCurrentRun = (exportPackage: ResearchRunExportPackage | null | undefined) =>
+      Boolean(
+        exportPackage &&
+          exportPackage.manifest.runId === currentResearchRunId &&
+          exportPackage.p0PackageCompleteness?.ready &&
+          exportPackage.p0PackageCompleteness.liveBlockedBoundary &&
+          !exportPackage.p0PackageCompleteness.liveTradingAllowed
+      );
+    return matchesCurrentRun(inspectedExportPackage) || indexedExportPackages.some(matchesCurrentRun);
+  }, [currentResearchRunId, indexedExportPackages, inspectedExportPackage]);
+  const p0CompletionChecklist = useMemo(
+    () =>
+      buildP0CompletionChecklist({
+        automatedTestsVerified: false,
+        exportImportReady: p0PortablePackageReady,
+        goldenPath,
+        outcome: p0PlatformActionOutcome,
+        paperPreflight: p0PaperExecutionPreflight,
+        productWorkAreaCount: productWorkAreas.length,
+        replayReady: Boolean(
+          currentResearchRunId &&
+            (activeAiReviewRunRecords.length > 0 ||
+              Boolean(activePaperExecutionRecord?.executionId) ||
+              p0PortablePackageReady)
+        ),
+        strategyVersionReady:
+          Boolean(workspace.researchRun?.strategyConfig) ||
+          visibleStrategyLibrary.some(
+            (item) => item.status === "audited" && Boolean(item.auditRunId) && item.auditRunId === workspace.researchRun?.runId
+          ),
+        summary: p0PlatformReadinessSummary
+      }),
+    [
+      activeAiReviewRunRecords.length,
+      activePaperExecutionRecord?.executionId,
+      currentResearchRunId,
+      goldenPath,
+      p0PortablePackageReady,
+      p0PaperExecutionPreflight,
+      p0PlatformActionOutcome,
+      p0PlatformReadinessSummary,
+      productWorkAreas.length,
+      visibleStrategyLibrary,
+      workspace.researchRun?.runId,
+      workspace.researchRun?.strategyConfig
+    ]
+  );
+  const p0GoldenPathJourney = useMemo(
+    () =>
+      buildP0GoldenPathJourney({
+        completionChecklist: p0CompletionChecklist,
+        goldenPath,
+        outcome: p0PlatformActionOutcome,
+        paperPreflight: p0PaperExecutionPreflight,
+        summary: p0PlatformReadinessSummary
+      }),
+    [
+      goldenPath,
+      p0CompletionChecklist,
+      p0PaperExecutionPreflight,
+      p0PlatformActionOutcome,
+      p0PlatformReadinessSummary
+    ]
+  );
   const p0PlatformReadinessReportMarkdown = useMemo(
     () =>
       buildP0PlatformReadinessReportMarkdown({
         backlogItems: p0PlatformBacklogItems,
+        completionChecklist: p0CompletionChecklist,
         evidenceLink: p0ActionOutcomeEvidenceLink,
         outcome: p0PlatformActionOutcome,
         paperPreflight: p0PaperExecutionPreflight,
@@ -2273,6 +2483,7 @@ export function App() {
       }),
     [
       p0ActionOutcomeEvidenceLink,
+      p0CompletionChecklist,
       p0PlatformActionOutcome,
       p0PlatformBacklogItems,
       p0PaperExecutionPreflight,
@@ -2287,6 +2498,10 @@ export function App() {
   useEffect(() => {
     setCopiedP0ReadinessReport(false);
   }, [p0PlatformReadinessReportMarkdown]);
+
+  useEffect(() => {
+    setCopiedP0AcceptanceReview(false);
+  }, [p0AcceptanceReviewMarkdown]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -2395,6 +2610,15 @@ export function App() {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
   }, []);
 
+  const refreshP0AcceptanceLatest = useCallback(async () => {
+    setIsLoadingP0Acceptance(true);
+    try {
+      setP0AcceptanceLatestState(await loadP0AcceptanceLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingP0Acceptance(false);
+    }
+  }, []);
+
   const resetAiReviewHistoryState = useCallback(() => {
     setAiReviewRunRecords([]);
     setAiReviewHistoryQuery("");
@@ -2405,6 +2629,10 @@ export function App() {
   useEffect(() => {
     resetAiReviewHistoryState();
   }, [resetAiReviewHistoryState, workspace.researchRun?.runId]);
+
+  useEffect(() => {
+    void refreshP0AcceptanceLatest();
+  }, [refreshP0AcceptanceLatest]);
 
   const refreshAiReviewRunHistory = useCallback(
     async (runId: string, options: { offset?: number; query?: string } = {}) => {
@@ -2433,7 +2661,8 @@ export function App() {
     auditEvidenceReportRequestIdRef.current = requestId;
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
-      eventType: "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report",
+      eventType:
+        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,pre_live_runbook_report,research_context_readiness_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -2729,6 +2958,12 @@ export function App() {
       }
       if (researchContextLinkCopyResetTimerRef.current !== null) {
         window.clearTimeout(researchContextLinkCopyResetTimerRef.current);
+      }
+      if (researchContextReadinessReportCopyResetTimerRef.current !== null) {
+        window.clearTimeout(researchContextReadinessReportCopyResetTimerRef.current);
+      }
+      if (preLiveRunbookCopyResetTimerRef.current !== null) {
+        window.clearTimeout(preLiveRunbookCopyResetTimerRef.current);
       }
     };
   }, []);
@@ -3736,6 +3971,8 @@ export function App() {
           operator: "settings-panel",
           paperExecutionMode: "manual_adapter_paper_execution"
         });
+        const reusedAdapterPaperExecution =
+          result.error === "execution_adapter_paper_execution_already_recorded" && Boolean(result.adapterPaperExecution);
         if (result.adapterPaperExecution) {
           setExecutionAdapterPaperExecutions((current) => [
             result.adapterPaperExecution!,
@@ -3745,7 +3982,7 @@ export function App() {
             )
           ]);
         }
-        if (result.error) {
+        if (result.error && !reusedAdapterPaperExecution) {
           setWorkspaceState((current) => ({
             ...current,
             error: result.error,
@@ -3757,7 +3994,9 @@ export function App() {
             ...current,
             error: undefined,
             statusLabel:
-              status === "paper_execution_recorded"
+              reusedAdapterPaperExecution
+                ? `Adapter paper execution reused · ${row.adapterId}`
+                : status === "paper_execution_recorded"
                 ? `Adapter paper execution recorded · ${row.adapterId}`
                 : `Adapter paper execution blocked · ${row.adapterId}`
           }));
@@ -4205,12 +4444,23 @@ export function App() {
     };
     setIsChartLoading(true);
     setKlinesState(buildLoadingMarketKlinesResult(params));
-    const result = await loadMarketKlines(quantCoreBaseUrl, { ...params, limit: chartKlineLimit });
+    setMarketDataReadinessState({ source: "fallback", error: "Market data readiness loading" });
+    const [result, readiness] = await Promise.all([
+      loadMarketKlines(quantCoreBaseUrl, { ...params, limit: chartKlineLimit }),
+      loadMarketDataReadiness(quantCoreBaseUrl, params)
+    ]);
     if (chartRequestIdRef.current === requestId) {
       setKlinesState(result);
+      setMarketDataReadinessState(readiness);
       setIsChartLoading(false);
     }
-  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+  }, [
+    chartKlineLimit,
+    quantCoreBaseUrl,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   const enableMarketDataRefreshOverride = useCallback(
     async (reason: string) => {
@@ -4571,7 +4821,7 @@ export function App() {
     appendLog("backtest", "info", "Backtest request sent to local core");
     publishStage("backtest", ["data", "factor"]);
 
-    const result = await runTerminalResearch(
+    const result = await runP0Pipeline(
       quantCoreBaseUrl,
       {
         market: workspace.selectedInstrument.market,
@@ -4599,7 +4849,9 @@ export function App() {
     appendLog(
       "backtest",
       "success",
-      researchRunEvidenceLogLabel(researchSummary)
+      result.pipeline
+        ? `P0 audited run ${result.pipeline.runId} ready · ${result.pipeline.dataSnapshotId} · paper-only`
+        : researchRunEvidenceLogLabel(researchSummary)
     );
     publishStage("agent", ["data", "factor", "backtest"]);
     await waitForWorkflowStep();
@@ -5561,13 +5813,111 @@ export function App() {
     }
   }, [auditEvidenceSummary]);
 
+  const copyExecutionAdapterPreLiveRunbook = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(buildExecutionAdapterPreLiveRunbookMarkdown(executionAdapterPreLiveRunbook));
+      setCopiedPreLiveRunbook(true);
+      if (preLiveRunbookCopyResetTimerRef.current !== null) {
+        window.clearTimeout(preLiveRunbookCopyResetTimerRef.current);
+      }
+      preLiveRunbookCopyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedPreLiveRunbook(false);
+        preLiveRunbookCopyResetTimerRef.current = null;
+      }, 1800);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [executionAdapterPreLiveRunbook]);
+
+  const downloadExecutionAdapterPreLiveRunbook = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      const markdown = buildExecutionAdapterPreLiveRunbookMarkdown(executionAdapterPreLiveRunbook);
+      objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+      const anchor = document.createElement("a");
+      const safeAdapterId = executionAdapterPreLiveRunbook.adapterId.replace(/[^a-z0-9._-]+/giu, "-");
+      anchor.href = objectUrl;
+      anchor.download = `${safeAdapterId}-${executionAdapterPreLiveRunbook.market}-pre-live-runbook.md`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Runbook download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [executionAdapterPreLiveRunbook]);
+
+  const recordExecutionAdapterPreLiveRunbook = useCallback(async () => {
+    setIsRecordingPreLiveRunbook(true);
+    try {
+      const markdown = buildExecutionAdapterPreLiveRunbookMarkdown(executionAdapterPreLiveRunbook);
+      const auditEvent = await buildExecutionAdapterPreLiveRunbookAuditEvent({
+        markdown,
+        runbook: executionAdapterPreLiveRunbook,
+        workspace
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source !== "core" || !result.event) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Pre-live runbook audit failed",
+          error: result.error ?? "Audit ledger unavailable"
+        }));
+        return;
+      }
+      setAuditEvidenceReportEvents((current) =>
+        mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+      );
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Pre-live runbook audited · ${result.event!.eventId}`,
+        error: undefined
+      }));
+    } catch (recordError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook audit failed",
+        error: recordError instanceof Error ? recordError.message : "Audit ledger save failed"
+      }));
+    } finally {
+      setIsRecordingPreLiveRunbook(false);
+    }
+  }, [executionAdapterPreLiveRunbook, quantCoreBaseUrl, workspace]);
+
   const copyResearchContextLink = useCallback(async () => {
     try {
       if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard API unavailable");
       }
       await navigator.clipboard.writeText(
-        buildResearchContextDeepLink(window.location.href, workspace, activeWorkAreaId === "market" ? "market" : "research")
+        buildResearchContextDeepLink(window.location.href, workspace, activeWorkAreaId === "market" ? "market" : "research", {
+          watchlistRefreshRunId:
+            researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId
+        })
       );
       setCopiedResearchContextLink(true);
       if (researchContextLinkCopyResetTimerRef.current !== null) {
@@ -5589,7 +5939,116 @@ export function App() {
         error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
       }));
     }
-  }, [activeWorkAreaId, workspace]);
+  }, [activeWorkAreaId, researchPipelinePreflight.lockedPreparationEvidence?.runId, selectedWatchlistCacheRefreshRunId, workspace]);
+
+  const buildCurrentResearchContextReadinessReport = useCallback(async () => {
+    const generatedAt = new Date().toISOString();
+    return buildResearchContextReadinessReportArchive({
+      contextLink: buildResearchContextDeepLink(window.location.href, workspace, activeWorkAreaId === "market" ? "market" : "research", {
+        watchlistRefreshRunId:
+          researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId
+      }),
+      evidenceRows: researchContextEvidenceRows,
+      generatedAt,
+      preflight: researchPipelinePreflight,
+      rows: researchContextReadinessRows,
+      workspace
+    });
+  }, [
+    activeWorkAreaId,
+    researchContextEvidenceRows,
+    researchContextReadinessRows,
+    researchPipelinePreflight,
+    selectedWatchlistCacheRefreshRunId,
+    workspace
+  ]);
+
+  const copyResearchContextReadinessReport = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      const report = await buildCurrentResearchContextReadinessReport();
+      await navigator.clipboard.writeText(report.contentMarkdown);
+      setCopiedResearchContextReadinessReport(true);
+      if (researchContextReadinessReportCopyResetTimerRef.current !== null) {
+        window.clearTimeout(researchContextReadinessReportCopyResetTimerRef.current);
+      }
+      researchContextReadinessReportCopyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedResearchContextReadinessReport(false);
+        researchContextReadinessReportCopyResetTimerRef.current = null;
+      }, 1800);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Research context readiness report copied · sha256 ${report.contentSha256.hash.slice(0, 12)}`,
+        error: undefined
+      }));
+    } catch (copyError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research context readiness report copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [buildCurrentResearchContextReadinessReport]);
+
+  const downloadResearchContextReadinessReport = useCallback(async () => {
+    let objectUrl: string | null = null;
+    try {
+      const report = await buildCurrentResearchContextReadinessReport();
+      objectUrl = URL.createObjectURL(new Blob([report.contentMarkdown], { type: "text/markdown;charset=utf-8" }));
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = report.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Research context readiness report download ready · sha256 ${report.contentSha256.hash.slice(0, 12)}`,
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research context readiness report download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Report download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [buildCurrentResearchContextReadinessReport, quantCoreBaseUrl]);
+
+  const recordResearchContextReadinessReport = useCallback(async () => {
+    try {
+      const report = await buildCurrentResearchContextReadinessReport();
+      const result = await saveAuditEvent(quantCoreBaseUrl, buildResearchContextReadinessReportAuditEvent(report));
+      if (result.source !== "core" || !result.event) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research context readiness report audit failed",
+          error: result.error ?? "Audit ledger unavailable"
+        }));
+        return;
+      }
+      setAuditEvidenceReportEvents((current) =>
+        mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+      );
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Research context readiness report audited · sha256 ${report.contentSha256.hash.slice(0, 12)}`,
+        error: undefined
+      }));
+    } catch (recordError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research context readiness report audit failed",
+        error: recordError instanceof Error ? recordError.message : "Audit ledger save failed"
+      }));
+    }
+  }, [buildCurrentResearchContextReadinessReport]);
 
   const downloadAuditEvidenceReport = useCallback(async () => {
     try {
@@ -5818,9 +6277,8 @@ export function App() {
   }, [workspace]);
 
   const saveCurrentAiReviewRunRecord = useCallback(async () => {
-    const record = buildAiReviewRunRecord(workspace);
     const runId = workspace.researchRun?.runId;
-    if (!record || !runId) {
+    if (!runId) {
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "AI review record save failed",
@@ -5830,7 +6288,12 @@ export function App() {
     }
 
     setIsSavingAiReviewRecord(true);
-    const result = await saveAiReviewRunRecord(quantCoreBaseUrl, record);
+    const result = await runP0AiReview(quantCoreBaseUrl, {
+      runId,
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe
+    });
     if (result.source === "fallback" || !result.aiReview) {
       setWorkspaceState((current) => ({
         ...current,
@@ -5847,7 +6310,7 @@ export function App() {
     ]);
     setWorkspaceState((current) => ({
       ...current,
-      statusLabel: "AI review record saved",
+      statusLabel: result.mode === "local_evidence_review" ? "P0 AI review evidence saved" : "AI review record saved",
       error: undefined
     }));
     setActiveWorkAreaId("ai-review");
@@ -6632,29 +7095,47 @@ export function App() {
     }
 
     setIsSubmittingPaperExecution(true);
-    const result = await submitResearchRunPaperExecution(quantCoreBaseUrl, runId);
-    if (result.source === "fallback" || !result.execution) {
+    try {
+      const result = await runP0PaperSimulation(quantCoreBaseUrl, {
+        runId,
+        market: workspace.researchRun?.market ?? workspace.selectedInstrument.market,
+        symbol: workspace.researchRun?.symbol ?? workspace.selectedInstrument.symbol,
+        timeframe: workspace.researchRun?.timeframe ?? workspace.selectedTimeframe
+      });
+      if (result.source === "fallback" || !result.execution || !result.simulation) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Paper execution failed",
+          error: result.error ?? "Paper execution failed"
+        }));
+        return;
+      }
+
+      setPaperExecutionRecord(result.execution);
+      setP0PaperSimulationRecord(result.simulation);
+      setPromotionCandidateRecord(result.promotion ?? null);
       setWorkspaceState((current) => ({
         ...current,
-        statusLabel: "Paper execution failed",
-        error: result.error ?? "Paper execution failed"
+        statusLabel: `P0 paper simulation recorded · ${result.simulatedFill?.orderId ?? result.execution?.executionId} · ${formatPlainNumber(result.simulatedFill?.quantity ?? 0)} @ ${formatPlainNumber(result.simulatedFill?.fillPrice ?? 0)}`,
+        error: undefined
       }));
+      setActiveWorkAreaId("execution");
+      setActiveLoopStepId("paper");
+      setActiveWorkflowStageId("execution");
+    } finally {
       setIsSubmittingPaperExecution(false);
-      return;
     }
-
-    setPaperExecutionRecord(result.execution);
-    setPromotionCandidateRecord(result.promotion ?? null);
-    setWorkspaceState((current) => ({
-      ...current,
-      statusLabel: "Paper execution recorded",
-      error: undefined
-    }));
-    setActiveWorkAreaId("execution");
-    setActiveLoopStepId("paper");
-    setActiveWorkflowStageId("execution");
-    setIsSubmittingPaperExecution(false);
-  }, [currentResearchRunId, researchRunContextBinding.detail, researchRunContextBinding.status]);
+  }, [
+    currentResearchRunId,
+    researchRunContextBinding.detail,
+    researchRunContextBinding.status,
+    workspace.researchRun?.market,
+    workspace.researchRun?.symbol,
+    workspace.researchRun?.timeframe,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   const selectProductWorkArea = useCallback(
     (areaId: ProductWorkAreaId) => {
@@ -6679,6 +7160,25 @@ export function App() {
     },
     [selectProductWorkArea, updateExecutionAdapterPaperExecutionAuditQuery]
   );
+
+  const focusExecutionAdapterPreLiveRunbookAudit = useCallback(() => {
+    const query = executionAdapterPreLiveRunbookAuditCoverage.query;
+    selectProductWorkArea("audit");
+    if (!query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook audit coverage unavailable",
+        error: "No matching pre-live runbook report has been recorded yet."
+      }));
+      return;
+    }
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Pre-live runbook audit coverage selected",
+      error: undefined
+    }));
+  }, [executionAdapterPreLiveRunbookAuditCoverage.query, selectProductWorkArea, updateAuditEvidenceReportQuery]);
 
   const openExecutionAdapterPaperExecutionEvidence = useCallback(
     (row: ExecutionAdapterPaperExecutionAuditLedgerRow) => {
@@ -6769,6 +7269,66 @@ export function App() {
     [loadImportAuditEvidenceDeepLink, loadPaperExecutionDeepLink, selectProductWorkArea]
   );
 
+  const openAuditReportLedgerResearchContextLink = useCallback(
+    (search: string) => {
+      const urlState = resolveResearchContextUrlState(search);
+      if (!urlState) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research context report link failed",
+          error: "The report does not contain a valid research context link."
+        }));
+        return;
+      }
+      const instrument =
+        workspace.watchlist.find(
+          (candidate) => candidate.market === urlState.market && candidate.symbol === urlState.symbol
+        ) ?? buildInstrumentFromSymbol(urlState.market, urlState.symbol);
+      if (!instrument) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Research context report link failed",
+          error: "The report research context symbol is invalid."
+        }));
+        return;
+      }
+
+      const watchlistRefreshRunId = resolveWatchlistCacheRefreshRunIdFromUrl(search);
+      const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, instrument);
+      manualSelectionVersionRef.current += 1;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
+      setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
+      resetAiReviewHistoryState();
+      setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
+      setWatchlistCacheRefreshRunSelection(watchlistRefreshRunId);
+      setWorkspaceState((current) => {
+        const instrumentWorkspace = workspaceWithSelectedInstrument(current.workspace, instrument);
+        const timeframeWorkspace =
+          instrumentWorkspace.selectedTimeframe === urlState.timeframe
+            ? instrumentWorkspace
+            : workspaceWithSelectedTimeframe(instrumentWorkspace, urlState.timeframe);
+        return {
+          workspace: timeframeWorkspace,
+          source: "core",
+          statusLabel: "Research context report link opened"
+        };
+      });
+      setActiveWorkAreaId("research");
+      setActiveLoopStepId("research");
+      setActiveWorkflowStageId("data");
+      setWorkflowRunState(createWorkflowRunState());
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.search = search.startsWith("?") ? search : `?${search}`;
+        url.hash = "";
+        window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+    },
+    [resetAiReviewHistoryState, setWatchlistCacheRefreshRunSelection, workspace.watchlist]
+  );
+
   const copyAuditReportLedgerEvidenceLink = useCallback(async (search: string) => {
     if (!search || !navigator.clipboard?.writeText) {
       setWorkspaceState((current) => ({
@@ -6789,6 +7349,70 @@ export function App() {
       error: undefined
     }));
   }, []);
+
+  const openLatestResearchContextReportInAudit = useCallback(() => {
+    const query = latestResearchContextReadinessReport?.query ?? "";
+    if (!query) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    setAuditEvidenceReportQuery(query);
+    setAuditEvidenceReportOffset(0);
+    replaceAuditEvidenceReportQueryUrlParam(query);
+    setActiveWorkAreaId("audit");
+    setActiveLoopStepId("backtest");
+    setActiveWorkflowStageId("execution");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Latest research context readiness report selected",
+      error: undefined
+    }));
+  }, [latestResearchContextReadinessReport?.query, selectProductWorkArea]);
+
+  const openLatestOtherResearchContextReportInAudit = useCallback(() => {
+    const query = latestOtherResearchContextReadinessReport?.query ?? "";
+    if (!query) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    setAuditEvidenceReportQuery(query);
+    setAuditEvidenceReportOffset(0);
+    replaceAuditEvidenceReportQueryUrlParam(query);
+    setActiveWorkAreaId("audit");
+    setActiveLoopStepId("backtest");
+    setActiveWorkflowStageId("execution");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Other research context readiness report selected",
+      error: undefined
+    }));
+  }, [latestOtherResearchContextReadinessReport?.query, selectProductWorkArea]);
+
+  const openLatestResearchContextReportContext = useCallback(() => {
+    const search = latestResearchContextReadinessReport?.linkSearch ?? "";
+    if (!search) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    openAuditReportLedgerResearchContextLink(search);
+  }, [
+    latestResearchContextReadinessReport?.linkSearch,
+    openAuditReportLedgerResearchContextLink,
+    selectProductWorkArea
+  ]);
+
+  const copyLatestResearchContextReportLink = useCallback(() => {
+    const search = latestResearchContextReadinessReport?.linkSearch ?? "";
+    if (!search) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research context report link copy failed",
+        error: "No recorded research context report link is available."
+      }));
+      return;
+    }
+    void copyAuditReportLedgerEvidenceLink(search);
+  }, [latestResearchContextReadinessReport?.linkSearch, copyAuditReportLedgerEvidenceLink]);
 
   const copyAuditReportLedgerQueryLink = useCallback(async (query: string) => {
     if (!query.trim() || !navigator.clipboard?.writeText) {
@@ -6812,6 +7436,32 @@ export function App() {
       error: undefined
     }));
   }, []);
+
+  const copyExecutionAdapterPreLiveRunbookAuditLink = useCallback(async () => {
+    const query = executionAdapterPreLiveRunbookAuditCoverage.query;
+    if (!query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Pre-live runbook audit link copy failed",
+        error: "No matching pre-live runbook report has been recorded yet."
+      }));
+      return;
+    }
+    await copyAuditReportLedgerQueryLink(query);
+  }, [copyAuditReportLedgerQueryLink, executionAdapterPreLiveRunbookAuditCoverage.query]);
+
+  const copyLatestOtherResearchContextReportAuditLink = useCallback(async () => {
+    const query = latestOtherResearchContextReadinessReport?.query ?? "";
+    if (!query.trim() || !navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Other research context report link copy failed",
+        error: "Clipboard is unavailable or no other research context report query is available."
+      }));
+      return;
+    }
+    await copyAuditReportLedgerQueryLink(query);
+  }, [latestOtherResearchContextReadinessReport?.query, copyAuditReportLedgerQueryLink]);
 
   const copyExecutionAdapterPaperExecutionAuditLink = useCallback(
     async (row: ExecutionAdapterPaperExecutionRow) => {
@@ -6846,6 +7496,34 @@ export function App() {
       error: undefined
     }));
   }, []);
+
+  const copyP0CompletionGapLink = useCallback(
+    async (targetWorkspaceId: ProductWorkAreaId | null | undefined, auditReportQuery: string) => {
+      const normalizedSearch = buildP0CompletionGapUrlSearch({
+        auditReportQuery,
+        targetWorkspaceId
+      });
+      if (!normalizedSearch || !navigator.clipboard?.writeText) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "P0 completion gap link copy failed",
+          error: "Clipboard is unavailable or the P0 completion gap link is incomplete."
+        }));
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      url.search = `?${normalizedSearch}`;
+      url.hash = "";
+      await navigator.clipboard.writeText(url.toString());
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P0 completion gap link copied",
+        error: undefined
+      }));
+    },
+    []
+  );
 
   const openP0CurrentGapActionLink = useCallback(
     (search: string) => {
@@ -6912,6 +7590,80 @@ export function App() {
     }));
   }, [p0PlatformReadinessReportMarkdown]);
 
+  const copyP0AcceptanceReview = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P0 acceptance review copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(p0AcceptanceReviewMarkdown);
+    setCopiedP0AcceptanceReview(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P0 acceptance review copied",
+      error: undefined
+    }));
+  }, [p0AcceptanceReviewMarkdown]);
+
+  const downloadP0AcceptanceReview = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([p0AcceptanceReviewMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    const safeRunId = (p0AcceptanceSummary.runId || "latest").replace(/[^a-z0-9._-]+/giu, "-");
+    anchor.href = objectUrl;
+    anchor.download = `${safeRunId}-p0-acceptance-review.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P0 acceptance review download ready",
+      error: undefined
+    }));
+  }, [p0AcceptanceReviewMarkdown, p0AcceptanceSummary.runId]);
+
+  const saveP0AcceptanceReview = useCallback(async () => {
+    setSavingP0AcceptanceReview(true);
+    try {
+      const auditEvent = await buildP0AcceptanceReviewAuditEvent({
+        acceptance: p0AcceptanceLatestState.acceptance ?? null,
+        markdown: p0AcceptanceReviewMarkdown,
+        summary: p0AcceptanceSummary
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "P0 acceptance review saved to audit ledger",
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P0 acceptance review ledger save failed",
+        error: result.error ?? "P0 acceptance review ledger save failed"
+      }));
+    } finally {
+      setSavingP0AcceptanceReview(false);
+    }
+  }, [
+    p0AcceptanceLatestState.acceptance,
+    p0AcceptanceReviewMarkdown,
+    p0AcceptanceSummary,
+    quantCoreBaseUrl
+  ]);
+
   const downloadP0ReadinessReport = useCallback(() => {
     const objectUrl = URL.createObjectURL(
       new Blob([p0PlatformReadinessReportMarkdown], { type: "text/markdown;charset=utf-8" })
@@ -6935,6 +7687,7 @@ export function App() {
     try {
       const auditEvent = await buildP0PlatformReadinessReportAuditEvent({
         backlogItems: p0PlatformBacklogItems,
+        completionChecklist: p0CompletionChecklist,
         evidenceLink: p0ActionOutcomeEvidenceLink,
         markdown: p0PlatformReadinessReportMarkdown,
         outcome: p0PlatformActionOutcome,
@@ -6964,6 +7717,7 @@ export function App() {
     }
   }, [
     p0ActionOutcomeEvidenceLink,
+    p0CompletionChecklist,
     p0PlatformActionOutcome,
     p0PlatformBacklogItems,
     p0PaperExecutionPreflight,
@@ -7007,6 +7761,83 @@ export function App() {
       error: undefined
     }));
   }, [auditEvidenceReportLedgerSummary.latestAuditAidPreparationEvidenceRunId, selectProductWorkArea]);
+
+  const focusLatestP0Progress = useCallback(() => {
+    if (!auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery);
+    setAuditEvidenceReportOffset(0);
+    replaceAuditEvidenceReportQueryUrlParam(auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery);
+    setActiveWorkAreaId("audit");
+    setActiveLoopStepId("backtest");
+    setActiveWorkflowStageId("execution");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Latest P0 progress selected",
+      error: undefined
+    }));
+  }, [auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery, selectProductWorkArea]);
+
+  const focusLatestP0Preflight = useCallback(() => {
+    if (!auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery);
+    setAuditEvidenceReportOffset(0);
+    replaceAuditEvidenceReportQueryUrlParam(auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery);
+    setActiveWorkAreaId("audit");
+    setActiveLoopStepId("backtest");
+    setActiveWorkflowStageId("execution");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Latest P0 preflight selected",
+      error: undefined
+    }));
+  }, [auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery, selectProductWorkArea]);
+
+  const focusLatestP0Completion = useCallback(() => {
+    if (!auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery) {
+      selectProductWorkArea("audit");
+      return;
+    }
+    setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery);
+    setAuditEvidenceReportOffset(0);
+    replaceAuditEvidenceReportQueryUrlParam(auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery);
+    setActiveWorkAreaId("audit");
+    setActiveLoopStepId("backtest");
+    setActiveWorkflowStageId("execution");
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Latest P0 completion selected",
+      error: undefined
+    }));
+  }, [auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery, selectProductWorkArea]);
+
+  const openLatestP0CompletionGap = useCallback(() => {
+    if (!auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId) {
+      focusLatestP0Completion();
+      return;
+    }
+    if (auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery) {
+      setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery);
+      setAuditEvidenceReportOffset(0);
+      replaceAuditEvidenceReportQueryUrlParam(auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery);
+    }
+    selectProductWorkArea(auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Latest P0 completion gap selected",
+      error: undefined
+    }));
+  }, [
+    auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId,
+    auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery,
+    focusLatestP0Completion,
+    selectProductWorkArea
+  ]);
 
   const focusLatestP0BacklogReadiness = useCallback(() => {
     if (!auditEvidenceReportLedgerSummary.latestAuditAidBacklogReadinessQuery) {
@@ -7593,6 +8424,7 @@ export function App() {
             isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
             isRefreshingWatchlistCache={isRefreshingWatchlistCache}
             latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
+            marketDataReadiness={marketDataReadinessState}
             refreshGuard={marketDataRefreshGuard}
             refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
             refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
@@ -7791,6 +8623,11 @@ export function App() {
             adapterSandboxProbePlanRows={executionAdapterSandboxProbePlanRows}
             adapterSandboxProbeReviewRows={executionAdapterSandboxProbeReviewRows}
             adapterProductionRouteReviewRows={executionAdapterProductionRouteReviewRows}
+            adapterSandboxOrderSchemaDryRunRows={executionAdapterSandboxOrderSchemaDryRunRows}
+            adapterPaperOrderLifecycleRows={executionAdapterPaperOrderLifecycleRows}
+            adapterPaperRouteRunbookRows={executionAdapterPaperRouteRunbookRows}
+            adapterOpsStateRows={executionAdapterOpsStateRows}
+            adapterPaperExecutionRows={executionAdapterPaperExecutionRows}
             adapterOrchestrationDryRunRows={executionAdapterOrchestrationDryRunRows}
             adapterOrchestrationExecutionRows={executionAdapterOrchestrationExecutionRows}
             adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}
@@ -7804,6 +8641,19 @@ export function App() {
             className="workflow-promotion-panel"
             i18n={i18n}
             readiness={promotionReadiness}
+          />
+          <PreLiveRunbookPanel
+            className="workflow-pre-live-runbook-panel"
+            i18n={i18n}
+            isCopied={copiedPreLiveRunbook}
+            isRecordingAudit={isRecordingPreLiveRunbook}
+            auditCoverage={executionAdapterPreLiveRunbookAuditCoverage}
+            onCopy={copyExecutionAdapterPreLiveRunbook}
+            onCopyAuditLink={copyExecutionAdapterPreLiveRunbookAuditLink}
+            onDownload={downloadExecutionAdapterPreLiveRunbook}
+            onFocusAudit={focusExecutionAdapterPreLiveRunbookAudit}
+            onRecordAudit={recordExecutionAdapterPreLiveRunbook}
+            runbook={executionAdapterPreLiveRunbook}
           />
           <BrokerAdapterPanel adapterRows={brokerAdapterRows} className="workflow-broker-panel" i18n={i18n} />
         </>
@@ -7891,16 +8741,32 @@ export function App() {
             query={executionAdapterPaperExecutionAuditQuery}
             rows={executionAdapterPaperExecutionAuditRows}
           />
+          <P0AcceptanceReviewPanel
+            acceptance={p0AcceptanceLatestState.acceptance ?? null}
+            className="workflow-p0-acceptance-panel"
+            i18n={i18n}
+            isCopied={copiedP0AcceptanceReview}
+            isRecordingAudit={savingP0AcceptanceReview}
+            isRefreshing={isLoadingP0Acceptance}
+            onCopy={() => void copyP0AcceptanceReview()}
+            onDownload={downloadP0AcceptanceReview}
+            onRecordAudit={() => void saveP0AcceptanceReview()}
+            onRefresh={() => void refreshP0AcceptanceLatest()}
+            summary={p0AcceptanceSummary}
+          />
           <AuditEvidenceReportLedgerPanel
             className="workflow-report-ledger-panel"
             i18n={i18n}
             isLoading={isLoadingAuditEvidenceReportEvents}
             onNextPage={nextAuditEvidenceReportPage}
             onCopyEvidenceLink={copyAuditReportLedgerEvidenceLink}
+            onCopyCompletionGapLink={copyP0CompletionGapLink}
             onCopyP0ActionLink={copyP0CurrentGapActionLink}
             onCopyQueryLink={copyAuditReportLedgerQueryLink}
+            onOpenCompletionGap={selectProductWorkArea}
             onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}
             onOpenP0ActionLink={openP0CurrentGapActionLink}
+            onOpenResearchContextLink={openAuditReportLedgerResearchContextLink}
             onPreviousPage={previousAuditEvidenceReportPage}
             onQueryChange={updateAuditEvidenceReportQuery}
             onRevokeReport={revokeAuditEvidenceReportEvent}
@@ -8165,6 +9031,19 @@ export function App() {
           onSaveNote={saveCurrentResearchNote}
           onSaveWatchlist={saveCurrentWatchlist}
           onSaveWorkspace={saveCurrentResearchWorkspace}
+          onCopyReadinessReport={copyResearchContextReadinessReport}
+          onDownloadReadinessReport={downloadResearchContextReadinessReport}
+          onRecordReadinessReport={recordResearchContextReadinessReport}
+          latestReadinessReport={latestResearchContextReadinessReport}
+          latestOtherReadinessReport={latestOtherResearchContextReadinessReport}
+          marketDataReadiness={marketDataReadinessState}
+          readinessReportCoverageStatus={researchContextReportCoverage.status}
+          onOpenLatestReadinessReport={openLatestResearchContextReportInAudit}
+          onOpenLatestOtherReadinessReport={openLatestOtherResearchContextReportInAudit}
+          onOpenLatestReadinessReportContext={openLatestResearchContextReportContext}
+          onCopyLatestReadinessReportLink={copyLatestResearchContextReportLink}
+          onCopyLatestOtherReadinessReportLink={copyLatestOtherResearchContextReportAuditLink}
+          isReadinessReportCopied={copiedResearchContextReadinessReport}
           evidenceRows={researchContextEvidenceRows}
           rows={researchContextReadinessRows}
         />
@@ -8405,6 +9284,13 @@ export function App() {
                   <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
                 </div>
               ) : null}
+              <P0GoldenPathJourneyPanel
+                i18n={i18n}
+                isActionDisabled={isGoldenPathActionDisabledById}
+                journey={p0GoldenPathJourney}
+                onRunAction={runGoldenPathActionById}
+                onSelectWorkspace={selectProductWorkArea}
+              />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
                 <div>
                   <span>{i18n.locale === "zh-CN" ? "P0 可用性" : "P0 Readiness"}</span>
@@ -8418,6 +9304,64 @@ export function App() {
                 <small className="p0-readiness-boundary">
                   {p0PlatformReadinessLiveBoundary(i18n, p0PlatformReadinessSummary)}
                 </small>
+                <div className={`p0-acceptance-summary ${p0AcceptanceSummary.tone}`}>
+                  <div>
+                    <span>{i18n.locale === "zh-CN" ? "P0 验收清单" : "P0 Acceptance"}</span>
+                    <strong>{p0AcceptanceSummaryHeadline(i18n, p0AcceptanceSummary)}</strong>
+                    <small>{p0AcceptanceSummaryDetail(i18n, p0AcceptanceSummary)}</small>
+                    <small title={p0AcceptanceSummary.sourcePath}>
+                      {i18n.locale === "zh-CN" ? "来源" : "Source"} · {p0AcceptanceSummary.sourcePath}
+                    </small>
+                  </div>
+                  <em>
+                    {p0AcceptanceSummary.checkCount}/{p0AcceptanceSummary.requiredCheckCount}
+                  </em>
+                  <div className="p0-acceptance-actions">
+                    <button disabled={isLoadingP0Acceptance} onClick={() => void refreshP0AcceptanceLatest()} type="button">
+                      {isLoadingP0Acceptance ? <RefreshCw className="spin" size={11} /> : <RefreshCw size={11} />}
+                      {i18n.locale === "zh-CN" ? "刷新验收" : "Refresh"}
+                    </button>
+                    <button onClick={() => selectProductWorkArea("audit")} type="button">
+                      <ShieldCheck size={11} />
+                      {i18n.locale === "zh-CN" ? "审计复核" : "Audit review"}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className={`p0-completion-checklist ${
+                    p0CompletionChecklist.currentGap?.status ?? "passed"
+                  }`}
+                >
+                  <div className="p0-completion-head">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "P0 完成定义" : "P0 Completion"}</span>
+                      <strong>{p0CompletionChecklistHeadline(i18n, p0CompletionChecklist)}</strong>
+                      <small>{p0CompletionChecklistDetail(i18n, p0CompletionChecklist)}</small>
+                    </div>
+                    <em>
+                      {p0CompletionChecklist.passed}/{p0CompletionChecklist.total}
+                    </em>
+                  </div>
+                  <div className="p0-completion-meter">
+                    <span style={{ width: `${p0CompletionChecklist.progressPct}%` }} />
+                  </div>
+                  {p0CompletionChecklist.openCriteria.length ? (
+                    <div className="p0-completion-open">
+                      {p0CompletionChecklist.openCriteria.slice(0, 4).map((criterion) => (
+                        <button
+                          className={`p0-completion-criterion ${criterion.status}`}
+                          key={criterion.id}
+                          onClick={() => selectProductWorkArea(criterion.targetWorkspaceId)}
+                          type="button"
+                        >
+                          <span>{p0CompletionCriterionStatusLabel(i18n, criterion.status)}</span>
+                          <strong>{p0CompletionCriterionLabel(i18n, criterion)}</strong>
+                          <small>{p0CompletionCriterionDetail(i18n, criterion)}</small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <div className={`p0-action-outcome ${p0PlatformActionOutcome.tone}`}>
                   <div>
                     <span>{i18n.locale === "zh-CN" ? "最近证据" : "Latest outcome"}</span>
@@ -8466,6 +9410,18 @@ export function App() {
                     </div>
                   </div>
                 </div>
+                <details className="p0-evidence-drawer">
+                  <summary className="p0-evidence-drawer-summary">
+                    <span>{i18n.locale === "zh-CN" ? "证据与复核明细" : "Evidence details"}</span>
+                    <strong>
+                      {p0EvidenceDrawerSummary(
+                        i18n,
+                        Boolean(auditEvidenceReportLedgerSummary.latestAuditAidEventId),
+                        p0PaperExecutionPreflight.gates.length,
+                        p0PlatformBacklogItems.length
+                      )}
+                    </strong>
+                  </summary>
                 {auditEvidenceReportLedgerSummary.latestAuditAidEventId ? (
                   <div className="p0-readiness-ledger-echo">
                     <div>
@@ -8501,6 +9457,41 @@ export function App() {
                           )}
                         </small>
                       ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidCompletionLabel ? (
+                        <small
+                          className={`audit-report-ledger-p0-completion ${
+                            !auditEvidenceReportLedgerSummary.latestAuditAidCompletionRecorded ? "muted" : "ready"
+                          }`}
+                          title={
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionTitle ||
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionLabel
+                          }
+                        >
+                          {i18n.locale === "zh-CN"
+                            ? p0CompletionLedgerLabelText(i18n, auditEvidenceReportLedgerSummary.latestAuditAidCompletionLabel)
+                            : auditEvidenceReportLedgerSummary.latestAuditAidCompletionLabel}
+                        </small>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionId ? (
+                        <small
+                          title={
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionActionLabel ||
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionLabel
+                          }
+                        >
+                          {i18n.locale === "zh-CN" ? "完成缺口" : "Completion gap"} ·{" "}
+                          {auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionId}
+                          {auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId ? (
+                            <>
+                              {" -> "}
+                              {productWorkAreaIdLabelText(
+                                i18n,
+                                auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId
+                              )}
+                            </>
+                          ) : null}
+                        </small>
+                      ) : null}
                       {latestAuditAidCurrentGapAction ? (
                         <small title={latestAuditAidCurrentGapAction.actionId || latestAuditAidCurrentGapAction.query}>
                           {i18n.locale === "zh-CN" ? "下一步" : "Next"} ·{" "}
@@ -8531,6 +9522,14 @@ export function App() {
                       >
                         {i18n.locale === "zh-CN" ? "在审计中查看" : "Open in Audit"}
                       </button>
+                      {auditEvidenceReportLedgerSummary.latestAuditAidReportQuery ? (
+                        <button
+                          onClick={() => void copyAuditReportLedgerQueryLink(auditEvidenceReportLedgerSummary.latestAuditAidReportQuery)}
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "复制报告链接" : "Copy report link"}
+                        </button>
+                      ) : null}
                       {auditEvidenceReportLedgerSummary.latestAuditAidPreparationEvidenceRunId ? (
                         <button onClick={focusLatestP0PreparationEvidence} type="button">
                           {i18n.locale === "zh-CN" ? "定位数据准备" : "Focus prep"}
@@ -8546,6 +9545,86 @@ export function App() {
                           type="button"
                         >
                           {i18n.locale === "zh-CN" ? "复制数据准备链接" : "Copy prep link"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery ? (
+                        <button onClick={focusLatestP0Progress} type="button">
+                          {i18n.locale === "zh-CN" ? "定位进度" : "Focus progress"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery ? (
+                        <button
+                          onClick={() =>
+                            void copyAuditReportLedgerQueryLink(
+                              auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery
+                            )
+                          }
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "复制进度链接" : "Copy progress link"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery ? (
+                        <button onClick={focusLatestP0Completion} type="button">
+                          {i18n.locale === "zh-CN" ? "定位完成定义" : "Focus completion"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery ? (
+                        <button
+                          onClick={() =>
+                            void copyAuditReportLedgerQueryLink(
+                              auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery
+                            )
+                          }
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "复制完成链接" : "Copy completion link"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId ? (
+                        <button
+                          onClick={openLatestP0CompletionGap}
+                          title={
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionActionLabel ||
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionLabel
+                          }
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "打开完成缺口" : "Open completion gap"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId ? (
+                        <button
+                          onClick={() =>
+                            void copyP0CompletionGapLink(
+                              auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId,
+                              auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery
+                            )
+                          }
+                          title={
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionActionLabel ||
+                            auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionLabel
+                          }
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "复制完成缺口链接" : "Copy completion gap link"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery ? (
+                        <button onClick={focusLatestP0Preflight} type="button">
+                          {i18n.locale === "zh-CN" ? "定位预检" : "Focus preflight"}
+                        </button>
+                      ) : null}
+                      {auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery ? (
+                        <button
+                          onClick={() =>
+                            void copyAuditReportLedgerQueryLink(
+                              auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery
+                            )
+                          }
+                          type="button"
+                        >
+                          {i18n.locale === "zh-CN" ? "复制预检链接" : "Copy preflight link"}
                         </button>
                       ) : null}
                       {auditEvidenceReportLedgerSummary.latestAuditAidBacklogReadinessQuery ? (
@@ -8598,6 +9677,44 @@ export function App() {
                           {i18n.locale === "zh-CN" ? "复制当前缺口链接" : "Copy current gap link"}
                         </button>
                       ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {initialP0CompletionGapDeepLinkState ? (
+                  <div className="p0-current-gap-deep-link p0-completion-gap-deep-link">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "已载入完成缺口链接" : "Recovered completion gap link"}</span>
+                      <strong>
+                        {productWorkAreaIdLabelText(i18n, initialP0CompletionGapDeepLinkState.targetWorkspaceId)}
+                      </strong>
+                      <small title={initialP0CompletionGapDeepLinkState.auditReportQuery}>
+                        {i18n.locale === "zh-CN" ? "审计定位" : "Audit query"} ·{" "}
+                        {initialP0CompletionGapDeepLinkState.auditReportQuery}
+                      </small>
+                    </div>
+                    <div className="p0-current-gap-deep-link-actions">
+                      <button
+                        onClick={() => {
+                          replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportQuery(initialP0CompletionGapDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportOffset(0);
+                          selectProductWorkArea("audit");
+                        }}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "打开审计定位" : "Open Audit query"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportQuery(initialP0CompletionGapDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportOffset(0);
+                          selectProductWorkArea(initialP0CompletionGapDeepLinkState.targetWorkspaceId);
+                        }}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "继续完成缺口" : "Continue completion gap"}
+                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -8679,6 +9796,51 @@ export function App() {
                       </article>
                     ))}
                   </div>
+                  {activeP0PaperSimulationRecord ? (
+                    <div className="p0-paper-simulation-result">
+                      <div>
+                        <span>{i18n.locale === "zh-CN" ? "最近模拟委托" : "Latest paper simulation"}</span>
+                        <strong>
+                          {activeP0PaperSimulationRecord.simulatedFill.orderId} ·{" "}
+                          {portfolioTradeReviewSideLabel(i18n, activeP0PaperSimulationRecord.simulatedFill.side)}
+                        </strong>
+                        <small>{activeP0PaperSimulationRecord.liveRouteBlockedReason}</small>
+                      </div>
+                      <div className="p0-paper-simulation-result-grid">
+                        <span>
+                          <small>{i18n.locale === "zh-CN" ? "成交" : "Fill"}</small>
+                          <b>
+                            {formatPlainNumber(activeP0PaperSimulationRecord.simulatedFill.quantity)} @{" "}
+                            {formatPlainNumber(activeP0PaperSimulationRecord.simulatedFill.fillPrice)}
+                          </b>
+                        </span>
+                        <span>
+                          <small>{i18n.locale === "zh-CN" ? "现金" : "Cash after"}</small>
+                          <b>{formatPlainNumber(activeP0PaperSimulationRecord.accountReplay.cashAfter)}</b>
+                        </span>
+                        <span>
+                          <small>{i18n.locale === "zh-CN" ? "持仓" : "Position after"}</small>
+                          <b>{formatPlainNumber(activeP0PaperSimulationRecord.accountReplay.positionAfter)}</b>
+                        </span>
+                        <span>
+                          <small>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</small>
+                          <b>{activeP0PaperSimulationRecord.auditEvent.eventId}</b>
+                        </span>
+                        <span>
+                          <small>{i18n.locale === "zh-CN" ? "导出" : "Export"}</small>
+                          <b>
+                            {activeP0PaperSimulationRecord.exportReadiness.ready
+                              ? i18n.locale === "zh-CN"
+                                ? "就绪"
+                                : "Ready"
+                              : i18n.locale === "zh-CN"
+                                ? "待补证据"
+                                : "Pending"}
+                          </b>
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 {paperExecutionDeepLinkStatus ? (
                   <div className={`p0-paper-deep-link ${paperExecutionDeepLinkStatus.status}`}>
@@ -8745,6 +9907,7 @@ export function App() {
                     })}
                   </div>
                 ) : null}
+                </details>
               </div>
               {activeWorkspaceContext ? (
                 <div className={`workspace-gate-summary ${activeWorkspaceContext.status}`}>
@@ -8945,6 +10108,126 @@ export function App() {
 
 type AppI18n = ReturnType<typeof createI18n>;
 
+function p0EvidenceDrawerSummary(
+  i18n: AppI18n,
+  hasSavedReport: boolean,
+  preflightGateCount: number,
+  backlogItemCount: number
+): string {
+  if (i18n.locale === "zh-CN") {
+    const report = hasSavedReport ? "已入账报告" : "无入账报告";
+    return `${report} · ${preflightGateCount} 个预检门 · ${backlogItemCount} 个开放缺口`;
+  }
+  const report = hasSavedReport ? "saved report" : "no saved report";
+  return `${report} · ${preflightGateCount} preflight gates · ${backlogItemCount} open gaps`;
+}
+
+function P0GoldenPathJourneyPanel({
+  i18n,
+  isActionDisabled,
+  journey,
+  onRunAction,
+  onSelectWorkspace
+}: {
+  i18n: AppI18n;
+  isActionDisabled: (actionId: string | null | undefined) => boolean;
+  journey: P0GoldenPathJourney;
+  onRunAction: (actionId: string, targetWorkspaceId?: ProductWorkAreaId | null) => void;
+  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
+}) {
+  const currentStep = journey.steps.find((step) => step.id === journey.currentStepId) ?? journey.steps[0];
+  const hasAction = Boolean(journey.nextActionId);
+
+  return (
+    <section className="p0-golden-path-journey" aria-label={i18n.t("p0Journey.title")}>
+      <div className="p0-golden-path-head">
+        <div>
+          <span>{i18n.t("p0Journey.title")}</span>
+          <strong>{currentStep ? p0JourneyStepLabel(i18n, currentStep) : i18n.t("p0Journey.ready")}</strong>
+          <small>{i18n.t("p0Journey.subtitle")}</small>
+        </div>
+        <em>{i18n.t("p0Journey.boundary")}</em>
+      </div>
+      <div className="p0-golden-path-steps">
+        {journey.steps.map((step, index) => (
+          <button
+            key={step.id}
+            type="button"
+            aria-current={step.id === journey.currentStepId ? "step" : undefined}
+            className={`p0-golden-path-step ${step.state}`}
+            onClick={() => onSelectWorkspace(step.workspaceId)}
+          >
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <strong>{p0JourneyStepLabel(i18n, step)}</strong>
+            <small>{p0JourneyStepDetail(i18n, step)}</small>
+            <em>{p0JourneyStepStateLabel(i18n, step.state)}</em>
+          </button>
+        ))}
+      </div>
+      <div className="p0-golden-path-footer">
+        <small>{i18n.locale === "zh-CN" ? "实盘边界已锁定：P0 仅推进研究、回测、AI 解释和模拟执行。" : journey.detail}</small>
+        {hasAction ? (
+          <button
+            type="button"
+            className="p0-golden-path-primary-action"
+            disabled={isActionDisabled(journey.nextActionId)}
+            onClick={() => onRunAction(journey.nextActionId, journey.nextActionTargetWorkspaceId)}
+          >
+            <Play size={14} />
+            {i18n.t("p0Journey.action")}
+          </button>
+        ) : (
+          <span className="p0-golden-path-complete">{i18n.t("p0Journey.ready")}</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function p0JourneyStepLabel(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
+  if (i18n.locale === "en-US") {
+    return step.label;
+  }
+  return (
+    {
+      data: "数据就绪",
+      strategy: "策略草稿",
+      backtest: "审计回测",
+      "ai-review": "AI 评审",
+      "paper-simulation": "模拟执行",
+      replay: "回放复核",
+      export: "证据导出"
+    }[step.id] ?? step.label
+  );
+}
+
+function p0JourneyStepDetail(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
+  if (i18n.locale === "en-US") {
+    return step.detail;
+  }
+  return (
+    {
+      data: "确认标的、周期、缓存与数据质量。",
+      strategy: "保存可复现的结构化规则。",
+      backtest: "生成带费用和滑点的审计运行。",
+      "ai-review": "仅解释证据、风险和改进方向。",
+      "paper-simulation": "提交纸面盘委托，保持实盘阻断。",
+      replay: "复核成交、资金和持仓变化。",
+      export: "打包运行证据，支持导入复现。"
+    }[step.id] ?? step.detail
+  );
+}
+
+function p0JourneyStepStateLabel(i18n: AppI18n, state: P0GoldenPathJourney["steps"][number]["state"]): string {
+  const stateTranslationKey = {
+    done: "p0Journey.done",
+    current: "p0Journey.current",
+    blocked: "p0Journey.blocked",
+    ready: "p0Journey.ready"
+  } as const;
+  return i18n.t(stateTranslationKey[state]);
+}
+
 function workflowNextActionLabel(i18n: AppI18n, stepId: string): string {
   if (stepId === "strategy") {
     return i18n.t("aiAction.strategyDraft");
@@ -9023,6 +10306,72 @@ function p0PlatformReadinessDetail(i18n: AppI18n, summary: P0PlatformReadinessSu
   const workspace = workspaceId ? productWorkAreaIdLabelText(i18n, workspaceId) : "";
   const actionDetail = action && workspace ? ` · 动作：${action} -> ${workspace}` : "";
   return `${progress} · 当前缺口：${gap}${actionDetail}`;
+}
+
+function p0AcceptanceSummaryHeadline(i18n: AppI18n, summary: P0AcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      "P0 acceptance manifest invalid": "P0 验收清单无效",
+      "P0 acceptance manifest missing": "P0 验收清单缺失",
+      "P0 acceptance passed": "P0 验收已通过"
+    }[summary.headline] ?? summary.headline
+  );
+}
+
+function p0AcceptanceSummaryDetail(i18n: AppI18n, summary: P0AcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "passed") {
+    const run = summary.runId ? `运行 ${summary.runId}` : "最近一次 P0 验收";
+    return `${run} · ${summary.checkCount}/${summary.requiredCheckCount} 项检查通过 · 实盘仍阻断`;
+  }
+  if (summary.state === "invalid") {
+    return `验收清单未通过校验：${summary.detail
+      .replace("P0 acceptance evidence is invalid: ", "")
+      .replace(". Live trading remains blocked.", "")}；实盘仍阻断。`;
+  }
+  return `运行 P0 验收后会在这里读取 ${summary.sourcePath}；缺失时仍保持实盘阻断。`;
+}
+
+function p0AcceptanceReviewStatusLabel(i18n: AppI18n, status: P0AcceptanceSummary["state"]): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { invalid: "无效", missing: "缺失", passed: "通过" }[status];
+}
+
+function p0AcceptanceReviewBoundaryLabel(i18n: AppI18n, summary: P0AcceptanceSummary): string {
+  if (summary.reportedLiveTradingAllowed) {
+    return i18n.locale === "zh-CN"
+      ? "manifest 声称允许实盘，平台已阻断"
+      : "Manifest reports live allowed; platform blocks it";
+  }
+  if (!summary.liveBlockedBoundary) {
+    return i18n.locale === "zh-CN"
+      ? "缺少 live-blocked 边界，平台已阻断"
+      : "Live-blocked boundary missing; platform blocks it";
+  }
+  return i18n.locale === "zh-CN" ? "paper-only · 实盘阻断" : "paper-only · live blocked";
+}
+
+function p0AcceptanceReviewCheckLabel(i18n: AppI18n, checkId: string): string {
+  if (i18n.locale === "en-US") {
+    return checkId;
+  }
+  return (
+    {
+      p0_acceptance_manifest_invalid: "验收清单无效",
+      p0_acceptance_manifest_missing: "验收清单缺失",
+      p0_export_package_complete: "复现包完整",
+      p0_import_replay_complete: "导入复现完整",
+      p0_paper_simulation_audited: "模拟委托已审计",
+      p0_pipeline_complete: "P0 流水线完成"
+    }[checkId] ?? checkId
+  );
 }
 
 function productWorkAreaIdLabelText(i18n: AppI18n, workspaceId: string): string {
@@ -9121,6 +10470,19 @@ function p0BacklogReadinessLabelText(i18n: AppI18n, label: string): string {
     .replace("ready", "就绪");
 }
 
+function p0CompletionLedgerLabelText(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US" || !label) {
+    return label;
+  }
+  return label
+    .replace("P0 completion", "P0 完成定义")
+    .replace("not recorded", "未记录")
+    .replace("passed", "通过")
+    .replace("review", "复核")
+    .replace("blocked", "阻断")
+    .replace("current", "当前");
+}
+
 function p0PlatformReadinessLiveBoundary(i18n: AppI18n, summary: P0PlatformReadinessSummary): string {
   if (i18n.locale === "en-US") {
     return summary.liveBoundary.detail;
@@ -9132,6 +10494,74 @@ function p0PlatformReadinessLiveBoundary(i18n: AppI18n, summary: P0PlatformReadi
     return "加载黄金路径后再评估执行边界。";
   }
   return "P0 可用于审计研究、评审和模拟执行；实盘交易保持阻断。";
+}
+
+function p0CompletionChecklistHeadline(i18n: AppI18n, checklist: P0CompletionChecklist): string {
+  if (i18n.locale === "en-US") {
+    return checklist.headline;
+  }
+  return (
+    {
+      "P0 completion needs review": "P0 完成定义待复核",
+      "P0 completion not ready": "P0 完成定义未达标",
+      "P0 completion ready": "P0 完成定义已达标"
+    }[checklist.headline] ?? checklist.headline
+  );
+}
+
+function p0CompletionChecklistDetail(i18n: AppI18n, checklist: P0CompletionChecklist): string {
+  if (i18n.locale === "en-US") {
+    return checklist.detail;
+  }
+  if (checklist.blocked === 0 && checklist.review === 0) {
+    return `${checklist.passed}/${checklist.total} 项完成 · 个人/小团队模拟链路可用`;
+  }
+  return `${checklist.passed}/${checklist.total} 项完成 · ${checklist.review} 项待复核 · ${checklist.blocked} 项阻断`;
+}
+
+function p0CompletionCriterionStatusLabel(
+  i18n: AppI18n,
+  status: P0CompletionCriterion["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { blocked: "阻断", passed: "通过", review: "复核" }[status];
+}
+
+function p0CompletionCriterionLabel(i18n: AppI18n, criterion: P0CompletionCriterion): string {
+  if (i18n.locale === "en-US") {
+    return criterion.label;
+  }
+  return (
+    {
+      "ai-evidence": "AI 证据",
+      "audited-backtest": "审计回测",
+      "automated-tests": "自动化测试",
+      "data-quality": "数据质量",
+      "export-import": "导入导出",
+      "golden-path": "黄金路径闭环",
+      "paper-execution": "模拟执行",
+      "product-workspaces": "产品工作区",
+      replay: "回放恢复",
+      "strategy-versioning": "策略版本"
+    }[criterion.id] ?? criterion.label
+  );
+}
+
+function p0CompletionCriterionDetail(i18n: AppI18n, criterion: P0CompletionCriterion): string {
+  if (i18n.locale === "en-US") {
+    return criterion.detail;
+  }
+  if (criterion.status === "passed") {
+    return "已有可审计证据。";
+  }
+  const next = criterion.actionLabel ? goldenPathActionLabelText(i18n, criterion.actionLabel) : null;
+  const workspace = productWorkAreaIdLabelText(i18n, criterion.targetWorkspaceId);
+  if (criterion.status === "blocked") {
+    return next ? `${next} -> ${workspace}` : "需要先补齐前置证据。";
+  }
+  return next ? `待复核：${next} -> ${workspace}` : "需要复核运行证据。";
 }
 
 function p0PlatformActionOutcomeLabel(i18n: AppI18n, outcome: P0PlatformActionOutcome): string {
@@ -10760,6 +12190,134 @@ function marketDataRefreshOverrideAuditStatusLabel(
   return "";
 }
 
+function MarketDataReadinessStrip({
+  i18n,
+  readinessState
+}: {
+  i18n: AppI18n;
+  readinessState: MarketDataReadinessResult;
+}) {
+  const readiness = readinessState.readiness;
+  if (!readiness) {
+    return (
+      <div className="market-data-readiness-strip blocked">
+        <div>
+          <span>{i18n.locale === "zh-CN" ? "数据就绪" : "Data readiness"}</span>
+          <strong>{i18n.locale === "zh-CN" ? "等待核心服务" : "Waiting for core"}</strong>
+          <p>{readinessState.error ?? (i18n.locale === "zh-CN" ? "尚未加载数据就绪合同。" : "Readiness contract is not loaded yet.")}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const latestBar = readiness.latestBarAt ?? (i18n.locale === "zh-CN" ? "无" : "n/a");
+  const repairLabel = readiness.repairActions.length
+    ? readiness.repairActions.map((action) => marketDataReadinessRepairLabel(i18n, action.label)).join(" · ")
+    : i18n.locale === "zh-CN"
+      ? "无需修复"
+      : "No repair needed";
+
+  return (
+    <div className={`market-data-readiness-strip ${readiness.state}`}>
+      <div>
+        <span>{i18n.locale === "zh-CN" ? "数据就绪" : "Data readiness"}</span>
+        <strong>{marketDataReadinessStateLabel(i18n, readiness.state)}</strong>
+        <p>{marketDataReadinessDetail(i18n, readiness)}</p>
+      </div>
+      <dl>
+        <div>
+          <dt>{i18n.locale === "zh-CN" ? "来源" : "Source"}</dt>
+          <dd>{readiness.source}</dd>
+        </div>
+        <div>
+          <dt>{i18n.locale === "zh-CN" ? "缓存" : "Cache"}</dt>
+          <dd>{marketDataReadinessCacheLabel(i18n, readiness.cacheState, readiness.ageHours)}</dd>
+        </div>
+        <div>
+          <dt>{i18n.locale === "zh-CN" ? "K线" : "Bars"}</dt>
+          <dd>{readiness.barCount.toLocaleString(i18n.locale === "zh-CN" ? "zh-CN" : "en-US")}</dd>
+        </div>
+        <div>
+          <dt>Provider</dt>
+          <dd>{marketDataReadinessProviderLabel(i18n, readiness.providerHealthState)}</dd>
+        </div>
+        <div>
+          <dt>{i18n.locale === "zh-CN" ? "最新" : "Latest"}</dt>
+          <dd>{latestBar}</dd>
+        </div>
+        <div>
+          <dt>{i18n.locale === "zh-CN" ? "修复" : "Repair"}</dt>
+          <dd>{repairLabel}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+function marketDataReadinessStateLabel(i18n: AppI18n, state: "ready" | "stale" | "blocked"): string {
+  if (i18n.locale === "en-US") {
+    return { ready: "Ready", stale: "Stale", blocked: "Blocked" }[state];
+  }
+  return { ready: "可用", stale: "需刷新", blocked: "阻断" }[state];
+}
+
+function marketDataReadinessDetail(
+  i18n: AppI18n,
+  readiness: NonNullable<MarketDataReadinessResult["readiness"]>
+): string {
+  if (i18n.locale === "en-US") {
+    if (readiness.state === "ready") {
+      return `${readiness.symbol} ${readiness.timeframe} is ready for research.`;
+    }
+    if (readiness.state === "stale") {
+      return `${readiness.symbol} has cached bars, but the cache should be refreshed.`;
+    }
+    return readiness.blockingReasons.length
+      ? readiness.blockingReasons.join(" · ")
+      : `${readiness.symbol} is not ready for research.`;
+  }
+  if (readiness.state === "ready") {
+    return `${readiness.symbol} ${readiness.timeframe} 已可用于研究。`;
+  }
+  if (readiness.state === "stale") {
+    return `${readiness.symbol} 有缓存，但需要刷新后再进入流水线。`;
+  }
+  return readiness.blockingReasons.length
+    ? readiness.blockingReasons.join(" · ")
+    : `${readiness.symbol} 当前不能进入研究流水线。`;
+}
+
+function marketDataReadinessCacheLabel(
+  i18n: AppI18n,
+  cacheState: "fresh" | "stale" | "empty",
+  ageHours: number | null
+): string {
+  const age = ageHours === null ? "" : i18n.locale === "zh-CN" ? ` · ${ageHours} 小时` : ` · ${ageHours}h`;
+  if (i18n.locale === "en-US") {
+    return { fresh: "Fresh", stale: "Stale", empty: "Empty" }[cacheState] + age;
+  }
+  return { fresh: "新鲜", stale: "过期", empty: "空" }[cacheState] + age;
+}
+
+function marketDataReadinessProviderLabel(
+  i18n: AppI18n,
+  providerHealthState: "healthy" | "degraded"
+): string {
+  if (i18n.locale === "en-US") {
+    return providerHealthState === "healthy" ? "Healthy" : "Degraded";
+  }
+  return providerHealthState === "healthy" ? "健康" : "降级";
+}
+
+function marketDataReadinessRepairLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "en-US") {
+    return label;
+  }
+  return label
+    .replace("Refresh market cache", "刷新行情缓存")
+    .replace("Review provider health", "检查数据源健康");
+}
+
 function MarketDataHealthPanel({
   cacheContext,
   className,
@@ -10767,6 +12325,7 @@ function MarketDataHealthPanel({
   isRefreshingCache = false,
   isRefreshingWatchlistCache = false,
   latestWatchlistCacheRefresh,
+  marketDataReadiness,
   refreshGuard,
   refreshOverrideAuditStatus,
   refreshOverrideReason,
@@ -10790,6 +12349,7 @@ function MarketDataHealthPanel({
   isRefreshingCache?: boolean;
   isRefreshingWatchlistCache?: boolean;
   latestWatchlistCacheRefresh?: CacheWatchlistRefreshRun | null;
+  marketDataReadiness: MarketDataReadinessResult;
   refreshGuard?: MarketDataRefreshGuard;
   refreshOverrideAuditStatus?: MarketDataRefreshOverrideAuditStatus;
   refreshOverrideReason?: string | null;
@@ -10902,6 +12462,7 @@ function MarketDataHealthPanel({
         overrideReason={refreshOverrideReason}
         refreshGuard={refreshGuard}
       />
+      <MarketDataReadinessStrip i18n={i18n} readinessState={marketDataReadiness} />
       <div className="health-grid">
         <article className={state.quality.isComplete ? "positive" : "warning"}>
           <span>{i18n.locale === "zh-CN" ? "数据源" : "Source"}</span>
@@ -11114,6 +12675,19 @@ function ResearchContextReadinessPanel({
   onSaveNote,
   onSaveWatchlist,
   onSaveWorkspace,
+  onCopyReadinessReport,
+  onDownloadReadinessReport,
+  onRecordReadinessReport,
+  latestReadinessReport,
+  latestOtherReadinessReport,
+  marketDataReadiness,
+  readinessReportCoverageStatus = "missing",
+  onOpenLatestReadinessReport,
+  onOpenLatestOtherReadinessReport,
+  onOpenLatestReadinessReportContext,
+  onCopyLatestReadinessReportLink,
+  onCopyLatestOtherReadinessReportLink,
+  isReadinessReportCopied = false,
   evidenceRows,
   rows
 }: {
@@ -11135,9 +12709,45 @@ function ResearchContextReadinessPanel({
   onSaveNote?: () => void;
   onSaveWatchlist?: () => void;
   onSaveWorkspace?: () => void;
+  onCopyReadinessReport?: () => void;
+  onDownloadReadinessReport?: () => void;
+  onRecordReadinessReport?: () => void;
+  latestReadinessReport?: {
+    linkSearch: string;
+    preflightStatus: string;
+    preparationEvidenceRunId: string;
+    query: string;
+    runId: string;
+    shortHash: string;
+  } | null;
+  latestOtherReadinessReport?: {
+    contextLabel: string;
+    query: string;
+    runId: string;
+    shortHash: string;
+  } | null;
+  marketDataReadiness: MarketDataReadinessResult;
+  readinessReportCoverageStatus?: "matched" | "context-mismatch" | "missing";
+  onOpenLatestReadinessReport?: () => void;
+  onOpenLatestOtherReadinessReport?: () => void;
+  onOpenLatestReadinessReportContext?: () => void;
+  onCopyLatestReadinessReportLink?: () => void;
+  onCopyLatestOtherReadinessReportLink?: () => void;
+  isReadinessReportCopied?: boolean;
   evidenceRows: ResearchContextEvidenceRow[];
   rows: ResearchContextReadinessRow[];
 }) {
+  const missingReadinessReportTitle =
+    readinessReportCoverageStatus === "context-mismatch"
+      ? i18n.locale === "zh-CN" ? "当前上下文未入账" : "Current context not recorded"
+      : i18n.locale === "zh-CN" ? "等待入账当前上下文" : "Waiting for this context";
+  const missingReadinessReportDetail =
+    readinessReportCoverageStatus === "context-mismatch"
+      ? i18n.locale === "zh-CN" ? "已有其他标的或周期的报告；请入账当前上下文。" : "Other symbols or timeframes have reports; record this context."
+      : i18n.locale === "zh-CN"
+        ? "复制、下载或入账报告后会在这里回显。"
+        : "Copy, download, or audit a report and it will appear here.";
+
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "研究上下文就绪" : "Research Context Readiness"}
@@ -11147,6 +12757,38 @@ function ResearchContextReadinessPanel({
           : "Stage 1 · symbol, watchlist, K-lines, cache, refresh evidence, notes, workspace, audited run"
       }
       className={className}
+      action={
+        onCopyReadinessReport || onDownloadReadinessReport || onRecordReadinessReport ? (
+          <div className="research-context-report-actions">
+            {onCopyReadinessReport ? (
+              <button className="research-context-report-button" onClick={onCopyReadinessReport} type="button">
+                <Copy size={13} />
+                <span>
+                  {isReadinessReportCopied
+                    ? i18n.locale === "zh-CN"
+                      ? "已复制"
+                      : "Copied"
+                    : i18n.locale === "zh-CN"
+                      ? "复制报告"
+                      : "Copy report"}
+                </span>
+              </button>
+            ) : null}
+            {onDownloadReadinessReport ? (
+              <button className="research-context-report-button" onClick={onDownloadReadinessReport} type="button">
+                <Download size={13} />
+                <span>{i18n.locale === "zh-CN" ? "下载报告" : "Download"}</span>
+              </button>
+            ) : null}
+            {onRecordReadinessReport ? (
+              <button className="research-context-report-button" onClick={onRecordReadinessReport} type="button">
+                <Save size={13} />
+                <span>{i18n.locale === "zh-CN" ? "入账报告" : "Audit"}</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null
+      }
     >
       {refreshGuard?.blocked || refreshGuard?.overrideApplied ? (
         <p className="market-refresh-guard-note">{marketDataRefreshGuardLabel(i18n, refreshGuard)}</p>
@@ -11159,6 +12801,66 @@ function ResearchContextReadinessPanel({
         overrideReason={refreshOverrideReason}
         refreshGuard={refreshGuard}
       />
+      <MarketDataReadinessStrip i18n={i18n} readinessState={marketDataReadiness} />
+      {latestReadinessReport?.runId ? (
+        <div className="research-context-latest-report">
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "最近入账报告" : "Latest recorded report"}</span>
+            <strong>{latestReadinessReport.runId}</strong>
+            <small>
+              {latestReadinessReport.shortHash || "n/a"} · {latestReadinessReport.preflightStatus || "n/a"}
+            </small>
+            {latestReadinessReport.preparationEvidenceRunId ? (
+              <em title={latestReadinessReport.preparationEvidenceRunId}>
+                prep {latestReadinessReport.preparationEvidenceRunId}
+              </em>
+            ) : null}
+          </div>
+          <div className="research-context-latest-report-actions">
+            {latestReadinessReport.query ? (
+              <button onClick={onOpenLatestReadinessReport} type="button">
+                {i18n.locale === "zh-CN" ? "定位审计报告" : "Focus audit report"}
+              </button>
+            ) : null}
+            {latestReadinessReport.linkSearch ? (
+              <button onClick={onOpenLatestReadinessReportContext} type="button">
+                {i18n.locale === "zh-CN" ? "打开研究上下文" : "Open research context"}
+              </button>
+            ) : null}
+            {latestReadinessReport.linkSearch ? (
+              <button onClick={onCopyLatestReadinessReportLink} type="button">
+                {i18n.locale === "zh-CN" ? "复制研究链接" : "Copy research link"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className={`research-context-latest-report muted ${readinessReportCoverageStatus}`}>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "最近入账报告" : "Latest recorded report"}</span>
+            <strong>{missingReadinessReportTitle}</strong>
+            <small>{missingReadinessReportDetail}</small>
+            {readinessReportCoverageStatus === "context-mismatch" && latestOtherReadinessReport?.runId ? (
+              <em title={latestOtherReadinessReport.runId}>
+                {latestOtherReadinessReport.contextLabel} ·{" "}
+                {latestOtherReadinessReport.shortHash || latestOtherReadinessReport.runId}
+              </em>
+            ) : null}
+          </div>
+          {readinessReportCoverageStatus === "context-mismatch" && latestOtherReadinessReport?.query ? (
+            <div className="research-context-latest-report-actions">
+              <button onClick={onOpenLatestOtherReadinessReport} type="button">
+                {i18n.locale === "zh-CN" ? "定位其他报告" : "Focus other report"}
+              </button>
+              {onCopyLatestOtherReadinessReportLink ? (
+                <button onClick={onCopyLatestOtherReadinessReportLink} type="button">
+                  {i18n.locale === "zh-CN" ? "复制其他报告链接" : "Copy other report link"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
       <div className="research-context-checklist">
         {rows.map((row, index) => {
           const action = row.action;
@@ -14308,16 +16010,128 @@ function marketRefreshOverrideAuditLiveBoundaryLabel(i18n: AppI18n, liveTradingA
   return i18n.locale === "zh-CN" ? "实盘阻断" : "Live blocked";
 }
 
+function P0AcceptanceReviewPanel({
+  acceptance,
+  className,
+  i18n,
+  isCopied,
+  isRecordingAudit,
+  isRefreshing,
+  onCopy,
+  onDownload,
+  onRecordAudit,
+  onRefresh,
+  summary
+}: {
+  acceptance: P0AcceptanceLatestResult["acceptance"] | null;
+  className?: string;
+  i18n: AppI18n;
+  isCopied: boolean;
+  isRecordingAudit: boolean;
+  isRefreshing: boolean;
+  onCopy: () => void;
+  onDownload: () => void;
+  onRecordAudit: () => void;
+  onRefresh: () => void;
+  summary: P0AcceptanceSummary;
+}) {
+  const context = [acceptance?.market ? i18n.marketLabel(acceptance.market) : null, acceptance?.symbol, acceptance?.timeframe]
+    .filter(Boolean)
+    .join(" · ");
+  const manifestCheckIds = acceptance?.checkIds.map((checkId) => checkId) ?? [];
+  const checks = manifestCheckIds.length
+    ? manifestCheckIds
+    : summary.state === "missing"
+      ? ["p0_acceptance_manifest_missing"]
+      : ["p0_acceptance_manifest_invalid"];
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P0 验收复核" : "P0 Acceptance Review"}
+      subtitle={i18n.locale === "zh-CN" ? "本地验收 manifest 与实盘阻断边界" : "Local acceptance manifest and live-blocked boundary"}
+      className={className}
+      action={
+        <div className="p0-acceptance-review-actions">
+          <button onClick={onCopy} type="button">
+            {isCopied ? <Check size={13} /> : <Copy size={13} />}
+            <span>
+              {isCopied
+                ? i18n.locale === "zh-CN"
+                  ? "已复制"
+                  : "Copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制"
+                  : "Copy"}
+            </span>
+          </button>
+          <button onClick={onDownload} type="button">
+            <Download size={13} />
+            <span>{i18n.locale === "zh-CN" ? "下载" : "Download"}</span>
+          </button>
+          <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+            {isRecordingAudit ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+            <span>
+              {isRecordingAudit
+                ? i18n.locale === "zh-CN"
+                  ? "入账中"
+                  : "Recording"
+                : i18n.locale === "zh-CN"
+                  ? "入账"
+                  : "Record"}
+            </span>
+          </button>
+          <button disabled={isRefreshing} onClick={onRefresh} type="button">
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p0-acceptance-review ${summary.tone}`}>
+        <div className="p0-acceptance-review-head">
+          <div>
+            <span>{p0AcceptanceReviewStatusLabel(i18n, summary.state)}</span>
+            <strong>{p0AcceptanceSummaryHeadline(i18n, summary)}</strong>
+            <p>{p0AcceptanceSummaryDetail(i18n, summary)}</p>
+          </div>
+          <em>
+            {summary.checkCount}/{summary.requiredCheckCount}
+          </em>
+        </div>
+        <div className="p0-acceptance-review-meta">
+          <span title={summary.sourcePath}>
+            {i18n.locale === "zh-CN" ? "来源" : "Source"} · {summary.sourcePath}
+          </span>
+          <span>{i18n.locale === "zh-CN" ? "运行" : "Run"} · {summary.runId || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "上下文" : "Context"} · {context || "n/a"}</span>
+          <span>{p0AcceptanceReviewBoundaryLabel(i18n, summary)}</span>
+        </div>
+        <div className="p0-acceptance-review-checks">
+          {checks.map((checkId) => (
+            <div className="p0-acceptance-review-check" key={checkId}>
+              <span>{p0AcceptanceReviewCheckLabel(i18n, checkId)}</span>
+              <em>{summary.state === "passed" ? (i18n.locale === "zh-CN" ? "通过" : "passed") : p0AcceptanceReviewStatusLabel(i18n, summary.state)}</em>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function AuditEvidenceReportLedgerPanel({
   className,
   i18n,
   isLoading,
   onNextPage,
   onCopyEvidenceLink,
+  onCopyCompletionGapLink,
   onCopyP0ActionLink,
   onCopyQueryLink,
+  onOpenCompletionGap,
   onOpenEvidenceLink,
   onOpenP0ActionLink,
+  onOpenResearchContextLink,
   onPreviousPage,
   onQueryChange,
   onRevokeReport,
@@ -14335,10 +16149,13 @@ function AuditEvidenceReportLedgerPanel({
   isLoading: boolean;
   onNextPage: () => void;
   onCopyEvidenceLink: (search: string) => void;
+  onCopyCompletionGapLink: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
   onCopyP0ActionLink: (search: string) => void;
   onCopyQueryLink: (query: string) => void;
+  onOpenCompletionGap: (workspaceId: ProductWorkAreaId) => void;
   onOpenEvidenceLink: (search: string) => void;
   onOpenP0ActionLink: (search: string) => void;
+  onOpenResearchContextLink: (search: string) => void;
   onPreviousPage: () => void;
   onQueryChange: (query: string) => void;
   onRevokeReport: (eventId: string) => void;
@@ -14354,6 +16171,7 @@ function AuditEvidenceReportLedgerPanel({
   const summary = buildAuditEvidenceReportLedgerSummary(rows);
   const latestAuditAidCurrentGapAction = buildLatestAuditAidCurrentGapActionDescriptor(summary);
   const latestAuditAidCurrentGapActionReadiness = buildLatestAuditAidCurrentGapActionReadiness(summary);
+  const latestCompletionGapWorkspaceId = summary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId;
   const visibleRows = filterAuditEvidenceReportLedgerRows(rows, query);
   const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
   const pageEnd = pagination ? Math.min(pagination.offset + rows.length, pagination.total) : visibleRows.length;
@@ -14399,14 +16217,99 @@ function AuditEvidenceReportLedgerPanel({
                     {i18n.locale === "zh-CN" ? "复制最新辅助" : "Copy latest aid"}
                   </button>
                 ) : null}
+                {summary.latestAuditAidProgressLabel ? (
+                  <span
+                    className="audit-report-ledger-p0-progress"
+                    title={summary.latestAuditAidProgressQuery || summary.latestAuditAidReportQuery || summary.latestAuditAidProgressLabel}
+                  >
+                    {i18n.locale === "zh-CN" ? "最新进度" : "Latest progress"} ·{" "}
+                    {summary.latestAuditAidProgressLabel}
+                  </span>
+                ) : null}
+                {summary.latestAuditAidProgressQuery ? (
+                  <button onClick={() => focusAuditReportQuery(summary.latestAuditAidProgressQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "定位进度" : "Focus progress"}
+                  </button>
+                ) : null}
+                {summary.latestAuditAidProgressQuery ? (
+                  <button onClick={() => onCopyQueryLink(summary.latestAuditAidProgressQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制进度链接" : "Copy progress link"}
+                  </button>
+                ) : null}
+                {summary.latestAuditAidCompletionLabel ? (
+                  <span
+                    className={`audit-report-ledger-p0-completion ${
+                      !summary.latestAuditAidCompletionRecorded ? "muted" : "ready"
+                    }`}
+                    title={summary.latestAuditAidCompletionTitle || summary.latestAuditAidCompletionLabel}
+                  >
+                    {i18n.locale === "zh-CN" ? "最新完成定义" : "Latest completion"} ·{" "}
+                    {p0CompletionLedgerLabelText(i18n, summary.latestAuditAidCompletionLabel)}
+                  </span>
+                ) : null}
+                {summary.latestAuditAidCompletionQuery ? (
+                  <button onClick={() => focusAuditReportQuery(summary.latestAuditAidCompletionQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "定位完成定义" : "Focus completion"}
+                  </button>
+                ) : null}
+                {summary.latestAuditAidCompletionQuery ? (
+                  <button onClick={() => onCopyQueryLink(summary.latestAuditAidCompletionQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制完成链接" : "Copy completion link"}
+                  </button>
+                ) : null}
+                {latestCompletionGapWorkspaceId ? (
+                  <button
+                    onClick={() => {
+                      if (summary.latestAuditAidCompletionQuery) {
+                        focusAuditReportQuery(summary.latestAuditAidCompletionQuery);
+                      }
+                      onOpenCompletionGap(latestCompletionGapWorkspaceId);
+                    }}
+                    title={
+                      summary.latestAuditAidCompletionCurrentCriterionActionLabel ||
+                      summary.latestAuditAidCompletionCurrentCriterionLabel
+                    }
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "打开完成缺口" : "Open completion gap"}
+                  </button>
+                ) : null}
+                {latestCompletionGapWorkspaceId ? (
+                  <button
+                    onClick={() =>
+                      onCopyCompletionGapLink(latestCompletionGapWorkspaceId, summary.latestAuditAidCompletionQuery)
+                    }
+                    title={
+                      summary.latestAuditAidCompletionCurrentCriterionActionLabel ||
+                      summary.latestAuditAidCompletionCurrentCriterionLabel
+                    }
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制完成缺口链接" : "Copy completion gap link"}
+                  </button>
+                ) : null}
                 {summary.latestAuditAidPreflightLabel ? (
                   <span
                     className="audit-report-ledger-preflight"
-                    title={summary.latestAuditAidPreflightActionId || summary.latestAuditAidPreflightState}
+                    title={
+                      summary.latestAuditAidPreflightQuery ||
+                      summary.latestAuditAidPreflightActionId ||
+                      summary.latestAuditAidPreflightState
+                    }
                   >
                     {i18n.locale === "zh-CN" ? "最新预检" : "Latest preflight"} ·{" "}
                     {summary.latestAuditAidPreflightLabel}
                   </span>
+                ) : null}
+                {summary.latestAuditAidPreflightQuery ? (
+                  <button onClick={() => focusAuditReportQuery(summary.latestAuditAidPreflightQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "定位预检" : "Focus preflight"}
+                  </button>
+                ) : null}
+                {summary.latestAuditAidPreflightQuery ? (
+                  <button onClick={() => onCopyQueryLink(summary.latestAuditAidPreflightQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制预检链接" : "Copy preflight link"}
+                  </button>
                 ) : null}
                 {summary.latestAuditAidBacklogReadinessLabel ? (
                   <span
@@ -14512,6 +16415,73 @@ function AuditEvidenceReportLedgerPanel({
                 </button>
               </span>
             ) : null}
+            {summary.latestPreLiveRunbookEventId ? (
+              <span title={summary.latestPreLiveRunbookEventId}>
+                {i18n.locale === "zh-CN" ? "最新运行手册" : "Latest runbook"}{" "}
+                <strong>{summary.latestPreLiveRunbookAdapterId}</strong>
+                <small>
+                  {summary.latestPreLiveRunbookContextLabel} · {summary.latestPreLiveRunbookStatus} ·{" "}
+                  {summary.latestPreLiveRunbookShortHash || "n/a"}
+                </small>
+                <span className="audit-report-ledger-pre-live" title={summary.latestPreLiveRunbookQuery}>
+                  {summary.latestPreLiveRunbookGateLabel} ·{" "}
+                  {auditReportLedgerPreLiveRunbookEvidenceLabel(
+                    i18n,
+                    summary.latestPreLiveRunbookEvidenceCount,
+                    summary.latestPreLiveRunbookEvidenceLabel
+                  )}
+                </span>
+                {summary.latestPreLiveRunbookQuery ? (
+                  <button onClick={() => focusAuditReportQuery(summary.latestPreLiveRunbookQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "定位运行手册" : "Focus runbook"}
+                  </button>
+                ) : null}
+                {summary.latestPreLiveRunbookQuery ? (
+                  <button onClick={() => onCopyQueryLink(summary.latestPreLiveRunbookQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制运行手册链接" : "Copy runbook link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
+            {summary.latestResearchContextReportRunId ? (
+              <span title={summary.latestResearchContextReportLabel || summary.latestResearchContextReportLinkSearch}>
+                {i18n.locale === "zh-CN" ? "最新研究上下文" : "Latest research"}{" "}
+                <strong>{summary.latestResearchContextReportRunId}</strong>
+                {summary.latestResearchContextReportShortHash ? (
+                  <small>
+                    {summary.latestResearchContextReportShortHash} ·{" "}
+                    {summary.latestResearchContextReportPreflightStatus || "n/a"}
+                  </small>
+                ) : null}
+                {summary.latestResearchContextReportPreparationEvidenceRunId ? (
+                  <span
+                    className="audit-report-ledger-preparation"
+                    title={summary.latestResearchContextReportPreparationEvidenceRunId}
+                  >
+                    {i18n.locale === "zh-CN" ? "数据准备" : "Data prep"} · prep{" "}
+                    {summary.latestResearchContextReportPreparationEvidenceRunId}
+                  </span>
+                ) : null}
+                {summary.latestResearchContextReportQuery ? (
+                  <button onClick={() => focusAuditReportQuery(summary.latestResearchContextReportQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "定位研究报告" : "Focus research report"}
+                  </button>
+                ) : null}
+                {summary.latestResearchContextReportLinkSearch ? (
+                  <button
+                    onClick={() => onOpenResearchContextLink(summary.latestResearchContextReportLinkSearch)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "打开研究上下文" : "Open research"}
+                  </button>
+                ) : null}
+                {summary.latestResearchContextReportLinkSearch ? (
+                  <button onClick={() => onCopyEvidenceLink(summary.latestResearchContextReportLinkSearch)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制研究链接" : "Copy research link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             <span>
               {i18n.locale === "zh-CN" ? "未签名" : "Unsigned"} <strong>{summary.unsigned}</strong>
             </span>
@@ -14582,6 +16552,17 @@ function AuditEvidenceReportLedgerPanel({
               const rowP0BacklogReadinessLabel = buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel(row);
               const rowP0BacklogReadinessTitle = buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle(row);
               const rowP0BacklogReadinessQuery = buildAuditEvidenceReportLedgerRowP0BacklogReadinessQuery(row);
+              const rowP0CompletionLabel = buildAuditEvidenceReportLedgerRowP0CompletionLabel(row);
+              const rowP0CompletionTitle = buildAuditEvidenceReportLedgerRowP0CompletionTitle(row);
+              const rowP0CompletionQuery = buildAuditEvidenceReportLedgerRowP0CompletionQuery(row);
+              const rowP0ProgressLabel = buildAuditEvidenceReportLedgerRowP0ProgressLabel(row);
+              const rowP0ProgressQuery = buildAuditEvidenceReportLedgerRowP0ProgressQuery(row);
+              const rowP0PreflightQuery = buildAuditEvidenceReportLedgerRowP0PreflightQuery(row);
+              const rowP0ReadinessReportQuery = buildAuditEvidenceReportLedgerRowP0ReadinessReportQuery(row);
+              const rowPreLiveRunbookQuery = buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(row);
+              const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId;
+              const preparationEvidenceRunId =
+                row.p0PreparationEvidenceRunId || row.researchContextPreparationEvidenceRunId;
 
               return (
               <article className={`audit-report-ledger-row ${row.tone} ${row.status}`} key={row.id}>
@@ -14603,10 +16584,34 @@ function AuditEvidenceReportLedgerPanel({
                       {row.evidenceLinkLabel}
                     </span>
                   ) : null}
+                  {row.researchContextLinkLabel ? (
+                    <span className="audit-report-ledger-research-context" title={row.researchContextLinkDecodedSearch}>
+                      {row.researchContextLinkLabel}
+                    </span>
+                  ) : null}
+                  {rowP0ProgressLabel ? (
+                    <span
+                      className="audit-report-ledger-p0-progress"
+                      title={rowP0ProgressQuery || rowP0ReadinessReportQuery || rowP0ProgressLabel}
+                    >
+                      {i18n.locale === "zh-CN" ? "P0 进度" : "P0 progress"} · {rowP0ProgressLabel}
+                    </span>
+                  ) : null}
+                  {rowP0CompletionLabel ? (
+                    <span
+                      className={`audit-report-ledger-p0-completion ${
+                        !row.p0CompletionReadinessRecorded ? "muted" : "ready"
+                      }`}
+                      title={rowP0CompletionTitle || rowP0CompletionQuery || rowP0CompletionLabel}
+                    >
+                      {i18n.locale === "zh-CN" ? "P0 完成定义" : "P0 completion"} ·{" "}
+                      {p0CompletionLedgerLabelText(i18n, rowP0CompletionLabel)}
+                    </span>
+                  ) : null}
                   {row.paperPreflightLabel ? (
                     <span
                       className="audit-report-ledger-preflight"
-                      title={row.paperPreflightActionId || row.paperPreflightState}
+                      title={rowP0PreflightQuery || row.paperPreflightActionId || row.paperPreflightState}
                     >
                       {row.paperPreflightLabel}
                     </span>
@@ -14629,9 +16634,9 @@ function AuditEvidenceReportLedgerPanel({
                       ) : null}
                     </span>
                   ) : null}
-                  {row.p0PreparationEvidenceRunId ? (
-                    <span className="audit-report-ledger-preparation" title={row.p0PreparationEvidenceRunId}>
-                      {i18n.locale === "zh-CN" ? "数据准备" : "Data prep"} · prep {row.p0PreparationEvidenceRunId}
+                  {preparationEvidenceRunId ? (
+                    <span className="audit-report-ledger-preparation" title={preparationEvidenceRunId}>
+                      {i18n.locale === "zh-CN" ? "数据准备" : "Data prep"} · prep {preparationEvidenceRunId}
                     </span>
                   ) : null}
                   {rowP0BacklogReadinessLabel ? (
@@ -14648,6 +16653,18 @@ function AuditEvidenceReportLedgerPanel({
                       {i18n.locale === "zh-CN"
                         ? p0BacklogReadinessLabelText(i18n, rowP0BacklogReadinessLabel)
                         : rowP0BacklogReadinessLabel}
+                    </span>
+                  ) : null}
+                  {rowPreLiveRunbookQuery ? (
+                    <span
+                      className="audit-report-ledger-pre-live"
+                      title={rowPreLiveRunbookQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "实盘前手册" : "Pre-live runbook"} ·{" "}
+                      {row.preLiveRunbookAdapterId} · {row.preLiveRunbookMarket} {row.preLiveRunbookSymbol}{" "}
+                      {row.preLiveRunbookTimeframe} · {row.preLiveRunbookCompletedSteps}/
+                      {row.preLiveRunbookTotalSteps} ·{" "}
+                      {auditReportLedgerPreLiveRunbookEvidenceLabel(i18n, row.preLiveRunbookEvidenceIds.length)}
                     </span>
                   ) : null}
                 </p>
@@ -14685,14 +16702,101 @@ function AuditEvidenceReportLedgerPanel({
                         {i18n.locale === "zh-CN" ? "复制证据链接" : "Copy evidence link"}
                       </button>
                     ) : null}
-                    {row.p0PreparationEvidenceRunId ? (
-                      <button onClick={() => focusAuditReportQuery(row.p0PreparationEvidenceRunId)} type="button">
+                    {row.researchContextLinkSearch ? (
+                      <button onClick={() => onOpenResearchContextLink(row.researchContextLinkSearch)} type="button">
+                        {i18n.locale === "zh-CN" ? "打开研究上下文" : "Open research"}
+                      </button>
+                    ) : null}
+                    {row.researchContextLinkSearch ? (
+                      <button onClick={() => onCopyEvidenceLink(row.researchContextLinkSearch)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制研究链接" : "Copy research link"}
+                      </button>
+                    ) : null}
+                    {preparationEvidenceRunId ? (
+                      <button onClick={() => focusAuditReportQuery(preparationEvidenceRunId)} type="button">
                         {i18n.locale === "zh-CN" ? "定位数据准备" : "Focus prep"}
                       </button>
                     ) : null}
-                    {row.p0PreparationEvidenceRunId ? (
-                      <button onClick={() => onCopyQueryLink(row.p0PreparationEvidenceRunId)} type="button">
+                    {preparationEvidenceRunId ? (
+                      <button onClick={() => onCopyQueryLink(preparationEvidenceRunId)} type="button">
                         {i18n.locale === "zh-CN" ? "复制数据准备链接" : "Copy prep link"}
+                      </button>
+                    ) : null}
+                    {rowP0ReadinessReportQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowP0ReadinessReportQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位 P0 报告" : "Focus P0 report"}
+                      </button>
+                    ) : null}
+                    {rowP0ReadinessReportQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowP0ReadinessReportQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制 P0 报告链接" : "Copy P0 report link"}
+                      </button>
+                    ) : null}
+                    {rowP0ProgressQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowP0ProgressQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位进度" : "Focus progress"}
+                      </button>
+                    ) : null}
+                    {rowP0ProgressQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowP0ProgressQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制进度链接" : "Copy progress link"}
+                      </button>
+                    ) : null}
+                    {rowP0CompletionQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowP0CompletionQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位完成定义" : "Focus completion"}
+                      </button>
+                    ) : null}
+                    {rowP0CompletionQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowP0CompletionQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制完成链接" : "Copy completion link"}
+                      </button>
+                    ) : null}
+                    {rowCompletionGapWorkspaceId ? (
+                      <button
+                        onClick={() => {
+                          if (rowP0CompletionQuery) {
+                            focusAuditReportQuery(rowP0CompletionQuery);
+                          }
+                          onOpenCompletionGap(rowCompletionGapWorkspaceId);
+                        }}
+                        title={
+                          row.p0CompletionCurrentCriterionActionLabel || row.p0CompletionCurrentCriterionLabel
+                        }
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "打开完成缺口" : "Open completion gap"}
+                      </button>
+                    ) : null}
+                    {rowCompletionGapWorkspaceId ? (
+                      <button
+                        onClick={() => onCopyCompletionGapLink(rowCompletionGapWorkspaceId, rowP0CompletionQuery)}
+                        title={
+                          row.p0CompletionCurrentCriterionActionLabel || row.p0CompletionCurrentCriterionLabel
+                        }
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制完成缺口链接" : "Copy completion gap link"}
+                      </button>
+                    ) : null}
+                    {rowP0PreflightQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowP0PreflightQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位预检" : "Focus preflight"}
+                      </button>
+                    ) : null}
+                    {rowP0PreflightQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowP0PreflightQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制预检链接" : "Copy preflight link"}
+                      </button>
+                    ) : null}
+                    {rowPreLiveRunbookQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowPreLiveRunbookQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位运行手册" : "Focus runbook"}
+                      </button>
+                    ) : null}
+                    {rowPreLiveRunbookQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowPreLiveRunbookQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制运行手册链接" : "Copy runbook link"}
                       </button>
                     ) : null}
                     {rowP0BacklogReadinessQuery ? (
@@ -14738,6 +16842,8 @@ function AuditEvidenceReportLedgerPanel({
                         row.status === "invalid" ||
                         row.importVerificationInvalid > 0 ||
                         row.reportKind === "p0_readiness_report" ||
+                        row.reportKind === "pre_live_runbook_report" ||
+                        row.reportKind === "research_context_readiness_report" ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onSignReport(row.id)}
@@ -14751,6 +16857,8 @@ function AuditEvidenceReportLedgerPanel({
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
                         row.reportKind === "p0_readiness_report" ||
+                        row.reportKind === "pre_live_runbook_report" ||
+                        row.reportKind === "research_context_readiness_report" ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "revoked"
                       }
@@ -14773,6 +16881,8 @@ function AuditEvidenceReportLedgerPanel({
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "invalid" ||
                         row.reportKind === "p0_readiness_report" ||
+                        row.reportKind === "pre_live_runbook_report" ||
+                        row.reportKind === "research_context_readiness_report" ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onRevokeReport(row.id)}
@@ -14819,6 +16929,16 @@ function auditReportLedgerSigningPolicyDetail(i18n: AppI18n, row: AuditEvidenceR
     return i18n.locale === "zh-CN"
       ? "P0 就绪报告只作为审计辅助材料入账，不进入签名链或实盘授权"
       : "P0 readiness reports are audit aids only; they do not enter the signing chain or live authorization";
+  }
+  if (row.reportKind === "pre_live_runbook_report") {
+    return i18n.locale === "zh-CN"
+      ? "实盘前运行手册只作为审计辅助材料入账，不进入签名链或实盘授权"
+      : "Pre-live runbook reports are audit aids only; they do not enter the signing chain or live authorization";
+  }
+  if (row.reportKind === "research_context_readiness_report") {
+    return i18n.locale === "zh-CN"
+      ? "研究上下文就绪报告只作为审计辅助材料入账，不进入签名链或实盘授权"
+      : "Research context readiness reports are audit aids only; they do not enter the signing chain or live authorization";
   }
   if (row.importVerificationInvalid <= 0) {
     return "";
@@ -16508,6 +18628,8 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "paper-executions": "模拟执行",
       "adapter-paper-executions": "适配器模拟执行",
       "portfolio-paper-orders": "组合模拟委托",
+      "audit-events": "审计事件",
+      "p0-completeness": "P0 完整性",
       "promotion-candidate": "晋级候选",
       "ai-reviews": "AI 评审",
       "audit-summary": "审计摘要",
@@ -17023,6 +19145,17 @@ function auditReportLedgerReportKindLabel(i18n: AppI18n, label: string): string 
       "Portfolio report": "组合报告"
     }[label] ?? label
   );
+}
+
+function auditReportLedgerPreLiveRunbookEvidenceLabel(
+  i18n: AppI18n,
+  count: number,
+  fallbackLabel = ""
+): string {
+  if (i18n.locale === "en-US") {
+    return fallbackLabel || `${count} evidence ${count === 1 ? "id" : "ids"}`;
+  }
+  return `${count} 条证据`;
 }
 
 function auditReportLedgerSignatureLabel(i18n: AppI18n, label: string): string {
@@ -18974,6 +21107,11 @@ function PromotionQueuePanel({
   adapterSandboxProbePlanRows,
   adapterSandboxProbeReviewRows,
   adapterProductionRouteReviewRows,
+  adapterSandboxOrderSchemaDryRunRows,
+  adapterPaperOrderLifecycleRows,
+  adapterPaperRouteRunbookRows,
+  adapterOpsStateRows,
+  adapterPaperExecutionRows,
   adapterSecretManifestValidationRows,
   adapterSecretMaterializationRows,
   adapterSecretReferenceRows,
@@ -18996,6 +21134,11 @@ function PromotionQueuePanel({
   adapterSandboxProbePlanRows: ExecutionAdapterSandboxProbePlanRow[];
   adapterSandboxProbeReviewRows: ExecutionAdapterSandboxProbeReviewRow[];
   adapterProductionRouteReviewRows: ExecutionAdapterProductionRouteReviewRow[];
+  adapterSandboxOrderSchemaDryRunRows: ExecutionAdapterSandboxOrderSchemaDryRunRow[];
+  adapterPaperOrderLifecycleRows: ExecutionAdapterPaperOrderLifecycleRow[];
+  adapterPaperRouteRunbookRows: ExecutionAdapterPaperRouteRunbookRow[];
+  adapterOpsStateRows: ExecutionAdapterOpsStateRow[];
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[];
   adapterSecretManifestValidationRows: ExecutionAdapterSecretManifestValidationRow[];
   adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[];
   adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[];
@@ -19019,6 +21162,11 @@ function PromotionQueuePanel({
   const recentSandboxProbeExecutionRows = adapterSandboxProbeExecutionRows.slice(0, 3);
   const recentSandboxProbeReviewRows = adapterSandboxProbeReviewRows.slice(0, 3);
   const recentProductionRouteReviewRows = adapterProductionRouteReviewRows.slice(0, 3);
+  const recentSandboxOrderSchemaDryRunRows = adapterSandboxOrderSchemaDryRunRows.slice(0, 3);
+  const recentPaperOrderLifecycleRows = adapterPaperOrderLifecycleRows.slice(0, 3);
+  const recentPaperRouteRunbookRows = adapterPaperRouteRunbookRows.slice(0, 3);
+  const recentAdapterOpsStateRows = adapterOpsStateRows.slice(0, 3);
+  const recentAdapterPaperExecutionRows = adapterPaperExecutionRows.slice(0, 3);
   const recentSecretReferenceRows = adapterSecretReferenceRows.slice(0, 3);
   const recentSecretMaterializationRows = adapterSecretMaterializationRows.slice(0, 3);
   const recentSecretManifestValidationRows = adapterSecretManifestValidationRows.slice(0, 3);
@@ -19374,10 +21522,115 @@ function PromotionQueuePanel({
             <p className="promotion-production-route-review-empty">
               {i18n.locale === "zh-CN"
                 ? "等待生产路由策略复核。sandbox 探针复核后，需要复核急停、限额、路由禁用和回滚责任。"
-                : "Waiting for production route policy review. After sandbox probe review, verify kill switch, limits, disabled routing, and rollback ownership."}
+              : "Waiting for production route policy review. After sandbox probe review, verify kill switch, limits, disabled routing, and rollback ownership."}
             </p>
           )}
         </div>
+        {recentSandboxOrderSchemaDryRunRows.length ? (
+          <div className="promotion-sandbox-order-schema-dry-run-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近订单 schema dry-run" : "Recent order schema dry-run"}</span>
+            {recentSandboxOrderSchemaDryRunRows.map((row) => (
+              <article className={`promotion-sandbox-order-schema-dry-run-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterSandboxOrderSchemaDryRunStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterSandboxOrderSchemaDryRunConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.dryRunMode)} · {row.orderIntentSummary} ·{" "}
+                  {adapterSandboxOrderSchemaDryRunBoundaryLabel(i18n, row.boundary)} ·{" "}
+                  {row.manifestValidationId ? `${row.manifestValidationId} · ` : ""}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentPaperOrderLifecycleRows.length ? (
+          <div className="promotion-paper-order-lifecycle-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近 paper 订单 lifecycle" : "Recent paper order lifecycle"}</span>
+            {recentPaperOrderLifecycleRows.map((row) => (
+              <article className={`promotion-paper-order-lifecycle-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterPaperOrderLifecycleStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterPaperOrderLifecycleConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} · {row.lifecycleStepSummary} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.lifecycleMode)} · {row.orderIntentSummary} ·{" "}
+                  {adapterPaperOrderLifecycleBoundaryLabel(i18n, row.boundary)} ·{" "}
+                  {row.manifestValidationId ? `${row.manifestValidationId} · ` : ""}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentPaperRouteRunbookRows.length ? (
+          <div className="promotion-paper-route-runbook-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近 paper 路由 runbook" : "Recent paper route runbook"}</span>
+            {recentPaperRouteRunbookRows.map((row) => (
+              <article className={`promotion-paper-route-runbook-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterPaperRouteRunbookStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterPaperRouteRunbookConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} · {row.runbookStepSummary} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.runbookMode)} · {row.orderIntentSummary} ·{" "}
+                  {adapterPaperRouteRunbookBoundaryLabel(i18n, row.boundary)} ·{" "}
+                  {row.manifestValidationId ? `${row.manifestValidationId} · ` : ""}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentAdapterOpsStateRows.length ? (
+          <div className="promotion-adapter-ops-state-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近适配器 ops state" : "Recent adapter ops state"}</span>
+            {recentAdapterOpsStateRows.map((row) => (
+              <article className={`promotion-adapter-ops-state-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterOpsStateStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterOpsStateConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} · {row.opsStepSummary} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.opsMode)} · {row.orderIntentSummary} ·{" "}
+                  {adapterOpsStateBoundaryLabel(i18n, row.boundary)} ·{" "}
+                  {row.manifestValidationId ? `${row.manifestValidationId} · ` : ""}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {recentAdapterPaperExecutionRows.length ? (
+          <div className="promotion-adapter-paper-execution-evidence">
+            <span>{i18n.locale === "zh-CN" ? "最近适配器模拟执行" : "Recent adapter paper execution"}</span>
+            {recentAdapterPaperExecutionRows.map((row) => (
+              <article className={`promotion-adapter-paper-execution-evidence-row ${row.tone}`} key={row.id}>
+                <strong>
+                  {adapterCertificationAdapterName(i18n, row.adapterId)} ·{" "}
+                  {adapterPaperExecutionStatusLabel(i18n, row.statusLabel)}
+                </strong>
+                <p>{adapterPaperExecutionConfirmationSummary(i18n, row.confirmationSummary)}</p>
+                <em>
+                  {adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)} · {row.paperExecutionStepSummary} ·{" "}
+                  {adapterCertificationApplyModeLabel(i18n, row.paperExecutionMode)} · {row.fillSummary} ·{" "}
+                  {adapterPaperExecutionBoundaryLabel(i18n, row.boundary)} ·{" "}
+                  {row.manifestValidationId ? `${row.manifestValidationId} · ` : ""}
+                  {row.auditEventId}
+                </em>
+              </article>
+            ))}
+          </div>
+        ) : null}
         {recentApplyRows.length ? (
           <div className="promotion-certification-apply-evidence">
             <span>{i18n.locale === "zh-CN" ? "最近应用预检证据" : "Recent apply preflight evidence"}</span>
@@ -19432,6 +21685,137 @@ function PromotionQueuePanel({
             ))}
           </div>
         ) : null}
+      </div>
+    </Panel>
+  );
+}
+
+function PreLiveRunbookPanel({
+  auditCoverage,
+  className,
+  i18n,
+  isCopied = false,
+  isRecordingAudit = false,
+  onCopy,
+  onCopyAuditLink,
+  onDownload,
+  onFocusAudit,
+  onRecordAudit,
+  runbook
+}: {
+  auditCoverage: PreLiveRunbookAuditCoverage;
+  className?: string;
+  i18n: AppI18n;
+  isCopied?: boolean;
+  isRecordingAudit?: boolean;
+  onCopy?: () => void;
+  onCopyAuditLink?: () => void;
+  onDownload?: () => void;
+  onFocusAudit?: () => void;
+  onRecordAudit?: () => void;
+  runbook: ExecutionAdapterPreLiveRunbookSummary;
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "实盘前运行手册" : "Pre-live Runbook"}
+      subtitle={i18n.locale === "zh-CN" ? "模拟演练证据链，实盘仍阻断" : "Paper-only evidence chain; live stays blocked"}
+      className={className}
+      action={
+        <div className="pre-live-runbook-actions">
+          {onCopy ? (
+            <button onClick={onCopy} type="button">
+              {isCopied ? <Check size={13} /> : <Copy size={13} />}
+              <span>
+                {isCopied
+                  ? i18n.locale === "zh-CN"
+                    ? "已复制"
+                    : "Copied"
+                  : i18n.locale === "zh-CN"
+                    ? "复制报告"
+                    : "Copy report"}
+              </span>
+            </button>
+          ) : null}
+          {onDownload ? (
+            <button onClick={onDownload} type="button">
+              <Download size={13} />
+              <span>{i18n.locale === "zh-CN" ? "下载" : "Download"}</span>
+            </button>
+          ) : null}
+          {onRecordAudit ? (
+            <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+              <Save size={13} />
+              <span>
+                {isRecordingAudit
+                  ? i18n.locale === "zh-CN"
+                    ? "入账中"
+                    : "Recording"
+                  : i18n.locale === "zh-CN"
+                    ? "审计入账"
+                    : "Audit"}
+              </span>
+            </button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className={`pre-live-runbook ${runbook.status}`}>
+        <div className="pre-live-runbook-summary">
+          <span>{preLiveRunbookStatusLabel(i18n, runbook.status)}</span>
+          <strong>{preLiveRunbookHeadline(i18n, runbook.headline)}</strong>
+          <p>{preLiveRunbookSummaryText(i18n, runbook.summary)}</p>
+          <div className="pre-live-runbook-progress">
+            <em>
+              {runbook.completedSteps}/{runbook.totalSteps}
+            </em>
+            <span>{preLiveRunbookNextStep(i18n, runbook.nextStep)}</span>
+            <small>{preLiveRunbookBoundary(i18n, runbook.boundary)}</small>
+          </div>
+          <div className={`pre-live-runbook-audit ${auditCoverage.status}`}>
+            <span>{preLiveRunbookAuditCoverageStatusLabel(i18n, auditCoverage)}</span>
+            <strong>{preLiveRunbookAuditCoverageHeadline(i18n, auditCoverage)}</strong>
+            <p>{preLiveRunbookAuditCoverageDetail(i18n, auditCoverage.detail)}</p>
+            {auditCoverage.latestEventId || auditCoverage.shortHash || auditCoverage.gateLabel ? (
+              <small className="pre-live-runbook-audit-meta" title={auditCoverage.latestEventId || auditCoverage.query}>
+                {preLiveRunbookAuditCoverageMetaLabel(i18n, auditCoverage)}
+              </small>
+            ) : null}
+            {(auditCoverage.query && (onFocusAudit || onCopyAuditLink)) ||
+            (auditCoverage.status !== "matched" && onRecordAudit) ? (
+              <div className="pre-live-runbook-audit-actions">
+                {onFocusAudit ? (
+                  <button onClick={onFocusAudit} type="button">
+                    <Search size={12} />
+                    <span>{i18n.locale === "zh-CN" ? "定位审计" : "Focus audit"}</span>
+                  </button>
+                ) : null}
+                {onCopyAuditLink ? (
+                  <button onClick={onCopyAuditLink} type="button">
+                    <Copy size={12} />
+                    <span>{i18n.locale === "zh-CN" ? "复制审计链接" : "Copy audit link"}</span>
+                  </button>
+                ) : null}
+                {auditCoverage.status !== "matched" && onRecordAudit ? (
+                  <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+                    {isRecordingAudit ? <Timer size={12} /> : <Save size={12} />}
+                    <span>{preLiveRunbookAuditRecordActionLabel(i18n, auditCoverage.status, isRecordingAudit)}</span>
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="pre-live-runbook-list">
+          {runbook.rows.map((row) => (
+            <article className={`pre-live-runbook-row ${row.tone}`} key={row.id}>
+              <span>{preLiveRunbookStepLabel(i18n, row)}</span>
+              <strong>{preLiveRunbookStepValue(i18n, row)}</strong>
+              <em>{preLiveRunbookStepStatusLabel(i18n, row.status)}</em>
+              <p>{preLiveRunbookStepDetail(i18n, row)}</p>
+              <small>{row.evidenceId ?? preLiveRunbookNextStep(i18n, row.nextStep)}</small>
+            </article>
+          ))}
+        </div>
       </div>
     </Panel>
   );
@@ -19630,6 +22014,281 @@ function promotionCertificationBoundaryLabel(i18n: AppI18n, boundary: string): s
     return boundary;
   }
   return adapterCertificationBoundaryLabel(i18n, boundary);
+}
+
+function preLiveRunbookStatusLabel(i18n: AppI18n, status: ExecutionAdapterPreLiveRunbookSummary["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status.replaceAll("_", " ");
+  }
+  return {
+    blocked: "运行手册阻断",
+    in_progress: "运行手册推进中",
+    paper_rehearsal_ready: "模拟演练就绪"
+  }[status];
+}
+
+function preLiveRunbookAuditCoverageStatusLabel(i18n: AppI18n, coverage: PreLiveRunbookAuditCoverage): string {
+  if (i18n.locale === "en-US") {
+    return coverage.statusLabel;
+  }
+  return {
+    matched: "已审计",
+    missing: "未入账",
+    stale: "需重新入账"
+  }[coverage.status];
+}
+
+function preLiveRunbookAuditCoverageHeadline(i18n: AppI18n, coverage: PreLiveRunbookAuditCoverage): string {
+  if (i18n.locale === "en-US") {
+    return {
+      matched: "Current runbook has matching audit evidence",
+      missing: "No current runbook audit evidence",
+      stale: "Audit evidence is stale"
+    }[coverage.status];
+  }
+  return {
+    matched: "当前运行手册已有匹配审计记录",
+    missing: "当前运行手册还没有审计记录",
+    stale: "审计记录与当前状态不一致"
+  }[coverage.status];
+}
+
+function preLiveRunbookAuditRecordActionLabel(
+  i18n: AppI18n,
+  status: PreLiveRunbookAuditCoverage["status"],
+  isRecording: boolean
+): string {
+  if (isRecording) {
+    return i18n.locale === "zh-CN" ? "入账中" : "Recording";
+  }
+  if (status === "stale") {
+    return i18n.locale === "zh-CN" ? "重新入账" : "Re-audit";
+  }
+  return i18n.locale === "zh-CN" ? "入账报告" : "Record audit";
+}
+
+function preLiveRunbookAuditCoverageDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  const missing = detail.match(/^No audited pre-live runbook report is recorded for (.+)\.$/);
+  if (missing) {
+    return `${missing[1]} 尚未记录实盘前运行手册审计报告。`;
+  }
+  return detail
+    .replace(
+      "Latest audited runbook matches the current adapter context and gate state.",
+      "最新入账运行手册与当前适配器上下文和闸门状态一致。"
+    )
+    .replace(
+      "Latest audited runbook is for this adapter context, but its gate state differs from the current screen.",
+      "最新入账运行手册属于当前适配器上下文，但闸门状态已和当前屏幕不一致。"
+    )
+    .replace(
+      "Latest audited runbook is for this adapter context, but its evidence set differs from the current screen.",
+      "最新入账运行手册属于当前适配器上下文，但底层证据集合已和当前屏幕不一致。"
+    )
+    .replace(
+      "Latest audited runbook is for this adapter context, but its gate state and evidence set differ from the current screen.",
+      "最新入账运行手册属于当前适配器上下文，但闸门状态和底层证据集合都已和当前屏幕不一致。"
+    );
+}
+
+function preLiveRunbookAuditCoverageMetaLabel(i18n: AppI18n, coverage: PreLiveRunbookAuditCoverage): string {
+  const gateLabel =
+    coverage.currentGateLabel && coverage.currentGateLabel !== coverage.gateLabel
+      ? preLiveRunbookGateComparisonLabel(i18n, coverage.gateLabel, coverage.currentGateLabel)
+      : coverage.gateLabel
+        ? preLiveRunbookGateLabel(i18n, coverage.gateLabel)
+        : "";
+  const parts = [
+    coverage.mismatchLabel ? preLiveRunbookMismatchLabel(i18n, coverage.mismatchLabel) : "",
+    gateLabel,
+    coverage.shortHash ? `sha256 ${coverage.shortHash}` : "",
+    coverage.latestEventId
+  ].filter(Boolean);
+  const prefix = i18n.locale === "zh-CN" ? "审计证据" : "Audit evidence";
+  return parts.length ? `${prefix} · ${parts.join(" · ")}` : prefix;
+}
+
+function preLiveRunbookMismatchLabel(i18n: AppI18n, mismatchLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return `Mismatch ${mismatchLabel}`;
+  }
+  return `差异 ${mismatchLabel
+    .replaceAll("status", "状态")
+    .replaceAll("next step", "下一步")
+    .replaceAll("gates", "闸门")
+    .replaceAll("evidence ids", "证据 ID")
+    .replaceAll("changed", "已变化")
+    .replaceAll("removed", "移除")
+    .replaceAll("added", "新增")}`;
+}
+
+function preLiveRunbookGateComparisonLabel(i18n: AppI18n, auditedGateLabel: string, currentGateLabel: string): string {
+  const audited = preLiveRunbookGateLabel(i18n, auditedGateLabel);
+  const current = preLiveRunbookGateLabel(i18n, currentGateLabel);
+  return i18n.locale === "zh-CN" ? `入账 ${audited} · 当前 ${current}` : `audited ${audited} · current ${current}`;
+}
+
+function preLiveRunbookGateLabel(i18n: AppI18n, gateLabel: string): string {
+  if (i18n.locale === "en-US") {
+    return gateLabel;
+  }
+  const gateMatch = gateLabel.match(/^(\d+)\/(\d+) gates$/);
+  if (gateMatch) {
+    return `${gateMatch[1]}/${gateMatch[2]} 闸门`;
+  }
+  return gateLabel;
+}
+
+function preLiveRunbookStepStatusLabel(
+  i18n: AppI18n,
+  status: ExecutionAdapterPreLiveRunbookStep["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { blocked: "阻断", passed: "通过", review: "复核" }[status];
+}
+
+function preLiveRunbookHeadline(i18n: AppI18n, headline: string): string {
+  if (i18n.locale === "en-US") {
+    return headline;
+  }
+  return {
+    "Paper rehearsal complete": "模拟演练证据链完成",
+    "Pre-live runbook blocked": "实盘前运行手册阻断",
+    "Pre-live runbook in progress": "实盘前运行手册推进中"
+  }[headline] ?? headline;
+}
+
+function preLiveRunbookSummaryText(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  const ready = summary.match(/^(.+) has a complete paper-only pre-live rehearsal chain\. Live routing is still blocked\.$/);
+  if (ready) {
+    return `${ready[1]} 已完成实盘前模拟演练证据链；实盘路由仍保持阻断。`;
+  }
+  const progress = summary.match(/^(.+) has (\d+)\/(\d+) pre-live runbook gates complete\.$/);
+  if (progress) {
+    return `${progress[1]} 已完成 ${progress[2]}/${progress[3]} 个实盘前运行手册闸门。`;
+  }
+  return summary;
+}
+
+function preLiveRunbookStepLabel(i18n: AppI18n, row: ExecutionAdapterPreLiveRunbookStep): string {
+  if (i18n.locale === "en-US") {
+    return row.label;
+  }
+  return {
+    "adapter-state": "适配器状态账本",
+    "adapter-certification": "适配器认证",
+    "human-confirmation": "最终人工确认",
+    "paper-rehearsal": "模拟路由演练",
+    "route-review-health": "路由复核与只读健康检查",
+    "runtime-acceptance": "运行时重载验收",
+    "secret-manifest": "密钥清单验证"
+  }[row.id];
+}
+
+function preLiveRunbookStepValue(i18n: AppI18n, row: ExecutionAdapterPreLiveRunbookStep): string {
+  if (i18n.locale === "en-US") {
+    return row.value;
+  }
+  return preLiveRunbookTranslateEvidenceText(row.value)
+    .replace("Live route blocked", "实盘路由已阻断")
+    .replace("No adapter state", "缺少适配器状态")
+    .replace("No certification", "缺少认证")
+    .replace("No manifest validation", "缺少清单验证")
+    .replace("No runtime acceptance", "缺少运行时验收")
+    .replace("No human confirmation", "缺少人工确认")
+    .replace("No route review", "缺少路由复核")
+    .replace("Route review recorded · health probe missing", "路由复核已记录 · 缺少健康探针")
+    .replace("Route review + health ready", "路由复核与健康探针就绪")
+    .replace("No paper rehearsal evidence", "缺少模拟演练证据");
+}
+
+function preLiveRunbookStepDetail(i18n: AppI18n, row: ExecutionAdapterPreLiveRunbookStep): string {
+  if (i18n.locale === "en-US") {
+    return row.detail;
+  }
+  return preLiveRunbookTranslateEvidenceText(row.detail);
+}
+
+function preLiveRunbookNextStep(i18n: AppI18n, nextStep: string): string {
+  if (i18n.locale === "en-US") {
+    return nextStep;
+  }
+  return {
+    "Continue paper-only certification chain": "继续模拟优先的认证链",
+    "Record adapter certification evidence": "记录适配器认证证据",
+    "Record adapter ops state": "记录适配器 ops state",
+    "Record adapter paper execution": "记录适配器模拟执行",
+    "Record final human confirmation": "记录最终人工确认",
+    "Record paper order lifecycle": "记录模拟订单生命周期",
+    "Record paper route runbook": "记录模拟路由运行手册",
+    "Record production route review": "记录生产路由复核",
+    "Record production route review and read-only health probe": "记录生产路由复核与只读健康探针",
+    "Record runtime reload final acceptance": "记录运行时重载最终验收",
+    "Record sandbox order schema dry-run": "记录 sandbox 订单 schema dry-run",
+    "Refresh adapter state ledger in Settings": "在设置中刷新适配器状态账本",
+    "Regenerate adapter paper execution without order submission or route execution": "重新生成不提交订单、不执行路由的模拟执行证据",
+    "Resolve read-only health probe review items": "处理只读健康探针复核项",
+    "Review paper rehearsal evidence before any separate live-route enablement": "单独启用实盘路由前，先复核模拟演练证据",
+    "Run read-only adapter health probe": "运行只读适配器健康探针",
+    "Validate local secret-store manifest": "验证本地密钥存储清单"
+  }[nextStep] ?? nextStep;
+}
+
+function preLiveRunbookBoundary(i18n: AppI18n, boundary: string): string {
+  if (i18n.locale === "en-US") {
+    return boundary;
+  }
+  return preLiveRunbookTranslateEvidenceText(boundary);
+}
+
+function preLiveRunbookTranslateEvidenceText(text: string): string {
+  return text
+    .replaceAll("Paper-only rehearsal · live routing remains blocked", "仅模拟演练 · 实盘路由仍阻断")
+    .replaceAll("Live execution remains blocked until gates pass.", "闸门通过前，实盘执行保持阻断。")
+    .replaceAll("Paper only · live trading blocked", "仅模拟 · 实盘交易阻断")
+    .replaceAll("Paper only · order routing disabled", "仅模拟 · 订单路由禁用")
+    .replaceAll("Paper execution recorded · simulated fill only · live route blocked", "模拟执行已记录 · 仅模拟成交 · 实盘路由阻断")
+    .replaceAll("No order submitted · paper only · live trading blocked", "未提交订单 · 仅模拟 · 实盘交易阻断")
+    .replaceAll("Paper lifecycle recorded · no live order submitted · live trading blocked", "模拟生命周期已记录 · 未提交实盘订单 · 实盘交易阻断")
+    .replaceAll("No sandbox order schema dry-run is bound to the paper rehearsal chain.", "模拟演练链尚未绑定 sandbox 订单 schema dry-run。")
+    .replaceAll("No live adapter certification evidence is bound", "尚未绑定实盘适配器认证证据")
+    .replaceAll("No validated local secret-store manifest is bound.", "尚未绑定已验证的本地密钥存储清单。")
+    .replaceAll("Runtime reload final acceptance has not been recorded.", "尚未记录运行时重载最终验收。")
+    .replaceAll("Final human confirmation has not been recorded.", "尚未记录最终人工确认。")
+    .replaceAll("Production route review has not been recorded.", "尚未记录生产路由复核。")
+    .replaceAll("Live trading is already allowed; pre-live runbook refuses to treat this as paper-only evidence.", "实盘交易已允许；实盘前运行手册不会把它视为模拟证据。")
+    .replaceAll("Settings has not loaded a live adapter state ledger", "设置尚未加载实盘适配器状态账本")
+    .replaceAll("Passed", "通过")
+    .replaceAll("Validated", "已验证")
+    .replaceAll("Acceptance recorded", "验收已记录")
+    .replaceAll("Confirmation recorded", "确认已记录")
+    .replaceAll("Route review recorded", "路由复核已记录")
+    .replaceAll("Ready", "就绪")
+    .replaceAll("Paper execution recorded", "模拟执行已记录")
+    .replaceAll("Schema dry-run recorded", "schema dry-run 已记录")
+    .replaceAll("Lifecycle recorded", "生命周期已记录")
+    .replaceAll("Runbook recorded", "运行手册已记录")
+    .replaceAll("Ops state recorded", "ops state 已记录")
+    .replaceAll("No blockers", "无阻断项")
+    .replaceAll("confirmed / 0 missing", "项已确认 / 0 项缺失")
+    .replaceAll("passed / 0 review / 0 blocked", "项通过 / 0 项复核 / 0 项阻断")
+    .replaceAll("passed / 0 blocked / 0 failed / 0 review", "项通过 / 0 项阻断 / 0 项失败 / 0 项复核")
+    .replaceAll("filled buy", "模拟买入成交")
+    .replaceAll("local paper fill", "本地模拟成交")
+    .replaceAll("live route blocked", "实盘路由阻断")
+    .replaceAll("live trading blocked", "实盘交易阻断")
+    .replaceAll("order routing disabled", "订单路由禁用")
+    .replaceAll("gates", "个闸门")
+    .replaceAll("env vars covered", "个环境变量已覆盖")
+    .replaceAll("markets", "个市场");
 }
 
 function scannerSignalLabel(i18n: AppI18n, signal: ScannerCandidate["signal"]): string {

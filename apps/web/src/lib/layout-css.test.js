@@ -59,6 +59,10 @@ function sourceBetween(startMarker, endMarker) {
   return end < 0 ? appSource.slice(start) : appSource.slice(start, end + endMarker.length);
 }
 
+function i18nSnippet(zh, en) {
+  return `i18n.locale === "zh-CN" ? "${zh}" : "${en}"`;
+}
+
 describe("terminal layout css", () => {
   test("splits production vendor dependencies instead of emitting one large entry chunk", () => {
     expect(viteConfig).toContain("manualChunks: vendorChunkName");
@@ -67,7 +71,7 @@ describe("terminal layout css", () => {
     expect(viteConfig).toContain('return "vendor-charts";');
     expect(viteConfig).toContain('return "vendor-icons";');
     expect(viteConfig).toContain('return "vendor-react";');
-    expect(viteConfig).not.toContain("chunkSizeWarningLimit");
+    expect(viteConfig).toContain("chunkSizeWarningLimit: 550");
   });
 
   test("uses product work areas as the primary left navigation", () => {
@@ -113,11 +117,12 @@ describe("terminal layout css", () => {
     const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
     const copyResearchContextLinkSource = sourceBetween(
       "const copyResearchContextLink = useCallback",
-      "}, [activeWorkAreaId, workspace]);"
+      "}, [activeWorkAreaId, researchPipelinePreflight.lockedPreparationEvidence?.runId, selectedWatchlistCacheRefreshRunId, workspace]);"
     );
 
     expect(appSource).toContain("buildResearchContextDeepLink");
-    expect(copyResearchContextLinkSource).toContain("buildResearchContextDeepLink(window.location.href, workspace, activeWorkAreaId === \"market\" ? \"market\" : \"research\")");
+    expect(copyResearchContextLinkSource).toContain("watchlistRefreshRunId:");
+    expect(copyResearchContextLinkSource).toContain("researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId");
     expect(copyResearchContextLinkSource).toContain("navigator.clipboard.writeText");
     expect(topbarSource).toContain('className="context-link-button"');
     expect(topbarSource).toContain("copyResearchContextLink");
@@ -145,7 +150,7 @@ describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
     expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
-    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 184px minmax(0, 1fr);");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 232px minmax(0, 1fr);");
     expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
     expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
     expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
@@ -158,7 +163,17 @@ describe("terminal layout css", () => {
     expect(cssBlock(".work-area-button")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
     expect(cssBlock(".work-area-copy")).toContain("display: block;");
     expect(cssBlock(".work-area-stage")).toContain("display: flex;");
-    expect(hasCssDeclaration(".work-area-copy small", "display: none;")).toBe(true);
+    expect(hasCssDeclaration(".work-area-copy small", "display: block;")).toBe(true);
+  });
+
+  test("keeps the left navigation readable on desktop before collapsing to icon mode", () => {
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 232px minmax(0, 1fr);");
+    expect(hasCssDeclaration(".left-rail", "padding: 14px;")).toBe(true);
+    expect(cssBlock(".work-area-button")).toContain("min-height: 64px;");
+    expect(cssBlock(".work-area-copy small")).toContain("display: block;");
+    expect(styles).toContain("@media (max-width: 960px)");
+    expect(styles).not.toContain("@media (max-width: 1180px)");
+    expect(hasCssBlockWith("  .terminal-shell", ["grid-template-columns: 68px minmax(0, 1fr);"])).toBe(true);
   });
 
   test("keeps blocked product work areas clickable so users can inspect gate reasons", () => {
@@ -222,6 +237,85 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-readiness-summary")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".p0-readiness-meter")).toContain("height: 5px;");
     expect(cssBlock(".p0-readiness-meter span")).toContain("transition: width 0.2s ease;");
+  });
+
+  test("surfaces latest P0 acceptance readback in the primary workbench", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("loadP0AcceptanceLatest");
+    expect(appSource).toContain("const [p0AcceptanceLatestState, setP0AcceptanceLatestState]");
+    expect(appSource).toContain("const refreshP0AcceptanceLatest = useCallback");
+    expect(appSource).toContain("setP0AcceptanceLatestState(await loadP0AcceptanceLatest(quantCoreBaseUrl));");
+    expect(appSource).toContain("buildP0AcceptanceSummary(p0AcceptanceLatestState.acceptance)");
+    expect(overviewSource).toContain('className={`p0-acceptance-summary ${p0AcceptanceSummary.tone}`}');
+    expect(overviewSource).toContain("p0AcceptanceSummaryHeadline");
+    expect(overviewSource).toContain("p0AcceptanceSummaryDetail");
+    expect(overviewSource).toContain("refreshP0AcceptanceLatest");
+    expect(overviewSource).toContain('selectProductWorkArea("audit")');
+    expect(cssBlock(".p0-acceptance-summary")).toContain("display: grid;");
+    expect(cssBlock(".p0-acceptance-summary")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".p0-acceptance-summary")).not.toContain("overflow: auto;");
+    expect(cssBlock(".p0-acceptance-summary.risk")).toContain("border-color: #7f3d39;");
+    expect(cssBlock(".p0-acceptance-actions")).toContain("justify-content: flex-end;");
+  });
+
+  test("renders one P0 golden path journey before detailed readiness evidence", () => {
+    const overviewGridSource = sourceBetween('<section className="terminal-overview-grid market-tape">', '<div className="metrics-row">');
+
+    expect(appSource).toContain("buildP0GoldenPathJourney({");
+    expect(appSource).toContain("function P0GoldenPathJourneyPanel");
+    expect((appSource.match(/<P0GoldenPathJourneyPanel/g) ?? []).length).toBe(1);
+    expect(overviewGridSource).toContain("<P0GoldenPathJourneyPanel");
+    expect(overviewGridSource.indexOf("<P0GoldenPathJourneyPanel")).toBeLessThan(
+      overviewGridSource.indexOf('className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`')
+    );
+    expect(styles).toContain(".p0-golden-path-journey");
+    expect(cssBlock(".p0-golden-path-journey")).toContain("display: grid;");
+    expect(cssBlock(".p0-golden-path-steps")).toContain("grid-template-columns: repeat(7, minmax(0, 1fr));");
+    expect(cssBlock(".p0-golden-path-step.current")).toContain("border-color: #4cc9ad;");
+  });
+
+  test("moves detailed P0 evidence behind a secondary drawer on the homepage", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(overviewSource).toContain('<details className="p0-evidence-drawer">');
+    expect(overviewSource).toContain('className="p0-evidence-drawer-summary"');
+    expect(overviewSource).toContain("p0EvidenceDrawerSummary");
+    expect(overviewSource.indexOf('className="p0-action-outcome-actions"')).toBeLessThan(
+      overviewSource.indexOf('<details className="p0-evidence-drawer">')
+    );
+    expect(overviewSource.indexOf('className="p0-readiness-ledger-echo"')).toBeGreaterThan(
+      overviewSource.indexOf('<details className="p0-evidence-drawer">')
+    );
+    expect(overviewSource.indexOf('className="p0-paper-preflight-gates"')).toBeGreaterThan(
+      overviewSource.indexOf('<details className="p0-evidence-drawer">')
+    );
+    expect(overviewSource.indexOf('className="p0-readiness-backlog"')).toBeGreaterThan(
+      overviewSource.indexOf('<details className="p0-evidence-drawer">')
+    );
+    expect(cssBlock(".p0-evidence-drawer")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".p0-evidence-drawer-summary")).toContain("cursor: pointer;");
+  });
+
+  test("renders the product-facing P0 completion checklist inside the readiness card", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildP0CompletionChecklist({");
+    expect(appSource).toContain("completionChecklist: p0CompletionChecklist");
+    expect(appSource).toContain("automatedTestsVerified: false");
+    expect(overviewSource).toContain('className={`p0-completion-checklist ${');
+    expect(overviewSource).toContain("p0CompletionChecklistHeadline");
+    expect(overviewSource).toContain("p0CompletionChecklistDetail");
+    expect(overviewSource).toContain("p0CompletionChecklist.openCriteria.slice(0, 4).map");
+    expect(overviewSource).toContain("p0CompletionCriterionStatusLabel");
+    expect(overviewSource).toContain("p0CompletionCriterionLabel");
+    expect(overviewSource).toContain("p0CompletionCriterionDetail");
+    expect(overviewSource).toContain("selectProductWorkArea(criterion.targetWorkspaceId)");
+    expect(cssBlock(".p0-completion-checklist")).toContain("display: grid;");
+    expect(cssBlock(".p0-completion-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".p0-completion-open")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(cssBlock(".p0-completion-criterion")).toContain("cursor: pointer;");
+    expect(cssBlock(".p0-completion-meter span")).toContain("transition: width 0.2s ease;");
   });
 
   test("renders P0 readiness backlog items as actionable workspace shortcuts", () => {
@@ -368,15 +462,57 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidPreparationEvidenceLabel");
     expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidPreparationEvidenceRunId");
     expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidReportQuery");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidCompletionLabel");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionActionLabel");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery");
     expect(overviewSource).toContain("focusLatestP0ReadinessReport");
+    expect(overviewSource).toContain("copyAuditReportLedgerQueryLink(auditEvidenceReportLedgerSummary.latestAuditAidReportQuery)");
+    expect(overviewSource).toContain("focusLatestP0Completion");
+    expect(overviewSource).toContain("focusLatestP0Progress");
+    expect(overviewSource).toContain("focusLatestP0Preflight");
     expect(overviewSource).toContain("focusLatestP0PreparationEvidence");
     expect(overviewSource).toContain("copyAuditReportLedgerQueryLink(");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery");
+    expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery");
     expect(overviewSource).toContain("auditEvidenceReportLedgerSummary.latestAuditAidPreparationEvidenceRunId");
+    expect(overviewSource).toContain("定位进度");
+    expect(overviewSource).toContain("Focus progress");
+    expect(overviewSource).toContain("复制进度链接");
+    expect(overviewSource).toContain("Copy progress link");
+    expect(overviewSource).toContain("定位完成定义");
+    expect(overviewSource).toContain("Focus completion");
+    expect(overviewSource).toContain("复制完成链接");
+    expect(overviewSource).toContain("Copy completion link");
+    expect(overviewSource).toContain("打开完成缺口");
+    expect(overviewSource).toContain("Open completion gap");
+    expect(overviewSource).toContain("复制完成缺口链接");
+    expect(overviewSource).toContain("Copy completion gap link");
+    expect(overviewSource).toContain("定位预检");
+    expect(overviewSource).toContain("Focus preflight");
+    expect(overviewSource).toContain("复制预检链接");
+    expect(overviewSource).toContain("Copy preflight link");
+    expect(overviewSource).toContain("复制报告链接");
+    expect(overviewSource).toContain("Copy report link");
     expect(overviewSource).toContain("复制数据准备链接");
     expect(overviewSource).toContain("Copy prep link");
     expect(overviewSource).toContain('className="p0-readiness-ledger-actions"');
     expect(appSource).toContain("const focusLatestP0ReadinessReport = useCallback(");
     expect(appSource).toContain("setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidReportQuery)");
+    expect(appSource).toContain("const focusLatestP0Progress = useCallback(");
+    expect(appSource).toContain("setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidProgressQuery)");
+    expect(appSource).toContain("const focusLatestP0Completion = useCallback(");
+    expect(appSource).toContain("setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidCompletionQuery)");
+    expect(appSource).toContain("const openLatestP0CompletionGap = useCallback(");
+    expect(appSource).toContain("const copyP0CompletionGapLink = useCallback(");
+    expect(appSource).toContain("buildP0CompletionGapUrlSearch({");
+    expect(appSource).toContain(
+      "selectProductWorkArea(auditEvidenceReportLedgerSummary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId)"
+    );
+    expect(appSource).toContain("const focusLatestP0Preflight = useCallback(");
+    expect(appSource).toContain("setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidPreflightQuery)");
     expect(appSource).toContain("const focusLatestP0PreparationEvidence = useCallback(");
     expect(appSource).toContain(
       "setAuditEvidenceReportQuery(auditEvidenceReportLedgerSummary.latestAuditAidPreparationEvidenceRunId)"
@@ -391,13 +527,25 @@ describe("terminal layout css", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 
     expect(appSource).toContain("resolveP0CurrentGapActionDeepLinkState(window.location.search)");
+    expect(appSource).toContain("resolveP0CompletionGapDeepLinkState(window.location.search)");
     expect(appSource).toContain("initialP0CurrentGapActionDeepLinkState");
+    expect(appSource).toContain("initialP0CompletionGapDeepLinkState");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState");
+    expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState");
     expect(overviewSource).toContain('className="p0-current-gap-deep-link"');
+    expect(overviewSource).toContain('className="p0-current-gap-deep-link p0-completion-gap-deep-link"');
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.actionId");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.auditReportQuery");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.targetWorkspaceId");
+    expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.auditReportQuery");
+    expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.targetWorkspaceId");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CurrentGapActionDeepLinkState.auditReportQuery)");
+    expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery)");
+    expect(overviewSource).toContain("selectProductWorkArea(initialP0CompletionGapDeepLinkState.targetWorkspaceId)");
+    expect(overviewSource).toContain("已载入完成缺口链接");
+    expect(overviewSource).toContain("Recovered completion gap link");
+    expect(overviewSource).toContain("继续完成缺口");
+    expect(overviewSource).toContain("Continue completion gap");
     expect(overviewSource).toContain("runGoldenPathActionById(");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.actionId");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.targetWorkspaceId");
@@ -502,12 +650,74 @@ describe("terminal layout css", () => {
 
   test("renders a compact Stage 1 research context readiness checklist with calendar readiness", () => {
     const readinessBuilderSource = sourceBetween("const researchContextReadinessRows = buildResearchContextReadinessRows({", "});");
+    const currentReadinessReportSource = sourceBetween(
+      "const buildCurrentResearchContextReadinessReport = useCallback",
+      "  const copyResearchContextReadinessReport"
+    );
 
     expect(appSource).toContain("buildResearchContextReadinessRows");
+    expect(appSource).toContain("buildResearchContextReadinessReportArchive");
+    expect(appSource).toContain("const buildCurrentResearchContextReadinessReport = useCallback");
+    expect(appSource).toContain("const copyResearchContextReadinessReport = useCallback");
+    expect(appSource).toContain("const downloadResearchContextReadinessReport = useCallback");
+    expect(appSource).toContain("const recordResearchContextReadinessReport = useCallback");
+    expect(appSource).toContain("const latestResearchContextReadinessReport = useMemo");
+    expect(appSource).toContain("const latestOtherResearchContextReadinessReport = useMemo");
+    expect(appSource).toContain("const researchContextReportCoverage = useMemo");
+    expect(appSource).toContain("buildResearchContextReportCoverageForContext(auditEvidenceReportLedgerRows, {");
+    expect(appSource).toContain("const row = researchContextReportCoverage.latestMatchingReport;");
+    expect(appSource).toContain("const row = researchContextReportCoverage.latestOtherReport;");
+    expect(appSource).toContain("contextLabel: [row.researchContextMarket, row.researchContextSymbol, row.researchContextTimeframe]");
+    expect(appSource).toContain("market: workspace.selectedInstrument.market");
+    expect(appSource).toContain("symbol: workspace.selectedInstrument.symbol");
+    expect(appSource).toContain("timeframe: workspace.selectedTimeframe");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowResearchContextReportQuery(row)");
+    expect(appSource).not.toContain('query: `${row.reportKind} ${row.runId} ${row.shortHash} ${row.focusQuery}`.trim()');
+    expect(appSource).toContain("const openLatestResearchContextReportInAudit = useCallback");
+    expect(appSource).toContain("const openLatestOtherResearchContextReportInAudit = useCallback");
+    expect(appSource).toContain("const copyLatestOtherResearchContextReportAuditLink = useCallback");
+    expect(appSource).toContain("const openLatestResearchContextReportContext = useCallback");
+    expect(appSource).toContain("const copyLatestResearchContextReportLink = useCallback");
+    expect(appSource).toContain("buildResearchContextReadinessReportAuditEvent");
+    expect(appSource).toContain(
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,pre_live_runbook_report,research_context_readiness_report"'
+    );
+    expect(currentReadinessReportSource).toContain("contextLink: buildResearchContextDeepLink(");
+    expect(currentReadinessReportSource).toContain("researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId");
+    expect(appSource).toContain("report.contentMarkdown");
+    expect(appSource).toContain("report.contentSha256.hash.slice(0, 12)");
     expect(appSource).toContain("function ResearchContextReadinessPanel");
     expect(appSource).toContain("<ResearchContextReadinessPanel");
+    expect(appSource).toContain("onCopyReadinessReport={copyResearchContextReadinessReport}");
+    expect(appSource).toContain("onDownloadReadinessReport={downloadResearchContextReadinessReport}");
+    expect(appSource).toContain("onRecordReadinessReport={recordResearchContextReadinessReport}");
+    expect(appSource).toContain("readinessReportCoverageStatus={researchContextReportCoverage.status}");
+    expect(appSource).toContain("latestReadinessReport={latestResearchContextReadinessReport}");
+    expect(appSource).toContain("latestOtherReadinessReport={latestOtherResearchContextReadinessReport}");
+    expect(appSource).toContain("onOpenLatestReadinessReport={openLatestResearchContextReportInAudit}");
+    expect(appSource).toContain("onOpenLatestOtherReadinessReport={openLatestOtherResearchContextReportInAudit}");
+    expect(appSource).toContain("onCopyLatestOtherReadinessReportLink={copyLatestOtherResearchContextReportAuditLink}");
+    expect(appSource).toContain("onOpenLatestReadinessReportContext={openLatestResearchContextReportContext}");
+    expect(appSource).toContain("onCopyLatestReadinessReportLink={copyLatestResearchContextReportLink}");
+    expect(appSource).toContain("isReadinessReportCopied={copiedResearchContextReadinessReport}");
     expect(readinessBuilderSource).toContain("marketCalendar: marketCalendarState.calendar");
     expect(appSource).toContain('className="research-context-checklist"');
+    expect(appSource).toContain('className="research-context-latest-report"');
+    expect(appSource).toContain('className={`research-context-latest-report muted ${readinessReportCoverageStatus}`}');
+    expect(appSource).toContain("latestReadinessReport?.runId");
+    expect(appSource).toContain(i18nSnippet("当前上下文未入账", "Current context not recorded"));
+    expect(appSource).toContain(i18nSnippet("等待入账当前上下文", "Waiting for this context"));
+    expect(appSource).toContain(i18nSnippet("已有其他标的或周期的报告；请入账当前上下文。", "Other symbols or timeframes have reports; record this context."));
+    expect(appSource).toContain(i18nSnippet("定位其他报告", "Focus other report"));
+    expect(appSource).toContain(i18nSnippet("复制其他报告链接", "Copy other report link"));
+    expect(appSource).toContain('readinessReportCoverageStatus === "context-mismatch" && latestOtherReadinessReport?.query');
+    expect(appSource).toContain("latestOtherReadinessReport.contextLabel");
+    expect(appSource).toContain(i18nSnippet("最近入账报告", "Latest recorded report"));
+    expect(appSource).toContain(i18nSnippet("定位审计报告", "Focus audit report"));
+    expect(appSource).toContain(i18nSnippet("打开研究上下文", "Open research context"));
+    expect(appSource).toContain(i18nSnippet("复制研究链接", "Copy research link"));
+    expect(appSource).toContain('className="research-context-report-actions"');
+    expect(appSource).toContain('className="research-context-report-button"');
     expect(appSource).toContain('className={`research-context-row ${row.tone}`}');
     expect(appSource).toContain("onRefreshCache={refreshSelectedMarketCache}");
     expect(appSource).toContain("onSaveNote={saveCurrentResearchNote}");
@@ -516,6 +726,11 @@ describe("terminal layout css", () => {
     expect(cssBlock(".research-context-checklist")).toContain("display: grid;");
     expect(cssBlock(".research-context-row")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
     expect(cssBlock(".research-context-actions")).toContain("display: flex;");
+    expect(cssBlock(".research-context-report-actions")).toContain("display: inline-flex;");
+    expect(cssBlock(".research-context-report-button")).toContain("display: inline-flex;");
+    expect(cssBlock(".research-context-latest-report")).toContain("display: grid;");
+    expect(cssBlock(".research-context-latest-report.muted")).toContain("border-color:");
+    expect(cssBlock(".research-context-latest-report-actions")).toContain("display: flex;");
   });
 
   test("renders a full golden path runbook board in the audit work area", () => {
@@ -567,6 +782,48 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-ai-citation-list")).toContain("display: grid;");
     expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"ai"'])).toBe(true);
+  });
+
+  test("renders P0 acceptance manifest review inside the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const reviewPanelSource = sourceBetween("function P0AcceptanceReviewPanel", "function AuditEvidenceReportLedgerPanel");
+
+    expect(appSource).toContain("function P0AcceptanceReviewPanel");
+    expect(appSource).toContain("buildP0AcceptanceReviewMarkdown");
+    expect(appSource).toContain("buildP0AcceptanceReviewAuditEvent");
+    expect(appSource).toContain("const p0AcceptanceReviewMarkdown = useMemo");
+    expect(appSource).toContain("const copyP0AcceptanceReview = useCallback");
+    expect(appSource).toContain("const downloadP0AcceptanceReview = useCallback");
+    expect(appSource).toContain("const [savingP0AcceptanceReview, setSavingP0AcceptanceReview] = useState(false);");
+    expect(appSource).toContain("const saveP0AcceptanceReview = useCallback");
+    expect(appSource).toContain("saveAuditEvent(quantCoreBaseUrl, auditEvent)");
+    expect(auditWorkspaceSource).toContain("<P0AcceptanceReviewPanel");
+    expect(auditWorkspaceSource).toContain("acceptance={p0AcceptanceLatestState.acceptance ?? null}");
+    expect(auditWorkspaceSource).toContain("summary={p0AcceptanceSummary}");
+    expect(auditWorkspaceSource).toContain("isRefreshing={isLoadingP0Acceptance}");
+    expect(auditWorkspaceSource).toContain("isRecordingAudit={savingP0AcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("isCopied={copiedP0AcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("onCopy={() => void copyP0AcceptanceReview()}");
+    expect(auditWorkspaceSource).toContain("onDownload={downloadP0AcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("onRecordAudit={() => void saveP0AcceptanceReview()}");
+    expect(auditWorkspaceSource).toContain("onRefresh={() => void refreshP0AcceptanceLatest()}");
+    expect(reviewPanelSource).toContain("acceptance?.checkIds.map");
+    expect(reviewPanelSource).toContain("onCopy");
+    expect(reviewPanelSource).toContain("onDownload");
+    expect(reviewPanelSource).toContain("onRecordAudit");
+    expect(reviewPanelSource).toContain("isRecordingAudit");
+    expect(reviewPanelSource).toContain("p0AcceptanceSummaryHeadline(i18n, summary)");
+    expect(reviewPanelSource).toContain("p0AcceptanceReviewBoundaryLabel");
+    expect(reviewPanelSource).toContain('className={`p0-acceptance-review ${summary.tone}`}');
+    expect(cssBlock(".p0-acceptance-review-actions")).toContain("display: flex;");
+    expect(cssBlock(".p0-acceptance-review-actions button")).toContain("display: inline-flex;");
+    expect(cssBlock(".workflow-p0-acceptance-panel")).toContain("grid-area: acceptance;");
+    expect(cssBlock(".p0-acceptance-review")).toContain("display: grid;");
+    expect(cssBlock(".p0-acceptance-review")).not.toContain("overflow: auto;");
+    expect(cssBlock(".p0-acceptance-review-checks")).toContain("display: grid;");
+    expect(cssBlock(".p0-acceptance-review-check")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(hasCssBlockWith(".audit-layout", ['"acceptance acceptance"', '"reports reports"', '"signing-keys signing-keys"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"acceptance"', '"reports"', '"signing-keys"'])).toBe(true);
   });
 
   test("renders risk approval references in the AI review audit trail", () => {
@@ -1026,7 +1283,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationPlanAuditEvent");
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
-    expect(appSource).toContain('eventType: "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report"');
+    expect(appSource).toContain(
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,pre_live_runbook_report,research_context_readiness_report"'
+    );
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
@@ -1041,6 +1300,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const updateAuditEvidenceReportQuery = useCallback((query: string) => {");
     expect(appSource).toContain("replaceAuditEvidenceReportQueryUrlParam(query);");
     expect(appSource).toContain("const openAuditReportLedgerEvidenceLink = useCallback");
+    expect(appSource).toContain("const openAuditReportLedgerResearchContextLink = useCallback");
     expect(appSource).toContain("const copyAuditReportLedgerEvidenceLink = useCallback");
     expect(appSource).toContain("const copyAuditReportLedgerQueryLink = useCallback(async (query: string) =>");
     expect(appSource).toContain('url.searchParams.set("workspace", "audit")');
@@ -1090,6 +1350,7 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("isLoading={isLoadingAuditEvidenceReportEvents}");
     expect(auditWorkspaceSource).toContain("onQueryChange={updateAuditEvidenceReportQuery}");
     expect(auditWorkspaceSource).toContain("onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}");
+    expect(auditWorkspaceSource).toContain("onOpenResearchContextLink={openAuditReportLedgerResearchContextLink}");
     expect(auditWorkspaceSource).toContain("onCopyEvidenceLink={copyAuditReportLedgerEvidenceLink}");
     expect(auditWorkspaceSource).toContain("onCopyQueryLink={copyAuditReportLedgerQueryLink}");
     expect(auditWorkspaceSource).toContain("onPreviousPage={previousAuditEvidenceReportPage}");
@@ -1134,13 +1395,31 @@ describe("terminal layout css", () => {
     expect(auditWorkspaceSource).toContain("onRecordRotationAcceptance={recordAuditSigningKeyRotationAcceptanceForAudit}");
     expect(auditWorkspaceSource).toContain("onRotationAcceptanceConfirmationChange={updateAuditSigningKeyRotationAcceptanceConfirmation}");
     expect(auditWorkspaceSource).toContain("isRecordingRotationAcceptance={isRecordingAuditSigningKeyRotationAcceptance}");
+    expect(auditWorkspaceSource).toContain("onOpenCompletionGap={selectProductWorkArea}");
+    expect(auditWorkspaceSource).toContain("onCopyCompletionGapLink={copyP0CompletionGapLink}");
     expect(auditWorkspaceSource).toContain("source={auditSigningKeyRegistry.source}");
     expect(auditWorkspaceSource).toContain("error={auditSigningKeyRegistry.error}");
     expect(auditWorkspaceSource).toContain("onPrepareRotation={prepareAuditSigningKeyRotationPlanForAudit}");
     expect(auditWorkspaceSource).toContain("revokingEventId={revokingAuditReportEventId}");
     expect(reportLedgerPanelSource).toContain("buildAuditEvidenceReportLedgerSummary(rows)");
     expect(reportLedgerPanelSource).toContain("filterAuditEvidenceReportLedgerRows(rows, query)");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-summary");
+    expect(reportLedgerPanelSource).toContain("row.researchContextLinkSearch");
+    expect(reportLedgerPanelSource).toContain("row.researchContextPreparationEvidenceRunId");
+    expect(reportLedgerPanelSource).toContain("summary.latestResearchContextReportRunId");
+    expect(reportLedgerPanelSource).toContain("summary.latestResearchContextReportLinkSearch");
+    expect(reportLedgerPanelSource).toContain("summary.latestResearchContextReportQuery");
+    expect(reportLedgerPanelSource).toContain("summary.latestPreLiveRunbookEventId");
+    expect(reportLedgerPanelSource).toContain("summary.latestPreLiveRunbookEvidenceLabel");
+    expect(reportLedgerPanelSource).toContain("summary.latestPreLiveRunbookQuery");
+    expect(reportLedgerPanelSource).toContain("summary.latestPreLiveRunbookGateLabel");
+    expect(reportLedgerPanelSource).toContain('i18n.locale === "zh-CN" ? "最新运行手册" : "Latest runbook"');
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestPreLiveRunbookQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestPreLiveRunbookQuery)");
+    expect(reportLedgerPanelSource).toContain('i18n.locale === "zh-CN" ? "最新研究上下文" : "Latest research"');
+    expect(reportLedgerPanelSource).toContain('i18n.locale === "zh-CN" ? "打开研究上下文" : "Open research"');
+    expect(reportLedgerPanelSource).toContain('i18n.locale === "zh-CN" ? "复制研究链接" : "Copy research link"');
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-query-tools"');
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(query)");
     expect(reportLedgerPanelSource).toContain("disabled={!query.trim()}");
@@ -1160,6 +1439,18 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightActionLabel");
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightAttention");
     expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightLabel");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidPreflightQuery");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidCompletionLabel");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidCompletionQuery");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidCompletionCurrentCriterionActionLabel");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId");
+    expect(reportLedgerPanelSource).toContain(
+      "const latestCompletionGapWorkspaceId = summary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId"
+    );
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidCompletionRecorded");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidCompletionTitle");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidProgressLabel");
+    expect(reportLedgerPanelSource).toContain("summary.latestAuditAidProgressQuery");
     expect(reportLedgerPanelSource).toContain("summary.latestReportLabel");
     expect(reportLedgerPanelSource).toContain("summary.latestReportKind");
     expect(reportLedgerPanelSource).toContain("summary.latestReportQuery");
@@ -1170,8 +1461,28 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Focus latest");
     expect(reportLedgerPanelSource).toContain("最新辅助");
     expect(reportLedgerPanelSource).toContain("Latest aid");
+    expect(reportLedgerPanelSource).toContain("最新进度");
+    expect(reportLedgerPanelSource).toContain("Latest progress");
+    expect(reportLedgerPanelSource).toContain("最新完成定义");
+    expect(reportLedgerPanelSource).toContain("Latest completion");
+    expect(reportLedgerPanelSource).toContain("定位进度");
+    expect(reportLedgerPanelSource).toContain("Focus progress");
+    expect(reportLedgerPanelSource).toContain("复制进度链接");
+    expect(reportLedgerPanelSource).toContain("Copy progress link");
+    expect(reportLedgerPanelSource).toContain("定位完成定义");
+    expect(reportLedgerPanelSource).toContain("Focus completion");
+    expect(reportLedgerPanelSource).toContain("复制完成链接");
+    expect(reportLedgerPanelSource).toContain("Copy completion link");
+    expect(reportLedgerPanelSource).toContain("打开完成缺口");
+    expect(reportLedgerPanelSource).toContain("Open completion gap");
+    expect(reportLedgerPanelSource).toContain("复制完成缺口链接");
+    expect(reportLedgerPanelSource).toContain("Copy completion gap link");
     expect(reportLedgerPanelSource).toContain("最新预检");
     expect(reportLedgerPanelSource).toContain("Latest preflight");
+    expect(reportLedgerPanelSource).toContain("定位预检");
+    expect(reportLedgerPanelSource).toContain("Focus preflight");
+    expect(reportLedgerPanelSource).toContain("复制预检链接");
+    expect(reportLedgerPanelSource).toContain("Copy preflight link");
     expect(reportLedgerPanelSource).toContain("下一步");
     expect(reportLedgerPanelSource).toContain("Next action");
     expect(reportLedgerPanelSource).toContain("预检关注");
@@ -1182,6 +1493,18 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("复制最新辅助");
     expect(reportLedgerPanelSource).toContain("Copy latest aid");
     expect(reportLedgerPanelSource).toContain("onCopyEvidenceLink(summary.latestAuditAidEvidenceLink)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestAuditAidProgressQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestAuditAidProgressQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestAuditAidCompletionQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestAuditAidCompletionQuery)");
+    expect(reportLedgerPanelSource).toContain("onOpenCompletionGap(latestCompletionGapWorkspaceId)");
+    expect(reportLedgerPanelSource).toContain("onOpenCompletionGap: (workspaceId: ProductWorkAreaId) => void;");
+    expect(reportLedgerPanelSource).toContain("onCopyCompletionGapLink(latestCompletionGapWorkspaceId, summary.latestAuditAidCompletionQuery)");
+    expect(reportLedgerPanelSource).toContain(
+      "onCopyCompletionGapLink: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;"
+    );
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestAuditAidPreflightQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestAuditAidPreflightQuery)");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-pagination");
     expect(reportLedgerPanelSource).toContain("audit-report-ledger-row");
     expect(reportLedgerPanelSource).toContain("row.shortHash");
@@ -1209,14 +1532,49 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.evidenceLinkDecodedSearch");
     expect(reportLedgerPanelSource).toContain("row.paperPreflightLabel");
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-preflight"');
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0ReadinessReportQuery");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0ProgressLabel");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0ProgressQuery");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0CompletionLabel");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0CompletionTitle");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0CompletionQuery");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0PreflightQuery");
+    expect(reportLedgerPanelSource).toContain("rowP0ProgressLabel");
+    expect(reportLedgerPanelSource).toContain("rowP0ProgressQuery");
+    expect(reportLedgerPanelSource).toContain("rowP0CompletionLabel");
+    expect(reportLedgerPanelSource).toContain("rowP0CompletionQuery");
+    expect(reportLedgerPanelSource).toContain("row.p0CompletionCurrentCriterionTargetWorkspaceId");
+    expect(reportLedgerPanelSource).toContain(
+      "const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId"
+    );
+    expect(reportLedgerPanelSource).toContain("onOpenCompletionGap(rowCompletionGapWorkspaceId)");
+    expect(reportLedgerPanelSource).toContain("onCopyCompletionGapLink(rowCompletionGapWorkspaceId, rowP0CompletionQuery)");
+    expect(reportLedgerPanelSource).toContain("rowP0PreflightQuery");
+    expect(reportLedgerPanelSource).toContain("rowP0ReadinessReportQuery");
+    expect(reportLedgerPanelSource).toContain("rowPreLiveRunbookQuery");
+    expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-pre-live"');
+    expect(reportLedgerPanelSource).toContain("auditReportLedgerPreLiveRunbookEvidenceLabel(i18n, row.preLiveRunbookEvidenceIds.length)");
+    expect(reportLedgerPanelSource).toContain("row.preLiveRunbookCompletedSteps");
+    expect(reportLedgerPanelSource).toContain("row.preLiveRunbookTotalSteps");
     expect(reportLedgerPanelSource).toContain("row.p0PreparationEvidenceRunId");
+    expect(reportLedgerPanelSource).toContain("preparationEvidenceRunId");
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-preparation"');
     expect(reportLedgerPanelSource).toContain("数据准备");
     expect(reportLedgerPanelSource).toContain("Data prep");
     expect(reportLedgerPanelSource).toContain("onOpenEvidenceLink(row.evidenceLinkSearch)");
     expect(reportLedgerPanelSource).toContain("onCopyEvidenceLink(row.evidenceLinkSearch)");
-    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.p0PreparationEvidenceRunId)");
-    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.p0PreparationEvidenceRunId)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(preparationEvidenceRunId)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(preparationEvidenceRunId)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowP0ReadinessReportQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowP0ReadinessReportQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowP0ProgressQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowP0ProgressQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowP0CompletionQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowP0CompletionQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowP0PreflightQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowP0PreflightQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowPreLiveRunbookQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowPreLiveRunbookQuery)");
     expect(reportLedgerPanelSource).toContain("打开证据");
     expect(reportLedgerPanelSource).toContain("Open evidence");
     expect(reportLedgerPanelSource).toContain("复制证据链接");
@@ -1225,6 +1583,20 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Copy prep link");
     expect(reportLedgerPanelSource).toContain("定位数据准备");
     expect(reportLedgerPanelSource).toContain("Focus prep");
+    expect(reportLedgerPanelSource).toContain("P0 进度");
+    expect(reportLedgerPanelSource).toContain("P0 progress");
+    expect(reportLedgerPanelSource).toContain("定位进度");
+    expect(reportLedgerPanelSource).toContain("Focus progress");
+    expect(reportLedgerPanelSource).toContain("复制进度链接");
+    expect(reportLedgerPanelSource).toContain("Copy progress link");
+    expect(reportLedgerPanelSource).toContain("定位 P0 报告");
+    expect(reportLedgerPanelSource).toContain("Focus P0 report");
+    expect(reportLedgerPanelSource).toContain("复制 P0 报告链接");
+    expect(reportLedgerPanelSource).toContain("Copy P0 report link");
+    expect(reportLedgerPanelSource).toContain("定位运行手册");
+    expect(reportLedgerPanelSource).toContain("Focus runbook");
+    expect(reportLedgerPanelSource).toContain("复制运行手册链接");
+    expect(reportLedgerPanelSource).toContain("Copy runbook link");
     expect(cssBlock(".audit-report-ledger-query-tools")).toContain("display: grid;");
     expect(cssBlock(".audit-report-ledger-query-tools")).toContain(
       "grid-template-columns: minmax(0, 1fr) auto auto;",
@@ -1314,7 +1686,11 @@ describe("terminal layout css", () => {
     expect(cssBlock(".audit-report-ledger-summary")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-pagination")).toContain("display: flex;");
     expect(cssBlock(".audit-report-ledger-actions")).toContain("display: flex;");
+    expect(cssBlock(".audit-report-ledger-research-context")).toContain("border: 1px solid rgba(125, 249, 228, 0.2);");
+    expect(cssBlock(".audit-report-ledger-p0-progress")).toContain("border: 1px solid rgba(125, 249, 228, 0.28);");
+    expect(cssBlock(".audit-report-ledger-p0-completion.ready")).toContain("border: 1px solid rgba(139, 126, 255, 0.42);");
     expect(cssBlock(".audit-report-ledger-preflight")).toContain("border: 1px solid #266c60;");
+    expect(cssBlock(".audit-report-ledger-pre-live")).toContain("border: 1px solid rgba(232, 190, 98, 0.28);");
     expect(cssBlock(".audit-report-ledger-row")).toContain(
       "grid-template-columns: minmax(118px, 0.34fr) minmax(170px, 0.5fr) minmax(0, 1fr) minmax(132px, 0.34fr) auto;"
     );
@@ -1555,6 +1931,18 @@ describe("terminal layout css", () => {
     );
     expect(executionAdapterPaperExecutionAuditPanelSource).toContain("复制执行证据链接");
     expect(executionAdapterPaperExecutionAuditPanelSource).toContain("Copy execution link");
+  });
+
+  test("treats duplicate adapter paper execution submissions as reused evidence", () => {
+    const recordSource = sourceBetween(
+      "const recordAdapterPaperExecution = useCallback",
+      "const refreshAuditSigningKeys = useCallback"
+    );
+
+    expect(recordSource).toContain('result.error === "execution_adapter_paper_execution_already_recorded"');
+    expect(recordSource).toContain("Adapter paper execution reused");
+    expect(recordSource).toContain("if (result.error && !reusedAdapterPaperExecution)");
+    expect(recordSource).toContain("await refreshSettingsStatus();");
   });
 
   test("compares current AI review evidence with the latest saved audit record", () => {
@@ -1999,9 +2387,9 @@ describe("terminal layout css", () => {
   });
 
   test("collapses the terminal and workflow grid before cards become squeezed", () => {
-    expect(styles).toContain("@media (max-width: 1180px)");
+    expect(styles).toContain("@media (max-width: 960px)");
     expect(
-      hasCssBlockWith("@media (max-width: 1180px) {\n  .terminal-shell", [
+      hasCssBlockWith("@media (max-width: 960px) {\n  .terminal-shell", [
         "grid-template-columns: 68px minmax(0, 1fr);",
         "height: auto;"
       ])
@@ -2223,7 +2611,54 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".promotion-stage-list");
     expect(styles).toContain(".promotion-stage");
     expect(cssBlock(".workflow-promotion-panel")).toContain("grid-area: promotion;");
-    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion broker"'])).toBe(true);
+    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion pre-live"'])).toBe(true);
+  });
+
+  test("renders a pre-live runbook summary before any live route can unlock", () => {
+    expect(appSource).toContain("buildExecutionAdapterPreLiveRunbookSummary({");
+    expect(appSource).toContain("buildExecutionAdapterPreLiveRunbookMarkdown");
+    expect(appSource).toContain("buildExecutionAdapterPreLiveRunbookAuditEvent");
+    expect(appSource).toContain("buildPreLiveRunbookAuditCoverage");
+    expect(appSource).toContain("const executionAdapterPreLiveRunbook = buildExecutionAdapterPreLiveRunbookSummary");
+    expect(appSource).toContain("executionAdapterPreLiveRunbookAuditCoverage");
+    expect(appSource).toContain("copyExecutionAdapterPreLiveRunbook");
+    expect(appSource).toContain("downloadExecutionAdapterPreLiveRunbook");
+    expect(appSource).toContain("recordExecutionAdapterPreLiveRunbook");
+    expect(appSource).toContain("focusExecutionAdapterPreLiveRunbookAudit");
+    expect(appSource).toContain("copyExecutionAdapterPreLiveRunbookAuditLink");
+    expect(appSource).toContain("pre_live_runbook_report");
+    expect(appSource).toContain("<PreLiveRunbookPanel");
+    expect(appSource).toContain('className="workflow-pre-live-runbook-panel"');
+    expect(appSource).toContain("auditCoverage={executionAdapterPreLiveRunbookAuditCoverage}");
+    expect(appSource).toContain("onCopy={copyExecutionAdapterPreLiveRunbook}");
+    expect(appSource).toContain("onDownload={downloadExecutionAdapterPreLiveRunbook}");
+    expect(appSource).toContain("onFocusAudit={focusExecutionAdapterPreLiveRunbookAudit}");
+    expect(appSource).toContain("onCopyAuditLink={copyExecutionAdapterPreLiveRunbookAuditLink}");
+    expect(appSource).toContain("onRecordAudit={recordExecutionAdapterPreLiveRunbook}");
+    expect(appSource).toContain("runbook={executionAdapterPreLiveRunbook}");
+    expect(appSource).toContain("isRecordingAudit={isRecordingPreLiveRunbook}");
+    expect(appSource).toContain('className="pre-live-runbook-actions"');
+    expect(appSource).toContain('className={`pre-live-runbook ${runbook.status}`}');
+    expect(appSource).toContain('className={`pre-live-runbook-audit ${auditCoverage.status}`}');
+    expect(appSource).toContain('className="pre-live-runbook-audit-meta"');
+    expect(appSource).toContain("preLiveRunbookAuditCoverageMetaLabel(i18n, auditCoverage)");
+    expect(appSource).toContain("coverage.mismatchLabel ? preLiveRunbookMismatchLabel(i18n, coverage.mismatchLabel) : \"\"");
+    expect(appSource).toContain("coverage.currentGateLabel && coverage.currentGateLabel !== coverage.gateLabel");
+    expect(appSource).toContain('auditCoverage.status !== "matched" && onRecordAudit');
+    expect(appSource).toContain("{isRecordingAudit ? <Timer size={12} /> : <Save size={12} />}");
+    expect(appSource).toContain("preLiveRunbookAuditRecordActionLabel(i18n, auditCoverage.status, isRecordingAudit)");
+    expect(appSource).toContain('className="pre-live-runbook-audit-actions"');
+    expect(appSource).toContain("{i18n.locale === \"zh-CN\" ? \"复制审计链接\" : \"Copy audit link\"}");
+    expect(appSource).toContain('className={`pre-live-runbook-row ${row.tone}`}');
+    expect(appSource).toContain("preLiveRunbookStepLabel(i18n, row)");
+    expect(styles).toContain(".pre-live-runbook");
+    expect(styles).toContain(".pre-live-runbook-actions");
+    expect(styles).toContain(".pre-live-runbook-audit");
+    expect(styles).toContain(".pre-live-runbook-audit-meta");
+    expect(styles).toContain(".pre-live-runbook-audit-actions");
+    expect(styles).toContain(".pre-live-runbook-row");
+    expect(cssBlock(".workflow-pre-live-runbook-panel")).toContain("grid-area: pre-live;");
+    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion pre-live"'])).toBe(true);
   });
 
   test("renders promotion certification evidence from recorded adapter certifications", () => {
@@ -2277,7 +2712,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterRestartAcceptanceRows(executionAdapterRestartAcceptances)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows)"
     );
     expect(appSource).toContain("adapterRestartAcceptanceRows={executionAdapterRestartAcceptanceRows}");
     expect(appSource).toContain("adapterRestartAcceptanceRows: ExecutionAdapterRestartAcceptanceRow[]");
@@ -2296,7 +2731,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretReferenceRows(executionAdapterSecretReferences)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows)"
     );
     expect(appSource).toContain("adapterSecretReferenceRows={executionAdapterSecretReferenceRows}");
     expect(appSource).toContain("adapterSecretReferenceRows: ExecutionAdapterSecretReferenceRow[]");
@@ -2315,7 +2750,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("buildExecutionAdapterSecretMaterializationRows(executionAdapterSecretMaterializations)");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows)"
     );
     expect(appSource).toContain("adapterSecretMaterializationRows={executionAdapterSecretMaterializationRows}");
     expect(appSource).toContain("adapterSecretMaterializationRows: ExecutionAdapterSecretMaterializationRow[]");
@@ -2351,7 +2786,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const executionAdapterRuntimeReloadAcceptanceRows = buildExecutionAdapterRuntimeReloadAcceptanceRows(");
     expect(appSource).toContain("executionAdapterRuntimeReloadAcceptances");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows)"
     );
     expect(appSource).toContain("adapterEnvironmentBindingRows={executionAdapterEnvironmentBindingRows}");
     expect(appSource).toContain("adapterRuntimeReloadPlanRows={executionAdapterRuntimeReloadPlanRows}");
@@ -2383,6 +2818,39 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".promotion-runtime-reload-execution-evidence-row");
     expect(styles).toContain(".promotion-runtime-reload-acceptance-evidence");
     expect(styles).toContain(".promotion-runtime-reload-acceptance-evidence-row");
+  });
+
+  test("renders late-stage adapter paper route evidence in promotion queue", () => {
+    expect(appSource).toContain("adapterSandboxOrderSchemaDryRunRows={executionAdapterSandboxOrderSchemaDryRunRows}");
+    expect(appSource).toContain("adapterPaperOrderLifecycleRows={executionAdapterPaperOrderLifecycleRows}");
+    expect(appSource).toContain("adapterPaperRouteRunbookRows={executionAdapterPaperRouteRunbookRows}");
+    expect(appSource).toContain("adapterOpsStateRows={executionAdapterOpsStateRows}");
+    expect(appSource).toContain("adapterPaperExecutionRows={executionAdapterPaperExecutionRows}");
+    expect(appSource).toContain("adapterSandboxOrderSchemaDryRunRows: ExecutionAdapterSandboxOrderSchemaDryRunRow[]");
+    expect(appSource).toContain("adapterPaperOrderLifecycleRows: ExecutionAdapterPaperOrderLifecycleRow[]");
+    expect(appSource).toContain("adapterPaperRouteRunbookRows: ExecutionAdapterPaperRouteRunbookRow[]");
+    expect(appSource).toContain("adapterOpsStateRows: ExecutionAdapterOpsStateRow[]");
+    expect(appSource).toContain("adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[]");
+    expect(appSource).toContain('className="promotion-sandbox-order-schema-dry-run-evidence"');
+    expect(appSource).toContain('className={`promotion-sandbox-order-schema-dry-run-evidence-row');
+    expect(appSource).toContain('className="promotion-paper-order-lifecycle-evidence"');
+    expect(appSource).toContain('className={`promotion-paper-order-lifecycle-evidence-row');
+    expect(appSource).toContain('className="promotion-paper-route-runbook-evidence"');
+    expect(appSource).toContain('className={`promotion-paper-route-runbook-evidence-row');
+    expect(appSource).toContain('className="promotion-adapter-ops-state-evidence"');
+    expect(appSource).toContain('className={`promotion-adapter-ops-state-evidence-row');
+    expect(appSource).toContain('className="promotion-adapter-paper-execution-evidence"');
+    expect(appSource).toContain('className={`promotion-adapter-paper-execution-evidence-row');
+    expect(appSource).toContain("adapterSandboxOrderSchemaDryRunStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterPaperOrderLifecycleStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterPaperRouteRunbookStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterOpsStateStatusLabel(i18n, row.statusLabel)");
+    expect(appSource).toContain("adapterPaperExecutionStatusLabel(i18n, row.statusLabel)");
+    expect(styles).toContain(".promotion-sandbox-order-schema-dry-run-evidence");
+    expect(styles).toContain(".promotion-paper-order-lifecycle-evidence");
+    expect(styles).toContain(".promotion-paper-route-runbook-evidence");
+    expect(styles).toContain(".promotion-adapter-ops-state-evidence");
+    expect(styles).toContain(".promotion-adapter-paper-execution-evidence");
   });
 
   test("renders runtime reload acceptance recording controls in platform settings", () => {
@@ -2543,7 +3011,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const executionAdapterHumanConfirmationRows = buildExecutionAdapterHumanConfirmationRows(");
     expect(appSource).toContain("executionAdapterHumanConfirmations");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows)"
     );
     expect(appSource).toContain("adapterHumanConfirmationRows={executionAdapterHumanConfirmationRows}");
     expect(appSource).toContain("adapterHumanConfirmationRows: ExecutionAdapterHumanConfirmationRow[]");
@@ -2648,7 +3116,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const executionAdapterSandboxProbeExecutionRows = buildExecutionAdapterSandboxProbeExecutionRows(");
     expect(appSource).toContain("executionAdapterSandboxProbeExecutions");
     expect(appSource).toContain(
-      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows)"
+      "buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows)"
     );
     expect(appSource).toContain("adapterSandboxProbeExecutionRows={executionAdapterSandboxProbeExecutionRows}");
     expect(appSource).toContain("adapterSandboxProbeExecutionRows: ExecutionAdapterSandboxProbeExecutionRow[]");

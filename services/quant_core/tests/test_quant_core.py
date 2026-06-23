@@ -16,6 +16,40 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _sample_p0_acceptance_manifest(self, *, run_id: str = "run-smoke"):
+        return {
+            "kind": "aiqt.p0AcceptanceManifest",
+            "schemaVersion": 1,
+            "generatedAt": "2026-06-23T08:00:00+00:00",
+            "status": "passed",
+            "baseUrl": "http://aiqt.local",
+            "importBaseUrl": "http://clean.local",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "runId": run_id,
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "liveBlockedBoundary": True,
+            "checkCount": 6,
+            "checks": [
+                {"id": "pipeline", "status": "passed", "summary": f"p0 pipeline run={run_id}"},
+                {"id": "ai-review", "status": "passed", "summary": f"p0 ai-review run={run_id} mode=local_evidence_review"},
+                {"id": "paper-simulation", "status": "passed", "summary": f"p0 paper-simulation run={run_id} liveBlocked=True"},
+                {
+                    "id": "export",
+                    "status": "passed",
+                    "summary": f"p0 export run={run_id} completeness=9/9 auditEvents=1 liveBlocked=True",
+                },
+                {"id": "import", "status": "passed", "summary": f"p0 import run={run_id} undo=import-undo-smoke"},
+                {
+                    "id": "imported-export",
+                    "status": "passed",
+                    "summary": f"p0 imported-export run={run_id} completeness=9/9 auditEvents=1 liveBlocked=True",
+                },
+            ],
+        }
+
     def _sample_research_run_audit(self, *, run_id: str, strategy_revision: str):
         from quant_core.runs import ResearchRunAudit
 
@@ -153,6 +187,556 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(calls[0][1]["encoding"], "utf-8")
         self.assertEqual(calls[0][1]["errors"], "replace")
+
+    def test_docker_smoke_builds_p0_acceptance_payloads_without_live_routing(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        pipeline_payload = docker_smoke.build_p0_pipeline_payload("ashare", "600000", "1d")
+        ai_review_payload = docker_smoke.build_p0_ai_review_payload("run-smoke", "ashare", "600000", "1d")
+        paper_payload = docker_smoke.build_p0_paper_simulation_payload(
+            "run-smoke",
+            "ashare",
+            "600000",
+            "1d",
+            quantity=2100,
+        )
+
+        self.assertEqual(pipeline_payload["market"], "ashare")
+        self.assertEqual(pipeline_payload["symbol"], "600000")
+        self.assertEqual(pipeline_payload["timeframe"], "1d")
+        self.assertEqual(pipeline_payload["strategyConfig"]["entry"], {"type": "sma_cross", "window": 20})
+        self.assertEqual(pipeline_payload["strategyConfig"]["risk"]["maxDrawdownPct"], 12)
+        self.assertEqual(pipeline_payload["assumptions"], {"initialCash": 100000, "feeBps": 3, "slippageBps": 2})
+        self.assertEqual(ai_review_payload["runId"], "run-smoke")
+        self.assertEqual(ai_review_payload["symbol"], "600000")
+        self.assertEqual(paper_payload["runId"], "run-smoke")
+        self.assertEqual(paper_payload["quantity"], 2100)
+        self.assertEqual(paper_payload["route"], "paper")
+        self.assertFalse(paper_payload["liveTradingAllowed"])
+        self.assertFalse(paper_payload["orderSubmitted"])
+        self.assertFalse(paper_payload["liveOrderSubmitted"])
+        self.assertFalse(paper_payload["routeExecuted"])
+
+    def test_docker_smoke_validates_p0_acceptance_export_payload(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        summary = docker_smoke.validate_p0_export_payload(
+            {
+                "export": {
+                    "manifest": {"runId": "run-smoke", "artifactCounts": {"auditEvents": 1}},
+                    "auditEvents": [{"eventType": "p0_paper_simulation"}],
+                    "p0PackageCompleteness": {
+                        "ready": True,
+                        "status": "complete",
+                        "passed": 9,
+                        "total": 9,
+                        "paperOnly": True,
+                        "liveTradingAllowed": False,
+                        "liveBlockedBoundary": True,
+                    },
+                }
+            },
+            "run-smoke",
+        )
+
+        self.assertEqual(summary, "p0 export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True")
+        with self.assertRaisesRegex(RuntimeError, "Invalid P0 export response"):
+            docker_smoke.validate_p0_export_payload(
+                {
+                    "export": {
+                        "manifest": {"runId": "run-smoke", "artifactCounts": {"auditEvents": 0}},
+                        "auditEvents": [],
+                        "p0PackageCompleteness": {
+                            "ready": True,
+                            "status": "complete",
+                            "passed": 9,
+                            "total": 9,
+                            "paperOnly": True,
+                            "liveTradingAllowed": True,
+                            "liveBlockedBoundary": False,
+                        },
+                    }
+                },
+                "run-smoke",
+            )
+
+    def test_docker_smoke_validates_p0_import_response(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        summary = docker_smoke.validate_p0_import_payload(
+            {
+                "run": {
+                    "runId": "run-smoke",
+                    "executionMode": "paper_only",
+                    "strategyRevision": "strategy-smoke",
+                    "dataSnapshot": {"bars": [{"timestamp": "2026-06-23T08:00:00+00:00"}]},
+                },
+                "undoToken": "import-undo-smoke",
+                "undo": {"runId": "run-smoke"},
+            },
+            "run-smoke",
+        )
+
+        self.assertEqual(summary, "p0 import run=run-smoke undo=import-undo-smoke")
+        with self.assertRaisesRegex(RuntimeError, "Invalid P0 import response"):
+            docker_smoke.validate_p0_import_payload(
+                {"run": {"runId": "run-smoke", "executionMode": "live"}, "undoToken": ""},
+                "run-smoke",
+            )
+
+    def test_docker_smoke_builds_p0_acceptance_manifest(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        manifest = docker_smoke.build_p0_acceptance_manifest(
+            base_url="http://aiqt.local",
+            import_base_url="http://clean.local",
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            run_id="run-smoke",
+            summaries=[
+                "p0 pipeline run=run-smoke",
+                "p0 ai-review run=run-smoke mode=local_evidence_review",
+                "p0 paper-simulation run=run-smoke liveBlocked=True",
+                "p0 export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True",
+                "p0 import run=run-smoke undo=import-undo-smoke",
+                "p0 imported-export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True",
+            ],
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.p0AcceptanceManifest")
+        self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertEqual(manifest["status"], "passed")
+        self.assertEqual(manifest["runId"], "run-smoke")
+        self.assertEqual(manifest["market"], "ashare")
+        self.assertEqual(manifest["symbol"], "600000")
+        self.assertEqual(manifest["importBaseUrl"], "http://clean.local")
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertTrue(manifest["liveBlockedBoundary"])
+        self.assertEqual(
+            [check["id"] for check in manifest["checks"]],
+            ["pipeline", "ai-review", "paper-simulation", "export", "import", "imported-export"],
+        )
+        self.assertTrue(all(check["status"] == "passed" for check in manifest["checks"]))
+
+    def test_docker_smoke_writes_p0_acceptance_report(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        manifest = docker_smoke.build_p0_acceptance_manifest(
+            base_url="http://aiqt.local",
+            import_base_url=None,
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            run_id="run-smoke",
+            summaries=["p0 pipeline run=run-smoke"],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "reports" / "p0-acceptance.json"
+            returned_path = docker_smoke.write_p0_acceptance_report(report_path, manifest)
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(returned_path, report_path)
+        self.assertEqual(payload["kind"], "aiqt.p0AcceptanceManifest")
+        self.assertEqual(payload["runId"], "run-smoke")
+        self.assertEqual(payload["checks"][0]["id"], "pipeline")
+
+    def test_docker_smoke_validates_p0_acceptance_manifest_contract(self):
+        docker_smoke = self._load_docker_smoke_module()
+        manifest = docker_smoke.build_p0_acceptance_manifest(
+            base_url="http://aiqt.local",
+            import_base_url="http://clean.local",
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            run_id="run-smoke",
+            summaries=[
+                "p0 pipeline run=run-smoke",
+                "p0 ai-review run=run-smoke mode=local_evidence_review",
+                "p0 paper-simulation run=run-smoke liveBlocked=True",
+                "p0 export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True",
+                "p0 import run=run-smoke undo=import-undo-smoke",
+                "p0 imported-export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True",
+            ],
+        )
+
+        summary = docker_smoke.validate_p0_acceptance_manifest(manifest)
+
+        self.assertEqual(summary, "p0 acceptance manifest run=run-smoke checks=6 liveBlocked=True")
+        unsafe_manifest = dict(manifest)
+        unsafe_manifest["liveTradingAllowed"] = True
+        with self.assertRaisesRegex(RuntimeError, "Invalid P0 acceptance manifest"):
+            docker_smoke.validate_p0_acceptance_manifest(unsafe_manifest)
+        missing_export_manifest = dict(manifest)
+        missing_export_manifest["checks"] = [check for check in manifest["checks"] if check["id"] != "export"]
+        with self.assertRaisesRegex(RuntimeError, "Invalid P0 acceptance manifest"):
+            docker_smoke.validate_p0_acceptance_manifest(missing_export_manifest)
+
+    def test_docker_smoke_loads_and_validates_p0_acceptance_report(self):
+        docker_smoke = self._load_docker_smoke_module()
+        manifest = docker_smoke.build_p0_acceptance_manifest(
+            base_url="http://aiqt.local",
+            import_base_url=None,
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            run_id="run-smoke",
+            summaries=[
+                "p0 pipeline run=run-smoke",
+                "p0 ai-review run=run-smoke mode=local_evidence_review",
+                "p0 paper-simulation run=run-smoke liveBlocked=True",
+                "p0 export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True",
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p0-acceptance.json"
+            docker_smoke.write_p0_acceptance_report(report_path, manifest)
+            loaded_manifest = docker_smoke.load_p0_acceptance_report(report_path)
+
+        self.assertEqual(loaded_manifest["runId"], "run-smoke")
+        self.assertEqual(
+            docker_smoke.validate_p0_acceptance_manifest(loaded_manifest),
+            "p0 acceptance manifest run=run-smoke checks=4 liveBlocked=True",
+        )
+
+    def test_p0_acceptance_status_reads_latest_report(self):
+        import json
+
+        from quant_core.p0_acceptance import load_p0_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "p0-acceptance.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+
+            status = load_p0_acceptance_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.p0AcceptanceStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "passed")
+        self.assertEqual(status["summary"], "p0 acceptance manifest run=run-smoke checks=6 liveBlocked=True")
+        self.assertEqual(status["runId"], "run-smoke")
+        self.assertEqual(status["market"], "ashare")
+        self.assertEqual(status["symbol"], "600000")
+        self.assertEqual(status["timeframe"], "1d")
+        self.assertEqual(status["checkCount"], 6)
+        self.assertEqual(status["requiredCheckCount"], 4)
+        self.assertEqual(
+            status["checkIds"],
+            ["pipeline", "ai-review", "paper-simulation", "export", "import", "imported-export"],
+        )
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-smoke")
+        self.assertTrue(str(status["sourcePath"]).endswith("p0-acceptance.json"))
+
+    def test_p0_acceptance_status_reports_missing_file(self):
+        from quant_core.p0_acceptance import load_p0_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_p0_acceptance_status(Path(tmp) / "data" / "p0-acceptance.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+
+    def test_p0_acceptance_status_rejects_live_enabled_report(self):
+        import json
+
+        from quant_core.p0_acceptance import load_p0_acceptance_status
+
+        unsafe_manifest = self._sample_p0_acceptance_manifest()
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p0-acceptance.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_p0_acceptance_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-smoke")
+
+    def test_p0_acceptance_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p0-acceptance.json"
+            report_path.write_text(json.dumps(self._sample_p0_acceptance_manifest(run_id="run-api-smoke")), encoding="utf-8")
+
+            class TestHandler(QuantApiHandler):
+                p0_acceptance_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/p0/acceptance/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["acceptance"]["status"], "passed")
+        self.assertEqual(payload["acceptance"]["runId"], "run-api-smoke")
+        self.assertEqual(payload["acceptance"]["summary"], "p0 acceptance manifest run=run-api-smoke checks=6 liveBlocked=True")
+        self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
+
+    def test_docker_smoke_cli_validates_p0_acceptance_report_without_compose(self):
+        import contextlib
+        import io
+
+        docker_smoke = self._load_docker_smoke_module()
+        manifest = docker_smoke.build_p0_acceptance_manifest(
+            base_url="http://aiqt.local",
+            import_base_url=None,
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            run_id="run-smoke",
+            summaries=[
+                "p0 pipeline run=run-smoke",
+                "p0 ai-review run=run-smoke mode=local_evidence_review",
+                "p0 paper-simulation run=run-smoke liveBlocked=True",
+                "p0 export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True",
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p0-acceptance.json"
+            docker_smoke.write_p0_acceptance_report(report_path, manifest)
+
+            def fail_run_smoke(*args, **kwargs):
+                raise AssertionError("run_smoke should not be called in report validation mode")
+
+            original_run_smoke = docker_smoke.run_smoke
+            docker_smoke.run_smoke = fail_run_smoke
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    exit_code = docker_smoke.main(["--validate-p0-acceptance-report", str(report_path)])
+            finally:
+                docker_smoke.run_smoke = original_run_smoke
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("p0 acceptance manifest run=run-smoke checks=4 liveBlocked=True", output.getvalue())
+
+    def test_docker_smoke_p0_acceptance_runs_paper_only_sequence(self):
+        docker_smoke = self._load_docker_smoke_module()
+        posts = []
+
+        def fake_post_json(url, payload, timeout_seconds):
+            posts.append((url, payload, timeout_seconds))
+            if url.endswith("/api/p0/pipeline"):
+                return {
+                    "status": "audited_run_created",
+                    "runId": "run-smoke",
+                    "strategyRevisionId": "strategy-smoke",
+                    "dataSnapshotId": "data-smoke",
+                    "metrics": {"totalReturnPct": 1.2, "maxDrawdownPct": 0.4, "tradeCount": 1},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                }
+            if url.endswith("/api/p0/ai-reviews"):
+                return {
+                    "status": "ai_review_saved",
+                    "mode": "local_evidence_review",
+                    "aiReview": {"aiReviewId": "ai-review-smoke"},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "directTradingInstructionBlocked": True,
+                }
+            if url.endswith("/api/p0/paper-simulations"):
+                return {
+                    "status": "paper_simulation_created",
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "auditEvent": {"eventType": "p0_paper_simulation"},
+                    "exportReadiness": {"ready": True},
+                }
+            raise AssertionError(f"Unexpected POST URL: {url}")
+
+        def fake_request_json(url, timeout_seconds):
+            self.assertTrue(url.endswith("/api/research/runs/run-smoke/export"))
+            return {
+                "export": {
+                    "manifest": {"runId": "run-smoke", "artifactCounts": {"auditEvents": 1}},
+                    "auditEvents": [{"eventType": "p0_paper_simulation"}],
+                    "p0PackageCompleteness": {
+                        "ready": True,
+                        "status": "complete",
+                        "passed": 9,
+                        "total": 9,
+                        "paperOnly": True,
+                        "liveTradingAllowed": False,
+                        "liveBlockedBoundary": True,
+                    },
+                }
+            }
+
+        original_post_json = docker_smoke.post_json
+        original_request_json = docker_smoke.request_json
+        docker_smoke.post_json = fake_post_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            summaries = docker_smoke.run_p0_acceptance(
+                "http://aiqt.local",
+                timeout_seconds=5,
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+                quantity=2100,
+            )
+        finally:
+            docker_smoke.post_json = original_post_json
+            docker_smoke.request_json = original_request_json
+
+        self.assertEqual(
+            [url.removeprefix("http://aiqt.local") for url, _, _ in posts],
+            ["/api/p0/pipeline", "/api/p0/ai-reviews", "/api/p0/paper-simulations"],
+        )
+        self.assertEqual(posts[2][1]["route"], "paper")
+        self.assertFalse(posts[2][1]["liveTradingAllowed"])
+        self.assertFalse(posts[2][1]["orderSubmitted"])
+        self.assertIn("p0 pipeline run=run-smoke", summaries)
+        self.assertIn("p0 export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True", summaries)
+
+    def test_docker_smoke_p0_acceptance_can_import_and_revalidate_export(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        posts = []
+        exports = []
+
+        source_export = {
+            "manifest": {"runId": "run-smoke", "artifactCounts": {"auditEvents": 1}},
+            "auditEvents": [{"eventType": "p0_paper_simulation"}],
+            "paperExecutions": [{"executionId": "paper-smoke", "runId": "run-smoke"}],
+            "aiReviewRuns": [{"aiReviewId": "ai-review-smoke", "runId": "run-smoke"}],
+            "p0PackageCompleteness": {
+                "ready": True,
+                "status": "complete",
+                "passed": 9,
+                "total": 9,
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "liveBlockedBoundary": True,
+            },
+        }
+
+        def fake_post_json(url, payload, timeout_seconds):
+            posts.append((url, payload, timeout_seconds))
+            if url.endswith("/api/p0/pipeline"):
+                return {
+                    "status": "audited_run_created",
+                    "runId": "run-smoke",
+                    "metrics": {"tradeCount": 1},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                }
+            if url.endswith("/api/p0/ai-reviews"):
+                return {
+                    "status": "ai_review_saved",
+                    "mode": "local_evidence_review",
+                    "aiReview": {"aiReviewId": "ai-review-smoke"},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "directTradingInstructionBlocked": True,
+                }
+            if url.endswith("/api/p0/paper-simulations"):
+                return {
+                    "status": "paper_simulation_created",
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "auditEvent": {"eventType": "p0_paper_simulation"},
+                    "exportReadiness": {"ready": True},
+                }
+            if url.endswith("/api/research/runs/import"):
+                self.assertEqual(url, "http://clean.local/api/research/runs/import")
+                self.assertEqual(payload, source_export)
+                return {
+                    "run": {
+                        "runId": "run-smoke",
+                        "executionMode": "paper_only",
+                        "strategyRevision": "strategy-smoke",
+                        "dataSnapshot": {"bars": [{"timestamp": "2026-06-23T08:00:00+00:00"}]},
+                    },
+                    "undoToken": "import-undo-smoke",
+                    "undo": {"runId": "run-smoke"},
+                }
+            raise AssertionError(f"Unexpected POST URL: {url}")
+
+        def fake_request_json(url, timeout_seconds):
+            exports.append(url)
+            if url == "http://aiqt.local/api/research/runs/run-smoke/export":
+                return {"export": source_export}
+            if url == "http://clean.local/api/research/runs/run-smoke/export":
+                return {"export": source_export}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        original_post_json = docker_smoke.post_json
+        original_request_json = docker_smoke.request_json
+        docker_smoke.post_json = fake_post_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report_path = Path(tmp) / "p0-acceptance.json"
+                summaries = docker_smoke.run_p0_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                    market="ashare",
+                    symbol="600000",
+                    timeframe="1d",
+                    quantity=2100,
+                    import_check=True,
+                    import_base_url="http://clean.local",
+                    report_path=report_path,
+                )
+                report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+        finally:
+            docker_smoke.post_json = original_post_json
+            docker_smoke.request_json = original_request_json
+
+        self.assertIn("http://clean.local/api/research/runs/import", [url for url, _, _ in posts])
+        self.assertEqual(
+            exports,
+            [
+                "http://aiqt.local/api/research/runs/run-smoke/export",
+                "http://clean.local/api/research/runs/run-smoke/export",
+            ],
+        )
+        self.assertIn("p0 import run=run-smoke undo=import-undo-smoke", summaries)
+        self.assertIn("p0 imported-export run=run-smoke completeness=9/9 auditEvents=1 liveBlocked=True", summaries)
+        self.assertEqual(report_payload["status"], "passed")
+        self.assertEqual(report_payload["runId"], "run-smoke")
+        self.assertIn("imported-export", [check["id"] for check in report_payload["checks"]])
 
     def test_quant_api_bind_uses_container_environment(self):
         from quant_core.api import resolve_api_bind
@@ -2025,6 +2609,112 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(events[0].context, "market-klines")
         self.assertEqual(events[0].message, "Yahoo chart timed out; yfinance returned no chart bars")
 
+    def test_market_data_readiness_api_summarizes_cache_provider_and_repair_actions(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapter_error_ledger import MarketDataAdapterErrorStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import (
+            WatchlistCacheRefreshRunStore,
+            create_watchlist_cache_refresh_run,
+            watchlist_cache_refresh_item_from_quality,
+        )
+        from quant_core.domain import DataQuality, OHLCVBar
+        from quant_core.terminal import Instrument
+
+        latest_bar_at = datetime.now(timezone.utc).replace(microsecond=0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        market="ashare",
+                        symbol="600000",
+                        timeframe="1d",
+                        timestamp=latest_bar_at - timedelta(days=1),
+                        open=9.1,
+                        high=9.4,
+                        low=9.0,
+                        close=9.2,
+                        volume=1_200_000,
+                    ),
+                    OHLCVBar(
+                        market="ashare",
+                        symbol="600000",
+                        timeframe="1d",
+                        timestamp=latest_bar_at,
+                        open=9.2,
+                        high=9.5,
+                        low=9.1,
+                        close=9.3,
+                        volume=1_300_000,
+                    ),
+                ]
+            )
+            refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+            refresh_store.record(
+                create_watchlist_cache_refresh_run(
+                    run_id="cache-refresh-readiness",
+                    timeframe="1d",
+                    requested_limit=500,
+                    items=[
+                        watchlist_cache_refresh_item_from_quality(
+                            instrument=Instrument(
+                                market="ashare",
+                                symbol="600000",
+                                name="浦发银行",
+                                change_pct=0.0,
+                                price=9.3,
+                            ),
+                            timeframe="1d",
+                            requested_limit=500,
+                            quality=DataQuality(source="tencent", is_complete=True, warnings=[], rows=2),
+                            upserted_rows=2,
+                        )
+                    ],
+                )
+            )
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.cache = cache
+            TestHandler.adapter_error_store = MarketDataAdapterErrorStore(f"{tmp}/adapter_errors.sqlite")
+            TestHandler.watchlist_cache_refresh_store = refresh_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/market/data-readiness?market=ashare&symbol=600000&timeframe=1d")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["market"], "ashare")
+        self.assertEqual(payload["symbol"], "600000")
+        self.assertEqual(payload["timeframe"], "1d")
+        self.assertEqual(payload["state"], "ready")
+        self.assertEqual(payload["source"], "tencent")
+        self.assertEqual(payload["cacheState"], "fresh")
+        self.assertEqual(payload["barCount"], 2)
+        self.assertEqual(payload["latestBarAt"], latest_bar_at.isoformat())
+        self.assertEqual(payload["providerHealthState"], "healthy")
+        self.assertEqual(payload["blockingReasons"], [])
+        self.assertEqual(payload["repairActions"], [])
+        self.assertEqual(payload["latestRefreshRunId"], "cache-refresh-readiness")
+
     def test_execution_adapter_state_ledger_summarizes_live_blocked_routes(self):
         from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
 
@@ -3157,6 +3847,138 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("secret-materialization-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("secret-materialization-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_secret_materialization_writes_local_manifest_for_validation(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+        from uuid import uuid4
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reference_name = f"ashare-live/broker-sandbox-{uuid4().hex}"
+            manifest_path = f"local-secret-store://{reference_name}"
+            expected_manifest_file = Path(tmp) / "secret-store" / "ashare-live" / f"{reference_name.split('/')[-1]}.json"
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                reference_request = {
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "live",
+                    "operator": "settings-panel",
+                    "referenceName": reference_name,
+                    "backend": "local-secret-store",
+                    "requiredEnvVars": [
+                        "ASHARE_BROKER_CLIENT_ID",
+                        "ASHARE_BROKER_CLIENT_SECRET",
+                    ],
+                    "confirmations": {
+                        "referenceCreatedOutsideUi": True,
+                        "operatorVerifiedFingerprint": True,
+                        "rotationPlanDocumented": True,
+                    },
+                    "metadata": {"source": "settings-panel"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-references",
+                    body=json.dumps(reference_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                reference_response = connection.getresponse()
+                reference_payload = json.loads(reference_response.read().decode("utf-8"))
+                reference_id = reference_payload["adapterSecretReference"]["referenceId"]
+
+                materialization_request = {
+                    "adapterId": "ashare-live",
+                    "referenceId": reference_id,
+                    "operator": "settings-panel",
+                    "manifestPath": manifest_path,
+                    "confirmations": {
+                        "localSecretStoreWriteVerified": True,
+                        "noRawSecretInPayload": True,
+                        "envBindingPlanDocumented": True,
+                        "rollbackPlanDocumented": True,
+                    },
+                    "metadata": {
+                        "source": "settings-panel",
+                        "fingerprint": "sha256:auto-written-manifest",
+                        "clientSecret": "auto-written-client-secret-should-not-leak",
+                    },
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-materializations",
+                    body=json.dumps(materialization_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                materialization_response = connection.getresponse()
+                materialization_payload = json.loads(materialization_response.read().decode("utf-8"))
+                materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_request = {
+                    "adapterId": "ashare-live",
+                    "materializationId": materialization_id,
+                    "operator": "settings-panel",
+                    "metadata": {"source": "settings-panel"},
+                }
+                connection.request(
+                    "POST",
+                    "/api/execution/adapter-secret-manifest-validations",
+                    body=json.dumps(validation_request).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                validation_response = connection.getresponse()
+                validation_payload = json.loads(validation_response.read().decode("utf-8"))
+                manifest_exists = expected_manifest_file.exists()
+                written_manifest = (
+                    json.loads(expected_manifest_file.read_text(encoding="utf-8")) if manifest_exists else {}
+                )
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(reference_response.status, 201)
+        self.assertEqual(materialization_response.status, 201)
+        self.assertTrue(manifest_exists)
+        self.assertEqual(written_manifest["schemaVersion"], 1)
+        self.assertEqual(written_manifest["backend"], "local-secret-store")
+        self.assertEqual(written_manifest["referenceName"], reference_name)
+        self.assertEqual(written_manifest["fingerprint"], "sha256:auto-written-manifest")
+        self.assertEqual(
+            written_manifest["requiredEnvVars"],
+            [
+                "ASHARE_BROKER_CLIENT_ID",
+                "ASHARE_BROKER_CLIENT_SECRET",
+            ],
+        )
+        self.assertFalse(written_manifest["rawSecretValuesStored"])
+        self.assertEqual(validation_response.status, 201)
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["status"], "validated")
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["fingerprint"], "sha256:auto-written-manifest")
+        self.assertEqual(validation_payload["adapterSecretManifestValidation"]["blockedReasons"], [])
+        serialized = json.dumps(
+            {
+                "materialization": materialization_payload,
+                "validation": validation_payload,
+                "manifest": written_manifest,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertNotIn("auto-written-client-secret-should-not-leak", serialized)
+
     def test_execution_adapter_secret_manifest_validation_reads_manifest_without_leaking_secret(self):
         import json
         from http.client import HTTPConnection
@@ -3624,7 +4446,6 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(reference_response.status, 201)
         self.assertEqual(materialization_response.status, 201)
-        self.assertEqual(validation_response.status, 201)
         self.assertEqual(binding_response.status, 201)
         self.assertEqual(binding_payload["adapterEnvironmentBinding"]["status"], "binding_recorded")
         self.assertEqual(binding_payload["adapterEnvironmentBinding"]["manifestValidationId"], validation_id)
@@ -3637,6 +4458,114 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("ccxt-secret-should-not-leak", serialized)
         self.assertNotIn("validation-private-key-should-not-leak", serialized)
         self.assertNotIn("binding-token-should-not-leak", serialized)
+
+    def test_execution_adapter_runtime_reload_plan_blocks_unvalidated_environment_binding(self):
+        from quant_core.execution import build_execution_adapter_runtime_reload_plan
+
+        plan = build_execution_adapter_runtime_reload_plan(
+            {
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "binding_recorded",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/runtime-reload",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            reload_mode="manual_container_reload_plan",
+            maintenance_window_id="window-ccxt-live-1",
+            confirmations={
+                "maintenanceWindowApproved": True,
+                "healthBaselineCaptured": True,
+                "configDiffReviewed": True,
+                "postReloadSmokePlanDocumented": True,
+                "rollbackOwnerAssigned": True,
+            },
+            operator="runtime-operator",
+        )
+
+        self.assertEqual(plan.status, "blocked")
+        self.assertEqual(plan.manifest_validation_id, "")
+        self.assertIn("runtime_reload_manifest_validation_missing", plan.blocked_reasons)
+        self.assertFalse(plan.live_trading_allowed)
+
+    def test_execution_adapter_runtime_reload_execution_blocks_unvalidated_plan(self):
+        from quant_core.execution import build_execution_adapter_runtime_reload_execution
+
+        execution = build_execution_adapter_runtime_reload_execution(
+            {
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "plan_recorded",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/runtime-reload",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            execution_mode="manual_controlled_reload",
+            confirmations={
+                "preReloadHealthVerified": True,
+                "reloadActionRecorded": True,
+                "postReloadSmokePassed": True,
+                "rollbackReadinessConfirmed": True,
+                "operatorConfirmedLiveBlocked": True,
+            },
+            operator="runtime-operator",
+        )
+
+        self.assertEqual(execution.status, "blocked")
+        self.assertEqual(execution.manifest_validation_id, "")
+        self.assertIn("runtime_reload_execution_manifest_validation_missing", execution.blocked_reasons)
+        self.assertFalse(execution.live_trading_allowed)
+
+    def test_execution_adapter_runtime_reload_acceptance_blocks_unvalidated_execution(self):
+        from quant_core.execution import build_execution_adapter_runtime_reload_acceptance
+
+        acceptance = build_execution_adapter_runtime_reload_acceptance(
+            {
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "execution_recorded",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/runtime-reload",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            acceptance_mode="manual_runtime_reload_acceptance",
+            confirmations={
+                "executionEvidenceReviewed": True,
+                "postReloadHealthVerified": True,
+                "adapterHandshakeVerified": True,
+                "killSwitchStillEnabled": True,
+                "operatorConfirmedLiveBlocked": True,
+            },
+            operator="runtime-operator",
+        )
+
+        self.assertEqual(acceptance.status, "blocked")
+        self.assertEqual(acceptance.manifest_validation_id, "")
+        self.assertIn("runtime_reload_acceptance_manifest_validation_missing", acceptance.blocked_reasons)
+        self.assertFalse(acceptance.live_trading_allowed)
 
     def test_execution_adapter_runtime_reload_plan_records_evidence_without_enabling_live(self):
         import json
@@ -3701,7 +4630,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:crypto-runtime-reload-unvalidated"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
@@ -3793,10 +4722,15 @@ class QuantCoreContractTest(unittest.TestCase):
                 "runtime_reload_config_diff_missing",
                 "runtime_reload_smoke_plan_missing",
                 "runtime_reload_rollback_owner_missing",
+                "runtime_reload_manifest_validation_missing",
             ],
         )
-        self.assertEqual(recorded_response.status, 201)
-        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["status"], "plan_recorded")
+        self.assertEqual(recorded_response.status, 409)
+        self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["status"], "blocked")
+        self.assertEqual(
+            recorded_payload["adapterRuntimeReloadPlan"]["blockedReasons"],
+            ["runtime_reload_manifest_validation_missing"],
+        )
         self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["bindingId"], binding_id)
         self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["adapterId"], "crypto-live")
         self.assertEqual(recorded_payload["adapterRuntimeReloadPlan"]["reloadMode"], "manual_container_reload_plan")
@@ -3807,7 +4741,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_runtime_reload_plan")
         self.assertEqual(history_response.status, 200)
         self.assertEqual(len(history_payload["adapterRuntimeReloadPlans"]), 2)
-        self.assertEqual(history_payload["adapterRuntimeReloadPlans"][0]["status"], "plan_recorded")
+        self.assertEqual(history_payload["adapterRuntimeReloadPlans"][0]["status"], "blocked")
         self.assertEqual(history_payload["adapterRuntimeReloadPlans"][1]["status"], "blocked")
         self.assertNotIn("runtime-reload-blocked-token-should-not-leak", serialized)
         self.assertNotIn("runtime-reload-private-key-should-not-leak", serialized)
@@ -3892,7 +4826,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ccxt-runtime-reload-manifest"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
@@ -4050,16 +4984,27 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:us-runtime-reload-execution"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "us-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
 
                 binding_response, binding_payload = post_json(
                     "/api/execution/adapter-environment-bindings",
                     {
                         "adapterId": "us-live",
-                        "materializationId": materialization_id,
+                        "manifestValidationId": validation_id,
                         "operator": "settings-panel",
                         "bindingMode": "container_env_reference",
                         "confirmations": {
@@ -4149,6 +5094,7 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(reference_response.status, 201)
         self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
         self.assertEqual(binding_response.status, 201)
         self.assertEqual(plan_response.status, 201)
         self.assertEqual(blocked_response.status, 409)
@@ -4260,7 +5206,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ccxt-runtime-execution-manifest"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
@@ -4440,16 +5386,27 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:crypto-runtime-reload-acceptance"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "crypto-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
 
                 binding_response, binding_payload = post_json(
                     "/api/execution/adapter-environment-bindings",
                     {
                         "adapterId": "crypto-live",
-                        "materializationId": materialization_id,
+                        "manifestValidationId": validation_id,
                         "operator": "settings-panel",
                         "bindingMode": "container_env_reference",
                         "confirmations": {
@@ -4568,6 +5525,7 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(reference_response.status, 201)
         self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
         self.assertEqual(binding_response.status, 201)
         self.assertEqual(plan_response.status, 201)
         self.assertEqual(execution_response.status, 201)
@@ -4682,7 +5640,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ccxt-runtime-acceptance-manifest"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
@@ -4821,6 +5779,88 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("runtime-acceptance-validation-token-should-not-leak", serialized)
         self.assertNotIn("runtime-acceptance-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_orchestration_dry_run_blocks_unvalidated_acceptance(self):
+        from quant_core.execution import build_execution_adapter_orchestration_dry_run
+
+        dry_run = build_execution_adapter_orchestration_dry_run(
+            {
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ibkr-live",
+                "market": "us",
+                "route": "live",
+                "status": "acceptance_recorded",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ibkr-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ibkr-live/orchestration",
+                "requiredEnvVars": ["IBKR_ACCOUNT_ID", "IBKR_GATEWAY_HOST"],
+            },
+            adapter_id="ibkr-live",
+            orchestration_mode="manual_adapter_orchestration_dry_run",
+            confirmations={
+                "acceptedChainReviewed": True,
+                "sandboxHandshakeDryRunPassed": True,
+                "orderSchemaDryRunPassed": True,
+                "accountSyncDryRunPassed": True,
+                "operatorConfirmedNoLiveOrders": True,
+            },
+            operator="runtime-operator",
+        )
+
+        self.assertEqual(dry_run.status, "blocked")
+        self.assertEqual(dry_run.manifest_validation_id, "")
+        self.assertIn("orchestration_dry_run_manifest_validation_missing", dry_run.blocked_reasons)
+        self.assertFalse(dry_run.live_trading_allowed)
+
+    def test_execution_adapter_orchestration_execution_blocks_unvalidated_dry_run(self):
+        from quant_core.execution import build_execution_adapter_orchestration_execution
+
+        execution = build_execution_adapter_orchestration_execution(
+            {
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "dry_run_recorded",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/orchestration",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            orchestration_execution_mode="manual_adapter_orchestration_execution",
+            confirmations={
+                "dryRunEvidenceReviewed": True,
+                "sandboxRouteLocked": True,
+                "killSwitchArmed": True,
+                "idempotencyKeyRecorded": True,
+                "operatorConfirmedNoCapital": True,
+            },
+            operator="runtime-operator",
+        )
+
+        self.assertEqual(execution.status, "blocked")
+        self.assertEqual(execution.manifest_validation_id, "")
+        self.assertIn("orchestration_execution_manifest_validation_missing", execution.blocked_reasons)
+        self.assertFalse(execution.live_trading_allowed)
+
     def test_execution_adapter_orchestration_dry_run_records_preflight_without_enabling_live(self):
         import json
         from http.client import HTTPConnection
@@ -4884,16 +5924,27 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ibkr-orchestration-dry-run"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ibkr-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
 
                 binding_response, binding_payload = post_json(
                     "/api/execution/adapter-environment-bindings",
                     {
                         "adapterId": "ibkr-live",
-                        "materializationId": materialization_id,
+                        "manifestValidationId": validation_id,
                         "operator": "settings-panel",
                         "bindingMode": "container_env_reference",
                         "confirmations": {
@@ -5031,6 +6082,7 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(reference_response.status, 201)
         self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
         self.assertEqual(binding_response.status, 201)
         self.assertEqual(plan_response.status, 201)
         self.assertEqual(execution_response.status, 201)
@@ -5145,7 +6197,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ibkr-orchestration-dry-run-manifest"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
@@ -5369,16 +6421,27 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
-                        "metadata": {"source": "settings-panel"},
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ccxt-orchestration-execution"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
 
                 binding_response, binding_payload = post_json(
                     "/api/execution/adapter-environment-bindings",
                     {
                         "adapterId": "ccxt-live",
-                        "materializationId": materialization_id,
+                        "manifestValidationId": validation_id,
                         "operator": "settings-panel",
                         "bindingMode": "container_env_reference",
                         "confirmations": {
@@ -5535,6 +6598,7 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(reference_response.status, 201)
         self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
         self.assertEqual(binding_response.status, 201)
         self.assertEqual(plan_response.status, 201)
         self.assertEqual(reload_execution_response.status, 201)
@@ -5655,6 +6719,50 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["paperOnly"])
         self.assertNotIn("orchestration-execution-validation-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_human_confirmation_blocks_unvalidated_orchestration_execution(self):
+        from quant_core.execution import build_execution_adapter_human_confirmation
+
+        confirmation = build_execution_adapter_human_confirmation(
+            {
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "execution_recorded",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/final-confirmation",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            confirmation_mode="manual_final_human_confirmation",
+            confirmations={
+                "orchestrationExecutionReviewed": True,
+                "riskApprovalStillValid": True,
+                "paperExecutionReviewed": True,
+                "killSwitchReady": True,
+                "operatorConfirmedFinalBoundary": True,
+            },
+            operator="human-operator",
+        )
+
+        self.assertEqual(confirmation.status, "blocked")
+        self.assertEqual(confirmation.manifest_validation_id, "")
+        self.assertIn("human_confirmation_manifest_validation_missing", confirmation.blocked_reasons)
+        self.assertFalse(confirmation.live_trading_allowed)
+
     def test_execution_adapter_human_confirmation_records_final_gate_without_enabling_live(self):
         import json
         from http.client import HTTPConnection
@@ -5718,15 +6826,27 @@ class QuantCoreContractTest(unittest.TestCase):
                             "envBindingPlanDocumented": True,
                             "rollbackPlanDocumented": True,
                         },
+                        "metadata": {"source": "settings-panel", "fingerprint": "sha256:ccxt-human-confirmation"},
                     },
                 )
                 materialization_id = materialization_payload["adapterSecretMaterialization"]["materializationId"]
+
+                validation_response, validation_payload = post_json(
+                    "/api/execution/adapter-secret-manifest-validations",
+                    {
+                        "adapterId": "ccxt-live",
+                        "materializationId": materialization_id,
+                        "operator": "settings-panel",
+                        "metadata": {"source": "settings-panel"},
+                    },
+                )
+                validation_id = validation_payload["adapterSecretManifestValidation"]["validationId"]
 
                 binding_response, binding_payload = post_json(
                     "/api/execution/adapter-environment-bindings",
                     {
                         "adapterId": "ccxt-live",
-                        "materializationId": materialization_id,
+                        "manifestValidationId": validation_id,
                         "operator": "settings-panel",
                         "bindingMode": "container_env_reference",
                         "confirmations": {
@@ -5898,6 +7018,7 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(reference_response.status, 201)
         self.assertEqual(materialization_response.status, 201)
+        self.assertEqual(validation_response.status, 201)
         self.assertEqual(binding_response.status, 201)
         self.assertEqual(plan_response.status, 201)
         self.assertEqual(reload_execution_response.status, 201)
@@ -6023,6 +7144,103 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["liveTradingAllowed"])
         self.assertTrue(payload["paperOnly"])
         self.assertNotIn("human-confirmation-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_sandbox_probe_plan_blocks_unvalidated_human_confirmation(self):
+        from quant_core.execution import build_execution_adapter_sandbox_probe_plan
+
+        sandbox_probe_plan = build_execution_adapter_sandbox_probe_plan(
+            {
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "confirmation_recorded",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox-probe",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            probe_mode="manual_sandbox_probe_plan",
+            confirmations={
+                "humanConfirmationReviewed": True,
+                "testnetEndpointLocked": True,
+                "credentialsAreSandboxOnly": True,
+                "orderRoutingDisabled": True,
+                "probeLimitsDocumented": True,
+            },
+            operator="sandbox-operator",
+        )
+
+        self.assertEqual(sandbox_probe_plan.status, "blocked")
+        self.assertEqual(sandbox_probe_plan.manifest_validation_id, "")
+        self.assertIn("sandbox_probe_plan_manifest_validation_missing", sandbox_probe_plan.blocked_reasons)
+        self.assertFalse(sandbox_probe_plan.live_trading_allowed)
+
+    def test_execution_adapter_sandbox_probe_execution_blocks_unvalidated_probe_plan(self):
+        from quant_core.execution import build_execution_adapter_sandbox_probe_execution
+
+        sandbox_probe_execution = build_execution_adapter_sandbox_probe_execution(
+            {
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "probe_plan_recorded",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox-probe",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            probe_execution_mode="manual_readonly_sandbox_probe",
+            confirmations={
+                "probePlanReviewed": True,
+                "readonlyHandshakeCaptured": True,
+                "accountSnapshotRedacted": True,
+                "orderSchemaValidated": True,
+                "operatorConfirmedNoOrdersSubmitted": True,
+            },
+            operator="sandbox-operator",
+        )
+
+        self.assertEqual(sandbox_probe_execution.status, "blocked")
+        self.assertEqual(sandbox_probe_execution.manifest_validation_id, "")
+        self.assertIn(
+            "sandbox_probe_execution_manifest_validation_missing",
+            sandbox_probe_execution.blocked_reasons,
+        )
+        self.assertFalse(sandbox_probe_execution.live_trading_allowed)
 
     def test_execution_adapter_sandbox_probe_plan_records_next_gate_without_enabling_live(self):
         import json
@@ -6840,6 +8058,59 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["paperOnly"])
         self.assertNotIn("sandbox-probe-review-validation-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_sandbox_probe_review_blocks_unvalidated_probe_execution(self):
+        from quant_core.execution import build_execution_adapter_sandbox_probe_review
+
+        sandbox_probe_review = build_execution_adapter_sandbox_probe_review(
+            {
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-unvalidated",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "probe_execution_recorded",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox-review",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            review_mode="manual_sandbox_probe_review",
+            confirmations={
+                "probeExecutionReviewed": True,
+                "readonlyEvidenceMatchesPlan": True,
+                "redactedSnapshotArchived": True,
+                "orderSchemaRiskReviewed": True,
+                "productionRouteStillBlocked": True,
+            },
+            operator="sandbox-reviewer",
+        )
+
+        self.assertEqual(sandbox_probe_review.status, "blocked")
+        self.assertEqual(sandbox_probe_review.manifest_validation_id, "")
+        self.assertIn(
+            "sandbox_probe_review_manifest_validation_missing",
+            sandbox_probe_review.blocked_reasons,
+        )
+        self.assertFalse(sandbox_probe_review.live_trading_allowed)
+
     def test_execution_adapter_production_route_review_records_policy_attestation_without_enabling_live(self):
         import json
         from http.client import HTTPConnection
@@ -7194,6 +8465,61 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["liveTradingAllowed"])
         self.assertTrue(payload["paperOnly"])
         self.assertNotIn("production-route-review-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_production_route_review_blocks_unvalidated_probe_review(self):
+        from quant_core.execution import build_execution_adapter_production_route_review
+
+        production_route_review = build_execution_adapter_production_route_review(
+            {
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-unvalidated",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-unvalidated",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "probe_review_recorded",
+                "reviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-live-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/production-route",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            review_mode="manual_production_route_review",
+            confirmations={
+                "sandboxProbeReviewAccepted": True,
+                "killSwitchPolicyReviewed": True,
+                "orderRoutingDisabledVerified": True,
+                "positionLimitPolicyReviewed": True,
+                "rollbackOwnerRecorded": True,
+            },
+            operator="route-reviewer",
+        )
+
+        self.assertEqual(production_route_review.status, "blocked")
+        self.assertEqual(production_route_review.manifest_validation_id, "")
+        self.assertIn(
+            "production_route_review_manifest_validation_missing",
+            production_route_review.blocked_reasons,
+        )
+        self.assertFalse(production_route_review.live_trading_allowed)
 
     def test_ccxt_sandbox_health_probe_runs_readonly_checks_without_order_routing(self):
         import json
@@ -7817,6 +9143,71 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["orderSubmitted"])
         self.assertNotIn("schema-dry-run-validation-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_sandbox_order_schema_dry_run_blocks_unvalidated_route_review(self):
+        from quant_core.execution import build_execution_adapter_sandbox_order_schema_dry_run
+
+        schema_dry_run = build_execution_adapter_sandbox_order_schema_dry_run(
+            {
+                "productionRouteReviewId": "execution-adapter-production-route-review-unvalidated",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-unvalidated",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-unvalidated",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "route_review_recorded",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-schema-unvalidated",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/schema-dry-run",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            adapter_id="ccxt-live",
+            dry_run_mode="manual_sandbox_order_schema_dry_run",
+            order_intent={
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "type": "limit",
+                "quantity": 0.01,
+                "price": 68000,
+                "timeInForce": "GTC",
+            },
+            confirmations={
+                "productionRouteReviewAccepted": True,
+                "healthProbeBound": True,
+                "orderIntentSchemaValidated": True,
+                "sandboxEndpointStillLocked": True,
+                "operatorConfirmedNoOrderSubmitted": True,
+            },
+            operator="schema-runner",
+        )
+
+        self.assertEqual(schema_dry_run.status, "blocked")
+        self.assertEqual(schema_dry_run.manifest_validation_id, "")
+        self.assertIn(
+            "sandbox_order_schema_dry_run_manifest_validation_missing",
+            schema_dry_run.blocked_reasons,
+        )
+        self.assertFalse(schema_dry_run.live_trading_allowed)
+
     def test_execution_adapter_paper_order_lifecycle_records_after_schema_dry_run_without_order_submission(self):
         import json
         from http.client import HTTPConnection
@@ -8130,6 +9521,74 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["orderSubmitted"])
         self.assertFalse(payload["liveOrderSubmitted"])
         self.assertNotIn("paper-lifecycle-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_order_lifecycle_blocks_unvalidated_schema_dry_run(self):
+        from quant_core.execution import build_execution_adapter_paper_order_lifecycle
+
+        lifecycle = build_execution_adapter_paper_order_lifecycle(
+            {
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-unvalidated",
+                "productionRouteReviewId": "execution-adapter-production-route-review-unvalidated",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-unvalidated",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-unvalidated",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "schema_dry_run_recorded",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-paper-lifecycle-unvalidated",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/paper-lifecycle",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "orderSubmitted": False,
+            },
+            adapter_id="ccxt-live",
+            lifecycle_mode="manual_paper_order_lifecycle_adapter",
+            confirmations={
+                "schemaDryRunAccepted": True,
+                "paperRouterLocked": True,
+                "riskLimitsBound": True,
+                "simulatedLifecycleGenerated": True,
+                "operatorConfirmedNoLiveOrderSubmitted": True,
+            },
+            operator="paper-lifecycle-operator",
+        )
+
+        self.assertEqual(lifecycle.status, "blocked")
+        self.assertEqual(lifecycle.manifest_validation_id, "")
+        self.assertIn(
+            "paper_order_lifecycle_manifest_validation_missing",
+            lifecycle.blocked_reasons,
+        )
+        self.assertFalse(lifecycle.live_trading_allowed)
 
     def test_execution_adapter_paper_route_runbook_records_after_lifecycle_without_order_routing(self):
         import json
@@ -8474,6 +9933,80 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["liveOrderSubmitted"])
         self.assertFalse(payload["routeExecuted"])
         self.assertNotIn("paper-runbook-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_route_runbook_blocks_unvalidated_lifecycle(self):
+        from quant_core.execution import build_execution_adapter_paper_route_runbook
+
+        runbook = build_execution_adapter_paper_route_runbook(
+            {
+                "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-unvalidated",
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-unvalidated",
+                "productionRouteReviewId": "execution-adapter-production-route-review-unvalidated",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-unvalidated",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-unvalidated",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "lifecycle_recorded",
+                "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-paper-runbook-unvalidated",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/paper-runbook",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "lifecycleSteps": [
+                    {"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}
+                ],
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+            },
+            adapter_id="ccxt-live",
+            runbook_mode="manual_paper_route_runbook",
+            confirmations={
+                "paperLifecycleAccepted": True,
+                "paperAccountSnapshotCaptured": True,
+                "riskControlsVerified": True,
+                "replayPlanRecorded": True,
+                "operatorConfirmedNoLiveRouting": True,
+            },
+            operator="paper-runbook-operator",
+        )
+
+        self.assertEqual(runbook.status, "blocked")
+        self.assertEqual(runbook.manifest_validation_id, "")
+        self.assertIn(
+            "paper_route_runbook_manifest_validation_missing",
+            runbook.blocked_reasons,
+        )
+        self.assertFalse(runbook.live_trading_allowed)
 
     def test_execution_adapter_ops_state_records_after_paper_route_runbook_without_live_enablement(self):
         import json
@@ -8851,6 +10384,90 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["routeExecuted"])
         self.assertNotIn("adapter-ops-validation-private-key-should-not-leak", serialized)
 
+    def test_execution_adapter_ops_state_blocks_unvalidated_paper_route_runbook(self):
+        from quant_core.execution import build_execution_adapter_ops_state
+
+        ops_state = build_execution_adapter_ops_state(
+            {
+                "paperRouteRunbookId": "execution-adapter-paper-route-runbook-unvalidated",
+                "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-unvalidated",
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-unvalidated",
+                "productionRouteReviewId": "execution-adapter-production-route-review-unvalidated",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-unvalidated",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-unvalidated",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-unvalidated",
+                "humanConfirmationId": "execution-adapter-human-confirmation-unvalidated",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-unvalidated",
+                "dryRunId": "execution-adapter-orchestration-dry-run-unvalidated",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-unvalidated",
+                "executionId": "execution-adapter-runtime-reload-execution-unvalidated",
+                "planId": "execution-adapter-runtime-reload-plan-unvalidated",
+                "bindingId": "execution-adapter-environment-binding-unvalidated",
+                "materializationId": "execution-adapter-secret-materialization-unvalidated",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "runbook_recorded",
+                "runbookMode": "manual_paper_route_runbook",
+                "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-ops-state-unvalidated",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/ops-state",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "lifecycleSteps": [
+                    {"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}
+                ],
+                "runbookSteps": [
+                    {
+                        "id": "lifecycle-evidence-linked",
+                        "label": "Paper lifecycle evidence linked",
+                        "status": "recorded",
+                    }
+                ],
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+            },
+            adapter_id="ccxt-live",
+            ops_mode="manual_adapter_ops_state",
+            confirmations={
+                "paperRouteRunbookAccepted": True,
+                "monitoringChannelReady": True,
+                "killSwitchDrillRecorded": True,
+                "paperAccountReconciled": True,
+                "operatorConfirmedLiveTradingDisabled": True,
+            },
+            operator="adapter-ops-operator",
+        )
+
+        self.assertEqual(ops_state.status, "blocked")
+        self.assertEqual(ops_state.manifest_validation_id, "")
+        self.assertIn(
+            "adapter_ops_state_manifest_validation_missing",
+            ops_state.blocked_reasons,
+        )
+        self.assertFalse(ops_state.live_trading_allowed)
+
     def test_execution_adapter_paper_execution_records_after_ops_state_without_live_routing(self):
         import json
         from http.client import HTTPConnection
@@ -9051,6 +10668,26 @@ class QuantCoreContractTest(unittest.TestCase):
                     },
                 )
 
+                duplicate_response, duplicate_payload = post_json(
+                    "/api/execution/adapter-paper-executions",
+                    {
+                        "adapterId": "ccxt-live",
+                        "adapterOpsStateId": "execution-adapter-ops-state-ccxt-live",
+                        "operator": "paper-execution-runner",
+                        "paperExecutionMode": "manual_adapter_paper_execution",
+                        "confirmations": {
+                            "opsStateAccepted": True,
+                            "paperAccountSynced": True,
+                            "riskBudgetBound": True,
+                            "simulatedFillGenerated": True,
+                            "operatorConfirmedNoLiveRouting": True,
+                        },
+                        "metadata": {
+                            "apiSecret": "adapter-paper-execution-duplicate-secret-should-not-leak"
+                        },
+                    },
+                )
+
                 connection.request(
                     "GET",
                     "/api/execution/adapter-paper-executions?adapterId=ccxt-live&limit=5",
@@ -9070,6 +10707,7 @@ class QuantCoreContractTest(unittest.TestCase):
             {
                 "blocked": blocked_payload,
                 "recorded": recorded_payload,
+                "duplicate": duplicate_payload,
                 "history": history_payload,
             },
             ensure_ascii=False,
@@ -9122,6 +10760,16 @@ class QuantCoreContractTest(unittest.TestCase):
             recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
             "execution-adapter-secret-manifest-validation-ccxt-live",
         )
+        self.assertEqual(duplicate_response.status, 409)
+        self.assertEqual(duplicate_payload["error"], "execution_adapter_paper_execution_already_recorded")
+        self.assertEqual(
+            duplicate_payload["existingAdapterPaperExecution"]["adapterPaperExecutionId"],
+            recorded_payload["adapterPaperExecution"]["adapterPaperExecutionId"],
+        )
+        self.assertEqual(
+            duplicate_payload["existingAdapterPaperExecution"]["adapterOpsStateId"],
+            "execution-adapter-ops-state-ccxt-live",
+        )
         self.assertEqual(history_response.status, 200)
         self.assertEqual(len(history_payload["adapterPaperExecutions"]), 2)
         self.assertEqual(history_payload["adapterPaperExecutions"][0]["status"], "paper_execution_recorded")
@@ -9132,6 +10780,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(history_payload["adapterPaperExecutions"][1]["status"], "blocked")
         self.assertNotIn("adapter-paper-execution-secret-should-not-leak", serialized)
         self.assertNotIn("adapter-paper-execution-private-key-should-not-leak", serialized)
+        self.assertNotIn("adapter-paper-execution-duplicate-secret-should-not-leak", serialized)
 
     def test_execution_adapter_paper_execution_inherits_manifest_validation_id(self):
         import json
@@ -9252,6 +10901,98 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["routeExecuted"])
         self.assertTrue(payload["paperFillRecorded"])
         self.assertNotIn("adapter-paper-execution-validation-private-key-should-not-leak", serialized)
+
+    def test_execution_adapter_paper_execution_blocks_unvalidated_ops_state(self):
+        from quant_core.execution import build_execution_adapter_paper_execution
+
+        paper_execution = build_execution_adapter_paper_execution(
+            {
+                "adapterOpsStateId": "execution-adapter-ops-state-ccxt-live",
+                "paperRouteRunbookId": "execution-adapter-paper-route-runbook-ccxt-live",
+                "paperOrderLifecycleId": "execution-adapter-paper-order-lifecycle-ccxt-live",
+                "sandboxOrderSchemaDryRunId": "execution-adapter-sandbox-order-schema-dry-run-ccxt-live",
+                "productionRouteReviewId": "execution-adapter-production-route-review-ccxt-live",
+                "sandboxProbeReviewId": "execution-adapter-sandbox-probe-review-ccxt-live",
+                "sandboxProbeExecutionId": "execution-adapter-sandbox-probe-execution-ccxt-live",
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": "",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "ops_state_recorded",
+                "opsMode": "manual_adapter_ops_state",
+                "runbookMode": "manual_paper_route_runbook",
+                "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+                "dryRunMode": "manual_sandbox_order_schema_dry_run",
+                "reviewMode": "manual_production_route_review",
+                "sandboxReviewMode": "manual_sandbox_probe_review",
+                "probeExecutionMode": "manual_readonly_sandbox_probe",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-paper-execution-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "orderIntent": {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "type": "limit",
+                    "quantity": 0.01,
+                    "price": 68000,
+                    "timeInForce": "GTC",
+                },
+                "lifecycleSteps": [
+                    {"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}
+                ],
+                "runbookSteps": [
+                    {
+                        "id": "lifecycle-evidence-linked",
+                        "label": "Paper lifecycle evidence linked",
+                        "status": "recorded",
+                    }
+                ],
+                "opsSteps": [
+                    {"id": "paper-route-runbook-linked", "label": "Paper route runbook linked", "status": "recorded"}
+                ],
+                "orderSubmitted": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "liveTradingAllowed": False,
+            },
+            adapter_id="ccxt-live",
+            paper_execution_mode="manual_adapter_paper_execution",
+            confirmations={
+                "opsStateAccepted": True,
+                "paperAccountSynced": True,
+                "riskBudgetBound": True,
+                "simulatedFillGenerated": True,
+                "operatorConfirmedNoLiveRouting": True,
+            },
+            operator="adapter-paper-execution-operator",
+            metadata={"source": "settings-panel"},
+            adapter_paper_execution_id="execution-adapter-paper-execution-ccxt-live",
+        )
+
+        self.assertEqual(paper_execution.status, "blocked")
+        self.assertEqual(paper_execution.manifest_validation_id, "")
+        self.assertIn(
+            "adapter_paper_execution_manifest_validation_missing",
+            paper_execution.blocked_reasons,
+        )
+        self.assertFalse(paper_execution.live_trading_allowed)
 
     def test_cache_refresh_api_fetches_bars_and_returns_updated_settings(self):
         import json
@@ -13879,6 +15620,69 @@ class QuantCoreContractTest(unittest.TestCase):
                 },
             )
 
+    def test_portfolio_paper_order_simulation_requires_adapter_manifest_when_execution_bound(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-state-manifest-required",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-state-manifest-required",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter evidence must keep manifest validation link.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-state-manifest-required",
+            batch_id="portfolio-paper-batch-state-manifest-required",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "portfolio_paper_order_simulation_adapter_manifest_validation_id_required",
+        ):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+            )
+
     def test_portfolio_paper_order_simulation_rejects_adapter_live_route_evidence(self):
         from quant_core.execution import (
             build_portfolio_paper_order_lifecycle,
@@ -13937,6 +15741,1693 @@ class QuantCoreContractTest(unittest.TestCase):
                     "orderSubmitted": False,
                     "liveOrderSubmitted": False,
                     "routeExecuted": True,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_live_trading_allowed_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-live-trading-evidence",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-live-trading-evidence",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Live-trading adapter evidence should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-live-trading-evidence",
+            batch_id="portfolio-paper-batch-live-trading-evidence",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_live_trading_allowed"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": True,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_unrecorded_paper_fill_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-unrecorded-paper-fill-evidence",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-unrecorded-paper-fill-evidence",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Unrecorded adapter fill evidence should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-unrecorded-paper-fill-evidence",
+            batch_id="portfolio-paper-batch-unrecorded-paper-fill-evidence",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_paper_fill_not_recorded"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "blocked",
+                    "fillSummary": "blocked buy 1000 600000 @ 9.2",
+                    "paperFillRecorded": False,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_rejected_simulated_fill_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-rejected-simulated-fill-evidence",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-rejected-simulated-fill-evidence",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Rejected simulated fill evidence should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-rejected-simulated-fill-evidence",
+            batch_id="portfolio-paper-batch-rejected-simulated-fill-evidence",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_simulated_fill_not_filled"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "rejected buy 1000 600000 @ 9.2",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "rejected",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_symbol_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-symbol-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-symbol-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter symbol mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-symbol-mismatch",
+            batch_id="portfolio-paper-batch-adapter-symbol-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_symbol_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 000300 @ 9.2",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "000300",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_order_intent_symbol_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-order-intent-symbol-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-order-intent-symbol-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter order intent symbol mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-order-intent-symbol-mismatch",
+            batch_id="portfolio-paper-batch-adapter-order-intent-symbol-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_intent_symbol_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "orderIntent": {
+                        "symbol": "000300",
+                        "side": "buy",
+                        "type": "limit",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                    },
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_order_intent_side_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-order-intent-side-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-order-intent-side-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter order intent side mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-order-intent-side-mismatch",
+            batch_id="portfolio-paper-batch-adapter-order-intent-side-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_intent_side_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "orderIntent": {
+                        "symbol": "600000",
+                        "side": "sell",
+                        "type": "limit",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                    },
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_order_intent_quantity_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-order-intent-quantity-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-order-intent-quantity-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter order intent quantity mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-order-intent-quantity-mismatch",
+            batch_id="portfolio-paper-batch-adapter-order-intent-quantity-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_intent_quantity_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "orderIntent": {
+                        "symbol": "600000",
+                        "side": "buy",
+                        "type": "limit",
+                        "quantity": 500.0,
+                        "price": 9.2,
+                    },
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_order_intent_price_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-order-intent-price-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-order-intent-price-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter order intent price mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-order-intent-price-mismatch",
+            batch_id="portfolio-paper-batch-adapter-order-intent-price-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_intent_price_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "orderIntent": {
+                        "symbol": "600000",
+                        "side": "buy",
+                        "type": "limit",
+                        "quantity": 1000.0,
+                        "price": 10.0,
+                    },
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_order_intent_notional_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-order-intent-notional-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-order-intent-notional-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter order intent notional mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-order-intent-notional-mismatch",
+            batch_id="portfolio-paper-batch-adapter-order-intent-notional-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_intent_notional_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "orderIntent": {
+                        "symbol": "600000",
+                        "side": "buy",
+                        "type": "limit",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 10000.0,
+                    },
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_order_intent_live_trading_allowed_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-order-intent-live-trading",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-order-intent-live-trading",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter order intent live trading boundary should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-order-intent-live-trading",
+            batch_id="portfolio-paper-batch-adapter-order-intent-live-trading",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_order_intent_live_trading_allowed"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "orderIntent": {
+                        "symbol": "600000",
+                        "side": "buy",
+                        "type": "limit",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                        "liveTradingAllowed": True,
+                    },
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_side_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-side-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-side-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter side mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-side-mismatch",
+            batch_id="portfolio-paper-batch-adapter-side-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_side_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled sell 1000 600000 @ 9.2",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "sell",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_quantity_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-quantity-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-quantity-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter quantity mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-quantity-mismatch",
+            batch_id="portfolio-paper-batch-adapter-quantity-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_quantity_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 2000 600000 @ 9.2",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 2000.0,
+                        "price": 9.2,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_price_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-price-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-price-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter price mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-price-mismatch",
+            batch_id="portfolio-paper-batch-adapter-price-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_price_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.8",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.8,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_notional_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-notional-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-notional-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter notional mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-notional-mismatch",
+            batch_id="portfolio-paper-batch-adapter-notional-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_notional_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "notionalValue": 10000.0,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 10000.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_non_paper_execution_mode_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-non-paper-execution-mode",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-non-paper-execution-mode",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter non-paper execution mode should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-non-paper-execution-mode",
+            batch_id="portfolio-paper-batch-adapter-non-paper-execution-mode",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_paper_execution_mode_invalid"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_live_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_event_type_mismatch_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-event-type-mismatch",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-event-type-mismatch",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter event type mismatch should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-event-type-mismatch",
+            batch_id="portfolio-paper-batch-adapter-event-type-mismatch",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_event_type_mismatch"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_ops_state",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_blocked_reasons_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-blocked-reasons",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-blocked-reasons",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter blocked reasons should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-blocked-reasons",
+            batch_id="portfolio-paper-batch-adapter-blocked-reasons",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_blocked_reasons_present"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "blockedReasons": ["adapter_paper_execution_fill_not_generated"],
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_blocked_step_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-blocked-step",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-blocked-step",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter blocked paper execution step should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-blocked-step",
+            batch_id="portfolio-paper-batch-adapter-blocked-step",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_steps_not_recorded"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "blockedReasons": [],
+                    "paperExecutionSteps": [
+                        {"id": "ops-state-linked", "label": "Adapter ops state linked", "status": "recorded"},
+                        {"id": "simulated-fill-recorded", "label": "Simulated fill recorded", "status": "blocked"},
+                    ],
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_incomplete_step_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-incomplete-steps",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-incomplete-steps",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter incomplete paper execution steps should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-incomplete-steps",
+            batch_id="portfolio-paper-batch-adapter-incomplete-steps",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_steps_missing"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "blockedReasons": [],
+                    "requiredConfirmations": [
+                        {"id": "ops-state-accepted", "label": "Ops state accepted", "status": "confirmed"},
+                        {"id": "paper-account-synced", "label": "Paper account synced", "status": "confirmed"},
+                        {"id": "risk-budget-bound", "label": "Risk budget bound", "status": "confirmed"},
+                        {"id": "simulated-fill-generated", "label": "Simulated fill generated", "status": "confirmed"},
+                        {
+                            "id": "operator-confirmed-no-live-routing",
+                            "label": "Operator confirmed no live routing",
+                            "status": "confirmed",
+                        },
+                    ],
+                    "paperExecutionSteps": [
+                        {"id": "ops-state-linked", "label": "Adapter ops state linked", "status": "recorded"},
+                        {"id": "simulated-fill-recorded", "label": "Simulated fill recorded", "status": "recorded"},
+                    ],
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_missing_confirmation_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-missing-confirmation",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-missing-confirmation",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter missing confirmation should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-missing-confirmation",
+            batch_id="portfolio-paper-batch-adapter-missing-confirmation",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_confirmations_not_confirmed"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "blockedReasons": [],
+                    "requiredConfirmations": [
+                        {"id": "ops-state-accepted", "label": "Ops state accepted", "status": "confirmed"},
+                        {"id": "risk-budget-bound", "label": "Risk budget bound", "status": "missing"},
+                    ],
+                    "paperExecutionSteps": [
+                        {"id": "ops-state-linked", "label": "Adapter ops state linked", "status": "recorded"},
+                        {"id": "paper-account-synced", "label": "Paper account synced", "status": "recorded"},
+                        {"id": "risk-budget-bound", "label": "Risk budget bound", "status": "recorded"},
+                        {"id": "simulated-fill-recorded", "label": "Simulated fill recorded", "status": "recorded"},
+                    ],
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_incomplete_confirmations_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-adapter-incomplete-confirmations",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-adapter-incomplete-confirmations",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Adapter incomplete confirmations should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-adapter-incomplete-confirmations",
+            batch_id="portfolio-paper-batch-adapter-incomplete-confirmations",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_confirmations_missing"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "eventType": "execution_adapter_paper_execution",
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "paperFillRecorded": True,
+                    "paperOnly": True,
+                    "blockedReasons": [],
+                    "requiredConfirmations": [
+                        {"id": "ops-state-accepted", "label": "Ops state accepted", "status": "confirmed"},
+                    ],
+                    "paperExecutionSteps": [
+                        {"id": "ops-state-linked", "label": "Adapter ops state linked", "status": "recorded"},
+                        {"id": "paper-account-synced", "label": "Paper account synced", "status": "recorded"},
+                        {"id": "risk-budget-bound", "label": "Risk budget bound", "status": "recorded"},
+                        {"id": "simulated-fill-recorded", "label": "Simulated fill recorded", "status": "recorded"},
+                    ],
+                    "simulatedFill": {
+                        "status": "filled",
+                        "symbol": "600000",
+                        "side": "buy",
+                        "quantity": 1000.0,
+                        "price": 9.2,
+                        "notionalValue": 9200.0,
+                    },
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
+                },
+            )
+
+    def test_portfolio_paper_order_simulation_rejects_adapter_not_paper_only_evidence(self):
+        from quant_core.execution import (
+            build_portfolio_paper_order_lifecycle,
+            create_portfolio_paper_order_approval,
+            create_portfolio_paper_order_batch,
+            create_portfolio_paper_order_simulation,
+            portfolio_paper_order_approvals_to_map,
+        )
+
+        batch = create_portfolio_paper_order_batch(
+            base_run_id="portfolio-run-not-paper-only-evidence",
+            portfolio_name="A-share state basket",
+            batch_id="portfolio-paper-batch-not-paper-only-evidence",
+            created_at=datetime(2026, 5, 26, 8, 30, tzinfo=timezone.utc),
+            orders=[
+                {
+                    "timestamp": "2026-05-26T08:00:00+00:00",
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "portfolio-paper-run-a-buy",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "notionalValue": 9200.0,
+                    "quantity": 1000.0,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                    "reason": "Non-paper-only adapter evidence should be rejected.",
+                }
+            ],
+        )
+        approval = create_portfolio_paper_order_approval(
+            base_run_id="portfolio-run-not-paper-only-evidence",
+            batch_id="portfolio-paper-batch-not-paper-only-evidence",
+            order_id="portfolio-paper-run-a-buy",
+            approved=True,
+            reviewer="operator-a",
+            reviewed_at="2026-05-26T08:45:00+00:00",
+            reason="Approved for paper simulation only.",
+        )
+        lifecycle = build_portfolio_paper_order_lifecycle(
+            batch,
+            approvals=portfolio_paper_order_approvals_to_map([approval]),
+        )
+
+        with self.assertRaisesRegex(ValueError, "portfolio_paper_order_simulation_adapter_not_paper_only"):
+            create_portfolio_paper_order_simulation(
+                batch=batch,
+                lifecycle_row=lifecycle[0],
+                simulated_at="2026-05-26T08:46:00+00:00",
+                adapter_paper_execution_id="execution-adapter-paper-execution-current",
+                adapter_manifest_validation_id="execution-adapter-secret-manifest-validation-current",
+                adapter_paper_execution_evidence={
+                    "adapterPaperExecutionId": "execution-adapter-paper-execution-current",
+                    "manifestValidationId": "execution-adapter-secret-manifest-validation-current",
+                    "status": "paper_execution_recorded",
+                    "fillSummary": "filled buy 1000 600000 @ 9.2",
+                    "paperFillRecorded": True,
+                    "paperOnly": False,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "liveTradingAllowed": False,
                 },
             )
 
@@ -14453,6 +17944,565 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["aiReviews"][0]["aiReviewId"], "ai-review:run-ai-review-api:rev-ai-review-api")
         self.assertEqual(list_payload["aiReviews"][0]["record"]["boundary"], "Evidence explanation only; no buy/sell instructions or guaranteed returns.")
+
+    def test_p0_ai_review_blocks_missing_and_mismatched_audited_run(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-p0-ai-review-block",
+            created_at=datetime(2026, 6, 23, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend",
+            strategy_revision="rev-p0-ai-review-block",
+            data_rows=120,
+            metrics={"total_return_pct": 2.4, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 2},
+            decisions=[],
+            execution_mode="paper_only",
+            ai_report={"summary": "Evidence only", "risks": [], "improvements": [], "disclaimer": "No advice"},
+            data_quality={"source": "tencent", "isComplete": True, "warnings": [], "rows": 120},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                ai_review_store = review_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                missing_body = json.dumps(
+                    {"runId": "run-missing", "market": "ashare", "symbol": "600000", "timeframe": "1d"}
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/p0/ai-reviews",
+                    body=missing_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(missing_body))},
+                )
+                missing_response = connection.getresponse()
+                missing_payload = json.loads(missing_response.read().decode("utf-8"))
+
+                mismatch_body = json.dumps(
+                    {"runId": "run-p0-ai-review-block", "market": "ashare", "symbol": "000001", "timeframe": "1d"}
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/p0/ai-reviews",
+                    body=mismatch_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(mismatch_body))},
+                )
+                mismatch_response = connection.getresponse()
+                mismatch_payload = json.loads(mismatch_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            stored = review_store.list_by_run("run-p0-ai-review-block")
+
+        self.assertEqual(missing_response.status, 404)
+        self.assertEqual(missing_payload["status"], "blocked")
+        self.assertEqual(missing_payload["error"], "research_run_not_found")
+        self.assertEqual(mismatch_response.status, 409)
+        self.assertEqual(mismatch_payload["status"], "blocked")
+        self.assertEqual(mismatch_payload["error"], "ai_review_context_mismatch")
+        self.assertEqual(mismatch_payload["runContext"]["symbol"], "600000")
+        self.assertEqual(mismatch_payload["requestContext"]["symbol"], "000001")
+        self.assertEqual(stored, [])
+
+    def test_p0_ai_review_generates_local_evidence_review_without_direct_trading_advice(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        audit = ResearchRunAudit(
+            run_id="run-p0-ai-review",
+            created_at=datetime(2026, 6, 23, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend",
+            strategy_revision="rev-p0-ai-review",
+            data_rows=120,
+            metrics={"total_return_pct": 2.4, "max_drawdown_pct": 1.1, "win_rate_pct": 50, "trade_count": 2},
+            decisions=[{"agent": "AI Summary", "message": "Evidence run completed.", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={
+                "summary": "Evidence explanation",
+                "risks": ["Volume confirmation remains weak."],
+                "improvements": ["Compare with benchmark and parameter scan."],
+                "disclaimer": "No investment advice",
+            },
+            data_quality={"source": "tencent", "isComplete": True, "warnings": ["calendar uses static template"], "rows": 120},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": ["calendar uses static template"],
+                "rows": 1,
+                "start": "2026-06-22T08:00:00+00:00",
+                "end": "2026-06-23T08:00:00+00:00",
+                "hash": "snapshot-p0-ai-review",
+                "bars": [
+                    {
+                        "timestamp": "2026-06-23T08:00:00+00:00",
+                        "timestampMs": 1782201600000,
+                        "open": 9.1,
+                        "high": 9.3,
+                        "low": 9.0,
+                        "close": 9.2,
+                        "volume": 1200000,
+                    }
+                ],
+            },
+            strategy_config={
+                "name": "SMA trend",
+                "revision": "rev-p0-ai-review",
+                "market": "ashare",
+                "symbols": ["600000"],
+                "timeframe": "1d",
+                "version": 1,
+                "entryConditions": [{"kind": "close_above_sma", "params": {"window": 20}}],
+                "exitConditions": [{"kind": "close_below_sma", "params": {"window": 20}}],
+                "risk": {"positionPct": 0.2, "stopLossPct": 0.08, "takeProfitPct": 0.18, "maxDrawdownPct": 0.12},
+            },
+            backtest_assumptions={"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            research_store.record(audit)
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                ai_review_store = review_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(
+                {"runId": "run-p0-ai-review", "market": "ashare", "symbol": "600000", "timeframe": "1d"}
+            ).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/p0/ai-reviews",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            stored = review_store.list_by_run("run-p0-ai-review")
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["status"], "ai_review_saved")
+        self.assertEqual(payload["mode"], "local_evidence_review")
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertTrue(payload["directTradingInstructionBlocked"])
+        record = payload["aiReview"]["record"]
+        self.assertEqual(record["runId"], "run-p0-ai-review")
+        self.assertEqual(record["market"], "ashare")
+        self.assertEqual(record["symbol"], "600000")
+        self.assertEqual(record["timeframe"], "1d")
+        self.assertEqual(record["strategyRevision"], "rev-p0-ai-review")
+        self.assertEqual(record["status"], "ready")
+        self.assertGreaterEqual(len(record["citations"]), 4)
+        self.assertTrue(any(citation["id"] == "run" for citation in record["citations"]))
+        self.assertTrue(any(citation["id"] == "metrics" for citation in record["citations"]))
+        self.assertTrue(any(citation["id"] == "risk-gates" for citation in record["citations"]))
+        self.assertTrue(any("weak" in warning.lower() for warning in record["dossier"]["unknowns"]))
+        self.assertGreaterEqual(len(record["rounds"]), 4)
+        self.assertTrue(any(round_row["phase"] == "risk" for round_row in record["rounds"]))
+        self.assertIn("No direct trading instructions", record["boundary"])
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0].ai_review_id, payload["aiReview"]["aiReviewId"])
+        serialized = json.dumps(record, ensure_ascii=False).lower()
+        for forbidden in [" buy ", " sell ", "买入", "卖出", "guaranteed return", "guaranteed profit"]:
+            self.assertNotIn(forbidden, serialized)
+
+    def test_p0_paper_simulation_creates_paper_fill_replay_and_audit_event(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import PaperExecutionStore
+        from quant_core.runs import ResearchRunStore
+
+        audit = self._sample_research_run_audit(run_id="run-p0-paper-sim", strategy_revision="rev-p0-paper-sim")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            audit_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+            research_store.record(audit)
+            review_store.record(
+                {
+                    "schemaVersion": 1,
+                    "recordType": "aiqt.aiReviewRun",
+                    "aiReviewId": "ai-review:run-p0-paper-sim:rev-p0-paper-sim:local-evidence",
+                    "runId": "run-p0-paper-sim",
+                    "createdAt": "2026-06-23T08:05:00+00:00",
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "strategyRevision": "rev-p0-paper-sim",
+                    "executionMode": "paper_only",
+                    "status": "ready",
+                    "summary": {"citationCount": 4, "liveExecutionBlocked": True},
+                    "dossier": {"status": "ready", "summary": "Evidence only"},
+                    "citations": [{"id": "run", "label": "Audited run", "value": "run-p0-paper-sim"}],
+                    "rounds": [{"id": "risk", "phase": "risk", "agent": "Risk", "verdict": "paper_only"}],
+                    "decisionLog": [{"agent": "Risk", "message": "Paper simulation only.", "tone": "warning"}],
+                    "boundary": "Evidence explanation only; No direct trading instructions; paper review only.",
+                }
+            )
+
+            class TestHandler(QuantApiHandler):
+                run_store = research_store
+                paper_execution_store = paper_store
+                ai_review_store = review_store
+                audit_event_store = audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(
+                {
+                    "runId": "run-p0-paper-sim",
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "quantity": 2100,
+                    "liveTradingAllowed": True,
+                    "route": "live",
+                    "orderSubmitted": True,
+                }
+            ).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/p0/paper-simulations",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            stored_executions = paper_store.list_by_run("run-p0-paper-sim")
+            stored_events = audit_store.list_recent(run_id="run-p0-paper-sim", event_type="p0_paper_simulation", limit=10)
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["status"], "paper_simulation_created")
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertFalse(payload["routeExecuted"])
+        self.assertEqual(payload["liveRouteBlockedReason"], "P0 only records simulated paper fills; live routing flags are rejected.")
+        self.assertEqual(payload["execution"]["runId"], "run-p0-paper-sim")
+        self.assertEqual(payload["execution"]["orders"][0]["status"], "filled")
+        self.assertEqual(payload["simulatedFill"]["symbol"], "600000")
+        self.assertEqual(payload["simulatedFill"]["status"], "filled")
+        self.assertEqual(payload["accountReplay"]["cashAfter"], payload["execution"]["account"]["cash"])
+        self.assertEqual(payload["accountReplay"]["positionAfter"], payload["execution"]["account"]["positions"]["600000"])
+        self.assertEqual(payload["auditEvent"]["eventType"], "p0_paper_simulation")
+        self.assertEqual(payload["auditEvent"]["runId"], "run-p0-paper-sim")
+        self.assertTrue(payload["exportReadiness"]["ready"])
+        self.assertEqual(len(stored_executions), 1)
+        self.assertEqual(stored_executions[0].execution_id, payload["execution"]["executionId"])
+        self.assertEqual(len(stored_events), 1)
+        self.assertEqual(stored_events[0].event_id, payload["auditEvent"]["eventId"])
+
+    def test_p0_package_completeness_requires_full_portable_evidence(self):
+        from quant_core.research import build_p0_package_completeness
+        from quant_core.runs import research_run_export_to_payload
+
+        audit = self._sample_research_run_audit(
+            run_id="run-p0-package-complete",
+            strategy_revision="rev-p0-package-complete",
+        )
+        paper_execution = {
+            "executionId": "paper-exec-p0-package-complete",
+            "runId": "run-p0-package-complete",
+            "createdAt": "2026-06-23T08:10:00+00:00",
+            "mode": "paper_only",
+            "account": {"cash": 80659.0, "equity": 100000.0, "positions": {"600000": 2100}},
+            "orders": [
+                {
+                    "orderId": "paper-order-p0-package-complete",
+                    "symbol": "600000",
+                    "side": "buy",
+                    "quantity": 2100,
+                    "price": 9.21,
+                    "status": "filled",
+                    "timestamp": "2026-06-23T08:10:00+00:00",
+                    "reason": "P0 paper simulation.",
+                }
+            ],
+            "gates": [{"id": "live-route", "label": "Live route", "passed": False, "reason": "Paper only"}],
+        }
+        ai_review = {
+            "aiReviewId": "ai-review:run-p0-package-complete:rev-p0-package-complete:local-evidence",
+            "runId": "run-p0-package-complete",
+            "createdAt": "2026-06-23T08:08:00+00:00",
+            "record": {
+                "schemaVersion": 1,
+                "recordType": "aiqt.aiReviewRun",
+                "aiReviewId": "ai-review:run-p0-package-complete:rev-p0-package-complete:local-evidence",
+                "runId": "run-p0-package-complete",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "strategyRevision": "rev-p0-package-complete",
+                "executionMode": "paper_only",
+                "status": "ready",
+                "citations": [{"id": "run", "label": "Audited run", "value": "run-p0-package-complete"}],
+                "boundary": "Evidence explanation only; no direct trading instructions.",
+            },
+        }
+        audit_event = {
+            "schemaVersion": 1,
+            "eventId": "p0-paper-simulation-paper-exec-p0-package-complete",
+            "eventType": "p0_paper_simulation",
+            "runId": "run-p0-package-complete",
+            "createdAt": "2026-06-23T08:10:00+00:00",
+            "stage": "execution",
+            "source": "p0-paper-simulation",
+            "summary": "P0 paper simulation recorded; live routing blocked.",
+            "detail": "Simulated fill evidence is ready for portable replay.",
+            "metadata": {
+                "paperExecutionId": "paper-exec-p0-package-complete",
+                "aiReviewId": "ai-review:run-p0-package-complete:rev-p0-package-complete:local-evidence",
+                "cashAfter": 80659.0,
+                "positionAfter": 2100,
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "routeExecuted": False,
+            },
+        }
+
+        incomplete_package = research_run_export_to_payload(audit)
+        incomplete = build_p0_package_completeness(incomplete_package)
+        complete_package = research_run_export_to_payload(
+            audit,
+            paper_executions=[paper_execution],
+            ai_review_runs=[ai_review],
+            audit_events=[audit_event],
+        )
+
+        self.assertFalse(incomplete["ready"])
+        self.assertEqual(incomplete["status"], "blocked")
+        self.assertEqual(complete_package["manifest"]["artifactCounts"]["auditEvents"], 1)
+        self.assertEqual(complete_package["auditEvents"][0]["eventType"], "p0_paper_simulation")
+        self.assertTrue(complete_package["p0PackageCompleteness"]["ready"])
+        self.assertEqual(complete_package["p0PackageCompleteness"]["status"], "complete")
+        self.assertFalse(complete_package["p0PackageCompleteness"]["liveTradingAllowed"])
+        self.assertIn(
+            "paper-simulation",
+            [criterion["id"] for criterion in complete_package["p0PackageCompleteness"]["criteria"]],
+        )
+        self.assertTrue(
+            all(criterion["status"] == "passed" for criterion in complete_package["p0PackageCompleteness"]["criteria"])
+        )
+
+    def test_p0_package_export_import_preserves_paper_simulation_audit_event(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.execution import (
+            PaperExecutionStore,
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+        )
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.research_import_undo import ResearchRunImportUndoStore
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        audit = self._sample_research_run_audit(
+            run_id="run-p0-package-portable",
+            strategy_revision="rev-p0-package-portable",
+        )
+        review_record = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review:run-p0-package-portable:rev-p0-package-portable:local-evidence",
+            "runId": "run-p0-package-portable",
+            "createdAt": "2026-06-23T08:05:00+00:00",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyRevision": "rev-p0-package-portable",
+            "executionMode": "paper_only",
+            "status": "ready",
+            "summary": {"citationCount": 1, "liveExecutionBlocked": True},
+            "dossier": {"status": "ready", "summary": "Portable evidence only"},
+            "citations": [{"id": "run", "label": "Audited run", "value": "run-p0-package-portable"}],
+            "rounds": [{"id": "risk", "phase": "risk", "agent": "Risk", "verdict": "paper_only"}],
+            "decisionLog": [{"agent": "Risk", "message": "Paper simulation only.", "tone": "warning"}],
+            "boundary": "Evidence explanation only; No direct trading instructions; paper review only.",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source_run_store = ResearchRunStore(f"{tmp}/source-runs.sqlite")
+            source_paper_store = PaperExecutionStore(f"{tmp}/source-paper.sqlite")
+            source_review_store = AiReviewRunStore(f"{tmp}/source-ai-reviews.sqlite")
+            source_audit_event_store = AuditEventStore(f"{tmp}/source-audit-events.sqlite")
+            source_run_store.record(audit)
+            source_review_store.record(review_record)
+
+            class SourceHandler(QuantApiHandler):
+                run_store = source_run_store
+                paper_execution_store = source_paper_store
+                ai_review_store = source_review_store
+                audit_event_store = source_audit_event_store
+                portfolio_paper_order_store = PortfolioPaperOrderStore(f"{tmp}/source-portfolio-orders.sqlite")
+                portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(
+                    f"{tmp}/source-portfolio-approvals.sqlite"
+                )
+                portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(
+                    f"{tmp}/source-portfolio-simulations.sqlite"
+                )
+
+            source_server = HTTPServer(("127.0.0.1", 0), SourceHandler)
+            source_thread = Thread(target=source_server.serve_forever, daemon=True)
+            source_thread.start()
+            source_connection = HTTPConnection(source_server.server_address[0], source_server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "runId": "run-p0-package-portable",
+                        "market": "ashare",
+                        "symbol": "600000",
+                        "timeframe": "1d",
+                        "quantity": 2100,
+                    }
+                ).encode("utf-8")
+                source_connection.request(
+                    "POST",
+                    "/api/p0/paper-simulations",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                paper_response = source_connection.getresponse()
+                paper_payload = json.loads(paper_response.read().decode("utf-8"))
+                source_connection.request("GET", "/api/research/runs/run-p0-package-portable/export")
+                export_response = source_connection.getresponse()
+                export_payload = json.loads(export_response.read().decode("utf-8"))
+            finally:
+                source_connection.close()
+                source_server.shutdown()
+                source_thread.join(timeout=5)
+                source_server.server_close()
+
+            target_run_store = ResearchRunStore(f"{tmp}/target-runs.sqlite")
+            target_paper_store = PaperExecutionStore(f"{tmp}/target-paper.sqlite")
+            target_review_store = AiReviewRunStore(f"{tmp}/target-ai-reviews.sqlite")
+            target_audit_event_store = AuditEventStore(f"{tmp}/target-audit-events.sqlite")
+
+            class TargetHandler(QuantApiHandler):
+                run_store = target_run_store
+                paper_execution_store = target_paper_store
+                ai_review_store = target_review_store
+                audit_event_store = target_audit_event_store
+                note_store = ResearchNoteStore(f"{tmp}/target-notes.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/target-strategies.sqlite")
+                import_undo_store = ResearchRunImportUndoStore(f"{tmp}/target-import-undo.sqlite")
+                portfolio_paper_order_store = PortfolioPaperOrderStore(f"{tmp}/target-portfolio-orders.sqlite")
+                portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(
+                    f"{tmp}/target-portfolio-approvals.sqlite"
+                )
+                portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(
+                    f"{tmp}/target-portfolio-simulations.sqlite"
+                )
+
+            target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
+            target_thread = Thread(target=target_server.serve_forever, daemon=True)
+            target_thread.start()
+            target_connection = HTTPConnection(target_server.server_address[0], target_server.server_address[1], timeout=5)
+            try:
+                import_body = json.dumps(export_payload["export"]).encode("utf-8")
+                target_connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=import_body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(import_body))},
+                )
+                import_response = target_connection.getresponse()
+                import_payload = json.loads(import_response.read().decode("utf-8"))
+                target_connection.request("GET", "/api/research/runs/run-p0-package-portable/export")
+                target_export_response = target_connection.getresponse()
+                target_export_payload = json.loads(target_export_response.read().decode("utf-8"))
+            finally:
+                target_connection.close()
+                target_server.shutdown()
+                target_thread.join(timeout=5)
+                target_server.server_close()
+
+            imported_events = target_audit_event_store.list_recent(
+                run_id="run-p0-package-portable",
+                event_type="p0_paper_simulation",
+                limit=10,
+            )
+
+        self.assertEqual(paper_response.status, 201)
+        self.assertEqual(paper_payload["auditEvent"]["eventType"], "p0_paper_simulation")
+        self.assertEqual(export_response.status, 200)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["auditEvents"], 1)
+        self.assertEqual(export_payload["export"]["auditEvents"][0]["eventType"], "p0_paper_simulation")
+        self.assertTrue(export_payload["export"]["p0PackageCompleteness"]["ready"])
+        self.assertEqual(import_response.status, 201)
+        self.assertEqual(import_payload["run"]["runId"], "run-p0-package-portable")
+        self.assertEqual(len(imported_events), 1)
+        self.assertEqual(imported_events[0].event_id, paper_payload["auditEvent"]["eventId"])
+        self.assertEqual(target_export_response.status, 200)
+        self.assertEqual(target_export_payload["export"]["manifest"]["artifactCounts"]["auditEvents"], 1)
+        self.assertTrue(target_export_payload["export"]["p0PackageCompleteness"]["ready"])
 
     def test_research_run_ai_review_api_pages_and_searches_review_records(self):
         import json
@@ -16448,6 +20498,90 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertAlmostEqual(engine.strategy.risk.max_drawdown_pct, 0.09)
         self.assertEqual(payload["researchRun"]["strategyRevision"], engine.strategy.revision)
 
+    def test_p0_pipeline_creates_strategy_backtest_and_run_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        request_payload = {
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "strategyConfig": {
+                "name": "SMA trend",
+                "entry": {"type": "sma_cross", "window": 20},
+                "exit": {"type": "sma_break", "window": 20},
+                "position": {"maxPositionPct": 20},
+                "risk": {"stopLossPct": 8, "maxDrawdownPct": 12},
+            },
+            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.run_store = store
+            TestHandler.cache = cache
+            TestHandler.strategy_store = strategy_store
+            TestHandler.kline_adapter = DemoMarketDataAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(request_payload).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/p0/pipeline",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            latest = store.list_recent(limit=1)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["status"], "audited_run_created")
+        self.assertRegex(payload["runId"], r"^run-[0-9a-f]+$")
+        self.assertRegex(payload["strategyRevisionId"], r"^strategy-[0-9a-f]+$")
+        self.assertRegex(payload["dataSnapshotId"], r"^data-[0-9a-f]+$")
+        self.assertIn("totalReturnPct", payload["metrics"])
+        self.assertIn("maxDrawdownPct", payload["metrics"])
+        self.assertIn("tradeCount", payload["metrics"])
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertEqual(len(latest), 1)
+        self.assertEqual(latest[0].run_id, payload["runId"])
+        self.assertEqual(latest[0].strategy_config["name"], "SMA trend")
+        self.assertEqual(latest[0].strategy_config["entryConditions"][0]["kind"], "close_above_sma")
+        self.assertEqual(latest[0].strategy_config["entryConditions"][0]["params"], {"window": 20})
+        self.assertEqual(latest[0].strategy_config["exitConditions"][0]["kind"], "close_below_sma")
+        self.assertEqual(latest[0].strategy_config["risk"]["positionPct"], 0.2)
+        self.assertEqual(latest[0].strategy_config["risk"]["stopLossPct"], 0.08)
+        self.assertEqual(latest[0].strategy_config["risk"]["maxDrawdownPct"], 0.12)
+        self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 100000, "feeBps": 3, "slippageBps": 2})
+        self.assertEqual(latest[0].execution_mode, "paper_only")
+        self.assertTrue(latest[0].data_snapshot["hash"])
+
     def test_research_run_store_records_and_reads_audit_records(self):
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
 
@@ -18172,6 +22306,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import _persist_research_run_import
+        from quant_core.audit_events import AuditEventStore
         from quant_core.execution import (
             PortfolioPaperOrderApprovalStore,
             PortfolioPaperOrderSimulationStore,
@@ -18236,6 +22371,7 @@ class QuantCoreContractTest(unittest.TestCase):
             portfolio_order_simulation_library = PortfolioPaperOrderSimulationStore(
                 f"{tmp}/portfolio_order_simulations.sqlite"
             )
+            audit_event_library = AuditEventStore(f"{tmp}/audit_events.sqlite")
 
             class FailingAiReviewStore(AiReviewRunStore):
                 def record(self, record):
@@ -18313,6 +22449,8 @@ class QuantCoreContractTest(unittest.TestCase):
                     portfolio_paper_order_batches=[imported_batch],
                     portfolio_paper_order_approvals=[],
                     portfolio_paper_order_simulations=[],
+                    audit_event_store=audit_event_library,
+                    audit_event_payloads=[],
                     ai_review_records=[failing_review],
                 )
 

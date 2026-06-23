@@ -17,7 +17,9 @@
     "api": "python tools/run_quant_api.py",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
-    "docker:smoke": "python tools/docker_smoke.py"
+    "docker:smoke": "python tools/docker_smoke.py",
+    "docker:smoke:p0": "python tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json",
+    "docker:smoke:p0:validate": "python tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json"
   },
   "engines": {
     "node": ">=22",

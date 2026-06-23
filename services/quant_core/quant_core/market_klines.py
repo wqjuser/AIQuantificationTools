@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import quote, urlencode
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
@@ -601,6 +601,232 @@ def market_klines_to_payload(
         "quality": quality_payload,
         "bars": [bar_to_payload(bar) for bar in bars],
     }
+
+
+def build_market_data_readiness(
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+    cache_context: dict[str, Any] | None,
+    watchlist_refreshes: list[dict[str, Any]] | None = None,
+    adapter_error_events: list[dict[str, Any]] | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, object]:
+    generated = generated_at or datetime.now(timezone.utc)
+    cache_payload = _market_data_readiness_cache_payload(
+        cache_context,
+        timeframe=timeframe,
+        generated_at=generated,
+    )
+    latest_refresh = _latest_market_data_readiness_refresh(
+        watchlist_refreshes or [],
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    latest_error = _latest_market_data_readiness_provider_error(
+        adapter_error_events or [],
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    provider_health_state = "degraded" if latest_error else "healthy"
+    cache_state = str(cache_payload["freshness"])
+    bar_count = int(cache_payload["rowCount"])
+    blocking_reasons: list[str] = []
+    repair_actions: list[dict[str, str]] = []
+
+    if cache_state == "empty" or bar_count <= 0:
+        blocking_reasons.append("no_cached_bars")
+        repair_actions.append(_market_data_readiness_repair_action("refresh-cache", market, symbol, timeframe))
+    elif cache_state == "stale":
+        repair_actions.append(_market_data_readiness_repair_action("refresh-cache", market, symbol, timeframe))
+
+    if latest_error:
+        if cache_state == "empty":
+            blocking_reasons.append("provider_unhealthy")
+        repair_actions.append(_market_data_readiness_repair_action("review-provider-health", market, symbol, timeframe))
+
+    state = "ready" if cache_state == "fresh" and not blocking_reasons else ("stale" if bar_count > 0 else "blocked")
+    return {
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "state": state,
+        "source": _market_data_readiness_source(market, latest_refresh),
+        "cacheState": cache_state,
+        "barCount": bar_count,
+        "latestBarAt": cache_payload["endTimestamp"],
+        "startBarAt": cache_payload["startTimestamp"],
+        "ageHours": cache_payload["ageHours"],
+        "providerHealthState": provider_health_state,
+        "blockingReasons": blocking_reasons,
+        "repairActions": repair_actions,
+        "latestRefreshRunId": latest_refresh["runId"] if latest_refresh else None,
+        "latestProviderErrorId": latest_error.get("eventId") if latest_error else None,
+        "dataQualityWarnings": _market_data_readiness_quality_warnings(latest_refresh),
+    }
+
+
+def _market_data_readiness_cache_payload(
+    context: dict[str, Any] | None,
+    *,
+    timeframe: str,
+    generated_at: datetime,
+) -> dict[str, object]:
+    if not context:
+        return {
+            "freshness": "empty",
+            "rowCount": 0,
+            "ageHours": None,
+            "startTimestamp": None,
+            "endTimestamp": None,
+        }
+    row_count = _non_negative_int(context.get("row_count"))
+    end_timestamp = _optional_string(context.get("end_timestamp"))
+    freshness, age_hours = _market_data_readiness_cache_freshness(
+        row_count=row_count,
+        timeframe=timeframe,
+        end_timestamp=end_timestamp,
+        generated_at=generated_at,
+    )
+    return {
+        "freshness": freshness,
+        "rowCount": row_count,
+        "ageHours": age_hours,
+        "startTimestamp": _optional_string(context.get("start_timestamp")),
+        "endTimestamp": end_timestamp,
+    }
+
+
+def _latest_market_data_readiness_refresh(
+    refreshes: list[dict[str, Any]],
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> dict[str, Any] | None:
+    for refresh in refreshes:
+        items = refresh.get("items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if (
+                str(item.get("market") or "") == market
+                and str(item.get("symbol") or "") == symbol
+                and str(item.get("timeframe") or "") == timeframe
+            ):
+                return {"runId": refresh.get("runId"), "createdAt": refresh.get("createdAt"), "item": item}
+    return None
+
+
+def _latest_market_data_readiness_provider_error(
+    events: list[dict[str, Any]],
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> dict[str, Any] | None:
+    adapter_id = _market_data_readiness_adapter_id(market)
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if adapter_id and str(event.get("adapterId") or "") != adapter_id:
+            continue
+        if str(event.get("market") or "") != market:
+            continue
+        if str(event.get("symbol") or "") != symbol:
+            continue
+        if str(event.get("timeframe") or "") != timeframe:
+            continue
+        return event
+    return None
+
+
+def _market_data_readiness_source(market: str, refresh: dict[str, Any] | None) -> str:
+    item = refresh.get("item") if refresh else None
+    quality = item.get("quality") if isinstance(item, dict) else None
+    source = quality.get("source") if isinstance(quality, dict) else None
+    if isinstance(source, str) and source.strip():
+        return source.strip()
+    return {
+        "ashare": "tencent",
+        "us": "yfinance",
+        "crypto": "ccxt",
+    }.get(market, "unknown")
+
+
+def _market_data_readiness_quality_warnings(refresh: dict[str, Any] | None) -> list[str]:
+    item = refresh.get("item") if refresh else None
+    quality = item.get("quality") if isinstance(item, dict) else None
+    warnings = quality.get("warnings") if isinstance(quality, dict) else None
+    if not isinstance(warnings, list):
+        return []
+    return [str(warning) for warning in warnings if str(warning).strip()]
+
+
+def _market_data_readiness_adapter_id(market: str) -> str:
+    return {
+        "ashare": "akshare-ohlcv",
+        "us": "yfinance-ohlcv",
+        "crypto": "ccxt-ohlcv",
+    }.get(market, "")
+
+
+def _market_data_readiness_repair_action(action_id: str, market: str, symbol: str, timeframe: str) -> dict[str, str]:
+    if action_id == "review-provider-health":
+        return {
+            "id": action_id,
+            "label": "Review provider health",
+            "target": "/api/settings/status",
+            "method": "GET",
+        }
+    return {
+        "id": action_id,
+        "label": "Refresh market cache",
+        "target": f"/api/cache/refresh?market={market}&symbol={symbol}&timeframe={timeframe}",
+        "method": "POST",
+    }
+
+
+def _market_data_readiness_cache_freshness(
+    *, row_count: int, timeframe: str, end_timestamp: str | None, generated_at: datetime
+) -> tuple[str, int | None]:
+    end = _parse_optional_datetime(end_timestamp)
+    if row_count <= 0 or end is None:
+        return "empty", None
+    reference = generated_at if generated_at.tzinfo else generated_at.replace(tzinfo=timezone.utc)
+    age_hours = max(0, int((reference.astimezone(timezone.utc) - end).total_seconds() // 3600))
+    fresh_threshold_hours = 96 if timeframe == "1d" else 24
+    return ("fresh" if age_hours <= fresh_threshold_hours else "stale"), age_hours
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0
 
 
 def bar_to_payload(bar: OHLCVBar) -> dict[str, object]:

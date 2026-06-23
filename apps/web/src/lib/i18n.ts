@@ -68,6 +68,14 @@ const messages = {
     "researchWorkspace.unsavedDetail": "Current Stage 1 market, symbol, timeframe, or entry workspace has not been persisted yet.",
     "researchWorkspace.savedDetail": "Current Stage 1 research workspace context is persisted in the local core.",
     "action.runPipeline": "Run Pipeline",
+    "p0Journey.title": "P0 Golden Path",
+    "p0Journey.subtitle": "One path from data to paper replay",
+    "p0Journey.current": "Current",
+    "p0Journey.done": "Done",
+    "p0Journey.blocked": "Blocked",
+    "p0Journey.ready": "Ready",
+    "p0Journey.action": "Run next step",
+    "p0Journey.boundary": "Paper-only · live trading blocked",
     "moduleFocus.label": "Current Task",
     "moduleFocus.instrument": "Instrument",
     "panel.chart.title": "Chart & Factor Overlays",
@@ -333,6 +341,14 @@ const messages = {
     "researchWorkspace.unsavedDetail": "当前 Stage 1 市场、标的、周期或入口工作区尚未持久化保存。",
     "researchWorkspace.savedDetail": "当前 Stage 1 研究工作区上下文已保存到本地核心服务。",
     "action.runPipeline": "运行流水线",
+    "p0Journey.title": "P0 黄金路径",
+    "p0Journey.subtitle": "从数据到纸面盘回放的一条主线",
+    "p0Journey.current": "当前",
+    "p0Journey.done": "完成",
+    "p0Journey.blocked": "阻断",
+    "p0Journey.ready": "就绪",
+    "p0Journey.action": "运行下一步",
+    "p0Journey.boundary": "仅纸面盘 · 实盘阻断",
     "moduleFocus.label": "当前任务",
     "moduleFocus.instrument": "标的",
     "panel.chart.title": "图表与因子叠加",
@@ -705,6 +721,10 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "AI review record saved": "AI review record saved",
       "AI review record save failed": "AI review record save failed",
       "AI review records loaded": "AI review records loaded",
+      "Adapter paper execution recorded": "Adapter paper execution recorded",
+      "Adapter paper execution blocked": "Adapter paper execution blocked",
+      "Adapter paper execution failed": "Adapter paper execution failed",
+      "Adapter paper execution reused": "Adapter paper execution reused",
       "Paper execution recorded": "Paper execution recorded",
       "Paper execution failed": "Paper execution failed",
       "Paper execution history loaded": "Paper execution history loaded",
@@ -860,6 +880,10 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "AI review record saved": "AI 评审运行记录已保存",
       "AI review record save failed": "AI 评审运行记录保存失败",
       "AI review records loaded": "AI 评审运行记录已加载",
+      "Adapter paper execution recorded": "适配器模拟执行已记录",
+      "Adapter paper execution blocked": "适配器模拟执行已阻断",
+      "Adapter paper execution failed": "适配器模拟执行失败",
+      "Adapter paper execution reused": "适配器模拟执行已复用",
       "Paper execution recorded": "模拟执行已记录",
       "Paper execution failed": "模拟执行失败",
       "Paper execution history loaded": "模拟执行历史已加载",
@@ -992,7 +1016,7 @@ export function createI18n(locale: Locale) {
       return valueOf(labels.metrics, label, label);
     },
     statusLabel(status: string) {
-      return valueOf(labels.statuses, status, status);
+      return translateStatusLabel(labels.statuses, status);
     },
     executionMode(execution: ExecutionState) {
       return labels.executionModes[execution.mode];
@@ -1227,4 +1251,17 @@ function valueOf<T>(record: Record<string, T>, key: string, fallback: T): T;
 function valueOf<T>(record: Record<string, T>, key: string, fallback: T | undefined): T | undefined;
 function valueOf<T>(record: Record<string, T>, key: string, fallback: T | undefined): T | undefined {
   return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : fallback;
+}
+
+function translateStatusLabel(statuses: Record<string, string>, status: string): string {
+  const direct = valueOf(statuses, status, undefined);
+  if (direct) {
+    return direct;
+  }
+  const dynamicStatus = status.match(/^(.+?)( · .+)$/u);
+  if (!dynamicStatus) {
+    return status;
+  }
+  const translatedPrefix = valueOf(statuses, dynamicStatus[1], undefined);
+  return translatedPrefix ? `${translatedPrefix}${dynamicStatus[2]}` : status;
 }

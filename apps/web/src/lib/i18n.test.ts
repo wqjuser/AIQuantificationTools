@@ -29,6 +29,16 @@ describe("i18n", () => {
     expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
     expect(zh.statusLabel("AI review export ready")).toBe("AI 评审报告导出完成");
     expect(zh.statusLabel("AI review record saved")).toBe("AI 评审运行记录已保存");
+    expect(zh.statusLabel("Adapter paper execution recorded · ashare-live")).toBe(
+      "适配器模拟执行已记录 · ashare-live"
+    );
+    expect(zh.statusLabel("Adapter paper execution blocked · ashare-live")).toBe(
+      "适配器模拟执行已阻断 · ashare-live"
+    );
+    expect(zh.statusLabel("Adapter paper execution reused")).toBe("适配器模拟执行已复用");
+    expect(zh.statusLabel("Adapter paper execution reused · ashare-live")).toBe(
+      "适配器模拟执行已复用 · ashare-live"
+    );
     expect(marketArea ? zh.productWorkAreaDeliveryStage(marketArea) : "").toBe("阶段 1 · 行情与研究");
     expect(marketArea ? zh.productDevelopmentStageStatus(marketArea.deliveryStageStatus) : "").toBe("当前阶段");
     expect(auditArea ? zh.productDevelopmentStageStatus(auditArea.deliveryStageStatus) : "").toBe("基础维护");
@@ -74,6 +84,8 @@ describe("i18n", () => {
     expect(zh.t("aiReview.exportMarkdown")).toBe("导出 AI 报告");
     expect(zh.t("aiReview.saveRecord")).toBe("保存运行记录");
     expect(zh.t("aiReview.savedRecords")).toBe("已保存评审记录");
+    expect(zh.t("p0Journey.title")).toBe("P0 黄金路径");
+    expect(zh.t("p0Journey.action")).toBe("运行下一步");
     expect(zh.t("history.replay")).toBe("回放");
     expect(zh.t("history.comparison")).toBe("运行对比");
     expect(zh.t("history.changed")).toBe("已变化");
@@ -98,6 +110,7 @@ describe("i18n", () => {
     expect(en.t("aiReview.exportMarkdown")).toBe("Export AI report");
     expect(en.t("aiReview.saveRecord")).toBe("Save record");
     expect(en.t("aiReview.savedRecords")).toBe("Saved review records");
+    expect(en.t("p0Journey.boundary")).toBe("Paper-only · live trading blocked");
     expect(en.t("portfolio.unrealizedPnl")).toBe("Unrealized P&L");
     expect(en.t("history.rows", { count: 240 })).toBe("240 bars");
     expect(en.t("history.comparison")).toBe("Run comparison");

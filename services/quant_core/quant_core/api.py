@@ -170,6 +170,7 @@ from quant_core.execution import (
     execution_adapter_secret_reference_payload_from_audit_event,
     execution_adapter_secret_reference_to_audit_event_payload,
     execution_adapter_secret_reference_to_payload,
+    materialize_execution_adapter_secret_manifest,
     execution_adapter_certification_to_audit_event_payload,
     execution_adapter_certification_to_payload,
     paper_execution_payload_to_record,
@@ -190,9 +191,10 @@ from quant_core.execution_adapter_health import execution_adapter_health_probe_t
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_calendar import build_market_calendar_status
-from quant_core.market_klines import QuantDingerKlineAdapter, market_klines_to_payload
+from quant_core.market_klines import QuantDingerKlineAdapter, build_market_data_readiness, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
 from quant_core.research_import_undo import (
     ResearchRunImportUndoRecord,
@@ -206,6 +208,7 @@ from quant_core.runs import (
     research_run_audit_to_payload,
     research_run_audits_to_payload,
     research_run_export_to_payload,
+    research_run_import_audit_events,
     research_run_import_ai_review_runs,
     research_run_import_paper_executions,
     research_run_import_portfolio_paper_order_approvals,
@@ -242,6 +245,13 @@ def _response(payload: object) -> bytes:
     return json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
 
 
+def _execution_adapter_secret_store_root(audit_event_store: AuditEventStore) -> Path:
+    store_path = getattr(audit_event_store, "path", None)
+    if store_path:
+        return Path(store_path).parent / "secret-store"
+    return Path("data") / "secret-store"
+
+
 def _adapter_paper_executions_for_export(
     audit_event_store: AuditEventStore,
     *,
@@ -262,6 +272,34 @@ def _adapter_paper_executions_for_export(
         if len(executions) >= limit:
             break
     return executions
+
+
+def _existing_adapter_paper_execution_for_ops_state(
+    audit_event_store: AuditEventStore,
+    *,
+    adapter_id: str,
+    adapter_ops_state_id: str,
+) -> dict[str, object] | None:
+    expected_adapter_id = str(adapter_id or "").strip()
+    expected_ops_state_id = str(adapter_ops_state_id or "").strip()
+    if not expected_adapter_id or not expected_ops_state_id:
+        return None
+    events = audit_event_store.list_recent(
+        event_type="execution_adapter_paper_execution",
+        limit=50,
+        query=expected_ops_state_id,
+    )
+    for event in events:
+        payload = execution_adapter_paper_execution_payload_from_audit_event(event)
+        if not payload:
+            continue
+        if (
+            payload.get("adapterId") == expected_adapter_id
+            and payload.get("adapterOpsStateId") == expected_ops_state_id
+            and payload.get("status") == "paper_execution_recorded"
+        ):
+            return payload
+    return None
 
 
 def _fetch_market_klines_with_cache(
@@ -344,6 +382,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     audit_signing_keys_json = os.environ.get("AIQT_AUDIT_SIGNING_KEYS_JSON", "")
     execution_adapter_health_exchange_factory = None
     execution_adapter_health_environ = None
+    p0_acceptance_report_path = DEFAULT_P0_ACCEPTANCE_REPORT_PATH
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -376,6 +415,175 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/p0/pipeline":
+            try:
+                payload = self._read_json_body()
+                market = str(payload.get("market") or "ashare").strip() or "ashare"
+                symbol = str(payload.get("symbol") or "600000").strip() or "600000"
+                timeframe = str(payload.get("timeframe") or "1d").strip() or "1d"
+                strategy_snapshot = _p0_strategy_snapshot_from_payload(payload.get("strategyConfig"))
+                validation = validate_strategy_snapshot(
+                    strategy_snapshot,
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
+                if validation.status == "blocked":
+                    self._send_json(
+                        {
+                            "error": "strategy_not_ready",
+                            "detail": "strategy_preflight_blocked",
+                            "validation": strategy_validation_to_payload(validation),
+                        },
+                        status=400,
+                    )
+                    return
+                workspace = run_terminal_research(
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    adapter=self.kline_adapter,
+                    assistant=self.assistant,
+                    engine=_p0_backtest_engine_from_payload(payload.get("assumptions")),
+                    cache=self.cache,
+                    run_store=self.run_store,
+                    data_limit=_p0_data_limit_from_payload(payload),
+                    strategy_snapshot=strategy_snapshot,
+                )
+                if not workspace.research_run:
+                    raise ValueError("p0_pipeline_run_missing")
+                strategy = strategy_config_from_snapshot(
+                    workspace.strategy,
+                    market=workspace.selected_instrument.market,
+                    symbol=workspace.selected_instrument.symbol,
+                    timeframe=workspace.selected_timeframe,
+                )
+                self.strategy_store.save(strategy, audit_run_id=workspace.research_run.run_id)
+                audit = self.run_store.get(workspace.research_run.run_id)
+                if audit is None:
+                    raise ValueError("p0_pipeline_audit_missing")
+            except ValueError as error:
+                self._send_json({"error": "invalid_p0_pipeline", "detail": str(error)}, status=400)
+                return
+            self._send_json(_p0_pipeline_response_payload(audit))
+            return
+        if parsed.path == "/api/p0/ai-reviews":
+            try:
+                payload = self._read_json_body()
+                run_id = str(payload.get("runId") or "").strip()
+                audit = self.run_store.get(run_id) if run_id else None
+                if not audit:
+                    self._send_json(
+                        {"status": "blocked", "error": "research_run_not_found", "runId": run_id},
+                        status=404,
+                    )
+                    return
+                mismatch = _p0_ai_review_context_mismatch(audit, payload)
+                if mismatch:
+                    self._send_json(
+                        {
+                            "status": "blocked",
+                            "error": "ai_review_context_mismatch",
+                            "runContext": mismatch["runContext"],
+                            "requestContext": mismatch["requestContext"],
+                        },
+                        status=409,
+                    )
+                    return
+                review = self.ai_review_store.record(_build_p0_ai_review_record(audit))
+            except ValueError as error:
+                self._send_json({"status": "blocked", "error": "invalid_p0_ai_review", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "status": "ai_review_saved",
+                    "mode": "local_evidence_review",
+                    "aiReview": ai_review_run_record_to_payload(review),
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "directTradingInstructionBlocked": True,
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/p0/paper-simulations":
+            try:
+                payload = self._read_json_body()
+                run_id = str(payload.get("runId") or "").strip()
+                audit = self.run_store.get(run_id) if run_id else None
+                if not audit:
+                    self._send_json(
+                        {"status": "blocked", "error": "research_run_not_found", "runId": run_id},
+                        status=404,
+                    )
+                    return
+                mismatch = _p0_ai_review_context_mismatch(audit, payload)
+                if mismatch:
+                    self._send_json(
+                        {
+                            "status": "blocked",
+                            "error": "paper_simulation_context_mismatch",
+                            "runContext": mismatch["runContext"],
+                            "requestContext": mismatch["requestContext"],
+                        },
+                        status=409,
+                    )
+                    return
+                ai_review = _latest_ready_p0_ai_review(self.ai_review_store, audit)
+                if ai_review is None:
+                    self._send_json(
+                        {
+                            "status": "blocked",
+                            "error": "p0_ai_review_required",
+                            "runId": audit.run_id,
+                            "detail": "Run P0 AI review before submitting a paper simulation.",
+                            "paperOnly": True,
+                            "liveTradingAllowed": False,
+                            "orderSubmitted": False,
+                            "liveOrderSubmitted": False,
+                            "routeExecuted": False,
+                        },
+                        status=409,
+                    )
+                    return
+                validate_paper_execution_handoff(audit)
+                execution = create_paper_execution_from_audit(audit)
+                self.paper_execution_store.record(execution)
+                audit_event = self.audit_event_store.record(
+                    _p0_paper_simulation_audit_event_payload(
+                        audit=audit,
+                        execution=execution,
+                        ai_review=ai_review,
+                        request_payload=payload,
+                    )
+                )
+                executions = self.paper_execution_store.list_by_run(run_id, limit=20)
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "status": "blocked",
+                        "error": "invalid_p0_paper_simulation",
+                        "detail": str(error),
+                        "paperOnly": True,
+                        "liveTradingAllowed": False,
+                        "orderSubmitted": False,
+                        "liveOrderSubmitted": False,
+                        "routeExecuted": False,
+                    },
+                    status=400,
+                )
+                return
+            self._send_json(
+                _p0_paper_simulation_response_payload(
+                    audit=audit,
+                    execution=execution,
+                    ai_review=ai_review,
+                    audit_event=audit_event,
+                    promotion=build_promotion_candidate(audit, executions),
+                ),
+                status=201,
+            )
+            return
         if parsed.path == "/api/strategies/validate":
             try:
                 payload = self._read_json_body()
@@ -603,6 +811,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send_json({"error": "invalid_execution_adapter_secret_materialization", "detail": str(error)}, status=400)
                 return
+            materialize_execution_adapter_secret_manifest(
+                materialization,
+                secret_store_root=_execution_adapter_secret_store_root(self.audit_event_store),
+            )
             audit_event = self.audit_event_store.record(
                 execution_adapter_secret_materialization_to_audit_event_payload(materialization)
             )
@@ -639,6 +851,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     manifest_path=str(payload.get("manifestPath") or ""),
                     operator=str(payload.get("operator") or "local-operator"),
                     metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                    secret_store_root=_execution_adapter_secret_store_root(self.audit_event_store),
                 )
             except ValueError as error:
                 self._send_json(
@@ -1352,6 +1565,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     status=400,
                 )
                 return
+            if adapter_paper_execution.status == "paper_execution_recorded":
+                existing_paper_execution = _existing_adapter_paper_execution_for_ops_state(
+                    self.audit_event_store,
+                    adapter_id=adapter_paper_execution.adapter_id,
+                    adapter_ops_state_id=adapter_paper_execution.adapter_ops_state_id,
+                )
+                if existing_paper_execution:
+                    self._send_json(
+                        {
+                            "error": "execution_adapter_paper_execution_already_recorded",
+                            "adapterOpsStateId": adapter_paper_execution.adapter_ops_state_id,
+                            "existingAdapterPaperExecution": existing_paper_execution,
+                        },
+                        status=409,
+                    )
+                    return
             audit_event = self.audit_event_store.record(
                 execution_adapter_paper_execution_to_audit_event_payload(adapter_paper_execution)
             )
@@ -2292,6 +2521,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_approval_store=self.portfolio_paper_order_approval_store,
                     portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                     ai_review_store=self.ai_review_store,
+                    audit_event_store=self.audit_event_store,
                     undo_record=undo_record,
                 )
                 consumed = self.import_undo_store.mark_consumed(undo_record.undo_token)
@@ -2323,6 +2553,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     base_run_id=audit.run_id,
                 )
                 ai_review_runs = research_run_import_ai_review_runs(payload, run_id=audit.run_id)
+                audit_events = research_run_import_audit_events(payload, run_id=audit.run_id)
                 paper_execution_records = [
                     paper_execution_payload_to_record(execution_payload) for execution_payload in paper_executions
                 ]
@@ -2358,6 +2589,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_approval_store=self.portfolio_paper_order_approval_store,
                     portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                     ai_review_store=self.ai_review_store,
+                    audit_event_store=self.audit_event_store,
                     audit=audit,
                     imported_note=imported_note,
                     paper_execution_records=paper_execution_records,
@@ -2365,6 +2597,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_approvals=portfolio_paper_order_approval_records,
                     portfolio_paper_order_simulations=portfolio_paper_order_simulation_records,
                     ai_review_records=ai_review_records,
+                    audit_event_payloads=audit_events,
                 )
                 undo_record = self.import_undo_store.record(run_id=audit.run_id, snapshot=undo_snapshot)
             except Exception as error:
@@ -2378,6 +2611,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         portfolio_paper_order_approval_store=self.portfolio_paper_order_approval_store,
                         portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                         ai_review_store=self.ai_review_store,
+                        audit_event_store=self.audit_event_store,
                         snapshot=undo_snapshot,
                     )
                 self._send_json({"error": "research_run_import_write_failed", "detail": str(error)}, status=500)
@@ -2464,6 +2698,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/settings/status":
             self._send_json({"settings": self._settings_status_payload()})
+            return
+        if parsed.path == "/api/p0/acceptance/latest":
+            self._send_json({"acceptance": load_p0_acceptance_status(Path(self.p0_acceptance_report_path))})
             return
         if parsed.path == "/api/cache/watchlist-refreshes":
             query = parse_qs(parsed.query)
@@ -3316,6 +3553,27 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
             )
             return
+        if parsed.path == "/api/market/data-readiness":
+            query = parse_qs(parsed.query)
+            market = query.get("market", ["ashare"])[0]
+            symbol = query.get("symbol", ["600000"])[0]
+            timeframe = query.get("timeframe", ["1d"])[0]
+            payload = build_market_data_readiness(
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                cache_context=self.cache.context(market, symbol, timeframe),
+                watchlist_refreshes=[
+                    watchlist_cache_refresh_run_to_payload(run)
+                    for run in self.watchlist_cache_refresh_store.list_recent(limit=25)
+                ],
+                adapter_error_events=[
+                    market_data_adapter_error_event_to_payload(event)
+                    for event in self.adapter_error_store.list_recent(limit=50)
+                ],
+            )
+            self._send_json(payload)
+            return
         if parsed.path == "/api/market/klines":
             query = parse_qs(parsed.query)
             market = query.get("market", ["ashare"])[0]
@@ -3505,6 +3763,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             ai_reviews = [
                 ai_review_run_record_to_payload(review) for review in self.ai_review_store.list_by_run(run_id, limit=20)
             ]
+            audit_events = [
+                audit_event_record_to_payload(event) for event in self.audit_event_store.list_recent(run_id=run_id, limit=50)
+            ]
             promotion_candidate = build_promotion_candidate(audit, self.paper_execution_store.list_by_run(run_id, limit=20))
             self._send_json(
                 {
@@ -3517,6 +3778,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         portfolio_paper_order_simulations=portfolio_paper_order_simulations,
                         promotion_candidate=promotion_candidate,
                         ai_review_runs=ai_reviews,
+                        audit_events=audit_events,
                     )
                 }
             )
@@ -3929,6 +4191,589 @@ def _strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
     )
 
 
+def _p0_strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
+    if not isinstance(value, dict):
+        raise ValueError("strategy_config_required")
+    name = str(value.get("name") or "SMA trend").strip() or "SMA trend"
+    return StrategySnapshot(
+        name=name,
+        entry=_p0_condition_text(value.get("entry"), role="entry"),
+        exit=_p0_condition_text(value.get("exit"), role="exit"),
+        position=_p0_position_text(value.get("position")),
+        risk=_p0_risk_text(value.get("risk")),
+    )
+
+
+def _p0_condition_text(value: object, *, role: str) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    if not isinstance(value, dict):
+        return "Close > SMA20" if role == "entry" else "Close < SMA20"
+
+    condition_type = str(value.get("type") or "").strip().lower()
+    window = _p0_int(value.get("window"), default=20, minimum=1, maximum=250)
+    if role == "entry":
+        if condition_type in {"", "sma_cross", "sma_breakout", "sma_above", "close_above_sma"}:
+            return f"Close > SMA{window}"
+        if condition_type in {"sma_below", "close_below_sma"}:
+            return f"Close < SMA{window}"
+        if condition_type in {"rsi_below", "rsi_oversold"}:
+            threshold = _p0_float(value.get("threshold"), default=30.0, minimum=0.0, maximum=100.0)
+            return f"RSI{window} < {threshold:g}"
+    if condition_type in {"", "sma_break", "sma_below", "close_below_sma"}:
+        return f"Close < SMA{window}"
+    if condition_type in {"sma_above", "close_above_sma"}:
+        return f"Close > SMA{window}"
+    if condition_type in {"rsi_above", "rsi_exit"}:
+        threshold = _p0_float(value.get("threshold"), default=55.0, minimum=0.0, maximum=100.0)
+        return f"RSI{window} > {threshold:g}"
+    raise ValueError(f"unsupported_p0_{role}_condition:{condition_type}")
+
+
+def _p0_position_text(value: object) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    if isinstance(value, dict):
+        max_position_pct = _p0_float(value.get("maxPositionPct"), default=80.0, minimum=1.0, maximum=100.0)
+        return f"{max_position_pct:g}% cap per instrument"
+    return "80% cap per instrument"
+
+
+def _p0_risk_text(value: object) -> str:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    risk = value if isinstance(value, dict) else {}
+    stop_loss_pct = _p0_float(risk.get("stopLossPct"), default=8.0, minimum=0.0, maximum=100.0)
+    max_drawdown_pct = _p0_float(risk.get("maxDrawdownPct"), default=20.0, minimum=0.0, maximum=100.0)
+    take_profit = _p0_float(risk.get("takeProfitPct"), default=18.0, minimum=0.0, maximum=500.0)
+    return (
+        f"Stop -{stop_loss_pct:g}%, take profit +{take_profit:g}%, "
+        f"drawdown guard {max_drawdown_pct:g}%, paper only"
+    )
+
+
+def _p0_backtest_engine_from_payload(value: object) -> BacktestEngine:
+    assumptions = value if isinstance(value, dict) else {}
+    initial_cash = _p0_float(assumptions.get("initialCash"), default=100_000.0, minimum=1.0, maximum=1_000_000_000.0)
+    fee_bps = _p0_float(assumptions.get("feeBps"), default=3.0, minimum=0.0, maximum=10_000.0)
+    slippage_bps = _p0_float(assumptions.get("slippageBps"), default=2.0, minimum=0.0, maximum=10_000.0)
+    return BacktestEngine(initial_cash=initial_cash, fee_rate=fee_bps / 10_000, slippage_rate=slippage_bps / 10_000)
+
+
+def _p0_data_limit_from_payload(payload: dict[str, object]) -> int:
+    return _parse_research_data_limit(str(payload.get("limit") or "500"))
+
+
+def _p0_int(value: object, *, default: int, minimum: int, maximum: int) -> int:
+    number = _p0_float(value, default=float(default), minimum=float(minimum), maximum=float(maximum))
+    return int(round(number))
+
+
+def _p0_float(value: object, *, default: float, minimum: float, maximum: float) -> float:
+    try:
+        number = float(value) if value is not None else default
+    except (TypeError, ValueError):
+        number = default
+    if number < minimum:
+        return minimum
+    if number > maximum:
+        return maximum
+    return number
+
+
+def _p0_pipeline_response_payload(audit: ResearchRunAudit) -> dict[str, object]:
+    snapshot_hash = str(audit.data_snapshot.get("hash") or "").strip()
+    data_snapshot_id = f"data-{(snapshot_hash or audit.run_id.removeprefix('run-'))[:12]}"
+    return {
+        "status": "audited_run_created",
+        "runId": audit.run_id,
+        "strategyRevisionId": f"strategy-{audit.strategy_revision}",
+        "dataSnapshotId": data_snapshot_id,
+        "metrics": {
+            "totalReturnPct": _p0_metric_value(audit.metrics, "total_return_pct"),
+            "maxDrawdownPct": _p0_metric_value(audit.metrics, "max_drawdown_pct"),
+            "tradeCount": int(_p0_metric_value(audit.metrics, "trade_count")),
+        },
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+    }
+
+
+def _p0_metric_value(metrics: dict[str, object], key: str) -> float:
+    value = metrics.get(key)
+    if isinstance(value, (int, float)):
+        return round(float(value), 4)
+    return 0.0
+
+
+def _p0_ai_review_context_mismatch(audit: ResearchRunAudit, payload: dict[str, object]) -> dict[str, dict[str, str]] | None:
+    request_context = {
+        "market": str(payload.get("market") or audit.market).strip() or audit.market,
+        "symbol": str(payload.get("symbol") or audit.symbol).strip() or audit.symbol,
+        "timeframe": str(payload.get("timeframe") or audit.timeframe).strip() or audit.timeframe,
+    }
+    run_context = {"market": audit.market, "symbol": audit.symbol, "timeframe": audit.timeframe}
+    if request_context != run_context:
+        return {"runContext": run_context, "requestContext": request_context}
+    return None
+
+
+def _latest_ready_p0_ai_review(
+    store: AiReviewRunStore,
+    audit: ResearchRunAudit,
+) -> AiReviewRunRecord | None:
+    for review in store.list_by_run(audit.run_id, limit=20):
+        record = review.record
+        if str(record.get("status") or "") != "ready":
+            continue
+        if str(record.get("market") or audit.market) != audit.market:
+            continue
+        if str(record.get("symbol") or audit.symbol) != audit.symbol:
+            continue
+        if str(record.get("timeframe") or audit.timeframe) != audit.timeframe:
+            continue
+        if str(record.get("strategyRevision") or audit.strategy_revision) != audit.strategy_revision:
+            continue
+        citations = record.get("citations")
+        if not isinstance(citations, list) or not citations:
+            continue
+        if not str(record.get("boundary") or "").strip():
+            continue
+        return review
+    return None
+
+
+def _p0_paper_simulation_response_payload(
+    *,
+    audit: ResearchRunAudit,
+    execution: PaperExecutionRecord,
+    ai_review: AiReviewRunRecord,
+    audit_event: object,
+    promotion: dict[str, object],
+) -> dict[str, object]:
+    execution_payload = paper_execution_record_to_payload(execution)
+    order = _p0_paper_execution_first_order(execution_payload)
+    account = execution_payload["account"]
+    positions = account.get("positions") if isinstance(account, dict) else {}
+    position_after = float(dict(positions).get(audit.symbol, 0)) if isinstance(positions, dict) else 0.0
+    account_replay = {
+        "mode": "single_run_paper_replay",
+        "runId": audit.run_id,
+        "symbol": audit.symbol,
+        "initialCash": _p0_assumption_number(audit, "initialCash", 100_000),
+        "cashAfter": account.get("cash") if isinstance(account, dict) else 0,
+        "positionAfter": position_after,
+        "equityAfter": account.get("equity") if isinstance(account, dict) else 0,
+        "ordersApplied": 1,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+    }
+    return {
+        "status": "paper_simulation_created",
+        "runId": audit.run_id,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "paperOrderRecorded": True,
+        "simulatedFillRecorded": True,
+        "liveRouteBlockedReason": _P0_LIVE_ROUTE_BLOCKED_REASON,
+        "execution": execution_payload,
+        "simulatedFill": {
+            "orderId": order["orderId"],
+            "symbol": order["symbol"],
+            "side": order["side"],
+            "quantity": order["quantity"],
+            "fillPrice": order["price"],
+            "status": order["status"],
+            "filledAt": order["timestamp"],
+            "reason": order["reason"],
+        },
+        "accountReplay": account_replay,
+        "gates": _p0_paper_simulation_gates(audit, execution, ai_review),
+        "aiReview": ai_review_run_record_to_payload(ai_review),
+        "promotion": promotion,
+        "auditEvent": audit_event_record_to_payload(audit_event),
+        "exportReadiness": {
+            "ready": True,
+            "requiredArtifacts": ["researchRun", "aiReview", "paperExecution", "auditEvent"],
+            "paperExecutionId": execution.execution_id,
+            "auditEventId": getattr(audit_event, "event_id", ""),
+            "detail": "Paper simulation evidence is recorded and can be exported with the research run.",
+        },
+    }
+
+
+def _p0_paper_simulation_audit_event_payload(
+    *,
+    audit: ResearchRunAudit,
+    execution: PaperExecutionRecord,
+    ai_review: AiReviewRunRecord,
+    request_payload: dict[str, object],
+) -> dict[str, object]:
+    execution_payload = paper_execution_record_to_payload(execution)
+    order = _p0_paper_execution_first_order(execution_payload)
+    account = execution_payload["account"]
+    return {
+        "schemaVersion": 1,
+        "eventId": f"p0-paper-simulation-{execution.execution_id}",
+        "eventType": "p0_paper_simulation",
+        "runId": audit.run_id,
+        "createdAt": execution.created_at.isoformat(),
+        "stage": "execution",
+        "source": "p0-paper-simulation",
+        "summary": f"P0 paper simulation recorded for {audit.symbol}; live routing blocked.",
+        "detail": (
+            f"Simulated {order['side']} {order['quantity']} {order['symbol']} at {order['price']} "
+            f"from audited run {audit.run_id}; no live order was submitted."
+        ),
+        "metadata": {
+            "market": audit.market,
+            "symbol": audit.symbol,
+            "timeframe": audit.timeframe,
+            "strategyRevision": audit.strategy_revision,
+            "aiReviewId": ai_review.ai_review_id,
+            "paperExecutionId": execution.execution_id,
+            "orderId": order["orderId"],
+            "orderStatus": order["status"],
+            "fillPrice": order["price"],
+            "fillQuantity": order["quantity"],
+            "cashAfter": account.get("cash") if isinstance(account, dict) else 0,
+            "positionAfter": dict(account.get("positions", {})).get(audit.symbol, 0) if isinstance(account, dict) else 0,
+            "liveFlagsRejected": _p0_rejected_live_flags(request_payload),
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderSubmitted": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+            "liveRouteBlockedReason": _P0_LIVE_ROUTE_BLOCKED_REASON,
+        },
+    }
+
+
+def _p0_paper_simulation_gates(
+    audit: ResearchRunAudit,
+    execution: PaperExecutionRecord,
+    ai_review: AiReviewRunRecord,
+) -> list[dict[str, object]]:
+    order = execution.orders[0] if execution.orders else None
+    return [
+        {
+            "id": "data-quality",
+            "label": "Data quality",
+            "status": "passed",
+            "detail": f"{audit.data_quality.get('source') or 'unknown'} complete; {audit.data_quality.get('rows') or audit.data_rows} rows.",
+        },
+        {
+            "id": "ai-review-evidence",
+            "label": "AI review evidence",
+            "status": "passed",
+            "detail": f"AI review {ai_review.ai_review_id} is bound to the audited run.",
+        },
+        {
+            "id": "strategy-risk",
+            "label": "Strategy risk",
+            "status": "passed",
+            "detail": "Position, stop loss, take profit, and drawdown fields are present.",
+        },
+        {
+            "id": "paper-preflight",
+            "label": "Paper preflight",
+            "status": "passed" if order and order.status == "filled" else "blocked",
+            "detail": order.reason if order else "No paper order was generated.",
+        },
+        {
+            "id": "live-route",
+            "label": "Live route",
+            "status": "blocked",
+            "detail": _P0_LIVE_ROUTE_BLOCKED_REASON,
+        },
+    ]
+
+
+def _p0_paper_execution_first_order(execution_payload: dict[str, object]) -> dict[str, object]:
+    orders = execution_payload.get("orders")
+    if not isinstance(orders, list) or not orders or not isinstance(orders[0], dict):
+        raise ValueError("p0_paper_simulation_order_missing")
+    return dict(orders[0])
+
+
+def _p0_assumption_number(audit: ResearchRunAudit, key: str, fallback: float) -> float:
+    value = audit.backtest_assumptions.get(key) if isinstance(audit.backtest_assumptions, dict) else None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return fallback
+
+
+def _p0_rejected_live_flags(payload: dict[str, object]) -> list[str]:
+    rejected = []
+    for key in ("liveTradingAllowed", "orderSubmitted", "liveOrderSubmitted", "routeExecuted"):
+        if payload.get(key) is True:
+            rejected.append(key)
+    if str(payload.get("route") or "").strip().lower() == "live":
+        rejected.append("route=live")
+    if str(payload.get("executionMode") or "").strip().lower() in {"live", "certified_live"}:
+        rejected.append("executionMode=live")
+    return rejected
+
+
+_P0_LIVE_ROUTE_BLOCKED_REASON = "P0 only records simulated paper fills; live routing flags are rejected."
+
+
+def _build_p0_ai_review_record(audit: ResearchRunAudit) -> dict[str, object]:
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    citations = _p0_ai_review_citations(audit)
+    rounds = _p0_ai_review_rounds(audit)
+    decision_log = _p0_ai_review_decision_log(audit)
+    unknowns = _p0_ai_review_unknowns(audit)
+    return {
+        "schemaVersion": 1,
+        "recordType": "aiqt.aiReviewRun",
+        "aiReviewId": f"ai-review:{audit.run_id}:{audit.strategy_revision}:local-evidence",
+        "runId": audit.run_id,
+        "createdAt": created_at,
+        "market": audit.market,
+        "symbol": audit.symbol,
+        "timeframe": audit.timeframe,
+        "strategyRevision": audit.strategy_revision,
+        "executionMode": audit.execution_mode,
+        "status": "ready",
+        "summary": {
+            "citationCount": len(citations),
+            "roundCount": len(rounds),
+            "decisionCount": len(decision_log),
+            "parameterScanBound": True,
+            "liveExecutionBlocked": True,
+            "mode": "local_evidence_review",
+        },
+        "dossier": {
+            "status": "ready",
+            "headline": "Local evidence review ready",
+            "summary": (
+                f"Reviewed {audit.symbol} {audit.timeframe} against audited run {audit.run_id}; "
+                "findings are evidence-bound and require human review before any execution."
+            ),
+            "citations": citations,
+            "risks": _p0_ai_review_risk_warnings(audit),
+            "unknowns": unknowns,
+            "mode": "local_evidence_review",
+        },
+        "citations": citations,
+        "rounds": rounds,
+        "decisionLog": decision_log,
+        "evidenceAnchors": _p0_ai_review_evidence_anchors(audit, citations),
+        "boundary": "Evidence explanation only; No direct trading instructions; no return promises; paper review only.",
+    }
+
+
+def _p0_ai_review_citations(audit: ResearchRunAudit) -> list[dict[str, object]]:
+    metrics = audit.metrics
+    quality = audit.data_quality
+    strategy = audit.strategy_config
+    return [
+        {
+            "id": "run",
+            "label": "Audited run",
+            "value": audit.run_id,
+            "detail": f"{audit.market} {audit.symbol} {audit.timeframe}; {audit.data_rows} bars locked.",
+            "tone": "ai",
+        },
+        {
+            "id": "metrics",
+            "label": "Backtest metrics",
+            "value": f"{_p0_display_pct(metrics.get('total_return_pct'))} return / {_p0_display_pct(metrics.get('max_drawdown_pct'))} max drawdown",
+            "detail": f"{int(_p0_metric_value(metrics, 'trade_count'))} audited trades; win rate {_p0_display_pct(metrics.get('win_rate_pct'))}.",
+            "tone": "positive" if _p0_metric_value(metrics, "total_return_pct") >= 0 else "warning",
+        },
+        {
+            "id": "strategy",
+            "label": "Strategy revision",
+            "value": audit.strategy_revision,
+            "detail": _p0_strategy_citation_detail(strategy),
+            "tone": "neutral",
+        },
+        {
+            "id": "data-quality",
+            "label": "Data quality",
+            "value": str(quality.get("source") or "unknown"),
+            "detail": _p0_data_quality_detail(quality),
+            "tone": "positive" if quality.get("isComplete") is True else "warning",
+        },
+        {
+            "id": "risk-gates",
+            "label": "Risk boundary",
+            "value": "paper-only gate",
+            "detail": "Live routing remains blocked until adapter certification, risk approval, and human confirmation pass.",
+            "tone": "risk",
+        },
+    ]
+
+
+def _p0_ai_review_risk_warnings(audit: ResearchRunAudit) -> list[str]:
+    warnings: list[str] = []
+    max_drawdown = _p0_metric_value(audit.metrics, "max_drawdown_pct")
+    if max_drawdown > 0:
+        warnings.append(f"Observed max drawdown is {_p0_display_pct(max_drawdown)} in this audited sample.")
+    if audit.data_quality.get("warnings"):
+        warnings.append("Data quality warnings require review before relying on the run.")
+    warnings.append("Paper-only boundary remains active; no live route is authorized.")
+    return warnings
+
+
+def _p0_ai_review_unknowns(audit: ResearchRunAudit) -> list[str]:
+    unknowns = [str(warning) for warning in audit.data_quality.get("warnings", []) if str(warning).strip()]
+    ai_report = audit.ai_report if isinstance(audit.ai_report, dict) else {}
+    risks = ai_report.get("risks")
+    if isinstance(risks, list):
+        unknowns.extend(str(risk) for risk in risks if str(risk).strip())
+    if not unknowns:
+        unknowns.append("Benchmark, liquidity, and regime sensitivity still require operator review.")
+    return unknowns
+
+
+def _p0_ai_review_rounds(audit: ResearchRunAudit) -> list[dict[str, object]]:
+    return [
+        {
+            "id": "technical-analyst",
+            "phase": "analysis",
+            "agent": "Technical Analyst",
+            "thesis": "Trend evidence is readable from the audited backtest.",
+            "evidence": f"Run {audit.run_id} reports {_p0_display_pct(audit.metrics.get('total_return_pct'))} return.",
+            "verdict": "support" if _p0_metric_value(audit.metrics, "total_return_pct") >= 0 else "challenge",
+            "confidence": 0.62,
+            "tone": "positive" if _p0_metric_value(audit.metrics, "total_return_pct") >= 0 else "warning",
+        },
+        {
+            "id": "fundamental-analyst",
+            "phase": "debate",
+            "agent": "Fundamental Analyst",
+            "thesis": "Single-instrument evidence needs external context before interpretation.",
+            "evidence": "No valuation, sector, or macro dataset is attached to this P0 run.",
+            "verdict": "watch",
+            "confidence": 0.52,
+            "tone": "warning",
+        },
+        {
+            "id": "risk-manager",
+            "phase": "risk",
+            "agent": "Risk Manager",
+            "thesis": "Execution remains constrained to paper review.",
+            "evidence": f"Max drawdown {_p0_display_pct(audit.metrics.get('max_drawdown_pct'))}; data source {audit.data_quality.get('source', 'unknown')}.",
+            "verdict": "risk",
+            "confidence": 0.78,
+            "tone": "risk",
+        },
+        {
+            "id": "portfolio-manager",
+            "phase": "decision",
+            "agent": "Portfolio Manager",
+            "thesis": "The review can move to paper simulation after human confirmation.",
+            "evidence": "AI review is bound to run, metrics, strategy revision, data quality, and risk gates.",
+            "verdict": "watch",
+            "confidence": 0.66,
+            "tone": "ai",
+        },
+    ]
+
+
+def _p0_ai_review_decision_log(audit: ResearchRunAudit) -> list[dict[str, str]]:
+    return [
+        {
+            "agent": "AI Boundary",
+            "message": "Evidence review completed without direct trading instructions.",
+            "tone": "ai",
+        },
+        {
+            "agent": "Risk Manager",
+            "message": "Live execution remains blocked; paper simulation requires operator confirmation.",
+            "tone": "risk",
+        },
+        {
+            "agent": "Audit",
+            "message": f"Review is linked to {audit.run_id} and strategy revision {audit.strategy_revision}.",
+            "tone": "positive",
+        },
+    ]
+
+
+def _p0_ai_review_evidence_anchors(
+    audit: ResearchRunAudit, citations: list[dict[str, object]]
+) -> list[dict[str, str]]:
+    anchors = [
+        {
+            "id": f"run:{audit.run_id}",
+            "type": "research-run",
+            "label": "Audited run",
+            "reference": audit.run_id,
+            "exportPath": "researchRun.runId",
+        },
+        {
+            "id": f"strategy:{audit.strategy_revision}",
+            "type": "strategy-revision",
+            "label": "Strategy revision",
+            "reference": audit.strategy_revision,
+            "exportPath": "researchRun.strategyRevision",
+        },
+    ]
+    anchors.extend(
+        {
+            "id": f"citation:{citation['id']}",
+            "type": "citation",
+            "label": str(citation["label"]),
+            "reference": str(citation["id"]),
+            "exportPath": f"aiReviewRuns[].record.citations[{citation['id']}]",
+        }
+        for citation in citations
+    )
+    anchors.append(
+        {
+            "id": f"boundary:{audit.run_id}",
+            "type": "risk-boundary",
+            "label": "AI boundary",
+            "reference": "paper-only",
+            "exportPath": "aiReviewRuns[].record.boundary",
+        }
+    )
+    return anchors
+
+
+def _p0_strategy_citation_detail(strategy: dict[str, object]) -> str:
+    if not strategy:
+        return "Strategy config was not stored with this run; rerun pipeline if reproducibility is required."
+    entry_conditions = strategy.get("entryConditions")
+    exit_conditions = strategy.get("exitConditions")
+    entry_count = len(entry_conditions) if isinstance(entry_conditions, list) else 0
+    exit_count = len(exit_conditions) if isinstance(exit_conditions, list) else 0
+    return f"{entry_count} entry condition(s), {exit_count} exit condition(s), risk rules stored."
+
+
+def _p0_data_quality_detail(quality: dict[str, object]) -> str:
+    warnings = quality.get("warnings")
+    warning_count = len(warnings) if isinstance(warnings, list) else 0
+    rows = quality.get("rows", 0)
+    complete = "complete" if quality.get("isComplete") is True else "review"
+    return f"{rows} rows, {complete}; {warning_count} warning(s)."
+
+
+def _p0_display_pct(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = 0.0
+    sign = "+" if number > 0 else ""
+    return f"{sign}{number:.2f}%"
+
+
 def _is_importable_strategy_config(value: object) -> bool:
     if not isinstance(value, dict):
         return False
@@ -3954,6 +4799,7 @@ def _persist_research_run_import(
     portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
+    audit_event_store: AuditEventStore,
     audit: ResearchRunAudit,
     imported_note: dict[str, object] | None,
     paper_execution_records: list[PaperExecutionRecord],
@@ -3961,6 +4807,7 @@ def _persist_research_run_import(
     portfolio_paper_order_approvals: list[PortfolioPaperOrderApproval],
     portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     ai_review_records: list[dict[str, object]],
+    audit_event_payloads: list[dict[str, object]],
 ) -> dict[str, object]:
     previous_run = run_store.get(audit.run_id)
     previous_note = (
@@ -3985,6 +4832,7 @@ def _persist_research_run_import(
         portfolio_paper_order_simulation_store.list_all_by_base_run(audit.run_id)
     )
     previous_ai_reviews = ai_review_store.list_all_by_run(audit.run_id)
+    previous_audit_events = audit_event_store.list_all_by_run(audit.run_id)
 
     try:
         run_store.record(audit)
@@ -4014,6 +4862,8 @@ def _persist_research_run_import(
             portfolio_paper_order_simulation_store.record(simulation)
         for review_record in ai_review_records:
             ai_review_store.record(review_record)
+        for audit_event_payload in audit_event_payloads:
+            audit_event_store.record(audit_event_payload)
     except Exception:
         _rollback_research_run_import(
             run_store=run_store,
@@ -4021,6 +4871,7 @@ def _persist_research_run_import(
             strategy_store=strategy_store,
             paper_execution_store=paper_execution_store,
             ai_review_store=ai_review_store,
+            audit_event_store=audit_event_store,
             run_id=audit.run_id,
             imported_note=imported_note,
             previous_run=previous_run,
@@ -4035,6 +4886,7 @@ def _persist_research_run_import(
             previous_portfolio_paper_order_approvals=previous_portfolio_paper_order_approvals,
             previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
             previous_ai_reviews=previous_ai_reviews,
+            previous_audit_events=previous_audit_events,
         )
         raise
     return _research_run_import_undo_snapshot(
@@ -4049,6 +4901,7 @@ def _persist_research_run_import(
         previous_portfolio_paper_order_approvals=previous_portfolio_paper_order_approvals,
         previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
         previous_ai_reviews=previous_ai_reviews,
+        previous_audit_events=previous_audit_events,
     )
 
 
@@ -4065,6 +4918,7 @@ def _research_run_import_undo_snapshot(
     previous_portfolio_paper_order_approvals: list[PortfolioPaperOrderApproval],
     previous_portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     previous_ai_reviews: list[AiReviewRunRecord],
+    previous_audit_events: list[object],
 ) -> dict[str, object]:
     return {
         "schemaVersion": 1,
@@ -4091,6 +4945,7 @@ def _research_run_import_undo_snapshot(
                 for simulation in previous_portfolio_paper_order_simulations
             ],
             "aiReviewRuns": [ai_review_run_record_to_payload(review) for review in previous_ai_reviews],
+            "auditEvents": [audit_event_record_to_payload(event) for event in previous_audit_events],
         },
     }
 
@@ -4118,6 +4973,7 @@ def _undo_research_run_import_from_record(
     portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
+    audit_event_store: AuditEventStore,
     undo_record: ResearchRunImportUndoRecord,
 ) -> ResearchRunAudit | None:
     return _undo_research_run_import_from_snapshot(
@@ -4129,6 +4985,7 @@ def _undo_research_run_import_from_record(
         portfolio_paper_order_approval_store=portfolio_paper_order_approval_store,
         portfolio_paper_order_simulation_store=portfolio_paper_order_simulation_store,
         ai_review_store=ai_review_store,
+        audit_event_store=audit_event_store,
         snapshot=undo_record.snapshot,
     )
 
@@ -4143,6 +5000,7 @@ def _undo_research_run_import_from_snapshot(
     portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
+    audit_event_store: AuditEventStore,
     snapshot: dict[str, object],
 ) -> ResearchRunAudit | None:
     if int(_number_or_default(snapshot.get("schemaVersion"), 0)) != 1:
@@ -4163,6 +5021,7 @@ def _undo_research_run_import_from_snapshot(
     previous_portfolio_paper_approval_payloads = previous.get("portfolioPaperOrderApprovals", [])
     previous_portfolio_paper_simulation_payloads = previous.get("portfolioPaperOrderSimulations", [])
     previous_ai_review_payloads = previous.get("aiReviewRuns", [])
+    previous_audit_event_payloads = previous.get("auditEvents", [])
 
     if previous_paper_payloads is None:
         previous_paper_payloads = []
@@ -4174,6 +5033,8 @@ def _undo_research_run_import_from_snapshot(
         previous_portfolio_paper_simulation_payloads = []
     if previous_ai_review_payloads is None:
         previous_ai_review_payloads = []
+    if previous_audit_event_payloads is None:
+        previous_audit_event_payloads = []
     if not isinstance(previous_paper_payloads, list):
         raise ValueError("import_undo_paper_executions_must_be_array")
     if not isinstance(previous_portfolio_paper_payloads, list):
@@ -4184,6 +5045,8 @@ def _undo_research_run_import_from_snapshot(
         raise ValueError("import_undo_portfolio_paper_order_simulations_must_be_array")
     if not isinstance(previous_ai_review_payloads, list):
         raise ValueError("import_undo_ai_reviews_must_be_array")
+    if not isinstance(previous_audit_event_payloads, list):
+        raise ValueError("import_undo_audit_events_must_be_array")
 
     previous_run = (
         _research_run_audit_from_payload(previous_run_payload) if isinstance(previous_run_payload, dict) else None
@@ -4215,6 +5078,7 @@ def _undo_research_run_import_from_snapshot(
     previous_ai_reviews = [
         _ai_review_run_from_payload(item) for item in previous_ai_review_payloads if isinstance(item, dict)
     ]
+    previous_audit_events = [dict(item) for item in previous_audit_event_payloads if isinstance(item, dict)]
 
     _rollback_research_run_import(
         run_store=run_store,
@@ -4236,6 +5100,8 @@ def _undo_research_run_import_from_snapshot(
         previous_portfolio_paper_order_approvals=previous_portfolio_paper_approvals,
         previous_portfolio_paper_order_simulations=previous_portfolio_paper_simulations,
         previous_ai_reviews=previous_ai_reviews,
+        audit_event_store=audit_event_store,
+        previous_audit_events=previous_audit_events,
     )
     return previous_run
 
@@ -4336,6 +5202,7 @@ def _rollback_research_run_import(
     portfolio_paper_order_approval_store: PortfolioPaperOrderApprovalStore,
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
+    audit_event_store: AuditEventStore,
     run_id: str,
     imported_note: dict[str, object] | None,
     previous_run: ResearchRunAudit | None,
@@ -4347,7 +5214,15 @@ def _rollback_research_run_import(
     previous_portfolio_paper_order_approvals: list[PortfolioPaperOrderApproval],
     previous_portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     previous_ai_reviews: list[AiReviewRunRecord],
+    previous_audit_events: list[object],
 ) -> None:
+    audit_event_store.delete_by_run(run_id)
+    for event in previous_audit_events:
+        if isinstance(event, dict):
+            audit_event_store.record(event)
+        else:
+            audit_event_store.record(audit_event_record_to_payload(event))
+
     ai_review_store.delete_by_run(run_id)
     for review in previous_ai_reviews:
         ai_review_store.record(review.record)

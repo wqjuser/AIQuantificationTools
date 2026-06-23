@@ -28,7 +28,7 @@ from quant_core.domain import (
 )
 from quant_core.market_klines import bar_to_payload
 from quant_core.market_calendar import build_market_calendar_status
-from quant_core.runs import ResearchRunAudit, ResearchRunStore
+from quant_core.runs import ResearchRunAudit, ResearchRunStore, build_p0_package_completeness
 from quant_core.terminal import (
     BacktestAssumptions,
     BacktestDiagnostic,

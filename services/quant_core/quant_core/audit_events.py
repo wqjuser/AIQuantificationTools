@@ -167,6 +167,36 @@ class AuditEventStore:
             connection.close()
         return [_row_to_audit_event_record(row) for row in rows]
 
+    def list_all_by_run(self, run_id: str) -> list[AuditEventRecord]:
+        normalized_run_id = _optional_string(run_id)
+        if not normalized_run_id:
+            return []
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select event_id, event_type, run_id, created_at, stage, source, summary, detail, metadata_json
+                from audit_events
+                where run_id = ?
+                order by created_at desc
+                """,
+                (normalized_run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_audit_event_record(row) for row in rows]
+
+    def delete_by_run(self, run_id: str) -> None:
+        normalized_run_id = _optional_string(run_id)
+        if not normalized_run_id:
+            return
+        connection = self._connect()
+        try:
+            connection.execute("delete from audit_events where run_id = ?", (normalized_run_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
     def count(
         self,
         *,

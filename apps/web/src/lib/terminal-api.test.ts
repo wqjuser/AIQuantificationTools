@@ -2,6 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   type AiReviewRunRecord,
   buildBacktestReportMarkdown,
+  buildP0AcceptanceReviewMarkdown,
+  buildP0AcceptanceSummary,
+  buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
   buildP0PlatformBacklogItems,
@@ -9,13 +12,25 @@ import {
   buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
   buildPortfolioBacktestReportMarkdown,
+  buildResearchContextEvidenceRows,
+  buildResearchContextReadinessReportArchive,
+  buildResearchContextReadinessRows,
+  buildResearchPipelinePreflight,
+  buildExecutionAdapterPreLiveRunbookMarkdown,
+  buildExecutionAdapterPreLiveRunbookSummary,
   buildTerminalWorkspace,
   workspaceFromResearchRunAudit,
+  workspaceWithSavedResearchWorkspaceState,
   workspaceWithBacktestAssumption,
   workspaceWithStrategyField,
+  type P0AcceptanceSummarySource,
   type ResearchRunAudit
 } from "./terminal-workbench";
 import {
+  buildP0AcceptanceLatestUrl,
+  buildP0AiReviewUrl,
+  buildP0PaperSimulationUrl,
+  buildP0PipelineUrl,
   buildResearchRunUrl,
   buildResearchRunDetailUrl,
   buildResearchRunExportUrl,
@@ -106,12 +121,14 @@ import {
   buildStrategyDetailUrl,
   buildStrategyValidationUrl,
   buildResearchRunsUrl,
+  buildMarketDataReadinessUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
   buildWatchlistUrl,
   buildLoadingMarketKlinesResult,
   buildGoldenPathStatusUrl,
   loadGoldenPathStatus,
+  loadMarketDataReadiness,
   loadMarketKlines,
   loadMarketCalendarStatus,
   loadMarketSearch,
@@ -213,7 +230,10 @@ import {
   withResearchRunExportAuditEvidenceArtifacts,
   buildBacktestReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
+  buildP0AcceptanceReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
+  buildExecutionAdapterPreLiveRunbookAuditEvent,
+  buildResearchContextReadinessReportAuditEvent,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
   buildMarketDataRefreshOverrideAuditEvent,
@@ -232,6 +252,10 @@ import {
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  loadP0AcceptanceLatest,
+  runP0Pipeline,
+  runP0AiReview,
+  runP0PaperSimulation,
   buildResearchWorkspaceStateUrl,
   saveResearchWorkspaceState,
   saveWatchlist,
@@ -614,6 +638,454 @@ describe("terminal workspace API client", () => {
     expect(buildResearchRunUrl("http://127.0.0.1:8765/", "ashare", "600000", "1d")).toBe(
       "http://127.0.0.1:8765/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=500"
     );
+  });
+
+  test("builds the P0 pipeline URL as a single audited command endpoint", () => {
+    expect(buildP0PipelineUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/p0/pipeline");
+    expect(buildP0PipelineUrl("/")).toBe("/api/p0/pipeline");
+  });
+
+  test("builds the P0 AI review URL as a single evidence review command endpoint", () => {
+    expect(buildP0AiReviewUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/p0/ai-reviews");
+    expect(buildP0AiReviewUrl("/")).toBe("/api/p0/ai-reviews");
+  });
+
+  test("builds the P0 paper simulation URL as a single paper-only command endpoint", () => {
+    expect(buildP0PaperSimulationUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p0/paper-simulations"
+    );
+    expect(buildP0PaperSimulationUrl("/")).toBe("/api/p0/paper-simulations");
+  });
+
+  test("loads latest P0 acceptance manifest readback from the core service", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.p0AcceptanceManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-23T08:00:00+00:00",
+      status: "passed" as const,
+      baseUrl: "http://aiqt.local",
+      importBaseUrl: "http://clean.local",
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const,
+      runId: "run-smoke",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      checkCount: 6,
+      checks: [
+        { id: "pipeline", status: "passed", summary: "p0 pipeline run=run-smoke" },
+        { id: "ai-review", status: "passed", summary: "p0 ai-review run=run-smoke mode=local_evidence_review" },
+        { id: "paper-simulation", status: "passed", summary: "p0 paper-simulation run=run-smoke liveBlocked=True" },
+        { id: "export", status: "passed", summary: "p0 export run=run-smoke completeness=9/9 liveBlocked=True" },
+        { id: "import", status: "passed", summary: "p0 import run=run-smoke undo=import-undo-smoke" },
+        { id: "imported-export", status: "passed", summary: "p0 imported-export run=run-smoke completeness=9/9" }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          acceptance: {
+            kind: "aiqt.p0AcceptanceStatus",
+            schemaVersion: 1,
+            status: "passed",
+            available: true,
+            sourcePath: "data/p0-acceptance.json",
+            summary: "p0 acceptance manifest run=run-smoke checks=6 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-23T08:00:00+00:00",
+            runId: "run-smoke",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            checkCount: 6,
+            requiredCheckCount: 4,
+            checkIds: ["pipeline", "ai-review", "paper-simulation", "export", "import", "imported-export"],
+            paperOnly: true,
+            liveTradingAllowed: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadP0AcceptanceLatest("http://127.0.0.1:8765/", fetcher);
+    const summary = buildP0AcceptanceSummary(result.acceptance);
+
+    expect(buildP0AcceptanceLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p0/acceptance/latest"
+    );
+    expect(buildP0AcceptanceLatestUrl("/")).toBe("/api/p0/acceptance/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p0/acceptance/latest");
+    expect(result.source).toBe("core");
+    expect(result.acceptance?.manifest?.runId).toBe("run-smoke");
+    expect(result.acceptance?.liveTradingAllowed).toBe(false);
+    expect(summary.state).toBe("passed");
+    expect(summary.liveTradingAllowed).toBe(false);
+  });
+
+  test("falls back when latest P0 acceptance readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ acceptance: { status: "passed" } })
+    });
+
+    const result = await loadP0AcceptanceLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.acceptance?.status).toBe("missing");
+    expect(result.acceptance?.available).toBe(false);
+    expect(result.acceptance?.manifest).toBeNull();
+    expect(result.error).toBe("Invalid P0 acceptance status contract");
+  });
+
+  test("runs the P0 paper simulation command and returns fill replay evidence", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: "paper_simulation_created",
+          runId: "run-p0-paper",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          orderSubmitted: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false,
+          paperOrderRecorded: true,
+          simulatedFillRecorded: true,
+          liveRouteBlockedReason: "P0 only records simulated paper fills; live routing flags are rejected.",
+          execution: {
+            executionId: "paper-p0-1",
+            runId: "run-p0-paper",
+            createdAt: "2026-06-23T08:20:00+00:00",
+            mode: "paper_only",
+            account: { cash: 80680, positions: { "600000": 2100 }, equity: 100000 },
+            orders: [
+              {
+                orderId: "order-p0-1",
+                symbol: "600000",
+                side: "buy",
+                quantity: 2100,
+                price: 9.2,
+                status: "filled",
+                reason: "filled_immediately",
+                timestamp: "2026-06-23T08:20:00+00:00"
+              }
+            ],
+            gates: [
+              { id: "audit-run-bound", label: "Audit run bound", passed: true, reason: "bound" },
+              { id: "paper-risk-check", label: "Paper risk check", passed: true, reason: "filled_immediately" },
+              { id: "live-route-blocked", label: "Live route blocked", passed: false, reason: "paper-only" }
+            ]
+          },
+          simulatedFill: {
+            orderId: "order-p0-1",
+            symbol: "600000",
+            side: "buy",
+            quantity: 2100,
+            fillPrice: 9.2,
+            status: "filled",
+            filledAt: "2026-06-23T08:20:00+00:00",
+            reason: "filled_immediately"
+          },
+          accountReplay: {
+            mode: "single_run_paper_replay",
+            runId: "run-p0-paper",
+            symbol: "600000",
+            initialCash: 100000,
+            cashAfter: 80680,
+            positionAfter: 2100,
+            equityAfter: 100000,
+            ordersApplied: 1,
+            paperOnly: true,
+            liveTradingAllowed: false
+          },
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "p0-paper-simulation-paper-p0-1",
+            eventType: "p0_paper_simulation",
+            runId: "run-p0-paper",
+            createdAt: "2026-06-23T08:20:00+00:00",
+            stage: "execution",
+            source: "p0-paper-simulation",
+            summary: "P0 paper simulation recorded for 600000; live routing blocked.",
+            detail: "Simulated buy 2100 600000 at 9.2; no live order was submitted.",
+            metadata: { paperOnly: true, liveTradingAllowed: false }
+          },
+          exportReadiness: {
+            ready: true,
+            requiredArtifacts: ["researchRun", "aiReview", "paperExecution", "auditEvent"],
+            paperExecutionId: "paper-p0-1",
+            auditEventId: "p0-paper-simulation-paper-p0-1",
+            detail: "Paper simulation evidence is recorded."
+          }
+        })
+      };
+    };
+
+    const result = await runP0PaperSimulation(
+      "/",
+      { runId: "run-p0-paper", market: "ashare", symbol: "600000", timeframe: "1d" },
+      fetcher
+    );
+    const body = JSON.parse(String(calls[0].init?.body));
+
+    expect(calls[0].url).toBe("/api/p0/paper-simulations");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(body).toEqual({ runId: "run-p0-paper", market: "ashare", symbol: "600000", timeframe: "1d" });
+    expect(result.source).toBe("core");
+    expect(result.statusLabel).toBe("P0 paper simulation created");
+    expect(result.execution?.executionId).toBe("paper-p0-1");
+    expect(result.simulatedFill?.orderId).toBe("order-p0-1");
+    expect(result.accountReplay?.cashAfter).toBe(80680);
+    expect(result.auditEvent?.eventType).toBe("p0_paper_simulation");
+    expect(result.exportReadiness?.ready).toBe(true);
+    expect(result.liveTradingAllowed).toBe(false);
+    expect(result.routeExecuted).toBe(false);
+  });
+
+  test("runs the P0 AI review command and returns saved evidence", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: "ai_review_saved",
+          mode: "local_evidence_review",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          directTradingInstructionBlocked: true,
+          aiReview: {
+            aiReviewId: "ai-review:run-p0:rev-p0:local-evidence",
+            runId: "run-p0",
+            createdAt: "2026-06-23T08:10:00+00:00",
+            record: {
+              schemaVersion: 1,
+              recordType: "aiqt.aiReviewRun",
+              aiReviewId: "ai-review:run-p0:rev-p0:local-evidence",
+              runId: "run-p0",
+              createdAt: "2026-06-23T08:10:00+00:00",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              strategyRevision: "rev-p0",
+              executionMode: "paper_only",
+              status: "ready",
+              summary: {
+                citationCount: 4,
+                roundCount: 4,
+                decisionCount: 3,
+                parameterScanBound: true,
+                liveExecutionBlocked: true
+              },
+              dossier: {
+                status: "ready",
+                headline: "Local evidence review ready",
+                summary: "Evidence-bound review, no direct trading instruction.",
+                citations: [
+                  { id: "run", label: "Audited run", value: "run-p0", detail: "120 bars", tone: "ai" },
+                  { id: "metrics", label: "Backtest metrics", value: "+1.2%", detail: "2 trades", tone: "positive" },
+                  { id: "risk-gates", label: "Risk boundary", value: "paper-only", detail: "Live blocked", tone: "risk" }
+                ],
+                risks: ["Paper-only boundary remains active."],
+                unknowns: ["Benchmark review remains open."]
+              },
+              citations: [
+                { id: "run", label: "Audited run", value: "run-p0", detail: "120 bars", tone: "ai" },
+                { id: "metrics", label: "Backtest metrics", value: "+1.2%", detail: "2 trades", tone: "positive" },
+                { id: "risk-gates", label: "Risk boundary", value: "paper-only", detail: "Live blocked", tone: "risk" }
+              ],
+              rounds: [
+                {
+                  id: "risk-manager",
+                  phase: "risk",
+                  agent: "Risk Manager",
+                  thesis: "Paper review only.",
+                  evidence: "Live route is blocked.",
+                  verdict: "risk",
+                  confidence: 0.8,
+                  tone: "risk"
+                }
+              ],
+              decisionLog: [{ agent: "AI Boundary", message: "No direct trading instructions.", tone: "ai" }],
+              evidenceAnchors: [
+                {
+                  id: "run:run-p0",
+                  type: "research-run",
+                  label: "Audited run",
+                  reference: "run-p0",
+                  exportPath: "researchRun.runId"
+                }
+              ],
+              boundary: "Evidence explanation only; No direct trading instructions; no return promises; paper review only."
+            }
+          }
+        })
+      };
+    };
+
+    const result = await runP0AiReview(
+      "/",
+      { runId: "run-p0", market: "ashare", symbol: "600000", timeframe: "1d" },
+      fetcher
+    );
+    const body = JSON.parse(String(calls[0].init?.body));
+
+    expect(calls[0].url).toBe("/api/p0/ai-reviews");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(body).toEqual({ runId: "run-p0", market: "ashare", symbol: "600000", timeframe: "1d" });
+    expect(result.source).toBe("core");
+    expect(result.statusLabel).toBe("P0 AI review saved");
+    expect(result.mode).toBe("local_evidence_review");
+    expect(result.aiReview?.aiReviewId).toBe("ai-review:run-p0:rev-p0:local-evidence");
+    expect(result.paperOnly).toBe(true);
+    expect(result.liveTradingAllowed).toBe(false);
+    expect(result.directTradingInstructionBlocked).toBe(true);
+  });
+
+  test("runs the P0 pipeline and hydrates the audited run workspace", async () => {
+    const currentWorkspace = {
+      ...buildTerminalWorkspace(),
+      strategy: {
+        name: "SMA trend",
+        entry: "Close > SMA20",
+        exit: "Close < SMA20",
+        position: "20% cap per instrument",
+        risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
+      },
+      backtestAssumptions: {
+        initialCash: 100000,
+        feeBps: 3,
+        slippageBps: 2
+      }
+    };
+    const auditedRun: ResearchRunAudit = {
+      runId: "run-p0abc123",
+      createdAt: "2026-06-23T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "SMA trend",
+      strategyRevision: "2015b7a0c498",
+      dataRows: 120,
+      metrics: {
+        total_return_pct: 1.2,
+        annual_return_pct: 24,
+        max_drawdown_pct: 0.8,
+        win_rate_pct: 50,
+        profit_factor: 1.1,
+        trade_count: 2,
+        bar_count: 120
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 120 },
+      dataSnapshot: {
+        source: "tencent",
+        isComplete: true,
+        warnings: [],
+        rows: 1,
+        start: "2026-06-22T08:00:00+00:00",
+        end: "2026-06-23T08:00:00+00:00",
+        hash: "abc123def456",
+        bars: [
+          {
+            timestamp: "2026-06-23T08:00:00+00:00",
+            timestampMs: 1782201600000,
+            open: 9.1,
+            high: 9.3,
+            low: 9,
+            close: 9.2,
+            volume: 1200000
+          }
+        ]
+      },
+      strategyConfig: {
+        name: "SMA trend",
+        revision: "2015b7a0c498",
+        market: "ashare",
+        symbols: ["600000"],
+        timeframe: "1d",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+        risk: { positionPct: 0.2, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.12 }
+      },
+      backtestAssumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 },
+      backtestTrades: [],
+      backtestEquityCurve: [{ timestamp: "2026-06-23T08:00:00+00:00", equity: 101200 }],
+      backtestDiagnostics: []
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (init?.method === "POST") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status: "audited_run_created",
+            runId: "run-p0abc123",
+            strategyRevisionId: "strategy-2015b7a0c498",
+            dataSnapshotId: "data-abc123def456",
+            metrics: { totalReturnPct: 1.2, maxDrawdownPct: 0.8, tradeCount: 2 },
+            paperOnly: true,
+            liveTradingAllowed: false,
+            orderSubmitted: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ run: auditedRun })
+      };
+    };
+
+    const result = await runP0Pipeline(
+      "/",
+      { market: "ashare", symbol: "600000", timeframe: "1d", limit: 240 },
+      currentWorkspace,
+      fetcher
+    );
+    const body = JSON.parse(String(calls[0].init?.body));
+
+    expect(calls[0].url).toBe("/api/p0/pipeline");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(body).toMatchObject({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      limit: 240,
+      strategyConfig: {
+        name: "SMA trend",
+        entry: { type: "sma_cross", window: 20 },
+        exit: { type: "sma_break", window: 20 },
+        position: { maxPositionPct: 20 },
+        risk: { stopLossPct: 8, takeProfitPct: 18, maxDrawdownPct: 12 }
+      },
+      assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 }
+    });
+    expect(calls[1].url).toBe("/api/research/runs/run-p0abc123");
+    expect(result.source).toBe("core");
+    expect(result.statusLabel).toBe("P0 pipeline run complete");
+    expect(result.pipeline?.paperOnly).toBe(true);
+    expect(result.pipeline?.liveTradingAllowed).toBe(false);
+    expect(result.workspace.researchRun?.runId).toBe("run-p0abc123");
+    expect(result.workspace.strategy.entry).toBe("Close > SMA20");
   });
 
   test("builds the research run URL with locked watchlist refresh evidence", () => {
@@ -1137,7 +1609,7 @@ describe("terminal workspace API client", () => {
       },
       orders: [order]
     };
-    const auditEvent = {
+    const auditEvent: AuditEventRecord = {
       schemaVersion: 1 as const,
       eventId: "portfolio-paper-order-batch-portfolio-paper-batch-1",
       eventType: "portfolio_paper_order_batch",
@@ -8153,6 +8625,112 @@ describe("terminal workspace API client", () => {
     expect(result.auditEvent?.eventType).toBe("execution_adapter_paper_execution");
   });
 
+  test("reuses existing adapter paper execution on duplicate submission", async () => {
+    const existingPaperExecution = {
+      schemaVersion: 1,
+      adapterPaperExecutionId: "execution-adapter-paper-execution-us-live-existing",
+      adapterOpsStateId: "execution-adapter-ops-state-us-live",
+      paperRouteRunbookId: "execution-adapter-paper-route-runbook-us-live",
+      paperOrderLifecycleId: "execution-adapter-paper-order-lifecycle-us-live",
+      sandboxOrderSchemaDryRunId: "execution-adapter-sandbox-order-schema-dry-run-us-live",
+      productionRouteReviewId: "execution-adapter-production-route-review-us-live",
+      sandboxProbeReviewId: "execution-adapter-sandbox-probe-review-us-live",
+      sandboxProbeExecutionId: "execution-adapter-sandbox-probe-execution-us-live",
+      sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      humanConfirmationId: "execution-adapter-human-confirmation-us-live",
+      orchestrationExecutionId: "execution-adapter-orchestration-execution-us-live",
+      dryRunId: "execution-adapter-orchestration-dry-run-us-live",
+      acceptanceId: "execution-adapter-runtime-reload-acceptance-us-live",
+      executionId: "execution-adapter-runtime-reload-execution-us-live",
+      planId: "execution-adapter-runtime-reload-plan-us-live",
+      bindingId: "execution-adapter-environment-binding-us-live",
+      materializationId: "execution-adapter-secret-materialization-us-live",
+      manifestValidationId: "execution-adapter-secret-manifest-validation-us-live",
+      adapterId: "us-live",
+      market: "us",
+      route: "live",
+      status: "paper_execution_recorded",
+      operator: "paper-execution-runner",
+      recordedAt: "2026-06-09T11:25:00+00:00",
+      paperExecutionMode: "manual_adapter_paper_execution",
+      opsMode: "manual_adapter_ops_state",
+      runbookMode: "manual_paper_route_runbook",
+      lifecycleMode: "manual_paper_order_lifecycle_adapter",
+      dryRunMode: "manual_sandbox_order_schema_dry_run",
+      reviewMode: "manual_production_route_review",
+      sandboxReviewMode: "manual_sandbox_probe_review",
+      probeExecutionMode: "manual_readonly_sandbox_probe",
+      probeMode: "manual_sandbox_probe_plan",
+      confirmationMode: "manual_final_human_confirmation",
+      orchestrationExecutionMode: "manual_adapter_orchestration_execution",
+      orchestrationMode: "manual_adapter_orchestration_dry_run",
+      acceptanceMode: "manual_runtime_reload_acceptance",
+      executionMode: "manual_controlled_reload",
+      reloadMode: "manual_container_reload_plan",
+      maintenanceWindowId: "window-us-live-1",
+      bindingMode: "container_env_reference",
+      manifestPath: "local-secret-store://us-live/alpaca-sandbox",
+      requiredEnvVars: ["ALPACA_API_KEY", "ALPACA_API_SECRET"],
+      orderIntent: { symbol: "AAPL", side: "buy", type: "limit", quantity: 10, price: 191.2 },
+      lifecycleSteps: [{ id: "intent-validated", label: "Order intent validated", status: "recorded" }],
+      runbookSteps: [{ id: "lifecycle-evidence-linked", label: "Paper lifecycle evidence linked", status: "recorded" }],
+      opsSteps: [{ id: "paper-route-runbook-linked", label: "Paper route runbook linked", status: "recorded" }],
+      paperExecutionSteps: [{ id: "simulated-fill-recorded", label: "Simulated fill recorded", status: "recorded" }],
+      simulatedFill: {
+        fillId: "paper-fill-execution-adapter-paper-execution-us-live-existing",
+        status: "filled",
+        symbol: "AAPL",
+        side: "buy",
+        type: "limit",
+        quantity: 10,
+        price: 191.2,
+        timeInForce: "GTC",
+        source: "local-paper-ledger",
+        orderSubmitted: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false
+      },
+      paperFillRecorded: true,
+      orderSubmitted: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      requiredConfirmations: [{ id: "ops-state-accepted", label: "Ops state accepted", status: "confirmed" }],
+      blockedReasons: [],
+      metadata: { source: "settings-panel" },
+      liveTradingAllowed: false,
+      paperOnly: true
+    };
+    const result = await recordExecutionAdapterPaperExecution(
+      "http://127.0.0.1:8765/",
+      {
+        adapterId: "us-live",
+        adapterOpsStateId: "execution-adapter-ops-state-us-live",
+        confirmations: {
+          opsStateAccepted: true,
+          paperAccountSynced: true,
+          riskBudgetBound: true,
+          simulatedFillGenerated: true,
+          operatorConfirmedNoLiveRouting: true
+        }
+      },
+      async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: "execution_adapter_paper_execution_already_recorded",
+          existingAdapterPaperExecution: existingPaperExecution
+        })
+      })
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.error).toBe("execution_adapter_paper_execution_already_recorded");
+    expect(result.adapterPaperExecution?.adapterPaperExecutionId).toBe(
+      "execution-adapter-paper-execution-us-live-existing"
+    );
+    expect(result.adapterPaperExecution?.paperFillRecorded).toBe(true);
+  });
+
   test("loads adapter paper execution history and rejects unredacted metadata", async () => {
     const calls: string[] = [];
     const paperExecution = {
@@ -11854,6 +12432,245 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
   });
 
+  test("normalizes P0 package completeness and run-bound audit events", () => {
+    const auditEvent: AuditEventRecord = {
+      schemaVersion: 1,
+      eventId: "p0-paper-simulation-paper-exec-preview",
+      eventType: "p0_paper_simulation",
+      runId: "run-preview",
+      createdAt: "2026-05-26T08:10:00+00:00",
+      stage: "execution",
+      source: "p0-paper-simulation",
+      summary: "P0 paper simulation recorded; live routing blocked.",
+      detail: "Portable P0 paper simulation evidence.",
+      metadata: {
+        paperExecutionId: "paper-exec-preview",
+        paperOnly: true,
+        liveTradingAllowed: false
+      }
+    };
+    const exportPackage = {
+      kind: "aiqt.researchRun.export",
+      packageVersion: 1,
+      exportedAt: "2026-05-26T08:05:00+00:00",
+      manifest: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyRevision: "rev-preview",
+        dataHash: "hash-preview",
+        dataRows: 1,
+        executionMode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        artifactCounts: {
+          bars: 1,
+          trades: 1,
+          equityPoints: 1,
+          decisions: 1,
+          aiRisks: 1,
+          paperExecutions: 1,
+          aiReviewRuns: 1,
+          auditEvents: 1
+        }
+      },
+      researchRun: {
+        runId: "run-preview",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "Preview SMA trend",
+        strategyRevision: "rev-preview",
+        dataRows: 1,
+        metrics: { total_return_pct: 1.2, trade_count: 1 },
+        decisions: [{ agent: "AI Summary", message: "Portable", tone: "ai" }],
+        executionMode: "paper_only",
+        aiReport: {
+          summary: "Evidence only",
+          risks: ["Imported package only explains evidence"],
+          improvements: [],
+          disclaimer: "No investment advice"
+        },
+        strategyConfig: {
+          name: "Preview SMA trend",
+          revision: "rev-preview",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+          risk: { positionPct: 0.2, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.2 }
+        },
+        dataSnapshot: {
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-05-26T08:00:00+00:00",
+          end: "2026-05-26T08:00:00+00:00",
+          hash: "hash-preview",
+          bars: [
+            {
+              timestamp: "2026-05-26T08:00:00+00:00",
+              timestampMs: 1779782400000,
+              open: 9.1,
+              high: 9.3,
+              low: 9,
+              close: 9.2,
+              volume: 1200000
+            }
+          ]
+        },
+        backtestTrades: [
+          {
+            id: "trade-preview",
+            timestamp: "2026-05-26T08:00:00+00:00",
+            symbol: "600000",
+            side: "BUY",
+            status: "filled",
+            price: "9.20",
+            quantity: "2100",
+            exposure: "19.32%",
+            pnl: "-",
+            reason: "entry_conditions",
+            tone: "neutral"
+          }
+        ],
+        backtestEquityCurve: [{ timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 }]
+      },
+      executionHandoff: {
+        mode: "paper_only",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        requiredGates: [{ id: "adapter-certified", label: "Adapter certified", passed: false, reason: "Blocked" }]
+      },
+      paperExecutions: [
+        {
+          executionId: "paper-exec-preview",
+          runId: "run-preview",
+          createdAt: "2026-05-26T08:10:00+00:00",
+          mode: "paper_only",
+          account: { cash: 80659, equity: 100000, positions: { "600000": 2100 } },
+          orders: [
+            {
+              orderId: "paper-order-preview",
+              symbol: "600000",
+              side: "buy",
+              quantity: 2100,
+              price: 9.21,
+              status: "filled",
+              timestamp: "2026-05-26T08:10:00+00:00",
+              reason: "P0 paper simulation"
+            }
+          ],
+          gates: []
+        }
+      ],
+      aiReviewRuns: [
+        {
+          aiReviewId: "ai-review:run-preview:rev-preview",
+          runId: "run-preview",
+          createdAt: "2026-05-26T08:08:00+00:00",
+          record: {
+            schemaVersion: 1,
+            recordType: "aiqt.aiReviewRun",
+            aiReviewId: "ai-review:run-preview:rev-preview",
+            runId: "run-preview",
+            createdAt: "2026-05-26T08:08:00+00:00",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            executionMode: "paper_only",
+            status: "ready",
+            strategyRevision: "rev-preview",
+            summary: {
+              citationCount: 1,
+              roundCount: 1,
+              decisionCount: 1,
+              parameterScanBound: false,
+              liveExecutionBlocked: true
+            },
+            dossier: {
+              status: "ready",
+              headline: "Evidence reviewed",
+              summary: "Portable P0 evidence is bound to the audited run.",
+              citations: [
+                {
+                  id: "run",
+                  label: "Audited run",
+                  value: "run-preview",
+                  detail: "Run is present in the export package.",
+                  tone: "ai"
+                }
+              ]
+            },
+            citations: [
+              {
+                id: "run",
+                label: "Audited run",
+                value: "run-preview",
+                detail: "Run is present in the export package.",
+                tone: "ai"
+              }
+            ],
+            rounds: [
+              {
+                id: "round-risk",
+                phase: "risk",
+                agent: "Risk Manager",
+                thesis: "Paper-only boundary is intact.",
+                evidence: "executionHandoff.liveTradingAllowed=false",
+                verdict: "risk",
+                confidence: 0.82,
+                tone: "warning"
+              }
+            ],
+            decisionLog: [{ agent: "Risk Manager", message: "Keep live routing blocked.", tone: "warning" }],
+            boundary: "Evidence explanation only; no direct trading instructions."
+          }
+        }
+      ],
+      auditEvents: [auditEvent],
+      p0PackageCompleteness: {
+        kind: "aiqt.p0PackageCompleteness",
+        schemaVersion: 1,
+        runId: "run-preview",
+        ready: true,
+        status: "complete",
+        passed: 9,
+        review: 0,
+        blocked: 0,
+        total: 9,
+        progressPct: 100,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true,
+        summary: "P0 package complete: 9/9 criteria passed.",
+        criteria: [
+          {
+            id: "paper-simulation",
+            label: "Paper simulation record",
+            status: "passed",
+            detail: "1 paper executions · 1 P0 audit events",
+            evidence: "1 paper executions · 1 P0 audit events",
+            evidencePath: "paperExecutions[]"
+          }
+        ]
+      }
+    } satisfies ResearchRunExportPackage;
+
+    const normalized = normalizeResearchRunExportPackagePayload({ export: exportPackage });
+
+    expect(normalized?.manifest.artifactCounts.auditEvents).toBe(1);
+    expect(normalized?.auditEvents?.[0].eventType).toBe("p0_paper_simulation");
+    expect(normalized?.p0PackageCompleteness?.ready).toBe(true);
+    expect(normalized?.p0PackageCompleteness?.criteria[0]?.id).toBe("paper-simulation");
+  });
+
   test("rejects malformed portfolio paper order batches in export packages", () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export",
@@ -12636,6 +13453,19 @@ describe("terminal workspace API client", () => {
       },
       runbook: [
         {
+          stepId: "market-data",
+          label: "Market data",
+          workspaceId: "market",
+          status: "passed",
+          current: false,
+          passed: true,
+          detail: "Fresh cache exists with provider quality.",
+          blocker: null,
+          actionId: null,
+          actionLabel: null,
+          targetWorkspace: null
+        },
+        {
           stepId: "backtest-report",
           label: "Backtest report",
           workspaceId: "backtest",
@@ -12731,8 +13561,20 @@ describe("terminal workspace API client", () => {
         ]
       }
     });
+    const completionChecklist = buildP0CompletionChecklist({
+      automatedTestsVerified: false,
+      exportImportReady: true,
+      goldenPath,
+      outcome,
+      paperPreflight,
+      productWorkAreaCount: 9,
+      replayReady: true,
+      strategyVersionReady: true,
+      summary
+    });
     const markdown = buildP0PlatformReadinessReportMarkdown({
       backlogItems,
+      completionChecklist,
       evidenceLink,
       generatedAt: "2026-06-12T10:00:00.000Z",
       outcome,
@@ -12742,6 +13584,7 @@ describe("terminal workspace API client", () => {
 
     const event = await buildP0PlatformReadinessReportAuditEvent({
       backlogItems,
+      completionChecklist,
       evidenceLink,
       generatedAt: "2026-06-12T10:00:00.000Z",
       markdown,
@@ -12782,6 +13625,18 @@ describe("terminal workspace API client", () => {
           "workspace=research&auditReportQuery=p0_readiness_report+run-p0-readiness+run-pipeline+research&p0Action=run-pipeline",
         currentGapExecutableActionId: "run-pipeline",
         currentGapReadinessReason: "ready",
+        completionBlockedCount: 0,
+        completionCurrentCriterionActionLabel: "Run research pipeline",
+        completionCurrentCriterionId: "golden-path",
+        completionCurrentCriterionLabel: "Golden path can run through",
+        completionCurrentCriterionStatus: "review",
+        completionCurrentCriterionTargetWorkspaceId: "research",
+        completionOpenCriterionIds: "golden-path,ai-evidence,automated-tests",
+        completionPassedCount: 7,
+        completionProgressPct: 70,
+        completionReviewCount: 3,
+        completionSummary: "7/10 passed, 3 review, 0 blocked · current golden-path review",
+        completionTotalCount: 10,
         latestEvidenceState: "paper_execution",
         latestEvidenceId: "paper-p0-readiness",
         latestEvidenceLink: "workspace=execution&paperExecution=paper-p0-readiness&runId=run-p0-readiness",
@@ -12813,6 +13668,248 @@ describe("terminal workspace API client", () => {
     expect(event.detail).toContain("run-p0-readiness-p0-readiness-report.md");
     expect(event.detail).toContain("2/5 steps");
     expect(event.detail).toContain("backlog 2/2 executable, 0 not executable");
+    expect(event.detail).toContain("completion 7/10 passed, 3 review, 0 blocked");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a P0 acceptance review audit event without storing markdown", async () => {
+    const acceptance: P0AcceptanceSummarySource = {
+      kind: "aiqt.p0AcceptanceManifest",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/p0-acceptance.json",
+      summary: "P0 acceptance smoke passed",
+      reason: "All local P0 checks passed while live trading remains blocked.",
+      generatedAt: "2026-06-23T09:00:00.000Z",
+      runId: "run-p0-acceptance",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      checkCount: 4,
+      requiredCheckCount: 4,
+      checkIds: ["docker-smoke", "research-pipeline", "paper-execution", "live-blocked-boundary"],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: {
+        checks: ["docker-smoke", "research-pipeline", "paper-execution", "live-blocked-boundary"]
+      }
+    };
+    const summary = buildP0AcceptanceSummary(acceptance);
+    const markdown = buildP0AcceptanceReviewMarkdown({ acceptance, summary });
+
+    const event = await buildP0AcceptanceReviewAuditEvent({
+      acceptance,
+      generatedAt: "2026-06-23T09:10:00.000Z",
+      markdown,
+      summary
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "p0_acceptance_review",
+      runId: "run-p0-acceptance",
+      createdAt: "2026-06-23T09:10:00.000Z",
+      stage: "passed",
+      source: "web",
+      summary: "P0 acceptance review recorded",
+      metadata: {
+        artifactKind: "aiqt.p0AcceptanceReview",
+        fileName: "run-p0-acceptance-p0-acceptance-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "passed",
+        sourcePath: "data/p0-acceptance.json",
+        manifestGeneratedAt: "2026-06-23T09:00:00.000Z",
+        manifestAvailable: true,
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        checkCount: 4,
+        requiredCheckCount: 4,
+        checkIds: ["docker-smoke", "research-pipeline", "paper-execution", "live-blocked-boundary"],
+        paperOnly: true,
+        reportedLiveTradingAllowed: false,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true,
+        boundary: "P0 acceptance audit evidence only; live trading remains blocked and no investment advice"
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(
+      `p0-acceptance-review-run-p0-acceptance-${String(event.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event.detail).toContain("run-p0-acceptance-p0-acceptance-review.md");
+    expect(event.detail).toContain("4/4 checks");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a research context readiness report audit event without storing markdown", async () => {
+    const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "1d",
+      workspaceId: "research",
+      updatedAt: "2026-05-26T08:40:00+08:00"
+    });
+    const rows = buildResearchContextReadinessRows({
+      workspace,
+      barCount: 240,
+      dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+      cacheContext: {
+        rowCount: 240,
+        freshness: "fresh",
+        ageHours: 1,
+        latestTimestamp: "2026-05-26T08:00:00+08:00"
+      },
+      watchlistRefreshRuns: [
+        {
+          runId: "cache-refresh-ready",
+          createdAt: "2026-06-10T06:00:00+00:00",
+          timeframe: "1d",
+          requestedLimit: 240,
+          summary: {
+            totalSymbols: 1,
+            refreshed: 1,
+            skipped: 0,
+            failed: 0,
+            upsertedRows: 240
+          },
+          items: [
+            {
+              market: "ashare",
+              symbol: "600000",
+              name: "浦发银行",
+              timeframe: "1d",
+              requestedLimit: 240,
+              upsertedRows: 240,
+              status: "refreshed",
+              quality: {
+                source: "tencent",
+                isComplete: true,
+                warnings: [],
+                rows: 240
+              },
+              error: null
+            }
+          ]
+        }
+      ],
+      note: {
+        source: "core",
+        body: "观察假设：银行板块修复中，等待成交量确认。",
+        savedBody: "观察假设：银行板块修复中，等待成交量确认。",
+        updatedAt: "2026-05-26T08:30:00+08:00"
+      }
+    });
+    const archive = await buildResearchContextReadinessReportArchive({
+      contextLink:
+        "http://127.0.0.1:5173/?workspace=research&market=ashare&symbol=600000&timeframe=1d&watchlistRefreshRun=cache-refresh-ready",
+      evidenceRows: buildResearchContextEvidenceRows(workspace),
+      generatedAt: "2026-06-20T08:00:00.000Z",
+      preflight: buildResearchPipelinePreflight(rows),
+      rows,
+      workspace
+    });
+
+    const event = buildResearchContextReadinessReportAuditEvent(archive);
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "research_context_readiness_report",
+      runId: "cache-refresh-ready",
+      createdAt: "2026-06-20T08:00:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: "Research context readiness report generated",
+      metadata: {
+        artifactKind: "aiqt.researchContextReadinessReport",
+        fileName: "aiquant-research-context-ashare-600000-1d-20260620T080000Z.md",
+        format: "text/markdown",
+        contentSha256: archive.contentSha256.hash,
+        contentSha256Algorithm: "sha256",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        preflightStatus: "ready",
+        nextAction: "none",
+        lockedPreparationEvidenceRunId: "cache-refresh-ready",
+        readinessReadyCount: 6,
+        readinessReviewCount: 0,
+        readinessBlockedCount: 0,
+        contextLink:
+          "http://127.0.0.1:5173/?workspace=research&market=ashare&symbol=600000&timeframe=1d&watchlistRefreshRun=cache-refresh-ready",
+        liveTradingAllowed: false,
+        boundary: "research context readiness evidence only; no order routing, investment advice, or live trading authorization"
+      }
+    });
+    expect(event.eventId).toBe(
+      `research-context-readiness-report-ashare-600000-1d-${archive.contentSha256.hash.slice(0, 16)}`
+    );
+    expect(event.detail).toContain("aiquant-research-context-ashare-600000-1d-20260620T080000Z.md");
+    expect(event.detail).toContain("sha256");
+    expect(event.detail).toContain("ready 6/0/0");
+    expect(event.detail).not.toContain(archive.contentMarkdown);
+  });
+
+  test("builds a pre-live runbook report audit event without storing markdown", async () => {
+    const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "1d",
+      workspaceId: "research",
+      updatedAt: "2026-05-26T08:40:00+08:00"
+    });
+    const runbook = buildExecutionAdapterPreLiveRunbookSummary({ workspace });
+    const markdown = buildExecutionAdapterPreLiveRunbookMarkdown(runbook, {
+      generatedAt: "2026-06-21T09:00:00.000Z"
+    });
+
+    const event = await buildExecutionAdapterPreLiveRunbookAuditEvent({
+      generatedAt: "2026-06-21T09:00:00.000Z",
+      markdown,
+      runbook,
+      workspace
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "pre_live_runbook_report",
+      runId: null,
+      createdAt: "2026-06-21T09:00:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: "Pre-live runbook report generated for ashare-live",
+      metadata: {
+        adapterId: "ashare-live",
+        artifactKind: "aiqt.preLiveRunbookReport",
+        boundary: "Pre-live runbook audit evidence only; no live trading authorization, order submission, or investment advice",
+        completedSteps: 0,
+        contentSha256Algorithm: "sha256",
+        fileName: "ashare-live-600000-1d-pre-live-runbook.md",
+        format: "text/markdown",
+        liveTradingAllowed: false,
+        market: "ashare",
+        nextStepId: "adapter-state",
+        status: "blocked",
+        symbol: "600000",
+        timeframe: "1d",
+        totalSteps: 7
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(
+      `pre-live-runbook-report-ashare-live-600000-1d-${String(event.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event.detail).toContain("ashare-live-600000-1d-pre-live-runbook.md");
+    expect(event.detail).toContain("sha256");
+    expect(event.detail).toContain("0/7 gates");
     expect(event.detail).not.toContain(markdown);
   });
 
@@ -15061,6 +16158,50 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.quality.source).toBe("tencent");
     expect(result.bars.at(-1)?.close).toBe(9.27);
+  });
+
+  test("loads market data readiness from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadMarketDataReadiness(
+      "http://127.0.0.1:8765",
+      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            state: "ready",
+            source: "tencent",
+            cacheState: "fresh",
+            barCount: 500,
+            latestBarAt: "2026-05-26T00:00:00+08:00",
+            startBarAt: "2025-05-26T00:00:00+08:00",
+            ageHours: 2,
+            providerHealthState: "healthy",
+            blockingReasons: [],
+            repairActions: [],
+            latestRefreshRunId: "cache-refresh-ready",
+            latestProviderErrorId: null,
+            dataQualityWarnings: []
+          })
+        };
+      }
+    );
+
+    expect(buildMarketDataReadinessUrl("http://127.0.0.1:8765", "ashare", "600000", "1d")).toBe(
+      "http://127.0.0.1:8765/api/market/data-readiness?market=ashare&symbol=600000&timeframe=1d"
+    );
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/market/data-readiness?market=ashare&symbol=600000&timeframe=1d"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.readiness?.state).toBe("ready");
+    expect(result.readiness?.cacheState).toBe("fresh");
+    expect(result.readiness?.providerHealthState).toBe("healthy");
+    expect(result.readiness?.repairActions).toEqual([]);
   });
 
   test("loads historical market klines with the requested end boundary", async () => {

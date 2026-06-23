@@ -62,6 +62,40 @@ npm run docker:smoke
 npm run docker:smoke -- --no-build
 ```
 
+如果要验证 P0 产品闭环，而不只是验证容器和首页可访问：
+
+```powershell
+npm run docker:smoke:p0 -- --no-build --down
+```
+
+`docker:smoke:p0` 会在 Compose 服务中依次调用 P0 策略流水线、证据型 AI 评审、纸面模拟委托、研究包导出、复现包导入和导入后重导出，并把验收结果写入 `data/p0-acceptance.json`。它会校验导出包包含 `p0_paper_simulation` 审计事件、完整 `p0PackageCompleteness`，且全程保持 `paperOnly=true`、`liveTradingAllowed=false`、`liveOrderSubmitted=false`、`routeExecuted=false`。该命令会写入容器数据卷中的本地 SQLite 审计记录，不会触发真实下单。
+
+已经归档的验收报告可以离线复核，不需要重新启动 Docker：
+
+```powershell
+npm run docker:smoke:p0:validate
+```
+
+如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
+
+```powershell
+npm run docker:smoke -- --no-build --p0-acceptance --p0-import-check --p0-import-base-url http://127.0.0.1:5174
+```
+
+该 JSON 文件会记录 P0 run id、标的、周期、导入目标、每个验收步骤和 `paperOnly=true / liveTradingAllowed=false` 边界，用于复核本次部署是否跑通过 P0 闭环；它不是交易建议，也不代表实盘许可。
+
+运行中的核心服务也可以读取这份本地验收产物：
+
+```powershell
+curl http://127.0.0.1:5173/api/p0/acceptance/latest
+```
+
+该端点默认读取 `data/p0-acceptance.json`，返回 `passed / missing / invalid` 三种状态。缺失或非法 manifest 不会被当成成功；如果 manifest 试图打开 `liveTradingAllowed` 或破坏 live-blocked 边界，平台会标记为 `invalid`，但仍不会放开实盘路由。
+
+主工作台的 P0 readiness 区域会同步读取同一份本地验收产物，显示通过、缺失或无效状态，并提供“刷新验收”和跳转 Audit 复核的动作。这个卡片只用于产品验收证据回读：缺失或无效时会提示处理，验收通过时也仍保持 `liveTradingAllowed=false` 的模拟优先边界。
+
+Audit 工作区也会显示同一份 P0 验收复核面板，列出 manifest 来源、run id、市场上下文、检查项和 live-blocked 边界。它用于复核本地部署是否跑通过 P0 闭环，不会执行真实交易，也不会把验收通过解释为实盘授权。该面板可以复制或下载 Markdown 复核材料，也可以将复核结果写入 Audit 账本为 `p0_acceptance_review` 事件，用于个人留档、小团队异步复核和后续证据搜索。
+
 访问：
 
 ```powershell
@@ -113,7 +147,11 @@ docker compose down -v
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` 会在 push 和 pull request 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，最后执行 `python tools/docker_smoke.py --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。
+`.github/workflows/ci.yml` 会在 push 和 pull request 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。
+
+CI 还会运行 `npm run docker:smoke:p0 -- --no-build --down`，把 P0 策略流水线、AI 评审、纸面模拟、导出、导入和重导出作为产品验收门禁，并上传 `data/p0-acceptance.json` 为 `p0-acceptance-manifest` artifact。
+
+归档产物会再通过 `npm run docker:smoke:p0:validate` 离线复核。校验会拒绝缺少核心 P0 检查、开启实盘边界或检查数量不一致的 manifest。
 
 实时报价可选配置：
 

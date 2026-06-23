@@ -48,4 +48,18 @@ jobs:
         run: docker compose build
 
       - name: Smoke test Docker deployment
-        run: python tools/docker_smoke.py --no-build --down
+        run: npm run docker:smoke -- --no-build --down
+
+      - name: Run P0 acceptance smoke
+        run: npm run docker:smoke:p0 -- --no-build --down
+
+      - name: Validate P0 acceptance manifest
+        run: npm run docker:smoke:p0:validate
+
+      - name: Upload P0 acceptance manifest
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: p0-acceptance-manifest
+          path: data/p0-acceptance.json
+          if-no-files-found: warn
