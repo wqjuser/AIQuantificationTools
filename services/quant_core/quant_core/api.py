@@ -195,11 +195,24 @@ from quant_core.market_klines import QuantDingerKlineAdapter, build_market_data_
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
+from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
+from quant_core.p2_acceptance import (
+    DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH,
+    load_p2_pre_live_acceptance_status,
+)
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
 from quant_core.research_import_undo import (
     ResearchRunImportUndoRecord,
     ResearchRunImportUndoStore,
     research_run_import_undo_record_to_payload,
+)
+from quant_core.handoff_notes import (
+    HandoffNote,
+    HandoffNoteStore,
+    create_handoff_note_id,
+    handoff_note_from_payload,
+    handoff_note_to_audit_event_payload,
+    handoff_note_to_payload,
 )
 from quant_core.research_notes import ResearchNote, ResearchNoteStore, research_note_to_payload
 from quant_core.runs import (
@@ -214,6 +227,7 @@ from quant_core.runs import (
     research_run_import_portfolio_paper_order_approvals,
     research_run_import_portfolio_paper_orders,
     research_run_import_portfolio_paper_order_simulations,
+    research_run_import_handoff_notes,
     research_run_import_to_audit,
 )
 from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
@@ -368,6 +382,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
+    handoff_note_store = HandoffNoteStore(Path("data/handoff_notes.sqlite"))
     watchlist_store = WatchlistStore(Path("data/watchlist.sqlite"))
     workspace_state_store = ResearchWorkspaceStateStore(Path("data/research_workspace_state.sqlite"))
     watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(Path("data/watchlist_cache_refreshes.sqlite"))
@@ -383,6 +398,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     execution_adapter_health_exchange_factory = None
     execution_adapter_health_environ = None
     p0_acceptance_report_path = DEFAULT_P0_ACCEPTANCE_REPORT_PATH
+    p1_acceptance_report_path = DEFAULT_P1_ACCEPTANCE_REPORT_PATH
+    p2_pre_live_acceptance_report_path = DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -421,6 +438,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 market = str(payload.get("market") or "ashare").strip() or "ashare"
                 symbol = str(payload.get("symbol") or "600000").strip() or "600000"
                 timeframe = str(payload.get("timeframe") or "1d").strip() or "1d"
+                watchlist_refresh_run_id = str(payload.get("watchlistRefreshRunId") or "").strip()
                 strategy_snapshot = _p0_strategy_snapshot_from_payload(payload.get("strategyConfig"))
                 validation = validate_strategy_snapshot(
                     strategy_snapshot,
@@ -438,6 +456,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         status=400,
                     )
                     return
+                data_preparation_evidence = _watchlist_refresh_preparation_evidence(
+                    self.watchlist_cache_refresh_store.get(watchlist_refresh_run_id),
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
                 workspace = run_terminal_research(
                     market=market,
                     symbol=symbol,
@@ -449,6 +473,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     run_store=self.run_store,
                     data_limit=_p0_data_limit_from_payload(payload),
                     strategy_snapshot=strategy_snapshot,
+                    data_preparation_evidence=data_preparation_evidence,
                 )
                 if not workspace.research_run:
                     raise ValueError("p0_pipeline_run_missing")
@@ -2103,6 +2128,33 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"note": research_note_to_payload(note)}, status=201)
             return
+        if parsed.path == "/api/handoff-notes":
+            try:
+                payload = self._read_json_body()
+                note_id = str(payload.get("noteId") or "").strip() or create_handoff_note_id()
+                audit_event_id = str(payload.get("auditEventId") or "").strip() or f"handoff-note:{note_id}"
+                note = self.handoff_note_store.save(
+                    note_id=note_id,
+                    subject_type=str(payload.get("subjectType") or ""),
+                    subject_id=str(payload.get("subjectId") or ""),
+                    body=str(payload.get("body") or ""),
+                    author=str(payload.get("author") or "local-operator"),
+                    source_workspace=str(payload.get("sourceWorkspace") or "local"),
+                    updated_at=_parse_optional_datetime(payload.get("updatedAt")),
+                    audit_event_id=audit_event_id,
+                )
+                audit_event = self.audit_event_store.record(handoff_note_to_audit_event_payload(note))
+            except ValueError as error:
+                self._send_json({"error": "invalid_handoff_note", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "handoffNote": handoff_note_to_payload(note),
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=201,
+            )
+            return
         if parsed.path == "/api/audit/events":
             try:
                 event = self.audit_event_store.record(self._read_json_body())
@@ -2522,6 +2574,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                     ai_review_store=self.ai_review_store,
                     audit_event_store=self.audit_event_store,
+                    handoff_note_store=self.handoff_note_store,
                     undo_record=undo_record,
                 )
                 consumed = self.import_undo_store.mark_consumed(undo_record.undo_token)
@@ -2554,6 +2607,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 ai_review_runs = research_run_import_ai_review_runs(payload, run_id=audit.run_id)
                 audit_events = research_run_import_audit_events(payload, run_id=audit.run_id)
+                handoff_notes = research_run_import_handoff_notes(payload, run_id=audit.run_id)
                 paper_execution_records = [
                     paper_execution_payload_to_record(execution_payload) for execution_payload in paper_executions
                 ]
@@ -2590,6 +2644,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                     ai_review_store=self.ai_review_store,
                     audit_event_store=self.audit_event_store,
+                    handoff_note_store=self.handoff_note_store,
                     audit=audit,
                     imported_note=imported_note,
                     paper_execution_records=paper_execution_records,
@@ -2598,6 +2653,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_simulations=portfolio_paper_order_simulation_records,
                     ai_review_records=ai_review_records,
                     audit_event_payloads=audit_events,
+                    handoff_note_payloads=handoff_notes,
                 )
                 undo_record = self.import_undo_store.record(run_id=audit.run_id, snapshot=undo_snapshot)
             except Exception as error:
@@ -2612,6 +2668,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         portfolio_paper_order_simulation_store=self.portfolio_paper_order_simulation_store,
                         ai_review_store=self.ai_review_store,
                         audit_event_store=self.audit_event_store,
+                        handoff_note_store=self.handoff_note_store,
                         snapshot=undo_snapshot,
                     )
                 self._send_json({"error": "research_run_import_write_failed", "detail": str(error)}, status=500)
@@ -2701,6 +2758,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/p0/acceptance/latest":
             self._send_json({"acceptance": load_p0_acceptance_status(Path(self.p0_acceptance_report_path))})
+            return
+        if parsed.path == "/api/p1/acceptance/latest":
+            self._send_json({"acceptance": load_p1_acceptance_status(Path(self.p1_acceptance_report_path))})
+            return
+        if parsed.path == "/api/p2/pre-live/acceptance/latest":
+            self._send_json(
+                {"acceptance": load_p2_pre_live_acceptance_status(Path(self.p2_pre_live_acceptance_report_path))}
+            )
             return
         if parsed.path == "/api/cache/watchlist-refreshes":
             query = parse_qs(parsed.query)
@@ -3634,6 +3699,35 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"note": research_note_to_payload(note)})
             return
+        if parsed.path == "/api/handoff-notes":
+            query = parse_qs(parsed.query)
+            subject_type = query.get("subjectType", [""])[0].strip()
+            subject_id = query.get("subjectId", [""])[0].strip()
+            limit = _parse_limit(query.get("limit", ["20"])[0])
+            try:
+                notes = self.handoff_note_store.list_by_subject(
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                    limit=limit,
+                )
+                total = self.handoff_note_store.count_by_subject(
+                    subject_type=subject_type,
+                    subject_id=subject_id,
+                )
+            except ValueError as error:
+                self._send_json({"error": "invalid_handoff_note_query", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "handoffNotes": [handoff_note_to_payload(note) for note in notes],
+                    "pagination": {
+                        "limit": limit,
+                        "offset": 0,
+                        "total": total,
+                    },
+                }
+            )
+            return
         if parsed.path == "/api/research/run":
             query = parse_qs(parsed.query)
             market = query.get("market", ["ashare"])[0]
@@ -3766,6 +3860,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             audit_events = [
                 audit_event_record_to_payload(event) for event in self.audit_event_store.list_recent(run_id=run_id, limit=50)
             ]
+            handoff_notes = [handoff_note_to_payload(note) for note in self.handoff_note_store.list_by_run(run_id, limit=50)]
             promotion_candidate = build_promotion_candidate(audit, self.paper_execution_store.list_by_run(run_id, limit=20))
             self._send_json(
                 {
@@ -3779,6 +3874,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         promotion_candidate=promotion_candidate,
                         ai_review_runs=ai_reviews,
                         audit_events=audit_events,
+                        handoff_notes=handoff_notes,
                     )
                 }
             )
@@ -4808,7 +4904,13 @@ def _persist_research_run_import(
     portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     ai_review_records: list[dict[str, object]],
     audit_event_payloads: list[dict[str, object]],
+    handoff_note_store: HandoffNoteStore | None = None,
+    handoff_note_payloads: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
+    handoff_note_payloads = handoff_note_payloads or []
+    if handoff_note_payloads and handoff_note_store is None:
+        raise ValueError("handoff_note_store_required")
+
     previous_run = run_store.get(audit.run_id)
     previous_note = (
         note_store.get_existing(
@@ -4833,6 +4935,7 @@ def _persist_research_run_import(
     )
     previous_ai_reviews = ai_review_store.list_all_by_run(audit.run_id)
     previous_audit_events = audit_event_store.list_all_by_run(audit.run_id)
+    previous_handoff_notes = handoff_note_store.list_by_run(audit.run_id, limit=200) if handoff_note_store else []
 
     try:
         run_store.record(audit)
@@ -4862,6 +4965,10 @@ def _persist_research_run_import(
             portfolio_paper_order_simulation_store.record(simulation)
         for review_record in ai_review_records:
             ai_review_store.record(review_record)
+        if handoff_note_payloads and handoff_note_store:
+            handoff_note_store.delete_by_subject(subject_type="research_run", subject_id=audit.run_id)
+            for handoff_note_payload in handoff_note_payloads:
+                handoff_note_store.restore(handoff_note_from_payload(handoff_note_payload))
         for audit_event_payload in audit_event_payloads:
             audit_event_store.record(audit_event_payload)
     except Exception:
@@ -4887,6 +4994,8 @@ def _persist_research_run_import(
             previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
             previous_ai_reviews=previous_ai_reviews,
             previous_audit_events=previous_audit_events,
+            handoff_note_store=handoff_note_store,
+            previous_handoff_notes=previous_handoff_notes,
         )
         raise
     return _research_run_import_undo_snapshot(
@@ -4902,6 +5011,8 @@ def _persist_research_run_import(
         previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
         previous_ai_reviews=previous_ai_reviews,
         previous_audit_events=previous_audit_events,
+        imported_handoff_notes=handoff_note_payloads,
+        previous_handoff_notes=previous_handoff_notes,
     )
 
 
@@ -4919,12 +5030,15 @@ def _research_run_import_undo_snapshot(
     previous_portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     previous_ai_reviews: list[AiReviewRunRecord],
     previous_audit_events: list[object],
+    imported_handoff_notes: list[dict[str, object]],
+    previous_handoff_notes: list[HandoffNote],
 ) -> dict[str, object]:
     return {
         "schemaVersion": 1,
         "runId": audit.run_id,
         "importedRun": research_run_audit_to_payload(audit, include_data_snapshot=True),
         "importedNote": _imported_note_snapshot(imported_note),
+        "importedHandoffNotes": imported_handoff_notes,
         "strategyRevision": strategy_revision,
         "previous": {
             "run": research_run_audit_to_payload(previous_run, include_data_snapshot=True) if previous_run else None,
@@ -4946,6 +5060,7 @@ def _research_run_import_undo_snapshot(
             ],
             "aiReviewRuns": [ai_review_run_record_to_payload(review) for review in previous_ai_reviews],
             "auditEvents": [audit_event_record_to_payload(event) for event in previous_audit_events],
+            "handoffNotes": [handoff_note_to_payload(note) for note in previous_handoff_notes],
         },
     }
 
@@ -4974,6 +5089,7 @@ def _undo_research_run_import_from_record(
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     audit_event_store: AuditEventStore,
+    handoff_note_store: HandoffNoteStore,
     undo_record: ResearchRunImportUndoRecord,
 ) -> ResearchRunAudit | None:
     return _undo_research_run_import_from_snapshot(
@@ -4986,6 +5102,7 @@ def _undo_research_run_import_from_record(
         portfolio_paper_order_simulation_store=portfolio_paper_order_simulation_store,
         ai_review_store=ai_review_store,
         audit_event_store=audit_event_store,
+        handoff_note_store=handoff_note_store,
         snapshot=undo_record.snapshot,
     )
 
@@ -5001,6 +5118,7 @@ def _undo_research_run_import_from_snapshot(
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     audit_event_store: AuditEventStore,
+    handoff_note_store: HandoffNoteStore,
     snapshot: dict[str, object],
 ) -> ResearchRunAudit | None:
     if int(_number_or_default(snapshot.get("schemaVersion"), 0)) != 1:
@@ -5022,6 +5140,7 @@ def _undo_research_run_import_from_snapshot(
     previous_portfolio_paper_simulation_payloads = previous.get("portfolioPaperOrderSimulations", [])
     previous_ai_review_payloads = previous.get("aiReviewRuns", [])
     previous_audit_event_payloads = previous.get("auditEvents", [])
+    previous_handoff_note_payloads = previous.get("handoffNotes", [])
 
     if previous_paper_payloads is None:
         previous_paper_payloads = []
@@ -5035,6 +5154,8 @@ def _undo_research_run_import_from_snapshot(
         previous_ai_review_payloads = []
     if previous_audit_event_payloads is None:
         previous_audit_event_payloads = []
+    if previous_handoff_note_payloads is None:
+        previous_handoff_note_payloads = []
     if not isinstance(previous_paper_payloads, list):
         raise ValueError("import_undo_paper_executions_must_be_array")
     if not isinstance(previous_portfolio_paper_payloads, list):
@@ -5047,6 +5168,8 @@ def _undo_research_run_import_from_snapshot(
         raise ValueError("import_undo_ai_reviews_must_be_array")
     if not isinstance(previous_audit_event_payloads, list):
         raise ValueError("import_undo_audit_events_must_be_array")
+    if not isinstance(previous_handoff_note_payloads, list):
+        raise ValueError("import_undo_handoff_notes_must_be_array")
 
     previous_run = (
         _research_run_audit_from_payload(previous_run_payload) if isinstance(previous_run_payload, dict) else None
@@ -5079,6 +5202,9 @@ def _undo_research_run_import_from_snapshot(
         _ai_review_run_from_payload(item) for item in previous_ai_review_payloads if isinstance(item, dict)
     ]
     previous_audit_events = [dict(item) for item in previous_audit_event_payloads if isinstance(item, dict)]
+    previous_handoff_notes = [
+        handoff_note_from_payload(item) for item in previous_handoff_note_payloads if isinstance(item, dict)
+    ]
 
     _rollback_research_run_import(
         run_store=run_store,
@@ -5102,6 +5228,8 @@ def _undo_research_run_import_from_snapshot(
         previous_ai_reviews=previous_ai_reviews,
         audit_event_store=audit_event_store,
         previous_audit_events=previous_audit_events,
+        handoff_note_store=handoff_note_store,
+        previous_handoff_notes=previous_handoff_notes,
     )
     return previous_run
 
@@ -5203,6 +5331,7 @@ def _rollback_research_run_import(
     portfolio_paper_order_simulation_store: PortfolioPaperOrderSimulationStore,
     ai_review_store: AiReviewRunStore,
     audit_event_store: AuditEventStore,
+    handoff_note_store: HandoffNoteStore | None,
     run_id: str,
     imported_note: dict[str, object] | None,
     previous_run: ResearchRunAudit | None,
@@ -5215,6 +5344,7 @@ def _rollback_research_run_import(
     previous_portfolio_paper_order_simulations: list[PortfolioPaperOrderSimulation],
     previous_ai_reviews: list[AiReviewRunRecord],
     previous_audit_events: list[object],
+    previous_handoff_notes: list[HandoffNote],
 ) -> None:
     audit_event_store.delete_by_run(run_id)
     for event in previous_audit_events:
@@ -5222,6 +5352,11 @@ def _rollback_research_run_import(
             audit_event_store.record(event)
         else:
             audit_event_store.record(audit_event_record_to_payload(event))
+
+    if handoff_note_store:
+        handoff_note_store.delete_by_subject(subject_type="research_run", subject_id=run_id)
+        for note in previous_handoff_notes:
+            handoff_note_store.restore(note)
 
     ai_review_store.delete_by_run(run_id)
     for review in previous_ai_reviews:

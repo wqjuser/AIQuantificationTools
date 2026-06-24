@@ -56,10 +56,24 @@ jobs:
       - name: Validate P0 acceptance manifest
         run: npm run docker:smoke:p0:validate
 
+      - name: Run P1 acceptance smoke
+        run: npm run docker:smoke:p1 -- --no-build --down
+
+      - name: Validate P1 acceptance manifest
+        run: npm run docker:smoke:p1:validate
+
       - name: Upload P0 acceptance manifest
         if: always()
         uses: actions/upload-artifact@v5
         with:
           name: p0-acceptance-manifest
           path: data/p0-acceptance.json
+          if-no-files-found: warn
+
+      - name: Upload P1 acceptance manifest
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: p1-acceptance-manifest
+          path: data/p1-acceptance.json
           if-no-files-found: warn

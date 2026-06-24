@@ -71,7 +71,7 @@ describe("terminal layout css", () => {
     expect(viteConfig).toContain('return "vendor-charts";');
     expect(viteConfig).toContain('return "vendor-icons";');
     expect(viteConfig).toContain('return "vendor-react";');
-    expect(viteConfig).toContain("chunkSizeWarningLimit: 550");
+    expect(viteConfig).toContain("chunkSizeWarningLimit: 600");
   });
 
   test("uses product work areas as the primary left navigation", () => {
@@ -1706,6 +1706,33 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .audit-layout", ['"package"', '"portfolio-orders"', '"reports"', '"signing-keys"', '"import-diff"'])).toBe(true);
   });
 
+  test("renders the evidence package control room as the audit workspace entry point", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const controlRoomSource = sourceBetween("function EvidencePackageControlRoomPanel", "function P0AcceptanceReviewPanel");
+
+    expect(appSource).toContain("buildEvidencePackageControlRoomRows");
+    expect(appSource).toContain("const evidencePackageControlRoom = buildEvidencePackageControlRoomRows({");
+    expect(appSource).toContain("const runEvidencePackageControlAction = useCallback");
+    expect(appSource).toContain("updateResearchRunImportAuditQuery(focusQuery)");
+    expect(appSource).toContain('updateAuditEvidenceReportQuery(`p0_acceptance_review ${row.runId}`)');
+    expect(auditWorkspaceSource).toContain("<EvidencePackageControlRoomPanel");
+    expect(auditWorkspaceSource).toContain('className="workflow-evidence-control-panel"');
+    expect(auditWorkspaceSource).toContain("controlRoom={evidencePackageControlRoom}");
+    expect(auditWorkspaceSource).toContain("onRunAction={runEvidencePackageControlAction}");
+    expect(controlRoomSource).toContain("controlRoom.summary");
+    expect(controlRoomSource).toContain("controlRoom.rows.slice(0, 8)");
+    expect(controlRoomSource).toContain("evidencePackageControlStatusLabel");
+    expect(controlRoomSource).toContain("evidencePackageControlActionLabel");
+    expect(cssBlock(".workflow-evidence-control-panel")).toContain("grid-area: evidence-control;");
+    expect(cssBlock(".evidence-package-control-summary")).toContain("grid-template-columns: repeat(5, minmax(120px, 1fr));");
+    expect(cssBlock(".evidence-package-control-row")).toContain(
+      "grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.35fr) auto;"
+    );
+    expect(hasCssDeclaration(".evidence-package-control-gates", "grid-template-columns: repeat(4, minmax(0, 1fr));")).toBe(true);
+    expect(hasCssBlockWith(".audit-layout", ['"evidence-control evidence-control"', '"runbook workflow"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"evidence-control"', '"runbook"'])).toBe(true);
+  });
+
   test("renders market data refresh override audit events in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
     const overridePanelSource = sourceBetween("function MarketDataRefreshOverrideAuditLedgerPanel", "function AuditEvidenceReportLedgerPanel");
@@ -2110,10 +2137,11 @@ describe("terminal layout css", () => {
       hasCssBlockWith(".research-layout", [
         '"chart scanner"',
         '"chart readiness"',
-        '"note workflow"',
+        '"note handoff"',
         '"decision workflow"'
       ])
     ).toBe(true);
+    expect(hasCssBlockWith(".market-layout", ['"chart data"', '"chart calendar"', '"research-ops research-ops"', '"scanner workflow"'])).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith(".agent-review-layout", ['"ai workflow"', '"decision history"'])).toBe(true);
     expect(cssBlock(".paper-layout")).toContain(
@@ -2123,8 +2151,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workflow-backtest-panel")).toContain("grid-area: backtest;");
     expect(cssBlock(".workflow-nodes-panel")).toContain("grid-area: workflow;");
     expect(cssBlock(".workflow-agent-panel")).toContain("grid-area: ai;");
+    expect(cssBlock(".workflow-handoff-panel")).toContain("grid-area: handoff;");
     expect(cssBlock(".workflow-scanner-panel .scanner-head")).toContain("display: none;");
     expect(cssBlock(".workflow-scanner-panel .scanner-row")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(appSource).toContain("function ResearchOpsQueuePanel");
+    expect(appSource).toContain("buildResearchOpsQueueRows({");
+    expect(appSource).toContain('className="workflow-research-ops-panel"');
+    expect(appSource).toContain("pendingResearchOpsAction");
+    expect(cssBlock(".workflow-research-ops-panel")).toContain("grid-area: research-ops;");
+    expect(cssBlock(".research-ops-row")).toContain("grid-template-columns: minmax(110px, 0.8fr) minmax(120px, 0.75fr) minmax(180px, 1fr) auto;");
     expect(cssBlock(".workflow-broker-panel .broker-adapter-head")).toContain("display: none;");
     expect(cssBlock(".workflow-broker-panel .broker-adapter-row")).toContain(
       "grid-template-columns: minmax(0, 1fr) auto;"
@@ -2312,6 +2347,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("loadStrategyLibrary");
     expect(appSource).toContain("saveStrategySnapshot");
     expect(appSource).toContain("buildStrategyVersionDiffRows");
+    expect(appSource).toContain("buildStrategyGovernanceQueueRows");
+    expect(appSource).toContain("pendingStrategyGovernanceAction");
+    expect(appSource).toContain("runStrategyGovernanceAction");
     expect(appSource).toContain("saveCurrentStrategyVersion");
     expect(appSource).toContain("loadSavedStrategyVersion");
     expect(appSource).toContain("workspaceWithStrategyLibraryItem");
@@ -2323,10 +2361,34 @@ describe("terminal layout css", () => {
     expect(runPipelineSource).toContain("await refreshStrategyLibrary();");
     expect(appSource).toContain('className="strategy-library-list"');
     expect(appSource).toContain('className="strategy-library-actions"');
+    expect(appSource).toContain('className="strategy-governance-queue"');
+    expect(appSource).toContain("strategyGovernanceQueue.summary.totalRows");
+    expect(appSource).toContain("strategyGovernanceActionLabel");
     expect(styles).toContain(".strategy-library-list");
     expect(styles).toContain(".strategy-library-card");
     expect(styles).toContain(".strategy-library-card small");
     expect(styles).toContain(".strategy-diff-chip.warning");
+    expect(styles).toContain(".strategy-governance-queue");
+    expect(styles).toContain(".strategy-governance-summary");
+    expect(styles).toContain(".strategy-governance-row");
+    expect(cssBlock(".strategy-governance-row")).toContain(
+      "grid-template-columns: minmax(130px, 0.85fr) minmax(108px, 0.55fr) minmax(220px, 1fr) auto;"
+    );
+  });
+
+  test("renders a compact portfolio paper ops queue across portfolio and execution workspaces", () => {
+    expect(appSource).toContain("buildPortfolioPaperOpsQueueRows");
+    expect(appSource).toContain("runPortfolioPaperOpsQueueAction");
+    expect(appSource).toContain("PortfolioPaperOpsQueuePanel");
+    expect(appSource).toContain('className="portfolio-paper-ops-queue"');
+    expect(appSource).toContain("portfolioPaperOpsQueue={portfolioPaperOpsQueue}");
+    expect(appSource).toContain("portfolioPaperOpsActionLabel");
+    expect(styles).toContain(".portfolio-paper-ops-queue");
+    expect(styles).toContain(".portfolio-paper-ops-summary");
+    expect(styles).toContain(".portfolio-paper-ops-row");
+    expect(cssBlock(".portfolio-paper-ops-row")).toContain(
+      "grid-template-columns: minmax(120px, 0.8fr) minmax(120px, 0.7fr) minmax(240px, 1.4fr) auto;"
+    );
   });
 
   test("renders a persistent research note panel for the selected context", () => {
@@ -2600,18 +2662,46 @@ describe("terminal layout css", () => {
 
   test("renders execution promotion readiness as a separate queue after paper execution", () => {
     expect(appSource).toContain("buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows");
+    expect(appSource).toContain("buildPreLiveReadinessChecklist(promotionReadiness, {");
+    expect(appSource).toContain("paperExecutionReplayGate");
     expect(appSource).toContain("loadResearchRunPromotion(quantCoreBaseUrl");
     expect(appSource).toContain("setPromotionCandidateRecord(result.promotion ?? null)");
     expect(appSource).toContain("activePromotionCandidateRecord ??");
     expect(appSource).toContain("<PromotionQueuePanel");
     expect(appSource).toContain("readiness={promotionReadiness}");
+    expect(appSource).toContain("preLiveChecklist={preLiveReadinessChecklist}");
+    expect(appSource).toContain('className={`pre-live-checklist');
+    expect(appSource).toContain('className="pre-live-checklist-row-list"');
     expect(appSource).toContain('className="promotion-stage-list"');
     expect(appSource).toContain('className={`promotion-stage');
+    expect(styles).toContain(".pre-live-checklist");
+    expect(styles).toContain(".pre-live-checklist-row-list");
+    expect(styles).toContain(".pre-live-checklist-row");
     expect(styles).toContain(".promotion-queue");
     expect(styles).toContain(".promotion-stage-list");
     expect(styles).toContain(".promotion-stage");
     expect(cssBlock(".workflow-promotion-panel")).toContain("grid-area: promotion;");
-    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion pre-live"'])).toBe(true);
+    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion p2-acceptance"', '"promotion pre-live"'])).toBe(true);
+  });
+
+  test("renders P2 pre-live acceptance readback in execution and audit workspaces", () => {
+    expect(appSource).toContain("loadP2PreLiveAcceptanceLatest(quantCoreBaseUrl)");
+    expect(appSource).toContain("const p2PreLiveAcceptanceSummary = useMemo(");
+    expect(appSource).toContain("buildP2PreLiveAcceptanceSummary(p2PreLiveAcceptanceLatestState.acceptance)");
+    expect(appSource).toContain("<P2PreLiveAcceptancePanel");
+    expect(appSource).toContain('className="workflow-p2-pre-live-acceptance-panel"');
+    expect(appSource).toContain('className="workflow-p2-pre-live-acceptance-audit-panel"');
+    expect(appSource).toContain('className={`p2-pre-live-acceptance ${summary.tone}`}');
+    expect(appSource).toContain("p2PreLiveAcceptanceSummaryHeadline(i18n, p2PreLiveAcceptanceSummary)");
+    expect(styles).toContain(".workflow-p2-pre-live-acceptance-panel");
+    expect(styles).toContain(".workflow-p2-pre-live-acceptance-audit-panel");
+    expect(styles).toContain(".p2-pre-live-acceptance");
+    expect(styles).toContain(".p2-pre-live-acceptance-meta");
+    expect(styles).toContain(".p2-pre-live-acceptance-actions");
+    expect(cssBlock(".workflow-p2-pre-live-acceptance-panel")).toContain("grid-area: p2-acceptance;");
+    expect(cssBlock(".workflow-p2-pre-live-acceptance-audit-panel")).toContain("grid-area: p2-acceptance;");
+    expect(hasCssBlockWith(".execution-layout", ['"promotion p2-acceptance"', '"promotion pre-live"'])).toBe(true);
+    expect(hasCssBlockWith(".audit-layout", ['"p2-acceptance p2-acceptance"', '"acceptance acceptance"'])).toBe(true);
   });
 
   test("renders a pre-live runbook summary before any live route can unlock", () => {
@@ -2658,7 +2748,64 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".pre-live-runbook-audit-actions");
     expect(styles).toContain(".pre-live-runbook-row");
     expect(cssBlock(".workflow-pre-live-runbook-panel")).toContain("grid-area: pre-live;");
-    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion pre-live"'])).toBe(true);
+    expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion p2-acceptance"', '"promotion pre-live"'])).toBe(true);
+  });
+
+  test("renders adapter chain health rollups in execution and settings workspaces", () => {
+    expect(appSource).toContain("const executionAdapterChainHealthRollups = buildExecutionAdapterChainHealthRollups({");
+    expect(appSource).toContain("brokerRows: brokerAdapterRows");
+    expect(appSource).toContain("<AdapterChainHealthPanel");
+    expect(appSource).toContain('className="workflow-adapter-chain-health-panel"');
+    expect(appSource).toContain("rollups={executionAdapterChainHealthRollups}");
+    expect(appSource).toContain("adapterChainHealthRollups={executionAdapterChainHealthRollups}");
+    expect(appSource).toContain("function AdapterChainHealthPanel");
+    expect(appSource).toContain("function AdapterChainHealthList");
+    expect(appSource).toContain('className="settings-adapter-chain-health"');
+    expect(appSource).toContain('className="adapter-chain-health"');
+    expect(appSource).toContain('className={`adapter-chain-health-row ${rollup.tone}`}');
+    expect(appSource).toContain('className={`adapter-chain-health-stage ${stage.status}`}');
+    expect(styles).toContain(".workflow-adapter-chain-health-panel");
+    expect(styles).toContain(".settings-adapter-chain-health");
+    expect(styles).toContain(".adapter-chain-health");
+    expect(styles).toContain(".adapter-chain-health-row");
+    expect(styles).toContain(".adapter-chain-health-meta");
+    expect(styles).toContain(".adapter-chain-health-stages");
+    expect(cssBlock(".workflow-adapter-chain-health-panel")).toContain("grid-area: adapter-chain;");
+    expect(
+      hasCssBlockWith(".execution-layout", [
+        '"execution broker"',
+        '"promotion adapter-chain"',
+        '"promotion p2-acceptance"',
+        '"promotion pre-live"'
+      ])
+    ).toBe(true);
+  });
+
+  test("renders paper execution replay gate before pre-live promotion", () => {
+    expect(appSource).toContain("const paperExecutionReplayGate = buildPaperExecutionReplayGate({");
+    expect(appSource).toContain("currentRunId: currentResearchRunId");
+    expect(appSource).toContain("paperExecution: activePaperExecutionRecord");
+    expect(appSource).toContain("<PaperExecutionReplayGatePanel");
+    expect(appSource).toContain('className="workflow-paper-replay-gate-panel"');
+    expect(appSource).toContain("gate={paperExecutionReplayGate}");
+    expect(appSource).toContain("function PaperExecutionReplayGatePanel");
+    expect(appSource).toContain('className={`paper-replay-gate ${gate.tone}`}');
+    expect(appSource).toContain('className="paper-replay-gate-items"');
+    expect(appSource).toContain('className={`paper-replay-gate-item ${item.tone}`}');
+    expect(styles).toContain(".workflow-paper-replay-gate-panel");
+    expect(styles).toContain(".paper-replay-gate");
+    expect(styles).toContain(".paper-replay-gate-summary");
+    expect(styles).toContain(".paper-replay-gate-metrics");
+    expect(styles).toContain(".paper-replay-gate-items");
+    expect(cssBlock(".workflow-paper-replay-gate-panel")).toContain("grid-area: replay-gate;");
+    expect(
+      hasCssBlockWith(".execution-layout", [
+        '"execution broker"',
+        '"replay-gate adapter-chain"',
+        '"promotion adapter-chain"',
+        '"promotion p2-acceptance"'
+      ])
+    ).toBe(true);
   });
 
   test("renders promotion certification evidence from recorded adapter certifications", () => {

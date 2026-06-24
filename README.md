@@ -76,6 +76,27 @@ npm run docker:smoke:p0 -- --no-build --down
 npm run docker:smoke:p0:validate
 ```
 
+如果要验证 P1 个人/小团队研究运营路径，而不只是验证 P0 单标的闭环：
+
+```powershell
+npm run docker:smoke:p1 -- --no-build --down
+```
+
+`docker:smoke:p1` 会读取 `/api/workspace` 的自选列表，要求至少 3 个标的，运行 watchlist cache refresh，选择一只刷新成功的 queue-ready 标的运行审计流水线、AI 评审、paper-only 模拟、研究包导出、复现包导入和导入后重导出，并把验收结果写入 `data/p1-acceptance.json`。该 manifest 会记录 `watchlistRefreshRunId`、queued symbol、检查步骤和 `paperOnly=true / liveTradingAllowed=false` 边界，用于证明 P1 研究运营链路可复现；它同样不会触发真实下单。工作台会通过 `GET /api/p1/acceptance/latest` 读取这份报告，并在 P1 研究运营验收卡显示 watchlist 数量、队列标的、检查覆盖和来源路径。
+
+```powershell
+npm run docker:smoke:p1:validate
+```
+
+P2 阶段已经开始推进实盘前准入控制面，计划见 `docs/superpowers/plans/2026-06-24-aiquant-p2-prelive-readiness.md`。Execution 的晋级队列会显示“实盘前清单”，把审计运行、风控审批、模拟执行、适配器认证和人工确认压成一个可读的准入摘要；它只用于人工复核准备，仍固定 `orderSubmissionEnabled=false` 和 `liveTradingAllowed=false`，不会连接券商或提交真实订单。
+
+运行中的核心服务也会通过 `GET /api/p2/pre-live/acceptance/latest` 回读本地 `data/p2-pre-live-acceptance.json`。Execution 与 Audit 会把这份 P2 manifest 显示为通过、缺失或无效三态；如果 manifest 声称允许下单、允许实盘、提交过实盘订单、执行过真实路由或缺少 live-blocked 边界，平台会标记为无效并继续保持 `orderSubmissionEnabled=false`、`liveTradingAllowed=false`。
+
+Execution 和 Settings 还会共享同一份 Adapter Chain Health Rollup，把 live adapter 从密钥引用到 adapter paper execution 的 19 段实盘前证据链压缩成完成进度、当前阻塞点和最近证据。完整链路只代表可以进入人工复核，不代表实盘授权；界面和模型仍固定 `orderSubmissionEnabled=false`、`liveTradingAllowed=false`，不会连接真实券商或提交订单。
+
+Execution 还会显示 Paper Execution Replay Gate，把当前审计 run 的单标的纸面执行、组合委托/审批/模拟、状态历史、组合 replay 和 adapter paper execution 聚合为一个回放闸门。缺证据或证据绑定旧 run 会阻断实盘前复核；完整回放也只是人工复核材料，仍保持 `preLiveReviewAllowed=false`、`orderSubmissionEnabled=false`、`liveTradingAllowed=false`。
+Pre-live checklist 会把 `paper-execution-replay` 作为第 6 个 gate；P2 acceptance manifest 也要求 `paper-execution-replay` 检查存在，缺失时 `/api/p2/pre-live/acceptance/latest` 会返回 invalid 状态。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell
@@ -151,7 +172,9 @@ docker compose down -v
 
 CI 还会运行 `npm run docker:smoke:p0 -- --no-build --down`，把 P0 策略流水线、AI 评审、纸面模拟、导出、导入和重导出作为产品验收门禁，并上传 `data/p0-acceptance.json` 为 `p0-acceptance-manifest` artifact。
 
-归档产物会再通过 `npm run docker:smoke:p0:validate` 离线复核。校验会拒绝缺少核心 P0 检查、开启实盘边界或检查数量不一致的 manifest。
+CI 同时运行 `npm run docker:smoke:p1 -- --no-build --down`，把自选列表刷新、queue-ready 审计 run、AI 评审、paper-only 模拟、导出/导入和 watchlist refresh provenance 作为 P1 研究运营验收门禁，并上传 `data/p1-acceptance.json`。本地服务会通过 `/api/p1/acceptance/latest` 将同一份 artifact 投影成产品状态，便于工作台直接显示 P1 验收是否可复核。
+
+归档产物会再通过 `npm run docker:smoke:p0:validate` 和 `npm run docker:smoke:p1:validate` 离线复核。校验会拒绝缺少核心检查、开启实盘边界或检查数量不一致的 manifest。
 
 实时报价可选配置：
 

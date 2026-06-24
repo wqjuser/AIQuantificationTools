@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from quant_core.handoff_notes import normalize_handoff_note_payloads
+
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
 DEFAULT_DATA_QUALITY = {"source": "unknown", "isComplete": False, "warnings": [], "rows": 0}
@@ -540,6 +542,7 @@ def research_run_export_to_payload(
     promotion_candidate: dict[str, Any] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
     audit_events: list[dict[str, Any]] | None = None,
+    handoff_notes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     exported = exported_at or datetime.now(timezone.utc)
     run_payload = research_run_audit_to_payload(audit, include_data_snapshot=True)
@@ -566,6 +569,11 @@ def research_run_export_to_payload(
     normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
     ai_review_run_payloads = _normalize_ai_review_run_payloads(ai_review_runs, run_id=audit.run_id)
     audit_event_payloads = _normalize_audit_event_payloads(audit_events, run_id=audit.run_id)
+    handoff_note_payloads = normalize_handoff_note_payloads(
+        handoff_notes,
+        subject_type="research_run",
+        subject_id=audit.run_id,
+    )
     artifact_counts = {
         "bars": len(data_snapshot.get("bars", [])) if isinstance(data_snapshot, dict) else 0,
         "trades": len(run_payload.get("backtestTrades", [])),
@@ -581,6 +589,7 @@ def research_run_export_to_payload(
         "researchNotes": 1 if _research_note_has_body(research_note) else 0,
         "aiReviewRuns": len(ai_review_run_payloads),
         "auditEvents": len(audit_event_payloads),
+        "handoffNotes": len(handoff_note_payloads),
     }
     export_package = {
         "kind": "aiqt.researchRun.export",
@@ -609,6 +618,7 @@ def research_run_export_to_payload(
         "promotionCandidate": normalized_promotion_candidate,
         "aiReviewRuns": ai_review_run_payloads,
         "auditEvents": audit_event_payloads,
+        "handoffNotes": handoff_note_payloads,
         "executionHandoff": {
             "mode": audit.execution_mode,
             "paperOnly": True,
@@ -746,6 +756,21 @@ def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | N
     return _normalize_audit_event_payloads(raw_events, run_id=run_id, strict=True)
 
 
+def research_run_import_handoff_notes(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_notes = export_package.get("handoffNotes", [])
+    if raw_notes is None:
+        return []
+    return normalize_handoff_note_payloads(
+        raw_notes,
+        subject_type="research_run",
+        subject_id=run_id,
+        strict=True,
+    )
+
+
 def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
@@ -785,6 +810,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     )
     ai_review_runs = research_run_import_ai_review_runs(export_package, run_id=run_id)
     audit_events = research_run_import_audit_events(export_package, run_id=run_id)
+    handoff_notes = research_run_import_handoff_notes(export_package, run_id=run_id)
     promotion_candidate = _normalize_promotion_candidate(export_package.get("promotionCandidate"), run_id=run_id)
     data_snapshot = research_run.get("dataSnapshot")
     if not isinstance(data_snapshot, dict):
@@ -801,6 +827,7 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         portfolio_paper_order_simulations=portfolio_paper_order_simulations,
         ai_review_runs=ai_review_runs,
         audit_events=audit_events,
+        handoff_notes=handoff_notes,
         promotion_candidate=promotion_candidate,
     )
 
@@ -936,6 +963,7 @@ def _validate_manifest_consistency(
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
     audit_events: list[dict[str, Any]] | None = None,
+    handoff_notes: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
 ) -> None:
     for manifest_key, run_key, error_code in [
@@ -993,6 +1021,8 @@ def _validate_manifest_consistency(
         expected_counts["aiReviewRuns"] = len(ai_review_runs or [])
     if "auditEvents" in counts or audit_events:
         expected_counts["auditEvents"] = len(audit_events or [])
+    if "handoffNotes" in counts or handoff_notes:
+        expected_counts["handoffNotes"] = len(handoff_notes or [])
     research_note = _normalize_research_note(
         _dict_or_empty(research_run.get("researchNote")),
         audit_fields={

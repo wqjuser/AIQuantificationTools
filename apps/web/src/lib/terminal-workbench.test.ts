@@ -12,6 +12,7 @@ import {
   buildAiReviewExportEvidenceIndexRows,
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
+  buildEvidencePackageControlRoomRows,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
   buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
@@ -84,6 +85,7 @@ import {
   buildExecutionAdapterPaperExecutionRows,
   buildExecutionAdapterPaperRouteRunbookRows,
   buildExecutionAdapterHealthProbeRows,
+  buildExecutionAdapterChainHealthRollups,
   buildExecutionAdapterRuntimeReloadExecutionRows,
   buildExecutionAdapterRuntimeReloadPlanRows,
   buildExecutionAdapterSecretManifestValidationRows,
@@ -104,6 +106,8 @@ import {
   buildModuleNewsEvents,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
+  buildP1AcceptanceSummary,
+  buildP2PreLiveAcceptanceSummary,
   buildP0CompletionChecklist,
   buildP0GoldenPathJourney,
   buildP0PlatformActionOutcome,
@@ -114,8 +118,10 @@ import {
   buildP0CurrentGapActionUrlSearch,
   buildP0PlatformReadinessReportMarkdown,
   buildP0PlatformReadinessSummary,
+  buildPreLiveReadinessChecklist,
   normalizeP0CurrentGapActionId,
   buildPaperExecutionSummaryTiles,
+  buildPaperExecutionReplayGate,
   buildPaperPositionRows,
   buildPaperTradingRows,
   buildPromotionReadiness,
@@ -132,6 +138,7 @@ import {
   buildPortfolioPaperOrderReplayPositionRows,
   buildPortfolioPaperOrderReplaySummaryTiles,
   buildPortfolioPaperOrderLatestSimulationSummary,
+  buildPortfolioPaperOpsQueueRows,
   buildPortfolioPaperOrderStateHistoryRows,
   buildPortfolioPeerAuditPlan,
   buildProductDevelopmentStages,
@@ -160,12 +167,14 @@ import {
   resolveResearchPipelinePreparationEvidenceRunId,
   buildResearchRunContextBinding,
   buildResearchWorkspaceStateDraft,
+  buildResearchOpsQueueRows,
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithAppliedResearchWorkspaceState,
   workspaceWithResearchContextUrlState,
   buildRiskApprovalSummary,
   buildScannerCandidates,
   buildStrategyReadinessGates,
+  buildStrategyGovernanceQueueRows,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildStrategyTemplateOptions,
@@ -2015,6 +2024,254 @@ describe("terminal workbench model", () => {
     });
     expect(invalid.detail).toContain("live-blocked boundary is not enforced");
     expect(invalid.detail).toContain("Live trading remains blocked");
+  });
+
+  test("builds P1 acceptance summary for watchlist research ops without opening live trading", () => {
+    const summary = buildP1AcceptanceSummary({
+      kind: "aiqt.p1AcceptanceStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/p1-acceptance.json",
+      summary: "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-23T09:00:00+00:00",
+      runId: "run-p1-smoke",
+      timeframe: "1d",
+      watchlistRefreshRunId: "cache-refresh-p1",
+      queuedMarket: "ashare",
+      queuedSymbol: "600000",
+      watchlistCount: 3,
+      checkCount: 8,
+      requiredCheckCount: 8,
+      checkIds: [
+        "workspace",
+        "watchlist-refresh",
+        "queue-pipeline",
+        "ai-review",
+        "paper-simulation",
+        "export",
+        "import",
+        "imported-export"
+      ],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+
+    expect(summary).toMatchObject({
+      state: "passed",
+      tone: "positive",
+      headline: "P1 research-ops acceptance passed",
+      actionLabel: "Open P1 acceptance manifest",
+      sourcePath: "data/p1-acceptance.json",
+      runId: "run-p1-smoke",
+      watchlistRefreshRunId: "cache-refresh-p1",
+      watchlistCount: 3,
+      checkCount: 8,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: false
+    });
+    expect(summary.detail).toContain("ashare 600000 1d");
+    expect(summary.detail).toContain("3 watchlist instruments");
+    expect(summary.detail).toContain("live blocked");
+  });
+
+  test("builds missing and invalid P1 acceptance summaries as blocked research ops evidence", () => {
+    const missing = buildP1AcceptanceSummary(null);
+    const invalid = buildP1AcceptanceSummary({
+      kind: "aiqt.p1AcceptanceStatus",
+      schemaVersion: 1,
+      status: "invalid",
+      available: false,
+      sourcePath: "data/p1-acceptance.json",
+      summary: "P1 acceptance manifest is invalid.",
+      reason: "live-blocked boundary is not enforced",
+      generatedAt: null,
+      runId: "run-p1-smoke",
+      timeframe: "1d",
+      watchlistRefreshRunId: "cache-refresh-p1",
+      queuedMarket: "ashare",
+      queuedSymbol: "600000",
+      watchlistCount: 3,
+      checkCount: 8,
+      requiredCheckCount: 8,
+      checkIds: ["workspace", "watchlist-refresh", "queue-pipeline"],
+      paperOnly: true,
+      liveTradingAllowed: true,
+      liveBlockedBoundary: false,
+      manifest: null
+    });
+
+    expect(missing).toMatchObject({
+      state: "missing",
+      tone: "warning",
+      headline: "P1 acceptance manifest missing",
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: false
+    });
+    expect(invalid).toMatchObject({
+      state: "invalid",
+      tone: "risk",
+      headline: "P1 acceptance manifest invalid",
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: true
+    });
+    expect(invalid.detail).toContain("live-blocked boundary is not enforced");
+    expect(invalid.detail).toContain("Live trading remains blocked");
+  });
+
+  test("builds P2 pre-live acceptance summary without enabling order submission", () => {
+    const summary = buildP2PreLiveAcceptanceSummary({
+      kind: "aiqt.p2PreLiveAcceptanceStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/p2-pre-live-acceptance.json",
+      summary:
+        "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-24T09:30:00+00:00",
+      runId: "run-p2-pre-live",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      adapterId: "ashare-live",
+      promotionStatus: "certification_pending",
+      checklistStatus: "evidence_pending",
+      passedGateCount: 4,
+      totalGateCount: 6,
+      blockingGateCount: 2,
+      gateIds: [
+        "audited-run",
+        "risk-approval",
+        "paper-execution",
+        "paper-execution-replay",
+        "adapter-certification",
+        "human-confirmation"
+      ],
+      blockerIds: ["adapter-certification", "human-confirmation"],
+      auditEventIds: [
+        "research-run-audit-run-p2-pre-live",
+        "paper-execution-run-p2-pre-live",
+        "paper-execution-replay-run-p2-pre-live",
+        "execution-adapter-certification-ashare-live"
+      ],
+      checkCount: 6,
+      requiredCheckCount: 6,
+      checkIds: [
+        "pre-live-checklist",
+        "promotion-gates",
+        "paper-execution-replay",
+        "adapter-evidence",
+        "manual-route-boundary",
+        "live-blocked-boundary"
+      ],
+      manualRouteCandidate: false,
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+
+    expect(summary).toMatchObject({
+      state: "passed",
+      tone: "positive",
+      headline: "P2 pre-live acceptance recorded",
+      actionLabel: "Open P2 pre-live manifest",
+      sourcePath: "data/p2-pre-live-acceptance.json",
+      runId: "run-p2-pre-live",
+      adapterId: "ashare-live",
+      checklistStatus: "evidence_pending",
+      passedGateCount: 4,
+      totalGateCount: 6,
+      blockingGateCount: 2,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: false,
+      reportedLiveTradingAllowed: false
+    });
+    expect(summary.detail).toContain("ashare 600000 1d");
+    expect(summary.detail).toContain("4/6 gates");
+    expect(summary.detail).toContain("2 blockers");
+    expect(summary.detail).toContain("live blocked");
+  });
+
+  test("builds missing and invalid P2 pre-live acceptance summaries as blocked execution evidence", () => {
+    const missing = buildP2PreLiveAcceptanceSummary(null);
+    const invalid = buildP2PreLiveAcceptanceSummary({
+      kind: "aiqt.p2PreLiveAcceptanceStatus",
+      schemaVersion: 1,
+      status: "invalid",
+      available: false,
+      sourcePath: "data/p2-pre-live-acceptance.json",
+      summary: "P2 pre-live acceptance manifest is invalid.",
+      reason: "live-blocked boundary is not enforced",
+      generatedAt: null,
+      runId: "run-p2-pre-live",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      adapterId: "ashare-live",
+      promotionStatus: "live_ready",
+      checklistStatus: "manual_route_ready",
+      passedGateCount: 6,
+      totalGateCount: 6,
+      blockingGateCount: 0,
+      gateIds: [
+        "audited-run",
+        "risk-approval",
+        "paper-execution",
+        "paper-execution-replay",
+        "adapter-certification",
+        "human-confirmation"
+      ],
+      blockerIds: [],
+      auditEventIds: ["unsafe-event"],
+      checkCount: 6,
+      requiredCheckCount: 6,
+      checkIds: [
+        "pre-live-checklist",
+        "promotion-gates",
+        "paper-execution-replay",
+        "adapter-evidence",
+        "manual-route-boundary",
+        "live-blocked-boundary"
+      ],
+      manualRouteCandidate: true,
+      paperOnly: true,
+      orderSubmissionEnabled: true,
+      liveTradingAllowed: true,
+      liveOrderSubmitted: true,
+      routeExecuted: true,
+      liveBlockedBoundary: false,
+      manifest: null
+    });
+
+    expect(missing).toMatchObject({
+      state: "missing",
+      tone: "warning",
+      headline: "P2 pre-live acceptance manifest missing",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: false,
+      reportedLiveTradingAllowed: false
+    });
+    expect(invalid).toMatchObject({
+      state: "invalid",
+      tone: "risk",
+      headline: "P2 pre-live acceptance manifest invalid",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: true,
+      reportedLiveTradingAllowed: true
+    });
+    expect(invalid.detail).toContain("live-blocked boundary is not enforced");
+    expect(invalid.detail).toContain("Direct order submission remains disabled");
   });
 
   test("builds a portable P0 acceptance review markdown without live authorization", () => {
@@ -9600,6 +9857,159 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("builds an evidence package control room across packages signatures imports and P0 acceptance", () => {
+    const exportRow = (
+      runId: string,
+      status: ResearchRunExportIndexRow["status"] = "review"
+    ): ResearchRunExportIndexRow => ({
+      id: `${runId}-package`,
+      runId,
+      context: `ashare 600000 1d ${runId}`,
+      strategyRevision: "rev-a1",
+      exportedAt: `2026-06-0${Math.min(runId.length, 8)}T08:00:00.000Z`,
+      status,
+      integrity: status === "blocked" ? "integrity mismatch" : "manifest hash ok",
+      dataHash: "data hash ok",
+      artifacts: "9/9 artifacts",
+      execution: status === "ready" ? "handoff ready" : "paper-only",
+      detail: status === "blocked" ? "Package integrity failed" : "Package can be reproduced locally",
+      exportPath: `manifest:${runId}`,
+      tone: status === "blocked" ? "risk" : status === "ready" ? "positive" : "warning"
+    });
+    const reportEvent = (
+      runId: string,
+      signatureStatus: "unsigned" | "verified" | "revoked"
+    ) => ({
+      schemaVersion: 1,
+      eventId: `${runId}-audit-report-${signatureStatus}`,
+      eventType: "audit_evidence_report",
+      runId,
+      createdAt: "2026-06-10T08:00:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: `Audit report ${signatureStatus}`,
+      detail: `${runId}-audit-report.md`,
+      metadata: {
+        artifactKind: "aiqt.auditReport",
+        contentSha256: signatureStatus === "revoked" ? "c".repeat(64) : "b".repeat(64),
+        fileName: `${runId}-audit-report.md`,
+        importVerificationVerified: signatureStatus === "verified" ? 1 : 0,
+        packageMatched: 9,
+        packageTotal: 9,
+        signature: signatureStatus === "unsigned" ? {} : { status: signatureStatus, signer: "local", keyId: "key-1" }
+      }
+    });
+    const acceptanceReviewEvent = (runId: string) => ({
+      schemaVersion: 1,
+      eventId: `${runId}-p0-acceptance-review`,
+      eventType: "p0_acceptance_review",
+      runId,
+      createdAt: "2026-06-10T09:00:00.000Z",
+      stage: "passed",
+      source: "web",
+      summary: "P0 acceptance review recorded",
+      detail: `${runId}-p0-acceptance-review.md`,
+      metadata: {
+        state: "passed",
+        checkCount: 4,
+        requiredCheckCount: 4,
+        liveBlockedBoundary: true
+      }
+    });
+    const importAuditEvent = (
+      runId: string,
+      stage: ResearchRunImportAuditEvent["stage"]
+    ): ResearchRunImportAuditEvent => ({
+      id: `${runId}-import-${stage}`,
+      stage,
+      runId,
+      previousRunId: null,
+      rollbackTargetRunId: null,
+      undoToken: stage === "confirmed" ? `${runId}-undo` : null,
+      fileName: `${runId}.json`,
+      createdAt: stage === "confirmed" ? "2026-06-10T10:00:00.000Z" : "2026-06-10T09:30:00.000Z",
+      summary: stage === "confirmed" ? "Import confirmed" : "Import blocked",
+      detail: stage === "confirmed" ? "Package restored" : "Policy blocker requires review",
+      failureCategory: stage === "blocked" ? "integrity" : null,
+      recoveryHint: stage === "blocked" ? "Review import diff" : "",
+      blockedCount: stage === "blocked" ? 1 : 0,
+      blockedRows: [],
+      artifactRows: [],
+      changeCount: 1,
+      exportPath: `manifest:${runId}`,
+      tone: stage === "blocked" ? "risk" : "positive",
+      verifiedReportSignatures: []
+    });
+    const exportIndexRows = [
+      exportRow("run-import-blocked"),
+      exportRow("run-package-blocked", "blocked"),
+      exportRow("run-acceptance-missing"),
+      exportRow("run-stale"),
+      exportRow("run-unsigned"),
+      exportRow("run-archive"),
+      exportRow("run-complete", "ready")
+    ];
+    const reportEvents = [
+      reportEvent("run-import-blocked", "verified"),
+      reportEvent("run-package-blocked", "verified"),
+      reportEvent("run-acceptance-missing", "verified"),
+      reportEvent("run-stale", "revoked"),
+      reportEvent("run-unsigned", "unsigned"),
+      reportEvent("run-archive", "verified"),
+      reportEvent("run-complete", "verified")
+    ];
+    const acceptanceReviewEvents = [
+      acceptanceReviewEvent("run-import-blocked"),
+      acceptanceReviewEvent("run-package-blocked"),
+      acceptanceReviewEvent("run-stale"),
+      acceptanceReviewEvent("run-unsigned"),
+      acceptanceReviewEvent("run-archive"),
+      acceptanceReviewEvent("run-complete")
+    ];
+
+    const controlRoom = buildEvidencePackageControlRoomRows({
+      acceptanceReviewEvents,
+      auditLedgerRows: buildAuditEvidenceReportLedgerRows(reportEvents),
+      exportIndexRows,
+      importAuditEvents: [
+        importAuditEvent("run-import-blocked", "blocked"),
+        importAuditEvent("run-complete", "confirmed")
+      ]
+    });
+
+    expect(controlRoom.rows.map((row) => `${row.runId}:${row.status}:${row.nextActionId}`)).toEqual([
+      "run-import-blocked:import_blocked:open-import-audit",
+      "run-package-blocked:package_blocked:inspect-package",
+      "run-acceptance-missing:acceptance_missing:open-acceptance",
+      "run-stale:stale_signature:open-signature-ledger",
+      "run-unsigned:unsigned:open-signature-ledger",
+      "run-archive:ready_for_archive:open-archive",
+      "run-complete:complete:open-archive"
+    ]);
+    expect(controlRoom.summary).toEqual({
+      acceptanceMissing: 1,
+      complete: 1,
+      importBlocked: 1,
+      latestUpdatedAt: "2026-06-10T10:00:00.000Z",
+      needsAction: 5,
+      packageBlocked: 1,
+      readyForArchive: 1,
+      signedRuns: 5,
+      staleSignature: 1,
+      total: 7,
+      unsigned: 1
+    });
+    expect(controlRoom.rows.find((row) => row.runId === "run-complete")).toEqual(
+      expect.objectContaining({
+        acceptanceStatus: "passed",
+        importStatus: "confirmed",
+        packageStatus: "ready",
+        signatureStatus: "verified",
+        statusLabel: "Complete evidence package"
+      })
+    );
+  });
+
   test("includes backtest markdown report events in the audit report ledger", () => {
     const backtestHash = "e".repeat(64);
     const rows = buildAuditEvidenceReportLedgerRows([
@@ -12507,6 +12917,117 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("builds a watchlist research ops queue from cache and audit evidence", () => {
+    const workspace = {
+      ...buildTerminalWorkspace(),
+      selectedInstrument: { symbol: "688111", name: "未入自选", market: "ashare", changePct: 0.2 },
+      selectedTimeframe: "1d",
+      watchlist: [
+        { symbol: "600000", name: "浦发银行", market: "ashare", changePct: 0.1 },
+        { symbol: "000300", name: "沪深300", market: "ashare", changePct: 0.3 },
+        { symbol: "600519", name: "贵州茅台", market: "ashare", changePct: -0.2 },
+        { symbol: "688111", name: "未入自选", market: "ashare", changePct: 0.2 }
+      ]
+    } satisfies TerminalWorkspace;
+    const runNeedsAi = auditedRunFixture({
+      runId: "run-000300-latest",
+      symbol: "000300",
+      market: "ashare",
+      timeframe: "1d",
+      createdAt: "2026-06-22T08:00:00+00:00"
+    });
+    const runPaperCandidate = {
+      ...auditedRunFixture({
+        runId: "run-600519-ai",
+        symbol: "600519",
+        market: "ashare",
+        timeframe: "1d",
+        createdAt: "2026-06-22T09:00:00+00:00"
+      }),
+      aiReport: {
+        summary: "Evidence-bound AI review complete.",
+        risks: ["Paper only."],
+        improvements: ["Keep risk review."],
+        disclaimer: "No investment advice."
+      }
+    };
+    const rows = buildResearchOpsQueueRows({
+      workspace,
+      runHistory: [runPaperCandidate, runNeedsAi],
+      watchlistRefreshRuns: [
+        watchlistRefreshRunFixture({
+          runId: "cache-refresh-p1",
+          items: [
+            {
+              market: "ashare",
+              symbol: "600000",
+              name: "浦发银行",
+              timeframe: "1d",
+              requestedLimit: 500,
+              upsertedRows: 240,
+              status: "refreshed",
+              quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+              error: null
+            },
+            {
+              market: "ashare",
+              symbol: "000300",
+              name: "沪深300",
+              timeframe: "1d",
+              requestedLimit: 500,
+              upsertedRows: 240,
+              status: "refreshed",
+              quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+              error: null
+            },
+            {
+              market: "ashare",
+              symbol: "600519",
+              name: "贵州茅台",
+              timeframe: "1d",
+              requestedLimit: 500,
+              upsertedRows: 240,
+              status: "refreshed",
+              quality: { source: "tencent", isComplete: true, warnings: [], rows: 240 },
+              error: null
+            },
+            {
+              market: "ashare",
+              symbol: "688111",
+              name: "未入自选",
+              timeframe: "1d",
+              requestedLimit: 500,
+              upsertedRows: 0,
+              status: "failed",
+              quality: { source: "unknown", isComplete: false, warnings: ["upstream failed"], rows: 0 },
+              error: "provider failed"
+            }
+          ],
+          summary: { totalSymbols: 4, refreshed: 3, skipped: 0, failed: 1, upsertedRows: 720 }
+        })
+      ]
+    });
+
+    expect(rows.summary).toMatchObject({
+      total: 4,
+      needsDataCount: 1,
+      readyForPipelineCount: 1,
+      needsAiReviewCount: 1,
+      paperCandidateCount: 1,
+      headline: "4 watched research tasks"
+    });
+    expect(rows.rows.map((row) => `${row.symbol}:${row.stage}:${row.nextActionId ?? "none"}`)).toEqual([
+      "688111:needs_data:refresh-watchlist-cache",
+      "600000:ready_for_pipeline:run-pipeline",
+      "000300:needs_ai_review:run-ai-review",
+      "600519:paper_candidate:submit-paper-order"
+    ]);
+    expect(rows.rows[0].detail).toContain("provider failed");
+    expect(rows.rows[1].latestCacheRunId).toBe("cache-refresh-p1");
+    expect(rows.rows[2].latestRunId).toBe("run-000300-latest");
+    expect(rows.rows[3].latestRunId).toBe("run-600519-ai");
+  });
+
   test("derives paper portfolio risk rows from the workspace state", () => {
     const rows = buildPortfolioRiskRows(buildTerminalWorkspace());
 
@@ -14034,6 +14555,214 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("blocks pre-live replay when paper execution evidence is missing", () => {
+    const gate = buildPaperExecutionReplayGate({
+      adapterPaperExecutionRows: [],
+      currentRunId: "run-replay-gate",
+      paperExecution: null,
+      portfolioApprovalRows: [],
+      portfolioOrderLifecycleRows: [],
+      portfolioOrderReplay: null,
+      portfolioOrderSimulations: [],
+      portfolioStateHistoryRows: []
+    });
+
+    expect(gate).toMatchObject({
+      status: "blocked",
+      tone: "risk",
+      currentBlockerId: "single-paper-execution",
+      replayReady: false,
+      preLiveReviewAllowed: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(gate.items.map((item) => `${item.id}:${item.status}`)).toEqual([
+      "single-paper-execution:blocked",
+      "portfolio-order-ledger:blocked",
+      "portfolio-approval-ledger:blocked",
+      "portfolio-simulation-ledger:blocked",
+      "portfolio-state-history:blocked",
+      "portfolio-replay:blocked",
+      "adapter-paper-execution:blocked",
+      "live-boundary:passed"
+    ]);
+  });
+
+  test("marks replay gate stale when paper evidence belongs to a different run", () => {
+    const gate = buildPaperExecutionReplayGate({
+      adapterPaperExecutionRows: [],
+      currentRunId: "run-current",
+      paperExecution: {
+        executionId: "paper-old",
+        runId: "run-old",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        mode: "paper_only",
+        account: { cash: 90_000, equity: 100_000, positions: { "600000": 1000 } },
+        orders: [
+          {
+            orderId: "order-old",
+            symbol: "600000",
+            side: "buy",
+            quantity: 1000,
+            price: 9.2,
+            status: "filled",
+            reason: "filled",
+            timestamp: "2026-05-26T08:00:00+00:00"
+          }
+        ],
+        gates: [{ id: "risk", label: "Risk", passed: true, reason: "ok" }]
+      } as any,
+      portfolioApprovalRows: [],
+      portfolioOrderLifecycleRows: [
+        {
+          id: "portfolio-paper-old",
+          batchId: "batch-old",
+          baseRunId: "run-old",
+          status: "ready",
+          routableOrders: 1
+        } as any
+      ],
+      portfolioOrderReplay: {
+        baseRunId: "run-old",
+        summary: { filledOrders: 1, warnings: [] },
+        paperOnly: true,
+        liveExecutionBlocked: true
+      } as any,
+      portfolioOrderSimulations: [],
+      portfolioStateHistoryRows: []
+    });
+
+    expect(gate).toMatchObject({
+      status: "stale",
+      currentBlockerId: "single-paper-execution",
+      replayReady: false,
+      preLiveReviewAllowed: false
+    });
+    expect(gate.items[0]).toMatchObject({
+      id: "single-paper-execution",
+      status: "stale",
+      evidence: "paper-old",
+      detail: "Paper execution paper-old is bound to run-old, not run-current."
+    });
+  });
+
+  test("passes replay gate only when paper, portfolio, state history, and adapter evidence align", () => {
+    const gate = buildPaperExecutionReplayGate({
+      adapterPaperExecutionRows: [
+        {
+          id: "adapter-paper-execution-ready",
+          adapterId: "ashare-live",
+          manifestValidationId: "manifest-ready",
+          route: "live",
+          status: "paper_execution_recorded",
+          timestamp: "2026-05-27T09:30:00+00:00",
+          paperFillRecorded: true,
+          orderSubmitted: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false,
+          simulatedSymbol: "600000",
+          simulatedSide: "buy",
+          simulatedQuantity: 1000,
+          simulatedPrice: 9.2,
+          auditEventId: "audit-adapter-paper-ready"
+        } as any
+      ],
+      currentRunId: "run-ready",
+      paperExecution: {
+        executionId: "paper-ready",
+        runId: "run-ready",
+        createdAt: "2026-05-26T08:00:00+00:00",
+        mode: "paper_only",
+        account: { cash: 90_800, equity: 100_000, positions: { "600000": 1000 } },
+        orders: [
+          {
+            orderId: "order-ready",
+            symbol: "600000",
+            side: "buy",
+            quantity: 1000,
+            price: 9.2,
+            status: "filled",
+            reason: "filled",
+            timestamp: "2026-05-26T08:00:00+00:00"
+          }
+        ],
+        gates: [
+          { id: "risk", label: "Risk", passed: true, reason: "ok" },
+          { id: "live-route", label: "Live route", passed: true, reason: "blocked" }
+        ]
+      } as any,
+      portfolioApprovalRows: [
+        {
+          id: "approval-ready",
+          baseRunId: "run-ready",
+          batchId: "batch-ready",
+          orderId: "portfolio-order-ready",
+          state: "ready_for_simulation",
+          approvedBy: "operator",
+          reviewedAt: "2026-05-27T09:00:00+00:00"
+        } as any
+      ],
+      portfolioOrderLifecycleRows: [
+        {
+          id: "portfolio-paper-ready",
+          batchId: "batch-ready",
+          baseRunId: "run-ready",
+          status: "ready",
+          routableOrders: 1,
+          orderCount: 1,
+          auditEventId: "audit-portfolio-ready"
+        } as any
+      ],
+      portfolioOrderReplay: {
+        baseRunId: "run-ready",
+        summary: { filledOrders: 1, warnings: [] },
+        paperOnly: true,
+        liveExecutionBlocked: true
+      } as any,
+      portfolioOrderSimulations: [
+        {
+          simulationId: "simulation-ready",
+          baseRunId: "run-ready",
+          batchId: "batch-ready",
+          orderId: "portfolio-order-ready",
+          fillStatus: "filled",
+          paperOnly: true,
+          liveExecutionBlocked: true,
+          adapterPaperExecutionId: "adapter-paper-execution-ready"
+        } as any
+      ],
+      portfolioStateHistoryRows: [
+        {
+          id: "state-filled-ready",
+          baseRunId: "run-ready",
+          batchId: "batch-ready",
+          orderId: "portfolio-order-ready",
+          state: "simulation_filled",
+          timestamp: "2026-05-27T09:10:00+00:00"
+        } as any
+      ]
+    });
+
+    expect(gate).toMatchObject({
+      status: "replay_ready",
+      tone: "positive",
+      currentBlockerId: null,
+      passedCount: 8,
+      totalCount: 8,
+      replayReady: true,
+      preLiveReviewAllowed: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      latestEvidenceId: "adapter-paper-execution-ready"
+    });
+    expect(gate.metrics).toMatchObject({
+      filledPaperOrders: 1,
+      portfolioFilledOrders: 1,
+      adapterPaperExecutions: 1,
+      replayWarnings: 0
+    });
+  });
+
   test("builds a latest portfolio paper simulation summary with timeline focus", () => {
     const simulations = [
       {
@@ -14459,6 +15188,314 @@ describe("terminal workbench model", () => {
       canSimulate: false,
       tone: "risk"
     });
+  });
+
+  test("builds a portfolio paper ops queue across approval, route, simulation, and stale batch evidence", () => {
+    const lifecycleRows = [
+      {
+        id: "batch-stale",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-stale",
+        baseRunId: "run-portfolio",
+        createdAt: "2026-05-27T08:00:00+00:00",
+        orderCount: 2,
+        notionalValue: 18500,
+        status: "ready" as const,
+        statusLabel: "",
+        executionStateLabel: "2 ready for simulation",
+        routableOrders: 2,
+        auditEventId: "portfolio-paper-order-batch-batch-stale",
+        detail: "2 paper-only candidates · 18500 notional · source portfolio_backtest",
+        tone: "positive" as const
+      },
+      {
+        id: "batch-active",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        createdAt: "2026-05-27T09:00:00+00:00",
+        orderCount: 5,
+        notionalValue: 43500,
+        status: "review" as const,
+        statusLabel: "2 review",
+        executionStateLabel: "1 ready for simulation / 1 awaiting review / 1 risk review / 1 risk rejected / 1 filled",
+        routableOrders: 2,
+        auditEventId: "portfolio-paper-order-batch-batch-active",
+        detail: "5 paper-only candidates · 43500 notional · source portfolio_backtest",
+        tone: "warning" as const
+      }
+    ];
+    const approvalRows = [
+      {
+        id: "batch-active:order-human",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-human",
+        symbol: "600000",
+        side: "buy" as const,
+        quantity: 800,
+        notionalValue: 7360,
+        riskStatus: "passed" as const,
+        state: "awaiting_operator_review" as const,
+        canApprove: true,
+        canReject: true,
+        approvedBy: null,
+        reviewedAt: null,
+        actionHint: "Operator approval or rejection is required before this paper-only order can move on.",
+        tone: "warning" as const
+      },
+      {
+        id: "batch-active:order-risk",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-risk",
+        symbol: "600519",
+        side: "buy" as const,
+        quantity: 20,
+        notionalValue: 31000,
+        riskStatus: "review" as const,
+        state: "risk_review" as const,
+        canApprove: false,
+        canReject: true,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T09:05:00+00:00",
+        actionHint: "Risk review is still required before this approved order can be simulated.",
+        tone: "warning" as const
+      },
+      {
+        id: "batch-active:order-ready",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-ready",
+        symbol: "000300",
+        side: "sell" as const,
+        quantity: 5,
+        notionalValue: 2400,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        canApprove: false,
+        canReject: false,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T09:10:00+00:00",
+        actionHint: "Approved by operator-a; ready for paper simulation.",
+        tone: "positive" as const
+      },
+      {
+        id: "batch-active:order-rejected",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-rejected",
+        symbol: "000001",
+        side: "buy" as const,
+        quantity: 1000,
+        notionalValue: 8900,
+        riskStatus: "blocked" as const,
+        state: "risk_rejected" as const,
+        canApprove: false,
+        canReject: false,
+        approvedBy: null,
+        reviewedAt: null,
+        actionHint: "Risk rejected this paper-only order: pre-trade risk blocked",
+        tone: "risk" as const
+      },
+      {
+        id: "batch-active:order-filled",
+        portfolioName: "ashare audited basket",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-filled",
+        symbol: "600036",
+        side: "buy" as const,
+        quantity: 300,
+        notionalValue: 10500,
+        riskStatus: "passed" as const,
+        state: "ready_for_simulation" as const,
+        canApprove: false,
+        canReject: false,
+        approvedBy: "operator-a",
+        reviewedAt: "2026-05-27T09:15:00+00:00",
+        actionHint: "Approved by operator-a; ready for paper simulation.",
+        tone: "positive" as const
+      }
+    ];
+    const routeRows = [
+      {
+        id: "portfolio-simulation-route-batch-active-order-human",
+        batchId: "batch-active",
+        orderId: "order-human",
+        symbol: "600000",
+        side: "buy" as const,
+        routeState: "waiting_review" as const,
+        statusLabel: "Waiting for operator review",
+        detail: "Approval evidence is required before the local simulator can be used.",
+        latestStateLabel: "Created · portfolio-builder",
+        focusQuery: "batch-active order-human 600000 awaiting_operator_review",
+        stateEventId: "state-human",
+        canSimulate: false,
+        simulationId: null,
+        adapterPaperExecutionId: null,
+        adapterPaperExecutionEvidenceLabel: "No adapter paper execution evidence",
+        adapterManifestValidationId: null,
+        tone: "warning" as const
+      },
+      {
+        id: "portfolio-simulation-route-batch-active-order-risk",
+        batchId: "batch-active",
+        orderId: "order-risk",
+        symbol: "600519",
+        side: "buy" as const,
+        routeState: "waiting_review" as const,
+        statusLabel: "Waiting for risk review",
+        detail: "Risk review is still required before this approved order can be simulated.",
+        latestStateLabel: "Risk review · risk-engine",
+        focusQuery: "batch-active order-risk 600519 risk_review",
+        stateEventId: "state-risk",
+        canSimulate: false,
+        simulationId: null,
+        adapterPaperExecutionId: null,
+        adapterPaperExecutionEvidenceLabel: "No adapter paper execution evidence",
+        adapterManifestValidationId: null,
+        tone: "warning" as const
+      },
+      {
+        id: "portfolio-simulation-route-batch-active-order-ready",
+        batchId: "batch-active",
+        orderId: "order-ready",
+        symbol: "000300",
+        side: "sell" as const,
+        routeState: "ready" as const,
+        statusLabel: "Ready for simulator",
+        detail: "Approved paper-only order can use the local simulator; live broker route remains blocked.",
+        latestStateLabel: "Ready for simulation · operator-a",
+        focusQuery: "batch-active order-ready 000300 ready_for_simulation",
+        stateEventId: "state-ready",
+        canSimulate: true,
+        simulationId: null,
+        adapterPaperExecutionId: "adapter-paper-1",
+        adapterPaperExecutionEvidenceLabel: "Adapter paper execution adapter-paper-1 · filled sell 5 @ 480.00",
+        adapterManifestValidationId: "manifest-ready",
+        tone: "positive" as const
+      },
+      {
+        id: "portfolio-simulation-route-batch-active-order-rejected",
+        batchId: "batch-active",
+        orderId: "order-rejected",
+        symbol: "000001",
+        side: "buy" as const,
+        routeState: "blocked" as const,
+        statusLabel: "Risk blocked",
+        detail: "Risk or operator state blocks the local simulator route.",
+        latestStateLabel: "Risk rejected · risk-engine",
+        focusQuery: "batch-active order-rejected 000001 risk_rejected",
+        stateEventId: "state-rejected",
+        canSimulate: false,
+        simulationId: null,
+        adapterPaperExecutionId: null,
+        adapterPaperExecutionEvidenceLabel: "No adapter paper execution evidence",
+        adapterManifestValidationId: null,
+        tone: "risk" as const
+      },
+      {
+        id: "portfolio-simulation-route-batch-active-order-filled",
+        batchId: "batch-active",
+        orderId: "order-filled",
+        symbol: "600036",
+        side: "buy" as const,
+        routeState: "filled" as const,
+        statusLabel: "Already simulated",
+        detail: "Filled by simulation-filled · buy 300 @ 35.00 · simulated 2026-05-27T09:30:00+00:00; duplicate simulator route is blocked.",
+        latestStateLabel: "Paper simulation filled · simulator",
+        focusQuery: "batch-active order-filled 600036 simulation-filled simulation_filled",
+        stateEventId: "state-filled",
+        canSimulate: false,
+        simulationId: "simulation-filled",
+        adapterPaperExecutionId: "adapter-paper-2",
+        adapterPaperExecutionEvidenceLabel: "Adapter paper execution adapter-paper-2 · filled buy 300 @ 35.00",
+        adapterManifestValidationId: "manifest-filled",
+        tone: "neutral" as const
+      }
+    ];
+    const stateHistoryRows = [
+      {
+        id: "state-filled",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-filled",
+        symbol: "600036",
+        timestamp: "2026-05-27T09:30:00+00:00",
+        state: "simulation_filled",
+        label: "Paper simulation filled",
+        actor: "simulator",
+        source: "paper-simulator",
+        reason: "Paper-only simulation filled the approved portfolio order; live execution remains blocked.",
+        quantity: "300",
+        notionalValue: "10500.00",
+        focusQuery: "batch-active order-filled 600036 simulation-filled adapter-paper-2",
+        adapterEvidenceLabel: "Adapter paper execution adapter-paper-2 · filled buy 300 @ 35.00",
+        tone: "positive" as const
+      },
+      {
+        id: "state-ready",
+        batchId: "batch-active",
+        baseRunId: "run-portfolio",
+        orderId: "order-ready",
+        symbol: "000300",
+        timestamp: "2026-05-27T09:10:00+00:00",
+        state: "ready_for_simulation",
+        label: "Ready for simulation",
+        actor: "operator-a",
+        source: "operator",
+        reason: "Operator approved this paper-only portfolio order for simulation.",
+        quantity: "5",
+        notionalValue: "2400.00",
+        focusQuery: "batch-active order-ready 000300 ready_for_simulation",
+        adapterEvidenceLabel: "",
+        tone: "positive" as const
+      }
+    ];
+
+    const queue = buildPortfolioPaperOpsQueueRows({
+      approvalRows,
+      lifecycleRows,
+      routeRows,
+      stateHistoryRows
+    });
+
+    expect(queue.summary).toEqual({
+      totalRows: 6,
+      waitingRiskCount: 1,
+      waitingHumanCount: 1,
+      readyForSimulationCount: 1,
+      simulatedCount: 1,
+      rejectedCount: 1,
+      staleCount: 1,
+      paperOnly: true,
+      liveTradingAllowed: false
+    });
+    expect(queue.rows.map((row) => `${row.stage}:${row.batchId}:${row.orderId ?? "batch"}:${row.nextActionId}`)).toEqual([
+      "stale:batch-stale:batch:open-portfolio",
+      "waiting_risk:batch-active:order-risk:review-order",
+      "waiting_human:batch-active:order-human:review-order",
+      "ready_for_simulation:batch-active:order-ready:simulate-order",
+      "rejected:batch-active:order-rejected:open-approval",
+      "simulated:batch-active:order-filled:replay-simulation"
+    ]);
+    expect(queue.rows.find((row) => row.orderId === "order-ready")).toMatchObject({
+      symbol: "000300",
+      statusLabel: "Ready for simulator",
+      adapterEvidenceLabel: "Adapter paper execution adapter-paper-1 · filled sell 5 @ 480.00",
+      canRunAction: true
+    });
+    expect(queue.rows.find((row) => row.orderId === "order-filled")).toMatchObject({
+      simulationId: "simulation-filled",
+      stateEventId: "state-filled",
+      canRunAction: true
+    });
+    expect(queue.rows[0].detail).toContain("stale");
   });
 
   test("builds portfolio paper simulation route risk requests from editable templates", () => {
@@ -17251,6 +18288,581 @@ describe("terminal workbench model", () => {
       value: "No paper fill",
       status: "blocked"
     });
+  });
+
+  test("summarizes pre-live readiness blockers without enabling live order submission", () => {
+    const checklist = buildPreLiveReadinessChecklist({
+      status: "blocked",
+      headline: "Promotion queue blocked",
+      summary: "A strategy needs audited evidence and risk approval before it can enter execution promotion.",
+      stages: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: "No audited run",
+          detail: "Run Pipeline before a strategy can enter the promotion queue.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "risk-approval",
+          label: "Risk approval",
+          value: "risk blocked",
+          detail: "Risk approval requires an audited run.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "paper-execution",
+          label: "Paper execution",
+          value: "No paper fill",
+          detail: "Submit a paper order from the active audited run before live promotion review.",
+          status: "blocked",
+          tone: "warning"
+        },
+        {
+          id: "adapter-certification",
+          label: "Adapter certification",
+          value: "0 certified live adapters",
+          detail: "Adapter certification is required.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "human-confirmation",
+          label: "Human confirmation",
+          value: "manual approval required",
+          detail: "Live promotion requires explicit human confirmation after adapter certification.",
+          status: "blocked",
+          tone: "warning"
+        }
+      ]
+    });
+
+    expect(checklist).toMatchObject({
+      status: "blocked",
+      tone: "risk",
+      headline: "Pre-live readiness blocked",
+      passedCount: 0,
+      totalCount: 5,
+      blockingCount: 5,
+      nextActionId: "audited-run",
+      manualRouteCandidate: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(checklist.summary).toContain("audited-run");
+    expect(checklist.items[0]).toMatchObject({
+      id: "audited-run",
+      state: "blocked",
+      evidence: "No audited run"
+    });
+  });
+
+  test("keeps pre-live readiness in evidence pending while adapter evidence is incomplete", () => {
+    const checklist = buildPreLiveReadinessChecklist({
+      status: "certification_pending",
+      headline: "Live promotion pending certification",
+      summary: "Paper execution has passed, but live routing stays blocked until adapter certification and human confirmation pass.",
+      stages: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: "run-promotion-filled",
+          detail: "240 1d bars are bound to the promotion queue.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "risk-approval",
+          label: "Risk approval",
+          value: "paper approved",
+          detail: "Risk checks passed for paper execution.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "paper-execution",
+          label: "Paper execution",
+          value: "1 filled order",
+          detail: "Paper snapshot paper-promotion passed local risk checks before live promotion.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "adapter-certification",
+          label: "Adapter certification",
+          value: "0 certified live adapters",
+          detail: "Adapter certification is required before production routing.",
+          status: "blocked",
+          tone: "risk"
+        },
+        {
+          id: "human-confirmation",
+          label: "Human confirmation",
+          value: "manual approval required",
+          detail: "Live promotion requires explicit human confirmation after adapter certification.",
+          status: "blocked",
+          tone: "warning"
+        }
+      ]
+    });
+
+    expect(checklist).toMatchObject({
+      status: "evidence_pending",
+      tone: "warning",
+      headline: "Pre-live evidence pending",
+      passedCount: 3,
+      totalCount: 5,
+      blockingCount: 2,
+      nextActionId: "adapter-certification",
+      manualRouteCandidate: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(checklist.summary).toContain("3/5 gates passed");
+  });
+
+  test("marks full pre-live evidence as manual route candidate but still disables direct order submission", () => {
+    const checklist = buildPreLiveReadinessChecklist({
+      status: "live_ready",
+      headline: "Live promotion ready",
+      summary: "Audited evidence, paper execution, certified adapter, and human confirmation are all bound.",
+      stages: [
+        {
+          id: "audited-run",
+          label: "Audited run",
+          value: "run-live-ready",
+          detail: "240 1d bars are bound to the promotion queue.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "risk-approval",
+          label: "Risk approval",
+          value: "live approved",
+          detail: "Risk checks passed for live review.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "paper-execution",
+          label: "Paper execution",
+          value: "1 filled order",
+          detail: "Paper snapshot paper-live-ready passed local risk checks before live promotion.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "adapter-certification",
+          label: "Adapter certification",
+          value: "Passed · ccxt-live",
+          detail: "Latest certification passed.",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          id: "human-confirmation",
+          label: "Human confirmation",
+          value: "Confirmation recorded · ccxt-live",
+          detail: "Latest human confirmation recorded.",
+          status: "passed",
+          tone: "positive"
+        }
+      ]
+    });
+
+    expect(checklist).toMatchObject({
+      status: "manual_route_ready",
+      tone: "positive",
+      headline: "Pre-live checklist complete",
+      passedCount: 5,
+      totalCount: 5,
+      blockingCount: 0,
+      nextActionId: null,
+      manualRouteCandidate: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(checklist.summary).toContain("manual route review");
+  });
+
+  test("blocks pre-live checklist when paper execution replay is not ready", () => {
+    const replayGate = buildPaperExecutionReplayGate({
+      adapterPaperExecutionRows: [],
+      currentRunId: "run-live-ready",
+      paperExecution: null,
+      portfolioApprovalRows: [],
+      portfolioOrderLifecycleRows: [],
+      portfolioOrderReplay: null,
+      portfolioOrderSimulations: [],
+      portfolioStateHistoryRows: []
+    });
+    const checklist = buildPreLiveReadinessChecklist(
+      {
+        status: "live_ready",
+        headline: "Live promotion ready",
+        summary: "Audited evidence, paper execution, certified adapter, and human confirmation are all bound.",
+        stages: [
+          {
+            id: "audited-run",
+            label: "Audited run",
+            value: "run-live-ready",
+            detail: "240 1d bars are bound to the promotion queue.",
+            status: "passed",
+            tone: "positive"
+          },
+          {
+            id: "risk-approval",
+            label: "Risk approval",
+            value: "live approved",
+            detail: "Risk checks passed for live review.",
+            status: "passed",
+            tone: "positive"
+          },
+          {
+            id: "paper-execution",
+            label: "Paper execution",
+            value: "1 filled order",
+            detail: "Paper snapshot paper-live-ready passed local risk checks before live promotion.",
+            status: "passed",
+            tone: "positive"
+          },
+          {
+            id: "adapter-certification",
+            label: "Adapter certification",
+            value: "Passed · ccxt-live",
+            detail: "Latest certification passed.",
+            status: "passed",
+            tone: "positive"
+          },
+          {
+            id: "human-confirmation",
+            label: "Human confirmation",
+            value: "Confirmation recorded · ccxt-live",
+            detail: "Latest human confirmation recorded.",
+            status: "passed",
+            tone: "positive"
+          }
+        ]
+      },
+      { paperExecutionReplayGate: replayGate }
+    );
+
+    expect(checklist).toMatchObject({
+      status: "evidence_pending",
+      tone: "warning",
+      headline: "Pre-live replay evidence pending",
+      passedCount: 5,
+      totalCount: 6,
+      blockingCount: 1,
+      nextActionId: "paper-execution-replay",
+      manualRouteCandidate: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(checklist.items.at(-1)).toMatchObject({
+      id: "paper-execution-replay",
+      state: "blocked",
+      evidence: "Paper replay blocked"
+    });
+    expect(checklist.summary).toContain("paper-execution-replay");
+  });
+
+  test("builds empty adapter chain health rollups from live broker routes", () => {
+    const rollups = buildExecutionAdapterChainHealthRollups({
+      brokerRows: [
+        {
+          id: "ashare-live",
+          market: "ashare",
+          adapter: "A-share broker adapter shape",
+          route: "live",
+          status: "config_required",
+          certification: "credentials missing",
+          nextStep: "Configure credentials",
+          tone: "warning"
+        }
+      ]
+    });
+
+    expect(rollups).toEqual([
+      expect.objectContaining({
+        id: "ashare-live:live",
+        adapterId: "ashare-live",
+        adapterName: "A-share broker adapter shape",
+        status: "empty",
+        blockerStageId: "secret-reference",
+        completedStageCount: 0,
+        latestEvidenceId: null,
+        manualRouteCandidate: false,
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false
+      })
+    ]);
+    expect(rollups[0].stages[0]).toMatchObject({
+      id: "secret-reference",
+      status: "missing",
+      evidenceId: null
+    });
+  });
+
+  test("builds adapter chain health rollups with the current blocker and latest valid evidence", () => {
+    const rollups = buildExecutionAdapterChainHealthRollups({
+      secretReferenceRows: [
+        {
+          id: "sec-ref-1",
+          adapterId: "ashare-live",
+          market: "ashare",
+          route: "live",
+          timestamp: "2026-06-24T01:00:00.000Z",
+          status: "reference_recorded",
+          statusLabel: "Reference recorded",
+          blockerSummary: "No blockers",
+          auditEventId: "sec-ref-1",
+          boundary: "Paper only · live trading blocked",
+          tone: "positive"
+        } as any
+      ],
+      secretMaterializationRows: [
+        {
+          id: "sec-mat-blocked",
+          referenceId: "sec-ref-1",
+          adapterId: "ashare-live",
+          market: "ashare",
+          route: "live",
+          timestamp: "2026-06-24T01:05:00.000Z",
+          status: "blocked",
+          statusLabel: "Blocked",
+          blockerSummary: "manifest missing",
+          auditEventId: "sec-mat-blocked",
+          boundary: "Paper only · live trading blocked",
+          tone: "risk"
+        } as any
+      ]
+    });
+
+    expect(rollups).toHaveLength(1);
+    expect(rollups[0]).toMatchObject({
+      status: "blocked",
+      blockerStageId: "secret-materialization",
+      blockerLabel: "Secret materialization",
+      completedStageCount: 1,
+      latestEvidenceId: "sec-ref-1",
+      latestAuditEventId: "sec-ref-1",
+      latestEvidenceTimestamp: "2026-06-24T01:00:00.000Z",
+      manualRouteCandidate: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(rollups[0].stages.map((stage) => `${stage.id}:${stage.status}`).slice(0, 3)).toEqual([
+      "secret-reference:recorded",
+      "secret-materialization:blocked",
+      "secret-manifest-validation:missing"
+    ]);
+  });
+
+  test("marks a complete adapter chain as a manual-route candidate while keeping live trading blocked", () => {
+    const row = (id: string, status: string, minute: string, extra: Record<string, unknown> = {}) =>
+      ({
+        adapterId: "ashare-live",
+        market: "ashare",
+        route: "live",
+        id,
+        timestamp: `2026-06-24T01:${minute}:00.000Z`,
+        status,
+        statusLabel: status,
+        blockerSummary: "No blockers",
+        boundary: "Paper only · live trading blocked",
+        auditEventId: id,
+        tone: "positive",
+        ...extra
+      }) as any;
+    const rollups = buildExecutionAdapterChainHealthRollups({
+      secretReferenceRows: [row("sec-ref", "reference_recorded", "00")],
+      secretMaterializationRows: [row("sec-mat", "manifest_recorded", "01", { referenceId: "sec-ref" })],
+      secretManifestValidationRows: [
+        row("sec-val", "validated", "02", { materializationId: "sec-mat", referenceId: "sec-ref" })
+      ],
+      environmentBindingRows: [
+        row("env-bind", "binding_recorded", "03", { materializationId: "sec-mat", manifestValidationId: "sec-val" })
+      ],
+      runtimeReloadPlanRows: [
+        row("reload-plan", "plan_recorded", "04", {
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      runtimeReloadExecutionRows: [
+        row("reload-exec", "execution_recorded", "05", {
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      runtimeReloadAcceptanceRows: [
+        row("reload-accept", "acceptance_recorded", "06", {
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      orchestrationDryRunRows: [
+        row("orch-dry", "dry_run_recorded", "07", {
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      orchestrationExecutionRows: [
+        row("orch-exec", "execution_recorded", "08", {
+          dryRunId: "orch-dry",
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      humanConfirmationRows: [
+        row("human", "confirmation_recorded", "09", {
+          orchestrationExecutionId: "orch-exec",
+          dryRunId: "orch-dry",
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      sandboxProbePlanRows: [
+        row("probe-plan", "probe_plan_recorded", "10", {
+          humanConfirmationId: "human",
+          orchestrationExecutionId: "orch-exec",
+          dryRunId: "orch-dry",
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      sandboxProbeExecutionRows: [
+        row("probe-exec", "probe_execution_recorded", "11", {
+          sandboxProbePlanId: "probe-plan",
+          humanConfirmationId: "human",
+          orchestrationExecutionId: "orch-exec",
+          dryRunId: "orch-dry",
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      sandboxProbeReviewRows: [
+        row("probe-review", "probe_review_recorded", "12", {
+          sandboxProbeExecutionId: "probe-exec",
+          sandboxProbePlanId: "probe-plan",
+          humanConfirmationId: "human",
+          orchestrationExecutionId: "orch-exec",
+          dryRunId: "orch-dry",
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      productionRouteReviewRows: [
+        row("prod-review", "route_review_recorded", "13", {
+          sandboxProbeReviewId: "probe-review",
+          sandboxProbeExecutionId: "probe-exec",
+          sandboxProbePlanId: "probe-plan",
+          humanConfirmationId: "human",
+          orchestrationExecutionId: "orch-exec",
+          dryRunId: "orch-dry",
+          acceptanceId: "reload-accept",
+          executionId: "reload-exec",
+          planId: "reload-plan",
+          bindingId: "env-bind",
+          materializationId: "sec-mat",
+          manifestValidationId: "sec-val"
+        })
+      ],
+      sandboxOrderSchemaDryRunRows: [
+        row("schema-dry", "schema_dry_run_recorded", "14", {
+          productionRouteReviewId: "prod-review",
+          sandboxProbeReviewId: "probe-review",
+          sandboxProbeExecutionId: "probe-exec",
+          sandboxProbePlanId: "probe-plan",
+          orderSubmitted: false
+        })
+      ],
+      paperOrderLifecycleRows: [
+        row("paper-life", "lifecycle_recorded", "15", {
+          sandboxOrderSchemaDryRunId: "schema-dry",
+          productionRouteReviewId: "prod-review",
+          orderSubmitted: false,
+          liveOrderSubmitted: false
+        })
+      ],
+      paperRouteRunbookRows: [
+        row("runbook", "runbook_recorded", "16", {
+          paperOrderLifecycleId: "paper-life",
+          sandboxOrderSchemaDryRunId: "schema-dry",
+          orderSubmitted: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false
+        })
+      ],
+      adapterOpsStateRows: [
+        row("ops", "ops_state_recorded", "17", {
+          paperRouteRunbookId: "runbook",
+          paperOrderLifecycleId: "paper-life",
+          orderSubmitted: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false
+        })
+      ],
+      adapterPaperExecutionRows: [
+        row("paper-exec", "paper_execution_recorded", "18", {
+          adapterOpsStateId: "ops",
+          paperRouteRunbookId: "runbook",
+          paperOrderLifecycleId: "paper-life",
+          paperFillRecorded: true,
+          orderSubmitted: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false
+        })
+      ]
+    });
+
+    expect(rollups).toHaveLength(1);
+    expect(rollups[0]).toMatchObject({
+      status: "paper_ready",
+      blockerStageId: null,
+      completedStageCount: 19,
+      totalStageCount: 19,
+      latestEvidenceId: "paper-exec",
+      latestAuditEventId: "paper-exec",
+      manualRouteCandidate: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(rollups[0].detail).toContain("complete paper-only pre-live adapter chain");
+    expect(rollups[0].stages.every((stage) => stage.status === "recorded")).toBe(true);
   });
 
   test("requires paper execution before a run can enter live promotion", () => {
@@ -22768,6 +24380,130 @@ describe("terminal workbench model", () => {
         tone: "warning"
       }
     ]);
+  });
+
+  test("builds a strategy governance queue from drafts, saved versions and audit evidence", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryWindow", 8);
+    const library: NonNullable<Parameters<typeof buildStrategyGovernanceQueueRows>[0]["library"]> = [
+      {
+        name: "Current edited draft",
+        revision: "rev-current-draft",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        status: "draft" as const,
+        auditRunId: null,
+        strategySnapshot: { ...workspace.strategy }
+      },
+      {
+        name: "Current audited strategy",
+        revision: "rev-audited-current",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        status: "audited" as const,
+        auditRunId: "run-audited-current",
+        strategySnapshot: { ...workspace.strategy }
+      },
+      {
+        name: "Imported US momentum",
+        revision: "rev-imported-aapl",
+        market: "us",
+        symbol: "AAPL",
+        timeframe: "5m",
+        status: "audited" as const,
+        auditRunId: "run-aapl-imported",
+        strategySnapshot: {
+          name: "Imported US momentum",
+          entry: "Close > SMA8",
+          exit: "Close < SMA21",
+          position: "30% max capital allocation",
+          risk: "Stop -6%, take profit +12%, drawdown guard 9%, paper only"
+        }
+      },
+      {
+        name: "Old same-context SMA20",
+        revision: "rev-stale-sma20",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        status: "audited" as const,
+        auditRunId: "run-old-sma20",
+        strategySnapshot: {
+          ...workspace.strategy,
+          entry: "Close > SMA20"
+        }
+      },
+      {
+        name: "Broken pending version",
+        revision: "rev-blocked-pending",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        status: "draft" as const,
+        auditRunId: null,
+        strategySnapshot: {
+          ...workspace.strategy,
+          entry: "Run Pipeline to generate entry rules from the selected context"
+        }
+      }
+    ];
+
+    const queue = buildStrategyGovernanceQueueRows({
+      workspace,
+      library,
+      runHistory: [
+        auditedRunFixture({
+          runId: "run-audited-current",
+          strategyRevision: "rev-audited-current",
+          createdAt: "2026-05-28T08:00:00+00:00"
+        }),
+        auditedRunFixture({
+          runId: "run-audited-current-newer",
+          strategyRevision: "rev-audited-current",
+          createdAt: "2026-05-29T08:00:00+00:00"
+        }),
+        auditedRunFixture({
+          runId: "run-old-sma20",
+          strategyRevision: "rev-stale-sma20",
+          createdAt: "2026-05-27T08:00:00+00:00"
+        })
+      ]
+    });
+
+    expect(queue.summary).toEqual({
+      totalRows: 6,
+      currentDraftCount: 1,
+      auditedCount: 1,
+      importedCount: 1,
+      staleCount: 1,
+      needsReauditCount: 1,
+      blockedCount: 1
+    });
+    expect(queue.rows.map((row) => `${row.revision}:${row.stage}:${row.nextActionId}`)).toEqual([
+      "current-draft:current_draft:save-current-version",
+      "rev-blocked-pending:blocked:load-version",
+      "rev-current-draft:needs_reaudit:load-and-rerun",
+      "rev-stale-sma20:stale:load-and-rerun",
+      "rev-audited-current:audited:load-version",
+      "rev-imported-aapl:imported:load-version"
+    ]);
+    expect(queue.rows.find((row) => row.revision === "rev-audited-current")).toMatchObject({
+      latestAuditRunId: "run-audited-current-newer",
+      changedFieldCount: 0,
+      contextMismatch: false,
+      validationStatus: "ready"
+    });
+    expect(queue.rows.find((row) => row.revision === "rev-imported-aapl")).toMatchObject({
+      contextMismatch: true,
+      importProvenance: "US · AAPL · 5m"
+    });
+    expect(queue.rows.find((row) => row.revision === "rev-stale-sma20")).toMatchObject({
+      changedFieldCount: 1,
+      changedFields: ["entry"],
+      latestAuditRunId: "run-old-sma20"
+    });
+    expect(queue.rows.find((row) => row.revision === "rev-blocked-pending")?.detail).toContain("Strategy schema");
   });
 
   test("edits backtest assumptions locally and invalidates stale audited results", () => {

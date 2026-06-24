@@ -58,7 +58,10 @@ import {
   loadResearchRunHistory,
   loadResearchRunPromotion,
   loadResearchNote,
+  loadHandoffNotes,
   loadP0AcceptanceLatest,
+  loadP1AcceptanceLatest,
+  loadP2PreLiveAcceptanceLatest,
   loadPlatformSettings,
   loadWatchlistCacheRefreshRuns,
   loadExecutionAdapterLedger,
@@ -129,6 +132,8 @@ import {
   PaperExecutionRecord,
   P0PaperSimulationResponse,
   P0AcceptanceLatestResult,
+  P1AcceptanceLatestResult,
+  P2PreLiveAcceptanceLatestResult,
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
   AiReviewRunHistoryPagination,
@@ -197,10 +202,12 @@ import {
   ResearchRunExportAuditReport,
   ResearchRunExportPackage,
   ResearchRunHistoryResult,
+  HandoffNotesResult,
   ResearchNoteResult,
   saveResearchWorkspaceState,
   saveWatchlist,
   saveResearchNote,
+  saveHandoffNote,
   saveAuditEvent,
   signAuditReportEvent,
   revokeAuditReportEvent,
@@ -231,6 +238,7 @@ import {
   buildAiReviewRunRecord,
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
+  buildEvidencePackageControlRoomRows,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
   buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
@@ -288,6 +296,7 @@ import {
   buildExecutionAdapterPaperRouteRunbookRows,
   buildExecutionAdapterProductionRouteReviewRows,
   buildExecutionAdapterHealthProbeRows,
+  buildExecutionAdapterChainHealthRollups,
   buildExecutionAdapterSecretManifestValidationRows,
   buildExecutionAdapterSecretMaterializationRows,
   buildExecutionAdapterSecretReferenceRows,
@@ -304,6 +313,8 @@ import {
   buildGoldenPathWorkspaceContext,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
+  buildP1AcceptanceSummary,
+  buildP2PreLiveAcceptanceSummary,
   buildP0CompletionChecklist,
   buildP0CompletionGapUrlSearch,
   buildP0GoldenPathJourney,
@@ -318,6 +329,7 @@ import {
   buildMarketDataRefreshGuard,
   buildMarketDataProviderHealthTrendRows,
   buildMarketDataProviderHealthTrendSummary,
+  buildPaperExecutionReplayGate,
   buildPaperExecutionSummaryTiles,
   buildPaperPositionRows,
   buildPaperTradingRows,
@@ -329,6 +341,7 @@ import {
   portfolioPaperOrderApprovalResultCarriesLockedLedgerState,
   buildPortfolioPaperOrderLatestSimulationSummary,
   buildPortfolioPaperOrderLifecycleRows,
+  buildPortfolioPaperOpsQueueRows,
   buildPortfolioPaperOrderSimulationRouteRiskRequest,
   buildPortfolioPaperOrderSimulationRouteRows,
   buildPortfolioPaperOrderReplayPositionRows,
@@ -338,11 +351,13 @@ import {
   buildPortfolioRiskRows,
   buildProductWorkAreas,
   defaultPortfolioPaperOrderRouteRiskTemplate,
+  buildPreLiveReadinessChecklist,
   buildPromotionReadiness,
   buildResearchContextEvidenceRows,
   buildResearchContextReadinessReportArchive,
   buildResearchContextReadinessRows,
   buildResearchPipelinePreflight,
+  buildResearchOpsQueueRows,
   buildResearchRunContextBinding,
   buildResearchRunComparisonRows,
   buildResearchWorkspaceStateDraft,
@@ -358,6 +373,7 @@ import {
   buildResearchRunImportUndoFailureAuditEvent,
   buildRiskApprovalSummary,
   buildScannerCandidates,
+  buildStrategyGovernanceQueueRows,
   buildStrategyReadinessGates,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
@@ -401,6 +417,8 @@ import {
   AiReviewRunRecord,
   AuditEvidenceSummary,
   AuditEvidenceReportLedgerRow,
+  EvidencePackageControlRoom,
+  EvidencePackageControlRoomRow,
   P0CurrentGapActionReadiness,
   MarketDataRefreshOverrideAuditLedgerRow,
   ExecutionAdapterPaperExecutionAuditLedgerRow,
@@ -442,6 +460,7 @@ import {
   ExecutionAdapterPaperRouteRunbookRow,
   ExecutionAdapterProductionRouteReviewRow,
   ExecutionAdapterHealthProbeRow,
+  ExecutionAdapterChainHealthRollup,
   ExecutionAdapterSecretManifestValidationRow,
   ExecutionAdapterSecretMaterializationRow,
   ExecutionAdapterSecretReferenceRow,
@@ -458,12 +477,15 @@ import {
   P0CompletionChecklist,
   P0CompletionCriterion,
   P0AcceptanceSummary,
+  P1AcceptanceSummary,
+  P2PreLiveAcceptanceSummary,
   P0GoldenPathJourney,
   P0PlatformActionOutcome,
   P0PlatformBacklogItem,
   P0PaperExecutionPreflightGate,
   P0PlatformReadinessSummary,
   PaperPositionRow,
+  PaperExecutionReplayGate,
   PaperExecutionSummaryTile,
   PaperTradingRow,
   PortfolioBacktestDraft,
@@ -471,6 +493,8 @@ import {
   PortfolioPaperOrderApprovalRow,
   PortfolioPaperOrderLatestSimulationSummary,
   PortfolioPaperOrderLifecycleRow,
+  PortfolioPaperOpsQueue,
+  PortfolioPaperOpsQueueRow,
   PortfolioPaperOrderRouteRiskTemplate,
   PortfolioPaperOrderSimulationRouteRiskRequest,
   PortfolioPaperOrderSimulationRouteRow,
@@ -479,11 +503,14 @@ import {
   PortfolioPaperOrderStateHistoryRow,
   PortfolioPeerAuditPlan,
   PortfolioRiskRow,
+  PreLiveReadinessChecklist,
   PromotionQueueStage,
   PromotionReadiness,
   ProductWorkArea,
   ProductWorkAreaId,
   ResearchContextUrlState,
+  ResearchOpsQueue,
+  ResearchOpsQueueRow,
   ResearchPipelinePreflight,
   ResearchContextEvidenceRow,
   ResearchContextMarketCalendar,
@@ -506,6 +533,8 @@ import {
   RiskApprovalSummary,
   ScannerCandidate,
   StrategyConditionKind,
+  StrategyGovernanceQueue,
+  StrategyGovernanceQueueRow,
   StrategyRuleDraft,
   StrategyRuleDraftField,
   StrategyReadinessGate,
@@ -610,6 +639,10 @@ const initialStrategyValidationState: StrategyValidationResult = {
 const initialResearchNoteState: ResearchNoteResult = {
   source: "fallback"
 };
+const initialHandoffNotesState: HandoffNotesResult = {
+  handoffNotes: [],
+  source: "fallback"
+};
 const initialSettingsStatusState: PlatformSettingsResult = {
   source: "fallback"
 };
@@ -654,6 +687,12 @@ const initialGoldenPathStatusState: GoldenPathStatusResult = {
   source: "fallback"
 };
 const initialP0AcceptanceLatestState: P0AcceptanceLatestResult = {
+  source: "fallback"
+};
+const initialP1AcceptanceLatestState: P1AcceptanceLatestResult = {
+  source: "fallback"
+};
+const initialP2PreLiveAcceptanceLatestState: P2PreLiveAcceptanceLatestResult = {
   source: "fallback"
 };
 const initialPortfolioBacktestState: PortfolioBacktestResult = {
@@ -1352,6 +1391,32 @@ const productWorkAreaIds: ProductWorkAreaId[] = [
   "settings"
 ];
 
+function researchOpsActionTargetWorkspace(actionId: ResearchOpsQueueRow["nextActionId"]): ProductWorkAreaId {
+  if (actionId === "refresh-watchlist-cache") {
+    return "market";
+  }
+  if (actionId === "run-ai-review") {
+    return "ai-review";
+  }
+  if (actionId === "submit-paper-order") {
+    return "execution";
+  }
+  return "research";
+}
+
+function strategyLibraryItemMatchesWorkspace(workspace: TerminalWorkspace, item: StrategyLibraryItem): boolean {
+  return (
+    workspace.selectedInstrument.market === item.market &&
+    workspace.selectedInstrument.symbol === item.symbol &&
+    workspace.selectedTimeframe === item.timeframe &&
+    workspace.strategy.name === item.strategySnapshot.name &&
+    workspace.strategy.entry === item.strategySnapshot.entry &&
+    workspace.strategy.exit === item.strategySnapshot.exit &&
+    workspace.strategy.position === item.strategySnapshot.position &&
+    workspace.strategy.risk === item.strategySnapshot.risk
+  );
+}
+
 function resolveInitialWorkAreaId(fallback: ProductWorkAreaId): ProductWorkAreaId {
   if (typeof window === "undefined") {
     return fallback;
@@ -1668,6 +1733,7 @@ export function App() {
   const [strategyValidationState, setStrategyValidationState] =
     useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
+  const [handoffNotesState, setHandoffNotesState] = useState<HandoffNotesResult>(initialHandoffNotesState);
   const [settingsStatus, setSettingsStatus] = useState<PlatformSettingsResult>(initialSettingsStatusState);
   const [executionAdapterLedger, setExecutionAdapterLedger] = useState<ExecutionAdapterLedgerResult>(
     initialExecutionAdapterLedgerState
@@ -1822,6 +1888,11 @@ export function App() {
   const [p0AcceptanceLatestState, setP0AcceptanceLatestState] = useState<P0AcceptanceLatestResult>(
     initialP0AcceptanceLatestState
   );
+  const [p1AcceptanceLatestState, setP1AcceptanceLatestState] = useState<P1AcceptanceLatestResult>(
+    initialP1AcceptanceLatestState
+  );
+  const [p2PreLiveAcceptanceLatestState, setP2PreLiveAcceptanceLatestState] =
+    useState<P2PreLiveAcceptanceLatestResult>(initialP2PreLiveAcceptanceLatestState);
   const [portfolioBacktestState, setPortfolioBacktestState] =
     useState<PortfolioBacktestResult>(initialPortfolioBacktestState);
   const [portfolioPaperOrderBatches, setPortfolioPaperOrderBatches] = useState<PortfolioPaperOrderBatch[]>([]);
@@ -1837,6 +1908,7 @@ export function App() {
   >([]);
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
+  const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [marketDataReadinessState, setMarketDataReadinessState] = useState<MarketDataReadinessResult>(
     initialMarketDataReadinessState
@@ -1853,6 +1925,9 @@ export function App() {
   const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(
     () => initialWorkAreaSelection.workflowStageId
   );
+  const [pendingResearchOpsAction, setPendingResearchOpsAction] = useState<ResearchOpsQueueRow | null>(null);
+  const [pendingStrategyGovernanceAction, setPendingStrategyGovernanceAction] =
+    useState<StrategyGovernanceQueueRow | null>(null);
   const [workflowRunState, setWorkflowRunState] = useState<WorkflowRunState>(() => createWorkflowRunState());
   const workflowStages = buildWorkflowStages(workspace, workflowRunState);
   const [marketDraft, setMarketDraft] = useState<Market>(workspace.selectedInstrument.market);
@@ -1866,6 +1941,7 @@ export function App() {
   const [hasUnsavedWatchlistChanges, setHasUnsavedWatchlistChanges] = useState(false);
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
+  const [isSavingHandoffNote, setIsSavingHandoffNote] = useState(false);
   const [isSavingWatchlist, setIsSavingWatchlist] = useState(false);
   const [isSavingResearchWorkspace, setIsSavingResearchWorkspace] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
@@ -1876,6 +1952,8 @@ export function App() {
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isLoadingP0Acceptance, setIsLoadingP0Acceptance] = useState(false);
+  const [isLoadingP1Acceptance, setIsLoadingP1Acceptance] = useState(false);
+  const [isLoadingP2PreLiveAcceptance, setIsLoadingP2PreLiveAcceptance] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
@@ -2061,6 +2139,11 @@ export function App() {
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
   const scannerCandidates = buildScannerCandidates(workspace);
+  const researchOpsQueue = buildResearchOpsQueueRows({
+    workspace,
+    runHistory,
+    watchlistRefreshRuns: watchlistCacheRefreshHistory
+  });
   const portfolioRiskRows = buildPortfolioRiskRows(workspace);
   const portfolioBacktestDiagnosticRows = buildPortfolioBacktestDiagnosticRows(portfolioBacktestState.portfolio);
   const portfolioBacktestDraft = buildPortfolioBacktestDraft(runHistory, currentResearchRunId);
@@ -2083,6 +2166,7 @@ export function App() {
   const paperExecutionSummaryTiles = buildPaperExecutionSummaryTiles(workspace, activePaperExecutionRecord);
   const paperPositionRows = buildPaperPositionRows(workspace, activePaperExecutionRecord);
   const paperTradingRows = buildPaperTradingRows(workspace);
+  const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const executionAdapterLedgerRows = buildExecutionAdapterLedgerRows(executionAdapterLedger.adapterLedger);
   const executionAdapterHealthProbeRows = buildExecutionAdapterHealthProbeRows(executionAdapterHealthProbe.adapterHealthProbe);
   const executionAdapterCertificationRows = buildExecutionAdapterCertificationRows(executionAdapterCertifications);
@@ -2134,6 +2218,28 @@ export function App() {
   );
   const executionAdapterOpsStateRows = buildExecutionAdapterOpsStateRows(executionAdapterOpsStates);
   const executionAdapterPaperExecutionRows = buildExecutionAdapterPaperExecutionRows(executionAdapterPaperExecutions);
+  const executionAdapterChainHealthRollups = buildExecutionAdapterChainHealthRollups({
+    adapterOpsStateRows: executionAdapterOpsStateRows,
+    adapterPaperExecutionRows: executionAdapterPaperExecutionRows,
+    brokerRows: brokerAdapterRows,
+    environmentBindingRows: executionAdapterEnvironmentBindingRows,
+    humanConfirmationRows: executionAdapterHumanConfirmationRows,
+    orchestrationDryRunRows: executionAdapterOrchestrationDryRunRows,
+    orchestrationExecutionRows: executionAdapterOrchestrationExecutionRows,
+    paperOrderLifecycleRows: executionAdapterPaperOrderLifecycleRows,
+    paperRouteRunbookRows: executionAdapterPaperRouteRunbookRows,
+    productionRouteReviewRows: executionAdapterProductionRouteReviewRows,
+    runtimeReloadAcceptanceRows: executionAdapterRuntimeReloadAcceptanceRows,
+    runtimeReloadExecutionRows: executionAdapterRuntimeReloadExecutionRows,
+    runtimeReloadPlanRows: executionAdapterRuntimeReloadPlanRows,
+    sandboxOrderSchemaDryRunRows: executionAdapterSandboxOrderSchemaDryRunRows,
+    sandboxProbeExecutionRows: executionAdapterSandboxProbeExecutionRows,
+    sandboxProbePlanRows: executionAdapterSandboxProbePlanRows,
+    sandboxProbeReviewRows: executionAdapterSandboxProbeReviewRows,
+    secretManifestValidationRows: executionAdapterSecretManifestValidationRows,
+    secretMaterializationRows: executionAdapterSecretMaterializationRows,
+    secretReferenceRows: executionAdapterSecretReferenceRows
+  });
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -2157,6 +2263,22 @@ export function App() {
     portfolioPaperOrderStateHistoryRows,
     executionAdapterPaperExecutionRows
   );
+  const paperExecutionReplayGate = buildPaperExecutionReplayGate({
+    adapterPaperExecutionRows: executionAdapterPaperExecutionRows,
+    currentRunId: currentResearchRunId,
+    paperExecution: activePaperExecutionRecord,
+    portfolioApprovalRows: portfolioPaperOrderApprovalRows,
+    portfolioOrderLifecycleRows: portfolioPaperOrderLifecycleRows,
+    portfolioOrderReplay: portfolioPaperOrderReplay,
+    portfolioOrderSimulations: portfolioPaperOrderSimulations,
+    portfolioStateHistoryRows: portfolioPaperOrderStateHistoryRows
+  });
+  const portfolioPaperOpsQueue = buildPortfolioPaperOpsQueueRows({
+    approvalRows: portfolioPaperOrderApprovalRows,
+    lifecycleRows: portfolioPaperOrderLifecycleRows,
+    routeRows: portfolioPaperOrderSimulationRouteRows,
+    stateHistoryRows: portfolioPaperOrderStateHistoryRows
+  });
   const portfolioPaperOrderRouteRiskRequest = useMemo(
     () => buildPortfolioPaperOrderSimulationRouteRiskRequest(portfolioRouteRiskTemplate, portfolioPaperOrderReplay),
     [portfolioPaperOrderReplay, portfolioRouteRiskTemplate]
@@ -2270,6 +2392,11 @@ export function App() {
   );
   const strategyRuleRows = buildStrategyRuleRows(workspace);
   const visibleStrategyLibrary = strategyLibraryState.strategies;
+  const strategyGovernanceQueue = buildStrategyGovernanceQueueRows({
+    workspace,
+    library: visibleStrategyLibrary,
+    runHistory
+  });
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
   const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
@@ -2279,10 +2406,12 @@ export function App() {
   const backtestRunComparisonMatrixSummary = buildBacktestRunComparisonMatrixSummary(backtestRunComparisonMatrixRows);
   const backtestReadinessGates = buildBacktestReadinessGates(workspace);
   const backtestTradeRows = buildBacktestTradeRows(workspace);
-  const brokerAdapterRows = buildBrokerAdapterRows(workspace);
   const promotionReadiness =
     activePromotionCandidateRecord ??
     buildPromotionReadiness(workspace, activePaperExecutionRecord, brokerAdapterRows, executionAdapterCertificationRows, executionAdapterCertificationApplyRows, executionAdapterControlledRestartEvidenceRows, executionAdapterRestartAcceptanceRows, executionAdapterSecretReferenceRows, executionAdapterSecretMaterializationRows, executionAdapterEnvironmentBindingRows, executionAdapterRuntimeReloadPlanRows, executionAdapterRuntimeReloadExecutionRows, executionAdapterRuntimeReloadAcceptanceRows, executionAdapterHumanConfirmationRows, executionAdapterSandboxProbeExecutionRows, executionAdapterPaperExecutionRows, executionAdapterSandboxProbeReviewRows, executionAdapterProductionRouteReviewRows, executionAdapterSandboxOrderSchemaDryRunRows, executionAdapterPaperOrderLifecycleRows, executionAdapterPaperRouteRunbookRows, executionAdapterOpsStateRows);
+  const preLiveReadinessChecklist = buildPreLiveReadinessChecklist(promotionReadiness, {
+    paperExecutionReplayGate
+  });
   const executionAdapterPreLiveRunbook = buildExecutionAdapterPreLiveRunbookSummary({
     adapterLedgerRows: executionAdapterLedgerRows,
     certificationRows: executionAdapterCertificationRows,
@@ -2398,6 +2527,15 @@ export function App() {
     () => buildP0AcceptanceSummary(p0AcceptanceLatestState.acceptance),
     [p0AcceptanceLatestState.acceptance]
   );
+  const p1AcceptanceSummary = useMemo(
+    () => buildP1AcceptanceSummary(p1AcceptanceLatestState.acceptance),
+    [p1AcceptanceLatestState.acceptance]
+  );
+  const p2PreLiveAcceptanceSummary = useMemo(
+    () => buildP2PreLiveAcceptanceSummary(p2PreLiveAcceptanceLatestState.acceptance),
+    [p2PreLiveAcceptanceLatestState.acceptance]
+  );
+  const p2PreLiveAcceptanceSummaryHeadlineText = p2PreLiveAcceptanceSummaryHeadline(i18n, p2PreLiveAcceptanceSummary);
   const p0AcceptanceReviewMarkdown = useMemo(
     () =>
       buildP0AcceptanceReviewMarkdown({
@@ -2406,6 +2544,13 @@ export function App() {
       }),
     [p0AcceptanceLatestState.acceptance, p0AcceptanceSummary]
   );
+  const evidencePackageControlRoom = buildEvidencePackageControlRoomRows({
+    acceptanceReviewEvents: auditEvidenceReportEvents,
+    auditLedgerRows: auditEvidenceReportLedgerRows,
+    exportIndexRows: researchRunExportIndexRows,
+    importAuditEvents: researchRunImportAuditEvents,
+    p0AcceptanceSummary
+  });
   const p0PortablePackageReady = useMemo(() => {
     const matchesCurrentRun = (exportPackage: ResearchRunExportPackage | null | undefined) =>
       Boolean(
@@ -2619,6 +2764,24 @@ export function App() {
     }
   }, []);
 
+  const refreshP1AcceptanceLatest = useCallback(async () => {
+    setIsLoadingP1Acceptance(true);
+    try {
+      setP1AcceptanceLatestState(await loadP1AcceptanceLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingP1Acceptance(false);
+    }
+  }, []);
+
+  const refreshP2PreLiveAcceptanceLatest = useCallback(async () => {
+    setIsLoadingP2PreLiveAcceptance(true);
+    try {
+      setP2PreLiveAcceptanceLatestState(await loadP2PreLiveAcceptanceLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingP2PreLiveAcceptance(false);
+    }
+  }, []);
+
   const resetAiReviewHistoryState = useCallback(() => {
     setAiReviewRunRecords([]);
     setAiReviewHistoryQuery("");
@@ -2633,6 +2796,14 @@ export function App() {
   useEffect(() => {
     void refreshP0AcceptanceLatest();
   }, [refreshP0AcceptanceLatest]);
+
+  useEffect(() => {
+    void refreshP1AcceptanceLatest();
+  }, [refreshP1AcceptanceLatest]);
+
+  useEffect(() => {
+    void refreshP2PreLiveAcceptanceLatest();
+  }, [refreshP2PreLiveAcceptanceLatest]);
 
   const refreshAiReviewRunHistory = useCallback(
     async (runId: string, options: { offset?: number; query?: string } = {}) => {
@@ -2998,6 +3169,17 @@ export function App() {
     setResearchNoteState(result);
     setResearchNoteDraft(result.note?.body ?? "");
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+
+  const refreshHandoffNotes = useCallback(async () => {
+    const runId = workspace.researchRun?.runId;
+    if (!runId) {
+      setHandoffNotesState(initialHandoffNotesState);
+      setHandoffNoteDraft("");
+      return;
+    }
+    const result = await loadHandoffNotes(quantCoreBaseUrl, "research_run", runId);
+    setHandoffNotesState(result);
+  }, [workspace.researchRun?.runId]);
 
   const refreshMarketCalendarStatus = useCallback(async () => {
     const market = workspace.selectedInstrument.market;
@@ -6506,10 +6688,11 @@ export function App() {
           error: undefined
         }));
       }
-      const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
+      const [paperHistory, promotionHistory, aiReviewHistory, handoffHistory] = await Promise.all([
         loadLatestResearchRunPaperExecution(quantCoreBaseUrl, result.run.runId),
         loadResearchRunPromotion(quantCoreBaseUrl, result.run.runId),
-        refreshAiReviewRunHistory(result.run.runId, { offset: 0, query: "" })
+        refreshAiReviewRunHistory(result.run.runId, { offset: 0, query: "" }),
+        loadHandoffNotes(quantCoreBaseUrl, "research_run", result.run.runId)
       ]);
       if (manualSelectionVersionRef.current !== importVersion) {
         return;
@@ -6518,6 +6701,7 @@ export function App() {
       setPaperExecutionRecord(paperHistory.execution ?? null);
       setPromotionCandidateRecord(promotionHistory.promotion ?? null);
       setAiReviewRunRecords(aiReviewHistory.aiReviews);
+      setHandoffNotesState(handoffHistory);
       if (paperHistory.execution) {
         setWorkspaceState((current) => ({
           ...current,
@@ -6758,6 +6942,35 @@ export function App() {
     setFocusedImportAuditEventId(null);
   }, []);
 
+  const runEvidencePackageControlAction = useCallback(
+    (row: EvidencePackageControlRoomRow) => {
+      const focusQuery = row.focusQuery || row.exportPath || row.runId;
+      setActiveWorkAreaId("audit");
+      if (row.nextActionId === "open-import-audit") {
+        updateResearchRunImportAuditQuery(focusQuery);
+        setResearchRunExportBrowserQuery(row.exportPath || row.runId);
+        setResearchRunImportDiffQuery(row.exportPath || row.runId);
+      } else if (row.nextActionId === "inspect-package") {
+        setResearchRunExportBrowserQuery(row.exportPath || row.runId);
+        setResearchRunImportDiffQuery(row.exportPath || row.runId);
+        updateAuditEvidenceReportQuery(row.runId);
+      } else if (row.nextActionId === "open-acceptance") {
+        updateAuditEvidenceReportQuery(`p0_acceptance_review ${row.runId}`);
+      } else if (row.nextActionId === "open-signature-ledger") {
+        updateAuditEvidenceReportQuery(focusQuery);
+      } else {
+        setResearchRunExportBrowserQuery(row.exportPath || row.runId);
+        updateAuditEvidenceReportQuery(focusQuery);
+      }
+      setWorkspaceState((current) => ({
+        ...current,
+        error: undefined,
+        statusLabel: `Evidence package focus · ${row.runId} · ${row.statusLabel}`
+      }));
+    },
+    [updateAuditEvidenceReportQuery, updateResearchRunImportAuditQuery]
+  );
+
   const previousResearchRunImportAuditPage = useCallback(() => {
     setResearchRunImportAuditOffset((current) => Math.max(0, current - IMPORT_AUDIT_EVENTS_PAGE_SIZE));
   }, []);
@@ -6814,6 +7027,14 @@ export function App() {
       setWorkflowRunState(createWorkflowRunState());
     },
     [resetAiReviewHistoryState, workspace.watchlist]
+  );
+
+  const runResearchOpsQueueAction = useCallback(
+    (row: ResearchOpsQueueRow) => {
+      setPendingResearchOpsAction(row);
+      selectInstrument(row.instrument);
+    },
+    [selectInstrument]
   );
 
   const selectWatchlistCacheRefreshItem = useCallback(
@@ -6996,6 +7217,44 @@ export function App() {
     setIsSavingResearchNote(false);
   }, [researchNoteDraft, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
+  const saveCurrentHandoffNote = useCallback(async () => {
+    const runId = workspace.researchRun?.runId;
+    if (!runId) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Handoff note needs a research run",
+        error: "Run Pipeline before saving handoff notes."
+      }));
+      return;
+    }
+    setIsSavingHandoffNote(true);
+    const result = await saveHandoffNote(quantCoreBaseUrl, {
+      subjectType: "research_run",
+      subjectId: runId,
+      body: handoffNoteDraft,
+      author: "local-operator",
+      sourceWorkspace: activeWorkAreaId
+    });
+    if (result.source === "core") {
+      const refreshed = await loadHandoffNotes(quantCoreBaseUrl, "research_run", runId);
+      setHandoffNotesState(refreshed);
+      setHandoffNoteDraft("");
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Handoff note saved",
+        error: undefined
+      }));
+    } else {
+      setHandoffNotesState(result);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Handoff note save failed",
+        error: result.error ?? "Handoff note save failed"
+      }));
+    }
+    setIsSavingHandoffNote(false);
+  }, [activeWorkAreaId, handoffNoteDraft, workspace.researchRun?.runId]);
+
   const saveCurrentWatchlist = useCallback(async () => {
     setIsSavingWatchlist(true);
     const result = await saveWatchlist(quantCoreBaseUrl, workspace.watchlist);
@@ -7049,6 +7308,27 @@ export function App() {
     setActiveWorkflowStageId("factor");
     setWorkflowRunState(createWorkflowRunState());
   }, [resetAiReviewHistoryState]);
+
+  const runStrategyGovernanceAction = useCallback(
+    (row: StrategyGovernanceQueueRow) => {
+      if (row.nextActionId === "save-current-version") {
+        void saveCurrentStrategyVersion();
+        return;
+      }
+      const strategy = visibleStrategyLibrary.find((item) => item.revision === row.revision);
+      if (!strategy) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Strategy governance action failed",
+          error: `Strategy revision ${row.revision} is not available in the local library`
+        }));
+        return;
+      }
+      setPendingStrategyGovernanceAction(row.nextActionId === "load-and-rerun" ? row : null);
+      loadSavedStrategyVersion(strategy);
+    },
+    [loadSavedStrategyVersion, saveCurrentStrategyVersion, visibleStrategyLibrary]
+  );
 
   const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
     manualSelectionVersionRef.current += 1;
@@ -7159,6 +7439,52 @@ export function App() {
       }));
     },
     [selectProductWorkArea, updateExecutionAdapterPaperExecutionAuditQuery]
+  );
+
+  const runPortfolioPaperOpsQueueAction = useCallback(
+    (row: PortfolioPaperOpsQueueRow) => {
+      if (!row.canRunAction) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Portfolio paper ops action blocked",
+          error: row.detail
+        }));
+        return;
+      }
+
+      if (row.nextActionId === "simulate-order" && row.orderId) {
+        const approval = portfolioPaperOrderApprovalRows.find(
+          (candidate) => candidate.batchId === row.batchId && candidate.orderId === row.orderId
+        );
+        if (!approval) {
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "Portfolio paper simulation unavailable",
+            error: "Approval evidence is missing for this paper order."
+          }));
+          return;
+        }
+        void simulatePortfolioPaperOrder(approval);
+        selectProductWorkArea("execution");
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: `Portfolio paper simulation queued · ${row.orderId}`,
+          error: undefined
+        }));
+        return;
+      }
+
+      if (row.focusQuery) {
+        updatePortfolioPaperOrderAuditQuery(row.focusQuery);
+      }
+      selectProductWorkArea(row.nextActionId === "open-portfolio" ? "portfolio" : "audit");
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Portfolio paper ops opened · ${row.statusLabel}`,
+        error: undefined
+      }));
+    },
+    [portfolioPaperOrderApprovalRows, selectProductWorkArea, simulatePortfolioPaperOrder, updatePortfolioPaperOrderAuditQuery]
   );
 
   const focusExecutionAdapterPreLiveRunbookAudit = useCallback(() => {
@@ -8061,6 +8387,10 @@ export function App() {
   }, [refreshResearchNote]);
 
   useEffect(() => {
+    void refreshHandoffNotes();
+  }, [refreshHandoffNotes]);
+
+  useEffect(() => {
     void refreshSettingsStatus();
   }, [refreshSettingsStatus]);
 
@@ -8224,6 +8554,54 @@ export function App() {
     ]
   );
 
+  useEffect(() => {
+    if (!pendingResearchOpsAction) {
+      return;
+    }
+    const selectedMatches =
+      workspace.selectedInstrument.market === pendingResearchOpsAction.market &&
+      workspace.selectedInstrument.symbol === pendingResearchOpsAction.symbol &&
+      workspace.selectedTimeframe === pendingResearchOpsAction.timeframe;
+    if (!selectedMatches || isRunning || isRefreshing) {
+      return;
+    }
+    setPendingResearchOpsAction(null);
+    runGoldenPathActionById(
+      pendingResearchOpsAction.nextActionId,
+      researchOpsActionTargetWorkspace(pendingResearchOpsAction.nextActionId)
+    );
+  }, [
+    isRefreshing,
+    isRunning,
+    pendingResearchOpsAction,
+    runGoldenPathActionById,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
+
+  useEffect(() => {
+    if (!pendingStrategyGovernanceAction) {
+      return;
+    }
+    if (isRunning || isSavingStrategy) {
+      return;
+    }
+    const strategy = visibleStrategyLibrary.find((item) => item.revision === pendingStrategyGovernanceAction.revision);
+    if (!strategy || !strategyLibraryItemMatchesWorkspace(workspace, strategy)) {
+      return;
+    }
+    setPendingStrategyGovernanceAction(null);
+    runGoldenPathActionById("run-pipeline", "strategy");
+  }, [
+    isRunning,
+    isSavingStrategy,
+    pendingStrategyGovernanceAction,
+    runGoldenPathActionById,
+    visibleStrategyLibrary,
+    workspace
+  ]);
+
   const runGoldenPathAction = useCallback(() => {
     const action = goldenPath?.nextAction;
     if (!action) {
@@ -8336,10 +8714,12 @@ export function App() {
         library={visibleStrategyLibrary}
         onApplyStrategyTemplate={applyStrategyTemplate}
         onLoadStrategyVersion={loadSavedStrategyVersion}
+        onRunStrategyGovernanceAction={runStrategyGovernanceAction}
         onSaveStrategyVersion={saveCurrentStrategyVersion}
         onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
         readinessGates={strategyReadinessGates}
         rows={strategyRuleRows}
+        strategyGovernanceQueue={strategyGovernanceQueue}
         templates={strategyTemplateOptions}
         validationSource={strategyValidationState.source}
         workspace={workspace}
@@ -8449,6 +8829,13 @@ export function App() {
             i18n={i18n}
             source={marketCalendarState.source}
           />
+          <ResearchOpsQueuePanel
+            className="workflow-research-ops-panel"
+            i18n={i18n}
+            isRunningAction={Boolean(pendingResearchOpsAction)}
+            onRunAction={runResearchOpsQueueAction}
+            queue={researchOpsQueue}
+          />
           <ScannerWorkspace
             candidates={scannerCandidates}
             className="workflow-scanner-panel"
@@ -8547,6 +8934,7 @@ export function App() {
             onRecordPortfolioPaperOrders={recordPortfolioPaperOrders}
             onRejectPortfolioOrder={rejectPortfolioPaperOrder}
             onRunPortfolioBacktest={runPortfolioBacktestDraft}
+            onRunPortfolioPaperOpsAction={runPortfolioPaperOpsQueueAction}
             onSimulatePortfolioOrder={simulatePortfolioPaperOrder}
             onSimulatePortfolioOrderBatch={simulatePortfolioPaperOrderBatch}
             onPortfolioRouteRiskTemplateChange={updatePortfolioRouteRiskTemplate}
@@ -8562,6 +8950,7 @@ export function App() {
             portfolioPaperOrderHistoryError={portfolioPaperOrderHistoryError}
             portfolioPaperOrderLifecycleRows={portfolioPaperOrderLifecycleRows}
             portfolioPaperOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
+            portfolioPaperOpsQueue={portfolioPaperOpsQueue}
             portfolioPaperOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioPaperOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
             portfolioRouteRiskRequest={portfolioPaperOrderRouteRiskRequest}
@@ -8594,12 +8983,14 @@ export function App() {
             approvingPortfolioOrderId={approvingPortfolioPaperOrderId}
             onApprovePortfolioOrder={approvePortfolioPaperOrder}
             onRejectPortfolioOrder={rejectPortfolioPaperOrder}
+            onRunPortfolioPaperOpsAction={runPortfolioPaperOpsQueueAction}
             onSimulatePortfolioOrder={simulatePortfolioPaperOrder}
             onSimulatePortfolioOrderBatch={simulatePortfolioPaperOrderBatch}
             onPortfolioRouteRiskTemplateChange={updatePortfolioRouteRiskTemplate}
             onFocusPortfolioOrderStateAuditQuery={focusPortfolioOrderStateAuditQuery}
             portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
             portfolioOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
+            portfolioPaperOpsQueue={portfolioPaperOpsQueue}
             portfolioOrderRows={portfolioPaperOrderLifecycleRows}
             portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
             portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
@@ -8613,6 +9004,13 @@ export function App() {
             simulatingPortfolioOrderId={simulatingPortfolioPaperOrderId}
             summaryTiles={paperExecutionSummaryTiles}
             workspace={workspace}
+          />
+          <PaperExecutionReplayGatePanel
+            className="workflow-paper-replay-gate-panel"
+            gate={paperExecutionReplayGate}
+            i18n={i18n}
+            onOpenAudit={() => selectProductWorkArea("audit")}
+            onOpenPortfolio={() => selectProductWorkArea("portfolio")}
           />
           <PromotionQueuePanel
             adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
@@ -8640,7 +9038,23 @@ export function App() {
             adapterCertificationRows={executionAdapterCertificationRows}
             className="workflow-promotion-panel"
             i18n={i18n}
+            preLiveChecklist={preLiveReadinessChecklist}
             readiness={promotionReadiness}
+          />
+          <AdapterChainHealthPanel
+            className="workflow-adapter-chain-health-panel"
+            i18n={i18n}
+            onOpenSettings={() => selectProductWorkArea("settings")}
+            rollups={executionAdapterChainHealthRollups}
+          />
+          <P2PreLiveAcceptancePanel
+            className="workflow-p2-pre-live-acceptance-panel"
+            headline={p2PreLiveAcceptanceSummaryHeadlineText}
+            i18n={i18n}
+            isRefreshing={isLoadingP2PreLiveAcceptance}
+            onOpenAudit={() => selectProductWorkArea("audit")}
+            onRefresh={() => void refreshP2PreLiveAcceptanceLatest()}
+            summary={p2PreLiveAcceptanceSummary}
           />
           <PreLiveRunbookPanel
             className="workflow-pre-live-runbook-panel"
@@ -8663,6 +9077,12 @@ export function App() {
     if (activeWorkAreaId === "audit") {
       return (
         <>
+          <EvidencePackageControlRoomPanel
+            className="workflow-evidence-control-panel"
+            controlRoom={evidencePackageControlRoom}
+            i18n={i18n}
+            onRunAction={runEvidencePackageControlAction}
+          />
           <GoldenPathRunbookPanel
             className="workflow-runbook-panel"
             i18n={i18n}
@@ -8740,6 +9160,15 @@ export function App() {
             pagination={executionAdapterPaperExecutionAuditPagination}
             query={executionAdapterPaperExecutionAuditQuery}
             rows={executionAdapterPaperExecutionAuditRows}
+          />
+          <P2PreLiveAcceptancePanel
+            className="workflow-p2-pre-live-acceptance-audit-panel"
+            headline={p2PreLiveAcceptanceSummaryHeadlineText}
+            i18n={i18n}
+            isRefreshing={isLoadingP2PreLiveAcceptance}
+            onOpenAudit={() => selectProductWorkArea("audit")}
+            onRefresh={() => void refreshP2PreLiveAcceptanceLatest()}
+            summary={p2PreLiveAcceptanceSummary}
           />
           <P0AcceptanceReviewPanel
             acceptance={p0AcceptanceLatestState.acceptance ?? null}
@@ -8913,6 +9342,7 @@ export function App() {
             adapterCertificationApplyConfirmations={adapterCertificationApplyConfirmations}
             adapterCertificationRows={executionAdapterCertificationRows}
             adapterHealthProbeRows={executionAdapterHealthProbeRows}
+            adapterChainHealthRollups={executionAdapterChainHealthRollups}
             adapterRows={brokerAdapterRows}
             adapterLedgerRows={executionAdapterLedgerRows}
             applyingAdapterCertificationId={applyingAdapterCertificationId}
@@ -9011,6 +9441,16 @@ export function App() {
           onChange={setResearchNoteDraft}
           onSave={saveCurrentResearchNote}
           workspace={workspace}
+        />
+        <HandoffNotesPanel
+          className="workflow-handoff-panel"
+          draft={handoffNoteDraft}
+          i18n={i18n}
+          isSaving={isSavingHandoffNote}
+          notes={handoffNotesState}
+          onChange={setHandoffNoteDraft}
+          onSave={saveCurrentHandoffNote}
+          runId={workspace.researchRun?.runId ?? null}
         />
         <ResearchContextReadinessPanel
           className="workflow-readiness-panel"
@@ -9320,6 +9760,29 @@ export function App() {
                     <button disabled={isLoadingP0Acceptance} onClick={() => void refreshP0AcceptanceLatest()} type="button">
                       {isLoadingP0Acceptance ? <RefreshCw className="spin" size={11} /> : <RefreshCw size={11} />}
                       {i18n.locale === "zh-CN" ? "刷新验收" : "Refresh"}
+                    </button>
+                    <button onClick={() => selectProductWorkArea("audit")} type="button">
+                      <ShieldCheck size={11} />
+                      {i18n.locale === "zh-CN" ? "审计复核" : "Audit review"}
+                    </button>
+                  </div>
+                </div>
+                <div className={`p1-acceptance-summary ${p1AcceptanceSummary.tone}`}>
+                  <div>
+                    <span>{i18n.locale === "zh-CN" ? "P1 研究运营验收" : "P1 Research-Ops Acceptance"}</span>
+                    <strong>{p1AcceptanceSummaryHeadline(i18n, p1AcceptanceSummary)}</strong>
+                    <small>{p1AcceptanceSummaryDetail(i18n, p1AcceptanceSummary)}</small>
+                    <small title={p1AcceptanceSummary.sourcePath}>
+                      {i18n.locale === "zh-CN" ? "来源" : "Source"} · {p1AcceptanceSummary.sourcePath}
+                    </small>
+                  </div>
+                  <em>
+                    {p1AcceptanceSummary.checkCount}/{p1AcceptanceSummary.requiredCheckCount}
+                  </em>
+                  <div className="p0-acceptance-actions">
+                    <button disabled={isLoadingP1Acceptance} onClick={() => void refreshP1AcceptanceLatest()} type="button">
+                      {isLoadingP1Acceptance ? <RefreshCw className="spin" size={11} /> : <RefreshCw size={11} />}
+                      {i18n.locale === "zh-CN" ? "刷新 P1" : "Refresh P1"}
                     </button>
                     <button onClick={() => selectProductWorkArea("audit")} type="button">
                       <ShieldCheck size={11} />
@@ -10337,6 +10800,102 @@ function p0AcceptanceSummaryDetail(i18n: AppI18n, summary: P0AcceptanceSummary):
   return `运行 P0 验收后会在这里读取 ${summary.sourcePath}；缺失时仍保持实盘阻断。`;
 }
 
+function p1AcceptanceSummaryHeadline(i18n: AppI18n, summary: P1AcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      "P1 acceptance manifest invalid": "P1 验收清单无效",
+      "P1 acceptance manifest missing": "P1 验收清单缺失",
+      "P1 research-ops acceptance passed": "P1 研究运营验收已通过"
+    }[summary.headline] ?? summary.headline
+  );
+}
+
+function p1AcceptanceSummaryDetail(i18n: AppI18n, summary: P1AcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "passed") {
+    const run = summary.runId ? `运行 ${summary.runId}` : "最近一次 P1 验收";
+    const queued = [summary.queuedMarket, summary.queuedSymbol, summary.timeframe].filter(Boolean).join(" ");
+    return `${run} · ${queued || "队列标的"} · 自选 ${summary.watchlistCount} 个 · ${
+      summary.checkCount
+    }/${summary.requiredCheckCount} 项检查通过 · 实盘仍阻断`;
+  }
+  if (summary.state === "invalid") {
+    return `P1 验收清单未通过校验：${summary.detail
+      .replace("P1 acceptance evidence is invalid: ", "")
+      .replace(". Live trading remains blocked.", "")}；实盘仍阻断。`;
+  }
+  return `运行 P1 验收后会在这里读取 ${summary.sourcePath}；缺失时仍保持实盘阻断。`;
+}
+
+function p2PreLiveAcceptanceSummaryStatusLabel(
+  i18n: AppI18n,
+  summary: P2PreLiveAcceptanceSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.state;
+  }
+  return { invalid: "无效", missing: "缺失", passed: "已记录" }[summary.state];
+}
+
+function p2PreLiveAcceptanceSummaryHeadline(i18n: AppI18n, summary: P2PreLiveAcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      "P2 pre-live acceptance manifest invalid": "P2 实盘前验收清单无效",
+      "P2 pre-live acceptance manifest missing": "P2 实盘前验收清单缺失",
+      "P2 pre-live acceptance recorded": "P2 实盘前验收已回读"
+    }[summary.headline] ?? summary.headline
+  );
+}
+
+function p2PreLiveAcceptanceSummaryDetail(i18n: AppI18n, summary: P2PreLiveAcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "passed") {
+    const run = summary.runId ? `运行 ${summary.runId}` : "最近一次 P2 实盘前验收";
+    const context = [summary.market, summary.symbol, summary.timeframe].filter(Boolean).join(" ");
+    const adapter = summary.adapterId ? ` · 适配器 ${summary.adapterId}` : "";
+    return `${run} · ${context || "未绑定上下文"}${adapter} · ${summary.passedGateCount}/${
+      summary.totalGateCount
+    } 个闸门通过 · ${summary.blockingGateCount} 个阻断 · 实盘仍阻断。`;
+  }
+  if (summary.state === "invalid") {
+    return `P2 实盘前验收未通过校验：${summary.detail
+      .replace("P2 pre-live evidence is invalid: ", "")
+      .replace(". Direct order submission remains disabled and live trading remains blocked.", "")}；下单通道和实盘仍阻断。`;
+  }
+  return `运行 P2 实盘前验收后会在这里读取 ${summary.sourcePath}；缺失时下单通道和实盘仍保持阻断。`;
+}
+
+function p2PreLiveAcceptanceBoundaryLabel(i18n: AppI18n, summary: P2PreLiveAcceptanceSummary): string {
+  if (
+    summary.reportedOrderSubmissionEnabled ||
+    summary.reportedLiveTradingAllowed ||
+    summary.reportedLiveOrderSubmitted ||
+    summary.reportedRouteExecuted
+  ) {
+    return i18n.locale === "zh-CN"
+      ? "manifest 声称存在实盘/下单动作，平台已阻断"
+      : "Manifest reports live or order activity; platform blocks it";
+  }
+  if (!summary.liveBlockedBoundary) {
+    return i18n.locale === "zh-CN"
+      ? "manifest 缺少实盘阻断边界，平台已阻断"
+      : "Manifest lacks live-blocked boundary; platform blocks it";
+  }
+  return i18n.locale === "zh-CN"
+    ? "下单通道关闭，实盘保持阻断"
+    : "Order submission off and live trading blocked";
+}
+
 function p0AcceptanceReviewStatusLabel(i18n: AppI18n, status: P0AcceptanceSummary["state"]): string {
   if (i18n.locale === "en-US") {
     return status;
@@ -11083,10 +11642,12 @@ function StrategySummary({
   library,
   onApplyStrategyTemplate,
   onLoadStrategyVersion,
+  onRunStrategyGovernanceAction,
   onSaveStrategyVersion,
   onUpdateStrategyRuleDraftField,
   readinessGates,
   rows,
+  strategyGovernanceQueue,
   templates,
   validationSource,
   workspace
@@ -11097,10 +11658,12 @@ function StrategySummary({
   library: StrategyLibraryItem[];
   onApplyStrategyTemplate: (templateId: StrategyTemplateId) => void;
   onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
+  onRunStrategyGovernanceAction: (row: StrategyGovernanceQueueRow) => void;
   onSaveStrategyVersion: () => void;
   onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
   readinessGates: StrategyReadinessGate[];
   rows: StrategyRuleRow[];
+  strategyGovernanceQueue: StrategyGovernanceQueue;
   templates: StrategyTemplateOption[];
   validationSource: WorkspaceLoadResult["source"];
   workspace: TerminalWorkspace;
@@ -11256,6 +11819,61 @@ function StrategySummary({
               <span>{i18n.strategyText(row.condition)}</span>
               <span>{strategyRuleParameterLabel(i18n, row.parameter)}</span>
               <span>{strategyRuleStatusLabel(i18n, row.status)}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+      <div className="strategy-governance-queue">
+        <div className="strategy-rule-title">
+          <span>{i18n.locale === "zh-CN" ? "版本治理队列" : "Version governance"}</span>
+          <strong>{strategyGovernanceQueue.summary.totalRows}</strong>
+        </div>
+        <div className="strategy-governance-summary">
+          <span className="positive">
+            {i18n.locale === "zh-CN" ? "已审计" : "Audited"} {strategyGovernanceQueue.summary.auditedCount}
+          </span>
+          <span className="warning">
+            {i18n.locale === "zh-CN" ? "需重审" : "Re-audit"}{" "}
+            {strategyGovernanceQueue.summary.needsReauditCount + strategyGovernanceQueue.summary.staleCount}
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "跨上下文" : "Imported"} {strategyGovernanceQueue.summary.importedCount}
+          </span>
+          <span className="risk">
+            {i18n.locale === "zh-CN" ? "阻断" : "Blocked"} {strategyGovernanceQueue.summary.blockedCount}
+          </span>
+        </div>
+        <div className="strategy-governance-table">
+          <div className="strategy-governance-row strategy-governance-head">
+            <span>{i18n.locale === "zh-CN" ? "版本" : "Version"}</span>
+            <span>{i18n.locale === "zh-CN" ? "状态" : "State"}</span>
+            <span>{i18n.locale === "zh-CN" ? "证据" : "Evidence"}</span>
+            <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
+          </div>
+          {strategyGovernanceQueue.rows.map((row) => (
+            <article className={`strategy-governance-row ${row.tone}`} key={row.id}>
+              <span>
+                <strong>{row.name}</strong>
+                <em>{row.revision}</em>
+                <small>{row.contextLabel}</small>
+              </span>
+              <span>
+                <strong>{strategyGovernanceStageLabel(i18n, row.stage)}</strong>
+                <em>{strategyGovernanceValidationLabel(i18n, row.validationStatus)}</em>
+              </span>
+              <span>
+                <strong>{row.latestAuditRunId ?? row.auditRunId ?? (i18n.locale === "zh-CN" ? "等待审计" : "Audit pending")}</strong>
+                <em>{i18n.strategyText(row.detail)}</em>
+                {row.changedFieldCount ? (
+                  <small>
+                    {i18n.locale === "zh-CN" ? "差异" : "Diff"}: {row.changedFields.join(", ")}
+                  </small>
+                ) : null}
+              </span>
+              <button onClick={() => onRunStrategyGovernanceAction(row)} type="button">
+                <Play size={13} />
+                <span>{strategyGovernanceActionLabel(i18n, row.nextActionId)}</span>
+              </button>
             </article>
           ))}
         </div>
@@ -13379,10 +13997,94 @@ function ResearchNotesPanel({
   );
 }
 
+function HandoffNotesPanel({
+  className,
+  draft,
+  i18n,
+  isSaving,
+  notes,
+  onChange,
+  onSave,
+  runId
+}: {
+  className?: string;
+  draft: string;
+  i18n: AppI18n;
+  isSaving: boolean;
+  notes: HandoffNotesResult;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  runId: string | null;
+}) {
+  const recentNotes = notes.handoffNotes.slice(0, 3);
+  const statusText =
+    notes.source === "core"
+      ? runId
+        ? i18n.locale === "zh-CN"
+          ? `${notes.pagination?.total ?? notes.handoffNotes.length} 条交接`
+          : `${notes.pagination?.total ?? notes.handoffNotes.length} handoff notes`
+        : i18n.locale === "zh-CN"
+          ? "先生成研究运行"
+          : "Run required"
+      : notes.error ?? (i18n.locale === "zh-CN" ? "本地核心不可用" : "Core unavailable");
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "交接备注" : "Handoff Notes"}
+      subtitle={runId ? `${i18n.locale === "zh-CN" ? "绑定运行" : "Bound run"} · ${runId}` : i18n.locale === "zh-CN" ? "等待研究运行" : "Waiting for run"}
+      className={className}
+    >
+      <div className="handoff-note-panel">
+        <div className="handoff-note-list">
+          {recentNotes.length ? (
+            recentNotes.map((note) => (
+              <article className="handoff-note-item" key={note.noteId}>
+                <div>
+                  <strong>{note.author || (i18n.locale === "zh-CN" ? "本地操作者" : "Local operator")}</strong>
+                  <span>{new Date(note.updatedAt).toLocaleString(i18n.locale === "zh-CN" ? "zh-CN" : "en-US")}</span>
+                </div>
+                <p>{note.body}</p>
+              </article>
+            ))
+          ) : (
+            <div className="handoff-note-empty">
+              {runId
+                ? i18n.locale === "zh-CN"
+                  ? "还没有交接备注。"
+                  : "No handoff notes yet."
+                : i18n.locale === "zh-CN"
+                  ? "先运行流水线，备注会绑定到审计运行。"
+                  : "Run the pipeline first; notes bind to the audited run."}
+            </div>
+          )}
+        </div>
+        <textarea
+          aria-label={i18n.locale === "zh-CN" ? "交接备注" : "Handoff note"}
+          disabled={!runId}
+          maxLength={20000}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={
+            i18n.locale === "zh-CN"
+              ? "给明天的自己或同伴写清：需要复核什么、不能做什么、下一步证据在哪里。"
+              : "Tell the next operator what to recheck, what not to do, and where the evidence lives."
+          }
+          value={draft}
+        />
+        <div className="research-note-meta">
+          <span>{statusText}</span>
+          <button disabled={isSaving || !runId || !draft.trim()} onClick={onSave} type="button">
+            {isSaving ? (i18n.locale === "zh-CN" ? "保存中" : "Saving") : i18n.locale === "zh-CN" ? "保存交接" : "Save handoff"}
+          </button>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function PlatformSettingsPanel({
   adapterCertificationApplyConfirmations,
   adapterCertificationApplyRows,
   adapterCertificationRows,
+  adapterChainHealthRollups,
   adapterHealthProbeRows,
   adapterRows,
   adapterLedgerRows,
@@ -13462,6 +14164,7 @@ function PlatformSettingsPanel({
   adapterCertificationApplyConfirmations: Record<string, ExecutionAdapterCertificationApplyConfirmations>;
   adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
+  adapterChainHealthRollups: ExecutionAdapterChainHealthRollup[];
   adapterHealthProbeRows: ExecutionAdapterHealthProbeRow[];
   adapterRows: BrokerAdapterRow[];
   adapterLedgerRows: ExecutionAdapterLedgerRow[];
@@ -13824,6 +14527,13 @@ function PlatformSettingsPanel({
               : "Waiting for the local core to return the ccxt sandbox/testnet read-only health probe."}
           </p>
         )}
+      </div>
+      <div className="settings-adapter-chain-health">
+        <div className="paper-blotter-title">
+          <span>{i18n.locale === "zh-CN" ? "实盘前链路总览" : "Pre-live chain overview"}</span>
+          <strong>{adapterChainHealthRollups.length}</strong>
+        </div>
+        <AdapterChainHealthList i18n={i18n} rollups={adapterChainHealthRollups} />
       </div>
       {adapterLedgerRows.length ? (
         <div className="adapter-ledger-list">
@@ -16008,6 +16718,663 @@ function marketRefreshOverrideAuditLiveBoundaryLabel(i18n: AppI18n, liveTradingA
     return i18n.locale === "zh-CN" ? "实盘允许" : "Live allowed";
   }
   return i18n.locale === "zh-CN" ? "实盘阻断" : "Live blocked";
+}
+
+function EvidencePackageControlRoomPanel({
+  className,
+  controlRoom,
+  i18n,
+  onRunAction
+}: {
+  className?: string;
+  controlRoom: EvidencePackageControlRoom;
+  i18n: AppI18n;
+  onRunAction: (row: EvidencePackageControlRoomRow) => void;
+}) {
+  const summary = controlRoom.summary;
+  const visibleRows = controlRoom.rows.slice(0, 8);
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "证据包控制室" : "Evidence Package Control Room"}
+      subtitle={i18n.locale === "zh-CN" ? "导出包、签名、导入审计与 P0 验收总览" : "Export packages, signatures, imports, and P0 acceptance"}
+      className={className}
+    >
+      <div className="evidence-package-control-room">
+        <div className="evidence-package-control-summary">
+          <span>
+            {i18n.locale === "zh-CN" ? "总数" : "Total"} <strong>{summary.total}</strong>
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "需处理" : "Needs action"} <strong>{summary.needsAction}</strong>
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "可归档" : "Archive-ready"} <strong>{summary.readyForArchive}</strong>
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "完整" : "Complete"} <strong>{summary.complete}</strong>
+          </span>
+          <span title={summary.latestUpdatedAt || "n/a"}>
+            {i18n.locale === "zh-CN" ? "签名通过" : "Signed"} <strong>{summary.signedRuns}</strong>
+          </span>
+        </div>
+        <div className="evidence-package-control-list">
+          {visibleRows.length ? (
+            visibleRows.map((row) => (
+              <article className={`evidence-package-control-row ${row.tone} ${row.status}`} key={row.id}>
+                <div className="evidence-package-control-main">
+                  <span>{evidencePackageControlStatusLabel(i18n, row.status)}</span>
+                  <strong>{row.runId}</strong>
+                  <p>{row.context}</p>
+                </div>
+                <div className="evidence-package-control-gates">
+                  <span title={row.packageDetail}>
+                    {i18n.locale === "zh-CN" ? "包" : "Package"} ·{" "}
+                    {evidencePackageControlPackageStatusLabel(i18n, row.packageStatus)}
+                  </span>
+                  <span title={row.signatureDetail}>
+                    {i18n.locale === "zh-CN" ? "签名" : "Signature"} ·{" "}
+                    {evidencePackageControlSignatureStatusLabel(i18n, row.signatureStatus)}
+                  </span>
+                  <span title={row.importDetail}>
+                    {i18n.locale === "zh-CN" ? "导入" : "Import"} ·{" "}
+                    {evidencePackageControlImportStatusLabel(i18n, row.importStatus)}
+                  </span>
+                  <span title={row.acceptanceDetail}>
+                    {i18n.locale === "zh-CN" ? "验收" : "Acceptance"} ·{" "}
+                    {p0AcceptanceReviewStatusLabel(i18n, row.acceptanceStatus)}
+                  </span>
+                </div>
+                <button onClick={() => onRunAction(row)} type="button">
+                  <Search size={13} />
+                  <span>{evidencePackageControlActionLabel(i18n, row.nextActionId)}</span>
+                </button>
+              </article>
+            ))
+          ) : (
+            <article className="evidence-package-control-row empty">
+              <div className="evidence-package-control-main">
+                <span>{i18n.locale === "zh-CN" ? "等待证据" : "Awaiting evidence"}</span>
+                <strong>{i18n.locale === "zh-CN" ? "暂无可检查的 run" : "No runs to inspect"}</strong>
+                <p>{i18n.locale === "zh-CN" ? "先生成复现包、签名报告或导入审计事件。" : "Generate export packages, signed reports, or import audit events first."}</p>
+              </div>
+            </article>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function evidencePackageControlStatusLabel(
+  i18n: AppI18n,
+  status: EvidencePackageControlRoomRow["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        acceptance_missing: "P0 acceptance missing",
+        complete: "Complete evidence package",
+        import_blocked: "Import blocked",
+        package_blocked: "Export package blocked",
+        ready_for_archive: "Ready for archive",
+        stale_signature: "Signature stale or invalid",
+        unsigned: "Unsigned report"
+      } satisfies Record<EvidencePackageControlRoomRow["status"], string>
+    )[status];
+  }
+  return (
+    {
+      acceptance_missing: "P0 验收缺失",
+      complete: "证据包完整",
+      import_blocked: "导入阻断",
+      package_blocked: "复现包阻断",
+      ready_for_archive: "可归档",
+      stale_signature: "签名过期或无效",
+      unsigned: "报告未签名"
+    } satisfies Record<EvidencePackageControlRoomRow["status"], string>
+  )[status];
+}
+
+function evidencePackageControlActionLabel(
+  i18n: AppI18n,
+  actionId: EvidencePackageControlRoomRow["nextActionId"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        "inspect-package": "Inspect package",
+        "open-acceptance": "Open acceptance",
+        "open-archive": "Open archive evidence",
+        "open-import-audit": "Open import audit",
+        "open-signature-ledger": "Open signature ledger"
+      } satisfies Record<EvidencePackageControlRoomRow["nextActionId"], string>
+    )[actionId];
+  }
+  return (
+    {
+      "inspect-package": "查看复现包",
+      "open-acceptance": "查看验收",
+      "open-archive": "打开归档证据",
+      "open-import-audit": "查看导入审计",
+      "open-signature-ledger": "查看签名账本"
+    } satisfies Record<EvidencePackageControlRoomRow["nextActionId"], string>
+  )[actionId];
+}
+
+function evidencePackageControlPackageStatusLabel(
+  i18n: AppI18n,
+  status: EvidencePackageControlRoomRow["packageStatus"]
+): string {
+  if (status === "ready") {
+    return i18n.locale === "zh-CN" ? "就绪" : "ready";
+  }
+  if (status === "review") {
+    return i18n.locale === "zh-CN" ? "待复核" : "review";
+  }
+  if (status === "blocked") {
+    return i18n.locale === "zh-CN" ? "阻断" : "blocked";
+  }
+  return i18n.locale === "zh-CN" ? "缺失" : "missing";
+}
+
+function evidencePackageControlSignatureStatusLabel(
+  i18n: AppI18n,
+  status: EvidencePackageControlRoomRow["signatureStatus"]
+): string {
+  if (status === "verified") {
+    return i18n.locale === "zh-CN" ? "已验证" : "verified";
+  }
+  if (status === "signed") {
+    return i18n.locale === "zh-CN" ? "已签名" : "signed";
+  }
+  if (status === "revoked") {
+    return i18n.locale === "zh-CN" ? "已撤销" : "revoked";
+  }
+  if (status === "invalid") {
+    return i18n.locale === "zh-CN" ? "无效" : "invalid";
+  }
+  if (status === "unsigned") {
+    return i18n.locale === "zh-CN" ? "未签名" : "unsigned";
+  }
+  return i18n.locale === "zh-CN" ? "缺失" : "missing";
+}
+
+function evidencePackageControlImportStatusLabel(
+  i18n: AppI18n,
+  status: EvidencePackageControlRoomRow["importStatus"]
+): string {
+  if (status === "none") {
+    return i18n.locale === "zh-CN" ? "未导入" : "none";
+  }
+  return researchImportAuditStageLabel(i18n, status);
+}
+
+function PaperExecutionReplayGatePanel({
+  className,
+  gate,
+  i18n,
+  onOpenAudit,
+  onOpenPortfolio
+}: {
+  className?: string;
+  gate: PaperExecutionReplayGate;
+  i18n: AppI18n;
+  onOpenAudit?: () => void;
+  onOpenPortfolio?: () => void;
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "纸面执行回放闸门" : "Paper Replay Gate"}
+      subtitle={i18n.locale === "zh-CN" ? "回放完整性 · 实盘前阻断" : "Replay integrity · pre-live blocker"}
+      className={className}
+      action={
+        <div className="paper-replay-gate-actions">
+          {onOpenPortfolio ? (
+            <button onClick={onOpenPortfolio} type="button">
+              <WalletCards size={13} />
+              <span>{i18n.locale === "zh-CN" ? "组合证据" : "Portfolio"}</span>
+            </button>
+          ) : null}
+          {onOpenAudit ? (
+            <button onClick={onOpenAudit} type="button">
+              <ShieldCheck size={13} />
+              <span>{i18n.locale === "zh-CN" ? "审计证据" : "Audit"}</span>
+            </button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className={`paper-replay-gate ${gate.tone}`}>
+        <div className="paper-replay-gate-summary">
+          <div>
+            <span>{paperReplayGateStatusLabel(i18n, gate.status)}</span>
+            <strong>{paperReplayGateHeadline(i18n, gate)}</strong>
+            <p>{paperReplayGateDetail(i18n, gate)}</p>
+          </div>
+          <em>
+            {gate.passedCount}/{gate.totalCount}
+          </em>
+        </div>
+        <div className="paper-replay-gate-metrics">
+          <span>
+            {i18n.locale === "zh-CN" ? "单标的成交" : "Single fills"} · {gate.metrics.filledPaperOrders}
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "组合成交" : "Portfolio fills"} · {gate.metrics.portfolioFilledOrders}
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "适配器证据" : "Adapter evidence"} · {gate.metrics.adapterPaperExecutions}
+          </span>
+          <span>
+            {i18n.locale === "zh-CN" ? "边界" : "Boundary"} ·{" "}
+            {gate.liveTradingAllowed || gate.orderSubmissionEnabled
+              ? i18n.locale === "zh-CN"
+                ? "需复核"
+                : "review"
+              : i18n.locale === "zh-CN"
+                ? "实盘关闭"
+                : "live blocked"}
+          </span>
+        </div>
+        <div className="paper-replay-gate-items">
+          {gate.items.map((item) => (
+            <article className={`paper-replay-gate-item ${item.tone}`} key={item.id}>
+              <span>{paperReplayGateItemLabel(i18n, item.id, item.label)}</span>
+              <strong>{paperReplayGateItemStatusLabel(i18n, item.status)}</strong>
+              <p>{paperReplayGateItemDetail(i18n, item)}</p>
+              <em>{item.evidence}</em>
+            </article>
+          ))}
+        </div>
+        <small>{paperReplayGateBoundaryLabel(i18n, gate)}</small>
+      </div>
+    </Panel>
+  );
+}
+
+function paperReplayGateStatusLabel(i18n: AppI18n, status: PaperExecutionReplayGate["status"]): string {
+  if (status === "replay_ready") {
+    return i18n.locale === "zh-CN" ? "回放就绪" : "Replay ready";
+  }
+  if (status === "stale") {
+    return i18n.locale === "zh-CN" ? "证据过期" : "Stale";
+  }
+  if (status === "partial") {
+    return i18n.locale === "zh-CN" ? "证据不完整" : "Partial";
+  }
+  return i18n.locale === "zh-CN" ? "回放阻断" : "Blocked";
+}
+
+function paperReplayGateHeadline(i18n: AppI18n, gate: PaperExecutionReplayGate): string {
+  if (i18n.locale !== "zh-CN") {
+    return gate.headline;
+  }
+  if (gate.status === "replay_ready") {
+    return "纸面执行可回放";
+  }
+  if (gate.status === "stale") {
+    return "回放证据绑定旧运行";
+  }
+  if (gate.status === "partial") {
+    return "回放证据仍缺项";
+  }
+  return "纸面执行不可回放";
+}
+
+function paperReplayGateDetail(i18n: AppI18n, gate: PaperExecutionReplayGate): string {
+  if (i18n.locale !== "zh-CN") {
+    return gate.detail;
+  }
+  if (gate.status === "replay_ready") {
+    return "单标的、组合、状态历史和适配器模拟执行证据已对齐；仍只允许人工复核。";
+  }
+  if (gate.currentBlockerId) {
+    return `${paperReplayGateItemLabel(i18n, gate.currentBlockerId, gate.currentBlockerLabel ?? gate.currentBlockerId)} 待处理。`;
+  }
+  return "等待纸面执行回放证据。";
+}
+
+function paperReplayGateItemLabel(i18n: AppI18n, id: string, fallback: string): string {
+  if (i18n.locale !== "zh-CN") {
+    return fallback;
+  }
+  const labels: Record<string, string> = {
+    "single-paper-execution": "单标的纸面执行",
+    "portfolio-order-ledger": "组合委托账本",
+    "portfolio-approval-ledger": "组合审批账本",
+    "portfolio-simulation-ledger": "组合模拟成交",
+    "portfolio-state-history": "状态历史",
+    "portfolio-replay": "组合回放",
+    "adapter-paper-execution": "适配器模拟执行",
+    "live-boundary": "实盘边界"
+  };
+  return labels[id] ?? fallback;
+}
+
+function paperReplayGateItemStatusLabel(
+  i18n: AppI18n,
+  status: PaperExecutionReplayGate["items"][number]["status"]
+): string {
+  if (status === "passed") {
+    return i18n.locale === "zh-CN" ? "通过" : "passed";
+  }
+  if (status === "stale") {
+    return i18n.locale === "zh-CN" ? "过期" : "stale";
+  }
+  if (status === "review") {
+    return i18n.locale === "zh-CN" ? "复核" : "review";
+  }
+  return i18n.locale === "zh-CN" ? "阻断" : "blocked";
+}
+
+function paperReplayGateItemDetail(i18n: AppI18n, item: PaperExecutionReplayGate["items"][number]): string {
+  if (i18n.locale !== "zh-CN") {
+    return item.detail;
+  }
+  if (item.status === "passed") {
+    return "证据已记录并保持纸面盘边界。";
+  }
+  if (item.status === "stale") {
+    return "证据不属于当前审计运行。";
+  }
+  if (item.status === "review") {
+    return "存在回放警告，需要人工复核。";
+  }
+  return "缺少可回放证据或边界不满足。";
+}
+
+function paperReplayGateBoundaryLabel(i18n: AppI18n, gate: PaperExecutionReplayGate): string {
+  if (gate.replayReady) {
+    return i18n.locale === "zh-CN"
+      ? "回放完整只代表可进入人工复核；直接下单和实盘交易仍关闭。"
+      : "Replay readiness only allows manual review; direct order submission and live trading stay disabled.";
+  }
+  return i18n.locale === "zh-CN"
+    ? "实盘前复核会被当前回放闸门阻断。"
+    : "Pre-live review is blocked by the current replay gate.";
+}
+
+function AdapterChainHealthPanel({
+  className,
+  i18n,
+  onOpenSettings,
+  rollups
+}: {
+  className?: string;
+  i18n: AppI18n;
+  onOpenSettings?: () => void;
+  rollups: ExecutionAdapterChainHealthRollup[];
+}) {
+  const readyCount = rollups.filter((row) => row.status === "paper_ready").length;
+  const blockedCount = rollups.filter((row) => row.status === "blocked").length;
+  const inProgressCount = rollups.filter((row) => row.status === "in_progress").length;
+  const summary =
+    i18n.locale === "zh-CN"
+      ? `${readyCount} 条模拟链路就绪 · ${blockedCount} 条阻断 · ${inProgressCount} 条收集中`
+      : `${readyCount} paper-ready · ${blockedCount} blocked · ${inProgressCount} in progress`;
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "适配器链路健康" : "Adapter Chain Health"}
+      subtitle={i18n.locale === "zh-CN" ? "19 段实盘前证据链" : "19-step pre-live evidence chain"}
+      className={className}
+      action={
+        onOpenSettings ? (
+          <button className="adapter-chain-health-settings-button" onClick={onOpenSettings} type="button">
+            <GitBranch size={13} />
+            <span>{i18n.locale === "zh-CN" ? "配置" : "Settings"}</span>
+          </button>
+        ) : null
+      }
+    >
+      <div className="adapter-chain-health-summary">
+        <strong>{summary}</strong>
+        <span>
+          {i18n.locale === "zh-CN"
+            ? "即使链路完整，也只进入人工复核；直接下单和实盘交易保持关闭。"
+            : "A complete chain only reaches manual review; direct order submission and live trading stay disabled."}
+        </span>
+      </div>
+      <AdapterChainHealthList i18n={i18n} rollups={rollups} />
+    </Panel>
+  );
+}
+
+function AdapterChainHealthList({
+  i18n,
+  rollups
+}: {
+  i18n: AppI18n;
+  rollups: ExecutionAdapterChainHealthRollup[];
+}) {
+  if (!rollups.length) {
+    return (
+      <div className="adapter-chain-health">
+        <p className="empty-state">
+          {i18n.locale === "zh-CN"
+            ? "暂无实盘适配器链路；模拟盘仍可运行，实盘保持关闭。"
+            : "No live adapter chain yet; paper trading can continue while live trading stays blocked."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="adapter-chain-health">
+      {rollups.slice(0, 4).map((rollup) => {
+        const marketLabel = rollup.market === "multi" ? (i18n.locale === "zh-CN" ? "多市场" : "Multi-market") : i18n.marketLabel(rollup.market);
+        return (
+          <article className={`adapter-chain-health-row ${rollup.tone}`} key={rollup.id}>
+            <div className="adapter-chain-health-head">
+              <div>
+                <span>{adapterChainHealthStatusLabel(i18n, rollup.status)}</span>
+                <strong>{rollup.adapterName}</strong>
+                <p>{adapterChainHealthDetailLabel(i18n, rollup)}</p>
+              </div>
+              <em>
+                {rollup.completedStageCount}/{rollup.totalStageCount}
+              </em>
+            </div>
+            <div className="adapter-chain-health-meta">
+              <span>
+                {i18n.locale === "zh-CN" ? "市场" : "Market"} · {marketLabel}
+              </span>
+              <span>
+                {i18n.locale === "zh-CN" ? "阻塞点" : "Blocker"} ·{" "}
+                {rollup.blockerStageId
+                  ? adapterChainHealthStageLabel(i18n, rollup.blockerStageId, rollup.blockerLabel)
+                  : i18n.locale === "zh-CN"
+                    ? "无"
+                    : "none"}
+              </span>
+              <span>
+                {i18n.locale === "zh-CN" ? "最近证据" : "Latest evidence"} ·{" "}
+                {rollup.latestEvidenceId ?? (i18n.locale === "zh-CN" ? "暂无" : "none")}
+              </span>
+              <span>
+                {i18n.locale === "zh-CN" ? "边界" : "Boundary"} ·{" "}
+                {rollup.orderSubmissionEnabled || rollup.liveTradingAllowed
+                  ? i18n.locale === "zh-CN"
+                    ? "需复核"
+                    : "review"
+                  : i18n.locale === "zh-CN"
+                    ? "实盘关闭"
+                    : "live blocked"}
+              </span>
+            </div>
+            <div className="adapter-chain-health-stages">
+              {rollup.stages.map((stage) => (
+                <span
+                  className={`adapter-chain-health-stage ${stage.status}`}
+                  key={`${rollup.id}-${stage.id}`}
+                  title={`${adapterChainHealthStageLabel(i18n, stage.id, stage.label)} · ${adapterChainHealthStageStatusLabel(
+                    i18n,
+                    stage.status
+                  )} · ${stage.detail}`}
+                >
+                  {adapterChainHealthStageLabel(i18n, stage.id, stage.label)}
+                </span>
+              ))}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function adapterChainHealthStatusLabel(
+  i18n: AppI18n,
+  status: ExecutionAdapterChainHealthRollup["status"]
+): string {
+  if (status === "paper_ready") {
+    return i18n.locale === "zh-CN" ? "模拟链路就绪" : "Paper-ready";
+  }
+  if (status === "blocked") {
+    return i18n.locale === "zh-CN" ? "链路阻断" : "Blocked";
+  }
+  if (status === "in_progress") {
+    return i18n.locale === "zh-CN" ? "证据收集中" : "In progress";
+  }
+  return i18n.locale === "zh-CN" ? "未启动" : "Not started";
+}
+
+function adapterChainHealthDetailLabel(i18n: AppI18n, rollup: ExecutionAdapterChainHealthRollup): string {
+  if (i18n.locale !== "zh-CN") {
+    return rollup.detail;
+  }
+  if (rollup.status === "paper_ready") {
+    return "模拟盘链路完整；仅允许人工复核，实盘仍关闭。";
+  }
+  if (rollup.blockerStageId) {
+    return `${adapterChainHealthStageLabel(i18n, rollup.blockerStageId, rollup.blockerLabel)} 待处理；实盘仍关闭。`;
+  }
+  return "暂无实盘前证据；从密钥引用开始记录，实盘仍关闭。";
+}
+
+function adapterChainHealthStageStatusLabel(
+  i18n: AppI18n,
+  status: ExecutionAdapterChainHealthRollup["stages"][number]["status"]
+): string {
+  if (status === "recorded") {
+    return i18n.locale === "zh-CN" ? "已记录" : "recorded";
+  }
+  if (status === "blocked") {
+    return i18n.locale === "zh-CN" ? "阻断" : "blocked";
+  }
+  if (status === "unsafe") {
+    return i18n.locale === "zh-CN" ? "不安全" : "unsafe";
+  }
+  return i18n.locale === "zh-CN" ? "缺失" : "missing";
+}
+
+function adapterChainHealthStageLabel(i18n: AppI18n, stageId: string, fallback?: string | null): string {
+  if (i18n.locale !== "zh-CN") {
+    return fallback || stageId;
+  }
+  const labels: Record<string, string> = {
+    "secret-reference": "密钥引用",
+    "secret-materialization": "密钥物化",
+    "secret-manifest-validation": "清单校验",
+    "environment-binding": "环境绑定",
+    "runtime-reload-plan": "重载计划",
+    "runtime-reload-execution": "重载执行",
+    "runtime-reload-acceptance": "重载验收",
+    "orchestration-dry-run": "编排预演",
+    "orchestration-execution": "编排执行",
+    "human-confirmation": "人工确认",
+    "sandbox-probe-plan": "沙箱计划",
+    "sandbox-probe-execution": "沙箱探针",
+    "sandbox-probe-review": "探针复核",
+    "production-route-review": "路由复核",
+    "sandbox-order-schema-dry-run": "订单 Schema",
+    "paper-order-lifecycle": "模拟订单",
+    "paper-route-runbook": "路由手册",
+    "ops-state": "运行状态",
+    "adapter-paper-execution": "模拟成交"
+  };
+  return labels[stageId] ?? fallback ?? stageId;
+}
+
+function P2PreLiveAcceptancePanel({
+  className,
+  headline,
+  i18n,
+  isRefreshing,
+  onOpenAudit,
+  onRefresh,
+  summary
+}: {
+  className?: string;
+  headline: string;
+  i18n: AppI18n;
+  isRefreshing: boolean;
+  onOpenAudit: () => void;
+  onRefresh: () => void;
+  summary: P2PreLiveAcceptanceSummary;
+}) {
+  const context = [summary.market ? i18n.marketLabel(summary.market) : null, summary.symbol, summary.timeframe]
+    .filter(Boolean)
+    .join(" · ");
+  const gateLabel =
+    summary.totalGateCount > 0
+      ? `${summary.passedGateCount}/${summary.totalGateCount}`
+      : `${summary.checkCount}/${summary.requiredCheckCount}`;
+  const blockerLabel =
+    summary.blockerIds.length > 0
+      ? summary.blockerIds.slice(0, 3).join(", ")
+      : i18n.locale === "zh-CN"
+        ? "无阻断项"
+        : "no blockers";
+  const auditLabel =
+    summary.auditEventIds.length > 0
+      ? summary.auditEventIds.slice(0, 2).join(", ")
+      : i18n.locale === "zh-CN"
+        ? "待写入审计"
+        : "audit pending";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 实盘前验收" : "P2 Pre-live Acceptance"}
+      subtitle={i18n.locale === "zh-CN" ? "回读 manifest，保持下单与实盘阻断" : "Manifest readback with order and live trading blocked"}
+      className={className}
+      action={
+        <div className="p2-pre-live-acceptance-actions">
+          <button disabled={isRefreshing} onClick={onRefresh} type="button">
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计复核" : "Audit review"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-pre-live-acceptance ${summary.tone}`}>
+        <div className="p2-pre-live-acceptance-head">
+          <div>
+            <span>{p2PreLiveAcceptanceSummaryStatusLabel(i18n, summary)}</span>
+            <strong>{headline}</strong>
+            <p>{p2PreLiveAcceptanceSummaryDetail(i18n, summary)}</p>
+          </div>
+          <em>{gateLabel}</em>
+        </div>
+        <div className="p2-pre-live-acceptance-meta">
+          <span title={summary.sourcePath}>
+            {i18n.locale === "zh-CN" ? "来源" : "Source"} · {summary.sourcePath}
+          </span>
+          <span>{i18n.locale === "zh-CN" ? "上下文" : "Context"} · {context || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "适配器" : "Adapter"} · {summary.adapterId || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "清单" : "Checklist"} · {summary.checklistStatus || summary.state}</span>
+          <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {blockerLabel}</span>
+          <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"} · {auditLabel}</span>
+          <span>{p2PreLiveAcceptanceBoundaryLabel(i18n, summary)}</span>
+        </div>
+      </div>
+    </Panel>
+  );
 }
 
 function P0AcceptanceReviewPanel({
@@ -18534,6 +19901,7 @@ function researchExportPreviewLabel(i18n: AppI18n, row: ResearchRunExportPreview
       "preparation-evidence": "准备证据",
       "strategy-config": "策略配置",
       "research-note": "研究笔记",
+      "handoff-notes": "交接备注",
       "backtest-trades": "回测流水",
       "paper-executions": "模拟执行",
       "promotion-candidate": "晋级候选",
@@ -18625,6 +19993,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       backtest: "回测回放",
       "backtest-report": "回测报告",
       "research-note": "研究笔记",
+      "handoff-notes": "交接备注",
       "paper-executions": "模拟执行",
       "adapter-paper-executions": "适配器模拟执行",
       "portfolio-paper-orders": "组合模拟委托",
@@ -18739,6 +20108,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "preparation-evidence": "准备证据",
       "strategy-revision": "策略版本",
       "research-note": "研究笔记",
+      "handoff-notes": "交接备注",
       "paper-executions": "模拟执行",
       "adapter-paper-executions": "适配器模拟执行",
       "portfolio-paper-orders": "组合模拟委托",
@@ -19983,12 +21353,14 @@ function ExecutionPanel({
   onApprovePortfolioOrder,
   onFocusPortfolioOrderStateAuditQuery,
   onPortfolioRouteRiskTemplateChange,
+  onRunPortfolioPaperOpsAction,
   onRejectPortfolioOrder,
   onSimulatePortfolioOrder,
   onSimulatePortfolioOrderBatch,
   onSubmit,
   portfolioOrderApprovalRows = [],
   portfolioOrderLatestSimulationSummary = null,
+  portfolioPaperOpsQueue = null,
   portfolioOrderReplayPositionRows = [],
   portfolioOrderReplaySummaryTiles = [],
   portfolioOrderRows = [],
@@ -20011,12 +21383,14 @@ function ExecutionPanel({
   onApprovePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onFocusPortfolioOrderStateAuditQuery?: (query: string) => void;
   onPortfolioRouteRiskTemplateChange?: (field: keyof PortfolioPaperOrderRouteRiskTemplate, value: number) => void;
+  onRunPortfolioPaperOpsAction?: (row: PortfolioPaperOpsQueueRow) => void;
   onRejectPortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSimulatePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSimulatePortfolioOrderBatch?: () => void;
   onSubmit?: () => void;
   portfolioOrderApprovalRows?: PortfolioPaperOrderApprovalRow[];
   portfolioOrderLatestSimulationSummary?: PortfolioPaperOrderLatestSimulationSummary | null;
+  portfolioPaperOpsQueue?: PortfolioPaperOpsQueue | null;
   portfolioOrderReplayPositionRows?: PortfolioPaperOrderReplayPositionRow[];
   portfolioOrderReplaySummaryTiles?: PortfolioPaperOrderReplaySummaryTile[];
   portfolioOrderRows?: PortfolioPaperOrderLifecycleRow[];
@@ -20087,6 +21461,14 @@ function ExecutionPanel({
             />
           ))}
         </div>
+      ) : null}
+      {portfolioPaperOpsQueue?.rows.length ? (
+        <PortfolioPaperOpsQueuePanel
+          i18n={i18n}
+          onRunAction={onRunPortfolioPaperOpsAction}
+          pendingActionId={simulatingPortfolioOrderId}
+          queue={portfolioPaperOpsQueue}
+        />
       ) : null}
       <div className="gate-list">
         {workspace.execution.gates.map((gate) => (
@@ -20521,6 +21903,201 @@ function ScannerWorkspace({
   );
 }
 
+function ResearchOpsQueuePanel({
+  className = "module-workspace-panel",
+  i18n,
+  isRunningAction,
+  onRunAction,
+  queue
+}: {
+  className?: string;
+  i18n: AppI18n;
+  isRunningAction: boolean;
+  onRunAction: (row: ResearchOpsQueueRow) => void;
+  queue: ResearchOpsQueue;
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "研究运营队列" : "Research Ops Queue"}
+      subtitle={i18n.locale === "zh-CN" ? "自选列表下一步行动" : "Next actions from watchlist evidence"}
+      className={className}
+    >
+      <div className={`research-ops-summary ${queue.summary.tone}`}>
+        <strong>{queue.summary.headline}</strong>
+        <span>{queue.summary.detail}</span>
+      </div>
+      <div className="research-ops-table">
+        <div className="research-ops-row research-ops-head">
+          <span>{i18n.locale === "zh-CN" ? "标的" : "Symbol"}</span>
+          <span>{i18n.locale === "zh-CN" ? "状态" : "State"}</span>
+          <span>{i18n.locale === "zh-CN" ? "证据" : "Evidence"}</span>
+          <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
+        </div>
+        {queue.rows.map((row) => (
+          <div className={`research-ops-row ${row.tone} ${row.selected ? "selected" : ""}`} key={row.id}>
+            <span>
+              <strong>{row.symbol}</strong>
+              <em>{row.name}</em>
+            </span>
+            <span>
+              <b>{researchOpsStageLabel(i18n, row.stage)}</b>
+              <em>{row.timeframe}</em>
+            </span>
+            <span title={row.detail}>
+              <b>{row.latestRunId ?? row.latestCacheRunId ?? row.cacheSource}</b>
+              <em>{row.cacheRows} rows</em>
+            </span>
+            <button disabled={isRunningAction} onClick={() => onRunAction(row)} type="button">
+              <Play size={13} />
+              {researchOpsActionLabel(i18n, row.nextActionLabel)}
+            </button>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function researchOpsStageLabel(i18n: AppI18n, stage: ResearchOpsQueueRow["stage"]): string {
+  if (i18n.locale === "zh-CN") {
+    return {
+      needs_data: "需修数据",
+      ready_for_pipeline: "可跑流水线",
+      needs_ai_review: "需 AI 评审",
+      paper_candidate: "模拟候选"
+    }[stage];
+  }
+  return {
+    needs_data: "Needs data",
+    ready_for_pipeline: "Pipeline ready",
+    needs_ai_review: "Needs AI review",
+    paper_candidate: "Paper candidate"
+  }[stage];
+}
+
+function researchOpsActionLabel(i18n: AppI18n, label: string): string {
+  if (i18n.locale === "zh-CN") {
+    return (
+      {
+        "Refresh data": "刷新数据",
+        "Run pipeline": "运行流水线",
+        "Run AI review": "运行 AI 评审",
+        "Stage paper simulation": "准备模拟"
+      }[label] ?? label
+    );
+  }
+  return label;
+}
+
+function PortfolioPaperOpsQueuePanel({
+  i18n,
+  onRunAction,
+  pendingActionId = null,
+  queue
+}: {
+  i18n: AppI18n;
+  onRunAction?: (row: PortfolioPaperOpsQueueRow) => void;
+  pendingActionId?: string | null;
+  queue: PortfolioPaperOpsQueue;
+}) {
+  return (
+    <div className="portfolio-paper-ops-queue">
+      <div className="portfolio-paper-ops-summary">
+        <div>
+          <span>{i18n.locale === "zh-CN" ? "组合纸面运营队列" : "Portfolio Paper Ops Queue"}</span>
+          <strong>
+            {queue.summary.readyForSimulationCount}
+            {i18n.locale === "zh-CN" ? " 个可模拟" : " ready"}
+          </strong>
+        </div>
+        <p>
+          {i18n.locale === "zh-CN"
+            ? `待风控 ${queue.summary.waitingRiskCount} · 待人工 ${queue.summary.waitingHumanCount} · 已模拟 ${queue.summary.simulatedCount} · 过期 ${queue.summary.staleCount}`
+            : `Risk ${queue.summary.waitingRiskCount} · Human ${queue.summary.waitingHumanCount} · Simulated ${queue.summary.simulatedCount} · Stale ${queue.summary.staleCount}`}
+        </p>
+        <em>{queue.summary.paperOnly && !queue.summary.liveTradingAllowed ? "paper-only / live blocked" : "live route review"}</em>
+      </div>
+      <div className="portfolio-paper-ops-table">
+        <div className="portfolio-paper-ops-row portfolio-paper-ops-head">
+          <span>{i18n.locale === "zh-CN" ? "委托" : "Order"}</span>
+          <span>{i18n.locale === "zh-CN" ? "阶段" : "Stage"}</span>
+          <span>{i18n.locale === "zh-CN" ? "证据" : "Evidence"}</span>
+          <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
+        </div>
+        {queue.rows.map((row) => {
+          const actionId = row.orderId ? `${row.batchId}:${row.orderId}` : row.id;
+          const isPending = pendingActionId === actionId;
+          return (
+            <div className={`portfolio-paper-ops-row ${row.tone}`} key={row.id}>
+              <span>
+                <strong>{row.orderId ? row.symbol : row.portfolioName}</strong>
+                <em>{row.orderId ?? row.batchId}</em>
+              </span>
+              <span>
+                <b>{portfolioPaperOpsStageLabel(i18n, row.stage)}</b>
+                <em>{row.statusLabel}</em>
+              </span>
+              <span title={row.detail}>
+                <b>{row.latestStateLabel}</b>
+                <em>{row.adapterEvidenceLabel}</em>
+              </span>
+              <button
+                disabled={!onRunAction || !row.canRunAction || isPending}
+                onClick={() => onRunAction?.(row)}
+                title={row.focusQuery}
+                type="button"
+              >
+                {isPending ? <RefreshCw className="spin" size={13} /> : <Play size={13} />}
+                {portfolioPaperOpsActionLabel(i18n, row.nextActionId)}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function portfolioPaperOpsStageLabel(i18n: AppI18n, stage: PortfolioPaperOpsQueueRow["stage"]): string {
+  if (i18n.locale === "zh-CN") {
+    return {
+      waiting_risk: "待风控",
+      waiting_human: "待人工",
+      ready_for_simulation: "可模拟",
+      simulated: "已模拟",
+      rejected: "已拒绝",
+      stale: "证据过期"
+    }[stage];
+  }
+  return {
+    waiting_risk: "Risk review",
+    waiting_human: "Human review",
+    ready_for_simulation: "Ready",
+    simulated: "Simulated",
+    rejected: "Rejected",
+    stale: "Stale"
+  }[stage];
+}
+
+function portfolioPaperOpsActionLabel(i18n: AppI18n, action: PortfolioPaperOpsQueueRow["nextActionId"]): string {
+  if (i18n.locale === "zh-CN") {
+    return {
+      "open-portfolio": "打开组合",
+      "review-order": "定位复核",
+      "open-approval": "查看审批",
+      "simulate-order": "模拟成交",
+      "replay-simulation": "查看回放"
+    }[action];
+  }
+  return {
+    "open-portfolio": "Open",
+    "review-order": "Review",
+    "open-approval": "Approval",
+    "simulate-order": "Simulate",
+    "replay-simulation": "Replay"
+  }[action];
+}
+
 function PortfolioWorkspace({
   approvingPortfolioOrderId = null,
   className = "module-workspace-panel",
@@ -20539,6 +22116,7 @@ function PortfolioWorkspace({
   onRecordPortfolioPaperOrders,
   onRejectPortfolioOrder,
   onRunPortfolioBacktest,
+  onRunPortfolioPaperOpsAction,
   onSimulatePortfolioOrder,
   onSimulatePortfolioOrderBatch,
   onSubmitPaperExecution,
@@ -20552,6 +22130,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderHistoryError,
   portfolioPaperOrderLifecycleRows,
   portfolioPaperOrderLatestSimulationSummary,
+  portfolioPaperOpsQueue,
   portfolioPaperOrderReplayPositionRows,
   portfolioPaperOrderReplaySummaryTiles,
   portfolioRouteRiskRequest,
@@ -20583,6 +22162,7 @@ function PortfolioWorkspace({
   onRecordPortfolioPaperOrders?: () => void;
   onRejectPortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onRunPortfolioBacktest?: () => void;
+  onRunPortfolioPaperOpsAction?: (row: PortfolioPaperOpsQueueRow) => void;
   onSimulatePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSimulatePortfolioOrderBatch?: () => void;
   onSubmitPaperExecution?: () => void;
@@ -20596,6 +22176,7 @@ function PortfolioWorkspace({
   portfolioPaperOrderHistoryError: string | null;
   portfolioPaperOrderLifecycleRows: PortfolioPaperOrderLifecycleRow[];
   portfolioPaperOrderLatestSimulationSummary: PortfolioPaperOrderLatestSimulationSummary | null;
+  portfolioPaperOpsQueue: PortfolioPaperOpsQueue;
   portfolioPaperOrderReplayPositionRows: PortfolioPaperOrderReplayPositionRow[];
   portfolioPaperOrderReplaySummaryTiles: PortfolioPaperOrderReplaySummaryTile[];
   portfolioRouteRiskRequest: PortfolioPaperOrderSimulationRouteRiskRequest;
@@ -21035,11 +22616,13 @@ function PortfolioWorkspace({
         onFocusPortfolioOrderStateAuditQuery={onFocusPortfolioOrderStateAuditQuery}
         onPortfolioRouteRiskTemplateChange={onPortfolioRouteRiskTemplateChange}
         onRejectPortfolioOrder={onRejectPortfolioOrder}
+        onRunPortfolioPaperOpsAction={onRunPortfolioPaperOpsAction}
         onSimulatePortfolioOrder={onSimulatePortfolioOrder}
         onSimulatePortfolioOrderBatch={onSimulatePortfolioOrderBatch}
         onSubmit={onSubmitPaperExecution}
         portfolioOrderApprovalRows={portfolioPaperOrderApprovalRows}
         portfolioOrderLatestSimulationSummary={portfolioPaperOrderLatestSimulationSummary}
+        portfolioPaperOpsQueue={portfolioPaperOpsQueue}
         portfolioOrderReplayPositionRows={portfolioPaperOrderReplayPositionRows}
         portfolioOrderReplaySummaryTiles={portfolioPaperOrderReplaySummaryTiles}
         portfolioRouteRiskRequest={portfolioRouteRiskRequest}
@@ -21118,6 +22701,7 @@ function PromotionQueuePanel({
   adapterCertificationRows,
   className,
   i18n,
+  preLiveChecklist,
   readiness
 }: {
   adapterCertificationApplyRows: ExecutionAdapterCertificationApplyRow[];
@@ -21145,6 +22729,7 @@ function PromotionQueuePanel({
   adapterCertificationRows: ExecutionAdapterCertificationRow[];
   className?: string;
   i18n: AppI18n;
+  preLiveChecklist: PreLiveReadinessChecklist;
   readiness: PromotionReadiness;
 }) {
   const recentCertificationRows = adapterCertificationRows.slice(0, 3);
@@ -21181,6 +22766,27 @@ function PromotionQueuePanel({
           <span>{promotionStatusLabel(i18n, readiness.status)}</span>
           <strong>{promotionHeadline(i18n, readiness.headline)}</strong>
           <p>{promotionSummaryText(i18n, readiness.summary)}</p>
+        </div>
+        <div className={`pre-live-checklist ${preLiveChecklist.tone}`}>
+          <div className="pre-live-checklist-summary">
+            <span>{preLiveChecklistStatusLabel(i18n, preLiveChecklist.status)}</span>
+            <strong>{preLiveChecklistHeadline(i18n, preLiveChecklist.headline)}</strong>
+            <p>{preLiveChecklistSummary(i18n, preLiveChecklist.summary)}</p>
+          </div>
+          <em className="pre-live-checklist-count">
+            {preLiveChecklist.passedCount}/{preLiveChecklist.totalCount}
+          </em>
+          <div className="pre-live-checklist-row-list">
+            {preLiveChecklist.items.map((item) => (
+              <article className={`pre-live-checklist-row ${item.tone}`} key={item.id}>
+                <span>{preLiveChecklistItemLabel(i18n, item)}</span>
+                <strong>{preLiveChecklistItemEvidence(i18n, item.evidence)}</strong>
+                <em>{promotionStageStatusLabel(i18n, item.state)}</em>
+                <p>{preLiveChecklistItemDetail(i18n, item.detail)}</p>
+              </article>
+            ))}
+          </div>
+          <small>{preLiveChecklistBoundary(i18n, preLiveChecklist)}</small>
         </div>
         <div className="promotion-stage-list">
           {readiness.stages.map((stage) => (
@@ -22009,6 +23615,101 @@ function promotionStageDetail(i18n: AppI18n, detail: string): string {
     .replace("Bind an audited run before paper or live execution.", "先绑定审计运行，再进入模拟或实盘执行。");
 }
 
+function preLiveChecklistStatusLabel(i18n: AppI18n, status: PreLiveReadinessChecklist["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status.replaceAll("_", " ");
+  }
+  return {
+    blocked: "实盘前阻断",
+    paper_pending: "等待模拟证据",
+    evidence_pending: "等待准入证据",
+    operator_pending: "等待人工确认",
+    manual_route_ready: "人工路由候选"
+  }[status];
+}
+
+function preLiveChecklistHeadline(i18n: AppI18n, headline: string): string {
+  if (i18n.locale === "en-US") {
+    return headline;
+  }
+  return {
+    "Pre-live checklist complete": "实盘前清单完成",
+    "Pre-live paper evidence pending": "等待模拟执行证据",
+    "Pre-live operator confirmation pending": "等待人工确认",
+    "Pre-live evidence pending": "等待实盘前准入证据",
+    "Pre-live readiness blocked": "实盘前准入阻断"
+  }[headline] ?? headline;
+}
+
+function preLiveChecklistSummary(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  const manualReady = summary.match(
+    /^(\d+)\/(\d+) gates passed; ready for manual route review only\. Direct order submission remains disabled\.$/
+  );
+  if (manualReady) {
+    return `${manualReady[1]}/${manualReady[2]} 个闸门通过；仅可进入人工路由复核。直接下单仍禁用。`;
+  }
+  const nextAction = summary.match(
+    /^(\d+)\/(\d+) gates passed; next action (.+)\. Direct order submission remains disabled\.$/
+  );
+  if (nextAction) {
+    return `${nextAction[1]}/${nextAction[2]} 个闸门通过；下一步 ${preLiveChecklistNextAction(i18n, nextAction[3])}。直接下单仍禁用。`;
+  }
+  return summary.replace("Direct order submission remains disabled.", "直接下单仍禁用。");
+}
+
+function preLiveChecklistNextAction(i18n: AppI18n, action: string): string {
+  const [id, ...evidenceParts] = action.split(": ");
+  const evidence = evidenceParts.join(": ");
+  const label = preLiveChecklistItemIdLabel(i18n, id);
+  return evidence ? `${label} · ${promotionStageValue(i18n, evidence)}` : label;
+}
+
+function preLiveChecklistItemIdLabel(i18n: AppI18n, id: string): string {
+  if (i18n.locale === "en-US") {
+    return id.replaceAll("-", " ");
+  }
+  return {
+    "audited-run": "审计运行",
+    "risk-approval": "风控审批",
+    "paper-execution": "模拟执行",
+    "paper-execution-replay": "模拟执行回放",
+    "adapter-certification": "适配器认证",
+    "human-confirmation": "人工确认"
+  }[id] ?? id;
+}
+
+function preLiveChecklistItemLabel(
+  i18n: AppI18n,
+  item: PreLiveReadinessChecklist["items"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return item.label;
+  }
+  return preLiveChecklistItemIdLabel(i18n, item.id);
+}
+
+function preLiveChecklistItemEvidence(i18n: AppI18n, evidence: string): string {
+  return promotionStageValue(i18n, evidence);
+}
+
+function preLiveChecklistItemDetail(i18n: AppI18n, detail: string): string {
+  return promotionStageDetail(i18n, detail);
+}
+
+function preLiveChecklistBoundary(i18n: AppI18n, checklist: PreLiveReadinessChecklist): string {
+  if (i18n.locale === "en-US") {
+    return checklist.manualRouteCandidate
+      ? "All gates are present for manual route review only; direct order submission and live trading remain disabled."
+      : "This is still a paper and audit control surface; direct order submission and live trading remain disabled.";
+  }
+  return checklist.manualRouteCandidate
+    ? "所有闸门仅满足人工路由复核；直接下单和实盘交易仍禁用。"
+    : "当前仍是模拟盘和审计控制面；直接下单和实盘交易仍禁用。";
+}
+
 function promotionCertificationBoundaryLabel(i18n: AppI18n, boundary: string): string {
   if (i18n.locale === "en-US") {
     return boundary;
@@ -22403,6 +24104,55 @@ function strategyValidationSourceLabel(i18n: AppI18n, source: WorkspaceLoadResul
     return source === "core" ? "core validation" : "local fallback";
   }
   return source === "core" ? "核心校验" : "本地兜底";
+}
+
+function strategyGovernanceStageLabel(i18n: AppI18n, stage: StrategyGovernanceQueueRow["stage"]): string {
+  if (i18n.locale === "en-US") {
+    return {
+      current_draft: "Current draft",
+      blocked: "Blocked",
+      needs_reaudit: "Needs re-audit",
+      stale: "Stale",
+      audited: "Audited",
+      imported: "Cross-context"
+    }[stage];
+  }
+  return {
+    current_draft: "当前草稿",
+    blocked: "已阻断",
+    needs_reaudit: "需重审",
+    stale: "上下文过期",
+    audited: "已审计",
+    imported: "跨上下文"
+  }[stage];
+}
+
+function strategyGovernanceValidationLabel(
+  i18n: AppI18n,
+  status: StrategyGovernanceQueueRow["validationStatus"]
+): string {
+  if (i18n.locale === "en-US") {
+    return { ready: "schema ready", review: "review", blocked: "schema blocked" }[status];
+  }
+  return { ready: "结构就绪", review: "待复核", blocked: "结构阻断" }[status];
+}
+
+function strategyGovernanceActionLabel(
+  i18n: AppI18n,
+  actionId: StrategyGovernanceQueueRow["nextActionId"]
+): string {
+  if (i18n.locale === "en-US") {
+    return {
+      "save-current-version": "Save",
+      "load-version": "Load",
+      "load-and-rerun": "Load + audit"
+    }[actionId];
+  }
+  return {
+    "save-current-version": "保存",
+    "load-version": "加载",
+    "load-and-rerun": "加载并审计"
+  }[actionId];
 }
 
 function strategyDiffRowLabel(i18n: AppI18n, row: StrategyVersionDiffRow): string {

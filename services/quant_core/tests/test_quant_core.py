@@ -50,6 +50,131 @@ class QuantCoreContractTest(unittest.TestCase):
             ],
         }
 
+    def _sample_p1_acceptance_manifest(self, *, run_id: str = "run-p1-smoke"):
+        return {
+            "kind": "aiqt.p1AcceptanceManifest",
+            "schemaVersion": 1,
+            "generatedAt": "2026-06-23T09:00:00+00:00",
+            "status": "passed",
+            "baseUrl": "http://aiqt.local",
+            "importBaseUrl": "http://clean.local",
+            "timeframe": "1d",
+            "runId": run_id,
+            "watchlistRefreshRunId": "cache-refresh-p1",
+            "queuedMarket": "ashare",
+            "queuedSymbol": "600000",
+            "watchlistCount": 3,
+            "watchlist": [
+                {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
+                {"market": "ashare", "symbol": "000300", "name": "沪深300"},
+                {"market": "us", "symbol": "AAPL", "name": "Apple"},
+            ],
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "liveBlockedBoundary": True,
+            "checkCount": 8,
+            "checks": [
+                {"id": "workspace", "status": "passed", "summary": "p1 workspace selected=600000 watchlist=3"},
+                {
+                    "id": "watchlist-refresh",
+                    "status": "passed",
+                    "summary": "p1 watchlist-refresh run=cache-refresh-p1 symbols=3 refreshed=3 queued=600000",
+                },
+                {
+                    "id": "queue-pipeline",
+                    "status": "passed",
+                    "summary": f"p1 queue-pipeline run={run_id} symbol=600000 refresh=cache-refresh-p1",
+                },
+                {"id": "ai-review", "status": "passed", "summary": f"p1 ai-review run={run_id} mode=local_evidence_review"},
+                {
+                    "id": "paper-simulation",
+                    "status": "passed",
+                    "summary": f"p1 paper-simulation run={run_id} liveBlocked=True",
+                },
+                {"id": "export", "status": "passed", "summary": f"p1 export run={run_id} refresh=cache-refresh-p1 liveBlocked=True"},
+                {"id": "import", "status": "passed", "summary": f"p1 import run={run_id} undo=import-undo-p1"},
+                {
+                    "id": "imported-export",
+                    "status": "passed",
+                    "summary": f"p1 imported-export run={run_id} refresh=cache-refresh-p1 liveBlocked=True",
+                },
+            ],
+        }
+
+    def _sample_p2_pre_live_acceptance_manifest(self, *, run_id: str = "run-p2-pre-live"):
+        return {
+            "kind": "aiqt.p2PreLiveAcceptanceManifest",
+            "schemaVersion": 1,
+            "generatedAt": "2026-06-24T09:30:00+00:00",
+            "status": "passed",
+            "baseUrl": "http://aiqt.local",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "runId": run_id,
+            "adapterId": "ashare-live",
+            "promotionStatus": "certification_pending",
+            "checklistStatus": "evidence_pending",
+            "passedGateCount": 4,
+            "totalGateCount": 6,
+            "blockingGateCount": 2,
+            "gateIds": [
+                "audited-run",
+                "risk-approval",
+                "paper-execution",
+                "paper-execution-replay",
+                "adapter-certification",
+                "human-confirmation",
+            ],
+            "blockerIds": ["adapter-certification", "human-confirmation"],
+            "auditEventIds": [
+                "research-run-audit-run-p2-pre-live",
+                "paper-execution-run-p2-pre-live",
+                "paper-execution-replay-run-p2-pre-live",
+                "execution-adapter-certification-ashare-live",
+            ],
+            "manualRouteCandidate": False,
+            "paperOnly": True,
+            "orderSubmissionEnabled": False,
+            "liveTradingAllowed": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+            "liveBlockedBoundary": True,
+            "checkCount": 6,
+            "checks": [
+                {
+                    "id": "pre-live-checklist",
+                    "status": "passed",
+                    "summary": "p2 pre-live checklist evidence_pending gates=4/6 blockers=2",
+                },
+                {
+                    "id": "promotion-gates",
+                    "status": "passed",
+                    "summary": "p2 promotion gates audited-run,risk-approval,paper-execution,paper-execution-replay",
+                },
+                {
+                    "id": "paper-execution-replay",
+                    "status": "passed",
+                    "summary": "p2 paper execution replay ready; order submission remains disabled",
+                },
+                {
+                    "id": "adapter-evidence",
+                    "status": "passed",
+                    "summary": "p2 adapter evidence ashare-live certification pending",
+                },
+                {
+                    "id": "manual-route-boundary",
+                    "status": "passed",
+                    "summary": "p2 manual route candidate false; direct order submission disabled",
+                },
+                {
+                    "id": "live-blocked-boundary",
+                    "status": "passed",
+                    "summary": "p2 live trading false; no live order and no route execution",
+                },
+            ],
+        }
+
     def _sample_research_run_audit(self, *, run_id: str, strategy_revision: str):
         from quant_core.runs import ResearchRunAudit
 
@@ -505,6 +630,268 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["acceptance"]["summary"], "p0 acceptance manifest run=run-api-smoke checks=6 liveBlocked=True")
         self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
 
+    def test_p1_acceptance_status_reads_latest_report(self):
+        import json
+
+        from quant_core.p1_acceptance import load_p1_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "p1-acceptance.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+
+            status = load_p1_acceptance_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.p1AcceptanceStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "passed")
+        self.assertEqual(status["summary"], "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True")
+        self.assertEqual(status["runId"], "run-p1-smoke")
+        self.assertEqual(status["timeframe"], "1d")
+        self.assertEqual(status["watchlistRefreshRunId"], "cache-refresh-p1")
+        self.assertEqual(status["queuedMarket"], "ashare")
+        self.assertEqual(status["queuedSymbol"], "600000")
+        self.assertEqual(status["watchlistCount"], 3)
+        self.assertEqual(status["checkCount"], 8)
+        self.assertEqual(status["requiredCheckCount"], 8)
+        self.assertEqual(
+            status["checkIds"],
+            [
+                "workspace",
+                "watchlist-refresh",
+                "queue-pipeline",
+                "ai-review",
+                "paper-simulation",
+                "export",
+                "import",
+                "imported-export",
+            ],
+        )
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-p1-smoke")
+        self.assertTrue(str(status["sourcePath"]).endswith("p1-acceptance.json"))
+
+    def test_p1_acceptance_status_reports_missing_file(self):
+        from quant_core.p1_acceptance import load_p1_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_p1_acceptance_status(Path(tmp) / "data" / "p1-acceptance.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+
+    def test_p1_acceptance_status_rejects_live_enabled_report(self):
+        import json
+
+        from quant_core.p1_acceptance import load_p1_acceptance_status
+
+        unsafe_manifest = self._sample_p1_acceptance_manifest()
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p1-acceptance.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_p1_acceptance_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-p1-smoke")
+
+    def test_p1_acceptance_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p1-acceptance.json"
+            report_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-api")), encoding="utf-8")
+
+            class TestHandler(QuantApiHandler):
+                p1_acceptance_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/p1/acceptance/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["acceptance"]["kind"], "aiqt.p1AcceptanceStatus")
+        self.assertEqual(payload["acceptance"]["status"], "passed")
+        self.assertEqual(payload["acceptance"]["runId"], "run-p1-api")
+        self.assertEqual(
+            payload["acceptance"]["summary"],
+            "p1 acceptance manifest run=run-p1-api watchlist=3 checks=8 liveBlocked=True",
+        )
+        self.assertEqual(payload["acceptance"]["watchlistRefreshRunId"], "cache-refresh-p1")
+        self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
+
+    def test_p2_pre_live_acceptance_status_reads_latest_report(self):
+        import json
+
+        from quant_core.p2_acceptance import load_p2_pre_live_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "p2-pre-live-acceptance.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
+
+            status = load_p2_pre_live_acceptance_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.p2PreLiveAcceptanceStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "passed")
+        self.assertEqual(
+            status["summary"],
+            "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+        )
+        self.assertEqual(status["runId"], "run-p2-pre-live")
+        self.assertEqual(status["market"], "ashare")
+        self.assertEqual(status["symbol"], "600000")
+        self.assertEqual(status["timeframe"], "1d")
+        self.assertEqual(status["adapterId"], "ashare-live")
+        self.assertEqual(status["checklistStatus"], "evidence_pending")
+        self.assertEqual(status["passedGateCount"], 4)
+        self.assertEqual(status["totalGateCount"], 6)
+        self.assertEqual(status["blockingGateCount"], 2)
+        self.assertEqual(status["blockerIds"], ["adapter-certification", "human-confirmation"])
+        self.assertEqual(status["checkCount"], 6)
+        self.assertEqual(status["requiredCheckCount"], 6)
+        self.assertFalse(status["manualRouteCandidate"])
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["liveOrderSubmitted"])
+        self.assertFalse(status["routeExecuted"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["adapterId"], "ashare-live")
+        self.assertTrue(str(status["sourcePath"]).endswith("p2-pre-live-acceptance.json"))
+
+    def test_p2_pre_live_acceptance_status_reports_missing_file(self):
+        from quant_core.p2_acceptance import load_p2_pre_live_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_p2_pre_live_acceptance_status(Path(tmp) / "data" / "p2-pre-live-acceptance.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+
+    def test_p2_pre_live_acceptance_status_rejects_live_or_order_enabled_report(self):
+        import json
+
+        from quant_core.p2_acceptance import load_p2_pre_live_acceptance_status
+
+        unsafe_manifest = self._sample_p2_pre_live_acceptance_manifest()
+        unsafe_manifest["orderSubmissionEnabled"] = True
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveOrderSubmitted"] = True
+        unsafe_manifest["routeExecuted"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-pre-live-acceptance.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_p2_pre_live_acceptance_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["orderSubmissionEnabled"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertTrue(status["liveOrderSubmitted"])
+        self.assertTrue(status["routeExecuted"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-p2-pre-live")
+
+    def test_p2_pre_live_acceptance_status_requires_paper_replay_check(self):
+        import json
+
+        from quant_core.p2_acceptance import load_p2_pre_live_acceptance_status
+
+        manifest = self._sample_p2_pre_live_acceptance_manifest()
+        manifest["checks"] = [check for check in manifest["checks"] if check["id"] != "paper-execution-replay"]
+        manifest["checkCount"] = len(manifest["checks"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-pre-live-acceptance.json"
+            report_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            status = load_p2_pre_live_acceptance_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("paper-execution-replay", status["reason"])
+        self.assertEqual(status["manifest"]["runId"], "run-p2-pre-live")
+
+    def test_p2_pre_live_acceptance_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-pre-live-acceptance.json"
+            report_path.write_text(
+                json.dumps(self._sample_p2_pre_live_acceptance_manifest(run_id="run-p2-api")),
+                encoding="utf-8",
+            )
+
+            class TestHandler(QuantApiHandler):
+                p2_pre_live_acceptance_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/p2/pre-live/acceptance/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["acceptance"]["kind"], "aiqt.p2PreLiveAcceptanceStatus")
+        self.assertEqual(payload["acceptance"]["status"], "passed")
+        self.assertEqual(payload["acceptance"]["runId"], "run-p2-api")
+        self.assertEqual(payload["acceptance"]["checklistStatus"], "evidence_pending")
+        self.assertEqual(payload["acceptance"]["blockingGateCount"], 2)
+        self.assertFalse(payload["acceptance"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
+
     def test_docker_smoke_cli_validates_p0_acceptance_report_without_compose(self):
         import contextlib
         import io
@@ -737,6 +1124,228 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report_payload["status"], "passed")
         self.assertEqual(report_payload["runId"], "run-smoke")
         self.assertIn("imported-export", [check["id"] for check in report_payload["checks"]])
+
+    def test_docker_smoke_builds_and_validates_p1_acceptance_manifest(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        manifest = docker_smoke.build_p1_acceptance_manifest(
+            base_url="http://aiqt.local",
+            import_base_url="http://clean.local",
+            timeframe="1d",
+            run_id="run-p1-smoke",
+            watchlist_refresh_run_id="cache-refresh-p1",
+            queued_market="ashare",
+            queued_symbol="600000",
+            watchlist=[
+                {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
+                {"market": "ashare", "symbol": "000300", "name": "沪深300"},
+                {"market": "us", "symbol": "AAPL", "name": "Apple"},
+            ],
+            summaries=[
+                "p1 workspace watchlist=3 selected=600000",
+                "p1 watchlist-refresh run=cache-refresh-p1 symbols=3 refreshed=3 queued=600000",
+                "p1 queue-pipeline run=run-p1-smoke symbol=600000 refresh=cache-refresh-p1",
+                "p1 ai-review run=run-p1-smoke mode=local_evidence_review",
+                "p1 paper-simulation run=run-p1-smoke liveBlocked=True",
+                "p1 export run=run-p1-smoke refresh=cache-refresh-p1 liveBlocked=True",
+                "p1 import run=run-p1-smoke undo=import-undo-p1",
+                "p1 imported-export run=run-p1-smoke refresh=cache-refresh-p1 liveBlocked=True",
+            ],
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.p1AcceptanceManifest")
+        self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertEqual(manifest["status"], "passed")
+        self.assertEqual(manifest["runId"], "run-p1-smoke")
+        self.assertEqual(manifest["watchlistRefreshRunId"], "cache-refresh-p1")
+        self.assertEqual(manifest["queuedSymbol"], "600000")
+        self.assertEqual(manifest["watchlistCount"], 3)
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertTrue(manifest["liveBlockedBoundary"])
+        self.assertEqual(
+            [check["id"] for check in manifest["checks"]],
+            [
+                "workspace",
+                "watchlist-refresh",
+                "queue-pipeline",
+                "ai-review",
+                "paper-simulation",
+                "export",
+                "import",
+                "imported-export",
+            ],
+        )
+        self.assertEqual(
+            docker_smoke.validate_p1_acceptance_manifest(manifest),
+            "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+        )
+
+        unsafe_manifest = dict(manifest)
+        unsafe_manifest["liveTradingAllowed"] = True
+        with self.assertRaisesRegex(RuntimeError, "Invalid P1 acceptance manifest"):
+            docker_smoke.validate_p1_acceptance_manifest(unsafe_manifest)
+
+        missing_refresh_manifest = dict(manifest)
+        missing_refresh_manifest["checks"] = [
+            check for check in manifest["checks"] if check["id"] != "watchlist-refresh"
+        ]
+        with self.assertRaisesRegex(RuntimeError, "Invalid P1 acceptance manifest"):
+            docker_smoke.validate_p1_acceptance_manifest(missing_refresh_manifest)
+
+    def test_docker_smoke_p1_acceptance_runs_watchlist_queue_path(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        posts = []
+        gets = []
+
+        source_export = {
+            "manifest": {"runId": "run-p1-smoke", "artifactCounts": {"auditEvents": 1}},
+            "researchRun": {
+                "runId": "run-p1-smoke",
+                "executionMode": "paper_only",
+                "dataSnapshot": {
+                    "bars": [{"timestamp": "2026-06-23T08:00:00+00:00"}],
+                    "preparationEvidence": {
+                        "kind": "watchlist_cache_refresh",
+                        "runId": "cache-refresh-p1",
+                        "market": "ashare",
+                        "symbol": "600000",
+                        "timeframe": "1d",
+                        "status": "refreshed",
+                    },
+                },
+            },
+            "auditEvents": [{"eventType": "p0_paper_simulation"}],
+            "p0PackageCompleteness": {
+                "ready": True,
+                "status": "complete",
+                "passed": 9,
+                "total": 9,
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "liveBlockedBoundary": True,
+            },
+        }
+
+        def fake_request_json(url, timeout_seconds):
+            gets.append((url, timeout_seconds))
+            if url == "http://aiqt.local/api/workspace":
+                return {
+                    "schemaVersion": 1,
+                    "selectedInstrument": {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
+                    "watchlist": [
+                        {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
+                        {"market": "ashare", "symbol": "000300", "name": "沪深300"},
+                        {"market": "us", "symbol": "AAPL", "name": "Apple"},
+                    ],
+                }
+            if url == "http://aiqt.local/api/research/runs/run-p1-smoke/export":
+                return {"export": source_export}
+            if url == "http://clean.local/api/research/runs/run-p1-smoke/export":
+                return {"export": source_export}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        def fake_post_json(url, payload, timeout_seconds):
+            posts.append((url, payload, timeout_seconds))
+            if url.endswith("/api/cache/watchlist-refreshes"):
+                self.assertEqual(len(payload["watchlist"]), 3)
+                self.assertEqual(payload["timeframe"], "1d")
+                return {
+                    "watchlistRefresh": {
+                        "runId": "cache-refresh-p1",
+                        "timeframe": "1d",
+                        "summary": {"totalSymbols": 3, "refreshed": 3, "failed": 0, "upsertedRows": 720},
+                        "items": [
+                            {"market": "ashare", "symbol": "600000", "timeframe": "1d", "status": "refreshed"},
+                            {"market": "ashare", "symbol": "000300", "timeframe": "1d", "status": "refreshed"},
+                            {"market": "us", "symbol": "AAPL", "timeframe": "1d", "status": "refreshed"},
+                        ],
+                    }
+                }
+            if url.endswith("/api/p0/pipeline"):
+                self.assertEqual(payload["watchlistRefreshRunId"], "cache-refresh-p1")
+                self.assertEqual(payload["symbol"], "600000")
+                return {
+                    "status": "audited_run_created",
+                    "runId": "run-p1-smoke",
+                    "metrics": {"tradeCount": 1},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                }
+            if url.endswith("/api/p0/ai-reviews"):
+                return {
+                    "status": "ai_review_saved",
+                    "mode": "local_evidence_review",
+                    "aiReview": {"aiReviewId": "ai-review-p1"},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "directTradingInstructionBlocked": True,
+                }
+            if url.endswith("/api/p0/paper-simulations"):
+                return {
+                    "status": "paper_simulation_created",
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                    "auditEvent": {"eventType": "p0_paper_simulation"},
+                    "exportReadiness": {"ready": True},
+                }
+            if url.endswith("/api/research/runs/import"):
+                self.assertEqual(url, "http://clean.local/api/research/runs/import")
+                self.assertEqual(payload, source_export)
+                return {
+                    "run": {
+                        "runId": "run-p1-smoke",
+                        "executionMode": "paper_only",
+                        "strategyRevision": "strategy-p1",
+                        "dataSnapshot": source_export["researchRun"]["dataSnapshot"],
+                    },
+                    "undoToken": "import-undo-p1",
+                    "undo": {"runId": "run-p1-smoke"},
+                }
+            raise AssertionError(f"Unexpected POST URL: {url}")
+
+        original_post_json = docker_smoke.post_json
+        original_request_json = docker_smoke.request_json
+        docker_smoke.post_json = fake_post_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report_path = Path(tmp) / "p1-acceptance.json"
+                summaries = docker_smoke.run_p1_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                    timeframe="1d",
+                    limit=240,
+                    quantity=2100,
+                    import_base_url="http://clean.local",
+                    report_path=report_path,
+                )
+                report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+        finally:
+            docker_smoke.post_json = original_post_json
+            docker_smoke.request_json = original_request_json
+
+        self.assertEqual(
+            [url.removeprefix("http://aiqt.local") for url, _, _ in posts[:4]],
+            [
+                "/api/cache/watchlist-refreshes",
+                "/api/p0/pipeline",
+                "/api/p0/ai-reviews",
+                "/api/p0/paper-simulations",
+            ],
+        )
+        self.assertEqual(gets[0][0], "http://aiqt.local/api/workspace")
+        self.assertIn("p1 workspace watchlist=3 selected=600000", summaries)
+        self.assertIn("p1 queue-pipeline run=run-p1-smoke symbol=600000 refresh=cache-refresh-p1", summaries)
+        self.assertIn("p1 imported-export run=run-p1-smoke refresh=cache-refresh-p1 liveBlocked=True", summaries)
+        self.assertEqual(report_payload["kind"], "aiqt.p1AcceptanceManifest")
+        self.assertEqual(report_payload["watchlistRefreshRunId"], "cache-refresh-p1")
+        self.assertEqual(report_payload["queuedSymbol"], "600000")
+        self.assertEqual(report_payload["status"], "passed")
 
     def test_quant_api_bind_uses_container_environment(self):
         from quant_core.api import resolve_api_bind
@@ -20181,6 +20790,79 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(read_response.status, 200)
         self.assertEqual(read_payload["note"], save_payload["note"])
 
+    def test_handoff_notes_api_persists_subject_notes_and_records_audit_event(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.handoff_notes import HandoffNoteStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                handoff_note_store = HandoffNoteStore(f"{tmp}/handoff_notes.sqlite")
+                audit_event_store = AuditEventStore(f"{tmp}/audit_events.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(
+                    {
+                        "subjectType": "research_run",
+                        "subjectId": "run-handoff-api",
+                        "body": "复盘交接：先复核 AI 风险，再做模拟。",
+                        "author": "operator-a",
+                        "sourceWorkspace": "audit",
+                    },
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/handoff-notes",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                save_response = connection.getresponse()
+                save_payload = json.loads(save_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/handoff-notes?subjectType=research_run&subjectId=run-handoff-api",
+                )
+                read_response = connection.getresponse()
+                read_payload = json.loads(read_response.read().decode("utf-8"))
+                connection.request(
+                    "GET",
+                    "/api/audit/events?eventType=handoff_note&runId=run-handoff-api",
+                )
+                audit_response = connection.getresponse()
+                audit_payload = json.loads(audit_response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(save_response.status, 201)
+        self.assertEqual(save_payload["handoffNote"]["subjectType"], "research_run")
+        self.assertEqual(save_payload["handoffNote"]["subjectId"], "run-handoff-api")
+        self.assertEqual(save_payload["handoffNote"]["body"], "复盘交接：先复核 AI 风险，再做模拟。")
+        self.assertEqual(save_payload["handoffNote"]["author"], "operator-a")
+        self.assertTrue(save_payload["handoffNote"]["auditEventId"].startswith("handoff-note:"))
+        self.assertTrue(save_payload["handoffNote"]["paperOnly"])
+        self.assertFalse(save_payload["handoffNote"]["liveTradingAllowed"])
+        self.assertEqual(save_payload["auditEvent"]["eventType"], "handoff_note")
+        self.assertEqual(save_payload["auditEvent"]["runId"], "run-handoff-api")
+        self.assertEqual(read_response.status, 200)
+        self.assertEqual(read_payload["pagination"]["total"], 1)
+        self.assertEqual(read_payload["handoffNotes"][0], save_payload["handoffNote"])
+        self.assertEqual(audit_response.status, 200)
+        self.assertEqual(audit_payload["pagination"]["total"], 1)
+        self.assertEqual(audit_payload["events"][0]["eventId"], save_payload["handoffNote"]["auditEventId"])
+
     def test_research_run_api_locks_current_note_into_audit_evidence(self):
         import json
         from http.client import HTTPConnection
@@ -20581,6 +21263,103 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 100000, "feeBps": 3, "slippageBps": 2})
         self.assertEqual(latest[0].execution_mode, "paper_only")
         self.assertTrue(latest[0].data_snapshot["hash"])
+
+    def test_p0_pipeline_locks_watchlist_refresh_evidence_from_payload(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import (
+            WatchlistCacheRefreshRunStore,
+            create_watchlist_cache_refresh_run,
+            watchlist_cache_refresh_item_from_quality,
+        )
+        from quant_core.domain import DataQuality
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+        from quant_core.terminal import Instrument
+
+        with tempfile.TemporaryDirectory() as tmp:
+            refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+            refresh_run = refresh_store.record(
+                create_watchlist_cache_refresh_run(
+                    items=[
+                        watchlist_cache_refresh_item_from_quality(
+                            instrument=Instrument(symbol="600000", name="浦发银行", market="ashare", change_pct=0),
+                            timeframe="1d",
+                            requested_limit=240,
+                            quality=DataQuality(source="tencent", is_complete=True, warnings=[], rows=240),
+                            upserted_rows=240,
+                        )
+                    ],
+                    timeframe="1d",
+                    requested_limit=240,
+                    override_audit_event_id="market-data-refresh-override-p1",
+                )
+            )
+            store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.run_store = store
+            TestHandler.cache = cache
+            TestHandler.strategy_store = strategy_store
+            TestHandler.watchlist_cache_refresh_store = refresh_store
+            TestHandler.kline_adapter = DemoMarketDataAdapter()
+
+            request_payload = {
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "limit": 120,
+                "watchlistRefreshRunId": refresh_run.run_id,
+                "strategyConfig": {
+                    "name": "SMA trend",
+                    "entry": {"type": "sma_cross", "window": 20},
+                    "exit": {"type": "sma_break", "window": 20},
+                    "position": {"maxPositionPct": 20},
+                    "risk": {"stopLossPct": 8, "maxDrawdownPct": 12},
+                },
+                "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            }
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(request_payload).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/p0/pipeline",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            latest = store.list_recent(limit=1)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["status"], "audited_run_created")
+        evidence = latest[0].data_snapshot["preparationEvidence"]
+        self.assertEqual(evidence["kind"], "watchlist_cache_refresh")
+        self.assertEqual(evidence["runId"], refresh_run.run_id)
+        self.assertEqual(evidence["symbol"], "600000")
+        self.assertEqual(evidence["status"], "refreshed")
+        self.assertEqual(evidence["upsertedRows"], 240)
 
     def test_research_run_store_records_and_reads_audit_records(self):
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
@@ -21481,6 +22260,73 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(imported.research_note["body"], "关注银行板块相对强度，等待放量确认。")
         self.assertEqual(imported.research_note["symbol"], "600000")
 
+    def test_research_run_export_import_preserves_handoff_notes(self):
+        from quant_core.runs import (
+            ResearchRunAudit,
+            research_run_export_to_payload,
+            research_run_import_handoff_notes,
+            research_run_import_to_audit,
+        )
+
+        audit = ResearchRunAudit(
+            run_id="run-handoff-portable",
+            created_at=datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc),
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="SMA trend demo",
+            strategy_revision="rev-handoff-portable",
+            data_rows=1,
+            metrics={"total_return_pct": 1.2, "trade_count": 1},
+            decisions=[{"agent": "AI Summary", "message": "Handoff evidence only", "tone": "ai"}],
+            execution_mode="paper_only",
+            ai_report={"summary": "Handoff locked", "risks": ["Volume not confirmed"], "improvements": [], "disclaimer": "No advice"},
+            data_snapshot={
+                "source": "tencent",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 1,
+                "start": "2026-05-29T08:00:00+00:00",
+                "end": "2026-05-29T08:00:00+00:00",
+                "hash": "snapshot-handoff-portable",
+                "bars": [
+                    {
+                        "timestamp": "2026-05-29T08:00:00+00:00",
+                        "timestampMs": 1780041600000,
+                        "open": 9.2,
+                        "high": 9.5,
+                        "low": 9.1,
+                        "close": 9.4,
+                        "volume": 1500000,
+                    }
+                ],
+            },
+            backtest_trades=[{"id": "trade-1"}],
+            backtest_equity_curve=[{"timestamp": "2026-05-29T08:00:00+00:00", "equity": 101200.0}],
+        )
+        handoff_note = {
+            "schemaVersion": 1,
+            "noteId": "handoff-run-handoff-portable",
+            "subjectType": "research_run",
+            "subjectId": "run-handoff-portable",
+            "body": "交接给同伴：先复核回撤来源，再决定是否继续模拟盘。",
+            "author": "operator-a",
+            "sourceWorkspace": "audit",
+            "updatedAt": "2026-05-29T08:06:00+00:00",
+            "auditEventId": "handoff-note:handoff-run-handoff-portable",
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+        }
+
+        export_package = research_run_export_to_payload(audit, handoff_notes=[handoff_note])
+        imported = research_run_import_to_audit(export_package)
+        imported_handoff_notes = research_run_import_handoff_notes(export_package, run_id=imported.run_id)
+
+        self.assertEqual(export_package["manifest"]["artifactCounts"]["handoffNotes"], 1)
+        self.assertEqual(export_package["handoffNotes"][0]["body"], "交接给同伴：先复核回撤来源，再决定是否继续模拟盘。")
+        self.assertEqual(imported.run_id, "run-handoff-portable")
+        self.assertEqual(imported_handoff_notes, [handoff_note])
+
     def test_research_run_import_rejects_tampered_integrity_hash(self):
         import copy
 
@@ -22133,6 +22979,121 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(notes_response.status, 200)
         self.assertEqual(notes_payload["note"]["body"], "导入包里的研究笔记应恢复到本地笔记库。")
         self.assertEqual(notes_payload["note"]["symbol"], "600000")
+
+    def test_research_run_export_import_api_preserves_handoff_notes(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.ai_review_runs import AiReviewRunStore
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            PaperExecutionStore,
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+        )
+        from quant_core.handoff_notes import HandoffNoteStore
+        from quant_core.research_import_undo import ResearchRunImportUndoStore
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        audit = self._sample_research_run_audit(
+            run_id="run-handoff-api-portable",
+            strategy_revision="rev-handoff-api-portable",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source_run_store = ResearchRunStore(f"{tmp}/source_runs.sqlite")
+            source_handoff_store = HandoffNoteStore(f"{tmp}/source_handoff.sqlite")
+            source_run_store.record(audit)
+            source_handoff_store.save(
+                note_id="handoff-api-portable",
+                subject_type="research_run",
+                subject_id="run-handoff-api-portable",
+                body="导出前交接：目标环境导入后继续做模拟盘复核。",
+                author="operator-a",
+                source_workspace="audit",
+                updated_at=datetime(2026, 5, 29, 8, 6, tzinfo=timezone.utc),
+                audit_event_id="handoff-note:handoff-api-portable",
+            )
+
+            class SourceHandler(QuantApiHandler):
+                run_store = source_run_store
+                handoff_note_store = source_handoff_store
+                paper_execution_store = PaperExecutionStore(f"{tmp}/source_paper.sqlite")
+                portfolio_paper_order_store = PortfolioPaperOrderStore(f"{tmp}/source_portfolio_orders.sqlite")
+                portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/source_approvals.sqlite")
+                portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/source_simulations.sqlite")
+                ai_review_store = AiReviewRunStore(f"{tmp}/source_ai_reviews.sqlite")
+                audit_event_store = AuditEventStore(f"{tmp}/source_audit_events.sqlite")
+
+            source_server = HTTPServer(("127.0.0.1", 0), SourceHandler)
+            source_thread = Thread(target=source_server.serve_forever, daemon=True)
+            source_thread.start()
+            source_connection = HTTPConnection(source_server.server_address[0], source_server.server_address[1], timeout=5)
+            try:
+                source_connection.request("GET", "/api/research/runs/run-handoff-api-portable/export")
+                export_response = source_connection.getresponse()
+                export_payload = json.loads(export_response.read().decode("utf-8"))
+            finally:
+                source_connection.close()
+                source_server.shutdown()
+                source_thread.join(timeout=5)
+                source_server.server_close()
+
+            target_handoff_store = HandoffNoteStore(f"{tmp}/target_handoff.sqlite")
+
+            class TargetHandler(QuantApiHandler):
+                run_store = ResearchRunStore(f"{tmp}/target_runs.sqlite")
+                note_store = ResearchNoteStore(f"{tmp}/target_notes.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/target_strategies.sqlite")
+                handoff_note_store = target_handoff_store
+                paper_execution_store = PaperExecutionStore(f"{tmp}/target_paper.sqlite")
+                portfolio_paper_order_store = PortfolioPaperOrderStore(f"{tmp}/target_portfolio_orders.sqlite")
+                portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(f"{tmp}/target_approvals.sqlite")
+                portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(f"{tmp}/target_simulations.sqlite")
+                ai_review_store = AiReviewRunStore(f"{tmp}/target_ai_reviews.sqlite")
+                audit_event_store = AuditEventStore(f"{tmp}/target_audit_events.sqlite")
+                import_undo_store = ResearchRunImportUndoStore(f"{tmp}/target_undo.sqlite")
+
+            target_server = HTTPServer(("127.0.0.1", 0), TargetHandler)
+            target_thread = Thread(target=target_server.serve_forever, daemon=True)
+            target_thread.start()
+            target_connection = HTTPConnection(target_server.server_address[0], target_server.server_address[1], timeout=5)
+            try:
+                body = json.dumps(export_payload["export"]).encode("utf-8")
+                target_connection.request(
+                    "POST",
+                    "/api/research/runs/import",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                import_response = target_connection.getresponse()
+                import_payload = json.loads(import_response.read().decode("utf-8"))
+                target_connection.request(
+                    "GET",
+                    "/api/handoff-notes?subjectType=research_run&subjectId=run-handoff-api-portable",
+                )
+                notes_response = target_connection.getresponse()
+                notes_payload = json.loads(notes_response.read().decode("utf-8"))
+            finally:
+                target_connection.close()
+                target_server.shutdown()
+                target_thread.join(timeout=5)
+                target_server.server_close()
+
+        self.assertEqual(export_response.status, 200)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["handoffNotes"], 1)
+        self.assertEqual(export_payload["export"]["handoffNotes"][0]["body"], "导出前交接：目标环境导入后继续做模拟盘复核。")
+        self.assertEqual(import_response.status, 201)
+        self.assertEqual(import_payload["run"]["runId"], "run-handoff-api-portable")
+        self.assertEqual(notes_response.status, 200)
+        self.assertEqual(notes_payload["pagination"]["total"], 1)
+        self.assertEqual(notes_payload["handoffNotes"][0]["body"], "导出前交接：目标环境导入后继续做模拟盘复核。")
 
     def test_research_run_import_api_rolls_back_partial_writes_on_store_failure(self):
         import json

@@ -24,6 +24,7 @@ import {
   type ExecutionAdapterPreLiveRunbookSummary,
   type P0AcceptanceSummary,
   type P0AcceptanceSummarySource,
+  type P2PreLiveAcceptanceSummarySource,
   type P0PlatformActionOutcome,
   type P0PlatformActionOutcomeEvidenceLink,
   type P0PlatformBacklogItem,
@@ -90,6 +91,33 @@ export interface ResearchNoteResult {
   error?: string;
 }
 
+export type HandoffNoteSubjectType = "research_run" | "strategy_version" | "portfolio_order_batch" | "p0_acceptance";
+
+export interface HandoffNote {
+  schemaVersion: 1;
+  noteId: string;
+  subjectType: HandoffNoteSubjectType;
+  subjectId: string;
+  body: string;
+  author: string;
+  sourceWorkspace: string;
+  updatedAt: string;
+  auditEventId: string | null;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+}
+
+export interface HandoffNotesResult {
+  handoffNotes: HandoffNote[];
+  pagination?: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface ResearchRunDetailResult {
   run?: ResearchRunAudit;
   source: WorkspaceSource;
@@ -123,6 +151,7 @@ export interface ResearchRunExportManifest {
     researchNotes?: number;
     aiReviewRuns?: number;
     auditEvents?: number;
+    handoffNotes?: number;
   };
 }
 
@@ -279,6 +308,7 @@ export interface ResearchRunExportPackage {
   promotionCandidate?: PromotionCandidateRecord | null;
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
   auditEvents?: AuditEventRecord[];
+  handoffNotes?: HandoffNote[];
   p0PackageCompleteness?: ResearchRunExportP0PackageCompleteness;
   auditEvidenceSummary?: ResearchRunExportAuditEvidenceSummary;
   auditReport?: ResearchRunExportAuditReport;
@@ -561,6 +591,118 @@ export interface P0AcceptanceStatus {
 
 export interface P0AcceptanceLatestResult {
   acceptance?: P0AcceptanceStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P1AcceptanceManifestCheck {
+  id: string;
+  status: string;
+  summary: string;
+}
+
+export interface P1AcceptanceManifestWatchlistItem {
+  market: string;
+  symbol: string;
+  name: string;
+}
+
+export interface P1AcceptanceManifest {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string;
+  status: string;
+  baseUrl: string;
+  importBaseUrl?: string | null;
+  timeframe: ResearchTimeframe;
+  runId: string;
+  watchlistRefreshRunId: string;
+  queuedMarket: Market;
+  queuedSymbol: string;
+  watchlistCount: number;
+  watchlist: P1AcceptanceManifestWatchlistItem[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  checkCount: number;
+  checks: P1AcceptanceManifestCheck[];
+}
+
+export interface P1AcceptanceStatus {
+  kind: "aiqt.p1AcceptanceStatus";
+  schemaVersion: 1;
+  status: "passed" | "missing" | "invalid";
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  timeframe: ResearchTimeframe | null;
+  watchlistRefreshRunId: string | null;
+  queuedMarket: Market | null;
+  queuedSymbol: string | null;
+  watchlistCount: number;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: P1AcceptanceManifest | null;
+}
+
+export interface P1AcceptanceLatestResult {
+  acceptance?: P1AcceptanceStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P2PreLiveAcceptanceManifestCheck {
+  id: string;
+  status: string;
+  summary: string;
+}
+
+export interface P2PreLiveAcceptanceManifest {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string;
+  status: string;
+  baseUrl: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  runId: string;
+  adapterId: string;
+  promotionStatus: string;
+  checklistStatus: string;
+  passedGateCount: number;
+  totalGateCount: number;
+  blockingGateCount: number;
+  gateIds: string[];
+  blockerIds: string[];
+  auditEventIds: string[];
+  manualRouteCandidate: boolean;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  checkCount: number;
+  checks: P2PreLiveAcceptanceManifestCheck[];
+}
+
+export interface P2PreLiveAcceptanceStatus extends P2PreLiveAcceptanceSummarySource {
+  kind: "aiqt.p2PreLiveAcceptanceStatus";
+  schemaVersion: 1;
+  status: "passed" | "missing" | "invalid";
+  manifest: P2PreLiveAcceptanceManifest | null;
+}
+
+export interface P2PreLiveAcceptanceLatestResult {
+  acceptance?: P2PreLiveAcceptanceStatus;
   source: WorkspaceSource;
   error?: string;
 }
@@ -3987,6 +4129,14 @@ export interface ResearchNoteSaveParams extends TerminalResearchParams {
   body: string;
 }
 
+export interface HandoffNoteSaveParams {
+  subjectType: HandoffNoteSubjectType;
+  subjectId: string;
+  body: string;
+  author?: string;
+  sourceWorkspace?: string;
+}
+
 const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
 
 export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): string {
@@ -4063,6 +4213,14 @@ export function buildP0AcceptanceLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p0/acceptance/latest");
 }
 
+export function buildP1AcceptanceLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p1/acceptance/latest");
+}
+
+export function buildP2PreLiveAcceptanceLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p2/pre-live/acceptance/latest");
+}
+
 export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
   return buildApiUrl(baseUrl, "api/research/runs", (url) => {
     url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 50))));
@@ -4095,6 +4253,14 @@ export function buildResearchNoteUrl(
     url.searchParams.set("market", market);
     url.searchParams.set("symbol", symbol);
     url.searchParams.set("timeframe", timeframe);
+  });
+}
+
+export function buildHandoffNotesUrl(baseUrl: string, subjectType: HandoffNoteSubjectType, subjectId: string, limit = 20): string {
+  return buildApiUrl(baseUrl, "api/handoff-notes", (url) => {
+    url.searchParams.set("subjectType", subjectType);
+    url.searchParams.set("subjectId", subjectId);
+    url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 50))));
   });
 }
 
@@ -6350,6 +6516,73 @@ export async function saveResearchNote(
   }
 }
 
+export async function loadHandoffNotes(
+  baseUrl: string,
+  subjectType: HandoffNoteSubjectType,
+  subjectId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<HandoffNotesResult> {
+  try {
+    const response = await fetcher(buildHandoffNotesUrl(baseUrl, subjectType, subjectId));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isHandoffNotesPayload(payload)) {
+      throw new Error("Invalid handoff notes contract");
+    }
+    return {
+      handoffNotes: payload.handoffNotes,
+      pagination: payload.pagination,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      handoffNotes: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown handoff notes load error"
+    };
+  }
+}
+
+export async function saveHandoffNote(
+  baseUrl: string,
+  params: HandoffNoteSaveParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<HandoffNotesResult> {
+  try {
+    const response = await fetcher(buildApiUrl(baseUrl, "api/handoff-notes"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subjectType: params.subjectType,
+        subjectId: params.subjectId,
+        body: params.body,
+        author: params.author ?? "local-operator",
+        sourceWorkspace: params.sourceWorkspace ?? "research"
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isHandoffNoteSavePayload(payload)) {
+      throw new Error("Invalid handoff note save contract");
+    }
+    return {
+      handoffNotes: [payload.handoffNote],
+      pagination: { limit: 1, offset: 0, total: 1 },
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      handoffNotes: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown handoff note save error"
+    };
+  }
+}
+
 export async function submitResearchRunPaperExecution(
   baseUrl: string,
   runId: string,
@@ -6581,6 +6814,123 @@ function buildMissingP0AcceptanceStatus(reason: string): P0AcceptanceStatus {
     checkIds: [],
     paperOnly: false,
     liveTradingAllowed: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
+}
+
+export async function loadP1AcceptanceLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P1AcceptanceLatestResult> {
+  try {
+    const response = await fetcher(buildP1AcceptanceLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP1AcceptanceLatestPayload(payload)) {
+      throw new Error("Invalid P1 acceptance status contract");
+    }
+    return {
+      acceptance: payload.acceptance,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P1 acceptance readback error";
+    return {
+      acceptance: buildMissingP1AcceptanceStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingP1AcceptanceStatus(reason: string): P1AcceptanceStatus {
+  return {
+    kind: "aiqt.p1AcceptanceStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/p1-acceptance.json",
+    summary: "P1 acceptance manifest is missing.",
+    reason,
+    generatedAt: null,
+    runId: null,
+    timeframe: null,
+    watchlistRefreshRunId: null,
+    queuedMarket: null,
+    queuedSymbol: null,
+    watchlistCount: 0,
+    checkCount: 0,
+    requiredCheckCount: 8,
+    checkIds: [],
+    paperOnly: false,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
+}
+
+export async function loadP2PreLiveAcceptanceLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P2PreLiveAcceptanceLatestResult> {
+  try {
+    const response = await fetcher(buildP2PreLiveAcceptanceLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP2PreLiveAcceptanceLatestPayload(payload)) {
+      throw new Error("Invalid P2 pre-live acceptance status contract");
+    }
+    return {
+      acceptance: payload.acceptance,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P2 pre-live acceptance readback error";
+    return {
+      acceptance: buildMissingP2PreLiveAcceptanceStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingP2PreLiveAcceptanceStatus(reason: string): P2PreLiveAcceptanceStatus {
+  return {
+    kind: "aiqt.p2PreLiveAcceptanceStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/p2-pre-live-acceptance.json",
+    summary: "P2 pre-live acceptance manifest is missing.",
+    reason,
+    generatedAt: null,
+    runId: null,
+    market: null,
+    symbol: null,
+    timeframe: null,
+    adapterId: null,
+    promotionStatus: null,
+    checklistStatus: null,
+    passedGateCount: 0,
+    totalGateCount: 0,
+    blockingGateCount: 0,
+    gateIds: [],
+    blockerIds: [],
+    auditEventIds: [],
+    checkCount: 0,
+    requiredCheckCount: 6,
+    checkIds: [],
+    manualRouteCandidate: false,
+    paperOnly: false,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
     liveBlockedBoundary: false,
     manifest: null
   };
@@ -10162,6 +10512,199 @@ function isP0AcceptanceManifestCheckPayload(value: unknown): value is P0Acceptan
   return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
 }
 
+function isP1AcceptanceLatestPayload(value: unknown): value is { acceptance: P1AcceptanceStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { acceptance?: unknown };
+  return isP1AcceptanceStatusPayload(payload.acceptance);
+}
+
+function isP1AcceptanceStatusPayload(value: unknown): value is P1AcceptanceStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P1AcceptanceStatus>;
+  const validStatus = payload.status === "passed" || payload.status === "missing" || payload.status === "invalid";
+  const validQueuedMarket = payload.queuedMarket === null || isMarket(payload.queuedMarket);
+  const validTimeframe = payload.timeframe === null || isTimeframe(payload.timeframe);
+  return (
+    payload.kind === "aiqt.p1AcceptanceStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    (payload.runId === null || typeof payload.runId === "string") &&
+    validTimeframe &&
+    (payload.watchlistRefreshRunId === null || typeof payload.watchlistRefreshRunId === "string") &&
+    validQueuedMarket &&
+    (payload.queuedSymbol === null || typeof payload.queuedSymbol === "string") &&
+    typeof payload.watchlistCount === "number" &&
+    typeof payload.checkCount === "number" &&
+    typeof payload.requiredCheckCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isP1AcceptanceManifestPayload(payload.manifest))
+  );
+}
+
+function isP1AcceptanceManifestPayload(value: unknown): value is P1AcceptanceManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P1AcceptanceManifest>;
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    typeof payload.generatedAt === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.baseUrl === "string" &&
+    (payload.importBaseUrl === undefined || payload.importBaseUrl === null || typeof payload.importBaseUrl === "string") &&
+    isTimeframe(payload.timeframe) &&
+    typeof payload.runId === "string" &&
+    typeof payload.watchlistRefreshRunId === "string" &&
+    isMarket(payload.queuedMarket) &&
+    typeof payload.queuedSymbol === "string" &&
+    typeof payload.watchlistCount === "number" &&
+    Array.isArray(payload.watchlist) &&
+    payload.watchlist.every(isP1AcceptanceManifestWatchlistItemPayload) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isP1AcceptanceManifestCheckPayload)
+  );
+}
+
+function isP1AcceptanceManifestWatchlistItemPayload(value: unknown): value is P1AcceptanceManifestWatchlistItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const item = value as Partial<P1AcceptanceManifestWatchlistItem>;
+  return typeof item.market === "string" && typeof item.symbol === "string" && typeof item.name === "string";
+}
+
+function isP1AcceptanceManifestCheckPayload(value: unknown): value is P1AcceptanceManifestCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<P1AcceptanceManifestCheck>;
+  return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
+}
+
+function isP2PreLiveAcceptanceLatestPayload(value: unknown): value is { acceptance: P2PreLiveAcceptanceStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { acceptance?: unknown };
+  return isP2PreLiveAcceptanceStatusPayload(payload.acceptance);
+}
+
+function isP2PreLiveAcceptanceStatusPayload(value: unknown): value is P2PreLiveAcceptanceStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2PreLiveAcceptanceStatus>;
+  const validStatus = payload.status === "passed" || payload.status === "missing" || payload.status === "invalid";
+  const validMarket = payload.market === null || isMarket(payload.market);
+  const validTimeframe = payload.timeframe === null || isTimeframe(payload.timeframe);
+  return (
+    payload.kind === "aiqt.p2PreLiveAcceptanceStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    (payload.runId === null || typeof payload.runId === "string") &&
+    validMarket &&
+    (payload.symbol === null || typeof payload.symbol === "string") &&
+    validTimeframe &&
+    (payload.adapterId === null || typeof payload.adapterId === "string") &&
+    (payload.promotionStatus === null || typeof payload.promotionStatus === "string") &&
+    (payload.checklistStatus === null || typeof payload.checklistStatus === "string") &&
+    typeof payload.passedGateCount === "number" &&
+    typeof payload.totalGateCount === "number" &&
+    typeof payload.blockingGateCount === "number" &&
+    Array.isArray(payload.gateIds) &&
+    payload.gateIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.blockerIds) &&
+    payload.blockerIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.auditEventIds) &&
+    payload.auditEventIds.every((id) => typeof id === "string") &&
+    typeof payload.checkCount === "number" &&
+    typeof payload.requiredCheckCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    typeof payload.manualRouteCandidate === "boolean" &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isP2PreLiveAcceptanceManifestPayload(payload.manifest))
+  );
+}
+
+function isP2PreLiveAcceptanceManifestPayload(value: unknown): value is P2PreLiveAcceptanceManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2PreLiveAcceptanceManifest>;
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    typeof payload.generatedAt === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.baseUrl === "string" &&
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isTimeframe(payload.timeframe) &&
+    typeof payload.runId === "string" &&
+    typeof payload.adapterId === "string" &&
+    typeof payload.promotionStatus === "string" &&
+    typeof payload.checklistStatus === "string" &&
+    typeof payload.passedGateCount === "number" &&
+    typeof payload.totalGateCount === "number" &&
+    typeof payload.blockingGateCount === "number" &&
+    Array.isArray(payload.gateIds) &&
+    payload.gateIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.blockerIds) &&
+    payload.blockerIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.auditEventIds) &&
+    payload.auditEventIds.every((id) => typeof id === "string") &&
+    typeof payload.manualRouteCandidate === "boolean" &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isP2PreLiveAcceptanceManifestCheckPayload)
+  );
+}
+
+function isP2PreLiveAcceptanceManifestCheckPayload(
+  value: unknown
+): value is P2PreLiveAcceptanceManifestCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<P2PreLiveAcceptanceManifestCheck>;
+  return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
+}
+
 function isResearchRunExportPayload(value: unknown): value is { export: ResearchRunExportPackage } {
   if (!value || typeof value !== "object") {
     return false;
@@ -10231,6 +10774,70 @@ function isResearchNote(value: unknown): value is ResearchNote {
     isTimeframe(note.timeframe) &&
     typeof note.body === "string" &&
     (note.updatedAt === null || typeof note.updatedAt === "string")
+  );
+}
+
+function isHandoffNotesPayload(value: unknown): value is {
+  handoffNotes: HandoffNote[];
+  pagination?: HandoffNotesResult["pagination"];
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { handoffNotes?: unknown; pagination?: unknown };
+  return (
+    Array.isArray(payload.handoffNotes) &&
+    payload.handoffNotes.every(isHandoffNote) &&
+    (payload.pagination === undefined || isHandoffNotesPagination(payload.pagination))
+  );
+}
+
+function isHandoffNoteSavePayload(value: unknown): value is { handoffNote: HandoffNote; auditEvent?: AuditEventRecord } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { handoffNote?: unknown; auditEvent?: unknown };
+  return isHandoffNote(payload.handoffNote) && (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent));
+}
+
+function isHandoffNotesPagination(value: unknown): value is NonNullable<HandoffNotesResult["pagination"]> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const pagination = value as NonNullable<HandoffNotesResult["pagination"]>;
+  return (
+    typeof pagination.limit === "number" &&
+    typeof pagination.offset === "number" &&
+    typeof pagination.total === "number"
+  );
+}
+
+function isHandoffNote(value: unknown): value is HandoffNote {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const note = value as Partial<HandoffNote>;
+  return (
+    note.schemaVersion === 1 &&
+    typeof note.noteId === "string" &&
+    isHandoffNoteSubjectType(note.subjectType) &&
+    typeof note.subjectId === "string" &&
+    typeof note.body === "string" &&
+    typeof note.author === "string" &&
+    typeof note.sourceWorkspace === "string" &&
+    typeof note.updatedAt === "string" &&
+    (note.auditEventId === null || typeof note.auditEventId === "string") &&
+    typeof note.paperOnly === "boolean" &&
+    typeof note.liveTradingAllowed === "boolean"
+  );
+}
+
+function isHandoffNoteSubjectType(value: unknown): value is HandoffNoteSubjectType {
+  return (
+    value === "research_run" ||
+    value === "strategy_version" ||
+    value === "portfolio_order_batch" ||
+    value === "p0_acceptance"
   );
 }
 
@@ -14603,6 +15210,8 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
       (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope))) &&
     (exportPackage.auditEvents === undefined ||
       (Array.isArray(exportPackage.auditEvents) && exportPackage.auditEvents.every(isAuditEventRecord))) &&
+    (exportPackage.handoffNotes === undefined ||
+      (Array.isArray(exportPackage.handoffNotes) && exportPackage.handoffNotes.every(isHandoffNote))) &&
     (exportPackage.p0PackageCompleteness === undefined ||
       isResearchRunExportP0PackageCompleteness(exportPackage.p0PackageCompleteness)) &&
     (exportPackage.auditEvidenceSummary === undefined ||
@@ -14900,7 +15509,8 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     (counts?.promotionCandidates === undefined || typeof counts.promotionCandidates === "number") &&
     (counts?.researchNotes === undefined || typeof counts.researchNotes === "number") &&
     (counts?.aiReviewRuns === undefined || typeof counts.aiReviewRuns === "number") &&
-    (counts?.auditEvents === undefined || typeof counts.auditEvents === "number")
+    (counts?.auditEvents === undefined || typeof counts.auditEvents === "number") &&
+    (counts?.handoffNotes === undefined || typeof counts.handoffNotes === "number")
   );
 }
 

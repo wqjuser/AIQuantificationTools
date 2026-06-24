@@ -4,6 +4,8 @@ import {
   buildBacktestReportMarkdown,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
+  buildP1AcceptanceSummary,
+  buildP2PreLiveAcceptanceSummary,
   buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
@@ -28,6 +30,8 @@ import {
 } from "./terminal-workbench";
 import {
   buildP0AcceptanceLatestUrl,
+  buildP1AcceptanceLatestUrl,
+  buildP2PreLiveAcceptanceLatestUrl,
   buildP0AiReviewUrl,
   buildP0PaperSimulationUrl,
   buildP0PipelineUrl,
@@ -253,6 +257,8 @@ import {
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
   loadP0AcceptanceLatest,
+  loadP1AcceptanceLatest,
+  loadP2PreLiveAcceptanceLatest,
   runP0Pipeline,
   runP0AiReview,
   runP0PaperSimulation,
@@ -743,6 +749,279 @@ describe("terminal workspace API client", () => {
     expect(result.acceptance?.available).toBe(false);
     expect(result.acceptance?.manifest).toBeNull();
     expect(result.error).toBe("Invalid P0 acceptance status contract");
+  });
+
+  test("loads the latest P1 acceptance readback and keeps live trading blocked", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.p1AcceptanceManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-23T09:00:00+00:00",
+      status: "passed",
+      baseUrl: "http://aiqt.local",
+      importBaseUrl: "http://clean.local",
+      timeframe: "1d" as const,
+      runId: "run-p1-smoke",
+      watchlistRefreshRunId: "cache-refresh-p1",
+      queuedMarket: "ashare" as const,
+      queuedSymbol: "600000",
+      watchlistCount: 3,
+      watchlist: [
+        { market: "ashare", symbol: "600000", name: "浦发银行" },
+        { market: "ashare", symbol: "000300", name: "沪深300" },
+        { market: "us", symbol: "AAPL", name: "Apple" }
+      ],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      checkCount: 8,
+      checks: [
+        { id: "workspace", status: "passed", summary: "p1 workspace selected=600000 watchlist=3" },
+        {
+          id: "watchlist-refresh",
+          status: "passed",
+          summary: "p1 watchlist-refresh run=cache-refresh-p1 symbols=3 refreshed=3 queued=600000"
+        },
+        {
+          id: "queue-pipeline",
+          status: "passed",
+          summary: "p1 queue-pipeline run=run-p1-smoke symbol=600000 refresh=cache-refresh-p1"
+        },
+        { id: "ai-review", status: "passed", summary: "p1 ai-review run=run-p1-smoke mode=local_evidence_review" },
+        { id: "paper-simulation", status: "passed", summary: "p1 paper-simulation run=run-p1-smoke liveBlocked=True" },
+        { id: "export", status: "passed", summary: "p1 export run=run-p1-smoke refresh=cache-refresh-p1 liveBlocked=True" },
+        { id: "import", status: "passed", summary: "p1 import run=run-p1-smoke undo=import-undo-p1" },
+        {
+          id: "imported-export",
+          status: "passed",
+          summary: "p1 imported-export run=run-p1-smoke refresh=cache-refresh-p1 liveBlocked=True"
+        }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          acceptance: {
+            kind: "aiqt.p1AcceptanceStatus",
+            schemaVersion: 1,
+            status: "passed",
+            available: true,
+            sourcePath: "data/p1-acceptance.json",
+            summary: "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-23T09:00:00+00:00",
+            runId: "run-p1-smoke",
+            timeframe: "1d",
+            watchlistRefreshRunId: "cache-refresh-p1",
+            queuedMarket: "ashare",
+            queuedSymbol: "600000",
+            watchlistCount: 3,
+            checkCount: 8,
+            requiredCheckCount: 8,
+            checkIds: [
+              "workspace",
+              "watchlist-refresh",
+              "queue-pipeline",
+              "ai-review",
+              "paper-simulation",
+              "export",
+              "import",
+              "imported-export"
+            ],
+            paperOnly: true,
+            liveTradingAllowed: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadP1AcceptanceLatest("http://127.0.0.1:8765/", fetcher);
+    const summary = buildP1AcceptanceSummary(result.acceptance);
+
+    expect(buildP1AcceptanceLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p1/acceptance/latest"
+    );
+    expect(buildP1AcceptanceLatestUrl("/")).toBe("/api/p1/acceptance/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p1/acceptance/latest");
+    expect(result.source).toBe("core");
+    expect(result.acceptance?.manifest?.runId).toBe("run-p1-smoke");
+    expect(result.acceptance?.watchlistRefreshRunId).toBe("cache-refresh-p1");
+    expect(result.acceptance?.liveTradingAllowed).toBe(false);
+    expect(summary.state).toBe("passed");
+    expect(summary.watchlistCount).toBe(3);
+    expect(summary.liveTradingAllowed).toBe(false);
+  });
+
+  test("falls back when latest P1 acceptance readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ acceptance: { status: "passed" } })
+    });
+
+    const result = await loadP1AcceptanceLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.acceptance?.status).toBe("missing");
+    expect(result.acceptance?.available).toBe(false);
+    expect(result.acceptance?.manifest).toBeNull();
+    expect(result.error).toBe("Invalid P1 acceptance status contract");
+  });
+
+  test("loads the latest P2 pre-live acceptance readback and keeps order submission blocked", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.p2PreLiveAcceptanceManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-24T09:30:00+00:00",
+      status: "passed",
+      baseUrl: "http://aiqt.local",
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const,
+      runId: "run-p2-pre-live",
+      adapterId: "ashare-live",
+      promotionStatus: "certification_pending",
+      checklistStatus: "evidence_pending",
+      passedGateCount: 4,
+      totalGateCount: 6,
+      blockingGateCount: 2,
+      gateIds: [
+        "audited-run",
+        "risk-approval",
+        "paper-execution",
+        "paper-execution-replay",
+        "adapter-certification",
+        "human-confirmation"
+      ],
+      blockerIds: ["adapter-certification", "human-confirmation"],
+      auditEventIds: [
+        "research-run-audit-run-p2-pre-live",
+        "paper-execution-run-p2-pre-live",
+        "paper-execution-replay-run-p2-pre-live",
+        "execution-adapter-certification-ashare-live"
+      ],
+      manualRouteCandidate: false,
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      checkCount: 6,
+      checks: [
+        { id: "pre-live-checklist", status: "passed", summary: "p2 pre-live checklist evidence_pending" },
+        { id: "promotion-gates", status: "passed", summary: "p2 promotion gates" },
+        { id: "paper-execution-replay", status: "passed", summary: "p2 paper execution replay ready" },
+        { id: "adapter-evidence", status: "passed", summary: "p2 adapter evidence ashare-live" },
+        { id: "manual-route-boundary", status: "passed", summary: "p2 manual route boundary" },
+        { id: "live-blocked-boundary", status: "passed", summary: "p2 live blocked boundary" }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          acceptance: {
+            kind: "aiqt.p2PreLiveAcceptanceStatus",
+            schemaVersion: 1,
+            status: "passed",
+            available: true,
+            sourcePath: "data/p2-pre-live-acceptance.json",
+            summary:
+              "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-24T09:30:00+00:00",
+            runId: "run-p2-pre-live",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            adapterId: "ashare-live",
+            promotionStatus: "certification_pending",
+            checklistStatus: "evidence_pending",
+            passedGateCount: 4,
+            totalGateCount: 6,
+            blockingGateCount: 2,
+            gateIds: [
+              "audited-run",
+              "risk-approval",
+              "paper-execution",
+              "paper-execution-replay",
+              "adapter-certification",
+              "human-confirmation"
+            ],
+            blockerIds: ["adapter-certification", "human-confirmation"],
+            auditEventIds: [
+              "research-run-audit-run-p2-pre-live",
+              "paper-execution-run-p2-pre-live",
+              "paper-execution-replay-run-p2-pre-live",
+              "execution-adapter-certification-ashare-live"
+            ],
+            checkCount: 6,
+            requiredCheckCount: 6,
+            checkIds: [
+              "pre-live-checklist",
+              "promotion-gates",
+              "paper-execution-replay",
+              "adapter-evidence",
+              "manual-route-boundary",
+              "live-blocked-boundary"
+            ],
+            manualRouteCandidate: false,
+            paperOnly: true,
+            orderSubmissionEnabled: false,
+            liveTradingAllowed: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadP2PreLiveAcceptanceLatest("http://127.0.0.1:8765/", fetcher);
+    const summary = buildP2PreLiveAcceptanceSummary(result.acceptance);
+
+    expect(buildP2PreLiveAcceptanceLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p2/pre-live/acceptance/latest"
+    );
+    expect(buildP2PreLiveAcceptanceLatestUrl("/")).toBe("/api/p2/pre-live/acceptance/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p2/pre-live/acceptance/latest");
+    expect(result.source).toBe("core");
+    expect(result.acceptance?.manifest?.runId).toBe("run-p2-pre-live");
+    expect(result.acceptance?.adapterId).toBe("ashare-live");
+    expect(result.acceptance?.orderSubmissionEnabled).toBe(false);
+    expect(result.acceptance?.liveTradingAllowed).toBe(false);
+    expect(result.acceptance?.liveOrderSubmitted).toBe(false);
+    expect(result.acceptance?.routeExecuted).toBe(false);
+    expect(summary.state).toBe("passed");
+    expect(summary.blockingGateCount).toBe(2);
+    expect(summary.orderSubmissionEnabled).toBe(false);
+    expect(summary.liveTradingAllowed).toBe(false);
+  });
+
+  test("falls back when latest P2 pre-live acceptance readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ acceptance: { status: "passed" } })
+    });
+
+    const result = await loadP2PreLiveAcceptanceLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.acceptance?.status).toBe("missing");
+    expect(result.acceptance?.available).toBe(false);
+    expect(result.acceptance?.manifest).toBeNull();
+    expect(result.error).toBe("Invalid P2 pre-live acceptance status contract");
   });
 
   test("runs the P0 paper simulation command and returns fill replay evidence", async () => {

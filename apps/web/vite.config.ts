@@ -65,7 +65,7 @@ export default defineConfig({
     }
   },
   build: {
-    chunkSizeWarningLimit: 550,
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks: vendorChunkName

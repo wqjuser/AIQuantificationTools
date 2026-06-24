@@ -251,6 +251,124 @@ export interface P0AcceptanceSummary {
   liveBlockedBoundary: boolean;
 }
 
+export type P1AcceptanceSummaryState = P0AcceptanceSummaryState;
+export type P1AcceptanceSummaryTone = P0AcceptanceSummaryTone;
+
+export interface P1AcceptanceSummarySource {
+  kind: string;
+  schemaVersion: number;
+  status: P1AcceptanceSummaryState;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  timeframe: Timeframe | null;
+  watchlistRefreshRunId: string | null;
+  queuedMarket: Market | null;
+  queuedSymbol: string | null;
+  watchlistCount: number;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
+export interface P1AcceptanceSummary {
+  state: P1AcceptanceSummaryState;
+  tone: P1AcceptanceSummaryTone;
+  headline: string;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  sourcePath: string;
+  runId: string | null;
+  timeframe: Timeframe | null;
+  watchlistRefreshRunId: string | null;
+  queuedMarket: Market | null;
+  queuedSymbol: string | null;
+  watchlistCount: number;
+  checkCount: number;
+  requiredCheckCount: number;
+  liveTradingAllowed: false;
+  reportedLiveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export type P2PreLiveAcceptanceSummaryState = P0AcceptanceSummaryState;
+export type P2PreLiveAcceptanceSummaryTone = P0AcceptanceSummaryTone;
+
+export interface P2PreLiveAcceptanceSummarySource {
+  kind: string;
+  schemaVersion: number;
+  status: P2PreLiveAcceptanceSummaryState;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  adapterId: string | null;
+  promotionStatus: string | null;
+  checklistStatus: string | null;
+  passedGateCount: number;
+  totalGateCount: number;
+  blockingGateCount: number;
+  gateIds: string[];
+  blockerIds: string[];
+  auditEventIds: string[];
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  manualRouteCandidate: boolean;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
+export interface P2PreLiveAcceptanceSummary {
+  state: P2PreLiveAcceptanceSummaryState;
+  tone: P2PreLiveAcceptanceSummaryTone;
+  headline: string;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  sourcePath: string;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  adapterId: string | null;
+  promotionStatus: string | null;
+  checklistStatus: string | null;
+  passedGateCount: number;
+  totalGateCount: number;
+  blockingGateCount: number;
+  blockerIds: string[];
+  auditEventIds: string[];
+  checkCount: number;
+  requiredCheckCount: number;
+  manualRouteCandidate: boolean;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  reportedOrderSubmissionEnabled: boolean;
+  reportedLiveTradingAllowed: boolean;
+  reportedLiveOrderSubmitted: boolean;
+  reportedRouteExecuted: boolean;
+  liveBlockedBoundary: boolean;
+}
+
 export type P0CompletionCriterionId =
   | "product-workspaces"
   | "golden-path"
@@ -531,6 +649,55 @@ export interface StrategyReadinessGate {
   detail: string;
   status: "passed" | "review" | "blocked";
   tone: "positive" | "warning" | "risk";
+}
+
+export type StrategyGovernanceQueueStage =
+  | "current_draft"
+  | "blocked"
+  | "needs_reaudit"
+  | "stale"
+  | "audited"
+  | "imported";
+
+export type StrategyGovernanceQueueActionId = "save-current-version" | "load-version" | "load-and-rerun";
+
+export interface StrategyGovernanceQueueRow {
+  id: string;
+  name: string;
+  revision: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  status: "current" | StrategyLibraryDraftItem["status"];
+  stage: StrategyGovernanceQueueStage;
+  tone: "positive" | "warning" | "neutral" | "risk";
+  contextLabel: string;
+  contextMismatch: boolean;
+  importProvenance: string;
+  validationStatus: "ready" | "review" | "blocked";
+  validationDetail: string;
+  auditRunId: string | null;
+  latestAuditRunId: string | null;
+  changedFieldCount: number;
+  changedFields: StrategyVersionDiffRow["id"][];
+  nextActionId: StrategyGovernanceQueueActionId;
+  nextActionLabel: string;
+  detail: string;
+}
+
+export interface StrategyGovernanceQueueSummary {
+  totalRows: number;
+  currentDraftCount: number;
+  auditedCount: number;
+  importedCount: number;
+  staleCount: number;
+  needsReauditCount: number;
+  blockedCount: number;
+}
+
+export interface StrategyGovernanceQueue {
+  rows: StrategyGovernanceQueueRow[];
+  summary: StrategyGovernanceQueueSummary;
 }
 
 export type StrategyConditionKind = "close_above_sma" | "close_below_sma" | "rsi_below" | "rsi_above";
@@ -887,6 +1054,7 @@ export interface ResearchRunExportPreviewRow {
     | "preparation-evidence"
     | "strategy-config"
     | "research-note"
+    | "handoff-notes"
     | "backtest-trades"
     | "paper-executions"
     | "promotion-candidate"
@@ -949,6 +1117,7 @@ export interface ResearchRunExportBrowserManifest {
     researchNotes?: number;
     aiReviewRuns?: number;
     auditEvents?: number;
+    handoffNotes?: number;
   };
 }
 
@@ -963,6 +1132,20 @@ export interface ResearchRunExportAuditEventSnapshot {
   summary: string;
   detail: string;
   metadata: Record<string, unknown>;
+}
+
+export interface ResearchRunExportHandoffNoteSnapshot {
+  schemaVersion: 1;
+  noteId: string;
+  subjectType: "research_run" | "strategy_version" | "portfolio_order_batch" | "p0_acceptance";
+  subjectId: string;
+  body: string;
+  author: string;
+  sourceWorkspace: string;
+  updatedAt: string;
+  auditEventId: string | null;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
 }
 
 export interface PortfolioPaperOrderBatchSnapshot {
@@ -1175,6 +1358,123 @@ export interface PortfolioPaperOrderSimulationRouteRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type PortfolioPaperOpsQueueStage =
+  | "waiting_risk"
+  | "waiting_human"
+  | "ready_for_simulation"
+  | "simulated"
+  | "rejected"
+  | "stale";
+
+export type PortfolioPaperOpsQueueAction =
+  | "open-portfolio"
+  | "review-order"
+  | "open-approval"
+  | "simulate-order"
+  | "replay-simulation";
+
+export interface PortfolioPaperOpsQueueRow {
+  id: string;
+  stage: PortfolioPaperOpsQueueStage;
+  batchId: string;
+  baseRunId: string;
+  portfolioName: string;
+  orderId: string | null;
+  symbol: string;
+  side: "buy" | "sell" | "hold" | "batch";
+  quantity: number | null;
+  notionalValue: number | null;
+  statusLabel: string;
+  detail: string;
+  latestStateLabel: string;
+  adapterEvidenceLabel: string;
+  simulationId: string | null;
+  stateEventId: string | null;
+  focusQuery: string;
+  nextActionId: PortfolioPaperOpsQueueAction;
+  canRunAction: boolean;
+  updatedAt: string;
+  tone: "positive" | "warning" | "neutral" | "risk";
+}
+
+export interface PortfolioPaperOpsQueueSummary {
+  totalRows: number;
+  waitingRiskCount: number;
+  waitingHumanCount: number;
+  readyForSimulationCount: number;
+  simulatedCount: number;
+  rejectedCount: number;
+  staleCount: number;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+}
+
+export interface PortfolioPaperOpsQueue {
+  rows: PortfolioPaperOpsQueueRow[];
+  summary: PortfolioPaperOpsQueueSummary;
+}
+
+export type PaperExecutionReplayGateStatus = "blocked" | "stale" | "partial" | "replay_ready";
+export type PaperExecutionReplayGateTone = "positive" | "warning" | "risk";
+export type PaperExecutionReplayGateItemStatus = "passed" | "blocked" | "stale" | "review";
+export type PaperExecutionReplayGateItemId =
+  | "single-paper-execution"
+  | "portfolio-order-ledger"
+  | "portfolio-approval-ledger"
+  | "portfolio-simulation-ledger"
+  | "portfolio-state-history"
+  | "portfolio-replay"
+  | "adapter-paper-execution"
+  | "live-boundary";
+
+export interface PaperExecutionReplayGateItem {
+  id: PaperExecutionReplayGateItemId;
+  label: string;
+  status: PaperExecutionReplayGateItemStatus;
+  evidence: string;
+  detail: string;
+  tone: PaperExecutionReplayGateTone;
+}
+
+export interface PaperExecutionReplayGateMetrics {
+  filledPaperOrders: number;
+  portfolioOrders: number;
+  approvedPortfolioOrders: number;
+  portfolioFilledOrders: number;
+  stateHistoryFilledEvents: number;
+  adapterPaperExecutions: number;
+  replayWarnings: number;
+}
+
+export interface PaperExecutionReplayGate {
+  status: PaperExecutionReplayGateStatus;
+  tone: PaperExecutionReplayGateTone;
+  headline: string;
+  detail: string;
+  passedCount: number;
+  totalCount: number;
+  currentBlockerId: PaperExecutionReplayGateItemId | null;
+  currentBlockerLabel: string | null;
+  latestEvidenceId: string | null;
+  replayReady: boolean;
+  preLiveReviewAllowed: false;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  metrics: PaperExecutionReplayGateMetrics;
+  items: PaperExecutionReplayGateItem[];
+}
+
+export interface PaperExecutionReplayGateInput {
+  adapterPaperExecutionRows?: ExecutionAdapterPaperExecutionRow[] | null;
+  currentRunId?: string | null;
+  paperExecution?: PaperExecutionSnapshot | null;
+  portfolioApprovalRows?: PortfolioPaperOrderApprovalRow[] | null;
+  portfolioOrderLifecycleRows?: PortfolioPaperOrderLifecycleRow[] | null;
+  portfolioOrderReplay?: PortfolioPaperOrderReplaySnapshot | null;
+  portfolioOrderSimulations?: PortfolioPaperOrderSimulationSnapshot[] | null;
+  portfolioStateHistoryRows?: PortfolioPaperOrderStateHistoryRow[] | null;
+}
+
 export interface PortfolioPaperOrderStateHistoryEventSnapshot {
   eventId: string;
   batchId: string;
@@ -1353,6 +1653,7 @@ export interface ResearchRunExportBrowserPackage {
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
   auditEvents?: ResearchRunExportAuditEventSnapshot[];
+  handoffNotes?: ResearchRunExportHandoffNoteSnapshot[];
   p0PackageCompleteness?: {
     kind: "aiqt.p0PackageCompleteness";
     schemaVersion: 1;
@@ -1458,6 +1759,7 @@ export interface ResearchRunExportBrowserRow {
     | "backtest"
     | "backtest-report"
     | "research-note"
+    | "handoff-notes"
     | "paper-executions"
     | "adapter-paper-executions"
     | "portfolio-paper-orders"
@@ -1508,6 +1810,7 @@ export interface ResearchRunImportDiffRow {
     | "preparation-evidence"
     | "strategy-revision"
     | "research-note"
+    | "handoff-notes"
     | "paper-executions"
     | "adapter-paper-executions"
     | "portfolio-paper-orders"
@@ -1846,6 +2149,64 @@ export interface AuditEvidenceReportLedgerRow {
     | "research_context_readiness_report";
   searchText: string;
   tone: "ai" | "positive" | "risk";
+}
+
+export type EvidencePackageControlRoomStatus =
+  | "import_blocked"
+  | "package_blocked"
+  | "acceptance_missing"
+  | "stale_signature"
+  | "unsigned"
+  | "ready_for_archive"
+  | "complete";
+
+export type EvidencePackageControlRoomAction =
+  | "inspect-package"
+  | "open-import-audit"
+  | "open-acceptance"
+  | "open-signature-ledger"
+  | "open-archive";
+
+export interface EvidencePackageControlRoomRow {
+  id: string;
+  runId: string;
+  context: string;
+  updatedAt: string;
+  status: EvidencePackageControlRoomStatus;
+  statusLabel: string;
+  packageStatus: ResearchRunExportIndexStatus | "missing";
+  packageDetail: string;
+  signatureStatus: AuditEvidenceReportSignatureStatus | "missing";
+  signatureDetail: string;
+  importStatus: ResearchRunImportAuditEventStage | "none";
+  importDetail: string;
+  acceptanceStatus: P0AcceptanceSummaryState;
+  acceptanceDetail: string;
+  evidenceCoverage: string;
+  exportPath: string;
+  focusQuery: string;
+  nextActionId: EvidencePackageControlRoomAction;
+  nextActionLabel: string;
+  tone: "positive" | "warning" | "risk" | "ai";
+}
+
+export interface EvidencePackageControlRoomSummary {
+  total: number;
+  complete: number;
+  readyForArchive: number;
+  needsAction: number;
+  importBlocked: number;
+  packageBlocked: number;
+  acceptanceMissing: number;
+  staleSignature: number;
+  unsigned: number;
+  signedRuns: number;
+  latestUpdatedAt: string;
+}
+
+export interface EvidencePackageControlRoom {
+  rows: EvidencePackageControlRoomRow[];
+  summary: EvidencePackageControlRoomSummary;
 }
 
 export interface AuditEvidenceReportLedgerSummary {
@@ -2658,6 +3019,54 @@ export interface ScannerCandidate {
   risk: "low" | "medium" | "high";
   score: number;
   note: string;
+}
+
+export type ResearchOpsQueueStage =
+  | "needs_data"
+  | "ready_for_pipeline"
+  | "needs_ai_review"
+  | "paper_candidate";
+
+export type ResearchOpsQueueAction =
+  | "refresh-watchlist-cache"
+  | "run-pipeline"
+  | "run-ai-review"
+  | "submit-paper-order";
+
+export interface ResearchOpsQueueRow {
+  id: string;
+  instrument: Instrument;
+  market: Market;
+  symbol: string;
+  name: string;
+  timeframe: Timeframe;
+  stage: ResearchOpsQueueStage;
+  status: ResearchContextReadinessStatus;
+  tone: "positive" | "warning" | "risk";
+  nextActionId: ResearchOpsQueueAction;
+  nextActionLabel: string;
+  latestRunId: string | null;
+  latestCacheRunId: string | null;
+  cacheSource: string;
+  cacheRows: number;
+  detail: string;
+  selected: boolean;
+}
+
+export interface ResearchOpsQueueSummary {
+  total: number;
+  needsDataCount: number;
+  readyForPipelineCount: number;
+  needsAiReviewCount: number;
+  paperCandidateCount: number;
+  headline: string;
+  detail: string;
+  tone: "positive" | "warning" | "risk" | "neutral";
+}
+
+export interface ResearchOpsQueue {
+  rows: ResearchOpsQueueRow[];
+  summary: ResearchOpsQueueSummary;
 }
 
 export interface PortfolioRiskRow {
@@ -4780,6 +5189,65 @@ export interface ExecutionAdapterPaperExecutionRow {
   tone: "positive" | "warning" | "neutral" | "risk";
 }
 
+export type ExecutionAdapterChainHealthStatus = "empty" | "in_progress" | "blocked" | "paper_ready";
+export type ExecutionAdapterChainHealthStageStatus = "missing" | "blocked" | "recorded" | "unsafe";
+
+export type ExecutionAdapterChainHealthStageId =
+  | "secret-reference"
+  | "secret-materialization"
+  | "secret-manifest-validation"
+  | "environment-binding"
+  | "runtime-reload-plan"
+  | "runtime-reload-execution"
+  | "runtime-reload-acceptance"
+  | "orchestration-dry-run"
+  | "orchestration-execution"
+  | "human-confirmation"
+  | "sandbox-probe-plan"
+  | "sandbox-probe-execution"
+  | "sandbox-probe-review"
+  | "production-route-review"
+  | "sandbox-order-schema-dry-run"
+  | "paper-order-lifecycle"
+  | "paper-route-runbook"
+  | "ops-state"
+  | "adapter-paper-execution";
+
+export interface ExecutionAdapterChainHealthStage {
+  id: ExecutionAdapterChainHealthStageId;
+  label: string;
+  status: ExecutionAdapterChainHealthStageStatus;
+  evidenceId: string | null;
+  auditEventId: string | null;
+  timestamp: string | null;
+  detail: string;
+  blocker: string | null;
+  tone: "positive" | "warning" | "risk";
+}
+
+export interface ExecutionAdapterChainHealthRollup {
+  id: string;
+  adapterId: string;
+  adapterName: string;
+  market: Market | "multi";
+  route: "live";
+  status: ExecutionAdapterChainHealthStatus;
+  headline: string;
+  detail: string;
+  completedStageCount: number;
+  totalStageCount: number;
+  blockerStageId: ExecutionAdapterChainHealthStageId | null;
+  blockerLabel: string | null;
+  latestEvidenceId: string | null;
+  latestEvidenceTimestamp: string | null;
+  latestAuditEventId: string | null;
+  manualRouteCandidate: boolean;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  stages: ExecutionAdapterChainHealthStage[];
+  tone: "positive" | "warning" | "risk";
+}
+
 export type ExecutionAdapterHealthProbeStatus = "ready" | "review" | "blocked";
 export type ExecutionAdapterHealthProbeCheckStatus = "passed" | "review" | "blocked" | "skipped";
 
@@ -4887,6 +5355,43 @@ export interface PromotionReadiness {
   headline: string;
   summary: string;
   stages: PromotionQueueStage[];
+}
+
+export type PreLiveReadinessChecklistStatus =
+  | "blocked"
+  | "paper_pending"
+  | "evidence_pending"
+  | "operator_pending"
+  | "manual_route_ready";
+
+export type PreLiveReadinessChecklistItemId = PromotionQueueStage["id"] | "paper-execution-replay";
+
+export interface PreLiveReadinessChecklistItem {
+  id: PreLiveReadinessChecklistItemId;
+  label: string;
+  state: PromotionQueueStage["status"];
+  tone: PromotionQueueStage["tone"];
+  evidence: string;
+  detail: string;
+}
+
+export interface PreLiveReadinessChecklist {
+  status: PreLiveReadinessChecklistStatus;
+  tone: "positive" | "warning" | "risk";
+  headline: string;
+  summary: string;
+  passedCount: number;
+  totalCount: number;
+  blockingCount: number;
+  nextActionId: PreLiveReadinessChecklistItemId | null;
+  manualRouteCandidate: boolean;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  items: PreLiveReadinessChecklistItem[];
+}
+
+export interface PreLiveReadinessChecklistInput {
+  paperExecutionReplayGate?: PaperExecutionReplayGate | null;
 }
 
 export type ExecutionAdapterPreLiveRunbookStatus = "blocked" | "in_progress" | "paper_rehearsal_ready";
@@ -6490,6 +6995,205 @@ export function buildP0AcceptanceSummary(
     requiredCheckCount: acceptance.requiredCheckCount,
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+    liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
+  };
+}
+
+export function buildP1AcceptanceSummary(
+  acceptance: P1AcceptanceSummarySource | null | undefined
+): P1AcceptanceSummary {
+  if (!acceptance || acceptance.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "P1 acceptance manifest missing",
+      detail:
+        acceptance?.reason ||
+        "Run npm run docker:smoke:p1 -- --no-build --down to generate data/p1-acceptance.json.",
+      actionLabel: "Run P1 acceptance smoke",
+      targetWorkspaceId: "audit",
+      sourcePath: acceptance?.sourcePath || "data/p1-acceptance.json",
+      runId: acceptance?.runId ?? null,
+      timeframe: acceptance?.timeframe ?? null,
+      watchlistRefreshRunId: acceptance?.watchlistRefreshRunId ?? null,
+      queuedMarket: acceptance?.queuedMarket ?? null,
+      queuedSymbol: acceptance?.queuedSymbol ?? null,
+      watchlistCount: acceptance?.watchlistCount ?? 0,
+      checkCount: acceptance?.checkCount ?? 0,
+      requiredCheckCount: acceptance?.requiredCheckCount ?? 8,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(acceptance?.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(acceptance?.liveBlockedBoundary)
+    };
+  }
+
+  if (acceptance.status === "invalid" || acceptance.liveTradingAllowed || !acceptance.liveBlockedBoundary) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "P1 acceptance manifest invalid",
+      detail: `P1 acceptance evidence is invalid: ${
+        acceptance.reason || acceptance.summary || "unknown validation failure"
+      }. Live trading remains blocked.`,
+      actionLabel: "Review P1 acceptance manifest",
+      targetWorkspaceId: "audit",
+      sourcePath: acceptance.sourcePath,
+      runId: acceptance.runId,
+      timeframe: acceptance.timeframe,
+      watchlistRefreshRunId: acceptance.watchlistRefreshRunId,
+      queuedMarket: acceptance.queuedMarket,
+      queuedSymbol: acceptance.queuedSymbol,
+      watchlistCount: acceptance.watchlistCount,
+      checkCount: acceptance.checkCount,
+      requiredCheckCount: acceptance.requiredCheckCount,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
+    };
+  }
+
+  const context = [acceptance.queuedMarket, acceptance.queuedSymbol, acceptance.timeframe].filter(Boolean).join(" ");
+  const runLabel = acceptance.runId ? `Run ${acceptance.runId}` : "Latest P1 run";
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P1 research-ops acceptance passed",
+    detail: `${runLabel} · ${context || "unknown queued context"} · ${
+      acceptance.watchlistCount
+    } watchlist instruments · ${acceptance.checkCount} checks · live blocked.`,
+    actionLabel: "Open P1 acceptance manifest",
+    targetWorkspaceId: "audit",
+    sourcePath: acceptance.sourcePath,
+    runId: acceptance.runId,
+    timeframe: acceptance.timeframe,
+    watchlistRefreshRunId: acceptance.watchlistRefreshRunId,
+    queuedMarket: acceptance.queuedMarket,
+    queuedSymbol: acceptance.queuedSymbol,
+    watchlistCount: acceptance.watchlistCount,
+    checkCount: acceptance.checkCount,
+    requiredCheckCount: acceptance.requiredCheckCount,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+    liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
+  };
+}
+
+export function buildP2PreLiveAcceptanceSummary(
+  acceptance: P2PreLiveAcceptanceSummarySource | null | undefined
+): P2PreLiveAcceptanceSummary {
+  if (!acceptance || acceptance.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "P2 pre-live acceptance manifest missing",
+      detail:
+        acceptance?.reason ||
+        "Generate data/p2-pre-live-acceptance.json from an audited pre-live checklist before treating the execution route as reviewed.",
+      actionLabel: "Review pre-live checklist",
+      targetWorkspaceId: "execution",
+      sourcePath: acceptance?.sourcePath || "data/p2-pre-live-acceptance.json",
+      runId: acceptance?.runId ?? null,
+      market: acceptance?.market ?? null,
+      symbol: acceptance?.symbol ?? null,
+      timeframe: acceptance?.timeframe ?? null,
+      adapterId: acceptance?.adapterId ?? null,
+      promotionStatus: acceptance?.promotionStatus ?? null,
+      checklistStatus: acceptance?.checklistStatus ?? null,
+      passedGateCount: acceptance?.passedGateCount ?? 0,
+      totalGateCount: acceptance?.totalGateCount ?? 0,
+      blockingGateCount: acceptance?.blockingGateCount ?? 0,
+      blockerIds: acceptance?.blockerIds ?? [],
+      auditEventIds: acceptance?.auditEventIds ?? [],
+      checkCount: acceptance?.checkCount ?? 0,
+      requiredCheckCount: acceptance?.requiredCheckCount ?? 6,
+      manualRouteCandidate: Boolean(acceptance?.manualRouteCandidate),
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: Boolean(acceptance?.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(acceptance?.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(acceptance?.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(acceptance?.routeExecuted),
+      liveBlockedBoundary: Boolean(acceptance?.liveBlockedBoundary)
+    };
+  }
+
+  const unsafeExecutionClaim =
+    acceptance.status === "invalid" ||
+    acceptance.orderSubmissionEnabled ||
+    acceptance.liveTradingAllowed ||
+    acceptance.liveOrderSubmitted ||
+    acceptance.routeExecuted ||
+    !acceptance.liveBlockedBoundary;
+  if (unsafeExecutionClaim) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "P2 pre-live acceptance manifest invalid",
+      detail: `P2 pre-live evidence is invalid: ${
+        acceptance.reason || acceptance.summary || "unknown validation failure"
+      }. Direct order submission remains disabled and live trading remains blocked.`,
+      actionLabel: "Review P2 pre-live manifest",
+      targetWorkspaceId: "audit",
+      sourcePath: acceptance.sourcePath,
+      runId: acceptance.runId,
+      market: acceptance.market,
+      symbol: acceptance.symbol,
+      timeframe: acceptance.timeframe,
+      adapterId: acceptance.adapterId,
+      promotionStatus: acceptance.promotionStatus,
+      checklistStatus: acceptance.checklistStatus,
+      passedGateCount: acceptance.passedGateCount,
+      totalGateCount: acceptance.totalGateCount,
+      blockingGateCount: acceptance.blockingGateCount,
+      blockerIds: acceptance.blockerIds,
+      auditEventIds: acceptance.auditEventIds,
+      checkCount: acceptance.checkCount,
+      requiredCheckCount: acceptance.requiredCheckCount,
+      manualRouteCandidate: Boolean(acceptance.manualRouteCandidate),
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: Boolean(acceptance.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(acceptance.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(acceptance.routeExecuted),
+      liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
+    };
+  }
+
+  const context = [acceptance.market, acceptance.symbol, acceptance.timeframe].filter(Boolean).join(" ");
+  const runLabel = acceptance.runId ? `Run ${acceptance.runId}` : "Latest P2 pre-live run";
+  const adapterLabel = acceptance.adapterId ? ` · adapter ${acceptance.adapterId}` : "";
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P2 pre-live acceptance recorded",
+    detail: `${runLabel} · ${context || "unknown context"}${adapterLabel} · ${
+      acceptance.passedGateCount
+    }/${acceptance.totalGateCount} gates · ${acceptance.blockingGateCount} blockers · live blocked.`,
+    actionLabel: "Open P2 pre-live manifest",
+    targetWorkspaceId: "audit",
+    sourcePath: acceptance.sourcePath,
+    runId: acceptance.runId,
+    market: acceptance.market,
+    symbol: acceptance.symbol,
+    timeframe: acceptance.timeframe,
+    adapterId: acceptance.adapterId,
+    promotionStatus: acceptance.promotionStatus,
+    checklistStatus: acceptance.checklistStatus,
+    passedGateCount: acceptance.passedGateCount,
+    totalGateCount: acceptance.totalGateCount,
+    blockingGateCount: acceptance.blockingGateCount,
+    blockerIds: acceptance.blockerIds,
+    auditEventIds: acceptance.auditEventIds,
+    checkCount: acceptance.checkCount,
+    requiredCheckCount: acceptance.requiredCheckCount,
+    manualRouteCandidate: Boolean(acceptance.manualRouteCandidate),
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    reportedOrderSubmissionEnabled: Boolean(acceptance.orderSubmissionEnabled),
+    reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
+    reportedLiveOrderSubmitted: Boolean(acceptance.liveOrderSubmitted),
+    reportedRouteExecuted: Boolean(acceptance.routeExecuted),
     liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
   };
 }
@@ -8974,6 +9678,7 @@ export function buildResearchRunExportBrowserRows(
     formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(exportPackage.portfolioPaperOrderSimulations);
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
   const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
+  const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
     (event) => event.eventType === "p0_paper_simulation"
   );
@@ -9041,6 +9746,7 @@ export function buildResearchRunExportBrowserRows(
   const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
   const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
   const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
+  const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
   const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
   const p0CompletenessIsReady =
     p0PackageCompleteness?.kind === "aiqt.p0PackageCompleteness" &&
@@ -9145,6 +9851,22 @@ export function buildResearchRunExportBrowserRows(
           : "No locked research note is declared in this package.",
       exportPath: "researchRun.researchNote",
       tone: (artifactCounts.researchNotes ?? 0) > 0 ? "ai" : "neutral"
+    },
+    {
+      id: "handoff-notes",
+      label: "Handoff notes",
+      status:
+        handoffNoteCountMatches && handoffNotePackageCount > 0
+          ? "ready"
+          : handoffNoteCountMatches
+            ? "missing"
+            : "blocked",
+      value: `${artifactCounts.handoffNotes ?? 0} manifest / ${handoffNotePackageCount} package`,
+      detail: handoffNoteCountMatches
+        ? "Local team handoff note count matches the export package payload."
+        : "Handoff note manifest count does not match the package payload.",
+      exportPath: "handoffNotes[]",
+      tone: handoffNoteCountMatches && handoffNotePackageCount > 0 ? "ai" : handoffNoteCountMatches ? "neutral" : "risk"
     },
     {
       id: "paper-executions",
@@ -9414,6 +10136,7 @@ export function buildResearchRunExportIndexRows(
       const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
       const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
       const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
+      const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
       const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
       const passedGateCount = exportPackage.executionHandoff.requiredGates.filter((gate) => gate.passed).length;
       const totalGateCount = exportPackage.executionHandoff.requiredGates.length;
@@ -9494,6 +10217,7 @@ export function buildResearchRunExportIndexRows(
       const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
       const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
       const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
+      const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
       const mismatchReasons = [
         integrityIsReady ? null : "Integrity missing",
         dataIsReady ? null : "Data snapshot mismatch",
@@ -9503,6 +10227,7 @@ export function buildResearchRunExportIndexRows(
         promotionCountMatches ? null : "Promotion candidate count mismatch",
         aiReviewCountMatches ? null : "AI review count mismatch",
         auditEventCountMatches ? null : "Audit event count mismatch",
+        handoffNoteCountMatches ? null : "Handoff note count mismatch",
         auditReport && !auditReportIsReady ? "Audit report mismatch" : null,
         backtestReport && !backtestReportIsReady ? "Backtest report mismatch" : null
       ].filter((reason): reason is string => Boolean(reason));
@@ -9537,6 +10262,7 @@ export function buildResearchRunExportIndexRows(
           `${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
           `${artifactCounts.aiReviewRuns ?? 0} AI`,
           (artifactCounts.auditEvents ?? 0) > 0 ? `${artifactCounts.auditEvents ?? 0} audit events` : null,
+          (artifactCounts.handoffNotes ?? 0) > 0 ? `${artifactCounts.handoffNotes ?? 0} handoff notes` : null,
           reportArtifactLabels.length ? `${reportArtifactLabels.length} reports` : null,
           ...reportArtifactLabels
         ]
@@ -9596,6 +10322,7 @@ function researchRunImportArtifactCountMismatches(
     promotionCandidates: number;
     researchNotes: number;
     auditEvents: number;
+    handoffNotes: number;
   }
 ): string[] {
   const { artifactCounts } = exportPackage.manifest;
@@ -9621,7 +10348,8 @@ function researchRunImportArtifactCountMismatches(
     ],
     ["promotionCandidates", artifactCounts.promotionCandidates ?? 0, actualCounts.promotionCandidates],
     ["aiReviewRuns", artifactCounts.aiReviewRuns ?? 0, actualCounts.aiReviewRuns],
-    ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents]
+    ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents],
+    ["handoffNotes", artifactCounts.handoffNotes ?? 0, actualCounts.handoffNotes]
   ];
 
   return pairs
@@ -9701,6 +10429,7 @@ export function buildResearchRunImportDiffRows({
   const packageAiReviewCount = exportPackage.aiReviewRuns?.length ?? 0;
   const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
   const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
+  const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
     : 0;
@@ -9777,7 +10506,8 @@ export function buildResearchRunImportDiffRows({
     portfolioPaperOrderSimulations: packagePortfolioPaperOrderSimulationCount,
     promotionCandidates: exportPackage.promotionCandidate ? 1 : 0,
     researchNotes: incomingNote ? 1 : 0,
-    auditEvents: packageAuditEventCount
+    auditEvents: packageAuditEventCount,
+    handoffNotes: packageHandoffNoteCount
   });
 
   return [
@@ -9943,6 +10673,19 @@ export function buildResearchRunImportDiffRows({
         : "Package does not include a locked research note.",
       exportPath: "researchRun.researchNote",
       tone: incomingNote && currentNote?.body !== incomingNote.body ? "warning" : "neutral"
+    },
+    {
+      id: "handoff-notes",
+      label: "Handoff notes",
+      status: packageHandoffNoteCount > 0 ? "add" : "same",
+      current: "Local handoff store",
+      incoming: `${packageHandoffNoteCount} saved / ${exportPackage.manifest.artifactCounts.handoffNotes ?? 0} manifest`,
+      detail:
+        packageHandoffNoteCount > 0
+          ? "Import will restore local team handoff notes attached to the package run."
+          : "Package does not include local team handoff notes.",
+      exportPath: "handoffNotes[]",
+      tone: packageHandoffNoteCount > 0 ? "warning" : "neutral"
     },
     {
       id: "paper-executions",
@@ -12579,6 +13322,357 @@ export function buildAuditEvidenceReportLedgerSummary(
   };
 }
 
+export function buildEvidencePackageControlRoomRows({
+  acceptanceReviewEvents = [],
+  auditLedgerRows = [],
+  exportIndexRows = [],
+  importAuditEvents = [],
+  p0AcceptanceSummary = null
+}: {
+  acceptanceReviewEvents?: AuditEvidenceReportLedgerEventRecord[];
+  auditLedgerRows?: AuditEvidenceReportLedgerRow[];
+  exportIndexRows?: ResearchRunExportIndexRow[];
+  importAuditEvents?: ResearchRunImportAuditEvent[];
+  p0AcceptanceSummary?: P0AcceptanceSummary | null;
+}): EvidencePackageControlRoom {
+  const latestExportByRun = new Map<string, ResearchRunExportIndexRow>();
+  const ledgerRowsByRun = new Map<string, AuditEvidenceReportLedgerRow[]>();
+  const importEventsByRun = new Map<string, ResearchRunImportAuditEvent[]>();
+  const acceptanceByRun = new Map<
+    string,
+    { state: P0AcceptanceSummaryState; detail: string; updatedAt: string }
+  >();
+  const runIds = new Set<string>();
+
+  for (const row of exportIndexRows) {
+    runIds.add(row.runId);
+    const current = latestExportByRun.get(row.runId);
+    if (!current || timestampSortValue(row.exportedAt) > timestampSortValue(current.exportedAt)) {
+      latestExportByRun.set(row.runId, row);
+    }
+  }
+
+  for (const row of auditLedgerRows) {
+    runIds.add(row.runId);
+    const rows = ledgerRowsByRun.get(row.runId) ?? [];
+    rows.push(row);
+    ledgerRowsByRun.set(row.runId, rows);
+  }
+
+  for (const event of importAuditEvents) {
+    runIds.add(event.runId);
+    const events = importEventsByRun.get(event.runId) ?? [];
+    events.push(event);
+    importEventsByRun.set(event.runId, events);
+  }
+
+  for (const event of acceptanceReviewEvents) {
+    if (event.eventType !== "p0_acceptance_review" || !event.runId) {
+      continue;
+    }
+    runIds.add(event.runId);
+    const state = evidencePackageAcceptanceState(event);
+    const current = acceptanceByRun.get(event.runId);
+    if (!current || timestampSortValue(event.createdAt) > timestampSortValue(current.updatedAt)) {
+      acceptanceByRun.set(event.runId, {
+        state,
+        detail:
+          event.detail ||
+          `${event.summary || "P0 acceptance review"} · ${auditReportLedgerMetadataText(
+            event.metadata,
+            "checkCount"
+          )}/${auditReportLedgerMetadataText(event.metadata, "requiredCheckCount")} checks`,
+        updatedAt: event.createdAt
+      });
+    }
+  }
+
+  if (p0AcceptanceSummary?.runId) {
+    runIds.add(p0AcceptanceSummary.runId);
+    const current = acceptanceByRun.get(p0AcceptanceSummary.runId);
+    if (!current) {
+      acceptanceByRun.set(p0AcceptanceSummary.runId, {
+        state: p0AcceptanceSummary.state,
+        detail: p0AcceptanceSummary.detail,
+        updatedAt: ""
+      });
+    }
+  }
+
+  const rows = [...runIds]
+    .map((runId): EvidencePackageControlRoomRow => {
+      const exportRow = latestExportByRun.get(runId);
+      const ledgerRows = ledgerRowsByRun.get(runId) ?? [];
+      const latestLedgerRow = latestEvidencePackageLedgerRow(ledgerRows);
+      const latestImportEvent = latestEvidencePackageImportEvent(importEventsByRun.get(runId) ?? []);
+      const acceptance = acceptanceByRun.get(runId) ?? {
+        state: "missing" as P0AcceptanceSummaryState,
+        detail: "No P0 acceptance review has been recorded for this run.",
+        updatedAt: ""
+      };
+      const signature = evidencePackageSignatureState(ledgerRows);
+      const importStatus = latestImportEvent?.stage ?? "none";
+      const packageStatus = exportRow?.status ?? "missing";
+      const status = evidencePackageControlStatus({
+        acceptanceStatus: acceptance.state,
+        importStatus,
+        packageStatus,
+        signatureStatus: signature.status,
+        staleSignature: signature.stale
+      });
+      const updatedAt = latestEvidencePackageUpdatedAt([
+        exportRow?.exportedAt ?? "",
+        latestLedgerRow?.createdAt ?? "",
+        latestImportEvent?.createdAt ?? "",
+        acceptance.updatedAt
+      ]);
+
+      return {
+        id: `evidence-package-control-${runId}`,
+        runId,
+        context: exportRow?.context || latestLedgerRow?.focusQuery || runId,
+        updatedAt,
+        status,
+        statusLabel: evidencePackageControlStatusLabel(status),
+        packageStatus,
+        packageDetail: exportRow?.detail || "No export package index row is available for this run.",
+        signatureStatus: signature.status,
+        signatureDetail: signature.detail,
+        importStatus,
+        importDetail: latestImportEvent?.detail || "No import audit event is recorded for this run.",
+        acceptanceStatus: acceptance.state,
+        acceptanceDetail: acceptance.detail,
+        evidenceCoverage: evidencePackageCoverageDetail(ledgerRows),
+        exportPath: exportRow?.exportPath || latestImportEvent?.exportPath || "",
+        focusQuery: evidencePackageControlFocusQuery(runId, exportRow, latestLedgerRow),
+        nextActionId: evidencePackageControlAction(status),
+        nextActionLabel: evidencePackageControlActionLabel(status),
+        tone: evidencePackageControlTone(status)
+      };
+    })
+    .sort((left, right) => {
+      const rankDelta = evidencePackageControlStatusRank(left.status) - evidencePackageControlStatusRank(right.status);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+      return timestampSortValue(right.updatedAt) - timestampSortValue(left.updatedAt) || left.runId.localeCompare(right.runId);
+    });
+
+  const summary: EvidencePackageControlRoomSummary = {
+    total: rows.length,
+    complete: rows.filter((row) => row.status === "complete").length,
+    readyForArchive: rows.filter((row) => row.status === "ready_for_archive").length,
+    needsAction: rows.filter((row) => evidencePackageControlStatusRank(row.status) < evidencePackageControlStatusRank("ready_for_archive")).length,
+    importBlocked: rows.filter((row) => row.status === "import_blocked").length,
+    packageBlocked: rows.filter((row) => row.status === "package_blocked").length,
+    acceptanceMissing: rows.filter((row) => row.status === "acceptance_missing").length,
+    staleSignature: rows.filter((row) => row.status === "stale_signature").length,
+    unsigned: rows.filter((row) => row.status === "unsigned").length,
+    signedRuns: rows.filter((row) => row.signatureStatus === "signed" || row.signatureStatus === "verified").length,
+    latestUpdatedAt: latestEvidencePackageUpdatedAt(rows.map((row) => row.updatedAt))
+  };
+
+  return { rows, summary };
+}
+
+function evidencePackageControlStatus({
+  acceptanceStatus,
+  importStatus,
+  packageStatus,
+  signatureStatus,
+  staleSignature
+}: {
+  acceptanceStatus: P0AcceptanceSummaryState;
+  importStatus: ResearchRunImportAuditEventStage | "none";
+  packageStatus: ResearchRunExportIndexStatus | "missing";
+  signatureStatus: AuditEvidenceReportSignatureStatus | "missing";
+  staleSignature: boolean;
+}): EvidencePackageControlRoomStatus {
+  if (importStatus === "blocked" || importStatus === "failed" || importStatus === "undo-failed") {
+    return "import_blocked";
+  }
+  if (packageStatus === "missing" || packageStatus === "blocked") {
+    return "package_blocked";
+  }
+  if (acceptanceStatus !== "passed") {
+    return "acceptance_missing";
+  }
+  if (staleSignature) {
+    return "stale_signature";
+  }
+  if (signatureStatus === "missing" || signatureStatus === "unsigned") {
+    return "unsigned";
+  }
+  return importStatus === "confirmed" ? "complete" : "ready_for_archive";
+}
+
+function evidencePackageControlStatusRank(status: EvidencePackageControlRoomStatus): number {
+  return (
+    {
+      import_blocked: 0,
+      package_blocked: 1,
+      acceptance_missing: 2,
+      stale_signature: 3,
+      unsigned: 4,
+      ready_for_archive: 5,
+      complete: 6
+    } satisfies Record<EvidencePackageControlRoomStatus, number>
+  )[status];
+}
+
+function evidencePackageControlStatusLabel(status: EvidencePackageControlRoomStatus): string {
+  return (
+    {
+      import_blocked: "Import blocked",
+      package_blocked: "Export package blocked",
+      acceptance_missing: "P0 acceptance missing",
+      stale_signature: "Signature stale or invalid",
+      unsigned: "Unsigned report",
+      ready_for_archive: "Ready for archive",
+      complete: "Complete evidence package"
+    } satisfies Record<EvidencePackageControlRoomStatus, string>
+  )[status];
+}
+
+function evidencePackageControlAction(status: EvidencePackageControlRoomStatus): EvidencePackageControlRoomAction {
+  if (status === "import_blocked") {
+    return "open-import-audit";
+  }
+  if (status === "package_blocked") {
+    return "inspect-package";
+  }
+  if (status === "acceptance_missing") {
+    return "open-acceptance";
+  }
+  if (status === "stale_signature" || status === "unsigned") {
+    return "open-signature-ledger";
+  }
+  return "open-archive";
+}
+
+function evidencePackageControlActionLabel(status: EvidencePackageControlRoomStatus): string {
+  return (
+    {
+      "inspect-package": "Inspect package",
+      "open-acceptance": "Open P0 acceptance",
+      "open-archive": "Archive evidence",
+      "open-import-audit": "Open import audit",
+      "open-signature-ledger": "Open signature ledger"
+    } satisfies Record<EvidencePackageControlRoomAction, string>
+  )[evidencePackageControlAction(status)];
+}
+
+function evidencePackageControlTone(status: EvidencePackageControlRoomStatus): EvidencePackageControlRoomRow["tone"] {
+  if (status === "complete") {
+    return "positive";
+  }
+  if (status === "ready_for_archive" || status === "unsigned" || status === "acceptance_missing") {
+    return "warning";
+  }
+  return "risk";
+}
+
+function evidencePackageControlFocusQuery(
+  runId: string,
+  exportRow: ResearchRunExportIndexRow | undefined,
+  ledgerRow: AuditEvidenceReportLedgerRow | null
+): string {
+  return [runId, exportRow?.exportPath, ledgerRow?.focusQuery, ledgerRow?.shortHash].filter(Boolean).join(" ");
+}
+
+function latestEvidencePackageLedgerRow(rows: AuditEvidenceReportLedgerRow[]): AuditEvidenceReportLedgerRow | null {
+  return rows.reduce<AuditEvidenceReportLedgerRow | null>((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return timestampSortValue(row.createdAt) > timestampSortValue(latest.createdAt) ? row : latest;
+  }, null);
+}
+
+function latestEvidencePackageImportEvent(events: ResearchRunImportAuditEvent[]): ResearchRunImportAuditEvent | null {
+  return events.reduce<ResearchRunImportAuditEvent | null>((latest, event) => {
+    if (!latest) {
+      return event;
+    }
+    return timestampSortValue(event.createdAt) > timestampSortValue(latest.createdAt) ? event : latest;
+  }, null);
+}
+
+function latestEvidencePackageUpdatedAt(timestamps: string[]): string {
+  return timestamps
+    .filter(Boolean)
+    .sort((left, right) => timestampSortValue(right) - timestampSortValue(left))[0] ?? "";
+}
+
+function evidencePackageAcceptanceState(event: AuditEvidenceReportLedgerEventRecord): P0AcceptanceSummaryState {
+  const state = (auditReportLedgerMetadataText(event.metadata, "state") || event.stage).toLowerCase();
+  if (state === "passed") {
+    return "passed";
+  }
+  if (state === "invalid") {
+    return "invalid";
+  }
+  return "missing";
+}
+
+function evidencePackageSignatureState(rows: AuditEvidenceReportLedgerRow[]): {
+  status: AuditEvidenceReportSignatureStatus | "missing";
+  stale: boolean;
+  detail: string;
+} {
+  const signingRows = rows.filter(
+    (row) =>
+      row.reportKind !== "p0_readiness_report" &&
+      row.reportKind !== "pre_live_runbook_report" &&
+      row.reportKind !== "research_context_readiness_report"
+  );
+  if (!signingRows.length) {
+    return {
+      status: "missing",
+      stale: false,
+      detail: "No signable audit/backtest/portfolio report has been recorded."
+    };
+  }
+  const staleRows = signingRows.filter(
+    (row) => row.status === "invalid" || row.signatureStatus === "invalid" || row.signatureStatus === "revoked"
+  );
+  const unsignedRows = signingRows.filter((row) => row.signatureStatus === "unsigned");
+  const verifiedRows = signingRows.filter((row) => row.signatureStatus === "verified");
+  const signedRows = signingRows.filter((row) => row.signatureStatus === "signed");
+  const latest = latestEvidencePackageLedgerRow(signingRows);
+  const status: AuditEvidenceReportSignatureStatus =
+    staleRows[0]?.signatureStatus === "revoked" || staleRows[0]?.signatureStatus === "invalid"
+      ? staleRows[0].signatureStatus
+      : staleRows.length
+        ? "invalid"
+        : unsignedRows.length
+          ? "unsigned"
+          : verifiedRows.length
+            ? "verified"
+            : signedRows.length
+              ? "signed"
+              : latest?.signatureStatus ?? "unsigned";
+
+  return {
+    status,
+    stale: staleRows.length > 0,
+    detail: `${signedRows.length + verifiedRows.length}/${signingRows.length} signed or verified · ${
+      unsignedRows.length
+    } unsigned · ${staleRows.length} stale`
+  };
+}
+
+function evidencePackageCoverageDetail(rows: AuditEvidenceReportLedgerRow[]): string {
+  if (!rows.length) {
+    return "No report ledger evidence recorded.";
+  }
+  const packageMatched = rows.reduce((total, row) => total + row.packageMatched, 0);
+  const packageTotal = rows.reduce((total, row) => total + row.packageTotal, 0);
+  const importVerified = rows.reduce((total, row) => total + row.importVerificationVerified, 0);
+  const importInvalid = rows.reduce((total, row) => total + row.importVerificationInvalid, 0);
+  return `Package evidence ${packageMatched}/${packageTotal} · import verification ${importVerified}/${importInvalid}`;
+}
+
 function auditReportLedgerPreLiveRunbookEvidenceLabel(count: number): string {
   return `${count} evidence ${count === 1 ? "id" : "ids"}`;
 }
@@ -14369,6 +15463,209 @@ export function buildScannerCandidates(workspace: TerminalWorkspace): ScannerCan
     .sort((left, right) => right.score - left.score);
 }
 
+export function buildResearchOpsQueueRows({
+  workspace,
+  runHistory = [],
+  watchlistRefreshRuns = []
+}: {
+  workspace: TerminalWorkspace;
+  runHistory?: ResearchRunAudit[];
+  watchlistRefreshRuns?: WatchlistCacheRefreshRunSnapshot[];
+}): ResearchOpsQueue {
+  const timeframe = workspace.selectedTimeframe;
+  const instruments = researchOpsQueueInstruments(workspace);
+  const sortedRuns = [...runHistory].sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt));
+  const sortedRefreshRuns = [...watchlistRefreshRuns].sort(
+    (left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt)
+  );
+  const rows = instruments
+    .map((instrument) => {
+      const latestRun =
+        sortedRuns.find(
+          (run) => run.market === instrument.market && run.symbol === instrument.symbol && run.timeframe === timeframe
+        ) ?? null;
+      const latestCache = latestWatchlistCacheItemForInstrument(sortedRefreshRuns, instrument, timeframe);
+      const cacheReady = researchOpsCacheReady(latestCache?.item ?? null);
+      const cacheIssue = researchOpsCacheIssue(latestCache?.item ?? null);
+      const stage: ResearchOpsQueueStage = !cacheReady
+        ? "needs_data"
+        : !latestRun
+          ? "ready_for_pipeline"
+          : latestRun.aiReport
+            ? "paper_candidate"
+            : "needs_ai_review";
+      const status: ResearchContextReadinessStatus =
+        stage === "needs_data" ? (latestCache?.item?.status === "failed" ? "blocked" : "review") : "ready";
+      const tone: ResearchOpsQueueRow["tone"] =
+        stage === "needs_data" ? (status === "blocked" ? "risk" : "warning") : "positive";
+      const nextActionId: ResearchOpsQueueAction =
+        stage === "needs_data"
+          ? "refresh-watchlist-cache"
+          : stage === "ready_for_pipeline"
+            ? "run-pipeline"
+            : stage === "needs_ai_review"
+              ? "run-ai-review"
+              : "submit-paper-order";
+      const cacheRows = Math.max(0, latestCache?.item?.quality.rows ?? latestCache?.item?.upsertedRows ?? 0);
+      return {
+        id: `${instrument.market}:${instrument.symbol}:${timeframe}`,
+        instrument,
+        market: instrument.market,
+        symbol: instrument.symbol,
+        name: instrument.name || instrument.symbol,
+        timeframe,
+        stage,
+        status,
+        tone,
+        nextActionId,
+        nextActionLabel: researchOpsActionLabel(nextActionId),
+        latestRunId: latestRun?.runId ?? null,
+        latestCacheRunId: latestCache?.run.runId ?? null,
+        cacheSource: latestCache?.item?.quality.source || "none",
+        cacheRows,
+        detail: researchOpsQueueDetail(stage, instrument, timeframe, latestRun, latestCache?.item ?? null, cacheIssue),
+        selected: instrument.market === workspace.selectedInstrument.market && instrument.symbol === workspace.selectedInstrument.symbol
+      } satisfies ResearchOpsQueueRow;
+    })
+    .sort(researchOpsQueueSort);
+
+  return {
+    rows,
+    summary: buildResearchOpsQueueSummary(rows)
+  };
+}
+
+function researchOpsQueueInstruments(workspace: TerminalWorkspace): Instrument[] {
+  const byKey = new Map<string, Instrument>();
+  const addInstrument = (instrument: Instrument) => {
+    byKey.set(`${instrument.market}:${instrument.symbol}`, instrument);
+  };
+  addInstrument(workspace.selectedInstrument);
+  workspace.watchlist.forEach(addInstrument);
+  return Array.from(byKey.values());
+}
+
+function latestWatchlistCacheItemForInstrument(
+  runs: WatchlistCacheRefreshRunSnapshot[],
+  instrument: Pick<Instrument, "market" | "symbol">,
+  timeframe: Timeframe
+): { run: WatchlistCacheRefreshRunSnapshot; item: WatchlistCacheRefreshItemSnapshot } | null {
+  for (const run of runs) {
+    const item = run.items.find(
+      (candidate) =>
+        candidate.market === instrument.market && candidate.symbol === instrument.symbol && candidate.timeframe === timeframe
+    );
+    if (item) {
+      return { run, item };
+    }
+  }
+  return null;
+}
+
+function researchOpsCacheReady(item: WatchlistCacheRefreshItemSnapshot | null): boolean {
+  if (!item || item.status !== "refreshed" || item.upsertedRows <= 0 || !item.quality.isComplete) {
+    return false;
+  }
+  if (item.quality.warnings.some((warning) => warning.trim())) {
+    return false;
+  }
+  return !isReviewRequiredKlineSource(item.quality.source);
+}
+
+function researchOpsCacheIssue(item: WatchlistCacheRefreshItemSnapshot | null): string {
+  if (!item) {
+    return "No watchlist cache refresh evidence for this timeframe.";
+  }
+  if (item.error) {
+    return item.error;
+  }
+  const warning = item.quality.warnings.find((value) => value.trim());
+  if (warning) {
+    return warning;
+  }
+  if (item.status !== "refreshed") {
+    return `Cache refresh status is ${item.status}.`;
+  }
+  if (!item.quality.isComplete) {
+    return `${item.quality.source || "unknown"} returned incomplete data.`;
+  }
+  if (item.upsertedRows <= 0) {
+    return "Cache refresh did not upsert rows.";
+  }
+  if (isReviewRequiredKlineSource(item.quality.source)) {
+    return `${item.quality.source || "unknown"} cache requires review before audited research.`;
+  }
+  return "Cache evidence is ready.";
+}
+
+function researchOpsActionLabel(action: ResearchOpsQueueAction): string {
+  return {
+    "refresh-watchlist-cache": "Refresh data",
+    "run-pipeline": "Run pipeline",
+    "run-ai-review": "Run AI review",
+    "submit-paper-order": "Stage paper simulation"
+  }[action];
+}
+
+function researchOpsQueueDetail(
+  stage: ResearchOpsQueueStage,
+  instrument: Instrument,
+  timeframe: Timeframe,
+  run: ResearchRunAudit | null,
+  cache: WatchlistCacheRefreshItemSnapshot | null,
+  cacheIssue: string
+): string {
+  const context = `${instrument.symbol} · ${timeframe}`;
+  if (stage === "needs_data") {
+    return `${context}: ${cacheIssue}`;
+  }
+  if (stage === "ready_for_pipeline") {
+    const rows = Math.max(0, cache?.quality.rows ?? cache?.upsertedRows ?? 0);
+    const source = cache?.quality.source || "unknown";
+    return `${context}: ${source} cache ready with ${rows} rows; audited pipeline can run.`;
+  }
+  if (stage === "needs_ai_review") {
+    return `${context}: audited run ${run?.runId ?? "unknown"} is ready for evidence-bound AI review.`;
+  }
+  return `${context}: AI-reviewed run ${run?.runId ?? "unknown"} can be staged for paper-only simulation.`;
+}
+
+function researchOpsQueueSort(left: ResearchOpsQueueRow, right: ResearchOpsQueueRow): number {
+  const stagePriority: Record<ResearchOpsQueueStage, number> = {
+    needs_data: 0,
+    ready_for_pipeline: 1,
+    needs_ai_review: 2,
+    paper_candidate: 3
+  };
+  const priorityDelta = stagePriority[left.stage] - stagePriority[right.stage];
+  if (priorityDelta !== 0) {
+    return priorityDelta;
+  }
+  if (left.selected !== right.selected) {
+    return left.selected ? -1 : 1;
+  }
+  return left.symbol.localeCompare(right.symbol);
+}
+
+function buildResearchOpsQueueSummary(rows: ResearchOpsQueueRow[]): ResearchOpsQueueSummary {
+  const needsDataCount = rows.filter((row) => row.stage === "needs_data").length;
+  const readyForPipelineCount = rows.filter((row) => row.stage === "ready_for_pipeline").length;
+  const needsAiReviewCount = rows.filter((row) => row.stage === "needs_ai_review").length;
+  const paperCandidateCount = rows.filter((row) => row.stage === "paper_candidate").length;
+  const tone: ResearchOpsQueueSummary["tone"] =
+    needsDataCount > 0 ? "warning" : readyForPipelineCount + needsAiReviewCount + paperCandidateCount > 0 ? "positive" : "neutral";
+  return {
+    total: rows.length,
+    needsDataCount,
+    readyForPipelineCount,
+    needsAiReviewCount,
+    paperCandidateCount,
+    headline: `${rows.length} watched research tasks`,
+    detail: `${needsDataCount} need data · ${readyForPipelineCount} ready for pipeline · ${needsAiReviewCount} need AI review · ${paperCandidateCount} paper candidates`,
+    tone
+  };
+}
+
 export function buildPortfolioRiskRows(workspace: TerminalWorkspace): PortfolioRiskRow[] {
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   return [
@@ -15966,6 +17263,507 @@ function portfolioReplayOrderAdapterEvidenceLabel(
     .join(" · ");
 }
 
+export function buildPaperExecutionReplayGate(input: PaperExecutionReplayGateInput): PaperExecutionReplayGate {
+  const currentRunId = (input.currentRunId ?? "").trim();
+  const paperExecution = input.paperExecution ?? null;
+  const lifecycleRows = (input.portfolioOrderLifecycleRows ?? []).filter((row) => row.baseRunId === currentRunId);
+  const approvalRows = (input.portfolioApprovalRows ?? []).filter((row) => row.baseRunId === currentRunId);
+  const simulations = (input.portfolioOrderSimulations ?? []).filter((row) => row.baseRunId === currentRunId);
+  const stateRows = (input.portfolioStateHistoryRows ?? []).filter((row) => row.baseRunId === currentRunId);
+  const replay = input.portfolioOrderReplay ?? null;
+  const replayMatchesCurrentRun = Boolean(replay && replay.baseRunId === currentRunId);
+  const filledPaperOrders = paperExecution?.orders.filter((order) => order.status === "filled").length ?? 0;
+  const approvedPortfolioOrders = approvalRows.filter((row) => Boolean(row.approvedBy || row.reviewedAt)).length;
+  const filledSimulations = simulations.filter(
+    (row) => row.fillStatus === "filled" && row.paperOnly && row.liveExecutionBlocked
+  );
+  const filledStateEvents = stateRows.filter((row) => row.state === "simulation_filled");
+  const validAdapterExecutions = filterValidReplayAdapterPaperExecutions(
+    input.adapterPaperExecutionRows ?? [],
+    new Set(filledSimulations.map((row) => row.adapterPaperExecutionId).filter(Boolean) as string[])
+  );
+  const unsafeBoundaryReasons = paperExecutionReplayBoundaryReasons({
+    adapterPaperExecutionRows: input.adapterPaperExecutionRows ?? [],
+    portfolioOrderReplay: replay,
+    portfolioOrderSimulations: simulations
+  });
+
+  const items: PaperExecutionReplayGateItem[] = [
+    buildSinglePaperExecutionReplayGateItem(currentRunId, paperExecution, filledPaperOrders),
+    buildPortfolioOrderLedgerReplayGateItem(currentRunId, lifecycleRows),
+    buildPortfolioApprovalReplayGateItem(currentRunId, approvalRows, approvedPortfolioOrders),
+    buildPortfolioSimulationReplayGateItem(currentRunId, simulations, filledSimulations.length),
+    buildPortfolioStateHistoryReplayGateItem(currentRunId, stateRows, filledStateEvents.length),
+    buildPortfolioReplayGateItem(currentRunId, replay, replayMatchesCurrentRun),
+    buildAdapterPaperExecutionReplayGateItem(input.adapterPaperExecutionRows ?? [], validAdapterExecutions),
+    buildLiveBoundaryReplayGateItem(unsafeBoundaryReasons)
+  ];
+  const passedCount = items.filter((item) => item.status === "passed").length;
+  const currentBlocker = items.find((item) => item.status !== "passed") ?? null;
+  const status = paperExecutionReplayGateStatus(items);
+  const latestEvidenceId =
+    validAdapterExecutions[0]?.id ??
+    filledSimulations
+      .slice()
+      .sort((left, right) => right.simulatedAt.localeCompare(left.simulatedAt) || right.simulationId.localeCompare(left.simulationId))[0]
+      ?.simulationId ??
+    (replayMatchesCurrentRun ? replay?.baseRunId ?? null : null);
+
+  return {
+    status,
+    tone: status === "replay_ready" ? "positive" : status === "partial" ? "warning" : "risk",
+    headline: paperExecutionReplayGateHeadline(status),
+    detail: paperExecutionReplayGateDetail(status, currentBlocker),
+    passedCount,
+    totalCount: items.length,
+    currentBlockerId: currentBlocker?.id ?? null,
+    currentBlockerLabel: currentBlocker?.label ?? null,
+    latestEvidenceId,
+    replayReady: status === "replay_ready",
+    preLiveReviewAllowed: false,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    metrics: {
+      filledPaperOrders,
+      portfolioOrders: lifecycleRows.reduce((total, row) => total + Math.max(0, row.orderCount || 0), 0),
+      approvedPortfolioOrders,
+      portfolioFilledOrders: replayMatchesCurrentRun ? replay?.summary.filledOrders ?? 0 : filledSimulations.length,
+      stateHistoryFilledEvents: filledStateEvents.length,
+      adapterPaperExecutions: validAdapterExecutions.length,
+      replayWarnings: replayMatchesCurrentRun ? replay?.summary.warnings.length ?? 0 : 0
+    },
+    items
+  };
+}
+
+function buildSinglePaperExecutionReplayGateItem(
+  currentRunId: string,
+  paperExecution: PaperExecutionSnapshot | null,
+  filledPaperOrders: number
+): PaperExecutionReplayGateItem {
+  if (!currentRunId) {
+    return paperExecutionReplayGateItem(
+      "single-paper-execution",
+      "Single-run paper execution",
+      "blocked",
+      "No active run",
+      "No active audited run is selected for replay.",
+      "risk"
+    );
+  }
+  if (!paperExecution) {
+    return paperExecutionReplayGateItem(
+      "single-paper-execution",
+      "Single-run paper execution",
+      "blocked",
+      "No paper execution",
+      "A filled paper execution snapshot is required before pre-live review.",
+      "risk"
+    );
+  }
+  if (paperExecution.runId !== currentRunId) {
+    return paperExecutionReplayGateItem(
+      "single-paper-execution",
+      "Single-run paper execution",
+      "stale",
+      paperExecution.executionId,
+      `Paper execution ${paperExecution.executionId} is bound to ${paperExecution.runId}, not ${currentRunId}.`,
+      "risk"
+    );
+  }
+  if (filledPaperOrders <= 0) {
+    return paperExecutionReplayGateItem(
+      "single-paper-execution",
+      "Single-run paper execution",
+      "blocked",
+      paperExecution.executionId,
+      "Paper execution has no filled orders to replay.",
+      "risk"
+    );
+  }
+  const blockedGate = paperExecution.gates.find((gate) => !gate.passed);
+  if (blockedGate) {
+    return paperExecutionReplayGateItem(
+      "single-paper-execution",
+      "Single-run paper execution",
+      "blocked",
+      paperExecution.executionId,
+      `${blockedGate.label}: ${blockedGate.reason}`,
+      "risk"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "single-paper-execution",
+    "Single-run paper execution",
+    "passed",
+    paperExecution.executionId,
+    `${filledPaperOrders} filled paper order${filledPaperOrders === 1 ? "" : "s"} can be replayed from ${paperExecution.mode}.`,
+    "positive"
+  );
+}
+
+function buildPortfolioOrderLedgerReplayGateItem(
+  currentRunId: string,
+  lifecycleRows: PortfolioPaperOrderLifecycleRow[]
+): PaperExecutionReplayGateItem {
+  if (!currentRunId || lifecycleRows.length === 0) {
+    return paperExecutionReplayGateItem(
+      "portfolio-order-ledger",
+      "Portfolio order ledger",
+      "blocked",
+      "No portfolio orders",
+      "Portfolio paper order ledger is required for replay integrity.",
+      "risk"
+    );
+  }
+  const routableOrders = lifecycleRows.reduce((total, row) => total + Math.max(0, row.routableOrders), 0);
+  if (!routableOrders) {
+    return paperExecutionReplayGateItem(
+      "portfolio-order-ledger",
+      "Portfolio order ledger",
+      "blocked",
+      lifecycleRows[0]?.id ?? currentRunId,
+      "Portfolio orders are present but none are routable.",
+      "risk"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "portfolio-order-ledger",
+    "Portfolio order ledger",
+    "passed",
+    lifecycleRows[0]?.auditEventId || lifecycleRows[0]?.id || currentRunId,
+    `${routableOrders} routable portfolio order${routableOrders === 1 ? "" : "s"} recorded.`,
+    "positive"
+  );
+}
+
+function buildPortfolioApprovalReplayGateItem(
+  currentRunId: string,
+  approvalRows: PortfolioPaperOrderApprovalRow[],
+  approvedPortfolioOrders: number
+): PaperExecutionReplayGateItem {
+  if (!currentRunId || approvalRows.length === 0) {
+    return paperExecutionReplayGateItem(
+      "portfolio-approval-ledger",
+      "Portfolio approvals",
+      "blocked",
+      "No approvals",
+      "Human approval evidence is required before portfolio replay can be trusted.",
+      "risk"
+    );
+  }
+  if (!approvedPortfolioOrders) {
+    return paperExecutionReplayGateItem(
+      "portfolio-approval-ledger",
+      "Portfolio approvals",
+      "blocked",
+      approvalRows[0]?.id ?? currentRunId,
+      "Portfolio order approvals are present but no order has an operator review timestamp.",
+      "risk"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "portfolio-approval-ledger",
+    "Portfolio approvals",
+    "passed",
+    approvalRows[0]?.id ?? currentRunId,
+    `${approvedPortfolioOrders} approved portfolio order${approvedPortfolioOrders === 1 ? "" : "s"} recorded.`,
+    "positive"
+  );
+}
+
+function buildPortfolioSimulationReplayGateItem(
+  currentRunId: string,
+  simulations: PortfolioPaperOrderSimulationSnapshot[],
+  filledSimulationCount: number
+): PaperExecutionReplayGateItem {
+  if (!currentRunId || simulations.length === 0) {
+    return paperExecutionReplayGateItem(
+      "portfolio-simulation-ledger",
+      "Portfolio simulations",
+      "blocked",
+      "No simulations",
+      "Approved portfolio orders must be simulated before replay.",
+      "risk"
+    );
+  }
+  if (!filledSimulationCount) {
+    return paperExecutionReplayGateItem(
+      "portfolio-simulation-ledger",
+      "Portfolio simulations",
+      "blocked",
+      simulations[0]?.simulationId ?? currentRunId,
+      "Portfolio simulations exist but no paper-only filled simulation is available.",
+      "risk"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "portfolio-simulation-ledger",
+    "Portfolio simulations",
+    "passed",
+    simulations[0]?.simulationId ?? currentRunId,
+    `${filledSimulationCount} paper-only filled simulation${filledSimulationCount === 1 ? "" : "s"} recorded.`,
+    "positive"
+  );
+}
+
+function buildPortfolioStateHistoryReplayGateItem(
+  currentRunId: string,
+  stateRows: PortfolioPaperOrderStateHistoryRow[],
+  filledStateEventCount: number
+): PaperExecutionReplayGateItem {
+  if (!currentRunId || stateRows.length === 0) {
+    return paperExecutionReplayGateItem(
+      "portfolio-state-history",
+      "Portfolio state history",
+      "blocked",
+      "No state history",
+      "State history is required to replay order lifecycle transitions.",
+      "risk"
+    );
+  }
+  if (!filledStateEventCount) {
+    return paperExecutionReplayGateItem(
+      "portfolio-state-history",
+      "Portfolio state history",
+      "blocked",
+      stateRows[0]?.id ?? currentRunId,
+      "State history exists but no simulation_filled event is recorded.",
+      "risk"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "portfolio-state-history",
+    "Portfolio state history",
+    "passed",
+    stateRows[0]?.id ?? currentRunId,
+    `${filledStateEventCount} simulation_filled state event${filledStateEventCount === 1 ? "" : "s"} recorded.`,
+    "positive"
+  );
+}
+
+function buildPortfolioReplayGateItem(
+  currentRunId: string,
+  replay: PortfolioPaperOrderReplaySnapshot | null,
+  replayMatchesCurrentRun: boolean
+): PaperExecutionReplayGateItem {
+  if (!currentRunId || !replay) {
+    return paperExecutionReplayGateItem(
+      "portfolio-replay",
+      "Portfolio replay",
+      "blocked",
+      "No replay",
+      "Portfolio cash and position replay is required before pre-live review.",
+      "risk"
+    );
+  }
+  if (!replayMatchesCurrentRun) {
+    return paperExecutionReplayGateItem(
+      "portfolio-replay",
+      "Portfolio replay",
+      "stale",
+      replay.baseRunId,
+      `Portfolio replay is bound to ${replay.baseRunId}, not ${currentRunId}.`,
+      "risk"
+    );
+  }
+  if (!replay.paperOnly || !replay.liveExecutionBlocked) {
+    return paperExecutionReplayGateItem(
+      "portfolio-replay",
+      "Portfolio replay",
+      "blocked",
+      replay.baseRunId,
+      "Portfolio replay boundary must remain paper-only and live-blocked.",
+      "risk"
+    );
+  }
+  if (replay.summary.filledOrders <= 0) {
+    return paperExecutionReplayGateItem(
+      "portfolio-replay",
+      "Portfolio replay",
+      "blocked",
+      replay.baseRunId,
+      "Portfolio replay has no applied filled orders.",
+      "risk"
+    );
+  }
+  if (replay.summary.warnings.length) {
+    return paperExecutionReplayGateItem(
+      "portfolio-replay",
+      "Portfolio replay",
+      "review",
+      replay.baseRunId,
+      `${replay.summary.warnings.length} replay warning${replay.summary.warnings.length === 1 ? "" : "s"} need review.`,
+      "warning"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "portfolio-replay",
+    "Portfolio replay",
+    "passed",
+    replay.baseRunId,
+    `${replay.summary.filledOrders} filled replay order${replay.summary.filledOrders === 1 ? "" : "s"} applied.`,
+    "positive"
+  );
+}
+
+function buildAdapterPaperExecutionReplayGateItem(
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[],
+  validAdapterExecutions: ExecutionAdapterPaperExecutionRow[]
+): PaperExecutionReplayGateItem {
+  if (!adapterPaperExecutionRows.length) {
+    return paperExecutionReplayGateItem(
+      "adapter-paper-execution",
+      "Adapter paper execution",
+      "blocked",
+      "No adapter execution",
+      "Adapter paper execution evidence is required to connect replay to the adapter chain.",
+      "risk"
+    );
+  }
+  if (!validAdapterExecutions.length) {
+    return paperExecutionReplayGateItem(
+      "adapter-paper-execution",
+      "Adapter paper execution",
+      "blocked",
+      adapterPaperExecutionRows[0]?.id ?? "adapter-paper-execution",
+      "Adapter paper execution must have a recorded paper fill with no submitted order or route execution.",
+      "risk"
+    );
+  }
+  const latest = validAdapterExecutions[0];
+  return paperExecutionReplayGateItem(
+    "adapter-paper-execution",
+    "Adapter paper execution",
+    "passed",
+    latest.id,
+    `${latest.adapterId} recorded ${latest.simulatedSide} ${latest.simulatedQuantity} ${latest.simulatedSymbol} as local paper evidence.`,
+    "positive"
+  );
+}
+
+function buildLiveBoundaryReplayGateItem(unsafeBoundaryReasons: string[]): PaperExecutionReplayGateItem {
+  if (unsafeBoundaryReasons.length) {
+    return paperExecutionReplayGateItem(
+      "live-boundary",
+      "Live boundary",
+      "blocked",
+      "Boundary violation",
+      unsafeBoundaryReasons.join(" · "),
+      "risk"
+    );
+  }
+  return paperExecutionReplayGateItem(
+    "live-boundary",
+    "Live boundary",
+    "passed",
+    "paper-only",
+    "Replay gate keeps order submission and live trading disabled.",
+    "positive"
+  );
+}
+
+function filterValidReplayAdapterPaperExecutions(
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[],
+  preferredAdapterExecutionIds: Set<string>
+): ExecutionAdapterPaperExecutionRow[] {
+  const validRows = adapterPaperExecutionRows.filter(
+    (row) =>
+      row.status === "paper_execution_recorded" &&
+      row.paperFillRecorded &&
+      !row.orderSubmitted &&
+      !row.liveOrderSubmitted &&
+      !row.routeExecuted
+  );
+  const preferredRows = validRows.filter((row) => preferredAdapterExecutionIds.size === 0 || preferredAdapterExecutionIds.has(row.id));
+  return (preferredRows.length ? preferredRows : validRows).sort(
+    (left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id)
+  );
+}
+
+function paperExecutionReplayBoundaryReasons({
+  adapterPaperExecutionRows,
+  portfolioOrderReplay,
+  portfolioOrderSimulations
+}: {
+  adapterPaperExecutionRows: ExecutionAdapterPaperExecutionRow[];
+  portfolioOrderReplay: PortfolioPaperOrderReplaySnapshot | null;
+  portfolioOrderSimulations: PortfolioPaperOrderSimulationSnapshot[];
+}): string[] {
+  const reasons: string[] = [];
+  if (portfolioOrderReplay && (!portfolioOrderReplay.paperOnly || !portfolioOrderReplay.liveExecutionBlocked)) {
+    reasons.push("portfolio replay boundary is not paper-only/live-blocked");
+  }
+  if (portfolioOrderSimulations.some((row) => !row.paperOnly || !row.liveExecutionBlocked)) {
+    reasons.push("portfolio simulation boundary is not paper-only/live-blocked");
+  }
+  if (adapterPaperExecutionRows.some((row) => row.orderSubmitted || row.liveOrderSubmitted || row.routeExecuted)) {
+    reasons.push("adapter paper execution attempted an order submission or route execution");
+  }
+  return reasons;
+}
+
+function paperExecutionReplayGateStatus(items: PaperExecutionReplayGateItem[]): PaperExecutionReplayGateStatus {
+  if (items.every((item) => item.status === "passed")) {
+    return "replay_ready";
+  }
+  if (items.some((item) => item.id === "live-boundary" && item.status === "blocked")) {
+    return "blocked";
+  }
+  if (items.some((item) => item.status === "stale")) {
+    return "stale";
+  }
+  const evidenceItems = items.filter((item) => item.id !== "live-boundary");
+  if (evidenceItems.some((item) => item.status === "review") || evidenceItems.some((item) => item.status === "passed")) {
+    return "partial";
+  }
+  return "blocked";
+}
+
+function paperExecutionReplayGateHeadline(status: PaperExecutionReplayGateStatus): string {
+  if (status === "replay_ready") {
+    return "Paper execution replay is ready for manual review";
+  }
+  if (status === "stale") {
+    return "Paper execution replay is stale";
+  }
+  if (status === "partial") {
+    return "Paper execution replay evidence is incomplete";
+  }
+  return "Paper execution replay is blocked";
+}
+
+function paperExecutionReplayGateDetail(
+  status: PaperExecutionReplayGateStatus,
+  blocker: PaperExecutionReplayGateItem | null
+): string {
+  if (status === "replay_ready") {
+    return "All replay evidence is bound, paper-only, and ready for human pre-live review; live trading remains disabled.";
+  }
+  if (blocker) {
+    return `${blocker.label}: ${blocker.detail}`;
+  }
+  return "Replay evidence is missing.";
+}
+
+function paperExecutionReplayGateItem(
+  id: PaperExecutionReplayGateItemId,
+  label: string,
+  status: PaperExecutionReplayGateItemStatus,
+  evidence: string,
+  detail: string,
+  tone: PaperExecutionReplayGateTone
+): PaperExecutionReplayGateItem {
+  return {
+    id,
+    label,
+    status,
+    evidence,
+    detail,
+    tone
+  };
+}
+
 export function buildPortfolioPaperOrderSimulationRouteRiskRequest(
   template: PortfolioPaperOrderRouteRiskTemplate,
   replay: PortfolioPaperOrderReplaySnapshot | null | undefined
@@ -16122,6 +17920,221 @@ export function buildPortfolioPaperOrderSimulationRouteRows(
       tone: "risk" as const
     };
   });
+}
+
+export function buildPortfolioPaperOpsQueueRows({
+  approvalRows = [],
+  lifecycleRows = [],
+  routeRows = [],
+  stateHistoryRows = []
+}: {
+  approvalRows?: PortfolioPaperOrderApprovalRow[] | null | undefined;
+  lifecycleRows?: PortfolioPaperOrderLifecycleRow[] | null | undefined;
+  routeRows?: PortfolioPaperOrderSimulationRouteRow[] | null | undefined;
+  stateHistoryRows?: PortfolioPaperOrderStateHistoryRow[] | null | undefined;
+}): PortfolioPaperOpsQueue {
+  const routeByOrder = new Map((routeRows ?? []).map((row) => [`${row.batchId}:${row.orderId}`, row]));
+  const stateByOrder = new Map<string, PortfolioPaperOrderStateHistoryRow>();
+  for (const row of [...(stateHistoryRows ?? [])].sort(
+    (left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id)
+  )) {
+    const key = `${row.batchId}:${row.orderId}`;
+    if (!stateByOrder.has(key)) {
+      stateByOrder.set(key, row);
+    }
+  }
+
+  const batchIdsWithOrderEvidence = new Set<string>();
+  for (const row of approvalRows ?? []) {
+    batchIdsWithOrderEvidence.add(row.batchId);
+  }
+  for (const row of routeRows ?? []) {
+    batchIdsWithOrderEvidence.add(row.batchId);
+  }
+
+  const staleRows: PortfolioPaperOpsQueueRow[] = [...(lifecycleRows ?? [])]
+    .filter((row) => row.routableOrders > 0 && !batchIdsWithOrderEvidence.has(row.batchId))
+    .map((row) => ({
+      id: `portfolio-paper-ops-stale-${row.batchId}`,
+      stage: "stale",
+      batchId: row.batchId,
+      baseRunId: row.baseRunId,
+      portfolioName: row.portfolioName,
+      orderId: null,
+      symbol: "BATCH",
+      side: "batch",
+      quantity: null,
+      notionalValue: row.notionalValue,
+      statusLabel: "Evidence stale",
+      detail: `${row.routableOrders} routable paper orders look stale because approval or route evidence is missing; refresh portfolio paper order history before simulation. ${row.detail}`,
+      latestStateLabel: row.executionStateLabel || row.statusLabel || "No order-level evidence",
+      adapterEvidenceLabel: "No adapter paper execution evidence",
+      simulationId: null,
+      stateEventId: null,
+      focusQuery: `${row.batchId} ${row.baseRunId} ${row.portfolioName} stale portfolio paper orders`,
+      nextActionId: "open-portfolio",
+      canRunAction: true,
+      updatedAt: row.createdAt,
+      tone: "warning"
+    }));
+
+  const orderRows: PortfolioPaperOpsQueueRow[] = [...(approvalRows ?? [])].map((approval) => {
+    const key = `${approval.batchId}:${approval.orderId}`;
+    const route = routeByOrder.get(key) ?? null;
+    const state = stateByOrder.get(key) ?? null;
+    const stage = portfolioPaperOpsQueueStage(approval, route);
+    const nextActionId = portfolioPaperOpsQueueAction(stage);
+    const statusLabel = route?.statusLabel ?? portfolioPaperOpsStatusLabel(stage);
+    const detail = route?.detail ?? approval.actionHint;
+    const latestStateLabel = route?.latestStateLabel ?? (state ? `${state.label} · ${state.actor || state.source}` : approval.actionHint);
+    const adapterEvidenceLabel =
+      route?.adapterPaperExecutionEvidenceLabel || state?.adapterEvidenceLabel || "No adapter paper execution evidence";
+    const focusQuery = [
+      route?.focusQuery,
+      state?.focusQuery,
+      approval.batchId,
+      approval.orderId,
+      approval.symbol,
+      approval.state
+    ]
+      .filter((token): token is string => Boolean(token))
+      .join(" ");
+
+    return {
+      id: `portfolio-paper-ops-${approval.batchId}-${approval.orderId}`,
+      stage,
+      batchId: approval.batchId,
+      baseRunId: approval.baseRunId,
+      portfolioName: approval.portfolioName,
+      orderId: approval.orderId,
+      symbol: approval.symbol,
+      side: approval.side,
+      quantity: approval.quantity,
+      notionalValue: approval.notionalValue,
+      statusLabel,
+      detail,
+      latestStateLabel,
+      adapterEvidenceLabel,
+      simulationId: route?.simulationId ?? null,
+      stateEventId: route?.stateEventId ?? state?.id ?? null,
+      focusQuery,
+      nextActionId,
+      canRunAction: portfolioPaperOpsQueueCanRunAction(stage, route),
+      updatedAt: state?.timestamp ?? approval.reviewedAt ?? "",
+      tone: portfolioPaperOpsQueueTone(stage)
+    };
+  });
+
+  const rows = [...staleRows, ...orderRows].sort((left, right) => {
+    const stageDelta = portfolioPaperOpsQueueStagePriority(left.stage) - portfolioPaperOpsQueueStagePriority(right.stage);
+    if (stageDelta !== 0) {
+      return stageDelta;
+    }
+    return right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id);
+  });
+
+  return {
+    rows,
+    summary: {
+      totalRows: rows.length,
+      waitingRiskCount: rows.filter((row) => row.stage === "waiting_risk").length,
+      waitingHumanCount: rows.filter((row) => row.stage === "waiting_human").length,
+      readyForSimulationCount: rows.filter((row) => row.stage === "ready_for_simulation").length,
+      simulatedCount: rows.filter((row) => row.stage === "simulated").length,
+      rejectedCount: rows.filter((row) => row.stage === "rejected").length,
+      staleCount: rows.filter((row) => row.stage === "stale").length,
+      paperOnly: true,
+      liveTradingAllowed: false
+    }
+  };
+}
+
+function portfolioPaperOpsQueueStage(
+  approval: PortfolioPaperOrderApprovalRow,
+  route: PortfolioPaperOrderSimulationRouteRow | null
+): PortfolioPaperOpsQueueStage {
+  if (route?.routeState === "filled" || route?.simulationId) {
+    return "simulated";
+  }
+  if (
+    route?.routeState === "blocked" ||
+    approval.state === "risk_rejected" ||
+    approval.state === "operator_rejected" ||
+    approval.state === "invalid_order"
+  ) {
+    return "rejected";
+  }
+  if (approval.state === "risk_review" || approval.riskStatus === "review" || route?.statusLabel === "Waiting for risk review") {
+    return "waiting_risk";
+  }
+  if (approval.state === "awaiting_operator_review") {
+    return "waiting_human";
+  }
+  if (route?.routeState === "ready" || approval.state === "ready_for_simulation") {
+    return "ready_for_simulation";
+  }
+  return "rejected";
+}
+
+function portfolioPaperOpsQueueAction(stage: PortfolioPaperOpsQueueStage): PortfolioPaperOpsQueueAction {
+  if (stage === "ready_for_simulation") {
+    return "simulate-order";
+  }
+  if (stage === "simulated") {
+    return "replay-simulation";
+  }
+  if (stage === "waiting_risk" || stage === "waiting_human") {
+    return "review-order";
+  }
+  if (stage === "rejected") {
+    return "open-approval";
+  }
+  return "open-portfolio";
+}
+
+function portfolioPaperOpsStatusLabel(stage: PortfolioPaperOpsQueueStage): string {
+  return {
+    waiting_risk: "Waiting for risk review",
+    waiting_human: "Waiting for operator review",
+    ready_for_simulation: "Ready for simulator",
+    simulated: "Already simulated",
+    rejected: "Risk blocked",
+    stale: "Evidence stale"
+  }[stage];
+}
+
+function portfolioPaperOpsQueueCanRunAction(
+  stage: PortfolioPaperOpsQueueStage,
+  route: PortfolioPaperOrderSimulationRouteRow | null
+): boolean {
+  if (stage === "ready_for_simulation") {
+    return Boolean(route?.canSimulate);
+  }
+  return true;
+}
+
+function portfolioPaperOpsQueueTone(stage: PortfolioPaperOpsQueueStage): PortfolioPaperOpsQueueRow["tone"] {
+  if (stage === "ready_for_simulation") {
+    return "positive";
+  }
+  if (stage === "rejected") {
+    return "risk";
+  }
+  if (stage === "simulated") {
+    return "neutral";
+  }
+  return "warning";
+}
+
+function portfolioPaperOpsQueueStagePriority(stage: PortfolioPaperOpsQueueStage): number {
+  return {
+    stale: 0,
+    waiting_risk: 1,
+    waiting_human: 2,
+    ready_for_simulation: 3,
+    rejected: 4,
+    simulated: 5
+  }[stage];
 }
 
 function portfolioPaperOrderSimulationRouteGuardDetail(
@@ -17424,6 +19437,420 @@ export function buildExecutionAdapterHealthProbeRows(
       checks: probe.checks
     }
   ];
+}
+
+type ExecutionAdapterChainRow = {
+  adapterId: string;
+  auditEventId?: string;
+  blockerSummary?: string;
+  boundary?: string;
+  id: string;
+  market: Market | "multi";
+  route: "paper" | "live";
+  status: string;
+  statusLabel?: string;
+  timestamp: string;
+  tone?: "positive" | "warning" | "neutral" | "risk";
+  liveOrderSubmitted?: boolean;
+  orderSubmitted?: boolean;
+  paperFillRecorded?: boolean;
+  routeExecuted?: boolean;
+};
+
+interface ExecutionAdapterChainStageDefinition {
+  id: ExecutionAdapterChainHealthStageId;
+  label: string;
+  rows: ReadonlyArray<ExecutionAdapterChainRow>;
+  recordedStatuses: string[];
+  requiresPaperFill?: boolean;
+  unsafeWhenOrderSubmitted?: boolean;
+  unsafeWhenLiveOrderSubmitted?: boolean;
+  unsafeWhenRouteExecuted?: boolean;
+}
+
+export function buildExecutionAdapterChainHealthRollups({
+  adapterOpsStateRows = [],
+  adapterPaperExecutionRows = [],
+  brokerRows = [],
+  environmentBindingRows = [],
+  humanConfirmationRows = [],
+  orchestrationDryRunRows = [],
+  orchestrationExecutionRows = [],
+  paperOrderLifecycleRows = [],
+  paperRouteRunbookRows = [],
+  productionRouteReviewRows = [],
+  runtimeReloadAcceptanceRows = [],
+  runtimeReloadExecutionRows = [],
+  runtimeReloadPlanRows = [],
+  sandboxOrderSchemaDryRunRows = [],
+  sandboxProbeExecutionRows = [],
+  sandboxProbePlanRows = [],
+  sandboxProbeReviewRows = [],
+  secretManifestValidationRows = [],
+  secretMaterializationRows = [],
+  secretReferenceRows = []
+}: {
+  adapterOpsStateRows?: ReadonlyArray<ExecutionAdapterOpsStateRow>;
+  adapterPaperExecutionRows?: ReadonlyArray<ExecutionAdapterPaperExecutionRow>;
+  brokerRows?: ReadonlyArray<BrokerAdapterRow>;
+  environmentBindingRows?: ReadonlyArray<ExecutionAdapterEnvironmentBindingRow>;
+  humanConfirmationRows?: ReadonlyArray<ExecutionAdapterHumanConfirmationRow>;
+  orchestrationDryRunRows?: ReadonlyArray<ExecutionAdapterOrchestrationDryRunRow>;
+  orchestrationExecutionRows?: ReadonlyArray<ExecutionAdapterOrchestrationExecutionRow>;
+  paperOrderLifecycleRows?: ReadonlyArray<ExecutionAdapterPaperOrderLifecycleRow>;
+  paperRouteRunbookRows?: ReadonlyArray<ExecutionAdapterPaperRouteRunbookRow>;
+  productionRouteReviewRows?: ReadonlyArray<ExecutionAdapterProductionRouteReviewRow>;
+  runtimeReloadAcceptanceRows?: ReadonlyArray<ExecutionAdapterRuntimeReloadAcceptanceRow>;
+  runtimeReloadExecutionRows?: ReadonlyArray<ExecutionAdapterRuntimeReloadExecutionRow>;
+  runtimeReloadPlanRows?: ReadonlyArray<ExecutionAdapterRuntimeReloadPlanRow>;
+  sandboxOrderSchemaDryRunRows?: ReadonlyArray<ExecutionAdapterSandboxOrderSchemaDryRunRow>;
+  sandboxProbeExecutionRows?: ReadonlyArray<ExecutionAdapterSandboxProbeExecutionRow>;
+  sandboxProbePlanRows?: ReadonlyArray<ExecutionAdapterSandboxProbePlanRow>;
+  sandboxProbeReviewRows?: ReadonlyArray<ExecutionAdapterSandboxProbeReviewRow>;
+  secretManifestValidationRows?: ReadonlyArray<ExecutionAdapterSecretManifestValidationRow>;
+  secretMaterializationRows?: ReadonlyArray<ExecutionAdapterSecretMaterializationRow>;
+  secretReferenceRows?: ReadonlyArray<ExecutionAdapterSecretReferenceRow>;
+}): ExecutionAdapterChainHealthRollup[] {
+  const stageDefinitions: ExecutionAdapterChainStageDefinition[] = [
+    {
+      id: "secret-reference",
+      label: "Secret reference",
+      rows: secretReferenceRows,
+      recordedStatuses: ["reference_recorded"]
+    },
+    {
+      id: "secret-materialization",
+      label: "Secret materialization",
+      rows: secretMaterializationRows,
+      recordedStatuses: ["manifest_recorded"]
+    },
+    {
+      id: "secret-manifest-validation",
+      label: "Secret manifest validation",
+      rows: secretManifestValidationRows,
+      recordedStatuses: ["validated"]
+    },
+    {
+      id: "environment-binding",
+      label: "Environment binding",
+      rows: environmentBindingRows,
+      recordedStatuses: ["binding_recorded"]
+    },
+    {
+      id: "runtime-reload-plan",
+      label: "Runtime reload plan",
+      rows: runtimeReloadPlanRows,
+      recordedStatuses: ["plan_recorded"]
+    },
+    {
+      id: "runtime-reload-execution",
+      label: "Runtime reload execution",
+      rows: runtimeReloadExecutionRows,
+      recordedStatuses: ["execution_recorded"]
+    },
+    {
+      id: "runtime-reload-acceptance",
+      label: "Runtime reload acceptance",
+      rows: runtimeReloadAcceptanceRows,
+      recordedStatuses: ["acceptance_recorded"]
+    },
+    {
+      id: "orchestration-dry-run",
+      label: "Orchestration dry-run",
+      rows: orchestrationDryRunRows,
+      recordedStatuses: ["dry_run_recorded"]
+    },
+    {
+      id: "orchestration-execution",
+      label: "Orchestration execution",
+      rows: orchestrationExecutionRows,
+      recordedStatuses: ["execution_recorded"]
+    },
+    {
+      id: "human-confirmation",
+      label: "Human confirmation",
+      rows: humanConfirmationRows,
+      recordedStatuses: ["confirmation_recorded"]
+    },
+    {
+      id: "sandbox-probe-plan",
+      label: "Sandbox probe plan",
+      rows: sandboxProbePlanRows,
+      recordedStatuses: ["probe_plan_recorded"]
+    },
+    {
+      id: "sandbox-probe-execution",
+      label: "Sandbox probe execution",
+      rows: sandboxProbeExecutionRows,
+      recordedStatuses: ["probe_execution_recorded"]
+    },
+    {
+      id: "sandbox-probe-review",
+      label: "Sandbox probe review",
+      rows: sandboxProbeReviewRows,
+      recordedStatuses: ["probe_review_recorded"]
+    },
+    {
+      id: "production-route-review",
+      label: "Production route review",
+      rows: productionRouteReviewRows,
+      recordedStatuses: ["route_review_recorded"]
+    },
+    {
+      id: "sandbox-order-schema-dry-run",
+      label: "Sandbox order schema dry-run",
+      rows: sandboxOrderSchemaDryRunRows,
+      recordedStatuses: ["schema_dry_run_recorded"],
+      unsafeWhenOrderSubmitted: true
+    },
+    {
+      id: "paper-order-lifecycle",
+      label: "Paper order lifecycle",
+      rows: paperOrderLifecycleRows,
+      recordedStatuses: ["lifecycle_recorded"],
+      unsafeWhenLiveOrderSubmitted: true
+    },
+    {
+      id: "paper-route-runbook",
+      label: "Paper route runbook",
+      rows: paperRouteRunbookRows,
+      recordedStatuses: ["runbook_recorded"],
+      unsafeWhenLiveOrderSubmitted: true,
+      unsafeWhenRouteExecuted: true
+    },
+    {
+      id: "ops-state",
+      label: "Adapter ops state",
+      rows: adapterOpsStateRows,
+      recordedStatuses: ["ops_state_recorded"],
+      unsafeWhenLiveOrderSubmitted: true,
+      unsafeWhenRouteExecuted: true
+    },
+    {
+      id: "adapter-paper-execution",
+      label: "Adapter paper execution",
+      rows: adapterPaperExecutionRows,
+      recordedStatuses: ["paper_execution_recorded"],
+      requiresPaperFill: true,
+      unsafeWhenLiveOrderSubmitted: true,
+      unsafeWhenRouteExecuted: true
+    }
+  ];
+  const routeIndex = new Map<
+    string,
+    {
+      adapterId: string;
+      adapterName: string;
+      market: Market | "multi";
+    }
+  >();
+
+  for (const row of brokerRows) {
+    if (row.route === "live" && row.id !== "paper-local") {
+      routeIndex.set(`${row.id}:live`, {
+        adapterId: row.id,
+        adapterName: row.adapter,
+        market: row.market
+      });
+    }
+  }
+  for (const stage of stageDefinitions) {
+    for (const row of stage.rows) {
+      if (row.route === "live" && row.adapterId !== "paper-local") {
+        routeIndex.set(`${row.adapterId}:live`, {
+          adapterId: row.adapterId,
+          adapterName: row.adapterId,
+          market: row.market
+        });
+      }
+    }
+  }
+
+  return [...routeIndex.values()]
+    .map((route) => {
+      const stages = stageDefinitions.map((stage) =>
+        buildExecutionAdapterChainHealthStage(route.adapterId, stage)
+      );
+      const recordedStages = stages.filter((stage) => stage.status === "recorded");
+      const blocker =
+        stages.find((stage) => stage.status === "unsafe" || stage.status === "blocked") ??
+        stages.find((stage) => stage.status === "missing") ??
+        null;
+      const latestEvidence =
+        recordedStages
+          .filter((stage) => stage.timestamp)
+          .sort(
+            (left, right) =>
+              (right.timestamp ?? "").localeCompare(left.timestamp ?? "") ||
+              (right.evidenceId ?? "").localeCompare(left.evidenceId ?? "")
+          )[0] ?? null;
+      const status = executionAdapterChainHealthStatus(stages, blocker);
+      const tone: ExecutionAdapterChainHealthRollup["tone"] =
+        status === "paper_ready" ? "positive" : status === "blocked" ? "risk" : "warning";
+      return {
+        id: `${route.adapterId}:live`,
+        adapterId: route.adapterId,
+        adapterName: route.adapterName,
+        market: route.market,
+        route: "live" as const,
+        status,
+        headline: executionAdapterChainHealthHeadline(status, route.adapterName),
+        detail: executionAdapterChainHealthDetail(status, route.adapterName, blocker),
+        completedStageCount: recordedStages.length,
+        totalStageCount: stages.length,
+        blockerStageId: blocker?.id ?? null,
+        blockerLabel: blocker?.label ?? null,
+        latestEvidenceId: latestEvidence?.evidenceId ?? null,
+        latestEvidenceTimestamp: latestEvidence?.timestamp ?? null,
+        latestAuditEventId: latestEvidence?.auditEventId ?? null,
+        manualRouteCandidate: status === "paper_ready",
+        orderSubmissionEnabled: false as const,
+        liveTradingAllowed: false as const,
+        stages,
+        tone
+      };
+    })
+    .sort((left, right) => {
+      const statusOrder: Record<ExecutionAdapterChainHealthStatus, number> = {
+        blocked: 0,
+        in_progress: 1,
+        empty: 2,
+        paper_ready: 3
+      };
+      return statusOrder[left.status] - statusOrder[right.status] || left.adapterId.localeCompare(right.adapterId);
+    });
+}
+
+function buildExecutionAdapterChainHealthStage(
+  adapterId: string,
+  definition: ExecutionAdapterChainStageDefinition
+): ExecutionAdapterChainHealthStage {
+  const row = latestExecutionAdapterChainRow(definition.rows, adapterId);
+  if (!row) {
+    return {
+      id: definition.id,
+      label: definition.label,
+      status: "missing",
+      evidenceId: null,
+      auditEventId: null,
+      timestamp: null,
+      detail: `${definition.label} evidence has not been recorded.`,
+      blocker: `${definition.label} evidence is missing.`,
+      tone: "warning"
+    };
+  }
+  const unsafeReasons = executionAdapterChainUnsafeReasons(row, definition);
+  if (unsafeReasons.length > 0) {
+    return {
+      id: definition.id,
+      label: definition.label,
+      status: "unsafe",
+      evidenceId: row.id,
+      auditEventId: row.auditEventId ?? row.id,
+      timestamp: row.timestamp,
+      detail: `${row.statusLabel || row.status} · ${unsafeReasons.join(", ")}`,
+      blocker: unsafeReasons.join(", "),
+      tone: "risk"
+    };
+  }
+  if (definition.recordedStatuses.includes(row.status)) {
+    return {
+      id: definition.id,
+      label: definition.label,
+      status: "recorded",
+      evidenceId: row.id,
+      auditEventId: row.auditEventId ?? row.id,
+      timestamp: row.timestamp,
+      detail: `${row.statusLabel || row.status} · ${row.boundary || "live trading blocked"}`,
+      blocker: null,
+      tone: "positive"
+    };
+  }
+  return {
+    id: definition.id,
+    label: definition.label,
+    status: "blocked",
+    evidenceId: row.id,
+    auditEventId: row.auditEventId ?? row.id,
+    timestamp: row.timestamp,
+    detail: `${row.statusLabel || row.status} · ${row.blockerSummary || "blocked"}`,
+    blocker: row.blockerSummary || `${definition.label} is blocked.`,
+    tone: "risk"
+  };
+}
+
+function latestExecutionAdapterChainRow<T extends ExecutionAdapterChainRow>(
+  rows: ReadonlyArray<T>,
+  adapterId: string
+): T | null {
+  return (
+    rows
+      .filter((row) => row.route === "live" && row.adapterId === adapterId)
+      .sort((left, right) => right.timestamp.localeCompare(left.timestamp) || right.id.localeCompare(left.id))[0] ?? null
+  );
+}
+
+function executionAdapterChainUnsafeReasons(
+  row: ExecutionAdapterChainRow,
+  definition: ExecutionAdapterChainStageDefinition
+): string[] {
+  const reasons: string[] = [];
+  if (definition.requiresPaperFill && row.paperFillRecorded !== true) {
+    reasons.push("paper fill is not recorded");
+  }
+  if (definition.unsafeWhenOrderSubmitted && row.orderSubmitted) {
+    reasons.push("order submission must stay disabled");
+  }
+  if (definition.unsafeWhenLiveOrderSubmitted && row.liveOrderSubmitted) {
+    reasons.push("live order submission is not allowed");
+  }
+  if (definition.unsafeWhenRouteExecuted && row.routeExecuted) {
+    reasons.push("route execution is not allowed");
+  }
+  return reasons;
+}
+
+function executionAdapterChainHealthStatus(
+  stages: ExecutionAdapterChainHealthStage[],
+  blocker: ExecutionAdapterChainHealthStage | null
+): ExecutionAdapterChainHealthStatus {
+  if (blocker?.status === "blocked" || blocker?.status === "unsafe") {
+    return "blocked";
+  }
+  if (stages.every((stage) => stage.status === "recorded")) {
+    return "paper_ready";
+  }
+  if (stages.every((stage) => stage.status === "missing")) {
+    return "empty";
+  }
+  return "in_progress";
+}
+
+function executionAdapterChainHealthHeadline(status: ExecutionAdapterChainHealthStatus, adapterName: string): string {
+  if (status === "paper_ready") {
+    return `${adapterName} paper-only chain ready for manual review`;
+  }
+  if (status === "blocked") {
+    return `${adapterName} adapter chain blocked`;
+  }
+  if (status === "in_progress") {
+    return `${adapterName} adapter chain in progress`;
+  }
+  return `${adapterName} adapter chain not started`;
+}
+
+function executionAdapterChainHealthDetail(
+  status: ExecutionAdapterChainHealthStatus,
+  adapterName: string,
+  blocker: ExecutionAdapterChainHealthStage | null
+): string {
+  if (status === "paper_ready") {
+    return `${adapterName} has a complete paper-only pre-live adapter chain; manual route review is required and live trading remains blocked.`;
+  }
+  if (blocker) {
+    return `${blocker.label}: ${blocker.blocker || blocker.detail}. Live trading remains blocked.`;
+  }
+  return `${adapterName} has no pre-live adapter evidence yet. Start with secret reference evidence; live trading remains blocked.`;
 }
 
 export function buildExecutionAdapterPreLiveRunbookSummary(
@@ -19394,6 +21821,102 @@ export function buildPromotionReadiness(
   };
 }
 
+export function buildPreLiveReadinessChecklist(
+  readiness: PromotionReadiness,
+  input: PreLiveReadinessChecklistInput = {}
+): PreLiveReadinessChecklist {
+  const items: PreLiveReadinessChecklistItem[] = readiness.stages.map((stage) => ({
+    id: stage.id,
+    label: stage.label,
+    state: stage.status,
+    tone: stage.tone,
+    evidence: stage.value,
+    detail: stage.detail
+  }));
+  if (input.paperExecutionReplayGate) {
+    items.push(buildPaperExecutionReplayChecklistItem(input.paperExecutionReplayGate));
+  }
+  const totalCount = items.length;
+  const passedCount = items.filter((item) => item.state === "passed").length;
+  const blockingCount = items.filter((item) => item.state !== "passed").length;
+  const nextAction = items.find((item) => item.state !== "passed") ?? null;
+  const adapterStage = items.find((item) => item.id === "adapter-certification");
+  const humanStage = items.find((item) => item.id === "human-confirmation");
+  const replayStage = items.find((item) => item.id === "paper-execution-replay");
+
+  let status: PreLiveReadinessChecklistStatus;
+  let tone: PreLiveReadinessChecklist["tone"];
+  let headline: string;
+  if (readiness.status === "live_ready" && blockingCount === 0) {
+    status = "manual_route_ready";
+    tone = "positive";
+    headline = "Pre-live checklist complete";
+  } else if (readiness.status === "paper_pending") {
+    status = "paper_pending";
+    tone = "warning";
+    headline = "Pre-live paper evidence pending";
+  } else if (replayStage && replayStage.state !== "passed" && passedCount > 0) {
+    status = "evidence_pending";
+    tone = "warning";
+    headline = "Pre-live replay evidence pending";
+  } else if (adapterStage?.state === "passed" && humanStage?.state !== "passed") {
+    status = "operator_pending";
+    tone = "warning";
+    headline = "Pre-live operator confirmation pending";
+  } else if (passedCount > 0) {
+    status = "evidence_pending";
+    tone = "warning";
+    headline = "Pre-live evidence pending";
+  } else {
+    status = "blocked";
+    tone = "risk";
+    headline = "Pre-live readiness blocked";
+  }
+
+  const nextActionLabel = nextAction ? `${nextAction.id}: ${nextAction.evidence}` : "manual route review only";
+  const summary =
+    status === "manual_route_ready"
+      ? `${passedCount}/${totalCount} gates passed; ready for manual route review only. Direct order submission remains disabled.`
+      : `${passedCount}/${totalCount} gates passed; next action ${nextActionLabel}. Direct order submission remains disabled.`;
+
+  return {
+    status,
+    tone,
+    headline,
+    summary,
+    passedCount,
+    totalCount,
+    blockingCount,
+    nextActionId: nextAction?.id ?? null,
+    manualRouteCandidate: status === "manual_route_ready",
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    items
+  };
+}
+
+function buildPaperExecutionReplayChecklistItem(gate: PaperExecutionReplayGate): PreLiveReadinessChecklistItem {
+  const passed = gate.status === "replay_ready";
+  const state: PromotionQueueStage["status"] = passed ? "passed" : gate.status === "partial" ? "review" : "blocked";
+  const evidence =
+    gate.status === "replay_ready"
+      ? "Paper replay ready"
+      : gate.status === "stale"
+        ? "Paper replay stale"
+        : gate.status === "partial"
+          ? "Paper replay incomplete"
+          : "Paper replay blocked";
+  const latestEvidence = gate.latestEvidenceId ? ` Latest evidence: ${gate.latestEvidenceId}.` : "";
+  return {
+    id: "paper-execution-replay",
+    label: "Paper execution replay",
+    state,
+    tone: gate.tone === "positive" ? "positive" : gate.tone === "warning" ? "warning" : "risk",
+    evidence,
+    detail: `${gate.detail} Replay checks ${gate.passedCount}/${gate.totalCount}.${latestEvidence}`
+  };
+}
+
 export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRuleRow[] {
   const draft = buildStrategyRuleDraft(workspace);
   return [
@@ -19608,6 +22131,283 @@ export function buildStrategyVersionDiffRows(
       tone: changed ? "warning" : "neutral"
     };
   });
+}
+
+export function buildStrategyGovernanceQueueRows({
+  workspace,
+  library = [],
+  runHistory = []
+}: {
+  workspace: TerminalWorkspace;
+  library?: StrategyLibraryDraftItem[];
+  runHistory?: ResearchRunAudit[];
+}): StrategyGovernanceQueue {
+  const currentContextLabel = strategyContextLabel(
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  );
+  const currentValidation = buildStrategyGovernanceValidation(workspace, workspace.strategy);
+  const currentAuditBinding = buildResearchRunContextBinding(workspace);
+  const currentDraftRow: StrategyGovernanceQueueRow = {
+    id: "current-draft",
+    name: workspace.strategy.name,
+    revision: "current-draft",
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    timeframe: workspace.selectedTimeframe,
+    status: "current",
+    stage: "current_draft",
+    tone: currentValidation.validationStatus === "blocked" ? "risk" : "neutral",
+    contextLabel: currentContextLabel,
+    contextMismatch: false,
+    importProvenance: currentContextLabel,
+    validationStatus: currentValidation.validationStatus,
+    validationDetail: currentValidation.validationDetail,
+    auditRunId: currentAuditBinding.runId,
+    latestAuditRunId: currentAuditBinding.status === "matched" ? currentAuditBinding.runId : null,
+    changedFieldCount: 0,
+    changedFields: [],
+    nextActionId: "save-current-version",
+    nextActionLabel: "Save current version",
+    detail:
+      currentAuditBinding.status === "matched"
+        ? `Current draft is bound to audit run ${currentAuditBinding.runId}.`
+        : currentValidation.validationDetail
+  };
+  const rows = [
+    currentDraftRow,
+    ...library.map((item) => buildStrategyGovernanceLibraryRow(workspace, item, runHistory))
+  ].sort(strategyGovernanceQueueSort);
+
+  return {
+    rows,
+    summary: buildStrategyGovernanceQueueSummary(rows)
+  };
+}
+
+function buildStrategyGovernanceLibraryRow(
+  workspace: TerminalWorkspace,
+  item: StrategyLibraryDraftItem,
+  runHistory: ResearchRunAudit[]
+): StrategyGovernanceQueueRow {
+  const diffRows = buildStrategyVersionDiffRows(workspace, item);
+  const changedFields = diffRows.filter((row) => row.changed).map((row) => row.id);
+  const contextMismatch =
+    item.market !== workspace.selectedInstrument.market ||
+    item.symbol !== workspace.selectedInstrument.symbol ||
+    item.timeframe !== workspace.selectedTimeframe;
+  const validation = buildStrategyGovernanceValidation(workspace, item.strategySnapshot, item);
+  const latestAuditRunId = latestStrategyAuditRunId(item, runHistory);
+  const stage = strategyGovernanceStage({
+    changedFieldCount: changedFields.length,
+    contextMismatch,
+    item,
+    latestAuditRunId,
+    validationStatus: validation.validationStatus
+  });
+  const nextActionId = strategyGovernanceActionId(stage);
+  const contextLabel = strategyContextLabel(item.market, item.symbol, item.timeframe);
+
+  return {
+    id: item.revision,
+    name: item.name,
+    revision: item.revision,
+    market: item.market,
+    symbol: item.symbol,
+    timeframe: item.timeframe,
+    status: item.status,
+    stage,
+    tone: strategyGovernanceTone(stage),
+    contextLabel,
+    contextMismatch,
+    importProvenance: contextLabel,
+    validationStatus: validation.validationStatus,
+    validationDetail: validation.validationDetail,
+    auditRunId: item.auditRunId ?? null,
+    latestAuditRunId,
+    changedFieldCount: changedFields.length,
+    changedFields,
+    nextActionId,
+    nextActionLabel: strategyGovernanceActionLabel(nextActionId),
+    detail: strategyGovernanceDetail({
+      changedFields,
+      contextLabel,
+      item,
+      latestAuditRunId,
+      stage,
+      validationDetail: validation.validationDetail
+    })
+  };
+}
+
+function buildStrategyGovernanceValidation(
+  workspace: TerminalWorkspace,
+  strategySnapshot: StrategySnapshot,
+  item?: StrategyLibraryDraftItem
+): Pick<StrategyGovernanceQueueRow, "validationStatus" | "validationDetail"> {
+  const validationWorkspace: TerminalWorkspace = {
+    ...workspace,
+    selectedInstrument: {
+      ...workspace.selectedInstrument,
+      market: item?.market ?? workspace.selectedInstrument.market,
+      symbol: item?.symbol ?? workspace.selectedInstrument.symbol,
+      name: item?.name ?? workspace.selectedInstrument.name
+    },
+    selectedTimeframe: item?.timeframe ?? workspace.selectedTimeframe,
+    strategy: strategySnapshot,
+    researchRun: null
+  };
+  const gates = buildStrategyReadinessGates(validationWorkspace).filter((gate) => gate.id !== "audit");
+  const blocked = gates.filter((gate) => gate.status === "blocked");
+  if (blocked.length) {
+    return {
+      validationStatus: "blocked",
+      validationDetail: blocked.map((gate) => `${gate.label}: ${gate.detail}`).join(" · ")
+    };
+  }
+  const review = gates.filter((gate) => gate.status === "review");
+  if (review.length) {
+    return {
+      validationStatus: "review",
+      validationDetail: review.map((gate) => `${gate.label}: ${gate.detail}`).join(" · ")
+    };
+  }
+  return {
+    validationStatus: "ready",
+    validationDetail: "Strategy schema, risk controls, and paper-only execution mode are ready."
+  };
+}
+
+function latestStrategyAuditRunId(item: StrategyLibraryDraftItem, runHistory: ResearchRunAudit[]): string | null {
+  const matchingRuns = runHistory
+    .filter(
+      (run) =>
+        run.market === item.market &&
+        run.symbol === item.symbol &&
+        run.timeframe === item.timeframe &&
+        run.strategyRevision === item.revision
+    )
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+  return matchingRuns[0]?.runId ?? item.auditRunId ?? null;
+}
+
+function strategyGovernanceStage({
+  changedFieldCount,
+  contextMismatch,
+  item,
+  latestAuditRunId,
+  validationStatus
+}: {
+  changedFieldCount: number;
+  contextMismatch: boolean;
+  item: StrategyLibraryDraftItem;
+  latestAuditRunId: string | null;
+  validationStatus: StrategyGovernanceQueueRow["validationStatus"];
+}): StrategyGovernanceQueueStage {
+  if (validationStatus === "blocked") {
+    return "blocked";
+  }
+  if (contextMismatch) {
+    return "imported";
+  }
+  if (changedFieldCount > 0) {
+    return "stale";
+  }
+  if (item.status === "audited" && latestAuditRunId) {
+    return "audited";
+  }
+  return "needs_reaudit";
+}
+
+function strategyGovernanceActionId(stage: StrategyGovernanceQueueStage): StrategyGovernanceQueueActionId {
+  if (stage === "stale" || stage === "needs_reaudit") {
+    return "load-and-rerun";
+  }
+  return "load-version";
+}
+
+function strategyGovernanceActionLabel(actionId: StrategyGovernanceQueueActionId): string {
+  if (actionId === "save-current-version") {
+    return "Save current version";
+  }
+  if (actionId === "load-and-rerun") {
+    return "Load and rerun audit";
+  }
+  return "Load version";
+}
+
+function strategyGovernanceTone(stage: StrategyGovernanceQueueStage): StrategyGovernanceQueueRow["tone"] {
+  if (stage === "audited") {
+    return "positive";
+  }
+  if (stage === "blocked") {
+    return "risk";
+  }
+  if (stage === "current_draft" || stage === "imported") {
+    return "neutral";
+  }
+  return "warning";
+}
+
+function strategyGovernanceDetail({
+  changedFields,
+  contextLabel,
+  item,
+  latestAuditRunId,
+  stage,
+  validationDetail
+}: {
+  changedFields: StrategyVersionDiffRow["id"][];
+  contextLabel: string;
+  item: StrategyLibraryDraftItem;
+  latestAuditRunId: string | null;
+  stage: StrategyGovernanceQueueStage;
+  validationDetail: string;
+}): string {
+  if (stage === "blocked") {
+    return validationDetail;
+  }
+  if (stage === "imported") {
+    return `Saved for ${contextLabel}; load as a cross-context draft before auditing in this workspace.`;
+  }
+  if (stage === "stale") {
+    return `Current context changed in ${changedFields.join(", ")}; load this version and rerun an audit.`;
+  }
+  if (stage === "audited") {
+    return `Audited version is backed by ${latestAuditRunId ?? item.auditRunId}.`;
+  }
+  return "Saved draft is valid but has no current audit evidence; load it and rerun the pipeline.";
+}
+
+function buildStrategyGovernanceQueueSummary(
+  rows: StrategyGovernanceQueueRow[]
+): StrategyGovernanceQueueSummary {
+  return {
+    totalRows: rows.length,
+    currentDraftCount: rows.filter((row) => row.stage === "current_draft").length,
+    auditedCount: rows.filter((row) => row.stage === "audited").length,
+    importedCount: rows.filter((row) => row.stage === "imported").length,
+    staleCount: rows.filter((row) => row.stage === "stale").length,
+    needsReauditCount: rows.filter((row) => row.stage === "needs_reaudit").length,
+    blockedCount: rows.filter((row) => row.stage === "blocked").length
+  };
+}
+
+function strategyGovernanceQueueSort(left: StrategyGovernanceQueueRow, right: StrategyGovernanceQueueRow): number {
+  const rank: Record<StrategyGovernanceQueueStage, number> = {
+    current_draft: 0,
+    blocked: 1,
+    needs_reaudit: 2,
+    stale: 3,
+    audited: 4,
+    imported: 5
+  };
+  const rankDelta = rank[left.stage] - rank[right.stage];
+  if (rankDelta !== 0) {
+    return rankDelta;
+  }
+  return left.revision.localeCompare(right.revision);
 }
 
 export function buildStrategyRuleDraft(workspace: TerminalWorkspace): StrategyRuleDraft {
