@@ -175,6 +175,390 @@ class QuantCoreContractTest(unittest.TestCase):
             ],
         }
 
+    def _sample_p2_paper_replay_manifest(self, *, run_id: str = "run-p2-paper-replay"):
+        return {
+            "kind": "aiqt.p2PaperReplayManifest",
+            "schemaVersion": 1,
+            "generatedAt": "2026-06-24T10:15:00+00:00",
+            "status": "passed",
+            "baseUrl": "http://aiqt.local",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "runId": run_id,
+            "adapterId": "ashare-live",
+            "replayStatus": "replay_ready",
+            "passedCheckCount": 8,
+            "totalCheckCount": 8,
+            "warningCount": 0,
+            "checkIds": [
+                "single-paper-execution",
+                "portfolio-order-ledger",
+                "portfolio-approval-ledger",
+                "portfolio-simulation-ledger",
+                "portfolio-state-history",
+                "portfolio-replay",
+                "adapter-paper-execution",
+                "live-blocked-boundary",
+            ],
+            "auditEventIds": [
+                "paper-execution-run-p2-paper-replay",
+                "portfolio-paper-order-run-p2-paper-replay",
+                "portfolio-paper-approval-run-p2-paper-replay",
+                "portfolio-paper-simulation-run-p2-paper-replay",
+                "portfolio-paper-replay-run-p2-paper-replay",
+                "adapter-paper-execution-run-p2-paper-replay",
+            ],
+            "latestEvidenceId": "adapter-paper-execution-ready",
+            "metrics": {
+                "filledPaperOrders": 1,
+                "portfolioOrders": 1,
+                "approvedPortfolioOrders": 1,
+                "portfolioFilledOrders": 1,
+                "stateHistoryFilledEvents": 1,
+                "adapterPaperExecutions": 1,
+                "replayWarnings": 0,
+            },
+            "paperOnly": True,
+            "orderSubmissionEnabled": False,
+            "liveTradingAllowed": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+            "liveBlockedBoundary": True,
+            "checkCount": 8,
+            "checks": [
+                {
+                    "id": "single-paper-execution",
+                    "status": "passed",
+                    "summary": "single-symbol paper execution is bound to the audited run",
+                    "evidenceId": "paper-execution-ready",
+                },
+                {
+                    "id": "portfolio-order-ledger",
+                    "status": "passed",
+                    "summary": "portfolio paper order ledger is bound to the audited run",
+                    "evidenceId": "portfolio-paper-ready",
+                },
+                {
+                    "id": "portfolio-approval-ledger",
+                    "status": "passed",
+                    "summary": "portfolio paper order approval is recorded",
+                    "evidenceId": "approval-ready",
+                },
+                {
+                    "id": "portfolio-simulation-ledger",
+                    "status": "passed",
+                    "summary": "portfolio paper simulation fill is recorded",
+                    "evidenceId": "simulation-ready",
+                },
+                {
+                    "id": "portfolio-state-history",
+                    "status": "passed",
+                    "summary": "portfolio state history can replay the simulated fill",
+                    "evidenceId": "state-filled-ready",
+                },
+                {
+                    "id": "portfolio-replay",
+                    "status": "passed",
+                    "summary": "portfolio replay reconstructs orders and positions",
+                    "evidenceId": "run-p2-paper-replay",
+                },
+                {
+                    "id": "adapter-paper-execution",
+                    "status": "passed",
+                    "summary": "adapter paper execution is recorded without route execution",
+                    "evidenceId": "adapter-paper-execution-ready",
+                },
+                {
+                    "id": "live-blocked-boundary",
+                    "status": "passed",
+                    "summary": "order submission and live trading remain disabled",
+                    "evidenceId": "live-blocked-boundary",
+                },
+            ],
+        }
+
+    def _sample_p2_paper_replay_export_package(self, *, run_id: str = "run-p2-paper-replay"):
+        return {
+            "kind": "aiqt.researchRun.export",
+            "packageVersion": 1,
+            "exportedAt": "2026-06-24T10:30:00+00:00",
+            "manifest": {
+                "runId": run_id,
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "paperOnly": True,
+                "orderSubmissionEnabled": False,
+                "liveTradingAllowed": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "liveBlockedBoundary": True,
+                "artifactCounts": {
+                    "paperExecutions": 1,
+                    "adapterPaperExecutions": 1,
+                    "portfolioPaperOrderBatches": 1,
+                    "portfolioPaperOrderApprovals": 1,
+                    "portfolioPaperOrderSimulations": 1,
+                    "auditEvents": 3,
+                },
+            },
+            "paperExecutions": [
+                {
+                    "executionId": "paper-execution-ready",
+                    "runId": run_id,
+                    "createdAt": "2026-06-24T10:00:00+00:00",
+                    "mode": "paper_only",
+                    "account": {"cash": 80659.0, "equity": 100000.0, "positions": {"600000": 2100}},
+                    "orders": [
+                        {
+                            "orderId": "single-paper-order-ready",
+                            "symbol": "600000",
+                            "side": "buy",
+                            "quantity": 2100,
+                            "price": 9.21,
+                            "status": "filled",
+                            "reason": "filled_immediately",
+                        }
+                    ],
+                    "gates": [{"id": "risk", "status": "passed"}],
+                }
+            ],
+            "portfolioPaperOrderBatches": [
+                {
+                    "batchId": "portfolio-paper-ready",
+                    "baseRunId": run_id,
+                    "portfolioName": "P2 paper replay portfolio",
+                    "createdAt": "2026-06-24T10:02:00+00:00",
+                    "mode": "portfolio_paper_order_review",
+                    "source": "portfolio_backtest",
+                    "summary": {"totalOrders": 1},
+                    "orders": [
+                        {
+                            "orderId": "portfolio-order-ready",
+                            "symbol": "600000",
+                            "side": "buy",
+                            "quantity": 2100,
+                            "price": 9.21,
+                            "notionalValue": 19341.0,
+                            "status": "staged",
+                            "riskStatus": "passed",
+                        }
+                    ],
+                }
+            ],
+            "portfolioPaperOrderApprovals": [
+                {
+                    "approvalId": "approval-ready",
+                    "baseRunId": run_id,
+                    "batchId": "portfolio-paper-ready",
+                    "orderId": "portfolio-order-ready",
+                    "reviewedAt": "2026-06-24T10:03:00+00:00",
+                    "approved": True,
+                    "reviewer": "operator",
+                    "reason": "paper replay acceptance evidence",
+                }
+            ],
+            "portfolioPaperOrderSimulations": [
+                {
+                    "simulationId": "simulation-ready",
+                    "baseRunId": run_id,
+                    "batchId": "portfolio-paper-ready",
+                    "orderId": "portfolio-order-ready",
+                    "simulatedAt": "2026-06-24T10:04:00+00:00",
+                    "mode": "portfolio_paper_order_simulation",
+                    "symbol": "600000",
+                    "sourceRunId": run_id,
+                    "side": "buy",
+                    "quantity": 2100,
+                    "fillPrice": 9.21,
+                    "notionalValue": 19341.0,
+                    "orderState": "filled",
+                    "fillStatus": "filled",
+                    "reason": "paper fill replayed",
+                    "approvedBy": "operator",
+                    "adapterPaperExecutionId": "adapter-paper-execution-ready",
+                    "adapterPaperExecutionEvidence": {"status": "paper_execution_recorded"},
+                }
+            ],
+            "adapterPaperExecutions": [
+                {
+                    "adapterPaperExecutionId": "adapter-paper-execution-ready",
+                    "adapterId": "ashare-live",
+                    "market": "ashare",
+                    "route": "paper",
+                    "status": "paper_execution_recorded",
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                }
+            ],
+            "auditEvents": [
+                {"eventId": f"paper-execution-{run_id}", "eventType": "p0_paper_simulation", "runId": run_id},
+                {
+                    "eventId": f"portfolio-paper-replay-{run_id}",
+                    "eventType": "portfolio_paper_order_simulation",
+                    "runId": run_id,
+                },
+                {
+                    "eventId": f"adapter-paper-execution-{run_id}",
+                    "eventType": "execution_adapter_paper_execution",
+                    "runId": run_id,
+                },
+            ],
+        }
+
+    def _sample_p2_readiness_acceptance_manifest(self, *, run_id: str = "run-p2-readiness"):
+        return {
+            "kind": "aiqt.p2ReadinessAcceptanceManifest",
+            "schemaVersion": 1,
+            "generatedAt": "2026-06-24T11:00:00+00:00",
+            "status": "accepted",
+            "baseUrl": "http://aiqt.local",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "runId": run_id,
+            "adapterId": "ashare-live",
+            "p1AcceptanceRunId": "run-p1-smoke",
+            "p2PreLiveAcceptanceRunId": "run-p2-pre-live",
+            "p2PaperReplayRunId": "run-p2-paper-replay",
+            "operatorRunbookAuditEventId": "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+            "readinessCoverageStatus": "covered",
+            "acceptedCriterionCount": 6,
+            "totalCriterionCount": 6,
+            "blockingCriterionCount": 0,
+            "criterionIds": [
+                "p1-acceptance",
+                "paper-execution-replay",
+                "pre-live-checklist",
+                "p2-pre-live-manifest",
+                "readiness-evidence-coverage",
+                "live-blocked-boundary",
+            ],
+            "auditEventIds": [
+                "p1-acceptance-run-p1-smoke",
+                "paper-execution-run-p2-paper-replay",
+                "p2-pre-live-acceptance-run-p2-pre-live",
+                "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+            ],
+            "manifestPaths": {
+                "p1Acceptance": "data/p1-acceptance.json",
+                "p2PreLiveAcceptance": "data/p2-pre-live-acceptance.json",
+                "p2PaperReplay": "data/p2-paper-replay.json",
+            },
+            "paperOnly": True,
+            "orderSubmissionEnabled": False,
+            "liveTradingAllowed": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+            "liveBlockedBoundary": True,
+            "checkCount": 6,
+            "checks": [
+                {
+                    "id": "p1-acceptance",
+                    "status": "passed",
+                    "summary": "P1 research workflow is accepted and live trading remains blocked.",
+                    "evidenceId": "data/p1-acceptance.json",
+                },
+                {
+                    "id": "paper-execution-replay",
+                    "status": "passed",
+                    "summary": "Paper-only execution replay is valid.",
+                    "evidenceId": "data/p2-paper-replay.json",
+                },
+                {
+                    "id": "pre-live-checklist",
+                    "status": "passed",
+                    "summary": "Pre-live checklist is complete for manual review only.",
+                    "evidenceId": "manual-route-ready",
+                },
+                {
+                    "id": "p2-pre-live-manifest",
+                    "status": "passed",
+                    "summary": "P2 pre-live manifest is valid.",
+                    "evidenceId": "data/p2-pre-live-acceptance.json",
+                },
+                {
+                    "id": "readiness-evidence-coverage",
+                    "status": "passed",
+                    "summary": "All readiness claims have traceable evidence.",
+                    "evidenceId": "p2-evidence-coverage",
+                },
+                {
+                    "id": "live-blocked-boundary",
+                    "status": "passed",
+                    "summary": "No direct order submission, live order, route execution, or live trading is allowed.",
+                    "evidenceId": "forced-platform-boundary",
+                },
+            ],
+        }
+
+    def _sample_p2_manifest_chain_preflight(self, *, status: str = "blocked"):
+        stages = [
+            {
+                "id": "p1-acceptance",
+                "label": "P1 acceptance",
+                "status": "valid",
+                "path": "data/p1-acceptance.json",
+                "summary": "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+                "reason": "",
+                "nextAction": "",
+                "nextCommand": "",
+            },
+            {
+                "id": "p2-paper-replay",
+                "label": "P2 paper replay",
+                "status": "valid",
+                "path": "data/p2-paper-replay.json",
+                "summary": "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+                "reason": "",
+                "nextAction": "",
+                "nextCommand": "",
+            },
+            {
+                "id": "p2-pre-live-acceptance",
+                "label": "P2 pre-live acceptance",
+                "status": "valid",
+                "path": "data/p2-pre-live-acceptance.json",
+                "summary": "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+                "reason": "",
+                "nextAction": "",
+                "nextCommand": "",
+            },
+            {
+                "id": "p2-readiness-acceptance",
+                "label": "P2 readiness acceptance",
+                "status": "missing" if status == "blocked" else "valid",
+                "path": "data/p2-readiness-acceptance.json",
+                "summary": "" if status == "blocked" else "p2 readiness acceptance manifest run=run-p2-readiness criteria=6/6 blockers=0 liveBlocked=True",
+                "reason": "P2 readiness acceptance report not found at data/p2-readiness-acceptance.json"
+                if status == "blocked"
+                else "",
+                "nextAction": "run-p2-readiness" if status == "blocked" else "",
+                "nextCommand": "npm run docker:smoke:p2 -- --no-build" if status == "blocked" else "",
+            },
+        ]
+        return {
+            "kind": "aiqt.p2ManifestChainPreflight",
+            "schemaVersion": 1,
+            "status": status,
+            "ready": status == "ready",
+            "validStageCount": 3 if status == "blocked" else 4,
+            "totalStageCount": 4,
+            "blockerIds": ["p2-readiness-acceptance"] if status == "blocked" else [],
+            "nextAction": "run-p2-readiness" if status == "blocked" else "",
+            "nextCommand": "npm run docker:smoke:p2 -- --no-build" if status == "blocked" else "",
+            "stages": stages,
+            "paperOnly": True,
+            "orderSubmissionEnabled": False,
+            "liveTradingAllowed": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+            "liveBlockedBoundary": True,
+        }
+
     def _sample_research_run_audit(self, *, run_id: str, strategy_revision: str):
         from quant_core.runs import ResearchRunAudit
 
@@ -889,8 +1273,671 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["acceptance"]["runId"], "run-p2-api")
         self.assertEqual(payload["acceptance"]["checklistStatus"], "evidence_pending")
         self.assertEqual(payload["acceptance"]["blockingGateCount"], 2)
+
+    def test_p2_pre_live_acceptance_manifest_can_be_built_from_p1_and_paper_replay(self):
+        from quant_core.p2_acceptance import build_p2_pre_live_acceptance_manifest
+
+        manifest = build_p2_pre_live_acceptance_manifest(
+            self._sample_p1_acceptance_manifest(run_id="run-p1-smoke"),
+            self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke"),
+            base_url="http://aiqt.local",
+            run_id="run-p2-pre-live-smoke",
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.p2PreLiveAcceptanceManifest")
+        self.assertEqual(manifest["runId"], "run-p2-pre-live-smoke")
+        self.assertEqual(manifest["market"], "ashare")
+        self.assertEqual(manifest["symbol"], "600000")
+        self.assertEqual(manifest["timeframe"], "1d")
+        self.assertEqual(manifest["adapterId"], "ashare-live")
+        self.assertEqual(manifest["promotionStatus"], "certification_pending")
+        self.assertEqual(manifest["checklistStatus"], "evidence_pending")
+        self.assertEqual(manifest["passedGateCount"], 4)
+        self.assertEqual(manifest["totalGateCount"], 6)
+        self.assertEqual(manifest["blockingGateCount"], 2)
+        self.assertEqual(manifest["blockerIds"], ["adapter-certification", "human-confirmation"])
+        self.assertFalse(manifest["manualRouteCandidate"])
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["orderSubmissionEnabled"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertFalse(manifest["liveOrderSubmitted"])
+        self.assertFalse(manifest["routeExecuted"])
+        self.assertTrue(manifest["liveBlockedBoundary"])
+        self.assertIn("p1-acceptance-run-p1-smoke", manifest["auditEventIds"])
+        self.assertIn("adapter-paper-execution-ready", manifest["auditEventIds"])
+        self.assertEqual(
+            [check["id"] for check in manifest["checks"]],
+            [
+                "pre-live-checklist",
+                "promotion-gates",
+                "paper-execution-replay",
+                "adapter-evidence",
+                "manual-route-boundary",
+                "live-blocked-boundary",
+            ],
+        )
+
+        mismatched_paper_replay = self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke")
+        mismatched_paper_replay["symbol"] = "000001"
+        with self.assertRaisesRegex(ValueError, "input mismatch"):
+            build_p2_pre_live_acceptance_manifest(
+                self._sample_p1_acceptance_manifest(run_id="run-p1-smoke"),
+                mismatched_paper_replay,
+                base_url="http://aiqt.local",
+                run_id="run-p2-pre-live-smoke",
+            )
+
+    def test_p2_paper_replay_status_reads_latest_report(self):
+        import json
+
+        from quant_core.p2_paper_replay import load_p2_paper_replay_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "p2-paper-replay.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest()), encoding="utf-8")
+
+            status = load_p2_paper_replay_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.p2PaperReplayStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "passed")
+        self.assertEqual(
+            status["summary"],
+            "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+        )
+        self.assertEqual(status["runId"], "run-p2-paper-replay")
+        self.assertEqual(status["market"], "ashare")
+        self.assertEqual(status["symbol"], "600000")
+        self.assertEqual(status["timeframe"], "1d")
+        self.assertEqual(status["adapterId"], "ashare-live")
+        self.assertEqual(status["replayStatus"], "replay_ready")
+        self.assertEqual(status["passedCheckCount"], 8)
+        self.assertEqual(status["totalCheckCount"], 8)
+        self.assertEqual(status["warningCount"], 0)
+        self.assertEqual(status["requiredCheckCount"], 8)
+        self.assertEqual(status["latestEvidenceId"], "adapter-paper-execution-ready")
+        self.assertEqual(status["metrics"]["adapterPaperExecutions"], 1)
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["liveOrderSubmitted"])
+        self.assertFalse(status["routeExecuted"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["adapterId"], "ashare-live")
+        self.assertTrue(str(status["sourcePath"]).endswith("p2-paper-replay.json"))
+
+    def test_p2_paper_replay_status_reports_missing_file(self):
+        from quant_core.p2_paper_replay import load_p2_paper_replay_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_p2_paper_replay_status(Path(tmp) / "data" / "p2-paper-replay.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+
+    def test_p2_paper_replay_status_rejects_unsafe_or_incomplete_report(self):
+        import json
+
+        from quant_core.p2_paper_replay import load_p2_paper_replay_status
+
+        unsafe_manifest = self._sample_p2_paper_replay_manifest()
+        unsafe_manifest["orderSubmissionEnabled"] = True
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveOrderSubmitted"] = True
+        unsafe_manifest["routeExecuted"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+        unsafe_manifest["checks"] = [
+            check for check in unsafe_manifest["checks"] if check["id"] != "adapter-paper-execution"
+        ]
+        unsafe_manifest["checkCount"] = len(unsafe_manifest["checks"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-paper-replay.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_p2_paper_replay_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["orderSubmissionEnabled"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertTrue(status["liveOrderSubmitted"])
+        self.assertTrue(status["routeExecuted"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-p2-paper-replay")
+
+    def test_p2_paper_replay_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-paper-replay.json"
+            report_path.write_text(
+                json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p2-replay-api")),
+                encoding="utf-8",
+            )
+
+            class TestHandler(QuantApiHandler):
+                p2_paper_replay_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/p2/paper-replay/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["replay"]["kind"], "aiqt.p2PaperReplayStatus")
+        self.assertEqual(payload["replay"]["status"], "passed")
+        self.assertEqual(payload["replay"]["runId"], "run-p2-replay-api")
+        self.assertEqual(payload["replay"]["replayStatus"], "replay_ready")
+        self.assertFalse(payload["replay"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["replay"]["liveTradingAllowed"])
+
+    def test_p2_paper_replay_manifest_can_be_built_from_research_export_package(self):
+        from quant_core.p2_paper_replay import build_p2_paper_replay_manifest_from_export_package
+
+        export_package = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+
+        manifest = build_p2_paper_replay_manifest_from_export_package(
+            export_package,
+            base_url="http://aiqt.local",
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.p2PaperReplayManifest")
+        self.assertEqual(manifest["runId"], "run-p2-paper-replay")
+        self.assertEqual(manifest["market"], "ashare")
+        self.assertEqual(manifest["symbol"], "600000")
+        self.assertEqual(manifest["timeframe"], "1d")
+        self.assertEqual(manifest["adapterId"], "ashare-live")
+        self.assertEqual(manifest["replayStatus"], "replay_ready")
+        self.assertEqual(manifest["passedCheckCount"], 8)
+        self.assertEqual(manifest["totalCheckCount"], 8)
+        self.assertEqual(manifest["warningCount"], 0)
+        self.assertEqual(manifest["metrics"]["filledPaperOrders"], 1)
+        self.assertEqual(manifest["metrics"]["portfolioOrders"], 1)
+        self.assertEqual(manifest["metrics"]["approvedPortfolioOrders"], 1)
+        self.assertEqual(manifest["metrics"]["portfolioFilledOrders"], 1)
+        self.assertEqual(manifest["metrics"]["stateHistoryFilledEvents"], 1)
+        self.assertEqual(manifest["metrics"]["adapterPaperExecutions"], 1)
+        self.assertEqual(manifest["latestEvidenceId"], "adapter-paper-execution-ready")
+        self.assertEqual(
+            [check["id"] for check in manifest["checks"]],
+            [
+                "single-paper-execution",
+                "portfolio-order-ledger",
+                "portfolio-approval-ledger",
+                "portfolio-simulation-ledger",
+                "portfolio-state-history",
+                "portfolio-replay",
+                "adapter-paper-execution",
+                "live-blocked-boundary",
+            ],
+        )
+
+        unsafe_export = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+        unsafe_export["manifest"]["liveTradingAllowed"] = True
+        with self.assertRaisesRegex(ValueError, "live-blocked boundary"):
+            build_p2_paper_replay_manifest_from_export_package(unsafe_export, base_url="http://aiqt.local")
+
+        missing_boundary_export = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+        missing_boundary_export["manifest"]["liveBlockedBoundary"] = False
+        with self.assertRaisesRegex(ValueError, "live-blocked boundary"):
+            build_p2_paper_replay_manifest_from_export_package(
+                missing_boundary_export,
+                base_url="http://aiqt.local",
+            )
+
+    def test_p2_readiness_acceptance_status_reads_latest_report(self):
+        import json
+
+        from quant_core.p2_readiness_acceptance import load_p2_readiness_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "p2-readiness-acceptance.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_p2_readiness_acceptance_manifest()), encoding="utf-8")
+
+            status = load_p2_readiness_acceptance_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.p2ReadinessAcceptanceStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "accepted")
+        self.assertEqual(
+            status["summary"],
+            "p2 readiness acceptance manifest run=run-p2-readiness criteria=6/6 blockers=0 liveBlocked=True",
+        )
+        self.assertEqual(status["runId"], "run-p2-readiness")
+        self.assertEqual(status["market"], "ashare")
+        self.assertEqual(status["symbol"], "600000")
+        self.assertEqual(status["timeframe"], "1d")
+        self.assertEqual(status["adapterId"], "ashare-live")
+        self.assertEqual(status["acceptedCriterionCount"], 6)
+        self.assertEqual(status["totalCriterionCount"], 6)
+        self.assertEqual(status["blockingCriterionCount"], 0)
+        self.assertEqual(status["checkCount"], 6)
+        self.assertEqual(status["requiredCheckCount"], 6)
+        self.assertEqual(status["readinessCoverageStatus"], "covered")
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["liveOrderSubmitted"])
+        self.assertFalse(status["routeExecuted"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["adapterId"], "ashare-live")
+        self.assertEqual(status["manifestPaths"]["p2PaperReplay"], "data/p2-paper-replay.json")
+        self.assertTrue(str(status["sourcePath"]).endswith("p2-readiness-acceptance.json"))
+
+    def test_p2_readiness_acceptance_status_reports_missing_file(self):
+        from quant_core.p2_readiness_acceptance import load_p2_readiness_acceptance_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_p2_readiness_acceptance_status(Path(tmp) / "data" / "p2-readiness-acceptance.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+
+    def test_p2_readiness_acceptance_status_rejects_unsafe_or_incomplete_report(self):
+        import json
+
+        from quant_core.p2_readiness_acceptance import load_p2_readiness_acceptance_status
+
+        unsafe_manifest = self._sample_p2_readiness_acceptance_manifest()
+        unsafe_manifest["orderSubmissionEnabled"] = True
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveOrderSubmitted"] = True
+        unsafe_manifest["routeExecuted"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+        unsafe_manifest["checks"] = [
+            check for check in unsafe_manifest["checks"] if check["id"] != "readiness-evidence-coverage"
+        ]
+        unsafe_manifest["checkCount"] = len(unsafe_manifest["checks"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-readiness-acceptance.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_p2_readiness_acceptance_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["orderSubmissionEnabled"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertTrue(status["liveOrderSubmitted"])
+        self.assertTrue(status["routeExecuted"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["runId"], "run-p2-readiness")
+
+    def test_p2_readiness_acceptance_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-readiness-acceptance.json"
+            report_path.write_text(
+                json.dumps(self._sample_p2_readiness_acceptance_manifest(run_id="run-p2-readiness-api")),
+                encoding="utf-8",
+            )
+
+            class TestHandler(QuantApiHandler):
+                p2_readiness_acceptance_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/p2/readiness/acceptance/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["acceptance"]["kind"], "aiqt.p2ReadinessAcceptanceStatus")
+        self.assertEqual(payload["acceptance"]["status"], "accepted")
+        self.assertEqual(payload["acceptance"]["runId"], "run-p2-readiness-api")
+        self.assertEqual(payload["acceptance"]["acceptedCriterionCount"], 6)
         self.assertFalse(payload["acceptance"]["orderSubmissionEnabled"])
         self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
+
+    def test_p2_readiness_acceptance_generate_api_writes_validated_manifest(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            p1_path = root / "data" / "p1-acceptance.json"
+            replay_path = root / "data" / "p2-paper-replay.json"
+            pre_live_path = root / "data" / "p2-pre-live-acceptance.json"
+            readiness_path = root / "data" / "p2-readiness-acceptance.json"
+            p1_path.parent.mkdir(parents=True)
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-ready")), encoding="utf-8")
+            replay_path.write_text(
+                json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p2-paper-replay")),
+                encoding="utf-8",
+            )
+            pre_live_path.write_text(
+                json.dumps(self._sample_p2_pre_live_acceptance_manifest(run_id="run-p2-pre-live")),
+                encoding="utf-8",
+            )
+
+            class TestHandler(QuantApiHandler):
+                p1_acceptance_report_path = p1_path
+                p2_paper_replay_report_path = replay_path
+                p2_pre_live_acceptance_report_path = pre_live_path
+                p2_readiness_acceptance_report_path = readiness_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/p2/readiness/acceptance")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+            file_written = readiness_path.exists()
+            written_manifest = json.loads(readiness_path.read_text(encoding="utf-8")) if file_written else {}
+
+        self.assertEqual(response.status, 201)
+        self.assertTrue(file_written)
+        self.assertEqual(payload["status"], "acceptance_generated")
+        self.assertEqual(payload["acceptance"]["kind"], "aiqt.p2ReadinessAcceptanceStatus")
+        self.assertEqual(payload["acceptance"]["status"], "accepted")
+        self.assertEqual(payload["acceptance"]["runId"], "run-p2-readiness")
+        self.assertEqual(payload["acceptance"]["acceptedCriterionCount"], 6)
+        self.assertFalse(payload["acceptance"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
+        self.assertFalse(payload["orderSubmissionEnabled"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertEqual(written_manifest["kind"], "aiqt.p2ReadinessAcceptanceManifest")
+        self.assertEqual(written_manifest["p1AcceptanceRunId"], "run-p1-ready")
+        self.assertEqual(written_manifest["p2PaperReplayRunId"], "run-p2-paper-replay")
+        self.assertEqual(written_manifest["p2PreLiveAcceptanceRunId"], "run-p2-pre-live")
+        self.assertEqual(written_manifest["manifestPaths"]["p2PaperReplay"], str(replay_path))
+
+    def test_p2_manifest_chain_preflight_status_reads_blocked_report(self):
+        import json
+
+        from quant_core.p2_manifest_chain_preflight import load_p2_manifest_chain_preflight_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "p2-chain-preflight.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_p2_manifest_chain_preflight()), encoding="utf-8")
+
+            status = load_p2_manifest_chain_preflight_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.p2ManifestChainPreflightStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "blocked")
+        self.assertFalse(status["ready"])
+        self.assertEqual(
+            status["summary"],
+            "p2 manifest chain preflight status=blocked valid=3/4 next=run-p2-readiness",
+        )
+        self.assertEqual(status["validStageCount"], 3)
+        self.assertEqual(status["totalStageCount"], 4)
+        self.assertEqual(status["blockerIds"], ["p2-readiness-acceptance"])
+        self.assertEqual(status["nextAction"], "run-p2-readiness")
+        self.assertEqual(status["nextCommand"], "npm run docker:smoke:p2 -- --no-build")
+        self.assertEqual([stage["status"] for stage in status["stages"]], ["valid", "valid", "valid", "missing"])
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["liveOrderSubmitted"])
+        self.assertFalse(status["routeExecuted"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertIsNotNone(status["manifest"])
+        self.assertTrue(str(status["sourcePath"]).endswith("p2-chain-preflight.json"))
+
+    def test_p2_manifest_chain_preflight_status_reports_missing_file(self):
+        from quant_core.p2_manifest_chain_preflight import load_p2_manifest_chain_preflight_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_p2_manifest_chain_preflight_status(Path(tmp) / "data" / "p2-chain-preflight.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertFalse(status["ready"])
+        self.assertEqual(status["validStageCount"], 0)
+        self.assertEqual(status["totalStageCount"], 4)
+        self.assertEqual(status["nextAction"], "run-p1-acceptance")
+        self.assertEqual(status["nextCommand"], "npm run docker:smoke:p1 -- --no-build")
+        self.assertEqual(status["stages"], [])
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertFalse(status["orderSubmissionEnabled"])
+
+    def test_p2_manifest_chain_preflight_status_rejects_unsafe_or_inconsistent_report(self):
+        import json
+
+        from quant_core.p2_manifest_chain_preflight import load_p2_manifest_chain_preflight_status
+
+        unsafe_manifest = self._sample_p2_manifest_chain_preflight(status="ready")
+        unsafe_manifest["orderSubmissionEnabled"] = True
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveOrderSubmitted"] = True
+        unsafe_manifest["routeExecuted"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+        unsafe_manifest["blockerIds"] = ["p2-readiness-acceptance"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-chain-preflight.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_p2_manifest_chain_preflight_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["orderSubmissionEnabled"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertTrue(status["liveOrderSubmitted"])
+        self.assertTrue(status["routeExecuted"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["blockerIds"], ["p2-readiness-acceptance"])
+
+    def test_p2_manifest_chain_preflight_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-chain-preflight.json"
+            report_path.write_text(json.dumps(self._sample_p2_manifest_chain_preflight()), encoding="utf-8")
+
+            class TestHandler(QuantApiHandler):
+                p2_manifest_chain_preflight_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/p2/manifest-chain/preflight/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["preflight"]["kind"], "aiqt.p2ManifestChainPreflightStatus")
+        self.assertEqual(payload["preflight"]["status"], "blocked")
+        self.assertEqual(payload["preflight"]["nextAction"], "run-p2-readiness")
+        self.assertFalse(payload["preflight"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["preflight"]["liveTradingAllowed"])
+
+    def test_p2_manifest_chain_preflight_can_be_generated_and_written_from_archived_reports(self):
+        import json
+
+        from quant_core.p2_manifest_chain_preflight import (
+            build_p2_manifest_chain_preflight,
+            load_p2_manifest_chain_preflight_status,
+            write_p2_manifest_chain_preflight_report,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            root.mkdir(parents=True)
+            p1_path = root / "p1-acceptance.json"
+            replay_path = root / "p2-paper-replay.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            readiness_path = root / "p2-readiness-acceptance.json"
+            output_path = root / "p2-chain-preflight.json"
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            replay_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest()), encoding="utf-8")
+            pre_live_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
+
+            manifest = build_p2_manifest_chain_preflight(
+                p1_acceptance_report=p1_path,
+                p2_paper_replay_report=replay_path,
+                p2_pre_live_acceptance_report=pre_live_path,
+                p2_readiness_acceptance_report=readiness_path,
+            )
+            write_p2_manifest_chain_preflight_report(output_path, manifest)
+            status = load_p2_manifest_chain_preflight_status(output_path)
+
+        self.assertEqual(manifest["kind"], "aiqt.p2ManifestChainPreflight")
+        self.assertEqual(manifest["status"], "blocked")
+        self.assertEqual(manifest["validStageCount"], 3)
+        self.assertEqual(manifest["blockerIds"], ["p2-readiness-acceptance"])
+        self.assertEqual(manifest["nextAction"], "run-p2-readiness")
+        self.assertEqual([stage["status"] for stage in manifest["stages"]], ["valid", "valid", "valid", "missing"])
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["orderSubmissionEnabled"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertFalse(manifest["liveOrderSubmitted"])
+        self.assertFalse(manifest["routeExecuted"])
+        self.assertTrue(manifest["liveBlockedBoundary"])
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "blocked")
+
+    def test_p2_manifest_chain_preflight_generate_api_writes_safe_report(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            root.mkdir(parents=True)
+            p1_path = root / "p1-acceptance.json"
+            replay_path = root / "p2-paper-replay.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            readiness_path = root / "p2-readiness-acceptance.json"
+            output_path = root / "p2-chain-preflight.json"
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            replay_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest()), encoding="utf-8")
+            pre_live_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
+            audit_store = AuditEventStore(root / "audit_events.sqlite")
+
+            class TestHandler(QuantApiHandler):
+                p1_acceptance_report_path = p1_path
+                p2_paper_replay_report_path = replay_path
+                p2_pre_live_acceptance_report_path = pre_live_path
+                p2_readiness_acceptance_report_path = readiness_path
+                p2_manifest_chain_preflight_report_path = output_path
+                audit_event_store = audit_store
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/p2/manifest-chain/preflight")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                output_exists = output_path.exists()
+                connection.request("GET", "/api/p2/manifest-chain/preflight/latest")
+                latest_response = connection.getresponse()
+                latest_payload = json.loads(latest_response.read().decode("utf-8"))
+                audit_event_id = str(payload["auditEvent"]["eventId"])
+                stored_event = audit_store.get(audit_event_id)
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertEqual(payload["status"], "preflight_generated")
+        self.assertEqual(payload["preflight"]["status"], "blocked")
+        self.assertEqual(payload["preflight"]["validStageCount"], 3)
+        self.assertEqual(payload["preflight"]["nextAction"], "run-p2-readiness")
+        self.assertTrue(output_exists)
+        self.assertFalse(payload["preflight"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["preflight"]["liveTradingAllowed"])
+        self.assertFalse(payload["preflight"]["liveOrderSubmitted"])
+        self.assertFalse(payload["preflight"]["routeExecuted"])
+        self.assertTrue(payload["preflight"]["liveBlockedBoundary"])
+        self.assertEqual(payload["auditEvent"]["eventType"], "p2_manifest_chain_preflight")
+        self.assertEqual(payload["auditEvent"]["stage"], "p2")
+        self.assertEqual(payload["auditEvent"]["metadata"]["preflightStatus"], "blocked")
+        self.assertEqual(payload["auditEvent"]["metadata"]["validStageCount"], 3)
+        self.assertEqual(payload["auditEvent"]["metadata"]["totalStageCount"], 4)
+        self.assertEqual(payload["auditEvent"]["metadata"]["nextAction"], "run-p2-readiness")
+        self.assertFalse(payload["auditEvent"]["metadata"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["auditEvent"]["metadata"]["liveTradingAllowed"])
+        self.assertFalse(payload["auditEvent"]["metadata"]["liveOrderSubmitted"])
+        self.assertFalse(payload["auditEvent"]["metadata"]["routeExecuted"])
+        self.assertIsNotNone(stored_event)
+        self.assertEqual(stored_event.event_type, "p2_manifest_chain_preflight")
+        self.assertEqual(latest_response.status, 200)
+        self.assertEqual(latest_payload["preflight"]["status"], "blocked")
+        self.assertEqual(latest_payload["preflight"]["validStageCount"], 3)
 
     def test_docker_smoke_cli_validates_p0_acceptance_report_without_compose(self):
         import contextlib
@@ -1346,6 +2393,368 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report_payload["watchlistRefreshRunId"], "cache-refresh-p1")
         self.assertEqual(report_payload["queuedSymbol"], "600000")
         self.assertEqual(report_payload["status"], "passed")
+
+    def test_docker_smoke_builds_and_validates_p2_readiness_acceptance_manifest(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        manifest = docker_smoke.build_p2_readiness_acceptance_manifest(
+            base_url="http://aiqt.local",
+            run_id="run-p2-readiness-smoke",
+            p1_acceptance_manifest=self._sample_p1_acceptance_manifest(run_id="run-p1-smoke"),
+            p1_acceptance_path=Path("data") / "p1-acceptance.json",
+            p2_pre_live_acceptance_manifest=self._sample_p2_pre_live_acceptance_manifest(run_id="run-p2-pre-live"),
+            p2_pre_live_acceptance_path=Path("data") / "p2-pre-live-acceptance.json",
+            p2_paper_replay_manifest=self._sample_p2_paper_replay_manifest(run_id="run-p2-paper-replay"),
+            p2_paper_replay_path=Path("data") / "p2-paper-replay.json",
+            operator_runbook_audit_event_id="operator-runbook-report-ashare-live-600000-1d-smoke",
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.p2ReadinessAcceptanceManifest")
+        self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertEqual(manifest["status"], "accepted")
+        self.assertEqual(manifest["runId"], "run-p2-readiness-smoke")
+        self.assertEqual(manifest["p1AcceptanceRunId"], "run-p1-smoke")
+        self.assertEqual(manifest["p2PreLiveAcceptanceRunId"], "run-p2-pre-live")
+        self.assertEqual(manifest["p2PaperReplayRunId"], "run-p2-paper-replay")
+        self.assertEqual(manifest["readinessCoverageStatus"], "covered")
+        self.assertEqual(manifest["acceptedCriterionCount"], 6)
+        self.assertEqual(manifest["totalCriterionCount"], 6)
+        self.assertEqual(manifest["blockingCriterionCount"], 0)
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["orderSubmissionEnabled"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertFalse(manifest["liveOrderSubmitted"])
+        self.assertFalse(manifest["routeExecuted"])
+        self.assertTrue(manifest["liveBlockedBoundary"])
+        self.assertEqual(
+            [check["id"] for check in manifest["checks"]],
+            [
+                "p1-acceptance",
+                "paper-execution-replay",
+                "pre-live-checklist",
+                "p2-pre-live-manifest",
+                "readiness-evidence-coverage",
+                "live-blocked-boundary",
+            ],
+        )
+        self.assertEqual(
+            docker_smoke.validate_p2_readiness_acceptance_manifest(manifest),
+            "p2 readiness acceptance manifest run=run-p2-readiness-smoke criteria=6/6 blockers=0 liveBlocked=True",
+        )
+
+        unsafe_manifest = dict(manifest)
+        unsafe_manifest["liveTradingAllowed"] = True
+        with self.assertRaisesRegex(RuntimeError, "Invalid P2 readiness acceptance manifest"):
+            docker_smoke.validate_p2_readiness_acceptance_manifest(unsafe_manifest)
+
+    def test_docker_smoke_p2_readiness_acceptance_aggregates_existing_reports(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            root.mkdir(parents=True)
+            p1_path = root / "p1-acceptance.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            replay_path = root / "p2-paper-replay.json"
+            readiness_path = root / "p2-readiness-acceptance.json"
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+            pre_live_path.write_text(
+                json.dumps(self._sample_p2_pre_live_acceptance_manifest(run_id="run-p2-pre-live")),
+                encoding="utf-8",
+            )
+            replay_path.write_text(
+                json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p2-paper-replay")),
+                encoding="utf-8",
+            )
+
+            summaries = docker_smoke.run_p2_readiness_acceptance(
+                "http://aiqt.local",
+                run_id="run-p2-readiness-smoke",
+                p1_acceptance_report=p1_path,
+                p2_pre_live_acceptance_report=pre_live_path,
+                p2_paper_replay_report=replay_path,
+                report_path=readiness_path,
+                operator_runbook_audit_event_id="operator-runbook-report-ashare-live-600000-1d-smoke",
+            )
+            report_payload = json.loads(readiness_path.read_text(encoding="utf-8"))
+
+        self.assertIn("p2 readiness p1-acceptance run=run-p1-smoke liveBlocked=True", summaries)
+        self.assertIn("p2 readiness paper-replay run=run-p2-paper-replay liveBlocked=True", summaries)
+        self.assertIn("p2 readiness pre-live run=run-p2-pre-live liveBlocked=True", summaries)
+        self.assertIn(
+            "p2 readiness acceptance manifest run=run-p2-readiness-smoke criteria=6/6 blockers=0 liveBlocked=True",
+            summaries,
+        )
+        self.assertEqual(report_payload["kind"], "aiqt.p2ReadinessAcceptanceManifest")
+        self.assertEqual(report_payload["manifestPaths"]["p1Acceptance"], str(p1_path))
+        self.assertEqual(report_payload["manifestPaths"]["p2PaperReplay"], str(replay_path))
+
+    def test_docker_smoke_p2_paper_replay_generates_manifest_from_run_export(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        gets = []
+        export_package = self._sample_p2_paper_replay_export_package(run_id="run-p1-smoke")
+
+        def fake_request_json(url, timeout_seconds):
+            gets.append((url, timeout_seconds))
+            if url == "http://aiqt.local/api/research/runs/run-p1-smoke/export":
+                return {"export": export_package}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        original_request_json = docker_smoke.request_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "data"
+                root.mkdir(parents=True)
+                p1_path = root / "p1-acceptance.json"
+                replay_path = root / "p2-paper-replay.json"
+                p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+
+                summaries = docker_smoke.run_p2_paper_replay(
+                    "http://aiqt.local",
+                    p1_acceptance_report=p1_path,
+                    report_path=replay_path,
+                    timeout_seconds=5,
+                )
+                report_payload = json.loads(replay_path.read_text(encoding="utf-8"))
+        finally:
+            docker_smoke.request_json = original_request_json
+
+        self.assertEqual(gets, [("http://aiqt.local/api/research/runs/run-p1-smoke/export", 5)])
+        self.assertIn(
+            "p2 paper replay manifest run=run-p1-smoke replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+            summaries,
+        )
+        self.assertEqual(report_payload["kind"], "aiqt.p2PaperReplayManifest")
+        self.assertEqual(report_payload["runId"], "run-p1-smoke")
+        self.assertEqual(report_payload["latestEvidenceId"], "adapter-paper-execution-ready")
+
+    def test_docker_smoke_p2_pre_live_acceptance_generates_manifest_from_reports(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            root.mkdir(parents=True)
+            p1_path = root / "p1-acceptance.json"
+            replay_path = root / "p2-paper-replay.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+            replay_path.write_text(
+                json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke")),
+                encoding="utf-8",
+            )
+
+            summaries = docker_smoke.run_p2_pre_live_acceptance(
+                "http://aiqt.local",
+                run_id="run-p2-pre-live-smoke",
+                p1_acceptance_report=p1_path,
+                p2_paper_replay_report=replay_path,
+                report_path=pre_live_path,
+            )
+            report_payload = json.loads(pre_live_path.read_text(encoding="utf-8"))
+
+        self.assertIn(
+            "p2 pre-live acceptance manifest run=run-p2-pre-live-smoke checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+            summaries,
+        )
+        self.assertEqual(report_payload["kind"], "aiqt.p2PreLiveAcceptanceManifest")
+        self.assertEqual(report_payload["runId"], "run-p2-pre-live-smoke")
+        self.assertEqual(report_payload["market"], "ashare")
+        self.assertEqual(report_payload["symbol"], "600000")
+        self.assertEqual(report_payload["adapterId"], "ashare-live")
+        self.assertEqual(report_payload["blockerIds"], ["adapter-certification", "human-confirmation"])
+        self.assertFalse(report_payload["liveTradingAllowed"])
+
+    def test_docker_smoke_cli_validates_p2_readiness_report_without_compose(self):
+        import contextlib
+        import io
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "p2-readiness-acceptance.json"
+            report_path.write_text(json.dumps(self._sample_p2_readiness_acceptance_manifest()), encoding="utf-8")
+
+            def fail_run_smoke(*args, **kwargs):
+                raise AssertionError("run_smoke should not be called in report validation mode")
+
+            original_run_smoke = docker_smoke.run_smoke
+            docker_smoke.run_smoke = fail_run_smoke
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    exit_code = docker_smoke.main(["--validate-p2-readiness-acceptance-report", str(report_path)])
+            finally:
+                docker_smoke.run_smoke = original_run_smoke
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn(
+            "p2 readiness acceptance manifest run=run-p2-readiness criteria=6/6 blockers=0 liveBlocked=True",
+            output.getvalue(),
+        )
+
+    def test_docker_smoke_cli_validates_p2_upstream_reports_without_compose(self):
+        import contextlib
+        import io
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            replay_path = root / "p2-paper-replay.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            replay_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest()), encoding="utf-8")
+            pre_live_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
+
+            def fail_run_smoke(*args, **kwargs):
+                raise AssertionError("run_smoke should not be called in upstream report validation mode")
+
+            original_run_smoke = docker_smoke.run_smoke
+            docker_smoke.run_smoke = fail_run_smoke
+            replay_output = io.StringIO()
+            pre_live_output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(replay_output):
+                    replay_exit_code = docker_smoke.main(["--validate-p2-paper-replay-report", str(replay_path)])
+                with contextlib.redirect_stdout(pre_live_output):
+                    pre_live_exit_code = docker_smoke.main(
+                        ["--validate-p2-pre-live-acceptance-report", str(pre_live_path)]
+                    )
+            finally:
+                docker_smoke.run_smoke = original_run_smoke
+
+        self.assertEqual(replay_exit_code, 0)
+        self.assertEqual(pre_live_exit_code, 0)
+        self.assertIn(
+            "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+            replay_output.getvalue(),
+        )
+        self.assertIn(
+            "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+            pre_live_output.getvalue(),
+        )
+
+    def test_package_exposes_p2_chain_and_upstream_validators(self):
+        import json
+
+        package_json = json.loads((Path(__file__).resolve().parents[3] / "package.json").read_text(encoding="utf-8"))
+        scripts = package_json["scripts"]
+
+        self.assertEqual(
+            scripts["docker:smoke:p2:preflight"],
+            "python tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+        )
+        self.assertIn("--p2-paper-replay", scripts["docker:smoke:p2:chain"])
+        self.assertIn("--p2-pre-live-acceptance", scripts["docker:smoke:p2:chain"])
+        self.assertIn("--p2-readiness-acceptance", scripts["docker:smoke:p2:chain"])
+        self.assertIn("data/p2-paper-replay.json", scripts["docker:smoke:p2:chain"])
+        self.assertIn("data/p2-pre-live-acceptance.json", scripts["docker:smoke:p2:chain"])
+        self.assertIn("data/p2-readiness-acceptance.json", scripts["docker:smoke:p2:chain"])
+        self.assertEqual(
+            scripts["docker:smoke:p2:paper-replay:validate"],
+            "python tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",
+        )
+        self.assertEqual(
+            scripts["docker:smoke:p2:pre-live:validate"],
+            "python tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+        )
+
+    def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            preflight = docker_smoke.build_p2_manifest_chain_preflight(
+                p1_acceptance_report=root / "p1-acceptance.json",
+                p2_paper_replay_report=root / "p2-paper-replay.json",
+                p2_pre_live_acceptance_report=root / "p2-pre-live-acceptance.json",
+                p2_readiness_acceptance_report=root / "p2-readiness-acceptance.json",
+            )
+
+        self.assertEqual(preflight["kind"], "aiqt.p2ManifestChainPreflight")
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertFalse(preflight["ready"])
+        self.assertEqual(preflight["nextAction"], "run-p1-acceptance")
+        self.assertEqual(preflight["nextCommand"], "npm run docker:smoke:p1 -- --no-build")
+        self.assertEqual(preflight["validStageCount"], 0)
+        self.assertEqual(preflight["totalStageCount"], 4)
+        self.assertEqual(
+            [stage["status"] for stage in preflight["stages"]],
+            ["missing", "missing", "missing", "missing"],
+        )
+        self.assertEqual(preflight["blockerIds"][0], "p1-acceptance")
+
+    def test_docker_smoke_p2_chain_preflight_reports_readiness_next_action(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            root.mkdir(parents=True)
+            p1_path = root / "p1-acceptance.json"
+            replay_path = root / "p2-paper-replay.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            readiness_path = root / "p2-readiness-acceptance.json"
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            replay_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+            pre_live_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
+
+            preflight = docker_smoke.build_p2_manifest_chain_preflight(
+                p1_acceptance_report=p1_path,
+                p2_paper_replay_report=replay_path,
+                p2_pre_live_acceptance_report=pre_live_path,
+                p2_readiness_acceptance_report=readiness_path,
+            )
+
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertFalse(preflight["ready"])
+        self.assertEqual(preflight["nextAction"], "run-p2-readiness")
+        self.assertEqual(preflight["nextCommand"], "npm run docker:smoke:p2 -- --no-build")
+        self.assertEqual(preflight["validStageCount"], 3)
+        self.assertEqual(preflight["blockerIds"], ["p2-readiness-acceptance"])
+        self.assertEqual(
+            [stage["status"] for stage in preflight["stages"]],
+            ["valid", "valid", "valid", "missing"],
+        )
+
+    def test_docker_smoke_cli_writes_p2_chain_preflight_without_compose(self):
+        import contextlib
+        import io
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report_path = root / "p2-chain-preflight.json"
+
+            def fail_run_smoke(*args, **kwargs):
+                raise AssertionError("run_smoke should not be called in P2 chain preflight mode")
+
+            original_run_smoke = docker_smoke.run_smoke
+            docker_smoke.run_smoke = fail_run_smoke
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    exit_code = docker_smoke.main(["--p2-chain-preflight-report", str(report_path)])
+            finally:
+                docker_smoke.run_smoke = original_run_smoke
+
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["kind"], "aiqt.p2ManifestChainPreflight")
+        self.assertEqual(payload["status"], "blocked")
+        self.assertIn("p2 manifest chain preflight status=blocked valid=0/4 next=run-p1-acceptance", output.getvalue())
 
     def test_quant_api_bind_uses_container_environment(self):
         from quant_core.api import resolve_api_bind

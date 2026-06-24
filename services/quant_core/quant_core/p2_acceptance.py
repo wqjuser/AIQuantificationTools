@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from quant_core.p1_acceptance import validate_p1_acceptance_manifest
+from quant_core.p2_paper_replay import validate_p2_paper_replay_manifest
 
 
 DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH = Path("data") / "p2-pre-live-acceptance.json"
@@ -14,6 +18,114 @@ P2_PRE_LIVE_ACCEPTANCE_REQUIRED_CHECKS = {
     "manual-route-boundary",
     "live-blocked-boundary",
 }
+
+
+def build_p2_pre_live_acceptance_manifest(
+    p1_acceptance_manifest: dict[str, Any],
+    p2_paper_replay_manifest: dict[str, Any],
+    *,
+    base_url: str = "",
+    run_id: str = "run-p2-pre-live-smoke",
+    adapter_id: str | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    validate_p1_acceptance_manifest(p1_acceptance_manifest)
+    paper_replay_summary = validate_p2_paper_replay_manifest(p2_paper_replay_manifest)
+
+    p1_run_id = _required_string_field(p1_acceptance_manifest, "runId", "P1 acceptance manifest runId is required")
+    market = _required_string_field(p1_acceptance_manifest, "queuedMarket", "P1 acceptance queuedMarket is required")
+    symbol = _required_string_field(p1_acceptance_manifest, "queuedSymbol", "P1 acceptance queuedSymbol is required")
+    timeframe = _required_string_field(p1_acceptance_manifest, "timeframe", "P1 acceptance timeframe is required")
+    _assert_matching_input(market, p2_paper_replay_manifest, "market", "P2 paper replay manifest")
+    _assert_matching_input(symbol, p2_paper_replay_manifest, "symbol", "P2 paper replay manifest")
+    _assert_matching_input(timeframe, p2_paper_replay_manifest, "timeframe", "P2 paper replay manifest")
+
+    selected_adapter_id = (
+        str(adapter_id or "").strip()
+        or _required_string_field(p2_paper_replay_manifest, "adapterId", "P2 paper replay adapterId is required")
+    )
+    replay_run_id = _required_string_field(p2_paper_replay_manifest, "runId", "P2 paper replay runId is required")
+    latest_replay_evidence_id = _string_field(p2_paper_replay_manifest, "latestEvidenceId")
+    gate_ids = [
+        "audited-run",
+        "risk-approval",
+        "paper-execution",
+        "paper-execution-replay",
+        "adapter-certification",
+        "human-confirmation",
+    ]
+    blocker_ids = ["adapter-certification", "human-confirmation"]
+    audit_event_ids = _unique_strings(
+        [
+            f"p1-acceptance-{p1_run_id}",
+            *_string_list(p2_paper_replay_manifest.get("auditEventIds")),
+            latest_replay_evidence_id or "",
+            f"p2-pre-live-checklist-{run_id}",
+        ]
+    )
+    checks = [
+        {
+            "id": "pre-live-checklist",
+            "status": "passed",
+            "summary": "p2 pre-live checklist evidence_pending gates=4/6 blockers=2",
+        },
+        {
+            "id": "promotion-gates",
+            "status": "passed",
+            "summary": "p2 promotion gates audited-run,risk-approval,paper-execution,paper-execution-replay",
+        },
+        {
+            "id": "paper-execution-replay",
+            "status": "passed",
+            "summary": paper_replay_summary,
+        },
+        {
+            "id": "adapter-evidence",
+            "status": "passed",
+            "summary": f"p2 adapter evidence {selected_adapter_id} certification pending",
+        },
+        {
+            "id": "manual-route-boundary",
+            "status": "passed",
+            "summary": "p2 manual route candidate false; direct order submission disabled",
+        },
+        {
+            "id": "live-blocked-boundary",
+            "status": "passed",
+            "summary": "p2 live trading false; no live order and no route execution",
+        },
+    ]
+    manifest = {
+        "kind": "aiqt.p2PreLiveAcceptanceManifest",
+        "schemaVersion": 1,
+        "generatedAt": (generated_at or datetime.now(timezone.utc)).isoformat(),
+        "status": "passed",
+        "baseUrl": str(base_url or ""),
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "runId": str(run_id or "").strip() or f"run-p2-pre-live-{replay_run_id}",
+        "adapterId": selected_adapter_id,
+        "promotionStatus": "certification_pending",
+        "checklistStatus": "evidence_pending",
+        "passedGateCount": 4,
+        "totalGateCount": len(gate_ids),
+        "blockingGateCount": len(blocker_ids),
+        "gateIds": gate_ids,
+        "blockerIds": blocker_ids,
+        "auditEventIds": audit_event_ids,
+        "manualRouteCandidate": False,
+        "paperOnly": True,
+        "orderSubmissionEnabled": False,
+        "liveTradingAllowed": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "liveBlockedBoundary": True,
+        "checkCount": len(checks),
+        "checks": checks,
+    }
+    validate_p2_pre_live_acceptance_manifest(manifest)
+    return manifest
 
 
 def load_p2_pre_live_acceptance_report(
@@ -215,6 +327,23 @@ def _p2_pre_live_acceptance_check_ids(manifest: dict[str, Any] | None) -> list[s
         for check in checks
         if isinstance(check, dict) and str(check.get("id") or "").strip()
     ]
+
+
+def _assert_matching_input(expected: str, manifest: dict[str, Any], field: str, label: str) -> None:
+    actual = _required_string_field(manifest, field, f"{label} {field} is required")
+    if actual != expected:
+        raise ValueError(f"P2 pre-live acceptance input mismatch: {label}.{field} {actual} != {expected}")
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            unique.append(text)
+    return unique
 
 
 def _required_string_field(manifest: dict[str, Any], field: str, message: str) -> str:

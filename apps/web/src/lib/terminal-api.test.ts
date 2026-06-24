@@ -5,7 +5,9 @@ import {
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
+  buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
+  buildP2ReadinessAcceptanceReviewMarkdown,
   buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
@@ -20,18 +22,27 @@ import {
   buildResearchPipelinePreflight,
   buildExecutionAdapterPreLiveRunbookMarkdown,
   buildExecutionAdapterPreLiveRunbookSummary,
+  buildOperatorRunbookMarkdown,
   buildTerminalWorkspace,
   workspaceFromResearchRunAudit,
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithBacktestAssumption,
   workspaceWithStrategyField,
+  type OperatorRunbookSummary,
   type P0AcceptanceSummarySource,
+  type P2ReadinessAcceptanceReviewSource,
+  type P2ReadinessAcceptanceSummary,
   type ResearchRunAudit
 } from "./terminal-workbench";
 import {
   buildP0AcceptanceLatestUrl,
   buildP1AcceptanceLatestUrl,
+  buildP2PaperReplayLatestUrl,
   buildP2PreLiveAcceptanceLatestUrl,
+  buildP2ReadinessAcceptanceUrl,
+  buildP2ReadinessAcceptanceLatestUrl,
+  buildP2ManifestChainPreflightUrl,
+  buildP2ManifestChainPreflightLatestUrl,
   buildP0AiReviewUrl,
   buildP0PaperSimulationUrl,
   buildP0PipelineUrl,
@@ -235,8 +246,10 @@ import {
   buildBacktestReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
   buildP0AcceptanceReviewAuditEvent,
+  buildP2ReadinessAcceptanceReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
+  buildOperatorRunbookAuditEvent,
   buildResearchContextReadinessReportAuditEvent,
   buildResearchRunExportAuditReport,
   buildAuditEvidenceReportAuditEvent,
@@ -258,7 +271,12 @@ import {
   runTerminalResearch,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
+  loadP2PaperReplayLatest,
   loadP2PreLiveAcceptanceLatest,
+  loadP2ReadinessAcceptanceLatest,
+  generateP2ReadinessAcceptance,
+  loadP2ManifestChainPreflightLatest,
+  generateP2ManifestChainPreflight,
   runP0Pipeline,
   runP0AiReview,
   runP0PaperSimulation,
@@ -1022,6 +1040,753 @@ describe("terminal workspace API client", () => {
     expect(result.acceptance?.available).toBe(false);
     expect(result.acceptance?.manifest).toBeNull();
     expect(result.error).toBe("Invalid P2 pre-live acceptance status contract");
+  });
+
+  test("loads the latest P2 paper replay manifest readback and keeps live routes blocked", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.p2PaperReplayManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-24T10:15:00+00:00",
+      status: "passed",
+      baseUrl: "http://aiqt.local",
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const,
+      runId: "run-p2-paper-replay",
+      adapterId: "ashare-live",
+      replayStatus: "replay_ready",
+      passedCheckCount: 8,
+      totalCheckCount: 8,
+      warningCount: 0,
+      checkIds: [
+        "single-paper-execution",
+        "portfolio-order-ledger",
+        "portfolio-approval-ledger",
+        "portfolio-simulation-ledger",
+        "portfolio-state-history",
+        "portfolio-replay",
+        "adapter-paper-execution",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: ["paper-execution-run-p2-paper-replay", "adapter-paper-execution-run-p2-paper-replay"],
+      latestEvidenceId: "adapter-paper-execution-ready",
+      metrics: {
+        filledPaperOrders: 1,
+        portfolioOrders: 1,
+        approvedPortfolioOrders: 1,
+        portfolioFilledOrders: 1,
+        stateHistoryFilledEvents: 1,
+        adapterPaperExecutions: 1,
+        replayWarnings: 0
+      },
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      checkCount: 8,
+      checks: [
+        {
+          id: "single-paper-execution",
+          status: "passed",
+          summary: "single paper execution",
+          evidenceId: "paper-execution-ready"
+        },
+        {
+          id: "portfolio-order-ledger",
+          status: "passed",
+          summary: "portfolio order ledger",
+          evidenceId: "portfolio-paper-ready"
+        },
+        {
+          id: "portfolio-approval-ledger",
+          status: "passed",
+          summary: "portfolio approval ledger",
+          evidenceId: "approval-ready"
+        },
+        {
+          id: "portfolio-simulation-ledger",
+          status: "passed",
+          summary: "portfolio simulation ledger",
+          evidenceId: "simulation-ready"
+        },
+        {
+          id: "portfolio-state-history",
+          status: "passed",
+          summary: "portfolio state history",
+          evidenceId: "state-filled-ready"
+        },
+        {
+          id: "portfolio-replay",
+          status: "passed",
+          summary: "portfolio replay",
+          evidenceId: "run-p2-paper-replay"
+        },
+        {
+          id: "adapter-paper-execution",
+          status: "passed",
+          summary: "adapter paper execution",
+          evidenceId: "adapter-paper-execution-ready"
+        },
+        {
+          id: "live-blocked-boundary",
+          status: "passed",
+          summary: "live blocked boundary",
+          evidenceId: "live-blocked-boundary"
+        }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          replay: {
+            kind: "aiqt.p2PaperReplayStatus",
+            schemaVersion: 1,
+            status: "passed",
+            available: true,
+            sourcePath: "data/p2-paper-replay.json",
+            summary:
+              "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-24T10:15:00+00:00",
+            runId: "run-p2-paper-replay",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            adapterId: "ashare-live",
+            replayStatus: "replay_ready",
+            passedCheckCount: 8,
+            totalCheckCount: 8,
+            warningCount: 0,
+            requiredCheckCount: 8,
+            checkCount: 8,
+            checkIds: manifest.checkIds,
+            auditEventIds: manifest.auditEventIds,
+            latestEvidenceId: "adapter-paper-execution-ready",
+            metrics: manifest.metrics,
+            paperOnly: true,
+            orderSubmissionEnabled: false,
+            liveTradingAllowed: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadP2PaperReplayLatest("http://127.0.0.1:8765/", fetcher);
+    const summary = buildP2PaperReplaySummary(result.replay);
+
+    expect(buildP2PaperReplayLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p2/paper-replay/latest"
+    );
+    expect(buildP2PaperReplayLatestUrl("/")).toBe("/api/p2/paper-replay/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p2/paper-replay/latest");
+    expect(result.source).toBe("core");
+    expect(result.replay?.manifest?.runId).toBe("run-p2-paper-replay");
+    expect(result.replay?.latestEvidenceId).toBe("adapter-paper-execution-ready");
+    expect(result.replay?.metrics.adapterPaperExecutions).toBe(1);
+    expect(result.replay?.orderSubmissionEnabled).toBe(false);
+    expect(result.replay?.liveTradingAllowed).toBe(false);
+    expect(result.replay?.liveOrderSubmitted).toBe(false);
+    expect(result.replay?.routeExecuted).toBe(false);
+    expect(summary.state).toBe("passed");
+    expect(summary.passedCheckCount).toBe(8);
+    expect(summary.totalCheckCount).toBe(8);
+    expect(summary.orderSubmissionEnabled).toBe(false);
+    expect(summary.liveTradingAllowed).toBe(false);
+  });
+
+  test("falls back when latest P2 paper replay manifest readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ replay: { status: "passed" } })
+    });
+
+    const result = await loadP2PaperReplayLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.replay?.status).toBe("missing");
+    expect(result.replay?.available).toBe(false);
+    expect(result.replay?.manifest).toBeNull();
+    expect(result.error).toBe("Invalid P2 paper replay status contract");
+  });
+
+  test("loads the latest P2 readiness acceptance manifest readback without opening live routes", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.p2ReadinessAcceptanceManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-24T11:00:00+00:00",
+      status: "accepted",
+      baseUrl: "http://aiqt.local",
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const,
+      runId: "run-p2-readiness",
+      adapterId: "ashare-live",
+      p1AcceptanceRunId: "run-p1-smoke",
+      p2PreLiveAcceptanceRunId: "run-p2-pre-live",
+      p2PaperReplayRunId: "run-p2-paper-replay",
+      operatorRunbookAuditEventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+      readinessCoverageStatus: "covered",
+      acceptedCriterionCount: 6,
+      totalCriterionCount: 6,
+      blockingCriterionCount: 0,
+      criterionIds: [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: [
+        "p1-acceptance-run-p1-smoke",
+        "paper-execution-run-p2-paper-replay",
+        "p2-pre-live-acceptance-run-p2-pre-live",
+        "operator-runbook-report-ashare-live-600000-1d-7777777777777777"
+      ],
+      manifestPaths: {
+        p1Acceptance: "data/p1-acceptance.json",
+        p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json",
+        p2PaperReplay: "data/p2-paper-replay.json"
+      },
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      checkCount: 6,
+      checks: [
+        {
+          id: "p1-acceptance",
+          status: "passed",
+          summary: "P1 research workflow accepted",
+          evidenceId: "data/p1-acceptance.json"
+        },
+        {
+          id: "paper-execution-replay",
+          status: "passed",
+          summary: "Paper replay valid",
+          evidenceId: "data/p2-paper-replay.json"
+        },
+        {
+          id: "pre-live-checklist",
+          status: "passed",
+          summary: "Pre-live checklist complete",
+          evidenceId: "manual-route-ready"
+        },
+        {
+          id: "p2-pre-live-manifest",
+          status: "passed",
+          summary: "P2 pre-live manifest valid",
+          evidenceId: "data/p2-pre-live-acceptance.json"
+        },
+        {
+          id: "readiness-evidence-coverage",
+          status: "passed",
+          summary: "Readiness evidence covered",
+          evidenceId: "p2-evidence-coverage"
+        },
+        {
+          id: "live-blocked-boundary",
+          status: "passed",
+          summary: "Live boundary blocked",
+          evidenceId: "forced-platform-boundary"
+        }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          acceptance: {
+            kind: "aiqt.p2ReadinessAcceptanceStatus",
+            schemaVersion: 1,
+            status: "accepted",
+            available: true,
+            sourcePath: "data/p2-readiness-acceptance.json",
+            summary:
+              "p2 readiness acceptance manifest run=run-p2-readiness criteria=6/6 blockers=0 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-24T11:00:00+00:00",
+            runId: "run-p2-readiness",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            adapterId: "ashare-live",
+            p1AcceptanceRunId: "run-p1-smoke",
+            p2PreLiveAcceptanceRunId: "run-p2-pre-live",
+            p2PaperReplayRunId: "run-p2-paper-replay",
+            operatorRunbookAuditEventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+            readinessCoverageStatus: "covered",
+            acceptedCriterionCount: 6,
+            totalCriterionCount: 6,
+            blockingCriterionCount: 0,
+            criterionIds: manifest.criterionIds,
+            auditEventIds: manifest.auditEventIds,
+            manifestPaths: manifest.manifestPaths,
+            checkCount: 6,
+            requiredCheckCount: 6,
+            checkIds: manifest.criterionIds,
+            paperOnly: true,
+            orderSubmissionEnabled: false,
+            liveTradingAllowed: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadP2ReadinessAcceptanceLatest("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildP2ReadinessAcceptanceLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p2/readiness/acceptance/latest"
+    );
+    expect(buildP2ReadinessAcceptanceLatestUrl("/")).toBe("/api/p2/readiness/acceptance/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p2/readiness/acceptance/latest");
+    expect(result.source).toBe("core");
+    expect(result.acceptance?.manifest?.runId).toBe("run-p2-readiness");
+    expect(result.acceptance?.acceptedCriterionCount).toBe(6);
+    expect(result.acceptance?.totalCriterionCount).toBe(6);
+    expect(result.acceptance?.blockingCriterionCount).toBe(0);
+    expect(result.acceptance?.readinessCoverageStatus).toBe("covered");
+    expect(result.acceptance?.manifestPaths.p2PaperReplay).toBe("data/p2-paper-replay.json");
+    expect(result.acceptance?.orderSubmissionEnabled).toBe(false);
+    expect(result.acceptance?.liveTradingAllowed).toBe(false);
+    expect(result.acceptance?.liveOrderSubmitted).toBe(false);
+    expect(result.acceptance?.routeExecuted).toBe(false);
+  });
+
+  test("generates the P2 readiness acceptance manifest without enabling execution", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.p2ReadinessAcceptanceManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-24T11:00:00+00:00",
+      status: "accepted",
+      baseUrl: "http://aiqt.local",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      runId: "run-p2-readiness",
+      adapterId: "ashare-live",
+      p1AcceptanceRunId: "run-p1-smoke",
+      p2PreLiveAcceptanceRunId: "run-p2-pre-live",
+      p2PaperReplayRunId: "run-p2-paper-replay",
+      operatorRunbookAuditEventId: "operator-runbook-report-ashare-live-600000-1d-run-p2-readiness",
+      readinessCoverageStatus: "covered",
+      acceptedCriterionCount: 6,
+      totalCriterionCount: 6,
+      blockingCriterionCount: 0,
+      criterionIds: [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: ["p1-acceptance-run-p1-smoke", "paper-execution-run-p2-paper-replay"],
+      manifestPaths: {
+        p1Acceptance: "data/p1-acceptance.json",
+        p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json",
+        p2PaperReplay: "data/p2-paper-replay.json"
+      },
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      checkCount: 6,
+      checks: [
+        { id: "p1-acceptance", status: "passed", summary: "P1 accepted", evidenceId: "data/p1-acceptance.json" },
+        { id: "paper-execution-replay", status: "passed", summary: "Replay ready", evidenceId: "data/p2-paper-replay.json" },
+        { id: "pre-live-checklist", status: "passed", summary: "Checklist ready", evidenceId: "run-p2-pre-live" },
+        { id: "p2-pre-live-manifest", status: "passed", summary: "Manifest ready", evidenceId: "data/p2-pre-live-acceptance.json" },
+        { id: "readiness-evidence-coverage", status: "passed", summary: "Traceable", evidenceId: "p2-evidence-coverage" },
+        { id: "live-blocked-boundary", status: "passed", summary: "Live blocked", evidenceId: "forced-platform-boundary" }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: "acceptance_generated",
+          acceptance: {
+            kind: "aiqt.p2ReadinessAcceptanceStatus",
+            schemaVersion: 1,
+            status: "accepted",
+            available: true,
+            sourcePath: "data/p2-readiness-acceptance.json",
+            summary:
+              "p2 readiness acceptance manifest run=run-p2-readiness criteria=6/6 blockers=0 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-24T11:00:00+00:00",
+            runId: "run-p2-readiness",
+            market: "ashare",
+            symbol: "600000",
+            timeframe: "1d",
+            adapterId: "ashare-live",
+            p1AcceptanceRunId: "run-p1-smoke",
+            p2PreLiveAcceptanceRunId: "run-p2-pre-live",
+            p2PaperReplayRunId: "run-p2-paper-replay",
+            operatorRunbookAuditEventId: "operator-runbook-report-ashare-live-600000-1d-run-p2-readiness",
+            readinessCoverageStatus: "covered",
+            acceptedCriterionCount: 6,
+            totalCriterionCount: 6,
+            blockingCriterionCount: 0,
+            criterionIds: manifest.criterionIds,
+            auditEventIds: manifest.auditEventIds,
+            manifestPaths: manifest.manifestPaths,
+            checkCount: 6,
+            requiredCheckCount: 6,
+            checkIds: manifest.criterionIds,
+            paperOnly: true,
+            orderSubmissionEnabled: false,
+            liveTradingAllowed: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            liveBlockedBoundary: true,
+            manifest
+          },
+          paperOnly: true,
+          orderSubmissionEnabled: false,
+          liveTradingAllowed: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false
+        })
+      };
+    };
+
+    const result = await generateP2ReadinessAcceptance("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildP2ReadinessAcceptanceUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p2/readiness/acceptance"
+    );
+    expect(buildP2ReadinessAcceptanceUrl("/")).toBe("/api/p2/readiness/acceptance");
+    expect(calls[0]).toEqual(
+      expect.objectContaining({
+        url: "http://127.0.0.1:8765/api/p2/readiness/acceptance",
+        init: expect.objectContaining({ method: "POST" })
+      })
+    );
+    expect(result.source).toBe("core");
+    expect(result.acceptance?.status).toBe("accepted");
+    expect(result.acceptance?.acceptedCriterionCount).toBe(6);
+    expect(result.orderSubmissionEnabled).toBe(false);
+    expect(result.liveTradingAllowed).toBe(false);
+    expect(result.liveOrderSubmitted).toBe(false);
+    expect(result.routeExecuted).toBe(false);
+  });
+
+  test("falls back when latest P2 readiness acceptance readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ acceptance: { status: "accepted" } })
+    });
+
+    const result = await loadP2ReadinessAcceptanceLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.acceptance?.status).toBe("missing");
+    expect(result.acceptance?.available).toBe(false);
+    expect(result.acceptance?.manifest).toBeNull();
+    expect(result.error).toBe("Invalid P2 readiness acceptance status contract");
+  });
+
+  test("loads the latest P2 manifest chain preflight readback without enabling execution", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const stages = [
+      {
+        id: "p1-acceptance",
+        label: "P1 acceptance",
+        status: "valid",
+        path: "data/p1-acceptance.json",
+        summary: "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+        reason: "",
+        nextAction: "",
+        nextCommand: ""
+      },
+      {
+        id: "p2-paper-replay",
+        label: "P2 paper replay",
+        status: "valid",
+        path: "data/p2-paper-replay.json",
+        summary: "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+        reason: "",
+        nextAction: "",
+        nextCommand: ""
+      },
+      {
+        id: "p2-pre-live-acceptance",
+        label: "P2 pre-live acceptance",
+        status: "valid",
+        path: "data/p2-pre-live-acceptance.json",
+        summary: "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+        reason: "",
+        nextAction: "",
+        nextCommand: ""
+      },
+      {
+        id: "p2-readiness-acceptance",
+        label: "P2 readiness acceptance",
+        status: "missing",
+        path: "data/p2-readiness-acceptance.json",
+        summary: "",
+        reason: "P2 readiness acceptance report not found at data/p2-readiness-acceptance.json",
+        nextAction: "run-p2-readiness",
+        nextCommand: "npm run docker:smoke:p2 -- --no-build"
+      }
+    ];
+    const manifest = {
+      kind: "aiqt.p2ManifestChainPreflight",
+      schemaVersion: 1,
+      status: "blocked",
+      ready: false,
+      validStageCount: 3,
+      totalStageCount: 4,
+      blockerIds: ["p2-readiness-acceptance"],
+      nextAction: "run-p2-readiness",
+      nextCommand: "npm run docker:smoke:p2 -- --no-build",
+      stages,
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          preflight: {
+            kind: "aiqt.p2ManifestChainPreflightStatus",
+            schemaVersion: 1,
+            status: "blocked",
+            available: true,
+            sourcePath: "data/p2-chain-preflight.json",
+            summary: "p2 manifest chain preflight status=blocked valid=3/4 next=run-p2-readiness",
+            reason: "",
+            ready: false,
+            validStageCount: 3,
+            totalStageCount: 4,
+            blockerIds: ["p2-readiness-acceptance"],
+            nextAction: "run-p2-readiness",
+            nextCommand: "npm run docker:smoke:p2 -- --no-build",
+            stages,
+            paperOnly: true,
+            orderSubmissionEnabled: false,
+            liveTradingAllowed: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadP2ManifestChainPreflightLatest("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildP2ManifestChainPreflightLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p2/manifest-chain/preflight/latest"
+    );
+    expect(buildP2ManifestChainPreflightLatestUrl("/")).toBe("/api/p2/manifest-chain/preflight/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p2/manifest-chain/preflight/latest");
+    expect(result.source).toBe("core");
+    expect(result.preflight?.status).toBe("blocked");
+    expect(result.preflight?.validStageCount).toBe(3);
+    expect(result.preflight?.totalStageCount).toBe(4);
+    expect(result.preflight?.nextAction).toBe("run-p2-readiness");
+    expect(result.preflight?.nextCommand).toBe("npm run docker:smoke:p2 -- --no-build");
+    expect(result.preflight?.stages.map((stage) => stage.status)).toEqual(["valid", "valid", "valid", "missing"]);
+    expect(result.preflight?.orderSubmissionEnabled).toBe(false);
+    expect(result.preflight?.liveTradingAllowed).toBe(false);
+    expect(result.preflight?.liveOrderSubmitted).toBe(false);
+    expect(result.preflight?.routeExecuted).toBe(false);
+  });
+
+  test("falls back when latest P2 manifest chain preflight readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ preflight: { status: "blocked" } })
+    });
+
+    const result = await loadP2ManifestChainPreflightLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.preflight?.status).toBe("missing");
+    expect(result.preflight?.available).toBe(false);
+    expect(result.preflight?.manifest).toBeNull();
+    expect(result.preflight?.nextAction).toBe("run-p1-acceptance");
+    expect(result.error).toBe("Invalid P2 manifest chain preflight status contract");
+  });
+
+  test("generates the P2 manifest chain preflight through the core service without enabling execution", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const stages = [
+      {
+        id: "p1-acceptance",
+        label: "P1 acceptance",
+        status: "valid",
+        path: "data/p1-acceptance.json",
+        summary: "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+        reason: "",
+        nextAction: "",
+        nextCommand: ""
+      },
+      {
+        id: "p2-paper-replay",
+        label: "P2 paper replay",
+        status: "valid",
+        path: "data/p2-paper-replay.json",
+        summary: "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+        reason: "",
+        nextAction: "",
+        nextCommand: ""
+      },
+      {
+        id: "p2-pre-live-acceptance",
+        label: "P2 pre-live acceptance",
+        status: "valid",
+        path: "data/p2-pre-live-acceptance.json",
+        summary: "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+        reason: "",
+        nextAction: "",
+        nextCommand: ""
+      },
+      {
+        id: "p2-readiness-acceptance",
+        label: "P2 readiness acceptance",
+        status: "missing",
+        path: "data/p2-readiness-acceptance.json",
+        summary: "",
+        reason: "P2 readiness acceptance report not found at data/p2-readiness-acceptance.json",
+        nextAction: "run-p2-readiness",
+        nextCommand: "npm run docker:smoke:p2 -- --no-build"
+      }
+    ];
+    const manifest = {
+      kind: "aiqt.p2ManifestChainPreflight",
+      schemaVersion: 1,
+      status: "blocked",
+      ready: false,
+      validStageCount: 3,
+      totalStageCount: 4,
+      blockerIds: ["p2-readiness-acceptance"],
+      nextAction: "run-p2-readiness",
+      nextCommand: "npm run docker:smoke:p2 -- --no-build",
+      stages,
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: "preflight_generated",
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "p2-chain-preflight-abc123",
+            eventType: "p2_manifest_chain_preflight",
+            runId: null,
+            createdAt: "2026-06-24T12:00:00+00:00",
+            stage: "p2",
+            source: "core-service",
+            summary: "P2 manifest chain preflight blocked 3/4 next=run-p2-readiness",
+            detail: "First blocker: p2-readiness-acceptance; live trading remains blocked.",
+            metadata: {
+              reportKind: "p2_manifest_chain_preflight",
+              preflightStatus: "blocked",
+              validStageCount: 3,
+              totalStageCount: 4,
+              nextAction: "run-p2-readiness",
+              orderSubmissionEnabled: false,
+              liveTradingAllowed: false,
+              liveOrderSubmitted: false,
+              routeExecuted: false
+            }
+          },
+          paperOnly: true,
+          orderSubmissionEnabled: false,
+          liveTradingAllowed: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false,
+          preflight: {
+            kind: "aiqt.p2ManifestChainPreflightStatus",
+            schemaVersion: 1,
+            status: "blocked",
+            available: true,
+            sourcePath: "data/p2-chain-preflight.json",
+            summary: "p2 manifest chain preflight status=blocked valid=3/4 next=run-p2-readiness",
+            reason: "",
+            ready: false,
+            validStageCount: 3,
+            totalStageCount: 4,
+            blockerIds: ["p2-readiness-acceptance"],
+            nextAction: "run-p2-readiness",
+            nextCommand: "npm run docker:smoke:p2 -- --no-build",
+            stages,
+            paperOnly: true,
+            orderSubmissionEnabled: false,
+            liveTradingAllowed: false,
+            liveOrderSubmitted: false,
+            routeExecuted: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await generateP2ManifestChainPreflight("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildP2ManifestChainPreflightUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/p2/manifest-chain/preflight"
+    );
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/p2/manifest-chain/preflight");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(result.source).toBe("core");
+    expect(result.status).toBe("preflight_generated");
+    expect(result.auditEvent?.eventType).toBe("p2_manifest_chain_preflight");
+    expect(result.auditEvent?.metadata.preflightStatus).toBe("blocked");
+    expect(result.auditEvent?.metadata.liveTradingAllowed).toBe(false);
+    expect(result.preflight?.status).toBe("blocked");
+    expect(result.preflight?.nextAction).toBe("run-p2-readiness");
+    expect(result.preflight?.orderSubmissionEnabled).toBe(false);
+    expect(result.preflight?.liveTradingAllowed).toBe(false);
+    expect(result.preflight?.liveOrderSubmitted).toBe(false);
+    expect(result.preflight?.routeExecuted).toBe(false);
   });
 
   test("runs the P0 paper simulation command and returns fill replay evidence", async () => {
@@ -14026,6 +14791,207 @@ describe("terminal workspace API client", () => {
     expect(event.detail).not.toContain(markdown);
   });
 
+  test("builds a P2 readiness acceptance review audit event without storing markdown", async () => {
+    const acceptance: P2ReadinessAcceptanceReviewSource = {
+      kind: "aiqt.p2ReadinessAcceptanceStatus",
+      schemaVersion: 1,
+      status: "accepted",
+      available: true,
+      sourcePath: "data/p2-readiness-acceptance.json",
+      summary: "P2 readiness accepted with live boundary blocked.",
+      reason: "All P2 criteria passed while the execution boundary remains paper-only.",
+      generatedAt: "2026-06-24T09:00:00.000Z",
+      runId: "run-p2-readiness",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      adapterId: "paper-sim",
+      p1AcceptanceRunId: "run-p1-acceptance",
+      p2PreLiveAcceptanceRunId: "run-p2-prelive",
+      p2PaperReplayRunId: "run-p2-replay",
+      operatorRunbookAuditEventId: "operator-runbook-audit-1",
+      readinessCoverageStatus: "accepted",
+      acceptedCriterionCount: 6,
+      totalCriterionCount: 6,
+      blockingCriterionCount: 0,
+      criterionIds: [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: ["p1-audit", "prelive-audit", "replay-audit", "operator-audit"],
+      manifestPaths: {
+        p1Acceptance: "data/p1-acceptance.json",
+        p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json",
+        p2PaperReplay: "data/p2-paper-replay.json"
+      },
+      checkCount: 6,
+      requiredCheckCount: 6,
+      checkIds: [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary"
+      ],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    };
+    const summary: P2ReadinessAcceptanceSummary = {
+      acceptedCount: 6,
+      blockingCount: 0,
+      detail: "All six top-level P2 readiness criteria have evidence while live routing stays blocked.",
+      headline: "P2 readiness accepted",
+      liveOrderSubmitted: false,
+      liveTradingAllowed: false,
+      orderSubmissionEnabled: false,
+      routeExecuted: false,
+      rows: [
+        {
+          detail: "P1 acceptance manifest is available.",
+          evidence: "data/p1-acceptance.json",
+          id: "p1-acceptance",
+          label: "P1 acceptance",
+          sourceId: "run-p1-acceptance",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          detail: "Paper execution replay manifest is available.",
+          evidence: "data/p2-paper-replay.json",
+          id: "paper-execution-replay",
+          label: "Paper execution replay",
+          sourceId: "run-p2-replay",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          detail: "Pre-live checklist is complete.",
+          evidence: "manual-route candidate",
+          id: "pre-live-checklist",
+          label: "Pre-live checklist",
+          sourceId: "run-p2-prelive",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          detail: "P2 pre-live manifest is available.",
+          evidence: "data/p2-pre-live-acceptance.json",
+          id: "p2-pre-live-manifest",
+          label: "P2 pre-live manifest",
+          sourceId: "run-p2-prelive",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          detail: "Readiness evidence coverage is accepted.",
+          evidence: "accepted",
+          id: "readiness-evidence-coverage",
+          label: "Readiness evidence coverage",
+          sourceId: "operator-runbook-audit-1",
+          status: "passed",
+          tone: "positive"
+        },
+        {
+          detail: "All live execution flags remain disabled.",
+          evidence: "live blocked",
+          id: "live-blocked-boundary",
+          label: "Live-blocked boundary",
+          sourceId: "forced-platform-boundary",
+          status: "passed",
+          tone: "positive"
+        }
+      ],
+      status: "accepted",
+      tone: "positive",
+      totalCount: 6
+    };
+    const markdown = buildP2ReadinessAcceptanceReviewMarkdown({ acceptance, summary });
+
+    const event = await buildP2ReadinessAcceptanceReviewAuditEvent({
+      acceptance,
+      generatedAt: "2026-06-24T09:10:00.000Z",
+      markdown,
+      summary
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "p2_readiness_acceptance_review",
+      runId: "run-p2-readiness",
+      createdAt: "2026-06-24T09:10:00.000Z",
+      stage: "accepted",
+      source: "web",
+      summary: "P2 readiness acceptance review recorded",
+      metadata: {
+        artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+        fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "accepted",
+        sourcePath: "data/p2-readiness-acceptance.json",
+        manifestGeneratedAt: "2026-06-24T09:00:00.000Z",
+        manifestAvailable: true,
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        adapterId: "paper-sim",
+        p1AcceptanceRunId: "run-p1-acceptance",
+        p2PreLiveAcceptanceRunId: "run-p2-prelive",
+        p2PaperReplayRunId: "run-p2-replay",
+        operatorRunbookAuditEventId: "operator-runbook-audit-1",
+        readinessCoverageStatus: "accepted",
+        acceptedCriterionCount: 6,
+        totalCriterionCount: 6,
+        blockingCriterionCount: 0,
+        criterionIds: [
+          "p1-acceptance",
+          "paper-execution-replay",
+          "pre-live-checklist",
+          "p2-pre-live-manifest",
+          "readiness-evidence-coverage",
+          "live-blocked-boundary"
+        ],
+        auditEventIds: ["p1-audit", "prelive-audit", "replay-audit", "operator-audit"],
+        manifestPaths: {
+          p1Acceptance: "data/p1-acceptance.json",
+          p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json",
+          p2PaperReplay: "data/p2-paper-replay.json"
+        },
+        paperOnly: true,
+        reportedOrderSubmissionEnabled: false,
+        reportedLiveTradingAllowed: false,
+        reportedLiveOrderSubmitted: false,
+        reportedRouteExecuted: false,
+        reportedLiveBlockedBoundary: true,
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true,
+        boundary: "P2 readiness acceptance review is audit evidence only; live trading remains blocked and no investment advice"
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(
+      `p2-readiness-acceptance-review-run-p2-readiness-${String(event.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event.detail).toContain("run-p2-readiness-p2-readiness-acceptance-review.md");
+    expect(event.detail).toContain("6/6 criteria");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
   test("builds a research context readiness report audit event without storing markdown", async () => {
     const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
       market: "ashare",
@@ -14189,6 +15155,160 @@ describe("terminal workspace API client", () => {
     expect(event.detail).toContain("ashare-live-600000-1d-pre-live-runbook.md");
     expect(event.detail).toContain("sha256");
     expect(event.detail).toContain("0/7 gates");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds an operator runbook report audit event without storing markdown", async () => {
+    const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "1d",
+      workspaceId: "research",
+      updatedAt: "2026-06-24T09:00:00.000Z"
+    });
+    const runbook: OperatorRunbookSummary = {
+      status: "manual_review_ready",
+      tone: "positive",
+      headline: "Operator runbook ready for manual review",
+      summary: "All operator runbook sections are aligned for manual pre-live review only; live trading remains blocked.",
+      contextLabel: "ashare 600000 1d",
+      adapterId: "ashare-live",
+      completedSections: 5,
+      totalSections: 5,
+      nextActionId: null,
+      nextAction: "Record or review the operator runbook before any separate live-route enablement.",
+      controls: {
+        killSwitch: "Disable adapter route and stop the scheduler",
+        rollbackOwner: "Desk operator",
+        positionLimit: "20% max position per instrument",
+        dataFreshness: "tencent · 240 rows · complete",
+        environmentState: "ashare-live · paper_ready · live blocked",
+        auditPackage: "data/p2-pre-live-acceptance.json"
+      },
+      sections: [
+        {
+          id: "pre-live-checklist",
+          label: "Pre-live checklist",
+          status: "passed",
+          evidence: "6/6 gates",
+          detail: "Checklist complete.",
+          nextAction: "Keep checklist evidence attached to the runbook.",
+          tone: "positive"
+        },
+        {
+          id: "paper-execution-replay",
+          label: "Paper execution replay",
+          status: "passed",
+          evidence: "8/8 replay checks",
+          detail: "Replay aligned.",
+          nextAction: "Keep replay evidence aligned with the current run.",
+          tone: "positive"
+        },
+        {
+          id: "adapter-chain",
+          label: "Adapter chain",
+          status: "passed",
+          evidence: "19/19 stages",
+          detail: "Adapter paper-only chain complete.",
+          nextAction: "Keep adapter chain evidence available for audit.",
+          tone: "positive"
+        },
+        {
+          id: "p2-acceptance",
+          label: "P2 acceptance",
+          status: "passed",
+          evidence: "passed",
+          detail: "P2 evidence recorded.",
+          nextAction: "Keep acceptance manifest linked to this operator runbook.",
+          tone: "positive"
+        },
+        {
+          id: "safety-boundary",
+          label: "Safety boundary",
+          status: "passed",
+          evidence: "live blocked",
+          detail: "Order submission, live orders, route execution, and live trading remain disabled.",
+          nextAction: "Do not enable live routes in P2.",
+          tone: "positive"
+        }
+      ],
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false
+    };
+    const markdown = buildOperatorRunbookMarkdown(runbook);
+
+    const event = await buildOperatorRunbookAuditEvent({
+      generatedAt: "2026-06-24T09:00:00.000Z",
+      markdown,
+      runbook,
+      workspace
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "operator_runbook_report",
+      runId: null,
+      createdAt: "2026-06-24T09:00:00.000Z",
+      stage: "generated",
+      source: "web",
+      summary: "Operator runbook report generated for ashare-live",
+      metadata: {
+        adapterId: "ashare-live",
+        artifactKind: "aiqt.operatorRunbookReport",
+        auditPackage: "data/p2-pre-live-acceptance.json",
+        completedSections: 5,
+        contentSha256Algorithm: "sha256",
+        dataFreshness: "tencent · 240 rows · complete",
+        environmentState: "ashare-live · paper_ready · live blocked",
+        fileName: "ashare-live-600000-1d-operator-runbook.md",
+        format: "text/markdown",
+        killSwitch: "Disable adapter route and stop the scheduler",
+        liveOrderSubmitted: false,
+        liveTradingAllowed: false,
+        market: "ashare",
+        nextActionId: "",
+        orderSubmissionEnabled: false,
+        positionLimit: "20% max position per instrument",
+        rollbackOwner: "Desk operator",
+        routeExecuted: false,
+        sectionEvidence: [
+          "pre-live-checklist:6/6 gates",
+          "paper-execution-replay:8/8 replay checks",
+          "adapter-chain:19/19 stages",
+          "p2-acceptance:passed",
+          "safety-boundary:live blocked"
+        ],
+        sectionIds: [
+          "pre-live-checklist",
+          "paper-execution-replay",
+          "adapter-chain",
+          "p2-acceptance",
+          "safety-boundary"
+        ],
+        sectionStatuses: [
+          "pre-live-checklist:passed",
+          "paper-execution-replay:passed",
+          "adapter-chain:passed",
+          "p2-acceptance:passed",
+          "safety-boundary:passed"
+        ],
+        status: "manual_review_ready",
+        symbol: "600000",
+        timeframe: "1d",
+        totalSections: 5
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(
+      `operator-runbook-report-ashare-live-600000-1d-${String(event.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event.detail).toContain("ashare-live-600000-1d-operator-runbook.md");
+    expect(event.detail).toContain("sha256");
+    expect(event.detail).toContain("5/5 sections");
     expect(event.detail).not.toContain(markdown);
   });
 

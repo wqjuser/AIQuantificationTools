@@ -1,4 +1,15 @@
 import { describe, expect, test } from "vitest";
+import type {
+  ExecutionAdapterChainHealthRollup,
+  OperatorRunbookAuditCoverage,
+  OperatorRunbookSummary,
+  P1AcceptanceSummary,
+  P2PaperReplaySummary,
+  P2PreLiveAcceptanceSummary,
+  P2ReadinessEvidenceCoverage,
+  PaperExecutionReplayGate,
+  PreLiveReadinessChecklist
+} from "./terminal-workbench";
 import {
   agentRoleLabels,
   buildAgentCommitteeRounds,
@@ -16,7 +27,9 @@ import {
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
   buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
+  buildAuditEvidenceReportLedgerRowOperatorRunbookQuery,
   buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery,
+  buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessQuery,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle,
@@ -94,6 +107,7 @@ import {
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildExecutionAdapterCertificationRows,
   buildExecutionAdapterLedgerRows,
+  buildOperatorRunbookAuditCoverage,
   buildPreLiveRunbookAuditCoverage,
   buildExecutionAdapterPreLiveRunbookMarkdown,
   buildExecutionAdapterPreLiveRunbookSummary,
@@ -107,7 +121,14 @@ import {
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
+  buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
+  buildP2ManifestChainPreflightSummary,
+  buildP2ReadinessAcceptanceReviewMarkdown,
+  buildP2ReadinessEvidenceCoverage,
+  buildP2ReadinessAcceptanceSummary,
+  buildOperatorRunbookMarkdown,
+  buildOperatorRunbookSummary,
   buildP0CompletionChecklist,
   buildP0GoldenPathJourney,
   buildP0PlatformActionOutcome,
@@ -500,6 +521,357 @@ function promotionAdapterOpsStateRowFixture(
     boundary: "Adapter ops state recorded · no route executed · live trading blocked",
     auditEventId: "execution-adapter-ops-state-ashare",
     tone: "positive",
+    ...overrides
+  };
+}
+
+function operatorRunbookSummaryFixture(overrides: Partial<OperatorRunbookSummary> = {}): OperatorRunbookSummary {
+  return {
+    status: "manual_review_ready",
+    tone: "positive",
+    headline: "Operator runbook ready for manual review",
+    summary: "All operator runbook sections are aligned for manual pre-live review only; live trading remains blocked.",
+    contextLabel: "ashare 600000 1d",
+    adapterId: "ashare-live",
+    completedSections: 5,
+    totalSections: 5,
+    nextActionId: null,
+    nextAction: "Record or review the operator runbook before any separate live-route enablement.",
+    controls: {
+      killSwitch: "Disable adapter route and stop the scheduler",
+      rollbackOwner: "Desk operator",
+      positionLimit: "20% max position per instrument",
+      dataFreshness: "tencent · 240 rows · complete",
+      environmentState: "ashare-live · paper_ready · live blocked",
+      auditPackage: "data/p2-pre-live-acceptance.json"
+    },
+    sections: [
+      {
+        id: "pre-live-checklist",
+        label: "Pre-live checklist",
+        status: "passed",
+        evidence: "6/6 gates",
+        detail: "Checklist complete.",
+        nextAction: "Keep checklist evidence attached to the runbook.",
+        tone: "positive"
+      },
+      {
+        id: "paper-execution-replay",
+        label: "Paper execution replay",
+        status: "passed",
+        evidence: "8/8 replay checks",
+        detail: "Replay aligned.",
+        nextAction: "Keep replay evidence aligned with the current run.",
+        tone: "positive"
+      },
+      {
+        id: "adapter-chain",
+        label: "Adapter chain",
+        status: "passed",
+        evidence: "19/19 stages",
+        detail: "Adapter paper-only chain complete.",
+        nextAction: "Keep adapter chain evidence available for audit.",
+        tone: "positive"
+      },
+      {
+        id: "p2-acceptance",
+        label: "P2 acceptance",
+        status: "passed",
+        evidence: "passed",
+        detail: "P2 evidence recorded.",
+        nextAction: "Keep acceptance manifest linked to this operator runbook.",
+        tone: "positive"
+      },
+      {
+        id: "safety-boundary",
+        label: "Safety boundary",
+        status: "passed",
+        evidence: "live blocked",
+        detail: "Order submission, live orders, route execution, and live trading remain disabled.",
+        nextAction: "Do not enable live routes in P2.",
+        tone: "positive"
+      }
+    ],
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    ...overrides
+  };
+}
+
+function p1AcceptanceSummaryFixture(overrides: Partial<P1AcceptanceSummary> = {}): P1AcceptanceSummary {
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P1 research-ops acceptance passed",
+    detail:
+      "Run run-p1-smoke · ashare 600000 1d · 3 watchlist instruments · 7 checks · live blocked.",
+    actionLabel: "Open P1 acceptance manifest",
+    targetWorkspaceId: "audit",
+    sourcePath: "data/p1-acceptance.json",
+    runId: "run-p1-smoke",
+    timeframe: "1d",
+    watchlistRefreshRunId: "cache-refresh-p1",
+    queuedMarket: "ashare",
+    queuedSymbol: "600000",
+    watchlistCount: 3,
+    checkCount: 7,
+    requiredCheckCount: 7,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: false,
+    liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function p2PreLiveAcceptanceSummaryFixture(
+  overrides: Partial<P2PreLiveAcceptanceSummary> = {}
+): P2PreLiveAcceptanceSummary {
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P2 pre-live acceptance recorded",
+    detail: "Run run-p2-pre-live · ashare 600000 1d · 6/6 gates · 0 blockers · live blocked.",
+    actionLabel: "Open P2 pre-live manifest",
+    targetWorkspaceId: "audit",
+    sourcePath: "data/p2-pre-live-acceptance.json",
+    runId: "run-p2-pre-live",
+    market: "ashare",
+    symbol: "600000",
+    timeframe: "1d",
+    adapterId: "ashare-live",
+    promotionStatus: "live_ready",
+    checklistStatus: "manual_route_ready",
+    passedGateCount: 6,
+    totalGateCount: 6,
+    blockingGateCount: 0,
+    blockerIds: [],
+    auditEventIds: ["p2-pre-live-acceptance-run-p2-pre-live"],
+    checkCount: 6,
+    requiredCheckCount: 6,
+    manualRouteCandidate: true,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    reportedOrderSubmissionEnabled: false,
+    reportedLiveTradingAllowed: false,
+    reportedLiveOrderSubmitted: false,
+    reportedRouteExecuted: false,
+    liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function p2PaperReplaySummaryFixture(overrides: Partial<P2PaperReplaySummary> = {}): P2PaperReplaySummary {
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P2 paper replay manifest recorded",
+    detail: "Run run-p2-paper-replay · ashare 600000 1d · 8/8 checks · 0 warnings · live blocked.",
+    actionLabel: "Open replay manifest",
+    targetWorkspaceId: "execution",
+    sourcePath: "data/p2-paper-replay.json",
+    runId: "run-p2-paper-replay",
+    market: "ashare",
+    symbol: "600000",
+    timeframe: "1d",
+    adapterId: "ashare-live",
+    replayStatus: "replay_ready",
+    passedCheckCount: 8,
+    totalCheckCount: 8,
+    warningCount: 0,
+    requiredCheckCount: 8,
+    checkCount: 8,
+    checkIds: [
+      "single-paper-execution",
+      "portfolio-order-ledger",
+      "portfolio-approval-ledger",
+      "portfolio-simulation-ledger",
+      "portfolio-state-history",
+      "portfolio-replay",
+      "adapter-paper-execution",
+      "live-blocked-boundary"
+    ],
+    auditEventIds: ["paper-execution-run-p2-paper-replay", "adapter-paper-execution-run-p2-paper-replay"],
+    latestEvidenceId: "adapter-paper-execution-ready",
+    metrics: {
+      filledPaperOrders: 1,
+      portfolioOrders: 1,
+      approvedPortfolioOrders: 1,
+      portfolioFilledOrders: 1,
+      stateHistoryFilledEvents: 1,
+      adapterPaperExecutions: 1,
+      replayWarnings: 0
+    },
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    reportedOrderSubmissionEnabled: false,
+    reportedLiveTradingAllowed: false,
+    reportedLiveOrderSubmitted: false,
+    reportedRouteExecuted: false,
+    liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function preLiveReadinessChecklistFixture(
+  overrides: Partial<PreLiveReadinessChecklist> = {}
+): PreLiveReadinessChecklist {
+  return {
+    status: "manual_route_ready",
+    tone: "positive",
+    headline: "Pre-live checklist complete",
+    summary: "6/6 gates passed; ready for manual route review only. Direct order submission remains disabled.",
+    passedCount: 6,
+    totalCount: 6,
+    blockingCount: 0,
+    nextActionId: null,
+    manualRouteCandidate: true,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    items: [
+      {
+        id: "audited-run",
+        label: "Audited run",
+        state: "passed",
+        tone: "positive",
+        evidence: "run-p2-pre-live",
+        detail: "Audited research run is bound."
+      },
+      {
+        id: "paper-execution-replay",
+        label: "Paper execution replay",
+        state: "passed",
+        tone: "positive",
+        evidence: "Paper replay ready",
+        detail: "Replay checks 8/8."
+      }
+    ],
+    ...overrides
+  };
+}
+
+function operatorRunbookAuditCoverageFixture(
+  overrides: Partial<OperatorRunbookAuditCoverage> = {}
+): OperatorRunbookAuditCoverage {
+  return {
+    currentSectionLabel: "5/5 sections",
+    detail: "Latest audited operator runbook matches the current context, controls, and section state.",
+    latestEventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+    mismatchLabel: "",
+    query: "operator_runbook_report ashare-live ashare 600000 1d manual_review_ready 5/5",
+    sectionLabel: "5/5 sections",
+    shortHash: "777777777777",
+    status: "matched",
+    statusLabel: "Audited",
+    ...overrides
+  };
+}
+
+function adapterChainHealthRollupFixture(
+  overrides: Partial<ExecutionAdapterChainHealthRollup> = {}
+): ExecutionAdapterChainHealthRollup {
+  return {
+    id: "ashare-live:live",
+    adapterId: "ashare-live",
+    adapterName: "A-share broker adapter shape",
+    market: "ashare",
+    route: "live",
+    status: "paper_ready",
+    headline: "Adapter chain paper-ready",
+    detail: "Complete paper-only pre-live adapter chain; live trading remains blocked.",
+    completedStageCount: 19,
+    totalStageCount: 19,
+    blockerStageId: null,
+    blockerLabel: null,
+    latestEvidenceId: "paper-exec",
+    latestEvidenceTimestamp: "2026-06-24T01:18:00.000Z",
+    latestAuditEventId: "paper-exec",
+    manualRouteCandidate: true,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    stages: [],
+    tone: "positive",
+    ...overrides
+  };
+}
+
+function p2ReadinessEvidenceCoverageFixture(
+  overrides: Partial<P2ReadinessEvidenceCoverage> = {}
+): P2ReadinessEvidenceCoverage {
+  return {
+    status: "covered",
+    tone: "positive",
+    headline: "P2 readiness evidence fully covered",
+    detail:
+      "6/6 readiness claims have audit events or local manifests; 0 rows still block pre-live confidence. Direct order submission remains disabled.",
+    coveredCount: 6,
+    totalCount: 6,
+    blockingCount: 0,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    rows: [
+      {
+        id: "paper-replay-manifest",
+        label: "Paper replay manifest",
+        status: "covered",
+        tone: "positive",
+        evidence: "8/8 checks · latest adapter-paper-execution-ready",
+        detail: "P2 paper replay manifest is present.",
+        sourceType: "manifest",
+        sourceId: "data/p2-paper-replay.json"
+      },
+      {
+        id: "p2-acceptance-manifest",
+        label: "P2 acceptance manifest",
+        status: "covered",
+        tone: "positive",
+        evidence: "6/6 gates",
+        detail: "P2 pre-live acceptance manifest is present.",
+        sourceType: "manifest",
+        sourceId: "data/p2-pre-live-acceptance.json"
+      },
+      {
+        id: "operator-runbook-audit",
+        label: "Operator runbook audit",
+        status: "covered",
+        tone: "positive",
+        evidence: "Audited · 777777777777",
+        detail: "Operator runbook is audited.",
+        sourceType: "audit",
+        sourceId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777"
+      },
+      {
+        id: "pre-live-checklist",
+        label: "Pre-live checklist",
+        status: "covered",
+        tone: "positive",
+        evidence: "6/6 gates",
+        detail: "Checklist complete.",
+        sourceType: "local-state",
+        sourceId: "manual-route-ready"
+      },
+      {
+        id: "adapter-chain-health",
+        label: "Adapter chain health",
+        status: "covered",
+        tone: "positive",
+        evidence: "19/19 stages",
+        detail: "Adapter chain complete.",
+        sourceType: "local-state",
+        sourceId: "paper-exec"
+      },
+      {
+        id: "safety-boundary",
+        label: "Safety boundary",
+        status: "covered",
+        tone: "positive",
+        evidence: "Live blocked · direct order submission disabled",
+        detail: "Live trading remains blocked.",
+        sourceType: "safety-boundary",
+        sourceId: "paper-exec"
+      }
+    ],
     ...overrides
   };
 }
@@ -2272,6 +2644,575 @@ describe("terminal workbench model", () => {
     });
     expect(invalid.detail).toContain("live-blocked boundary is not enforced");
     expect(invalid.detail).toContain("Direct order submission remains disabled");
+  });
+
+  test("builds P2 paper replay manifest summary without opening live routes", () => {
+    const summary: P2PaperReplaySummary = buildP2PaperReplaySummary({
+      kind: "aiqt.p2PaperReplayStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/p2-paper-replay.json",
+      summary:
+        "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-24T10:15:00+00:00",
+      runId: "run-p2-paper-replay",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      adapterId: "ashare-live",
+      replayStatus: "replay_ready",
+      passedCheckCount: 8,
+      totalCheckCount: 8,
+      warningCount: 0,
+      requiredCheckCount: 8,
+      checkCount: 8,
+      checkIds: [
+        "single-paper-execution",
+        "portfolio-order-ledger",
+        "portfolio-approval-ledger",
+        "portfolio-simulation-ledger",
+        "portfolio-state-history",
+        "portfolio-replay",
+        "adapter-paper-execution",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: ["paper-execution-run-p2-paper-replay", "adapter-paper-execution-run-p2-paper-replay"],
+      latestEvidenceId: "adapter-paper-execution-ready",
+      metrics: {
+        filledPaperOrders: 1,
+        portfolioOrders: 1,
+        approvedPortfolioOrders: 1,
+        portfolioFilledOrders: 1,
+        stateHistoryFilledEvents: 1,
+        adapterPaperExecutions: 1,
+        replayWarnings: 0
+      },
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+
+    expect(summary).toMatchObject({
+      state: "passed",
+      tone: "positive",
+      headline: "P2 paper replay manifest recorded",
+      actionLabel: "Open replay manifest",
+      targetWorkspaceId: "execution",
+      sourcePath: "data/p2-paper-replay.json",
+      runId: "run-p2-paper-replay",
+      adapterId: "ashare-live",
+      replayStatus: "replay_ready",
+      passedCheckCount: 8,
+      totalCheckCount: 8,
+      warningCount: 0,
+      latestEvidenceId: "adapter-paper-execution-ready",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: false,
+      reportedLiveTradingAllowed: false
+    });
+    expect(summary.detail).toContain("ashare 600000 1d");
+    expect(summary.detail).toContain("8/8 checks");
+    expect(summary.detail).toContain("0 warnings");
+    expect(summary.detail).toContain("live blocked");
+  });
+
+  test("builds missing and invalid P2 paper replay summaries as blocked replay evidence", () => {
+    const missing = buildP2PaperReplaySummary(null);
+    const invalid = buildP2PaperReplaySummary({
+      kind: "aiqt.p2PaperReplayStatus",
+      schemaVersion: 1,
+      status: "invalid",
+      available: false,
+      sourcePath: "data/p2-paper-replay.json",
+      summary: "P2 paper replay manifest is invalid.",
+      reason: "live-blocked boundary is not enforced",
+      generatedAt: null,
+      runId: "run-p2-paper-replay",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      adapterId: "ashare-live",
+      replayStatus: "replay_ready",
+      passedCheckCount: 8,
+      totalCheckCount: 8,
+      warningCount: 0,
+      requiredCheckCount: 8,
+      checkCount: 7,
+      checkIds: [
+        "single-paper-execution",
+        "portfolio-order-ledger",
+        "portfolio-approval-ledger",
+        "portfolio-simulation-ledger",
+        "portfolio-state-history",
+        "portfolio-replay",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: ["unsafe-event"],
+      latestEvidenceId: "unsafe-event",
+      metrics: {
+        filledPaperOrders: 1,
+        portfolioOrders: 1,
+        approvedPortfolioOrders: 1,
+        portfolioFilledOrders: 1,
+        stateHistoryFilledEvents: 1,
+        adapterPaperExecutions: 0,
+        replayWarnings: 0
+      },
+      paperOnly: true,
+      orderSubmissionEnabled: true,
+      liveTradingAllowed: true,
+      liveOrderSubmitted: true,
+      routeExecuted: true,
+      liveBlockedBoundary: false,
+      manifest: null
+    });
+
+    expect(missing).toMatchObject({
+      state: "missing",
+      tone: "warning",
+      headline: "P2 paper replay manifest missing",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: false,
+      reportedLiveTradingAllowed: false
+    });
+    expect(invalid).toMatchObject({
+      state: "invalid",
+      tone: "risk",
+      headline: "P2 paper replay manifest invalid",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: true,
+      reportedLiveTradingAllowed: true
+    });
+    expect(invalid.detail).toContain("live-blocked boundary is not enforced");
+    expect(invalid.detail).toContain("Live trading remains blocked");
+  });
+
+  test("builds P2 manifest chain preflight summary with next operator command", () => {
+    const summary = buildP2ManifestChainPreflightSummary({
+      kind: "aiqt.p2ManifestChainPreflightStatus",
+      schemaVersion: 1,
+      status: "blocked",
+      available: true,
+      sourcePath: "data/p2-chain-preflight.json",
+      summary: "p2 manifest chain preflight status=blocked valid=3/4 next=run-p2-readiness",
+      reason: "",
+      ready: false,
+      validStageCount: 3,
+      totalStageCount: 4,
+      blockerIds: ["p2-readiness-acceptance"],
+      nextAction: "run-p2-readiness",
+      nextCommand: "npm run docker:smoke:p2 -- --no-build",
+      stages: [
+        {
+          id: "p1-acceptance",
+          label: "P1 acceptance",
+          status: "valid",
+          path: "data/p1-acceptance.json",
+          summary: "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-paper-replay",
+          label: "P2 paper replay",
+          status: "valid",
+          path: "data/p2-paper-replay.json",
+          summary:
+            "p2 paper replay manifest run=run-p2-paper-replay replay=replay_ready checks=8/8 warnings=0 liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-pre-live-acceptance",
+          label: "P2 pre-live acceptance",
+          status: "valid",
+          path: "data/p2-pre-live-acceptance.json",
+          summary:
+            "p2 pre-live acceptance manifest run=run-p2-pre-live checklist=evidence_pending gates=4/6 blockers=2 liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-readiness-acceptance",
+          label: "P2 readiness acceptance",
+          status: "missing",
+          path: "data/p2-readiness-acceptance.json",
+          summary: "",
+          reason: "P2 readiness acceptance report not found at data/p2-readiness-acceptance.json",
+          nextAction: "run-p2-readiness",
+          nextCommand: "npm run docker:smoke:p2 -- --no-build"
+        }
+      ],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+
+    expect(summary.state).toBe("blocked");
+    expect(summary.tone).toBe("warning");
+    expect(summary.headline).toBe("P2 manifest chain blocked");
+    expect(summary.detail).toBe(
+      "3/4 manifest stages valid · next run-p2-readiness via npm run docker:smoke:p2 -- --no-build."
+    );
+    expect(summary.actionLabel).toBe("Run P2 readiness smoke");
+    expect(summary.nextAction).toBe("run-p2-readiness");
+    expect(summary.nextCommand).toBe("npm run docker:smoke:p2 -- --no-build");
+    expect(summary.blockerIds).toEqual(["p2-readiness-acceptance"]);
+    expect(summary.stages.map((stage) => stage.status)).toEqual(["valid", "valid", "valid", "missing"]);
+    expect(summary.orderSubmissionEnabled).toBe(false);
+    expect(summary.liveTradingAllowed).toBe(false);
+    expect(summary.liveOrderSubmitted).toBe(false);
+    expect(summary.routeExecuted).toBe(false);
+  });
+
+  test("builds missing and invalid P2 manifest chain preflight summaries without opening live routes", () => {
+    const missing = buildP2ManifestChainPreflightSummary(null);
+    const invalid = buildP2ManifestChainPreflightSummary({
+      kind: "aiqt.p2ManifestChainPreflightStatus",
+      schemaVersion: 1,
+      status: "invalid",
+      available: false,
+      sourcePath: "data/p2-chain-preflight.json",
+      summary: "P2 manifest chain preflight is invalid.",
+      reason: "P2 manifest chain preflight live-blocked boundary is not enforced",
+      ready: true,
+      validStageCount: 4,
+      totalStageCount: 4,
+      blockerIds: [],
+      nextAction: "",
+      nextCommand: "",
+      stages: [],
+      paperOnly: true,
+      orderSubmissionEnabled: true,
+      liveTradingAllowed: true,
+      liveOrderSubmitted: true,
+      routeExecuted: true,
+      liveBlockedBoundary: false,
+      manifest: null
+    });
+
+    expect(missing.state).toBe("missing");
+    expect(missing.tone).toBe("warning");
+    expect(missing.headline).toBe("P2 manifest chain preflight missing");
+    expect(missing.nextAction).toBe("run-p1-acceptance");
+    expect(missing.nextCommand).toBe("npm run docker:smoke:p1 -- --no-build");
+    expect(missing.liveTradingAllowed).toBe(false);
+
+    expect(invalid.state).toBe("invalid");
+    expect(invalid.tone).toBe("risk");
+    expect(invalid.headline).toBe("P2 manifest chain preflight invalid");
+    expect(invalid.reportedOrderSubmissionEnabled).toBe(true);
+    expect(invalid.reportedLiveTradingAllowed).toBe(true);
+    expect(invalid.reportedLiveOrderSubmitted).toBe(true);
+    expect(invalid.reportedRouteExecuted).toBe(true);
+    expect(invalid.orderSubmissionEnabled).toBe(false);
+    expect(invalid.liveTradingAllowed).toBe(false);
+  });
+
+  test("builds P2 readiness evidence coverage from manifests, audit events, and local gates", () => {
+    const coverage = buildP2ReadinessEvidenceCoverage({
+      adapterChainHealthRollups: [adapterChainHealthRollupFixture()],
+      operatorRunbookAuditCoverage: operatorRunbookAuditCoverageFixture(),
+      p2PaperReplay: p2PaperReplaySummaryFixture(),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
+      preLiveChecklist: preLiveReadinessChecklistFixture()
+    });
+
+    expect(coverage).toMatchObject({
+      status: "covered",
+      tone: "positive",
+      headline: "P2 readiness evidence fully covered",
+      coveredCount: 6,
+      totalCount: 6,
+      blockingCount: 0,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(coverage.detail).toContain("6/6 readiness claims");
+    expect(coverage.rows.map((row) => `${row.id}:${row.status}`)).toEqual([
+      "paper-replay-manifest:covered",
+      "p2-acceptance-manifest:covered",
+      "operator-runbook-audit:covered",
+      "pre-live-checklist:covered",
+      "adapter-chain-health:covered",
+      "safety-boundary:covered"
+    ]);
+    expect(coverage.rows.find((row) => row.id === "paper-replay-manifest")).toMatchObject({
+      sourceType: "manifest",
+      sourceId: "data/p2-paper-replay.json",
+      evidence: "8/8 checks · latest adapter-paper-execution-ready"
+    });
+    expect(coverage.rows.find((row) => row.id === "operator-runbook-audit")).toMatchObject({
+      sourceType: "audit",
+      sourceId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+      evidence: "Audited · 777777777777"
+    });
+    expect(coverage.rows.find((row) => row.id === "safety-boundary")).toMatchObject({
+      status: "covered",
+      evidence: "Live blocked · direct order submission disabled"
+    });
+  });
+
+  test("blocks P2 readiness evidence coverage for stale, missing, and unsafe claims", () => {
+    const coverage = buildP2ReadinessEvidenceCoverage({
+      adapterChainHealthRollups: [adapterChainHealthRollupFixture({ status: "blocked", blockerLabel: "Ops state" })],
+      operatorRunbookAuditCoverage: operatorRunbookAuditCoverageFixture({
+        mismatchLabel: "sections changed",
+        status: "stale",
+        statusLabel: "Needs re-audit"
+      }),
+      p2PaperReplay: p2PaperReplaySummaryFixture({
+        state: "missing",
+        tone: "warning",
+        liveBlockedBoundary: false,
+        sourcePath: "data/p2-paper-replay.json",
+        auditEventIds: [],
+        latestEvidenceId: null
+      }),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture({
+        state: "invalid",
+        tone: "risk",
+        reportedOrderSubmissionEnabled: true,
+        reportedLiveTradingAllowed: true,
+        liveBlockedBoundary: false
+      }),
+      preLiveChecklist: preLiveReadinessChecklistFixture({
+        blockingCount: 2,
+        manualRouteCandidate: false,
+        nextActionId: "adapter-certification",
+        passedCount: 4,
+        status: "evidence_pending",
+        tone: "warning"
+      })
+    });
+
+    expect(coverage).toMatchObject({
+      status: "blocked",
+      tone: "risk",
+      headline: "P2 readiness evidence blocked",
+      coveredCount: 0,
+      totalCount: 6,
+      blockingCount: 6,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false
+    });
+    expect(coverage.rows.map((row) => `${row.id}:${row.status}`)).toEqual([
+      "paper-replay-manifest:missing",
+      "p2-acceptance-manifest:blocked",
+      "operator-runbook-audit:stale",
+      "pre-live-checklist:missing",
+      "adapter-chain-health:blocked",
+      "safety-boundary:blocked"
+    ]);
+    expect(coverage.rows.find((row) => row.id === "p2-acceptance-manifest")?.detail).toContain(
+      "unsafe execution claims"
+    );
+    expect(coverage.rows.find((row) => row.id === "operator-runbook-audit")?.detail).toContain("sections changed");
+    expect(coverage.rows.find((row) => row.id === "safety-boundary")?.detail).toContain("unsafe execution flags");
+  });
+
+  test("builds P2 readiness acceptance summary from all accepted evidence while keeping live routes closed", () => {
+    const summary = buildP2ReadinessAcceptanceSummary({
+      evidenceCoverage: p2ReadinessEvidenceCoverageFixture(),
+      p1Acceptance: p1AcceptanceSummaryFixture(),
+      p2PaperReplay: p2PaperReplaySummaryFixture(),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
+      preLiveChecklist: preLiveReadinessChecklistFixture()
+    });
+
+    expect(summary).toMatchObject({
+      status: "accepted",
+      tone: "positive",
+      headline: "P2 pre-live readiness accepted",
+      acceptedCount: 6,
+      totalCount: 6,
+      blockingCount: 0,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false
+    });
+    expect(summary.detail).toContain("6/6 P2 acceptance criteria");
+    expect(summary.rows.map((row) => `${row.id}:${row.status}`)).toEqual([
+      "p1-acceptance:passed",
+      "paper-execution-replay:passed",
+      "pre-live-checklist:passed",
+      "p2-pre-live-manifest:passed",
+      "readiness-evidence-coverage:passed",
+      "live-blocked-boundary:passed"
+    ]);
+    expect(summary.rows.find((row) => row.id === "readiness-evidence-coverage")).toMatchObject({
+      evidence: "6/6 claims covered",
+      sourceId: "P2 evidence coverage matrix"
+    });
+  });
+
+  test("blocks P2 readiness acceptance when evidence is missing, stale, or unsafe", () => {
+    const summary = buildP2ReadinessAcceptanceSummary({
+      evidenceCoverage: p2ReadinessEvidenceCoverageFixture({
+        blockingCount: 3,
+        coveredCount: 3,
+        status: "blocked",
+        tone: "risk"
+      }),
+      p1Acceptance: p1AcceptanceSummaryFixture({
+        state: "missing",
+        tone: "warning",
+        liveBlockedBoundary: false,
+        reportedLiveTradingAllowed: false
+      }),
+      p2PaperReplay: p2PaperReplaySummaryFixture({
+        state: "invalid",
+        tone: "risk",
+        reportedLiveOrderSubmitted: true,
+        liveBlockedBoundary: false
+      }),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture({
+        state: "invalid",
+        tone: "risk",
+        reportedRouteExecuted: true,
+        liveBlockedBoundary: false
+      }),
+      preLiveChecklist: preLiveReadinessChecklistFixture({
+        blockingCount: 2,
+        manualRouteCandidate: false,
+        nextActionId: "adapter-certification",
+        passedCount: 4,
+        status: "evidence_pending",
+        tone: "warning"
+      })
+    });
+
+    expect(summary).toMatchObject({
+      status: "blocked",
+      tone: "risk",
+      headline: "P2 pre-live readiness blocked",
+      acceptedCount: 0,
+      totalCount: 6,
+      blockingCount: 6,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false
+    });
+    expect(summary.rows.map((row) => `${row.id}:${row.status}`)).toEqual([
+      "p1-acceptance:missing",
+      "paper-execution-replay:blocked",
+      "pre-live-checklist:missing",
+      "p2-pre-live-manifest:blocked",
+      "readiness-evidence-coverage:blocked",
+      "live-blocked-boundary:blocked"
+    ]);
+    expect(summary.rows.find((row) => row.id === "live-blocked-boundary")?.detail).toContain(
+      "unsafe execution flags"
+    );
+  });
+
+  test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {
+    const acceptance = {
+      kind: "aiqt.p2ReadinessAcceptanceStatus",
+      schemaVersion: 1,
+      status: "accepted" as const,
+      available: true,
+      sourcePath: "data/p2-readiness-acceptance.json",
+      summary: "p2 readiness acceptance manifest run=run-p2-readiness criteria=6/6 blockers=0 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-24T11:00:00+00:00",
+      runId: "run-p2-readiness",
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const,
+      adapterId: "ashare-live",
+      p1AcceptanceRunId: "run-p1-smoke",
+      p2PreLiveAcceptanceRunId: "run-p2-pre-live",
+      p2PaperReplayRunId: "run-p2-paper-replay",
+      operatorRunbookAuditEventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+      readinessCoverageStatus: "covered",
+      acceptedCriterionCount: 6,
+      totalCriterionCount: 6,
+      blockingCriterionCount: 0,
+      criterionIds: [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary"
+      ],
+      auditEventIds: [
+        "p1-acceptance-run-p1-smoke",
+        "paper-execution-run-p2-paper-replay",
+        "p2-pre-live-acceptance-run-p2-pre-live",
+        "operator-runbook-report-ashare-live-600000-1d-7777777777777777"
+      ],
+      manifestPaths: {
+        p1Acceptance: "data/p1-acceptance.json",
+        p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json",
+        p2PaperReplay: "data/p2-paper-replay.json"
+      },
+      checkCount: 6,
+      requiredCheckCount: 6,
+      checkIds: [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary"
+      ],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    };
+    const summary = buildP2ReadinessAcceptanceSummary({
+      evidenceCoverage: p2ReadinessEvidenceCoverageFixture(),
+      p1Acceptance: p1AcceptanceSummaryFixture(),
+      p2PaperReplay: p2PaperReplaySummaryFixture(),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
+      preLiveChecklist: preLiveReadinessChecklistFixture()
+    });
+
+    const markdown = buildP2ReadinessAcceptanceReviewMarkdown({ acceptance, summary });
+
+    expect(markdown).toContain("# P2 Readiness Acceptance Review");
+    expect(markdown).toContain("- Status: accepted");
+    expect(markdown).toContain("- Source: data/p2-readiness-acceptance.json");
+    expect(markdown).toContain("- Run: run-p2-readiness");
+    expect(markdown).toContain("- Context: ashare 600000 1d");
+    expect(markdown).toContain("- Adapter: ashare-live");
+    expect(markdown).toContain("- Criteria: 6/6");
+    expect(markdown).toContain("- Blocking criteria: 0");
+    expect(markdown).toContain("- readinessCoverageStatus: covered");
+    expect(markdown).toContain("- p2PaperReplay: data/p2-paper-replay.json");
+    expect(markdown).toContain("- paperOnly: true");
+    expect(markdown).toContain("- orderSubmissionEnabled: false");
+    expect(markdown).toContain("- liveTradingAllowed: false");
+    expect(markdown).toContain("- liveOrderSubmitted: false");
+    expect(markdown).toContain("- routeExecuted: false");
+    expect(markdown).toContain("- liveBlockedBoundary: true");
+    expect(markdown).toContain("- p1-acceptance");
+    expect(markdown).toContain("- operator-runbook-report-ashare-live-600000-1d-7777777777777777");
+    expect(markdown).toContain("This review is audit evidence only and does not authorize live trading.");
   });
 
   test("builds a portable P0 acceptance review markdown without live authorization", () => {
@@ -10454,6 +11395,334 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("includes operator runbook report events in the audit report ledger", () => {
+    const runbookHash = "7".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+        eventType: "operator_runbook_report",
+        runId: null,
+        createdAt: "2026-06-24T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Operator runbook report generated for ashare-live",
+        detail: "ashare-live-600000-1d-operator-runbook.md · sha256 777777777777 · 5/5 sections · manual_review_ready",
+        metadata: {
+          adapterId: "ashare-live",
+          artifactKind: "aiqt.operatorRunbookReport",
+          auditPackage: "data/p2-pre-live-acceptance.json",
+          boundary:
+            "Operator runbook audit evidence only; no live trading authorization, order submission, route execution, or investment advice",
+          completedSections: 5,
+          contentSha256: runbookHash,
+          contentSha256Algorithm: "sha256",
+          controlSnapshot: [
+            "killSwitch=Disable adapter route and stop the scheduler",
+            "rollbackOwner=Desk operator",
+            "positionLimit=20% max position per instrument",
+            "dataFreshness=tencent · 240 rows · complete",
+            "environmentState=ashare-live · paper_ready · live blocked",
+            "auditPackage=data/p2-pre-live-acceptance.json"
+          ],
+          fileName: "ashare-live-600000-1d-operator-runbook.md",
+          format: "text/markdown",
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          nextActionId: "",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          sectionEvidence: [
+            "pre-live-checklist:6/6 gates",
+            "paper-execution-replay:8/8 replay checks",
+            "adapter-chain:19/19 stages",
+            "p2-acceptance:passed",
+            "safety-boundary:live blocked"
+          ],
+          sectionIds: [
+            "pre-live-checklist",
+            "paper-execution-replay",
+            "adapter-chain",
+            "p2-acceptance",
+            "safety-boundary"
+          ],
+          sectionStatuses: [
+            "pre-live-checklist:passed",
+            "paper-execution-replay:passed",
+            "adapter-chain:passed",
+            "p2-acceptance:passed",
+            "safety-boundary:passed"
+          ],
+          status: "manual_review_ready",
+          symbol: "600000",
+          timeframe: "1d",
+          totalSections: 5
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.operatorRunbookReport",
+        contentSha256: runbookHash,
+        deepLinkStatus: "operator-runbook-report",
+        fileName: "ashare-live-600000-1d-operator-runbook.md",
+        focusQuery: "ashare-live ashare 600000 1d manual_review_ready 5/5",
+        importDiffBlocked: 0,
+        importDiffTotal: 0,
+        operatorRunbookAdapterId: "ashare-live",
+        operatorRunbookCompletedSections: 5,
+        operatorRunbookControlSnapshot: [
+          "killSwitch=Disable adapter route and stop the scheduler",
+          "rollbackOwner=Desk operator",
+          "positionLimit=20% max position per instrument",
+          "dataFreshness=tencent · 240 rows · complete",
+          "environmentState=ashare-live · paper_ready · live blocked",
+          "auditPackage=data/p2-pre-live-acceptance.json"
+        ],
+        operatorRunbookMarket: "ashare",
+        operatorRunbookNextActionId: "",
+        operatorRunbookSectionEvidence: [
+          "pre-live-checklist:6/6 gates",
+          "paper-execution-replay:8/8 replay checks",
+          "adapter-chain:19/19 stages",
+          "p2-acceptance:passed",
+          "safety-boundary:live blocked"
+        ],
+        operatorRunbookSectionStatuses: [
+          "pre-live-checklist:passed",
+          "paper-execution-replay:passed",
+          "adapter-chain:passed",
+          "p2-acceptance:passed",
+          "safety-boundary:passed"
+        ],
+        operatorRunbookStatus: "manual_review_ready",
+        operatorRunbookSymbol: "600000",
+        operatorRunbookTimeframe: "1d",
+        operatorRunbookTotalSections: 5,
+        packageMatched: 5,
+        packageTotal: 5,
+        reportKind: "operator_runbook_report",
+        runId: "unknown",
+        signatureLabel: "Unsigned report hash",
+        signatureStatus: "unsigned",
+        statusLabel: "Operator runbook report hash recorded",
+        tone: "ai"
+      })
+    );
+    expect(buildAuditEvidenceReportLedgerRowOperatorRunbookQuery(rows[0])).toContain(
+      "operator_runbook_report ashare-live ashare 600000 1d manual_review_ready 5/5"
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "operator-runbook-report paper-execution-replay:passed").map((row) => row.id)).toEqual([
+      "operator-runbook-report-ashare-live-600000-1d-7777777777777777"
+    ]);
+  });
+
+  test("matches operator runbook audit coverage to the current operator summary", () => {
+    const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "1d",
+      workspaceId: "research",
+      updatedAt: "2026-06-24T09:00:00.000Z"
+    });
+    const runbook = operatorRunbookSummaryFixture();
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+        eventType: "operator_runbook_report",
+        runId: null,
+        createdAt: "2026-06-24T09:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Operator runbook report generated for ashare-live",
+        detail: "ashare-live-600000-1d-operator-runbook.md · sha256 777777777777 · 5/5 sections · manual_review_ready",
+        metadata: {
+          adapterId: "ashare-live",
+          artifactKind: "aiqt.operatorRunbookReport",
+          completedSections: 5,
+          contentSha256: "7".repeat(64),
+          contentSha256Algorithm: "sha256",
+          controlSnapshot: [
+            "killSwitch=Disable adapter route and stop the scheduler",
+            "rollbackOwner=Desk operator",
+            "positionLimit=20% max position per instrument",
+            "dataFreshness=tencent · 240 rows · complete",
+            "environmentState=ashare-live · paper_ready · live blocked",
+            "auditPackage=data/p2-pre-live-acceptance.json"
+          ],
+          fileName: "ashare-live-600000-1d-operator-runbook.md",
+          format: "text/markdown",
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          nextActionId: "",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          sectionEvidence: [
+            "pre-live-checklist:6/6 gates",
+            "paper-execution-replay:8/8 replay checks",
+            "adapter-chain:19/19 stages",
+            "p2-acceptance:passed",
+            "safety-boundary:live blocked"
+          ],
+          sectionStatuses: [
+            "pre-live-checklist:passed",
+            "paper-execution-replay:passed",
+            "adapter-chain:passed",
+            "p2-acceptance:passed",
+            "safety-boundary:passed"
+          ],
+          status: "manual_review_ready",
+          symbol: "600000",
+          timeframe: "1d",
+          totalSections: 5
+        }
+      }
+    ]);
+
+    const coverage = buildOperatorRunbookAuditCoverage(rows, runbook, workspace);
+
+    expect(coverage).toEqual(
+      expect.objectContaining({
+        currentSectionLabel: "5/5 sections",
+        detail: "Latest audited operator runbook matches the current context, controls, and section state.",
+        latestEventId: "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+        mismatchLabel: "",
+        query: expect.stringContaining("operator_runbook_report ashare-live ashare 600000 1d manual_review_ready 5/5"),
+        sectionLabel: "5/5 sections",
+        shortHash: "777777777777",
+        status: "matched",
+        statusLabel: "Audited"
+      })
+    );
+  });
+
+  test("marks operator runbook audit coverage stale when controls or sections changed", () => {
+    const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "1d",
+      workspaceId: "research",
+      updatedAt: "2026-06-24T09:00:00.000Z"
+    });
+    const runbook = operatorRunbookSummaryFixture({
+      controls: {
+        ...operatorRunbookSummaryFixture().controls,
+        killSwitch: "Disable adapter route, stop scheduler, and revoke sandbox key"
+      },
+      sections: operatorRunbookSummaryFixture().sections.map((section) =>
+        section.id === "paper-execution-replay"
+          ? { ...section, evidence: "7/8 replay checks", status: "review", tone: "warning" }
+          : section
+      ),
+      completedSections: 4,
+      status: "review_pending",
+      tone: "warning",
+      nextActionId: "paper-execution-replay"
+    });
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "operator-runbook-report-ashare-live-600000-1d-stale",
+        eventType: "operator_runbook_report",
+        runId: null,
+        createdAt: "2026-06-24T08:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Operator runbook report generated for ashare-live",
+        detail: "ashare-live-600000-1d-operator-runbook.md · sha256 555555555555 · 5/5 sections · manual_review_ready",
+        metadata: {
+          adapterId: "ashare-live",
+          artifactKind: "aiqt.operatorRunbookReport",
+          completedSections: 5,
+          contentSha256: "5".repeat(64),
+          contentSha256Algorithm: "sha256",
+          controlSnapshot: [
+            "killSwitch=Disable adapter route and stop the scheduler",
+            "rollbackOwner=Desk operator",
+            "positionLimit=20% max position per instrument",
+            "dataFreshness=tencent · 240 rows · complete",
+            "environmentState=ashare-live · paper_ready · live blocked",
+            "auditPackage=data/p2-pre-live-acceptance.json"
+          ],
+          fileName: "ashare-live-600000-1d-operator-runbook.md",
+          format: "text/markdown",
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          nextActionId: "",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          sectionEvidence: [
+            "pre-live-checklist:6/6 gates",
+            "paper-execution-replay:8/8 replay checks",
+            "adapter-chain:19/19 stages",
+            "p2-acceptance:passed",
+            "safety-boundary:live blocked"
+          ],
+          sectionStatuses: [
+            "pre-live-checklist:passed",
+            "paper-execution-replay:passed",
+            "adapter-chain:passed",
+            "p2-acceptance:passed",
+            "safety-boundary:passed"
+          ],
+          status: "manual_review_ready",
+          symbol: "600000",
+          timeframe: "1d",
+          totalSections: 5
+        }
+      }
+    ]);
+
+    const coverage = buildOperatorRunbookAuditCoverage(rows, runbook, workspace);
+
+    expect(coverage).toEqual(
+      expect.objectContaining({
+        currentSectionLabel: "4/5 sections",
+        latestEventId: "operator-runbook-report-ashare-live-600000-1d-stale",
+        mismatchLabel:
+          "status manual_review_ready -> review_pending · next action ready -> paper-execution-replay · sections 5/5 -> 4/5 · section statuses changed · section evidence changed · controls changed",
+        sectionLabel: "5/5 sections",
+        shortHash: "555555555555",
+        status: "stale",
+        statusLabel: "Needs re-audit"
+      })
+    );
+  });
+
+  test("reports missing operator runbook audit coverage before any matching report is recorded", () => {
+    const workspace = workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
+      market: "ashare",
+      symbol: "600000",
+      name: "浦发银行",
+      timeframe: "1d",
+      workspaceId: "research",
+      updatedAt: "2026-06-24T09:00:00.000Z"
+    });
+    const runbook = operatorRunbookSummaryFixture();
+
+    const coverage = buildOperatorRunbookAuditCoverage([], runbook, workspace);
+
+    expect(coverage).toEqual({
+      currentSectionLabel: "5/5 sections",
+      detail: "No audited operator runbook report is recorded for ashare-live ashare 600000 1d.",
+      latestEventId: "",
+      mismatchLabel: "",
+      query: "",
+      sectionLabel: "",
+      shortHash: "",
+      status: "missing",
+      statusLabel: "Not audited"
+    });
+  });
+
   test("selects the latest research context readiness report for the active context", () => {
     const ashareHash = "8".repeat(64);
     const usHash = "9".repeat(64);
@@ -10666,6 +11935,139 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "backtest_report verified").map((row) => row.id)).toEqual([
       "backtest-report-run-signed"
     ]);
+  });
+
+  test("includes P2 readiness acceptance review events in the audit report ledger", () => {
+    const reviewHash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-run-p2-8888888888888888",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2",
+        createdAt: "2026-06-24T09:10:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria · live blocked true",
+        metadata: {
+          adapterId: "paper-sim",
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          auditEventIds: ["p1-audit", "prelive-audit", "replay-audit"],
+          blockingCriterionCount: 0,
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          criterionIds: [
+            "p1-acceptance",
+            "paper-execution-replay",
+            "pre-live-checklist",
+            "p2-pre-live-manifest",
+            "readiness-evidence-coverage",
+            "live-blocked-boundary"
+          ],
+          fileName: "run-p2-p2-readiness-acceptance-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          manifestPaths: {
+            p1Acceptance: "data/p1-acceptance.json",
+            p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json",
+            p2PaperReplay: "data/p2-paper-replay.json"
+          },
+          market: "ashare",
+          readinessCoverageStatus: "accepted",
+          signature: {
+            algorithm: "hmac-sha256",
+            chainId: "audit-chain-local",
+            keyId: "local-audit-key",
+            signer: "Local Audit Key",
+            signedAt: "2026-06-24T09:11:00.000Z",
+            status: "verified",
+            value: "a".repeat(64),
+            verifiedAt: "2026-06-24T09:12:00.000Z"
+          },
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6,
+          acceptedCriterionCount: 6
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+        fileName: "run-p2-p2-readiness-acceptance-review.md",
+        focusQuery: "ashare 600000 1d accepted 6/6",
+        reportKind: "p2_readiness_acceptance_review",
+        status: "ready",
+        tone: "positive"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "p2_readiness_acceptance_review 600000 accepted").map((row) => row.id)).toEqual([
+      "p2-readiness-acceptance-review-run-p2-8888888888888888"
+    ]);
+  });
+
+  test("includes P2 manifest chain preflight events in the audit report ledger", () => {
+    const manifestHash = "6".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-chain-preflight-6666666666666666",
+        eventType: "p2_manifest_chain_preflight",
+        runId: "p2-manifest-chain-preflight",
+        createdAt: "2026-06-24T09:20:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 manifest chain preflight blocked 3/4 next=run-p2-readiness",
+        detail: "First blocker p2-readiness-acceptance: Missing data/p2-readiness-acceptance.json",
+        metadata: {
+          artifactKind: "aiqt.p2ManifestChainPreflight",
+          blockerIds: ["p2-readiness-acceptance"],
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestSha256: manifestHash,
+          nextAction: "run-p2-readiness",
+          orderSubmissionEnabled: false,
+          preflightStatus: "blocked",
+          ready: false,
+          routeExecuted: false,
+          sourcePath: "data/p2-chain-preflight.json",
+          totalStageCount: 4,
+          validStageCount: 3
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.p2ManifestChainPreflight",
+        contentSha256: manifestHash,
+        fileName: "data/p2-chain-preflight.json",
+        focusQuery: "blocked 3/4 run-p2-readiness p2-readiness-acceptance",
+        packageMatched: 3,
+        packageTotal: 4,
+        reportKind: "p2_manifest_chain_preflight",
+        status: "ready",
+        statusLabel: "P2 manifest chain preflight hash recorded",
+        tone: "risk"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "p2_manifest_chain_preflight run-p2-readiness").map((row) => row.id)).toEqual([
+      "p2-chain-preflight-6666666666666666"
+    ]);
+    expect(buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(rows[0])).toBe(
+      "p2_manifest_chain_preflight p2-chain-preflight-6666666666666666 666666666666 data/p2-chain-preflight.json blocked 3/4 run-p2-readiness p2-readiness-acceptance"
+    );
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(rows[0])).map(
+        (row) => row.id
+      )
+    ).toEqual(["p2-chain-preflight-6666666666666666"]);
   });
 
   test("includes portfolio markdown report events in the audit report ledger", () => {
@@ -18567,6 +19969,248 @@ describe("terminal workbench model", () => {
       evidence: "Paper replay blocked"
     });
     expect(checklist.summary).toContain("paper-execution-replay");
+  });
+
+  test("builds an operator runbook from aligned pre-live evidence without enabling live trading", () => {
+    const workspace = {
+      ...buildTerminalWorkspace(),
+      researchRun: {
+        runId: "run-operator-ready",
+        createdAt: "2026-06-24T08:00:00.000Z",
+        market: "ashare" as const,
+        symbol: "600000",
+        timeframe: "1d" as const,
+        strategyRevision: "rev-operator-ready",
+        dataRows: 240,
+        executionMode: "paper_only",
+        dataQuality: { source: "tencent", isComplete: true, warnings: [], rows: 240 }
+      }
+    };
+    const preLiveChecklist: PreLiveReadinessChecklist = {
+      status: "manual_route_ready",
+      tone: "positive",
+      headline: "Pre-live checklist complete",
+      summary: "6/6 gates passed; ready for manual route review only. Direct order submission remains disabled.",
+      passedCount: 6,
+      totalCount: 6,
+      blockingCount: 0,
+      nextActionId: null,
+      manualRouteCandidate: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      items: [
+        {
+          id: "paper-execution-replay",
+          label: "Paper execution replay",
+          state: "passed",
+          tone: "positive",
+          evidence: "Paper replay ready",
+          detail: "Replay checks 8/8."
+        }
+      ]
+    };
+    const replayGate: PaperExecutionReplayGate = {
+      status: "replay_ready",
+      tone: "positive",
+      headline: "Paper execution replay ready",
+      detail: "Paper execution, portfolio replay, adapter evidence, and live boundary are aligned.",
+      passedCount: 8,
+      totalCount: 8,
+      currentBlockerId: null,
+      currentBlockerLabel: null,
+      latestEvidenceId: "adapter-paper-execution-ready",
+      replayReady: true,
+      preLiveReviewAllowed: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      metrics: {
+        filledPaperOrders: 1,
+        portfolioOrders: 1,
+        approvedPortfolioOrders: 1,
+        portfolioFilledOrders: 1,
+        stateHistoryFilledEvents: 1,
+        adapterPaperExecutions: 1,
+        replayWarnings: 0
+      },
+      items: []
+    };
+    const adapterChain: ExecutionAdapterChainHealthRollup = {
+      id: "ashare-live:live",
+      adapterId: "ashare-live",
+      adapterName: "A-share broker adapter shape",
+      market: "ashare",
+      route: "live",
+      status: "paper_ready",
+      headline: "A-share broker adapter shape paper-only chain ready for manual review",
+      detail: "Complete paper-only chain; live trading remains blocked.",
+      completedStageCount: 19,
+      totalStageCount: 19,
+      blockerStageId: null,
+      blockerLabel: null,
+      latestEvidenceId: "adapter-paper-execution-ready",
+      latestEvidenceTimestamp: "2026-06-24T08:10:00.000Z",
+      latestAuditEventId: "audit-adapter-paper-ready",
+      manualRouteCandidate: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      stages: [],
+      tone: "positive"
+    };
+    const acceptance: P2PreLiveAcceptanceSummary = {
+      state: "passed",
+      tone: "positive",
+      headline: "P2 pre-live acceptance recorded",
+      detail: "P2 evidence is recorded and live blocked.",
+      actionLabel: "Open P2 pre-live manifest",
+      targetWorkspaceId: "audit",
+      sourcePath: "data/p2-pre-live-acceptance.json",
+      runId: "run-operator-ready",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      adapterId: "ashare-live",
+      promotionStatus: "certification_pending",
+      checklistStatus: "manual_route_ready",
+      passedGateCount: 6,
+      totalGateCount: 6,
+      blockingGateCount: 0,
+      blockerIds: [],
+      auditEventIds: ["audit-pre-live-acceptance", "audit-adapter-paper-ready"],
+      checkCount: 6,
+      requiredCheckCount: 6,
+      manualRouteCandidate: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: false,
+      reportedLiveTradingAllowed: false,
+      reportedLiveOrderSubmitted: false,
+      reportedRouteExecuted: false,
+      liveBlockedBoundary: true
+    };
+
+    const runbook = buildOperatorRunbookSummary({
+      adapterChainHealthRollups: [adapterChain],
+      killSwitch: "Disable adapter route and stop the scheduler",
+      maxPositionPct: 20,
+      p2PreLiveAcceptance: acceptance,
+      paperExecutionReplayGate: replayGate,
+      preLiveChecklist,
+      rollbackOwner: "Desk operator",
+      workspace
+    });
+    const markdown = buildOperatorRunbookMarkdown(runbook);
+
+    expect(runbook).toMatchObject({
+      status: "manual_review_ready",
+      tone: "positive",
+      headline: "Operator runbook ready for manual review",
+      completedSections: 5,
+      totalSections: 5,
+      nextActionId: null,
+      adapterId: "ashare-live",
+      contextLabel: "ashare 600000 1d",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      controls: {
+        killSwitch: "Disable adapter route and stop the scheduler",
+        rollbackOwner: "Desk operator",
+        positionLimit: "20% max position per instrument",
+        dataFreshness: "tencent · 240 rows · complete",
+        auditPackage: "data/p2-pre-live-acceptance.json"
+      }
+    });
+    expect(runbook.sections.map((section) => section.id)).toEqual([
+      "pre-live-checklist",
+      "paper-execution-replay",
+      "adapter-chain",
+      "p2-acceptance",
+      "safety-boundary"
+    ]);
+    expect(runbook.sections.every((section) => section.status === "passed")).toBe(true);
+    expect(markdown).toContain("# Operator Runbook");
+    expect(markdown).toContain("paper-execution-replay");
+    expect(markdown).toContain("liveTradingAllowed=false");
+    expect(markdown).toContain("ashare-live");
+    expect(markdown).toContain("data/p2-pre-live-acceptance.json");
+  });
+
+  test("blocks operator runbook when replay and acceptance evidence are missing", () => {
+    const workspace = buildTerminalWorkspace();
+    const preLiveChecklist: PreLiveReadinessChecklist = {
+      status: "evidence_pending",
+      tone: "warning",
+      headline: "Pre-live replay evidence pending",
+      summary: "5/6 gates passed; next action paper-execution-replay.",
+      passedCount: 5,
+      totalCount: 6,
+      blockingCount: 1,
+      nextActionId: "paper-execution-replay",
+      manualRouteCandidate: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      items: []
+    };
+    const replayGate: PaperExecutionReplayGate = {
+      status: "blocked",
+      tone: "risk",
+      headline: "Paper execution replay blocked",
+      detail: "Single-run paper execution is missing.",
+      passedCount: 1,
+      totalCount: 8,
+      currentBlockerId: "single-paper-execution",
+      currentBlockerLabel: "Single-run paper execution",
+      latestEvidenceId: null,
+      replayReady: false,
+      preLiveReviewAllowed: false,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      metrics: {
+        filledPaperOrders: 0,
+        portfolioOrders: 0,
+        approvedPortfolioOrders: 0,
+        portfolioFilledOrders: 0,
+        stateHistoryFilledEvents: 0,
+        adapterPaperExecutions: 0,
+        replayWarnings: 0
+      },
+      items: []
+    };
+
+    const runbook = buildOperatorRunbookSummary({
+      adapterChainHealthRollups: [],
+      p2PreLiveAcceptance: buildP2PreLiveAcceptanceSummary(null),
+      paperExecutionReplayGate: replayGate,
+      preLiveChecklist,
+      workspace
+    });
+
+    expect(runbook).toMatchObject({
+      status: "blocked",
+      tone: "risk",
+      headline: "Operator runbook blocked",
+      completedSections: 1,
+      totalSections: 5,
+      nextActionId: "paper-execution-replay",
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false
+    });
+    expect(runbook.nextAction).toContain("Paper execution replay");
+    expect(runbook.sections.find((section) => section.id === "paper-execution-replay")).toMatchObject({
+      status: "blocked",
+      tone: "risk",
+      evidence: "1/8 replay checks"
+    });
+    expect(runbook.sections.find((section) => section.id === "p2-acceptance")).toMatchObject({
+      status: "blocked",
+      evidence: "missing"
+    });
+    expect(runbook.sections.find((section) => section.id === "safety-boundary")).toMatchObject({
+      status: "passed"
+    });
   });
 
   test("builds empty adapter chain health rollups from live broker routes", () => {

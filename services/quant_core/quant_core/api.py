@@ -200,6 +200,20 @@ from quant_core.p2_acceptance import (
     DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH,
     load_p2_pre_live_acceptance_status,
 )
+from quant_core.p2_paper_replay import DEFAULT_P2_PAPER_REPLAY_REPORT_PATH, load_p2_paper_replay_status
+from quant_core.p2_readiness_acceptance import (
+    DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH,
+    build_p2_readiness_acceptance_manifest_from_reports,
+    load_p2_readiness_acceptance_status,
+    write_p2_readiness_acceptance_report,
+)
+from quant_core.p2_manifest_chain_preflight import (
+    DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH,
+    build_p2_manifest_chain_preflight,
+    load_p2_manifest_chain_preflight_status,
+    p2_manifest_chain_preflight_to_audit_event_payload,
+    write_p2_manifest_chain_preflight_report,
+)
 from quant_core.research import run_terminal_research, strategy_config_from_snapshot
 from quant_core.research_import_undo import (
     ResearchRunImportUndoRecord,
@@ -400,6 +414,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     p0_acceptance_report_path = DEFAULT_P0_ACCEPTANCE_REPORT_PATH
     p1_acceptance_report_path = DEFAULT_P1_ACCEPTANCE_REPORT_PATH
     p2_pre_live_acceptance_report_path = DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH
+    p2_paper_replay_report_path = DEFAULT_P2_PAPER_REPLAY_REPORT_PATH
+    p2_readiness_acceptance_report_path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH
+    p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -432,6 +449,76 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/p2/readiness/acceptance":
+            try:
+                manifest = build_p2_readiness_acceptance_manifest_from_reports(
+                    p1_acceptance_report=Path(self.p1_acceptance_report_path),
+                    p2_paper_replay_report=Path(self.p2_paper_replay_report_path),
+                    p2_pre_live_acceptance_report=Path(self.p2_pre_live_acceptance_report_path),
+                    base_url="",
+                    run_id="run-p2-readiness",
+                )
+                write_p2_readiness_acceptance_report(
+                    Path(self.p2_readiness_acceptance_report_path),
+                    manifest,
+                )
+                acceptance = load_p2_readiness_acceptance_status(
+                    Path(self.p2_readiness_acceptance_report_path)
+                )
+            except (OSError, ValueError) as error:
+                self._send_json({"error": "invalid_p2_readiness_acceptance", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "status": "acceptance_generated",
+                    "acceptance": acceptance,
+                    "paperOnly": True,
+                    "orderSubmissionEnabled": False,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/p2/manifest-chain/preflight":
+            try:
+                manifest = build_p2_manifest_chain_preflight(
+                    p1_acceptance_report=Path(self.p1_acceptance_report_path),
+                    p2_paper_replay_report=Path(self.p2_paper_replay_report_path),
+                    p2_pre_live_acceptance_report=Path(self.p2_pre_live_acceptance_report_path),
+                    p2_readiness_acceptance_report=Path(self.p2_readiness_acceptance_report_path),
+                )
+                write_p2_manifest_chain_preflight_report(
+                    Path(self.p2_manifest_chain_preflight_report_path),
+                    manifest,
+                )
+                audit_event = self.audit_event_store.record(
+                    p2_manifest_chain_preflight_to_audit_event_payload(
+                        manifest,
+                        source_path=Path(self.p2_manifest_chain_preflight_report_path),
+                    )
+                )
+                preflight = load_p2_manifest_chain_preflight_status(
+                    Path(self.p2_manifest_chain_preflight_report_path)
+                )
+            except (OSError, ValueError) as error:
+                self._send_json({"error": "invalid_p2_manifest_chain_preflight", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "status": "preflight_generated",
+                    "preflight": preflight,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                    "paperOnly": True,
+                    "orderSubmissionEnabled": False,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+                status=201,
+            )
+            return
         if parsed.path == "/api/p0/pipeline":
             try:
                 payload = self._read_json_body()
@@ -2765,6 +2852,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/p2/pre-live/acceptance/latest":
             self._send_json(
                 {"acceptance": load_p2_pre_live_acceptance_status(Path(self.p2_pre_live_acceptance_report_path))}
+            )
+            return
+        if parsed.path == "/api/p2/paper-replay/latest":
+            self._send_json({"replay": load_p2_paper_replay_status(Path(self.p2_paper_replay_report_path))})
+            return
+        if parsed.path == "/api/p2/readiness/acceptance/latest":
+            self._send_json(
+                {"acceptance": load_p2_readiness_acceptance_status(Path(self.p2_readiness_acceptance_report_path))}
+            )
+            return
+        if parsed.path == "/api/p2/manifest-chain/preflight/latest":
+            self._send_json(
+                {"preflight": load_p2_manifest_chain_preflight_status(Path(self.p2_manifest_chain_preflight_report_path))}
             )
             return
         if parsed.path == "/api/cache/watchlist-refreshes":

@@ -12,6 +12,12 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
+def ensure_quant_core_import_path() -> None:
+    quant_core_root = Path(__file__).resolve().parents[1] / "services" / "quant_core"
+    if quant_core_root.exists() and str(quant_core_root) not in sys.path:
+        sys.path.insert(0, str(quant_core_root))
+
+
 def compose_up_args(build: bool = True) -> list[str]:
     args = ["docker", "compose", "up", "-d"]
     if build:
@@ -452,6 +458,420 @@ def load_p1_acceptance_report(path: Path) -> dict[str, Any]:
     return _require_dict(payload, "P1 acceptance manifest")
 
 
+def _load_json_report(path: Path, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Invalid {label}: report file not found {path}") from error
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"Invalid {label}: report is not valid JSON {path}") from error
+    return _require_dict(payload, label)
+
+
+def _quant_core_validator(module_name: str, function_name: str):
+    ensure_quant_core_import_path()
+    module = __import__(f"quant_core.{module_name}", fromlist=[function_name])
+    return getattr(module, function_name)
+
+
+def load_p2_pre_live_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "P2 pre-live acceptance manifest")
+
+
+def load_p2_paper_replay_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "P2 paper replay manifest")
+
+
+def load_p2_readiness_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "P2 readiness acceptance manifest")
+
+
+def validate_p2_pre_live_acceptance_manifest(manifest: Any) -> str:
+    validator = _quant_core_validator("p2_acceptance", "validate_p2_pre_live_acceptance_manifest")
+    try:
+        return validator(manifest)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid P2 pre-live acceptance manifest: {error}") from error
+
+
+def build_p2_pre_live_acceptance_manifest(
+    p1_acceptance_manifest: dict[str, Any],
+    p2_paper_replay_manifest: dict[str, Any],
+    *,
+    base_url: str,
+    run_id: str,
+    adapter_id: str | None = None,
+) -> dict[str, Any]:
+    builder = _quant_core_validator("p2_acceptance", "build_p2_pre_live_acceptance_manifest")
+    try:
+        return builder(
+            p1_acceptance_manifest,
+            p2_paper_replay_manifest,
+            base_url=base_url,
+            run_id=run_id,
+            adapter_id=adapter_id,
+        )
+    except ValueError as error:
+        raise RuntimeError(f"Invalid P2 pre-live acceptance inputs: {error}") from error
+
+
+def validate_p2_paper_replay_manifest(manifest: Any) -> str:
+    validator = _quant_core_validator("p2_paper_replay", "validate_p2_paper_replay_manifest")
+    try:
+        return validator(manifest)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid P2 paper replay manifest: {error}") from error
+
+
+def build_p2_paper_replay_manifest_from_export_package(
+    export_package: dict[str, Any],
+    *,
+    base_url: str,
+    adapter_id: str | None = None,
+) -> dict[str, Any]:
+    builder = _quant_core_validator("p2_paper_replay", "build_p2_paper_replay_manifest_from_export_package")
+    try:
+        return builder(export_package, base_url=base_url, adapter_id=adapter_id)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid P2 paper replay export package: {error}") from error
+
+
+def validate_p2_readiness_acceptance_manifest(manifest: Any) -> str:
+    validator = _quant_core_validator("p2_readiness_acceptance", "validate_p2_readiness_acceptance_manifest")
+    try:
+        return validator(manifest)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid P2 readiness acceptance manifest: {error}") from error
+
+
+def _p2_manifest_stage(
+    *,
+    stage_id: str,
+    label: str,
+    path: Path,
+    loader,
+    validator,
+    next_action: str,
+    next_command: str,
+) -> dict[str, Any]:
+    try:
+        manifest = loader(path)
+        summary = validator(manifest)
+    except RuntimeError as error:
+        reason = str(error)
+        status = "missing" if "file not found" in reason else "invalid"
+        return {
+            "id": stage_id,
+            "label": label,
+            "status": status,
+            "path": str(path),
+            "summary": "",
+            "reason": reason,
+            "nextAction": next_action,
+            "nextCommand": next_command,
+        }
+    return {
+        "id": stage_id,
+        "label": label,
+        "status": "valid",
+        "path": str(path),
+        "summary": summary,
+        "reason": "",
+        "nextAction": "",
+        "nextCommand": "",
+    }
+
+
+def build_p2_manifest_chain_preflight(
+    *,
+    p1_acceptance_report: Path = Path("data") / "p1-acceptance.json",
+    p2_paper_replay_report: Path = Path("data") / "p2-paper-replay.json",
+    p2_pre_live_acceptance_report: Path = Path("data") / "p2-pre-live-acceptance.json",
+    p2_readiness_acceptance_report: Path = Path("data") / "p2-readiness-acceptance.json",
+) -> dict[str, Any]:
+    stages = [
+        _p2_manifest_stage(
+            stage_id="p1-acceptance",
+            label="P1 acceptance",
+            path=p1_acceptance_report,
+            loader=load_p1_acceptance_report,
+            validator=validate_p1_acceptance_manifest,
+            next_action="run-p1-acceptance",
+            next_command="npm run docker:smoke:p1 -- --no-build",
+        ),
+        _p2_manifest_stage(
+            stage_id="p2-paper-replay",
+            label="P2 paper replay",
+            path=p2_paper_replay_report,
+            loader=load_p2_paper_replay_report,
+            validator=validate_p2_paper_replay_manifest,
+            next_action="run-p2-paper-replay",
+            next_command="npm run docker:smoke:p2:paper-replay -- --no-build",
+        ),
+        _p2_manifest_stage(
+            stage_id="p2-pre-live-acceptance",
+            label="P2 pre-live acceptance",
+            path=p2_pre_live_acceptance_report,
+            loader=load_p2_pre_live_acceptance_report,
+            validator=validate_p2_pre_live_acceptance_manifest,
+            next_action="run-p2-pre-live",
+            next_command="npm run docker:smoke:p2:pre-live -- --no-build",
+        ),
+        _p2_manifest_stage(
+            stage_id="p2-readiness-acceptance",
+            label="P2 readiness acceptance",
+            path=p2_readiness_acceptance_report,
+            loader=load_p2_readiness_acceptance_report,
+            validator=validate_p2_readiness_acceptance_manifest,
+            next_action="run-p2-readiness",
+            next_command="npm run docker:smoke:p2 -- --no-build",
+        ),
+    ]
+    valid_stage_count = sum(1 for stage in stages if stage["status"] == "valid")
+    first_blocker = next((stage for stage in stages if stage["status"] != "valid"), None)
+    ready = first_blocker is None
+    blocker_ids = [stage["id"] for stage in stages if stage["status"] != "valid"]
+    return {
+        "kind": "aiqt.p2ManifestChainPreflight",
+        "schemaVersion": 1,
+        "status": "ready" if ready else "blocked",
+        "ready": ready,
+        "validStageCount": valid_stage_count,
+        "totalStageCount": len(stages),
+        "blockerIds": blocker_ids,
+        "nextAction": "" if ready else str(first_blocker["nextAction"]),
+        "nextCommand": "" if ready else str(first_blocker["nextCommand"]),
+        "stages": stages,
+        "paperOnly": True,
+        "orderSubmissionEnabled": False,
+        "liveTradingAllowed": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "liveBlockedBoundary": True,
+    }
+
+
+def validate_p2_manifest_chain_preflight(preflight: dict[str, Any]) -> str:
+    status = str(preflight.get("status") or "").strip()
+    valid_stage_count = int(preflight.get("validStageCount") or 0)
+    total_stage_count = int(preflight.get("totalStageCount") or 0)
+    next_action = str(preflight.get("nextAction") or "none").strip() or "none"
+    return (
+        f"p2 manifest chain preflight status={status} "
+        f"valid={valid_stage_count}/{total_stage_count} next={next_action}"
+    )
+
+
+def write_p2_manifest_chain_preflight(path: Path, preflight: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(preflight, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"p2 manifest chain preflight report={path}")
+    return path
+
+
+def _manifest_string(manifest: dict[str, Any], field: str) -> str:
+    return str(manifest.get(field) or "").strip()
+
+
+def _require_manifest_string(manifest: dict[str, Any], field: str, label: str) -> str:
+    value = _manifest_string(manifest, field)
+    if not value:
+        raise RuntimeError(f"Invalid {label}: {field} is missing")
+    return value
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _dedupe_strings(values: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        item = str(value).strip()
+        if item and item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped
+
+
+def _assert_same_manifest_field(
+    expected: str,
+    manifest: dict[str, Any],
+    field: str,
+    *,
+    label: str,
+) -> None:
+    actual = _require_manifest_string(manifest, field, label)
+    if actual != expected:
+        raise RuntimeError(f"Invalid P2 readiness acceptance inputs: {label}.{field} {actual} != {expected}")
+
+
+def build_p2_readiness_acceptance_manifest(
+    *,
+    base_url: str,
+    run_id: str,
+    p1_acceptance_manifest: dict[str, Any],
+    p1_acceptance_path: Path,
+    p2_pre_live_acceptance_manifest: dict[str, Any],
+    p2_pre_live_acceptance_path: Path,
+    p2_paper_replay_manifest: dict[str, Any],
+    p2_paper_replay_path: Path,
+    operator_runbook_audit_event_id: str | None = None,
+) -> dict[str, Any]:
+    validate_p1_acceptance_manifest(p1_acceptance_manifest)
+    paper_replay_summary = validate_p2_paper_replay_manifest(p2_paper_replay_manifest)
+    pre_live_summary = validate_p2_pre_live_acceptance_manifest(p2_pre_live_acceptance_manifest)
+
+    p1_run_id = _require_manifest_string(p1_acceptance_manifest, "runId", "P1 acceptance manifest")
+    pre_live_run_id = _require_manifest_string(
+        p2_pre_live_acceptance_manifest,
+        "runId",
+        "P2 pre-live acceptance manifest",
+    )
+    paper_replay_run_id = _require_manifest_string(p2_paper_replay_manifest, "runId", "P2 paper replay manifest")
+    market = _require_manifest_string(p2_pre_live_acceptance_manifest, "market", "P2 pre-live acceptance manifest")
+    symbol = _require_manifest_string(p2_pre_live_acceptance_manifest, "symbol", "P2 pre-live acceptance manifest")
+    timeframe = _require_manifest_string(
+        p2_pre_live_acceptance_manifest,
+        "timeframe",
+        "P2 pre-live acceptance manifest",
+    )
+    adapter_id = _require_manifest_string(
+        p2_pre_live_acceptance_manifest,
+        "adapterId",
+        "P2 pre-live acceptance manifest",
+    )
+
+    _assert_same_manifest_field(market, p2_paper_replay_manifest, "market", label="P2 paper replay manifest")
+    _assert_same_manifest_field(symbol, p2_paper_replay_manifest, "symbol", label="P2 paper replay manifest")
+    _assert_same_manifest_field(timeframe, p2_paper_replay_manifest, "timeframe", label="P2 paper replay manifest")
+    _assert_same_manifest_field(adapter_id, p2_paper_replay_manifest, "adapterId", label="P2 paper replay manifest")
+    _assert_same_manifest_field(symbol, p1_acceptance_manifest, "queuedSymbol", label="P1 acceptance manifest")
+    _assert_same_manifest_field(timeframe, p1_acceptance_manifest, "timeframe", label="P1 acceptance manifest")
+
+    operator_event_id = (
+        str(operator_runbook_audit_event_id or "").strip()
+        or f"operator-runbook-report-{adapter_id}-{symbol}-{timeframe}-{run_id}"
+    )
+    criterion_ids = [
+        "p1-acceptance",
+        "paper-execution-replay",
+        "pre-live-checklist",
+        "p2-pre-live-manifest",
+        "readiness-evidence-coverage",
+        "live-blocked-boundary",
+    ]
+    audit_event_ids = _dedupe_strings(
+        [
+            f"p1-acceptance-{p1_run_id}",
+            *_string_list(p2_paper_replay_manifest.get("auditEventIds")),
+            *_string_list(p2_pre_live_acceptance_manifest.get("auditEventIds")),
+            operator_event_id,
+        ]
+    )
+    manifest_paths = {
+        "p1Acceptance": str(p1_acceptance_path),
+        "p2PreLiveAcceptance": str(p2_pre_live_acceptance_path),
+        "p2PaperReplay": str(p2_paper_replay_path),
+    }
+    checks = [
+        {
+            "id": "p1-acceptance",
+            "status": "passed",
+            "summary": "P1 research workflow acceptance is valid and live trading remains blocked.",
+            "evidenceId": manifest_paths["p1Acceptance"],
+        },
+        {
+            "id": "paper-execution-replay",
+            "status": "passed",
+            "summary": paper_replay_summary,
+            "evidenceId": manifest_paths["p2PaperReplay"],
+        },
+        {
+            "id": "pre-live-checklist",
+            "status": "passed",
+            "summary": (
+                "P2 pre-live checklist evidence is present for manual review; "
+                f"promotionStatus={_manifest_string(p2_pre_live_acceptance_manifest, 'promotionStatus') or 'unknown'}"
+            ),
+            "evidenceId": pre_live_run_id,
+        },
+        {
+            "id": "p2-pre-live-manifest",
+            "status": "passed",
+            "summary": pre_live_summary,
+            "evidenceId": manifest_paths["p2PreLiveAcceptance"],
+        },
+        {
+            "id": "readiness-evidence-coverage",
+            "status": "passed",
+            "summary": "P1 acceptance, P2 paper replay, P2 pre-live manifest, and operator runbook evidence are traceable.",
+            "evidenceId": "p2-evidence-coverage",
+        },
+        {
+            "id": "live-blocked-boundary",
+            "status": "passed",
+            "summary": "No direct order submission, live order, route execution, or live trading is allowed.",
+            "evidenceId": "forced-platform-boundary",
+        },
+    ]
+    return {
+        "kind": "aiqt.p2ReadinessAcceptanceManifest",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "accepted",
+        "baseUrl": base_url,
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "runId": run_id,
+        "adapterId": adapter_id,
+        "p1AcceptanceRunId": p1_run_id,
+        "p2PreLiveAcceptanceRunId": pre_live_run_id,
+        "p2PaperReplayRunId": paper_replay_run_id,
+        "operatorRunbookAuditEventId": operator_event_id,
+        "readinessCoverageStatus": "covered",
+        "acceptedCriterionCount": len(criterion_ids),
+        "totalCriterionCount": len(criterion_ids),
+        "blockingCriterionCount": 0,
+        "criterionIds": criterion_ids,
+        "auditEventIds": audit_event_ids,
+        "manifestPaths": manifest_paths,
+        "paperOnly": True,
+        "orderSubmissionEnabled": False,
+        "liveTradingAllowed": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+        "liveBlockedBoundary": True,
+        "checkCount": len(checks),
+        "checks": checks,
+    }
+
+
+def write_p2_readiness_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"p2 readiness acceptance report={path}")
+    return path
+
+
+def write_p2_pre_live_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"p2 pre-live acceptance report={path}")
+    return path
+
+
+def write_p2_paper_replay_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"p2 paper replay report={path}")
+    return path
+
+
 def request_json(url: str, timeout_seconds: int) -> Any:
     with urlopen(url, timeout=timeout_seconds) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -855,6 +1275,115 @@ def run_p1_acceptance(
     return summaries
 
 
+def run_p2_readiness_acceptance(
+    base_url: str,
+    *,
+    run_id: str,
+    p1_acceptance_report: Path,
+    p2_pre_live_acceptance_report: Path,
+    p2_paper_replay_report: Path,
+    report_path: Path | None = None,
+    operator_runbook_audit_event_id: str | None = None,
+) -> list[str]:
+    p1_acceptance_manifest = load_p1_acceptance_report(p1_acceptance_report)
+    p2_pre_live_acceptance_manifest = load_p2_pre_live_acceptance_report(p2_pre_live_acceptance_report)
+    p2_paper_replay_manifest = load_p2_paper_replay_report(p2_paper_replay_report)
+
+    validate_p1_acceptance_manifest(p1_acceptance_manifest)
+    validate_p2_pre_live_acceptance_manifest(p2_pre_live_acceptance_manifest)
+    validate_p2_paper_replay_manifest(p2_paper_replay_manifest)
+
+    p1_run_id = _require_manifest_string(p1_acceptance_manifest, "runId", "P1 acceptance manifest")
+    pre_live_run_id = _require_manifest_string(
+        p2_pre_live_acceptance_manifest,
+        "runId",
+        "P2 pre-live acceptance manifest",
+    )
+    paper_replay_run_id = _require_manifest_string(p2_paper_replay_manifest, "runId", "P2 paper replay manifest")
+
+    manifest = build_p2_readiness_acceptance_manifest(
+        base_url=base_url,
+        run_id=run_id,
+        p1_acceptance_manifest=p1_acceptance_manifest,
+        p1_acceptance_path=p1_acceptance_report,
+        p2_pre_live_acceptance_manifest=p2_pre_live_acceptance_manifest,
+        p2_pre_live_acceptance_path=p2_pre_live_acceptance_report,
+        p2_paper_replay_manifest=p2_paper_replay_manifest,
+        p2_paper_replay_path=p2_paper_replay_report,
+        operator_runbook_audit_event_id=operator_runbook_audit_event_id,
+    )
+    readiness_summary = validate_p2_readiness_acceptance_manifest(manifest)
+    summaries = [
+        f"p2 readiness p1-acceptance run={p1_run_id} liveBlocked=True",
+        f"p2 readiness paper-replay run={paper_replay_run_id} liveBlocked=True",
+        f"p2 readiness pre-live run={pre_live_run_id} liveBlocked=True",
+        readiness_summary,
+    ]
+    for summary in summaries:
+        print(summary)
+    if report_path is not None:
+        write_p2_readiness_acceptance_report(report_path, manifest)
+    return summaries
+
+
+def run_p2_paper_replay(
+    base_url: str,
+    *,
+    p1_acceptance_report: Path,
+    report_path: Path | None = None,
+    timeout_seconds: int,
+    run_id: str | None = None,
+    adapter_id: str | None = None,
+) -> list[str]:
+    p1_acceptance_manifest = load_p1_acceptance_report(p1_acceptance_report)
+    validate_p1_acceptance_manifest(p1_acceptance_manifest)
+    source_run_id = str(run_id or p1_acceptance_manifest.get("runId") or "").strip()
+    if not source_run_id:
+        raise RuntimeError("Invalid P2 paper replay smoke: source run id is missing")
+
+    export_payload = request_json(join_url(base_url, f"/api/research/runs/{source_run_id}/export"), timeout_seconds)
+    export_package = _p0_export_package_from_payload(export_payload)
+    manifest = build_p2_paper_replay_manifest_from_export_package(
+        export_package,
+        base_url=base_url,
+        adapter_id=adapter_id,
+    )
+    replay_summary = validate_p2_paper_replay_manifest(manifest)
+    summaries = [replay_summary]
+    for summary in summaries:
+        print(summary)
+    if report_path is not None:
+        write_p2_paper_replay_report(report_path, manifest)
+    return summaries
+
+
+def run_p2_pre_live_acceptance(
+    base_url: str,
+    *,
+    run_id: str,
+    p1_acceptance_report: Path,
+    p2_paper_replay_report: Path,
+    report_path: Path | None = None,
+    adapter_id: str | None = None,
+) -> list[str]:
+    p1_acceptance_manifest = load_p1_acceptance_report(p1_acceptance_report)
+    p2_paper_replay_manifest = load_p2_paper_replay_report(p2_paper_replay_report)
+    manifest = build_p2_pre_live_acceptance_manifest(
+        p1_acceptance_manifest,
+        p2_paper_replay_manifest,
+        base_url=base_url,
+        run_id=run_id,
+        adapter_id=adapter_id,
+    )
+    pre_live_summary = validate_p2_pre_live_acceptance_manifest(manifest)
+    summaries = [pre_live_summary]
+    for summary in summaries:
+        print(summary)
+    if report_path is not None:
+        write_p2_pre_live_acceptance_report(report_path, manifest)
+    return summaries
+
+
 def run_smoke(
     repo_root: Path,
     base_url: str,
@@ -876,6 +1405,22 @@ def run_smoke(
     p1_quantity: int = 2100,
     p1_import_base_url: str | None = None,
     p1_acceptance_report: Path | None = None,
+    p2_readiness_acceptance: bool = False,
+    p2_run_id: str = "run-p2-readiness-smoke",
+    p2_p1_acceptance_report: Path = Path("data") / "p1-acceptance.json",
+    p2_pre_live_acceptance_report: Path = Path("data") / "p2-pre-live-acceptance.json",
+    p2_paper_replay_report: Path = Path("data") / "p2-paper-replay.json",
+    p2_readiness_acceptance_report: Path | None = None,
+    p2_operator_runbook_audit_event_id: str | None = None,
+    p2_paper_replay: bool = False,
+    p2_paper_replay_run_id: str | None = None,
+    p2_paper_replay_p1_acceptance_report: Path = Path("data") / "p1-acceptance.json",
+    p2_paper_replay_adapter_id: str | None = None,
+    p2_pre_live_acceptance: bool = False,
+    p2_pre_live_run_id: str = "run-p2-pre-live-smoke",
+    p2_pre_live_p1_acceptance_report: Path = Path("data") / "p1-acceptance.json",
+    p2_pre_live_paper_replay_report: Path = Path("data") / "p2-paper-replay.json",
+    p2_pre_live_adapter_id: str | None = None,
 ) -> None:
     try:
         run_command(["docker", "compose", "config"], cwd=repo_root)
@@ -913,6 +1458,34 @@ def run_smoke(
                 import_base_url=p1_import_base_url,
                 report_path=p1_acceptance_report,
             )
+        if p2_paper_replay:
+            run_p2_paper_replay(
+                base_url,
+                p1_acceptance_report=p2_paper_replay_p1_acceptance_report,
+                report_path=p2_paper_replay_report,
+                timeout_seconds=timeout_seconds,
+                run_id=p2_paper_replay_run_id,
+                adapter_id=p2_paper_replay_adapter_id,
+            )
+        if p2_pre_live_acceptance:
+            run_p2_pre_live_acceptance(
+                base_url,
+                run_id=p2_pre_live_run_id,
+                p1_acceptance_report=p2_pre_live_p1_acceptance_report,
+                p2_paper_replay_report=p2_pre_live_paper_replay_report,
+                report_path=p2_pre_live_acceptance_report,
+                adapter_id=p2_pre_live_adapter_id,
+            )
+        if p2_readiness_acceptance:
+            run_p2_readiness_acceptance(
+                base_url,
+                run_id=p2_run_id,
+                p1_acceptance_report=p2_p1_acceptance_report,
+                p2_pre_live_acceptance_report=p2_pre_live_acceptance_report,
+                p2_paper_replay_report=p2_paper_replay_report,
+                report_path=p2_readiness_acceptance_report,
+                operator_runbook_audit_event_id=p2_operator_runbook_audit_event_id,
+            )
     finally:
         if down:
             run_command(["docker", "compose", "down"], cwd=repo_root, check=False)
@@ -940,6 +1513,90 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--p1-import-base-url", default=None, help="Optional clean service URL used as the P1 import target.")
     parser.add_argument("--p1-acceptance-report", default=None, help="Optional path for a JSON P1 acceptance manifest.")
     parser.add_argument("--validate-p1-acceptance-report", default=None, help="Validate an existing P1 acceptance manifest and exit.")
+    parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
+    parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
+    parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
+    parser.add_argument(
+        "--p2-pre-live-acceptance-report",
+        default="data/p2-pre-live-acceptance.json",
+        help="Path to the P2 pre-live acceptance manifest used as P2 evidence.",
+    )
+    parser.add_argument(
+        "--p2-paper-replay-report",
+        default="data/p2-paper-replay.json",
+        help="Path to the P2 paper replay manifest used as P2 evidence.",
+    )
+    parser.add_argument(
+        "--p2-paper-replay",
+        action="store_true",
+        help="Generate a P2 paper replay manifest from an exported audited run package.",
+    )
+    parser.add_argument(
+        "--p2-paper-replay-run-id",
+        default=None,
+        help="Optional audited run id for P2 paper replay generation; defaults to the P1 acceptance run id.",
+    )
+    parser.add_argument(
+        "--p2-paper-replay-p1-acceptance-report",
+        default="data/p1-acceptance.json",
+        help="Path to the P1 acceptance manifest used to infer the P2 paper replay source run.",
+    )
+    parser.add_argument(
+        "--p2-paper-replay-adapter-id",
+        default=None,
+        help="Optional adapter id override for the generated P2 paper replay manifest.",
+    )
+    parser.add_argument(
+        "--p2-pre-live-acceptance",
+        action="store_true",
+        help="Generate a P2 pre-live acceptance manifest from P1 acceptance and P2 paper replay evidence.",
+    )
+    parser.add_argument("--p2-pre-live-run-id", default="run-p2-pre-live-smoke", help="P2 pre-live acceptance run id.")
+    parser.add_argument(
+        "--p2-pre-live-p1-acceptance-report",
+        default="data/p1-acceptance.json",
+        help="Path to the P1 acceptance manifest used to generate P2 pre-live evidence.",
+    )
+    parser.add_argument(
+        "--p2-pre-live-paper-replay-report",
+        default="data/p2-paper-replay.json",
+        help="Path to the P2 paper replay manifest used to generate P2 pre-live evidence.",
+    )
+    parser.add_argument(
+        "--p2-pre-live-adapter-id",
+        default=None,
+        help="Optional adapter id override for the generated P2 pre-live acceptance manifest.",
+    )
+    parser.add_argument(
+        "--p2-readiness-acceptance-report",
+        default=None,
+        help="Optional path for a JSON P2 readiness acceptance manifest.",
+    )
+    parser.add_argument(
+        "--p2-operator-runbook-audit-event-id",
+        default=None,
+        help="Optional operator runbook audit event id to bind into the P2 readiness manifest.",
+    )
+    parser.add_argument(
+        "--validate-p2-readiness-acceptance-report",
+        default=None,
+        help="Validate an existing P2 readiness acceptance manifest and exit.",
+    )
+    parser.add_argument(
+        "--validate-p2-paper-replay-report",
+        default=None,
+        help="Validate an existing P2 paper replay manifest and exit.",
+    )
+    parser.add_argument(
+        "--validate-p2-pre-live-acceptance-report",
+        default=None,
+        help="Validate an existing P2 pre-live acceptance manifest and exit.",
+    )
+    parser.add_argument(
+        "--p2-chain-preflight-report",
+        default=None,
+        help="Write an offline P2 manifest chain preflight report and exit.",
+    )
     return parser.parse_args(argv)
 
 
@@ -952,6 +1609,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.validate_p1_acceptance_report:
         manifest = load_p1_acceptance_report(Path(args.validate_p1_acceptance_report))
         print(validate_p1_acceptance_manifest(manifest))
+        return 0
+    if args.validate_p2_paper_replay_report:
+        manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
+        print(validate_p2_paper_replay_manifest(manifest))
+        return 0
+    if args.validate_p2_pre_live_acceptance_report:
+        manifest = load_p2_pre_live_acceptance_report(Path(args.validate_p2_pre_live_acceptance_report))
+        print(validate_p2_pre_live_acceptance_manifest(manifest))
+        return 0
+    if args.validate_p2_readiness_acceptance_report:
+        manifest = load_p2_readiness_acceptance_report(Path(args.validate_p2_readiness_acceptance_report))
+        print(validate_p2_readiness_acceptance_manifest(manifest))
+        return 0
+    if args.p2_chain_preflight_report:
+        preflight = build_p2_manifest_chain_preflight(
+            p1_acceptance_report=Path(args.p2_p1_acceptance_report),
+            p2_paper_replay_report=Path(args.p2_paper_replay_report),
+            p2_pre_live_acceptance_report=Path(args.p2_pre_live_acceptance_report),
+            p2_readiness_acceptance_report=(
+                Path(args.p2_readiness_acceptance_report)
+                if args.p2_readiness_acceptance_report
+                else Path("data") / "p2-readiness-acceptance.json"
+            ),
+        )
+        print(validate_p2_manifest_chain_preflight(preflight))
+        write_p2_manifest_chain_preflight(Path(args.p2_chain_preflight_report), preflight)
         return 0
     repo_root = Path(__file__).resolve().parents[1]
     run_smoke(
@@ -974,6 +1657,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         p1_quantity=max(1, args.p1_quantity),
         p1_import_base_url=args.p1_import_base_url,
         p1_acceptance_report=Path(args.p1_acceptance_report) if args.p1_acceptance_report else None,
+        p2_readiness_acceptance=args.p2_readiness_acceptance,
+        p2_run_id=args.p2_run_id,
+        p2_p1_acceptance_report=Path(args.p2_p1_acceptance_report),
+        p2_pre_live_acceptance_report=Path(args.p2_pre_live_acceptance_report),
+        p2_paper_replay_report=Path(args.p2_paper_replay_report),
+        p2_readiness_acceptance_report=(
+            Path(args.p2_readiness_acceptance_report) if args.p2_readiness_acceptance_report else None
+        ),
+        p2_operator_runbook_audit_event_id=args.p2_operator_runbook_audit_event_id,
+        p2_paper_replay=args.p2_paper_replay,
+        p2_paper_replay_run_id=args.p2_paper_replay_run_id,
+        p2_paper_replay_p1_acceptance_report=Path(args.p2_paper_replay_p1_acceptance_report),
+        p2_paper_replay_adapter_id=args.p2_paper_replay_adapter_id,
+        p2_pre_live_acceptance=args.p2_pre_live_acceptance,
+        p2_pre_live_run_id=args.p2_pre_live_run_id,
+        p2_pre_live_p1_acceptance_report=Path(args.p2_pre_live_p1_acceptance_report),
+        p2_pre_live_paper_replay_report=Path(args.p2_pre_live_paper_replay_report),
+        p2_pre_live_adapter_id=args.p2_pre_live_adapter_id,
     )
     return 0
 

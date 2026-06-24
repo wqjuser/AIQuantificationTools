@@ -369,6 +369,282 @@ export interface P2PreLiveAcceptanceSummary {
   liveBlockedBoundary: boolean;
 }
 
+export type P2PaperReplaySummaryState = P0AcceptanceSummaryState;
+export type P2PaperReplaySummaryTone = P0AcceptanceSummaryTone;
+
+export interface P2PaperReplayMetrics {
+  filledPaperOrders: number;
+  portfolioOrders: number;
+  approvedPortfolioOrders: number;
+  portfolioFilledOrders: number;
+  stateHistoryFilledEvents: number;
+  adapterPaperExecutions: number;
+  replayWarnings: number;
+}
+
+export interface P2PaperReplaySummarySource {
+  kind: string;
+  schemaVersion: number;
+  status: P2PaperReplaySummaryState;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  adapterId: string | null;
+  replayStatus: string | null;
+  passedCheckCount: number;
+  totalCheckCount: number;
+  warningCount: number;
+  requiredCheckCount: number;
+  checkCount: number;
+  checkIds: string[];
+  auditEventIds: string[];
+  latestEvidenceId: string | null;
+  metrics: P2PaperReplayMetrics;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
+export interface P2PaperReplaySummary {
+  state: P2PaperReplaySummaryState;
+  tone: P2PaperReplaySummaryTone;
+  headline: string;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  sourcePath: string;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  adapterId: string | null;
+  replayStatus: string | null;
+  passedCheckCount: number;
+  totalCheckCount: number;
+  warningCount: number;
+  requiredCheckCount: number;
+  checkCount: number;
+  checkIds: string[];
+  auditEventIds: string[];
+  latestEvidenceId: string | null;
+  metrics: P2PaperReplayMetrics;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  reportedOrderSubmissionEnabled: boolean;
+  reportedLiveTradingAllowed: boolean;
+  reportedLiveOrderSubmitted: boolean;
+  reportedRouteExecuted: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export type P2ManifestChainPreflightStatus = "ready" | "blocked" | "missing" | "invalid";
+export type P2ManifestChainPreflightTone = "positive" | "warning" | "risk";
+export type P2ManifestChainPreflightStageStatus = "valid" | "missing" | "invalid";
+
+export interface P2ManifestChainPreflightStageSource {
+  id: string;
+  label: string;
+  status: P2ManifestChainPreflightStageStatus;
+  path: string;
+  summary: string;
+  reason: string;
+  nextAction: string;
+  nextCommand: string;
+}
+
+export interface P2ManifestChainPreflightSummarySource {
+  kind: string;
+  schemaVersion: number;
+  status: P2ManifestChainPreflightStatus;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  ready: boolean;
+  validStageCount: number;
+  totalStageCount: number;
+  blockerIds: string[];
+  nextAction: string;
+  nextCommand: string;
+  stages: P2ManifestChainPreflightStageSource[];
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
+export interface P2ManifestChainPreflightSummary {
+  state: P2ManifestChainPreflightStatus;
+  tone: P2ManifestChainPreflightTone;
+  headline: string;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  sourcePath: string;
+  ready: boolean;
+  validStageCount: number;
+  totalStageCount: number;
+  blockerIds: string[];
+  nextAction: string;
+  nextCommand: string;
+  stages: P2ManifestChainPreflightStageSource[];
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  liveOrderSubmitted: false;
+  routeExecuted: false;
+  reportedOrderSubmissionEnabled: boolean;
+  reportedLiveTradingAllowed: boolean;
+  reportedLiveOrderSubmitted: boolean;
+  reportedRouteExecuted: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export type P2ReadinessEvidenceCoverageStatus = "covered" | "missing" | "stale" | "blocked";
+export type P2ReadinessEvidenceCoverageTone = "positive" | "warning" | "risk";
+
+export type P2ReadinessEvidenceCoverageRowId =
+  | "paper-replay-manifest"
+  | "p2-acceptance-manifest"
+  | "operator-runbook-audit"
+  | "pre-live-checklist"
+  | "adapter-chain-health"
+  | "safety-boundary";
+
+export type P2ReadinessEvidenceCoverageSourceType = "manifest" | "audit" | "local-state" | "safety-boundary";
+
+export interface P2ReadinessEvidenceCoverageRow {
+  id: P2ReadinessEvidenceCoverageRowId;
+  label: string;
+  status: P2ReadinessEvidenceCoverageStatus;
+  tone: P2ReadinessEvidenceCoverageTone;
+  evidence: string;
+  detail: string;
+  sourceType: P2ReadinessEvidenceCoverageSourceType;
+  sourceId: string | null;
+}
+
+export interface P2ReadinessEvidenceCoverage {
+  status: P2ReadinessEvidenceCoverageStatus;
+  tone: P2ReadinessEvidenceCoverageTone;
+  headline: string;
+  detail: string;
+  coveredCount: number;
+  totalCount: number;
+  blockingCount: number;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  rows: P2ReadinessEvidenceCoverageRow[];
+}
+
+export interface P2ReadinessEvidenceCoverageInput {
+  adapterChainHealthRollups?: ReadonlyArray<ExecutionAdapterChainHealthRollup>;
+  operatorRunbookAuditCoverage: OperatorRunbookAuditCoverage;
+  p2PaperReplay: P2PaperReplaySummary;
+  p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
+  preLiveChecklist: PreLiveReadinessChecklist;
+}
+
+export type P2ReadinessAcceptanceStatus = "accepted" | "incomplete" | "blocked";
+export type P2ReadinessAcceptanceTone = "positive" | "warning" | "risk";
+export type P2ReadinessAcceptanceRowStatus = "passed" | "missing" | "blocked";
+
+export type P2ReadinessAcceptanceRowId =
+  | "p1-acceptance"
+  | "paper-execution-replay"
+  | "pre-live-checklist"
+  | "p2-pre-live-manifest"
+  | "readiness-evidence-coverage"
+  | "live-blocked-boundary";
+
+export interface P2ReadinessAcceptanceRow {
+  id: P2ReadinessAcceptanceRowId;
+  label: string;
+  status: P2ReadinessAcceptanceRowStatus;
+  tone: P2ReadinessAcceptanceTone;
+  evidence: string;
+  detail: string;
+  sourceId: string | null;
+}
+
+export interface P2ReadinessAcceptanceSummary {
+  status: P2ReadinessAcceptanceStatus;
+  tone: P2ReadinessAcceptanceTone;
+  headline: string;
+  detail: string;
+  acceptedCount: number;
+  totalCount: number;
+  blockingCount: number;
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  liveOrderSubmitted: false;
+  routeExecuted: false;
+  rows: P2ReadinessAcceptanceRow[];
+}
+
+export interface P2ReadinessAcceptanceSummaryInput {
+  evidenceCoverage: P2ReadinessEvidenceCoverage;
+  p1Acceptance: P1AcceptanceSummary;
+  p2PaperReplay: P2PaperReplaySummary;
+  p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
+  preLiveChecklist: PreLiveReadinessChecklist;
+}
+
+export type P2ReadinessAcceptanceReviewStatus = "accepted" | "missing" | "invalid";
+
+export interface P2ReadinessAcceptanceReviewSource {
+  kind: string;
+  schemaVersion: number;
+  status: P2ReadinessAcceptanceReviewStatus;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  adapterId: string | null;
+  p1AcceptanceRunId: string | null;
+  p2PreLiveAcceptanceRunId: string | null;
+  p2PaperReplayRunId: string | null;
+  operatorRunbookAuditEventId: string | null;
+  readinessCoverageStatus: string | null;
+  acceptedCriterionCount: number;
+  totalCriterionCount: number;
+  blockingCriterionCount: number;
+  criterionIds: string[];
+  auditEventIds: string[];
+  manifestPaths: {
+    p1Acceptance: string | null;
+    p2PreLiveAcceptance: string | null;
+    p2PaperReplay: string | null;
+  };
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
 export type P0CompletionCriterionId =
   | "product-workspaces"
   | "golden-path"
@@ -2116,6 +2392,18 @@ export interface AuditEvidenceReportLedgerRow {
   researchContextPreparationEvidenceRunId: string;
   researchContextSymbol: string;
   researchContextTimeframe: string;
+  operatorRunbookAdapterId: string;
+  operatorRunbookCompletedSections: number;
+  operatorRunbookControlSnapshot: string[];
+  operatorRunbookMarket: string;
+  operatorRunbookNextActionId: string;
+  operatorRunbookSectionEvidence: string[];
+  operatorRunbookSectionIds: string[];
+  operatorRunbookSectionStatuses: string[];
+  operatorRunbookStatus: string;
+  operatorRunbookSymbol: string;
+  operatorRunbookTimeframe: string;
+  operatorRunbookTotalSections: number;
   preLiveRunbookAdapterId: string;
   preLiveRunbookCompletedSteps: number;
   preLiveRunbookEvidenceIds: string[];
@@ -2145,6 +2433,9 @@ export interface AuditEvidenceReportLedgerRow {
     | "backtest_report"
     | "portfolio_report"
     | "p0_readiness_report"
+    | "p2_manifest_chain_preflight"
+    | "p2_readiness_acceptance_review"
+    | "operator_runbook_report"
     | "pre_live_runbook_report"
     | "research_context_readiness_report";
   searchText: string;
@@ -2300,6 +2591,20 @@ export interface PreLiveRunbookAuditCoverage {
   query: string;
   shortHash: string;
   status: PreLiveRunbookAuditCoverageStatus;
+  statusLabel: string;
+}
+
+export type OperatorRunbookAuditCoverageStatus = "matched" | "missing" | "stale";
+
+export interface OperatorRunbookAuditCoverage {
+  currentSectionLabel: string;
+  detail: string;
+  latestEventId: string;
+  mismatchLabel: string;
+  query: string;
+  sectionLabel: string;
+  shortHash: string;
+  status: OperatorRunbookAuditCoverageStatus;
   statusLabel: string;
 }
 
@@ -5394,6 +5699,65 @@ export interface PreLiveReadinessChecklistInput {
   paperExecutionReplayGate?: PaperExecutionReplayGate | null;
 }
 
+export type OperatorRunbookStatus = "blocked" | "review_pending" | "manual_review_ready";
+export type OperatorRunbookTone = "positive" | "warning" | "risk";
+export type OperatorRunbookSectionStatus = "passed" | "review" | "blocked";
+export type OperatorRunbookSectionId =
+  | "pre-live-checklist"
+  | "paper-execution-replay"
+  | "adapter-chain"
+  | "p2-acceptance"
+  | "safety-boundary";
+
+export interface OperatorRunbookSection {
+  id: OperatorRunbookSectionId;
+  label: string;
+  status: OperatorRunbookSectionStatus;
+  evidence: string;
+  detail: string;
+  nextAction: string;
+  tone: OperatorRunbookTone;
+}
+
+export interface OperatorRunbookControls {
+  killSwitch: string;
+  rollbackOwner: string;
+  positionLimit: string;
+  dataFreshness: string;
+  auditPackage: string;
+  environmentState: string;
+}
+
+export interface OperatorRunbookSummary {
+  status: OperatorRunbookStatus;
+  tone: OperatorRunbookTone;
+  headline: string;
+  summary: string;
+  contextLabel: string;
+  adapterId: string;
+  completedSections: number;
+  totalSections: number;
+  nextActionId: OperatorRunbookSectionId | null;
+  nextAction: string;
+  controls: OperatorRunbookControls;
+  sections: OperatorRunbookSection[];
+  orderSubmissionEnabled: false;
+  liveTradingAllowed: false;
+  liveOrderSubmitted: false;
+  routeExecuted: false;
+}
+
+export interface OperatorRunbookInput {
+  adapterChainHealthRollups?: ExecutionAdapterChainHealthRollup[] | null;
+  killSwitch?: string | null;
+  maxPositionPct?: number | null;
+  p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
+  paperExecutionReplayGate: PaperExecutionReplayGate;
+  preLiveChecklist: PreLiveReadinessChecklist;
+  rollbackOwner?: string | null;
+  workspace: TerminalWorkspace;
+}
+
 export type ExecutionAdapterPreLiveRunbookStatus = "blocked" | "in_progress" | "paper_rehearsal_ready";
 export type ExecutionAdapterPreLiveRunbookStepStatus = "passed" | "review" | "blocked";
 export type ExecutionAdapterPreLiveRunbookStepId =
@@ -7196,6 +7560,849 @@ export function buildP2PreLiveAcceptanceSummary(
     reportedRouteExecuted: Boolean(acceptance.routeExecuted),
     liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
   };
+}
+
+export function buildP2PaperReplaySummary(
+  replay: P2PaperReplaySummarySource | null | undefined
+): P2PaperReplaySummary {
+  if (!replay || replay.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "P2 paper replay manifest missing",
+      detail:
+        replay?.reason ||
+        "Generate data/p2-paper-replay.json from aligned paper execution evidence before treating replay as portable.",
+      actionLabel: "Review paper replay gate",
+      targetWorkspaceId: "execution",
+      sourcePath: replay?.sourcePath || "data/p2-paper-replay.json",
+      runId: replay?.runId ?? null,
+      market: replay?.market ?? null,
+      symbol: replay?.symbol ?? null,
+      timeframe: replay?.timeframe ?? null,
+      adapterId: replay?.adapterId ?? null,
+      replayStatus: replay?.replayStatus ?? null,
+      passedCheckCount: replay?.passedCheckCount ?? 0,
+      totalCheckCount: replay?.totalCheckCount ?? 0,
+      warningCount: replay?.warningCount ?? 0,
+      requiredCheckCount: replay?.requiredCheckCount ?? 8,
+      checkCount: replay?.checkCount ?? 0,
+      checkIds: replay?.checkIds ?? [],
+      auditEventIds: replay?.auditEventIds ?? [],
+      latestEvidenceId: replay?.latestEvidenceId ?? null,
+      metrics: replay?.metrics ?? emptyP2PaperReplayMetrics(),
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: Boolean(replay?.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(replay?.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(replay?.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(replay?.routeExecuted),
+      liveBlockedBoundary: Boolean(replay?.liveBlockedBoundary)
+    };
+  }
+
+  const unsafeExecutionClaim =
+    replay.status === "invalid" ||
+    replay.orderSubmissionEnabled ||
+    replay.liveTradingAllowed ||
+    replay.liveOrderSubmitted ||
+    replay.routeExecuted ||
+    !replay.liveBlockedBoundary;
+  if (unsafeExecutionClaim) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "P2 paper replay manifest invalid",
+      detail: `P2 paper replay evidence is invalid: ${
+        replay.reason || replay.summary || "unknown validation failure"
+      }. Live trading remains blocked and direct order submission stays disabled.`,
+      actionLabel: "Review replay manifest",
+      targetWorkspaceId: "audit",
+      sourcePath: replay.sourcePath,
+      runId: replay.runId,
+      market: replay.market,
+      symbol: replay.symbol,
+      timeframe: replay.timeframe,
+      adapterId: replay.adapterId,
+      replayStatus: replay.replayStatus,
+      passedCheckCount: replay.passedCheckCount,
+      totalCheckCount: replay.totalCheckCount,
+      warningCount: replay.warningCount,
+      requiredCheckCount: replay.requiredCheckCount,
+      checkCount: replay.checkCount,
+      checkIds: replay.checkIds,
+      auditEventIds: replay.auditEventIds,
+      latestEvidenceId: replay.latestEvidenceId,
+      metrics: replay.metrics,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      reportedOrderSubmissionEnabled: Boolean(replay.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(replay.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(replay.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(replay.routeExecuted),
+      liveBlockedBoundary: Boolean(replay.liveBlockedBoundary)
+    };
+  }
+
+  const context = [replay.market, replay.symbol, replay.timeframe].filter(Boolean).join(" ");
+  const runLabel = replay.runId ? `Run ${replay.runId}` : "Latest P2 replay run";
+  const adapterLabel = replay.adapterId ? ` · adapter ${replay.adapterId}` : "";
+  const evidenceLabel = replay.latestEvidenceId ? ` · latest evidence ${replay.latestEvidenceId}` : "";
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P2 paper replay manifest recorded",
+    detail: `${runLabel} · ${context || "unknown context"}${adapterLabel} · ${
+      replay.passedCheckCount
+    }/${replay.totalCheckCount} checks · ${replay.warningCount} warnings${evidenceLabel} · live blocked.`,
+    actionLabel: "Open replay manifest",
+    targetWorkspaceId: "execution",
+    sourcePath: replay.sourcePath,
+    runId: replay.runId,
+    market: replay.market,
+    symbol: replay.symbol,
+    timeframe: replay.timeframe,
+    adapterId: replay.adapterId,
+    replayStatus: replay.replayStatus,
+    passedCheckCount: replay.passedCheckCount,
+    totalCheckCount: replay.totalCheckCount,
+    warningCount: replay.warningCount,
+    requiredCheckCount: replay.requiredCheckCount,
+    checkCount: replay.checkCount,
+    checkIds: replay.checkIds,
+    auditEventIds: replay.auditEventIds,
+    latestEvidenceId: replay.latestEvidenceId,
+    metrics: replay.metrics,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    reportedOrderSubmissionEnabled: Boolean(replay.orderSubmissionEnabled),
+    reportedLiveTradingAllowed: Boolean(replay.liveTradingAllowed),
+    reportedLiveOrderSubmitted: Boolean(replay.liveOrderSubmitted),
+    reportedRouteExecuted: Boolean(replay.routeExecuted),
+    liveBlockedBoundary: Boolean(replay.liveBlockedBoundary)
+  };
+}
+
+export function buildP2ManifestChainPreflightSummary(
+  preflight: P2ManifestChainPreflightSummarySource | null | undefined
+): P2ManifestChainPreflightSummary {
+  const missingDefaults = {
+    sourcePath: preflight?.sourcePath || "data/p2-chain-preflight.json",
+    ready: false,
+    validStageCount: preflight?.validStageCount ?? 0,
+    totalStageCount: preflight?.totalStageCount ?? 4,
+    blockerIds: preflight?.blockerIds ?? [],
+    nextAction: preflight?.nextAction || "run-p1-acceptance",
+    nextCommand: preflight?.nextCommand || "npm run docker:smoke:p1 -- --no-build",
+    stages: preflight?.stages ?? [],
+    reportedOrderSubmissionEnabled: Boolean(preflight?.orderSubmissionEnabled),
+    reportedLiveTradingAllowed: Boolean(preflight?.liveTradingAllowed),
+    reportedLiveOrderSubmitted: Boolean(preflight?.liveOrderSubmitted),
+    reportedRouteExecuted: Boolean(preflight?.routeExecuted),
+    liveBlockedBoundary: Boolean(preflight?.liveBlockedBoundary)
+  };
+
+  if (!preflight || preflight.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "P2 manifest chain preflight missing",
+      detail:
+        preflight?.reason ||
+        "Generate data/p2-chain-preflight.json to see which archived P1/P2 manifest blocks the operator path.",
+      actionLabel: "Run P2 chain preflight",
+      targetWorkspaceId: "execution",
+      ...missingDefaults,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false
+    };
+  }
+
+  const unsafeExecutionClaim =
+    preflight.status === "invalid" ||
+    preflight.orderSubmissionEnabled ||
+    preflight.liveTradingAllowed ||
+    preflight.liveOrderSubmitted ||
+    preflight.routeExecuted ||
+    !preflight.liveBlockedBoundary;
+  if (unsafeExecutionClaim) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "P2 manifest chain preflight invalid",
+      detail: `P2 chain preflight evidence is invalid: ${
+        preflight.reason || preflight.summary || "unknown validation failure"
+      }. Direct order submission remains disabled and live trading remains blocked.`,
+      actionLabel: "Review P2 preflight report",
+      targetWorkspaceId: "audit",
+      sourcePath: preflight.sourcePath,
+      ready: Boolean(preflight.ready),
+      validStageCount: preflight.validStageCount,
+      totalStageCount: preflight.totalStageCount,
+      blockerIds: preflight.blockerIds,
+      nextAction: preflight.nextAction,
+      nextCommand: preflight.nextCommand,
+      stages: preflight.stages,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      reportedOrderSubmissionEnabled: Boolean(preflight.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(preflight.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(preflight.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(preflight.routeExecuted),
+      liveBlockedBoundary: Boolean(preflight.liveBlockedBoundary)
+    };
+  }
+
+  if (preflight.status === "ready") {
+    return {
+      state: "ready",
+      tone: "positive",
+      headline: "P2 manifest chain ready",
+      detail: `${preflight.validStageCount}/${preflight.totalStageCount} manifest stages valid · archived evidence chain can be reviewed without enabling live trading.`,
+      actionLabel: "Open P2 readiness review",
+      targetWorkspaceId: "audit",
+      sourcePath: preflight.sourcePath,
+      ready: Boolean(preflight.ready),
+      validStageCount: preflight.validStageCount,
+      totalStageCount: preflight.totalStageCount,
+      blockerIds: preflight.blockerIds,
+      nextAction: preflight.nextAction,
+      nextCommand: preflight.nextCommand,
+      stages: preflight.stages,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      reportedOrderSubmissionEnabled: Boolean(preflight.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(preflight.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(preflight.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(preflight.routeExecuted),
+      liveBlockedBoundary: Boolean(preflight.liveBlockedBoundary)
+    };
+  }
+
+  const actionLabel = p2ManifestChainPreflightActionLabel(preflight.nextAction);
+  return {
+    state: "blocked",
+    tone: "warning",
+    headline: "P2 manifest chain blocked",
+    detail: `${preflight.validStageCount}/${preflight.totalStageCount} manifest stages valid · next ${
+      preflight.nextAction || "operator action"
+    } via ${preflight.nextCommand || "manual command"}.`,
+    actionLabel,
+    targetWorkspaceId: "execution",
+    sourcePath: preflight.sourcePath,
+    ready: Boolean(preflight.ready),
+    validStageCount: preflight.validStageCount,
+    totalStageCount: preflight.totalStageCount,
+    blockerIds: preflight.blockerIds,
+    nextAction: preflight.nextAction,
+    nextCommand: preflight.nextCommand,
+    stages: preflight.stages,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    reportedOrderSubmissionEnabled: Boolean(preflight.orderSubmissionEnabled),
+    reportedLiveTradingAllowed: Boolean(preflight.liveTradingAllowed),
+    reportedLiveOrderSubmitted: Boolean(preflight.liveOrderSubmitted),
+    reportedRouteExecuted: Boolean(preflight.routeExecuted),
+    liveBlockedBoundary: Boolean(preflight.liveBlockedBoundary)
+  };
+}
+
+function p2ManifestChainPreflightActionLabel(nextAction: string): string {
+  const labels: Record<string, string> = {
+    "run-p1-acceptance": "Run P1 acceptance smoke",
+    "run-p2-paper-replay": "Run P2 paper replay smoke",
+    "run-p2-pre-live": "Run P2 pre-live smoke",
+    "run-p2-readiness": "Run P2 readiness smoke"
+  };
+  return labels[nextAction] ?? "Run next P2 chain step";
+}
+
+function emptyP2PaperReplayMetrics(): P2PaperReplayMetrics {
+  return {
+    filledPaperOrders: 0,
+    portfolioOrders: 0,
+    approvedPortfolioOrders: 0,
+    portfolioFilledOrders: 0,
+    stateHistoryFilledEvents: 0,
+    adapterPaperExecutions: 0,
+    replayWarnings: 0
+  };
+}
+
+export function buildP2ReadinessEvidenceCoverage({
+  adapterChainHealthRollups = [],
+  operatorRunbookAuditCoverage,
+  p2PaperReplay,
+  p2PreLiveAcceptance,
+  preLiveChecklist
+}: P2ReadinessEvidenceCoverageInput): P2ReadinessEvidenceCoverage {
+  const primaryAdapterChain =
+    adapterChainHealthRollups.find((rollup) => rollup.status === "paper_ready") ??
+    adapterChainHealthRollups.find((rollup) => rollup.status === "blocked") ??
+    adapterChainHealthRollups.find((rollup) => rollup.status === "in_progress") ??
+    adapterChainHealthRollups[0] ??
+    null;
+  const rows: P2ReadinessEvidenceCoverageRow[] = [
+    buildP2PaperReplayEvidenceCoverageRow(p2PaperReplay),
+    buildP2AcceptanceEvidenceCoverageRow(p2PreLiveAcceptance),
+    buildP2OperatorRunbookEvidenceCoverageRow(operatorRunbookAuditCoverage),
+    buildP2PreLiveChecklistEvidenceCoverageRow(preLiveChecklist),
+    buildP2AdapterChainEvidenceCoverageRow(primaryAdapterChain),
+    buildP2SafetyBoundaryEvidenceCoverageRow({ p2PaperReplay, p2PreLiveAcceptance, primaryAdapterChain })
+  ];
+  const coveredCount = rows.filter((row) => row.status === "covered").length;
+  const totalCount = rows.length;
+  const blockingCount = rows.filter((row) => row.status !== "covered").length;
+  const status: P2ReadinessEvidenceCoverageStatus = rows.some((row) => row.status === "blocked")
+    ? "blocked"
+    : rows.some((row) => row.status === "stale")
+      ? "stale"
+      : coveredCount === totalCount
+        ? "covered"
+        : "missing";
+  const tone: P2ReadinessEvidenceCoverageTone =
+    status === "covered" ? "positive" : status === "blocked" ? "risk" : "warning";
+  const headline =
+    status === "covered"
+      ? "P2 readiness evidence fully covered"
+      : status === "blocked"
+        ? "P2 readiness evidence blocked"
+        : status === "stale"
+          ? "P2 readiness evidence stale"
+          : "P2 readiness evidence incomplete";
+
+  return {
+    status,
+    tone,
+    headline,
+    detail: `${coveredCount}/${totalCount} readiness claims have audit events or local manifests; ${blockingCount} rows still block pre-live confidence. Direct order submission remains disabled.`,
+    coveredCount,
+    totalCount,
+    blockingCount,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    rows
+  };
+}
+
+function buildP2PaperReplayEvidenceCoverageRow(replay: P2PaperReplaySummary): P2ReadinessEvidenceCoverageRow {
+  const unsafe = p2ReplayHasUnsafeExecutionClaim(replay);
+  const status: P2ReadinessEvidenceCoverageStatus =
+    replay.state === "passed" && !unsafe
+      ? "covered"
+      : replay.state === "missing"
+        ? "missing"
+        : "blocked";
+  const latestEvidence = replay.latestEvidenceId ? ` · latest ${replay.latestEvidenceId}` : "";
+  return {
+    id: "paper-replay-manifest",
+    label: "Paper replay manifest",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence:
+      status === "covered"
+        ? `${replay.passedCheckCount}/${replay.totalCheckCount} checks${latestEvidence}`
+        : replay.state === "missing"
+          ? "Manifest missing"
+          : `${replay.passedCheckCount}/${replay.totalCheckCount} checks`,
+    detail:
+      status === "covered"
+        ? "P2 paper replay manifest is present, validates replay checks, and keeps live routing blocked."
+        : unsafe
+          ? "P2 paper replay manifest has unsafe execution claims or no live-blocked boundary."
+          : replay.detail,
+    sourceType: "manifest",
+    sourceId: replay.sourcePath || null
+  };
+}
+
+function buildP2AcceptanceEvidenceCoverageRow(
+  acceptance: P2PreLiveAcceptanceSummary
+): P2ReadinessEvidenceCoverageRow {
+  const unsafe = p2AcceptanceHasUnsafeExecutionClaim(acceptance);
+  const status: P2ReadinessEvidenceCoverageStatus =
+    acceptance.state === "passed" && !unsafe
+      ? "covered"
+      : acceptance.state === "missing"
+        ? "missing"
+        : "blocked";
+  return {
+    id: "p2-acceptance-manifest",
+    label: "P2 acceptance manifest",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence:
+      status === "covered"
+        ? `${acceptance.passedGateCount}/${acceptance.totalGateCount} gates`
+        : acceptance.state === "missing"
+          ? "Manifest missing"
+          : `${acceptance.passedGateCount}/${acceptance.totalGateCount} gates`,
+    detail:
+      status === "covered"
+        ? "P2 pre-live acceptance manifest is present and keeps the manual-route boundary intact."
+        : unsafe
+          ? "P2 acceptance manifest has unsafe execution claims or no live-blocked boundary."
+          : acceptance.detail,
+    sourceType: "manifest",
+    sourceId: acceptance.sourcePath || null
+  };
+}
+
+function buildP2OperatorRunbookEvidenceCoverageRow(
+  coverage: OperatorRunbookAuditCoverage
+): P2ReadinessEvidenceCoverageRow {
+  const status: P2ReadinessEvidenceCoverageStatus =
+    coverage.status === "matched" ? "covered" : coverage.status === "stale" ? "stale" : "missing";
+  const detail =
+    status === "covered"
+      ? coverage.detail
+      : coverage.mismatchLabel
+        ? `${coverage.detail} ${coverage.mismatchLabel}`
+        : coverage.detail;
+  return {
+    id: "operator-runbook-audit",
+    label: "Operator runbook audit",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence:
+      status === "covered"
+        ? `${coverage.statusLabel} · ${coverage.shortHash}`
+        : coverage.statusLabel || "Not audited",
+    detail,
+    sourceType: "audit",
+    sourceId: coverage.latestEventId || null
+  };
+}
+
+function buildP2PreLiveChecklistEvidenceCoverageRow(
+  checklist: PreLiveReadinessChecklist
+): P2ReadinessEvidenceCoverageRow {
+  const status: P2ReadinessEvidenceCoverageStatus =
+    checklist.status === "manual_route_ready" && checklist.blockingCount === 0 ? "covered" : checklist.status === "blocked" ? "blocked" : "missing";
+  const nextAction = checklist.nextActionId ? ` Next action: ${checklist.nextActionId}.` : "";
+  return {
+    id: "pre-live-checklist",
+    label: "Pre-live checklist",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence: `${checklist.passedCount}/${checklist.totalCount} gates`,
+    detail:
+      status === "covered"
+        ? "Local pre-live checklist is complete for manual route review only."
+        : `${checklist.summary}${nextAction}`,
+    sourceType: "local-state",
+    sourceId: checklist.nextActionId ?? "manual-route-ready"
+  };
+}
+
+function buildP2AdapterChainEvidenceCoverageRow(
+  rollup: ExecutionAdapterChainHealthRollup | null
+): P2ReadinessEvidenceCoverageRow {
+  if (!rollup) {
+    return {
+      id: "adapter-chain-health",
+      label: "Adapter chain health",
+      status: "missing",
+      tone: "warning",
+      evidence: "No adapter chain evidence",
+      detail: "No paper-only live-adapter chain rollup is available for the current route.",
+      sourceType: "local-state",
+      sourceId: null
+    };
+  }
+  const status: P2ReadinessEvidenceCoverageStatus =
+    rollup.status === "paper_ready"
+      ? "covered"
+      : rollup.status === "blocked"
+        ? "blocked"
+        : rollup.latestEvidenceId
+          ? "stale"
+          : "missing";
+  return {
+    id: "adapter-chain-health",
+    label: "Adapter chain health",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence:
+      status === "covered"
+        ? `${rollup.completedStageCount}/${rollup.totalStageCount} stages`
+        : rollup.blockerLabel || rollup.headline,
+    detail:
+      status === "covered"
+        ? "Adapter chain has complete paper-only evidence and remains blocked from live routing."
+        : rollup.detail,
+    sourceType: "local-state",
+    sourceId: rollup.latestEvidenceId || rollup.latestAuditEventId || rollup.id
+  };
+}
+
+function buildP2SafetyBoundaryEvidenceCoverageRow({
+  p2PaperReplay,
+  p2PreLiveAcceptance,
+  primaryAdapterChain
+}: {
+  p2PaperReplay: P2PaperReplaySummary;
+  p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
+  primaryAdapterChain: ExecutionAdapterChainHealthRollup | null;
+}): P2ReadinessEvidenceCoverageRow {
+  const unsafe =
+    p2ReplayHasUnsafeExecutionClaim(p2PaperReplay) ||
+    p2AcceptanceHasUnsafeExecutionClaim(p2PreLiveAcceptance) ||
+    Boolean(primaryAdapterChain?.orderSubmissionEnabled || primaryAdapterChain?.liveTradingAllowed);
+  const hasBoundaryEvidence =
+    p2PaperReplay.state === "passed" &&
+    p2PreLiveAcceptance.state === "passed" &&
+    p2PaperReplay.liveBlockedBoundary &&
+    p2PreLiveAcceptance.liveBlockedBoundary &&
+    Boolean(primaryAdapterChain);
+  const status: P2ReadinessEvidenceCoverageStatus = unsafe
+    ? "blocked"
+    : hasBoundaryEvidence
+      ? "covered"
+      : "missing";
+  return {
+    id: "safety-boundary",
+    label: "Safety boundary",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence:
+      status === "covered"
+        ? "Live blocked · direct order submission disabled"
+        : unsafe
+          ? "Unsafe execution claim detected"
+          : "Boundary evidence incomplete",
+    detail:
+      status === "covered"
+        ? "All P2 readiness evidence keeps order submission, live orders, route execution, and live trading blocked."
+        : unsafe
+          ? "One or more P2 evidence sources reports unsafe execution flags or a missing live-blocked boundary."
+          : "Safety boundary needs both P2 manifests and an adapter-chain rollup before pre-live confidence is complete.",
+    sourceType: "safety-boundary",
+    sourceId: primaryAdapterChain?.latestEvidenceId ?? p2PaperReplay.latestEvidenceId ?? p2PreLiveAcceptance.runId
+  };
+}
+
+function p2EvidenceCoverageTone(
+  status: P2ReadinessEvidenceCoverageStatus
+): P2ReadinessEvidenceCoverageTone {
+  return status === "covered" ? "positive" : status === "blocked" ? "risk" : "warning";
+}
+
+function p2ReplayHasUnsafeExecutionClaim(replay: P2PaperReplaySummary): boolean {
+  return (
+    replay.state === "invalid" ||
+    replay.reportedOrderSubmissionEnabled ||
+    replay.reportedLiveTradingAllowed ||
+    replay.reportedLiveOrderSubmitted ||
+    replay.reportedRouteExecuted ||
+    !replay.liveBlockedBoundary
+  );
+}
+
+function p2AcceptanceHasUnsafeExecutionClaim(acceptance: P2PreLiveAcceptanceSummary): boolean {
+  return (
+    acceptance.state === "invalid" ||
+    acceptance.reportedOrderSubmissionEnabled ||
+    acceptance.reportedLiveTradingAllowed ||
+    acceptance.reportedLiveOrderSubmitted ||
+    acceptance.reportedRouteExecuted ||
+    !acceptance.liveBlockedBoundary
+  );
+}
+
+export function buildP2ReadinessAcceptanceSummary({
+  evidenceCoverage,
+  p1Acceptance,
+  p2PaperReplay,
+  p2PreLiveAcceptance,
+  preLiveChecklist
+}: P2ReadinessAcceptanceSummaryInput): P2ReadinessAcceptanceSummary {
+  const rows: P2ReadinessAcceptanceRow[] = [
+    buildP2AcceptanceP1Row(p1Acceptance),
+    buildP2AcceptancePaperReplayRow(p2PaperReplay),
+    buildP2AcceptancePreLiveChecklistRow(preLiveChecklist),
+    buildP2AcceptancePreLiveManifestRow(p2PreLiveAcceptance),
+    buildP2ReadinessAcceptanceEvidenceCoverageRow(evidenceCoverage),
+    buildP2AcceptanceLiveBoundaryRow({
+      evidenceCoverage,
+      p1Acceptance,
+      p2PaperReplay,
+      p2PreLiveAcceptance
+    })
+  ];
+  const acceptedCount = rows.filter((row) => row.status === "passed").length;
+  const totalCount = rows.length;
+  const blockingCount = rows.filter((row) => row.status !== "passed").length;
+  const status: P2ReadinessAcceptanceStatus = rows.some((row) => row.status === "blocked")
+    ? "blocked"
+    : acceptedCount === totalCount
+      ? "accepted"
+      : "incomplete";
+  const tone: P2ReadinessAcceptanceTone =
+    status === "accepted" ? "positive" : status === "blocked" ? "risk" : "warning";
+  return {
+    status,
+    tone,
+    headline:
+      status === "accepted"
+        ? "P2 pre-live readiness accepted"
+        : status === "blocked"
+          ? "P2 pre-live readiness blocked"
+          : "P2 pre-live readiness incomplete",
+    detail: `${acceptedCount}/${totalCount} P2 acceptance criteria passed; ${blockingCount} criteria still block final pre-live acceptance. Direct order submission and live trading remain disabled.`,
+    acceptedCount,
+    totalCount,
+    blockingCount,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    rows
+  };
+}
+
+function buildP2AcceptanceP1Row(p1Acceptance: P1AcceptanceSummary): P2ReadinessAcceptanceRow {
+  const unsafe = p1AcceptanceHasUnsafeExecutionClaim(p1Acceptance);
+  const status: P2ReadinessAcceptanceRowStatus =
+    p1Acceptance.state === "passed" && !unsafe
+      ? "passed"
+      : p1Acceptance.state === "missing"
+        ? "missing"
+        : "blocked";
+  return {
+    id: "p1-acceptance",
+    label: "P1 accepted research workflow",
+    status,
+    tone: p2ReadinessAcceptanceRowTone(status),
+    evidence:
+      status === "passed"
+        ? `${p1Acceptance.checkCount}/${p1Acceptance.requiredCheckCount} checks · ${p1Acceptance.runId || "latest run"}`
+        : p1Acceptance.state === "missing"
+          ? "P1 acceptance missing"
+          : "P1 acceptance unsafe",
+    detail:
+      status === "passed"
+        ? "A P1 research-ops workflow is accepted and keeps the live boundary closed."
+        : unsafe
+          ? "P1 acceptance evidence has unsafe live-trading claims or lacks a live-blocked boundary."
+          : p1Acceptance.detail,
+    sourceId: p1Acceptance.sourcePath
+  };
+}
+
+function buildP2AcceptancePaperReplayRow(replay: P2PaperReplaySummary): P2ReadinessAcceptanceRow {
+  const unsafe = p2ReplayHasUnsafeExecutionClaim(replay);
+  const status: P2ReadinessAcceptanceRowStatus =
+    replay.state === "passed" && !unsafe ? "passed" : replay.state === "missing" ? "missing" : "blocked";
+  return {
+    id: "paper-execution-replay",
+    label: "Paper execution replay",
+    status,
+    tone: p2ReadinessAcceptanceRowTone(status),
+    evidence:
+      status === "passed"
+        ? `${replay.passedCheckCount}/${replay.totalCheckCount} checks`
+        : replay.state === "missing"
+          ? "Replay manifest missing"
+          : "Replay manifest unsafe",
+    detail:
+      status === "passed"
+        ? "Paper-only execution can be replayed from stored evidence."
+        : unsafe
+          ? "Paper replay evidence has unsafe execution flags or lacks a live-blocked boundary."
+          : replay.detail,
+    sourceId: replay.latestEvidenceId ?? replay.sourcePath
+  };
+}
+
+function buildP2AcceptancePreLiveChecklistRow(
+  checklist: PreLiveReadinessChecklist
+): P2ReadinessAcceptanceRow {
+  const status: P2ReadinessAcceptanceRowStatus =
+    checklist.status === "manual_route_ready" && checklist.blockingCount === 0
+      ? "passed"
+      : checklist.status === "blocked"
+        ? "blocked"
+        : "missing";
+  return {
+    id: "pre-live-checklist",
+    label: "Pre-live checklist",
+    status,
+    tone: p2ReadinessAcceptanceRowTone(status),
+    evidence: `${checklist.passedCount}/${checklist.totalCount} gates`,
+    detail:
+      status === "passed"
+        ? "Pre-live checklist is complete for manual route review only."
+        : checklist.summary,
+    sourceId: checklist.nextActionId ?? "manual-route-ready"
+  };
+}
+
+function buildP2AcceptancePreLiveManifestRow(
+  acceptance: P2PreLiveAcceptanceSummary
+): P2ReadinessAcceptanceRow {
+  const unsafe = p2AcceptanceHasUnsafeExecutionClaim(acceptance);
+  const status: P2ReadinessAcceptanceRowStatus =
+    acceptance.state === "passed" && !unsafe
+      ? "passed"
+      : acceptance.state === "missing"
+        ? "missing"
+        : "blocked";
+  return {
+    id: "p2-pre-live-manifest",
+    label: "P2 pre-live acceptance manifest",
+    status,
+    tone: p2ReadinessAcceptanceRowTone(status),
+    evidence:
+      status === "passed"
+        ? `${acceptance.passedGateCount}/${acceptance.totalGateCount} gates`
+        : acceptance.state === "missing"
+          ? "P2 manifest missing"
+          : "P2 manifest unsafe",
+    detail:
+      status === "passed"
+        ? "P2 pre-live manifest is valid and records the live-blocked boundary."
+        : unsafe
+          ? "P2 pre-live manifest has unsafe execution flags or lacks a live-blocked boundary."
+          : acceptance.detail,
+    sourceId: acceptance.sourcePath
+  };
+}
+
+function buildP2ReadinessAcceptanceEvidenceCoverageRow(
+  coverage: P2ReadinessEvidenceCoverage
+): P2ReadinessAcceptanceRow {
+  const status: P2ReadinessAcceptanceRowStatus =
+    coverage.status === "covered" && coverage.blockingCount === 0
+      ? "passed"
+      : coverage.status === "blocked" || coverage.status === "stale"
+        ? "blocked"
+        : "missing";
+  return {
+    id: "readiness-evidence-coverage",
+    label: "Readiness evidence coverage",
+    status,
+    tone: p2ReadinessAcceptanceRowTone(status),
+    evidence: `${coverage.coveredCount}/${coverage.totalCount} claims covered`,
+    detail:
+      status === "passed"
+        ? "Every P2 readiness claim is traceable to audit evidence, a manifest, or local state."
+        : coverage.detail,
+    sourceId: "P2 evidence coverage matrix"
+  };
+}
+
+function buildP2AcceptanceLiveBoundaryRow({
+  evidenceCoverage,
+  p1Acceptance,
+  p2PaperReplay,
+  p2PreLiveAcceptance
+}: {
+  evidenceCoverage: P2ReadinessEvidenceCoverage;
+  p1Acceptance: P1AcceptanceSummary;
+  p2PaperReplay: P2PaperReplaySummary;
+  p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
+}): P2ReadinessAcceptanceRow {
+  const unsafe =
+    p1AcceptanceHasUnsafeExecutionClaim(p1Acceptance) ||
+    p2ReplayHasUnsafeExecutionClaim(p2PaperReplay) ||
+    p2AcceptanceHasUnsafeExecutionClaim(p2PreLiveAcceptance) ||
+    evidenceCoverage.status === "blocked";
+  const status: P2ReadinessAcceptanceRowStatus = unsafe ? "blocked" : "passed";
+  return {
+    id: "live-blocked-boundary",
+    label: "Live-blocked boundary",
+    status,
+    tone: p2ReadinessAcceptanceRowTone(status),
+    evidence: status === "passed" ? "Live blocked · no order route" : "Unsafe execution flags detected",
+    detail:
+      status === "passed"
+        ? "P2 acceptance keeps order submission, live orders, route execution, and live trading disabled."
+        : "One or more acceptance inputs reports unsafe execution flags or a missing live-blocked boundary.",
+    sourceId: "forced-platform-boundary"
+  };
+}
+
+function p2ReadinessAcceptanceRowTone(status: P2ReadinessAcceptanceRowStatus): P2ReadinessAcceptanceTone {
+  return status === "passed" ? "positive" : status === "blocked" ? "risk" : "warning";
+}
+
+function p1AcceptanceHasUnsafeExecutionClaim(acceptance: P1AcceptanceSummary): boolean {
+  return acceptance.state === "invalid" || acceptance.reportedLiveTradingAllowed || !acceptance.liveBlockedBoundary;
+}
+
+export function buildP2ReadinessAcceptanceReviewMarkdown({
+  acceptance,
+  summary
+}: {
+  acceptance: P2ReadinessAcceptanceReviewSource | null | undefined;
+  summary: P2ReadinessAcceptanceSummary;
+}): string {
+  const criterionIds =
+    acceptance?.criterionIds.length
+      ? acceptance.criterionIds
+      : summary.status === "incomplete"
+        ? ["p2_readiness_acceptance_manifest_missing"]
+        : ["p2_readiness_acceptance_manifest_invalid"];
+  const auditEventIds = acceptance?.auditEventIds.length ? acceptance.auditEventIds : ["audit_event_missing"];
+  const context = [acceptance?.market, acceptance?.symbol, acceptance?.timeframe].filter(Boolean).join(" ") || "n/a";
+  const generatedAt = acceptance?.generatedAt || "n/a";
+  const reason = acceptance?.reason || acceptance?.summary || summary.detail;
+  const status = acceptance?.status ?? (summary.status === "accepted" ? "accepted" : summary.status === "blocked" ? "invalid" : "missing");
+  const sourcePath = acceptance?.sourcePath ?? "data/p2-readiness-acceptance.json";
+  const acceptedCriterionCount = acceptance?.acceptedCriterionCount ?? summary.acceptedCount;
+  const totalCriterionCount = acceptance?.totalCriterionCount ?? summary.totalCount;
+  const blockingCriterionCount = acceptance?.blockingCriterionCount ?? summary.blockingCount;
+
+  return [
+    "# P2 Readiness Acceptance Review",
+    "",
+    "## Summary",
+    `- Status: ${status}`,
+    `- Headline: ${summary.headline}`,
+    `- Detail: ${summary.detail}`,
+    `- Source: ${sourcePath}`,
+    `- Generated at: ${generatedAt}`,
+    `- Run: ${acceptance?.runId || "n/a"}`,
+    `- Context: ${context}`,
+    `- Adapter: ${acceptance?.adapterId || "n/a"}`,
+    `- Criteria: ${acceptedCriterionCount}/${totalCriterionCount}`,
+    `- Blocking criteria: ${blockingCriterionCount}`,
+    `- readinessCoverageStatus: ${acceptance?.readinessCoverageStatus || "n/a"}`,
+    "",
+    "## Linked Manifests",
+    `- p1Acceptance: ${acceptance?.manifestPaths.p1Acceptance || "n/a"}`,
+    `- p2PreLiveAcceptance: ${acceptance?.manifestPaths.p2PreLiveAcceptance || "n/a"}`,
+    `- p2PaperReplay: ${acceptance?.manifestPaths.p2PaperReplay || "n/a"}`,
+    "",
+    "## Execution Boundary",
+    `- paperOnly: ${Boolean(acceptance?.paperOnly)}`,
+    `- orderSubmissionEnabled: ${Boolean(acceptance?.orderSubmissionEnabled)}`,
+    `- liveTradingAllowed: ${Boolean(acceptance?.liveTradingAllowed)}`,
+    `- liveOrderSubmitted: ${Boolean(acceptance?.liveOrderSubmitted)}`,
+    `- routeExecuted: ${Boolean(acceptance?.routeExecuted)}`,
+    `- liveBlockedBoundary: ${Boolean(acceptance?.liveBlockedBoundary)}`,
+    "- Platform decision: live trading and real order routing remain blocked.",
+    "",
+    "## Acceptance Criteria",
+    ...criterionIds.map((criterionId) => `- ${criterionId}`),
+    "",
+    "## Audit Evidence",
+    ...auditEventIds.map((eventId) => `- ${eventId}`),
+    "",
+    "## Review Notes",
+    `- Reason: ${reason}`,
+    "- This review is audit evidence only and does not authorize live trading.",
+    ""
+  ].join("\n");
 }
 
 export function buildP0AcceptanceReviewMarkdown({
@@ -11650,7 +12857,10 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
     {
       audit_evidence_report: "Audit evidence report",
       backtest_report: "Backtest report",
+      operator_runbook_report: "Operator runbook report",
       p0_readiness_report: "P0 readiness report",
+      p2_manifest_chain_preflight: "P2 manifest chain preflight",
+      p2_readiness_acceptance_review: "P2 readiness acceptance review",
       pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
       research_context_readiness_report: "Research context readiness report",
@@ -11736,6 +12946,28 @@ export function buildAuditEvidenceReportLedgerRowResearchContextReportQuery(
     .join(" ");
 }
 
+export function buildAuditEvidenceReportLedgerRowOperatorRunbookQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "operator_runbook_report") {
+    return "";
+  }
+  return [
+    row.reportKind,
+    row.operatorRunbookAdapterId,
+    row.operatorRunbookMarket,
+    row.operatorRunbookSymbol,
+    row.operatorRunbookTimeframe,
+    row.operatorRunbookStatus,
+    `${row.operatorRunbookCompletedSections}/${row.operatorRunbookTotalSections}`,
+    auditReportLedgerOperatorRunbookSectionLabel(row.operatorRunbookSectionStatuses.length),
+    row.operatorRunbookSectionStatuses.join(" "),
+    row.shortHash
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(
   row: AuditEvidenceReportLedgerRow | null | undefined
 ): string {
@@ -11753,6 +12985,23 @@ export function buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(
     auditReportLedgerPreLiveRunbookEvidenceLabel(row.preLiveRunbookEvidenceIds.length),
     row.preLiveRunbookEvidenceIds.join(" "),
     row.shortHash
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p2_manifest_chain_preflight") {
+    return "";
+  }
+  return [
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.fileName,
+    row.focusQuery
   ]
     .filter(Boolean)
     .join(" ");
@@ -12491,6 +13740,9 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "backtest_report" ||
         event.eventType === "portfolio_report" ||
         event.eventType === "p0_readiness_report" ||
+        event.eventType === "p2_manifest_chain_preflight" ||
+        event.eventType === "p2_readiness_acceptance_review" ||
+        event.eventType === "operator_runbook_report" ||
         event.eventType === "pre_live_runbook_report" ||
         event.eventType === "research_context_readiness_report"
     )
@@ -12498,6 +13750,12 @@ export function buildAuditEvidenceReportLedgerRows(
       const reportKind: AuditEvidenceReportLedgerRow["reportKind"] =
         event.eventType === "p0_readiness_report"
           ? "p0_readiness_report"
+          : event.eventType === "p2_manifest_chain_preflight"
+          ? "p2_manifest_chain_preflight"
+          : event.eventType === "p2_readiness_acceptance_review"
+          ? "p2_readiness_acceptance_review"
+          : event.eventType === "operator_runbook_report"
+          ? "operator_runbook_report"
           : event.eventType === "pre_live_runbook_report"
           ? "pre_live_runbook_report"
           : event.eventType === "research_context_readiness_report"
@@ -12507,11 +13765,21 @@ export function buildAuditEvidenceReportLedgerRows(
           : event.eventType === "backtest_report"
             ? "backtest_report"
             : "audit_evidence_report";
-      const contentSha256 = auditReportLedgerMetadataText(event.metadata, "contentSha256");
+      const contentSha256 =
+        auditReportLedgerMetadataText(event.metadata, "contentSha256") ||
+        (reportKind === "p2_manifest_chain_preflight"
+          ? auditReportLedgerMetadataText(event.metadata, "manifestSha256")
+          : "");
       const artifactKind =
         auditReportLedgerMetadataText(event.metadata, "artifactKind") ||
         (reportKind === "p0_readiness_report"
           ? "aiqt.p0ReadinessReport"
+          : reportKind === "p2_manifest_chain_preflight"
+          ? "aiqt.p2ManifestChainPreflight"
+          : reportKind === "p2_readiness_acceptance_review"
+          ? "aiqt.p2ReadinessAcceptanceReview"
+          : reportKind === "operator_runbook_report"
+          ? "aiqt.operatorRunbookReport"
           : reportKind === "pre_live_runbook_report"
           ? "aiqt.preLiveRunbookReport"
           : reportKind === "research_context_readiness_report"
@@ -12525,6 +13793,12 @@ export function buildAuditEvidenceReportLedgerRows(
         auditReportLedgerMetadataText(event.metadata, "fileName") ||
         (reportKind === "p0_readiness_report"
           ? "p0-readiness-report.md"
+          : reportKind === "p2_manifest_chain_preflight"
+          ? auditReportLedgerMetadataText(event.metadata, "sourcePath") || "p2-chain-preflight.json"
+          : reportKind === "p2_readiness_acceptance_review"
+          ? "p2-readiness-acceptance-review.md"
+          : reportKind === "operator_runbook_report"
+          ? "operator-runbook-report.md"
           : reportKind === "pre_live_runbook_report"
           ? "pre-live-runbook-report.md"
           : reportKind === "research_context_readiness_report"
@@ -12544,6 +13818,20 @@ export function buildAuditEvidenceReportLedgerRows(
                 : "",
               auditReportLedgerMetadataText(event.metadata, "currentGapLabel"),
               auditReportLedgerMetadataText(event.metadata, "latestEvidenceId")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "operator_runbook_report"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "adapterId"),
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "status"),
+              `${auditReportLedgerMetadataNumber(event.metadata, "completedSections")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalSections"
+              )}`
             ]
               .filter(Boolean)
               .join(" ")
@@ -12568,6 +13856,31 @@ export function buildAuditEvidenceReportLedgerRows(
               auditReportLedgerMetadataText(event.metadata, "timeframe"),
               auditReportLedgerMetadataText(event.metadata, "preflightStatus"),
               auditReportLedgerMetadataText(event.metadata, "lockedPreparationEvidenceRunId")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "p2_manifest_chain_preflight"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "preflightStatus"),
+              `${auditReportLedgerMetadataNumber(event.metadata, "validStageCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalStageCount"
+              )}`,
+              auditReportLedgerMetadataText(event.metadata, "nextAction"),
+              auditReportLedgerMetadataStringList(event.metadata, "blockerIds").join(" ")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "p2_readiness_acceptance_review"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "state"),
+              `${auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCriterionCount"
+              )}`
             ]
               .filter(Boolean)
               .join(" ")
@@ -12596,21 +13909,30 @@ export function buildAuditEvidenceReportLedgerRows(
       const signatureLabel = auditReportLedgerSignatureLabel(signatureStatus);
       const importVerificationVerified =
         reportKind === "backtest_report" ||
+        reportKind === "operator_runbook_report" ||
         reportKind === "p0_readiness_report" ||
+        reportKind === "p2_manifest_chain_preflight" ||
+        reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
           : auditReportLedgerMetadataNumber(event.metadata, "importVerificationVerified");
       const importVerificationInvalid =
         reportKind === "backtest_report" ||
+        reportKind === "operator_runbook_report" ||
         reportKind === "p0_readiness_report" ||
+        reportKind === "p2_manifest_chain_preflight" ||
+        reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
           : auditReportLedgerMetadataNumber(event.metadata, "importVerificationInvalid");
       const importVerificationDetail =
         reportKind === "backtest_report" ||
+        reportKind === "operator_runbook_report" ||
         reportKind === "p0_readiness_report" ||
+        reportKind === "p2_manifest_chain_preflight" ||
+        reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? ""
@@ -12944,6 +14266,50 @@ export function buildAuditEvidenceReportLedgerRows(
           : "";
       const evidenceTargetWorkspaceId = auditReportLedgerEvidenceTargetWorkspaceId(evidenceLinkSearch);
       const evidenceLinkDecodedSearch = auditReportLedgerDecodedSearchText(evidenceLinkSearch);
+      const operatorRunbookAdapterId =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "adapterId") : "";
+      const operatorRunbookMarket =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "market") : "";
+      const operatorRunbookSymbol =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "symbol") : "";
+      const operatorRunbookTimeframe =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "timeframe") : "";
+      const operatorRunbookStatus =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "status") : "";
+      const operatorRunbookCompletedSections =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataNumber(event.metadata, "completedSections") : 0;
+      const operatorRunbookTotalSections =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataNumber(event.metadata, "totalSections") : 0;
+      const operatorRunbookNextActionId =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "nextActionId") : "";
+      const operatorRunbookSectionIds =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "sectionIds") : [];
+      const operatorRunbookSectionStatuses =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "sectionStatuses") : [];
+      const operatorRunbookSectionEvidence =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "sectionEvidence") : [];
+      const operatorRunbookControlSnapshot =
+        reportKind === "operator_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "controlSnapshot") : [];
+      const operatorRunbookSearchText =
+        reportKind === "operator_runbook_report"
+          ? [
+              operatorRunbookAdapterId,
+              operatorRunbookMarket,
+              operatorRunbookSymbol,
+              operatorRunbookTimeframe,
+              operatorRunbookStatus,
+              operatorRunbookNextActionId,
+              `${operatorRunbookCompletedSections}/${operatorRunbookTotalSections}`,
+              auditReportLedgerOperatorRunbookSectionLabel(operatorRunbookSectionStatuses.length),
+              operatorRunbookSectionIds.join(" "),
+              operatorRunbookSectionStatuses.join(" "),
+              operatorRunbookSectionEvidence.join(" "),
+              operatorRunbookControlSnapshot.join(" "),
+              auditReportLedgerMetadataText(event.metadata, "boundary")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       const preLiveRunbookAdapterId =
         reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "adapterId") : "";
       const preLiveRunbookMarket =
@@ -12964,6 +14330,37 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "nextStepId") : "";
       const preLiveRunbookEvidenceIds =
         reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "evidenceIds") : [];
+      const p2ManifestChainPreflightStatus =
+        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataText(event.metadata, "preflightStatus") : "";
+      const p2ManifestChainPreflightNextAction =
+        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataText(event.metadata, "nextAction") : "";
+      const p2ManifestChainPreflightBlockers =
+        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataStringList(event.metadata, "blockerIds") : [];
+      const p2ManifestChainPreflightValidStages =
+        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataNumber(event.metadata, "validStageCount") : 0;
+      const p2ManifestChainPreflightTotalStages =
+        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataNumber(event.metadata, "totalStageCount") : 0;
+      const p2ManifestChainPreflightSafeBoundary =
+        reportKind !== "p2_manifest_chain_preflight" ||
+        (auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted"));
+      const p2ManifestChainPreflightSearchText =
+        reportKind === "p2_manifest_chain_preflight"
+          ? [
+              "p2_manifest_chain_preflight",
+              p2ManifestChainPreflightStatus,
+              `${p2ManifestChainPreflightValidStages}/${p2ManifestChainPreflightTotalStages}`,
+              p2ManifestChainPreflightNextAction,
+              p2ManifestChainPreflightBlockers.join(" "),
+              auditReportLedgerMetadataText(event.metadata, "sourcePath"),
+              p2ManifestChainPreflightSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       return {
         id: event.eventId,
         artifactKind,
@@ -12981,6 +14378,12 @@ export function buildAuditEvidenceReportLedgerRows(
         packageMatched:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "passedSteps")
+            : reportKind === "p2_manifest_chain_preflight"
+            ? p2ManifestChainPreflightValidStages
+            : reportKind === "p2_readiness_acceptance_review"
+            ? auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")
+            : reportKind === "operator_runbook_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "completedSections")
             : reportKind === "pre_live_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "completedSteps")
             : reportKind === "research_context_readiness_report"
@@ -12993,6 +14396,12 @@ export function buildAuditEvidenceReportLedgerRows(
         packageTotal:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps")
+            : reportKind === "p2_manifest_chain_preflight"
+            ? p2ManifestChainPreflightTotalStages
+            : reportKind === "p2_readiness_acceptance_review"
+            ? auditReportLedgerMetadataNumber(event.metadata, "totalCriterionCount")
+            : reportKind === "operator_runbook_report"
+            ? auditReportLedgerMetadataNumber(event.metadata, "totalSections")
             : reportKind === "pre_live_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps")
             : reportKind === "research_context_readiness_report"
@@ -13007,7 +14416,10 @@ export function buildAuditEvidenceReportLedgerRows(
         importDiffBlocked:
           reportKind === "backtest_report" ||
           reportKind === "portfolio_report" ||
+          reportKind === "operator_runbook_report" ||
           reportKind === "p0_readiness_report" ||
+          reportKind === "p2_manifest_chain_preflight" ||
+          reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -13015,7 +14427,10 @@ export function buildAuditEvidenceReportLedgerRows(
         importDiffTotal:
           reportKind === "backtest_report" ||
           reportKind === "portfolio_report" ||
+          reportKind === "operator_runbook_report" ||
           reportKind === "p0_readiness_report" ||
+          reportKind === "p2_manifest_chain_preflight" ||
+          reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -13071,6 +14486,18 @@ export function buildAuditEvidenceReportLedgerRows(
         researchContextPreparationEvidenceRunId,
         researchContextSymbol,
         researchContextTimeframe,
+        operatorRunbookAdapterId,
+        operatorRunbookCompletedSections,
+        operatorRunbookControlSnapshot,
+        operatorRunbookMarket,
+        operatorRunbookNextActionId,
+        operatorRunbookSectionEvidence,
+        operatorRunbookSectionIds,
+        operatorRunbookSectionStatuses,
+        operatorRunbookStatus,
+        operatorRunbookSymbol,
+        operatorRunbookTimeframe,
+        operatorRunbookTotalSections,
         preLiveRunbookAdapterId,
         preLiveRunbookCompletedSteps,
         preLiveRunbookEvidenceIds,
@@ -13084,6 +14511,12 @@ export function buildAuditEvidenceReportLedgerRows(
         deepLinkStatus:
           reportKind === "p0_readiness_report"
             ? "p0-readiness-report"
+            : reportKind === "p2_manifest_chain_preflight"
+            ? "p2-manifest-chain-preflight"
+            : reportKind === "p2_readiness_acceptance_review"
+            ? "p2-readiness-acceptance-review"
+            : reportKind === "operator_runbook_report"
+            ? "operator-runbook-report"
             : reportKind === "pre_live_runbook_report"
             ? "pre-live-runbook-report"
             : reportKind === "research_context_readiness_report"
@@ -13098,6 +14531,12 @@ export function buildAuditEvidenceReportLedgerRows(
           status === "ready"
             ? reportKind === "p0_readiness_report"
             ? "P0 readiness report hash recorded"
+            : reportKind === "p2_manifest_chain_preflight"
+              ? "P2 manifest chain preflight hash recorded"
+            : reportKind === "p2_readiness_acceptance_review"
+              ? "P2 readiness acceptance review hash recorded"
+            : reportKind === "operator_runbook_report"
+              ? "Operator runbook report hash recorded"
             : reportKind === "pre_live_runbook_report"
               ? "Pre-live runbook report hash recorded"
             : reportKind === "research_context_readiness_report"
@@ -13120,8 +14559,21 @@ export function buildAuditEvidenceReportLedgerRows(
         signatureVerifiedAt: auditReportLedgerMetadataText(signature, "verifiedAt"),
         detail: event.detail,
         reportKind,
-        searchText: [p0SearchText, preLiveRunbookSearchText, researchContextSearchText].filter(Boolean).join(" "),
-        tone: auditReportLedgerSignatureTone(signatureStatus)
+        searchText: [
+          p0SearchText,
+          p2ManifestChainPreflightSearchText,
+          operatorRunbookSearchText,
+          preLiveRunbookSearchText,
+          researchContextSearchText
+        ]
+          .filter(Boolean)
+          .join(" "),
+        tone:
+          reportKind === "p2_manifest_chain_preflight"
+            ? p2ManifestChainPreflightStatus === "ready" && p2ManifestChainPreflightSafeBoundary
+              ? "positive"
+              : "risk"
+            : auditReportLedgerSignatureTone(signatureStatus)
       };
     });
 }
@@ -13160,6 +14612,8 @@ export function buildAuditEvidenceReportLedgerSummary(
   const signingEligibleRows = rows.filter(
     (row) =>
       row.reportKind !== "p0_readiness_report" &&
+      row.reportKind !== "operator_runbook_report" &&
+      row.reportKind !== "p2_manifest_chain_preflight" &&
       row.reportKind !== "pre_live_runbook_report" &&
       row.reportKind !== "research_context_readiness_report"
   );
@@ -13178,6 +14632,7 @@ export function buildAuditEvidenceReportLedgerSummary(
   const auditAidRows = rows.filter(
     (row) =>
       row.reportKind === "p0_readiness_report" ||
+      row.reportKind === "operator_runbook_report" ||
       row.reportKind === "pre_live_runbook_report" ||
       row.reportKind === "research_context_readiness_report"
   );
@@ -13623,6 +15078,7 @@ function evidencePackageSignatureState(rows: AuditEvidenceReportLedgerRow[]): {
   const signingRows = rows.filter(
     (row) =>
       row.reportKind !== "p0_readiness_report" &&
+      row.reportKind !== "operator_runbook_report" &&
       row.reportKind !== "pre_live_runbook_report" &&
       row.reportKind !== "research_context_readiness_report"
   );
@@ -13675,6 +15131,10 @@ function evidencePackageCoverageDetail(rows: AuditEvidenceReportLedgerRow[]): st
 
 function auditReportLedgerPreLiveRunbookEvidenceLabel(count: number): string {
   return `${count} evidence ${count === 1 ? "id" : "ids"}`;
+}
+
+function auditReportLedgerOperatorRunbookSectionLabel(count: number): string {
+  return `${count} ${count === 1 ? "section" : "sections"}`;
 }
 
 export function buildLatestResearchContextReportForContext(
@@ -13822,6 +15282,131 @@ function buildPreLiveRunbookAuditMismatchLabel(
     mismatches.push(buildPreLiveRunbookEvidenceIdDiffLabel(auditedEvidenceIds, currentEvidenceIds));
   }
 
+  return mismatches.join(" · ");
+}
+
+export function buildOperatorRunbookAuditCoverage(
+  rows: AuditEvidenceReportLedgerRow[],
+  runbook: OperatorRunbookSummary,
+  workspace: TerminalWorkspace
+): OperatorRunbookAuditCoverage {
+  const market = workspace.selectedInstrument.market;
+  const symbol = workspace.selectedInstrument.symbol;
+  const timeframe = workspace.selectedTimeframe;
+  const currentSectionLabel = `${runbook.completedSections}/${runbook.totalSections} sections`;
+  const latest = rows
+    .filter(
+      (row) =>
+        row.reportKind === "operator_runbook_report" &&
+        row.status === "ready" &&
+        row.operatorRunbookAdapterId === runbook.adapterId &&
+        row.operatorRunbookMarket === market &&
+        row.operatorRunbookSymbol === symbol &&
+        row.operatorRunbookTimeframe === timeframe
+    )
+    .sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt))[0];
+
+  if (!latest) {
+    return {
+      currentSectionLabel,
+      detail: `No audited operator runbook report is recorded for ${runbook.adapterId} ${market} ${symbol} ${timeframe}.`,
+      latestEventId: "",
+      mismatchLabel: "",
+      query: "",
+      sectionLabel: "",
+      shortHash: "",
+      status: "missing",
+      statusLabel: "Not audited"
+    };
+  }
+
+  const query = buildAuditEvidenceReportLedgerRowOperatorRunbookQuery(latest);
+  const matchesCurrent =
+    latest.operatorRunbookCompletedSections === runbook.completedSections &&
+    latest.operatorRunbookTotalSections === runbook.totalSections &&
+    latest.operatorRunbookStatus === runbook.status &&
+    latest.operatorRunbookNextActionId === (runbook.nextActionId ?? "") &&
+    sameOperatorRunbookValues(latest.operatorRunbookSectionStatuses, operatorRunbookSectionStatuses(runbook)) &&
+    sameOperatorRunbookValues(latest.operatorRunbookSectionEvidence, operatorRunbookSectionEvidence(runbook)) &&
+    sameOperatorRunbookValues(latest.operatorRunbookControlSnapshot, operatorRunbookControlSnapshot(runbook));
+
+  return {
+    currentSectionLabel,
+    detail: matchesCurrent
+      ? "Latest audited operator runbook matches the current context, controls, and section state."
+      : "Latest audited operator runbook is for this context, but its controls or section state differ from the current screen.",
+    latestEventId: latest.id,
+    mismatchLabel: matchesCurrent ? "" : buildOperatorRunbookAuditMismatchLabel(latest, runbook),
+    query,
+    sectionLabel: `${latest.operatorRunbookCompletedSections}/${latest.operatorRunbookTotalSections} sections`,
+    shortHash: latest.shortHash,
+    status: matchesCurrent ? "matched" : "stale",
+    statusLabel: matchesCurrent ? "Audited" : "Needs re-audit"
+  };
+}
+
+function operatorRunbookSectionStatuses(runbook: OperatorRunbookSummary): string[] {
+  return runbook.sections.map((section) => `${section.id}:${section.status}`);
+}
+
+function operatorRunbookSectionEvidence(runbook: OperatorRunbookSummary): string[] {
+  return runbook.sections.map((section) => `${section.id}:${section.evidence}`);
+}
+
+function operatorRunbookControlSnapshot(runbook: OperatorRunbookSummary): string[] {
+  return [
+    `killSwitch=${runbook.controls.killSwitch}`,
+    `rollbackOwner=${runbook.controls.rollbackOwner}`,
+    `positionLimit=${runbook.controls.positionLimit}`,
+    `dataFreshness=${runbook.controls.dataFreshness}`,
+    `environmentState=${runbook.controls.environmentState}`,
+    `auditPackage=${runbook.controls.auditPackage}`
+  ];
+}
+
+function sameOperatorRunbookValues(left: readonly string[], right: readonly string[]): boolean {
+  const normalizedLeft = normalizedOperatorRunbookValues(left);
+  const normalizedRight = normalizedOperatorRunbookValues(right);
+  return normalizedLeft.length === normalizedRight.length && normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function normalizedOperatorRunbookValues(values: readonly string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean).sort();
+}
+
+function buildOperatorRunbookAuditMismatchLabel(
+  latest: AuditEvidenceReportLedgerRow,
+  runbook: OperatorRunbookSummary
+): string {
+  const mismatches: string[] = [];
+  if (latest.operatorRunbookStatus !== runbook.status) {
+    mismatches.push(`status ${latest.operatorRunbookStatus || "unknown"} -> ${runbook.status}`);
+  }
+
+  const latestNextActionId = latest.operatorRunbookNextActionId || "ready";
+  const currentNextActionId = runbook.nextActionId ?? "ready";
+  if (latestNextActionId !== currentNextActionId) {
+    mismatches.push(`next action ${latestNextActionId} -> ${currentNextActionId}`);
+  }
+
+  if (
+    latest.operatorRunbookCompletedSections !== runbook.completedSections ||
+    latest.operatorRunbookTotalSections !== runbook.totalSections
+  ) {
+    mismatches.push(
+      `sections ${latest.operatorRunbookCompletedSections}/${latest.operatorRunbookTotalSections} -> ${runbook.completedSections}/${runbook.totalSections}`
+    );
+  }
+
+  if (!sameOperatorRunbookValues(latest.operatorRunbookSectionStatuses, operatorRunbookSectionStatuses(runbook))) {
+    mismatches.push("section statuses changed");
+  }
+  if (!sameOperatorRunbookValues(latest.operatorRunbookSectionEvidence, operatorRunbookSectionEvidence(runbook))) {
+    mismatches.push("section evidence changed");
+  }
+  if (!sameOperatorRunbookValues(latest.operatorRunbookControlSnapshot, operatorRunbookControlSnapshot(runbook))) {
+    mismatches.push("controls changed");
+  }
   return mismatches.join(" · ");
 }
 
@@ -21915,6 +23500,231 @@ function buildPaperExecutionReplayChecklistItem(gate: PaperExecutionReplayGate):
     evidence,
     detail: `${gate.detail} Replay checks ${gate.passedCount}/${gate.totalCount}.${latestEvidence}`
   };
+}
+
+export function buildOperatorRunbookSummary(input: OperatorRunbookInput): OperatorRunbookSummary {
+  const chainRollups = input.adapterChainHealthRollups ?? [];
+  const primaryChain =
+    chainRollups.find((rollup) => rollup.status === "paper_ready") ??
+    chainRollups.find((rollup) => rollup.status === "blocked") ??
+    chainRollups[0] ??
+    null;
+  const adapterId = primaryChain?.adapterId ?? input.p2PreLiveAcceptance.adapterId ?? "adapter-unselected";
+  const contextLabel = [
+    input.workspace.selectedInstrument.market,
+    input.workspace.selectedInstrument.symbol,
+    input.workspace.selectedTimeframe
+  ].join(" ");
+  const controls: OperatorRunbookControls = {
+    killSwitch: input.killSwitch?.trim() || "Disable execution route and keep adapters in paper-only mode",
+    rollbackOwner: input.rollbackOwner?.trim() || "operator",
+    positionLimit: `${Math.max(0, input.maxPositionPct ?? 20)}% max position per instrument`,
+    dataFreshness: operatorRunbookDataFreshness(input.workspace),
+    auditPackage: input.p2PreLiveAcceptance.sourcePath || "data/p2-pre-live-acceptance.json",
+    environmentState: operatorRunbookEnvironmentState(primaryChain)
+  };
+  const sections: OperatorRunbookSection[] = [
+    operatorRunbookChecklistSection(input.preLiveChecklist),
+    operatorRunbookReplaySection(input.paperExecutionReplayGate),
+    operatorRunbookAdapterChainSection(primaryChain),
+    operatorRunbookP2AcceptanceSection(input.p2PreLiveAcceptance),
+    operatorRunbookSafetyBoundarySection(input)
+  ];
+  const completedSections = sections.filter((section) => section.status === "passed").length;
+  const blocker = sections.find((section) => section.status === "blocked") ?? null;
+  const review = sections.find((section) => section.status === "review") ?? null;
+  const next = blocker ?? review;
+  const status: OperatorRunbookStatus = blocker ? "blocked" : review ? "review_pending" : "manual_review_ready";
+  const tone: OperatorRunbookTone = status === "manual_review_ready" ? "positive" : status === "review_pending" ? "warning" : "risk";
+
+  return {
+    status,
+    tone,
+    headline:
+      status === "manual_review_ready"
+        ? "Operator runbook ready for manual review"
+        : status === "review_pending"
+          ? "Operator runbook pending review"
+          : "Operator runbook blocked",
+    summary:
+      status === "manual_review_ready"
+        ? "All operator runbook sections are aligned for manual pre-live review only; live trading remains blocked."
+        : `${completedSections}/${sections.length} operator runbook sections passed; ${next?.label ?? "operator review"} is next.`,
+    contextLabel,
+    adapterId,
+    completedSections,
+    totalSections: sections.length,
+    nextActionId: next?.id ?? null,
+    nextAction: next ? `Resolve ${next.label}: ${next.nextAction}` : "Record or review the operator runbook before any separate live-route enablement.",
+    controls,
+    sections,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false
+  };
+}
+
+export function buildOperatorRunbookMarkdown(runbook: OperatorRunbookSummary): string {
+  const lines = [
+    "# Operator Runbook",
+    "",
+    `Status: ${runbook.status}`,
+    `Context: ${runbook.contextLabel}`,
+    `Adapter: ${runbook.adapterId}`,
+    `Progress: ${runbook.completedSections}/${runbook.totalSections}`,
+    `Next action: ${runbook.nextAction}`,
+    "",
+    "## Controls",
+    `- Kill switch: ${runbook.controls.killSwitch}`,
+    `- Rollback owner: ${runbook.controls.rollbackOwner}`,
+    `- Position limit: ${runbook.controls.positionLimit}`,
+    `- Data freshness: ${runbook.controls.dataFreshness}`,
+    `- Environment state: ${runbook.controls.environmentState}`,
+    `- Audit package: ${runbook.controls.auditPackage}`,
+    "",
+    "## Safety Boundary",
+    `- orderSubmissionEnabled=${runbook.orderSubmissionEnabled}`,
+    `- liveTradingAllowed=${runbook.liveTradingAllowed}`,
+    `- liveOrderSubmitted=${runbook.liveOrderSubmitted}`,
+    `- routeExecuted=${runbook.routeExecuted}`,
+    "",
+    "## Sections",
+    ...runbook.sections.flatMap((section) => [
+      `- ${section.id}: ${section.status} · ${section.evidence}`,
+      `  - ${section.detail}`,
+      `  - Next: ${section.nextAction}`
+    ])
+  ];
+  return lines.join("\n");
+}
+
+function operatorRunbookChecklistSection(checklist: PreLiveReadinessChecklist): OperatorRunbookSection {
+  const passed = checklist.status === "manual_route_ready" && checklist.manualRouteCandidate && checklist.blockingCount === 0;
+  const status: OperatorRunbookSectionStatus = passed ? "passed" : checklist.passedCount > 0 ? "review" : "blocked";
+  return {
+    id: "pre-live-checklist",
+    label: "Pre-live checklist",
+    status,
+    evidence: `${checklist.passedCount}/${checklist.totalCount} gates`,
+    detail: checklist.summary,
+    nextAction: checklist.nextActionId ? `Complete ${checklist.nextActionId}` : "Keep checklist evidence attached to the runbook.",
+    tone: operatorRunbookSectionTone(status)
+  };
+}
+
+function operatorRunbookReplaySection(gate: PaperExecutionReplayGate): OperatorRunbookSection {
+  const status: OperatorRunbookSectionStatus =
+    gate.status === "replay_ready" ? "passed" : gate.status === "partial" ? "review" : "blocked";
+  return {
+    id: "paper-execution-replay",
+    label: "Paper execution replay",
+    status,
+    evidence: `${gate.passedCount}/${gate.totalCount} replay checks`,
+    detail: gate.detail,
+    nextAction: gate.currentBlockerLabel ? `Resolve ${gate.currentBlockerLabel}` : "Keep replay evidence aligned with the current run.",
+    tone: operatorRunbookSectionTone(status)
+  };
+}
+
+function operatorRunbookAdapterChainSection(
+  chain: ExecutionAdapterChainHealthRollup | null
+): OperatorRunbookSection {
+  if (!chain) {
+    return {
+      id: "adapter-chain",
+      label: "Adapter chain",
+      status: "blocked",
+      evidence: "no adapter chain",
+      detail: "No adapter chain health rollup is available.",
+      nextAction: "Record adapter chain evidence from secret reference through paper execution.",
+      tone: "risk"
+    };
+  }
+  const status: OperatorRunbookSectionStatus =
+    chain.status === "paper_ready" ? "passed" : chain.status === "in_progress" ? "review" : "blocked";
+  return {
+    id: "adapter-chain",
+    label: "Adapter chain",
+    status,
+    evidence: `${chain.completedStageCount}/${chain.totalStageCount} stages`,
+    detail: chain.detail,
+    nextAction: chain.blockerLabel ? `Resolve ${chain.blockerLabel}` : "Keep adapter chain evidence available for audit.",
+    tone: operatorRunbookSectionTone(status)
+  };
+}
+
+function operatorRunbookP2AcceptanceSection(acceptance: P2PreLiveAcceptanceSummary): OperatorRunbookSection {
+  const unsafe =
+    acceptance.reportedOrderSubmissionEnabled ||
+    acceptance.reportedLiveTradingAllowed ||
+    acceptance.reportedLiveOrderSubmitted ||
+    acceptance.reportedRouteExecuted ||
+    !acceptance.liveBlockedBoundary;
+  const status: OperatorRunbookSectionStatus = acceptance.state === "passed" && !unsafe ? "passed" : "blocked";
+  return {
+    id: "p2-acceptance",
+    label: "P2 acceptance",
+    status,
+    evidence: acceptance.state,
+    detail: acceptance.detail,
+    nextAction: status === "passed" ? "Keep acceptance manifest linked to this operator runbook." : acceptance.actionLabel,
+    tone: operatorRunbookSectionTone(status)
+  };
+}
+
+function operatorRunbookSafetyBoundarySection(input: OperatorRunbookInput): OperatorRunbookSection {
+  const chainUnsafe = (input.adapterChainHealthRollups ?? []).some(
+    (rollup) => rollup.orderSubmissionEnabled || rollup.liveTradingAllowed
+  );
+  const unsafe =
+    input.preLiveChecklist.orderSubmissionEnabled ||
+    input.preLiveChecklist.liveTradingAllowed ||
+    input.paperExecutionReplayGate.orderSubmissionEnabled ||
+    input.paperExecutionReplayGate.liveTradingAllowed ||
+    input.p2PreLiveAcceptance.reportedOrderSubmissionEnabled ||
+    input.p2PreLiveAcceptance.reportedLiveTradingAllowed ||
+    input.p2PreLiveAcceptance.reportedLiveOrderSubmitted ||
+    input.p2PreLiveAcceptance.reportedRouteExecuted ||
+    (input.p2PreLiveAcceptance.state !== "missing" && !input.p2PreLiveAcceptance.liveBlockedBoundary) ||
+    chainUnsafe;
+  return {
+    id: "safety-boundary",
+    label: "Safety boundary",
+    status: unsafe ? "blocked" : "passed",
+    evidence: unsafe ? "unsafe claim detected" : "live blocked",
+    detail: unsafe
+      ? "One or more inputs claim order submission, route execution, or live trading is enabled."
+      : "Order submission, live orders, route execution, and live trading remain disabled.",
+    nextAction: unsafe ? "Remove unsafe execution claims before operator review." : "Do not enable live routes in P2.",
+    tone: unsafe ? "risk" : "positive"
+  };
+}
+
+function operatorRunbookSectionTone(status: OperatorRunbookSectionStatus): OperatorRunbookTone {
+  if (status === "passed") {
+    return "positive";
+  }
+  return status === "review" ? "warning" : "risk";
+}
+
+function operatorRunbookDataFreshness(workspace: TerminalWorkspace): string {
+  const quality = workspace.researchRun?.dataQuality;
+  if (!quality) {
+    return workspace.researchRun
+      ? `${workspace.researchRun.dataRows.toLocaleString("en-US")} rows · freshness not audited`
+      : "No audited research data freshness evidence";
+  }
+  return `${quality.source} · ${quality.rows.toLocaleString("en-US")} rows · ${
+    quality.isComplete ? "complete" : "review"
+  }`;
+}
+
+function operatorRunbookEnvironmentState(chain: ExecutionAdapterChainHealthRollup | null): string {
+  if (!chain) {
+    return "adapter chain missing";
+  }
+  return `${chain.adapterId} · ${chain.status} · live blocked`;
 }
 
 export function buildStrategyRuleRows(workspace: TerminalWorkspace): StrategyRuleRow[] {

@@ -183,6 +183,26 @@ describe("terminal layout css", () => {
     expect(cssBlock(".work-area-button.blocked")).toContain("border-color: #7a3a32;");
   });
 
+  test("lets operators generate the P2 manifest chain preflight from the execution panel", () => {
+    const panelSource = sourceBetween("function P2ManifestChainPreflightPanel", "function AdapterChainHealthPanel");
+
+    expect(appSource).toContain("generateP2ManifestChainPreflight");
+    expect(appSource).toContain("generateP2ManifestChainPreflightReport");
+    expect(appSource).toContain("p2ManifestChainPreflightAuditEvent");
+    expect(appSource).toContain("openP2ManifestChainPreflightAudit");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery");
+    expect(panelSource).toContain("onGeneratePreflight");
+    expect(panelSource).toContain("onOpenAudit");
+    expect(panelSource).toContain("isGenerating");
+    expect(panelSource).toContain("auditEventId");
+    expect(panelSource).toContain('"审计事件"');
+    expect(panelSource).toContain('"生成预检"');
+    expect(panelSource).toContain('"Generate"');
+    expect(cssBlock(".p2-chain-preflight-actions")).toContain("display: flex;");
+    expect(cssBlock(".p2-chain-preflight-actions")).toContain("flex-wrap: wrap;");
+    expect(cssBlock(".p2-chain-preflight-audit")).toContain("font-family: var(--mono);");
+  });
+
   test("resets the active workflow when timeframe changes invalidate audited context", () => {
     const selectTimeframeSource = sourceBetween("const selectTimeframe = useCallback", "setWorkflowRunState(createWorkflowRunState());");
 
@@ -680,7 +700,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const copyLatestResearchContextReportLink = useCallback");
     expect(appSource).toContain("buildResearchContextReadinessReportAuditEvent");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(currentReadinessReportSource).toContain("contextLink: buildResearchContextDeepLink(");
     expect(currentReadinessReportSource).toContain("researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId");
@@ -824,6 +844,44 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-acceptance-review-check")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(hasCssBlockWith(".audit-layout", ['"acceptance acceptance"', '"reports reports"', '"signing-keys signing-keys"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"acceptance"', '"reports"', '"signing-keys"'])).toBe(true);
+  });
+
+  test("renders P2 readiness acceptance manifest review inside the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const reviewPanelSource = sourceBetween("function P2ReadinessAcceptanceReviewPanel", "function P0AcceptanceReviewPanel");
+
+    expect(appSource).toContain("function P2ReadinessAcceptanceReviewPanel");
+    expect(appSource).toContain("buildP2ReadinessAcceptanceReviewMarkdown");
+    expect(appSource).toContain("buildP2ReadinessAcceptanceReviewAuditEvent");
+    expect(appSource).toContain("const p2ReadinessAcceptanceReviewMarkdown = useMemo");
+    expect(appSource).toContain("const copyP2ReadinessAcceptanceReview = useCallback");
+    expect(appSource).toContain("const downloadP2ReadinessAcceptanceReview = useCallback");
+    expect(appSource).toContain("const saveP2ReadinessAcceptanceReview = useCallback");
+    expect(auditWorkspaceSource).toContain("<P2ReadinessAcceptanceReviewPanel");
+    expect(auditWorkspaceSource).toContain("acceptance={p2ReadinessAcceptanceLatestState.acceptance ?? null}");
+    expect(auditWorkspaceSource).toContain("summary={p2ReadinessAcceptanceSummary}");
+    expect(auditWorkspaceSource).toContain("isRefreshing={isLoadingP2ReadinessAcceptance}");
+    expect(auditWorkspaceSource).toContain("isRecordingAudit={savingP2ReadinessAcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("isCopied={copiedP2ReadinessAcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("onCopy={() => void copyP2ReadinessAcceptanceReview()}");
+    expect(auditWorkspaceSource).toContain("onDownload={downloadP2ReadinessAcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("onRecordAudit={() => void saveP2ReadinessAcceptanceReview()}");
+    expect(auditWorkspaceSource).toContain("onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}");
+    expect(reviewPanelSource).toContain("acceptance?.criterionIds.map");
+    expect(reviewPanelSource).toContain("onRecordAudit");
+    expect(reviewPanelSource).toContain("isRecordingAudit");
+    expect(reviewPanelSource).toContain("readinessCoverageStatus");
+    expect(reviewPanelSource).toContain("p2ReadinessAcceptanceStatusLabel(i18n, summary.status)");
+    expect(reviewPanelSource).toContain('className={`p2-readiness-acceptance-review ${summary.tone}`}');
+    expect(cssBlock(".p2-readiness-acceptance-review-actions")).toContain("display: flex;");
+    expect(cssBlock(".p2-readiness-acceptance-review-actions button")).toContain("display: inline-flex;");
+    expect(cssBlock(".workflow-p2-readiness-acceptance-audit-panel")).toContain("grid-area: p2-readiness-review;");
+    expect(cssBlock(".p2-readiness-acceptance-review")).toContain("display: grid;");
+    expect(cssBlock(".p2-readiness-acceptance-review")).not.toContain("overflow: auto;");
+    expect(cssBlock(".p2-readiness-acceptance-review-criteria")).toContain("display: grid;");
+    expect(cssBlock(".p2-readiness-acceptance-review-criterion")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(hasCssBlockWith(".audit-layout", ['"p2-acceptance p2-acceptance"', '"p2-readiness-review p2-readiness-review"', '"acceptance acceptance"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"p2-acceptance"', '"p2-readiness-review"', '"acceptance"'])).toBe(true);
   });
 
   test("renders risk approval references in the AI review audit trail", () => {
@@ -1284,7 +1342,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
@@ -2751,6 +2809,50 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith(".execution-layout", ['"execution broker"', '"promotion p2-acceptance"', '"promotion pre-live"'])).toBe(true);
   });
 
+  test("renders operator runbook summary from pre-live gates before adapter runbook", () => {
+    expect(appSource).toContain("buildOperatorRunbookAuditCoverage(");
+    expect(appSource).toContain("buildOperatorRunbookSummary({");
+    expect(appSource).toContain("p2PreLiveAcceptance: p2PreLiveAcceptanceSummary");
+    expect(appSource).toContain("paperExecutionReplayGate");
+    expect(appSource).toContain("preLiveChecklist: preLiveReadinessChecklist");
+    expect(appSource).toContain("operatorRunbookAuditCoverage");
+    expect(appSource).toContain("<OperatorRunbookPanel");
+    expect(appSource).toContain("auditCoverage={operatorRunbookAuditCoverage}");
+    expect(appSource).toContain('className="workflow-operator-runbook-panel"');
+    expect(appSource).toContain("isCopied={copiedOperatorRunbook}");
+    expect(appSource).toContain("isRecordingAudit={isRecordingOperatorRunbook}");
+    expect(appSource).toContain("onCopy={copyOperatorRunbook}");
+    expect(appSource).toContain("onCopyAuditLink={copyOperatorRunbookAuditLink}");
+    expect(appSource).toContain("onDownload={downloadOperatorRunbook}");
+    expect(appSource).toContain("onFocusAudit={focusOperatorRunbookAudit}");
+    expect(appSource).toContain("onRecordAudit={recordOperatorRunbook}");
+    expect(appSource).toContain("runbook={operatorRunbookSummary}");
+    expect(appSource).toContain("function OperatorRunbookPanel");
+    expect(appSource).toContain('className="operator-runbook-actions"');
+    expect(appSource).toContain('className={`operator-runbook ${runbook.tone}`}');
+    expect(appSource).toContain('className={`operator-runbook-audit ${auditCoverage.status}`}');
+    expect(appSource).toContain('className="operator-runbook-audit-actions"');
+    expect(appSource).toContain('className="operator-runbook-controls"');
+    expect(appSource).toContain('className="operator-runbook-sections"');
+    expect(appSource).toContain('className={`operator-runbook-section ${section.tone}`}');
+    expect(styles).toContain(".workflow-operator-runbook-panel");
+    expect(styles).toContain(".operator-runbook");
+    expect(styles).toContain(".operator-runbook-actions");
+    expect(styles).toContain(".operator-runbook-audit");
+    expect(styles).toContain(".operator-runbook-audit-actions");
+    expect(styles).toContain(".operator-runbook-controls");
+    expect(styles).toContain(".operator-runbook-sections");
+    expect(styles).toContain(".operator-runbook-section");
+    expect(cssBlock(".workflow-operator-runbook-panel")).toContain("grid-area: operator-runbook;");
+    expect(
+      hasCssBlockWith(".execution-layout", [
+        '"promotion p2-acceptance"',
+        '"promotion operator-runbook"',
+        '"promotion pre-live"'
+      ])
+    ).toBe(true);
+  });
+
   test("renders adapter chain health rollups in execution and settings workspaces", () => {
     expect(appSource).toContain("const executionAdapterChainHealthRollups = buildExecutionAdapterChainHealthRollups({");
     expect(appSource).toContain("brokerRows: brokerAdapterRows");
@@ -2801,9 +2903,94 @@ describe("terminal layout css", () => {
     expect(
       hasCssBlockWith(".execution-layout", [
         '"execution broker"',
-        '"replay-gate adapter-chain"',
+        '"replay-gate replay-manifest"',
         '"promotion adapter-chain"',
         '"promotion p2-acceptance"'
+      ])
+    ).toBe(true);
+  });
+
+  test("renders P2 paper replay manifest readback next to the replay gate", () => {
+    expect(appSource).toContain("loadP2PaperReplayLatest(quantCoreBaseUrl)");
+    expect(appSource).toContain("const p2PaperReplaySummary = useMemo(");
+    expect(appSource).toContain("buildP2PaperReplaySummary(p2PaperReplayLatestState.replay)");
+    expect(appSource).toContain("<P2PaperReplayManifestPanel");
+    expect(appSource).toContain('className="workflow-p2-paper-replay-panel"');
+    expect(appSource).toContain('className={`p2-paper-replay ${summary.tone}`}');
+    expect(appSource).toContain("p2PaperReplaySummaryHeadline(i18n, p2PaperReplaySummary)");
+    expect(styles).toContain(".workflow-p2-paper-replay-panel");
+    expect(styles).toContain(".p2-paper-replay");
+    expect(styles).toContain(".p2-paper-replay-meta");
+    expect(styles).toContain(".p2-paper-replay-actions");
+    expect(cssBlock(".workflow-p2-paper-replay-panel")).toContain("grid-area: replay-manifest;");
+    expect(
+      hasCssBlockWith(".execution-layout", [
+        '"execution broker"',
+        '"replay-gate replay-manifest"',
+        '"promotion adapter-chain"',
+        '"promotion p2-acceptance"'
+      ])
+    ).toBe(true);
+  });
+
+  test("renders P2 readiness evidence coverage between acceptance and operator runbook", () => {
+    expect(appSource).toContain("buildP2ReadinessEvidenceCoverage({");
+    expect(appSource).toContain("operatorRunbookAuditCoverage,");
+    expect(appSource).toContain("p2PaperReplay: p2PaperReplaySummary");
+    expect(appSource).toContain("p2PreLiveAcceptance: p2PreLiveAcceptanceSummary");
+    expect(appSource).toContain("preLiveChecklist: preLiveReadinessChecklist");
+    expect(appSource).toContain("<P2ReadinessEvidenceCoveragePanel");
+    expect(appSource).toContain('className="workflow-p2-evidence-coverage-panel"');
+    expect(appSource).toContain('className={`p2-evidence-coverage ${coverage.tone}`}');
+    expect(appSource).toContain('className="p2-evidence-coverage-grid"');
+    expect(appSource).toContain('className={`p2-evidence-coverage-row ${row.tone}`}');
+    expect(styles).toContain(".workflow-p2-evidence-coverage-panel");
+    expect(styles).toContain(".p2-evidence-coverage");
+    expect(styles).toContain(".p2-evidence-coverage-grid");
+    expect(styles).toContain(".p2-evidence-coverage-row");
+    expect(cssBlock(".workflow-p2-evidence-coverage-panel")).toContain("grid-area: p2-coverage;");
+    expect(
+      hasCssBlockWith(".execution-layout", [
+        '"promotion p2-acceptance"',
+        '"promotion p2-coverage"',
+        '"promotion operator-runbook"'
+      ])
+    ).toBe(true);
+  });
+
+  test("renders P2 top-level readiness acceptance gate before the evidence matrix", () => {
+    expect(appSource).toContain("loadP2ReadinessAcceptanceLatest");
+    expect(appSource).toContain("generateP2ReadinessAcceptance");
+    expect(appSource).toContain("initialP2ReadinessAcceptanceLatestState");
+    expect(appSource).toContain("refreshP2ReadinessAcceptanceLatest");
+    expect(appSource).toContain("generateP2ReadinessAcceptanceReport");
+    expect(appSource).toContain("setP2ReadinessAcceptanceLatestState(await loadP2ReadinessAcceptanceLatest(quantCoreBaseUrl))");
+    expect(appSource).toContain("buildP2ReadinessAcceptanceSummary({");
+    expect(appSource).toContain("evidenceCoverage: p2ReadinessEvidenceCoverage");
+    expect(appSource).toContain("p1Acceptance: p1AcceptanceSummary");
+    expect(appSource).toContain("<P2ReadinessAcceptancePanel");
+    expect(appSource).toContain('className="workflow-p2-readiness-acceptance-panel"');
+    expect(appSource).toContain("readback={p2ReadinessAcceptanceLatestState.acceptance ?? null}");
+    expect(appSource).toContain("isRefreshing={isLoadingP2ReadinessAcceptance}");
+    expect(appSource).toContain("isGenerating={isGeneratingP2ReadinessAcceptance}");
+    expect(appSource).toContain("onGenerateAcceptance={() => void generateP2ReadinessAcceptanceReport()}");
+    expect(appSource).toContain("onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}");
+    expect(appSource).toContain('className={`p2-readiness-acceptance ${summary.tone}`}');
+    expect(appSource).toContain('className={`p2-readiness-acceptance-readback ${readbackTone}`}');
+    expect(appSource).toContain('className="p2-readiness-acceptance-grid"');
+    expect(appSource).toContain('className={`p2-readiness-acceptance-row ${row.tone}`}');
+    expect(styles).toContain(".workflow-p2-readiness-acceptance-panel");
+    expect(styles).toContain(".p2-readiness-acceptance");
+    expect(styles).toContain(".p2-readiness-acceptance-refresh");
+    expect(styles).toContain(".p2-readiness-acceptance-readback");
+    expect(styles).toContain(".p2-readiness-acceptance-grid");
+    expect(styles).toContain(".p2-readiness-acceptance-row");
+    expect(cssBlock(".workflow-p2-readiness-acceptance-panel")).toContain("grid-area: p2-readiness;");
+    expect(
+      hasCssBlockWith(".execution-layout", [
+        '"promotion p2-acceptance"',
+        '"promotion p2-readiness"',
+        '"promotion p2-coverage"'
       ])
     ).toBe(true);
   });

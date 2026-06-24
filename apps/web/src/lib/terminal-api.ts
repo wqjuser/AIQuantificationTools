@@ -13,6 +13,7 @@ import {
   workspaceWithPrimaryWorkflows,
   Market,
   type MarketDataRefreshGuard,
+  type OperatorRunbookSummary,
   PromotionReadiness,
   ResearchRunAudit,
   TerminalWorkspace,
@@ -24,13 +25,18 @@ import {
   type ExecutionAdapterPreLiveRunbookSummary,
   type P0AcceptanceSummary,
   type P0AcceptanceSummarySource,
+  type P2PaperReplaySummarySource,
   type P2PreLiveAcceptanceSummarySource,
+  type P2ManifestChainPreflightStageSource,
+  type P2ManifestChainPreflightSummarySource,
   type P0PlatformActionOutcome,
   type P0PlatformActionOutcomeEvidenceLink,
   type P0PlatformBacklogItem,
   type P0CompletionChecklist,
   type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
+  type P2ReadinessAcceptanceReviewSource,
+  type P2ReadinessAcceptanceSummary,
   type ResearchContextReadinessReportArchive,
   type ResearchRunDataPreparationEvidence,
   type StrategyRuleDraft,
@@ -703,6 +709,205 @@ export interface P2PreLiveAcceptanceStatus extends P2PreLiveAcceptanceSummarySou
 
 export interface P2PreLiveAcceptanceLatestResult {
   acceptance?: P2PreLiveAcceptanceStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P2PaperReplayManifestCheck {
+  id: string;
+  status: string;
+  summary: string;
+  evidenceId: string;
+}
+
+export interface P2PaperReplayMetrics {
+  filledPaperOrders: number;
+  portfolioOrders: number;
+  approvedPortfolioOrders: number;
+  portfolioFilledOrders: number;
+  stateHistoryFilledEvents: number;
+  adapterPaperExecutions: number;
+  replayWarnings: number;
+}
+
+export interface P2PaperReplayManifest {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string;
+  status: string;
+  baseUrl: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  runId: string;
+  adapterId: string;
+  replayStatus: string;
+  passedCheckCount: number;
+  totalCheckCount: number;
+  warningCount: number;
+  checkIds: string[];
+  auditEventIds: string[];
+  latestEvidenceId: string;
+  metrics: P2PaperReplayMetrics;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  checkCount: number;
+  checks: P2PaperReplayManifestCheck[];
+}
+
+export interface P2PaperReplayStatus extends P2PaperReplaySummarySource {
+  kind: "aiqt.p2PaperReplayStatus";
+  schemaVersion: 1;
+  status: "passed" | "missing" | "invalid";
+  manifest: P2PaperReplayManifest | null;
+}
+
+export interface P2PaperReplayLatestResult {
+  replay?: P2PaperReplayStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P2ReadinessAcceptanceManifestPaths {
+  p1Acceptance: string | null;
+  p2PreLiveAcceptance: string | null;
+  p2PaperReplay: string | null;
+}
+
+export interface P2ReadinessAcceptanceManifestCheck {
+  id: string;
+  status: string;
+  summary: string;
+  evidenceId: string;
+}
+
+export interface P2ReadinessAcceptanceManifest {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string;
+  status: string;
+  baseUrl: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  runId: string;
+  adapterId: string;
+  p1AcceptanceRunId: string;
+  p2PreLiveAcceptanceRunId: string;
+  p2PaperReplayRunId: string;
+  operatorRunbookAuditEventId: string;
+  readinessCoverageStatus: string;
+  acceptedCriterionCount: number;
+  totalCriterionCount: number;
+  blockingCriterionCount: number;
+  criterionIds: string[];
+  auditEventIds: string[];
+  manifestPaths: P2ReadinessAcceptanceManifestPaths;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  checkCount: number;
+  checks: P2ReadinessAcceptanceManifestCheck[];
+}
+
+export interface P2ReadinessAcceptanceReadbackStatus {
+  kind: "aiqt.p2ReadinessAcceptanceStatus";
+  schemaVersion: 1;
+  status: "accepted" | "missing" | "invalid";
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  runId: string | null;
+  market: Market | null;
+  symbol: string | null;
+  timeframe: ResearchTimeframe | null;
+  adapterId: string | null;
+  p1AcceptanceRunId: string | null;
+  p2PreLiveAcceptanceRunId: string | null;
+  p2PaperReplayRunId: string | null;
+  operatorRunbookAuditEventId: string | null;
+  readinessCoverageStatus: string | null;
+  acceptedCriterionCount: number;
+  totalCriterionCount: number;
+  blockingCriterionCount: number;
+  criterionIds: string[];
+  auditEventIds: string[];
+  manifestPaths: P2ReadinessAcceptanceManifestPaths;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: P2ReadinessAcceptanceManifest | null;
+}
+
+export interface P2ReadinessAcceptanceLatestResult {
+  acceptance?: P2ReadinessAcceptanceReadbackStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P2ReadinessAcceptanceGenerateResult {
+  acceptance?: P2ReadinessAcceptanceReadbackStatus;
+  status: "acceptance_generated" | "acceptance_failed";
+  source: WorkspaceSource;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  error?: string;
+}
+
+export interface P2ManifestChainPreflightManifest {
+  kind: string;
+  schemaVersion: number;
+  status: "ready" | "blocked";
+  ready: boolean;
+  validStageCount: number;
+  totalStageCount: number;
+  blockerIds: string[];
+  nextAction: string;
+  nextCommand: string;
+  stages: P2ManifestChainPreflightStageSource[];
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export interface P2ManifestChainPreflightStatus extends P2ManifestChainPreflightSummarySource {
+  kind: "aiqt.p2ManifestChainPreflightStatus";
+  schemaVersion: 1;
+  status: "ready" | "blocked" | "missing" | "invalid";
+  manifest: P2ManifestChainPreflightManifest | null;
+}
+
+export interface P2ManifestChainPreflightLatestResult {
+  preflight?: P2ManifestChainPreflightStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface P2ManifestChainPreflightGenerateResult {
+  preflight?: P2ManifestChainPreflightStatus;
+  auditEvent?: AuditEventRecord;
+  status: "preflight_generated" | "preflight_failed";
   source: WorkspaceSource;
   error?: string;
 }
@@ -4221,6 +4426,26 @@ export function buildP2PreLiveAcceptanceLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p2/pre-live/acceptance/latest");
 }
 
+export function buildP2PaperReplayLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p2/paper-replay/latest");
+}
+
+export function buildP2ReadinessAcceptanceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p2/readiness/acceptance");
+}
+
+export function buildP2ReadinessAcceptanceLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p2/readiness/acceptance/latest");
+}
+
+export function buildP2ManifestChainPreflightUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p2/manifest-chain/preflight");
+}
+
+export function buildP2ManifestChainPreflightLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/p2/manifest-chain/preflight/latest");
+}
+
 export function buildResearchRunsUrl(baseUrl: string, limit: number): string {
   return buildApiUrl(baseUrl, "api/research/runs", (url) => {
     url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 50))));
@@ -5663,6 +5888,91 @@ export async function buildP0AcceptanceReviewAuditEvent({
   };
 }
 
+export async function buildP2ReadinessAcceptanceReviewAuditEvent({
+  acceptance,
+  generatedAt = new Date().toISOString(),
+  markdown,
+  summary
+}: {
+  acceptance: P2ReadinessAcceptanceReviewSource | null | undefined;
+  generatedAt?: string;
+  markdown: string;
+  summary: P2ReadinessAcceptanceSummary;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const runId = acceptance?.runId?.trim() || "p2-readiness-acceptance";
+  const safeRunId = sanitizeDownloadFileName(runId);
+  const fileName = `${safeRunId}-p2-readiness-acceptance-review.md`;
+  const criterionIds =
+    acceptance?.criterionIds.length
+      ? acceptance.criterionIds
+      : summary.status === "incomplete"
+        ? ["p2_readiness_acceptance_manifest_missing"]
+        : ["p2_readiness_acceptance_manifest_invalid"];
+  const auditEventIds = acceptance?.auditEventIds.length ? acceptance.auditEventIds : ["audit_event_missing"];
+  const state = acceptance?.status ?? (summary.status === "accepted" ? "accepted" : summary.status === "blocked" ? "invalid" : "missing");
+
+  return {
+    schemaVersion: 1,
+    eventId: `p2-readiness-acceptance-review-${safeRunId}-${shortHash}`,
+    eventType: "p2_readiness_acceptance_review",
+    runId,
+    createdAt: generatedAt,
+    stage: state,
+    source: "web",
+    summary: "P2 readiness acceptance review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${
+      acceptance?.acceptedCriterionCount ?? summary.acceptedCount
+    }/${acceptance?.totalCriterionCount ?? summary.totalCount} criteria · live blocked ${Boolean(
+      acceptance?.liveBlockedBoundary
+    )}`,
+    metadata: {
+      artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state,
+      sourcePath: acceptance?.sourcePath ?? "data/p2-readiness-acceptance.json",
+      manifestGeneratedAt: acceptance?.generatedAt ?? "",
+      manifestAvailable: Boolean(acceptance?.available),
+      market: acceptance?.market ?? "",
+      symbol: acceptance?.symbol ?? "",
+      timeframe: acceptance?.timeframe ?? "",
+      adapterId: acceptance?.adapterId ?? "",
+      p1AcceptanceRunId: acceptance?.p1AcceptanceRunId ?? "",
+      p2PreLiveAcceptanceRunId: acceptance?.p2PreLiveAcceptanceRunId ?? "",
+      p2PaperReplayRunId: acceptance?.p2PaperReplayRunId ?? "",
+      operatorRunbookAuditEventId: acceptance?.operatorRunbookAuditEventId ?? "",
+      readinessCoverageStatus: acceptance?.readinessCoverageStatus ?? "",
+      acceptedCriterionCount: acceptance?.acceptedCriterionCount ?? summary.acceptedCount,
+      totalCriterionCount: acceptance?.totalCriterionCount ?? summary.totalCount,
+      blockingCriterionCount: acceptance?.blockingCriterionCount ?? summary.blockingCount,
+      criterionIds,
+      auditEventIds,
+      manifestPaths: acceptance?.manifestPaths ?? {
+        p1Acceptance: null,
+        p2PreLiveAcceptance: null,
+        p2PaperReplay: null
+      },
+      paperOnly: Boolean(acceptance?.paperOnly),
+      reportedOrderSubmissionEnabled: Boolean(acceptance?.orderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(acceptance?.liveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(acceptance?.liveOrderSubmitted),
+      reportedRouteExecuted: Boolean(acceptance?.routeExecuted),
+      reportedLiveBlockedBoundary: Boolean(acceptance?.liveBlockedBoundary),
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      boundary:
+        "P2 readiness acceptance review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
 export function buildMarketDataRefreshOverrideAuditEvent({
   actionScope = "manual_cache_refresh",
   createdAt = new Date().toISOString(),
@@ -6019,6 +6329,89 @@ export async function buildExecutionAdapterPreLiveRunbookAuditEvent({
       totalSteps: runbook.totalSteps
     }
   };
+}
+
+export async function buildOperatorRunbookAuditEvent({
+  generatedAt = new Date().toISOString(),
+  markdown,
+  runbook,
+  workspace
+}: {
+  generatedAt?: string;
+  markdown: string;
+  runbook: OperatorRunbookSummary;
+  workspace: TerminalWorkspace;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const market = workspace.selectedInstrument.market;
+  const symbol = workspace.selectedInstrument.symbol;
+  const timeframe = workspace.selectedTimeframe;
+  const safeAdapterId = sanitizeDownloadFileName(runbook.adapterId);
+  const safeSymbol = sanitizeDownloadFileName(symbol);
+  const safeTimeframe = sanitizeDownloadFileName(timeframe);
+  const fileName = `${safeAdapterId}-${safeSymbol}-${safeTimeframe}-operator-runbook.md`;
+  const sectionIds = runbook.sections.map((section) => section.id);
+  const sectionStatuses = runbook.sections.map((section) => `${section.id}:${section.status}`);
+  const sectionEvidence = runbook.sections.map((section) => `${section.id}:${section.evidence}`);
+  const controlSnapshot = buildOperatorRunbookControlSnapshot(runbook);
+
+  return {
+    schemaVersion: 1,
+    eventId: `operator-runbook-report-${safeAdapterId}-${safeSymbol}-${safeTimeframe}-${shortHash}`,
+    eventType: "operator_runbook_report",
+    runId: null,
+    createdAt: generatedAt,
+    stage: "generated",
+    source: "web",
+    summary: `Operator runbook report generated for ${runbook.adapterId}`,
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${runbook.completedSections}/${
+      runbook.totalSections
+    } sections · ${runbook.status} · next ${runbook.nextActionId ?? "review"}`,
+    metadata: {
+      adapterId: runbook.adapterId,
+      artifactKind: "aiqt.operatorRunbookReport",
+      auditPackage: runbook.controls.auditPackage,
+      boundary:
+        "Operator runbook audit evidence only; no live trading authorization, order submission, route execution, or investment advice",
+      completedSections: runbook.completedSections,
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      controlSnapshot,
+      dataFreshness: runbook.controls.dataFreshness,
+      environmentState: runbook.controls.environmentState,
+      fileName,
+      format: "text/markdown",
+      killSwitch: runbook.controls.killSwitch,
+      liveOrderSubmitted: false,
+      liveTradingAllowed: false,
+      market,
+      nextAction: runbook.nextAction,
+      nextActionId: runbook.nextActionId ?? "",
+      orderSubmissionEnabled: false,
+      positionLimit: runbook.controls.positionLimit,
+      rollbackOwner: runbook.controls.rollbackOwner,
+      routeExecuted: false,
+      sectionEvidence,
+      sectionIds,
+      sectionStatuses,
+      status: runbook.status,
+      symbol,
+      timeframe,
+      totalSections: runbook.totalSections
+    }
+  };
+}
+
+function buildOperatorRunbookControlSnapshot(runbook: OperatorRunbookSummary): string[] {
+  return [
+    `killSwitch=${runbook.controls.killSwitch}`,
+    `rollbackOwner=${runbook.controls.rollbackOwner}`,
+    `positionLimit=${runbook.controls.positionLimit}`,
+    `dataFreshness=${runbook.controls.dataFreshness}`,
+    `environmentState=${runbook.controls.environmentState}`,
+    `auditPackage=${runbook.controls.auditPackage}`
+  ];
 }
 
 export async function buildBacktestReportAuditEvent({
@@ -6926,6 +7319,272 @@ function buildMissingP2PreLiveAcceptanceStatus(reason: string): P2PreLiveAccepta
     requiredCheckCount: 6,
     checkIds: [],
     manualRouteCandidate: false,
+    paperOnly: false,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
+}
+
+export async function loadP2PaperReplayLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P2PaperReplayLatestResult> {
+  try {
+    const response = await fetcher(buildP2PaperReplayLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP2PaperReplayLatestPayload(payload)) {
+      throw new Error("Invalid P2 paper replay status contract");
+    }
+    return {
+      replay: payload.replay,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P2 paper replay readback error";
+    return {
+      replay: buildMissingP2PaperReplayStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingP2PaperReplayStatus(reason: string): P2PaperReplayStatus {
+  return {
+    kind: "aiqt.p2PaperReplayStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/p2-paper-replay.json",
+    summary: "P2 paper replay manifest is missing.",
+    reason,
+    generatedAt: null,
+    runId: null,
+    market: null,
+    symbol: null,
+    timeframe: null,
+    adapterId: null,
+    replayStatus: null,
+    passedCheckCount: 0,
+    totalCheckCount: 0,
+    warningCount: 0,
+    requiredCheckCount: 8,
+    checkCount: 0,
+    checkIds: [],
+    auditEventIds: [],
+    latestEvidenceId: null,
+    metrics: {
+      filledPaperOrders: 0,
+      portfolioOrders: 0,
+      approvedPortfolioOrders: 0,
+      portfolioFilledOrders: 0,
+      stateHistoryFilledEvents: 0,
+      adapterPaperExecutions: 0,
+      replayWarnings: 0
+    },
+    paperOnly: false,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
+}
+
+export async function loadP2ReadinessAcceptanceLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P2ReadinessAcceptanceLatestResult> {
+  try {
+    const response = await fetcher(buildP2ReadinessAcceptanceLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP2ReadinessAcceptanceLatestPayload(payload)) {
+      throw new Error("Invalid P2 readiness acceptance status contract");
+    }
+    return {
+      acceptance: payload.acceptance,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P2 readiness acceptance readback error";
+    return {
+      acceptance: buildMissingP2ReadinessAcceptanceStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+export async function generateP2ReadinessAcceptance(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P2ReadinessAcceptanceGenerateResult> {
+  try {
+    const response = await fetcher(buildP2ReadinessAcceptanceUrl(baseUrl), {
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP2ReadinessAcceptanceGeneratePayload(payload)) {
+      throw new Error("Invalid P2 readiness acceptance generation contract");
+    }
+    return {
+      acceptance: payload.acceptance,
+      status: payload.status,
+      source: "core",
+      paperOnly: payload.paperOnly,
+      orderSubmissionEnabled: payload.orderSubmissionEnabled,
+      liveTradingAllowed: payload.liveTradingAllowed,
+      liveOrderSubmitted: payload.liveOrderSubmitted,
+      routeExecuted: payload.routeExecuted
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P2 readiness acceptance generation error";
+    return {
+      acceptance: buildMissingP2ReadinessAcceptanceStatus(message),
+      status: "acceptance_failed",
+      source: "fallback",
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      error: message
+    };
+  }
+}
+
+function buildMissingP2ReadinessAcceptanceStatus(reason: string): P2ReadinessAcceptanceReadbackStatus {
+  return {
+    kind: "aiqt.p2ReadinessAcceptanceStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/p2-readiness-acceptance.json",
+    summary: "P2 readiness acceptance manifest is missing.",
+    reason,
+    generatedAt: null,
+    runId: null,
+    market: null,
+    symbol: null,
+    timeframe: null,
+    adapterId: null,
+    p1AcceptanceRunId: null,
+    p2PreLiveAcceptanceRunId: null,
+    p2PaperReplayRunId: null,
+    operatorRunbookAuditEventId: null,
+    readinessCoverageStatus: null,
+    acceptedCriterionCount: 0,
+    totalCriterionCount: 0,
+    blockingCriterionCount: 0,
+    criterionIds: [],
+    auditEventIds: [],
+    manifestPaths: {
+      p1Acceptance: null,
+      p2PreLiveAcceptance: null,
+      p2PaperReplay: null
+    },
+    checkCount: 0,
+    requiredCheckCount: 6,
+    checkIds: [],
+    paperOnly: false,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
+}
+
+export async function loadP2ManifestChainPreflightLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P2ManifestChainPreflightLatestResult> {
+  try {
+    const response = await fetcher(buildP2ManifestChainPreflightLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isP2ManifestChainPreflightLatestPayload(payload)) {
+      throw new Error("Invalid P2 manifest chain preflight status contract");
+    }
+    return {
+      preflight: payload.preflight,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P2 manifest chain preflight readback error";
+    return {
+      preflight: buildMissingP2ManifestChainPreflightStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+export async function generateP2ManifestChainPreflight(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<P2ManifestChainPreflightGenerateResult> {
+  try {
+    const response = await fetcher(buildP2ManifestChainPreflightUrl(baseUrl), {
+      method: "POST"
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (!isP2ManifestChainPreflightGeneratePayload(payload)) {
+      throw new Error("Invalid P2 manifest chain preflight generation contract");
+    }
+    return {
+      preflight: payload.preflight,
+      auditEvent: payload.auditEvent,
+      status: "preflight_generated",
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown P2 manifest chain preflight generation error";
+    return {
+      preflight: buildMissingP2ManifestChainPreflightStatus(message),
+      status: "preflight_failed",
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingP2ManifestChainPreflightStatus(reason: string): P2ManifestChainPreflightStatus {
+  return {
+    kind: "aiqt.p2ManifestChainPreflightStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/p2-chain-preflight.json",
+    summary: "P2 manifest chain preflight is missing.",
+    reason,
+    ready: false,
+    validStageCount: 0,
+    totalStageCount: 4,
+    blockerIds: [],
+    nextAction: "run-p1-acceptance",
+    nextCommand: "npm run docker:smoke:p1 -- --no-build",
+    stages: [],
     paperOnly: false,
     orderSubmissionEnabled: false,
     liveTradingAllowed: false,
@@ -10703,6 +11362,392 @@ function isP2PreLiveAcceptanceManifestCheckPayload(
   }
   const check = value as Partial<P2PreLiveAcceptanceManifestCheck>;
   return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
+}
+
+function isP2PaperReplayLatestPayload(value: unknown): value is { replay: P2PaperReplayStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { replay?: unknown };
+  return isP2PaperReplayStatusPayload(payload.replay);
+}
+
+function isP2PaperReplayStatusPayload(value: unknown): value is P2PaperReplayStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2PaperReplayStatus>;
+  const validStatus = payload.status === "passed" || payload.status === "missing" || payload.status === "invalid";
+  const validMarket = payload.market === null || isMarket(payload.market);
+  const validTimeframe = payload.timeframe === null || isTimeframe(payload.timeframe);
+  return (
+    payload.kind === "aiqt.p2PaperReplayStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    (payload.runId === null || typeof payload.runId === "string") &&
+    validMarket &&
+    (payload.symbol === null || typeof payload.symbol === "string") &&
+    validTimeframe &&
+    (payload.adapterId === null || typeof payload.adapterId === "string") &&
+    (payload.replayStatus === null || typeof payload.replayStatus === "string") &&
+    typeof payload.passedCheckCount === "number" &&
+    typeof payload.totalCheckCount === "number" &&
+    typeof payload.warningCount === "number" &&
+    typeof payload.requiredCheckCount === "number" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.auditEventIds) &&
+    payload.auditEventIds.every((id) => typeof id === "string") &&
+    (payload.latestEvidenceId === null || typeof payload.latestEvidenceId === "string") &&
+    isP2PaperReplayMetricsPayload(payload.metrics) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isP2PaperReplayManifestPayload(payload.manifest))
+  );
+}
+
+function isP2PaperReplayManifestPayload(value: unknown): value is P2PaperReplayManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2PaperReplayManifest>;
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    typeof payload.generatedAt === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.baseUrl === "string" &&
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isTimeframe(payload.timeframe) &&
+    typeof payload.runId === "string" &&
+    typeof payload.adapterId === "string" &&
+    typeof payload.replayStatus === "string" &&
+    typeof payload.passedCheckCount === "number" &&
+    typeof payload.totalCheckCount === "number" &&
+    typeof payload.warningCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.auditEventIds) &&
+    payload.auditEventIds.every((id) => typeof id === "string") &&
+    typeof payload.latestEvidenceId === "string" &&
+    isP2PaperReplayMetricsPayload(payload.metrics) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isP2PaperReplayManifestCheckPayload)
+  );
+}
+
+function isP2PaperReplayManifestCheckPayload(value: unknown): value is P2PaperReplayManifestCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<P2PaperReplayManifestCheck>;
+  return (
+    typeof check.id === "string" &&
+    typeof check.status === "string" &&
+    typeof check.summary === "string" &&
+    typeof check.evidenceId === "string"
+  );
+}
+
+function isP2PaperReplayMetricsPayload(value: unknown): value is P2PaperReplayMetrics {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const metrics = value as Partial<P2PaperReplayMetrics>;
+  return (
+    typeof metrics.filledPaperOrders === "number" &&
+    typeof metrics.portfolioOrders === "number" &&
+    typeof metrics.approvedPortfolioOrders === "number" &&
+    typeof metrics.portfolioFilledOrders === "number" &&
+    typeof metrics.stateHistoryFilledEvents === "number" &&
+    typeof metrics.adapterPaperExecutions === "number" &&
+    typeof metrics.replayWarnings === "number"
+  );
+}
+
+function isP2ReadinessAcceptanceLatestPayload(
+  value: unknown
+): value is { acceptance: P2ReadinessAcceptanceReadbackStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { acceptance?: unknown };
+  return isP2ReadinessAcceptanceStatusPayload(payload.acceptance);
+}
+
+function isP2ReadinessAcceptanceGeneratePayload(value: unknown): value is {
+  status: "acceptance_generated";
+  acceptance: P2ReadinessAcceptanceReadbackStatus;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2ReadinessAcceptanceGenerateResult>;
+  return (
+    payload.status === "acceptance_generated" &&
+    isP2ReadinessAcceptanceStatusPayload(payload.acceptance) &&
+    payload.paperOnly === true &&
+    payload.orderSubmissionEnabled === false &&
+    payload.liveTradingAllowed === false &&
+    payload.liveOrderSubmitted === false &&
+    payload.routeExecuted === false
+  );
+}
+
+function isP2ReadinessAcceptanceStatusPayload(value: unknown): value is P2ReadinessAcceptanceReadbackStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2ReadinessAcceptanceReadbackStatus>;
+  const validStatus = payload.status === "accepted" || payload.status === "missing" || payload.status === "invalid";
+  const validMarket = payload.market === null || isMarket(payload.market);
+  const validTimeframe = payload.timeframe === null || isTimeframe(payload.timeframe);
+  return (
+    payload.kind === "aiqt.p2ReadinessAcceptanceStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    (payload.runId === null || typeof payload.runId === "string") &&
+    validMarket &&
+    (payload.symbol === null || typeof payload.symbol === "string") &&
+    validTimeframe &&
+    (payload.adapterId === null || typeof payload.adapterId === "string") &&
+    (payload.p1AcceptanceRunId === null || typeof payload.p1AcceptanceRunId === "string") &&
+    (payload.p2PreLiveAcceptanceRunId === null || typeof payload.p2PreLiveAcceptanceRunId === "string") &&
+    (payload.p2PaperReplayRunId === null || typeof payload.p2PaperReplayRunId === "string") &&
+    (payload.operatorRunbookAuditEventId === null ||
+      typeof payload.operatorRunbookAuditEventId === "string") &&
+    (payload.readinessCoverageStatus === null || typeof payload.readinessCoverageStatus === "string") &&
+    typeof payload.acceptedCriterionCount === "number" &&
+    typeof payload.totalCriterionCount === "number" &&
+    typeof payload.blockingCriterionCount === "number" &&
+    Array.isArray(payload.criterionIds) &&
+    payload.criterionIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.auditEventIds) &&
+    payload.auditEventIds.every((id) => typeof id === "string") &&
+    isP2ReadinessAcceptanceManifestPathsPayload(payload.manifestPaths) &&
+    typeof payload.checkCount === "number" &&
+    typeof payload.requiredCheckCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isP2ReadinessAcceptanceManifestPayload(payload.manifest))
+  );
+}
+
+function isP2ReadinessAcceptanceManifestPayload(value: unknown): value is P2ReadinessAcceptanceManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2ReadinessAcceptanceManifest>;
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    typeof payload.generatedAt === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.baseUrl === "string" &&
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isTimeframe(payload.timeframe) &&
+    typeof payload.runId === "string" &&
+    typeof payload.adapterId === "string" &&
+    typeof payload.p1AcceptanceRunId === "string" &&
+    typeof payload.p2PreLiveAcceptanceRunId === "string" &&
+    typeof payload.p2PaperReplayRunId === "string" &&
+    typeof payload.operatorRunbookAuditEventId === "string" &&
+    typeof payload.readinessCoverageStatus === "string" &&
+    typeof payload.acceptedCriterionCount === "number" &&
+    typeof payload.totalCriterionCount === "number" &&
+    typeof payload.blockingCriterionCount === "number" &&
+    Array.isArray(payload.criterionIds) &&
+    payload.criterionIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.auditEventIds) &&
+    payload.auditEventIds.every((id) => typeof id === "string") &&
+    isP2ReadinessAcceptanceManifestPathsPayload(payload.manifestPaths) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isP2ReadinessAcceptanceManifestCheckPayload)
+  );
+}
+
+function isP2ReadinessAcceptanceManifestPathsPayload(
+  value: unknown
+): value is P2ReadinessAcceptanceManifestPaths {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const paths = value as Partial<P2ReadinessAcceptanceManifestPaths>;
+  return (
+    (paths.p1Acceptance === null || typeof paths.p1Acceptance === "string") &&
+    (paths.p2PreLiveAcceptance === null || typeof paths.p2PreLiveAcceptance === "string") &&
+    (paths.p2PaperReplay === null || typeof paths.p2PaperReplay === "string")
+  );
+}
+
+function isP2ReadinessAcceptanceManifestCheckPayload(
+  value: unknown
+): value is P2ReadinessAcceptanceManifestCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<P2ReadinessAcceptanceManifestCheck>;
+  return (
+    typeof check.id === "string" &&
+    typeof check.status === "string" &&
+    typeof check.summary === "string" &&
+    typeof check.evidenceId === "string"
+  );
+}
+
+function isP2ManifestChainPreflightLatestPayload(
+  value: unknown
+): value is { preflight: P2ManifestChainPreflightStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { preflight?: unknown };
+  return isP2ManifestChainPreflightStatusPayload(payload.preflight);
+}
+
+function isP2ManifestChainPreflightGeneratePayload(
+  value: unknown
+): value is {
+  status: "preflight_generated";
+  preflight: P2ManifestChainPreflightStatus;
+  auditEvent: AuditEventRecord;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { status?: unknown; preflight?: unknown; auditEvent?: unknown };
+  return (
+    payload.status === "preflight_generated" &&
+    isP2ManifestChainPreflightStatusPayload(payload.preflight) &&
+    isAuditEventRecord(payload.auditEvent)
+  );
+}
+
+function isP2ManifestChainPreflightStatusPayload(value: unknown): value is P2ManifestChainPreflightStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2ManifestChainPreflightStatus>;
+  const validStatus =
+    payload.status === "ready" ||
+    payload.status === "blocked" ||
+    payload.status === "missing" ||
+    payload.status === "invalid";
+  return (
+    payload.kind === "aiqt.p2ManifestChainPreflightStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    typeof payload.ready === "boolean" &&
+    typeof payload.validStageCount === "number" &&
+    typeof payload.totalStageCount === "number" &&
+    Array.isArray(payload.blockerIds) &&
+    payload.blockerIds.every((id) => typeof id === "string") &&
+    typeof payload.nextAction === "string" &&
+    typeof payload.nextCommand === "string" &&
+    Array.isArray(payload.stages) &&
+    payload.stages.every(isP2ManifestChainPreflightStagePayload) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isP2ManifestChainPreflightManifestPayload(payload.manifest))
+  );
+}
+
+function isP2ManifestChainPreflightManifestPayload(
+  value: unknown
+): value is P2ManifestChainPreflightManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<P2ManifestChainPreflightManifest>;
+  const validStatus = payload.status === "ready" || payload.status === "blocked";
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    validStatus &&
+    typeof payload.ready === "boolean" &&
+    typeof payload.validStageCount === "number" &&
+    typeof payload.totalStageCount === "number" &&
+    Array.isArray(payload.blockerIds) &&
+    payload.blockerIds.every((id) => typeof id === "string") &&
+    typeof payload.nextAction === "string" &&
+    typeof payload.nextCommand === "string" &&
+    Array.isArray(payload.stages) &&
+    payload.stages.every(isP2ManifestChainPreflightStagePayload) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean"
+  );
+}
+
+function isP2ManifestChainPreflightStagePayload(value: unknown): value is P2ManifestChainPreflightStageSource {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const stage = value as Partial<P2ManifestChainPreflightStageSource>;
+  const validStatus = stage.status === "valid" || stage.status === "missing" || stage.status === "invalid";
+  return (
+    typeof stage.id === "string" &&
+    typeof stage.label === "string" &&
+    validStatus &&
+    typeof stage.path === "string" &&
+    typeof stage.summary === "string" &&
+    typeof stage.reason === "string" &&
+    typeof stage.nextAction === "string" &&
+    typeof stage.nextCommand === "string"
+  );
 }
 
 function isResearchRunExportPayload(value: unknown): value is { export: ResearchRunExportPackage } {

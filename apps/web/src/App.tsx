@@ -61,7 +61,12 @@ import {
   loadHandoffNotes,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
+  loadP2PaperReplayLatest,
   loadP2PreLiveAcceptanceLatest,
+  loadP2ReadinessAcceptanceLatest,
+  generateP2ReadinessAcceptance,
+  loadP2ManifestChainPreflightLatest,
+  generateP2ManifestChainPreflight,
   loadPlatformSettings,
   loadWatchlistCacheRefreshRuns,
   loadExecutionAdapterLedger,
@@ -113,6 +118,7 @@ import {
   buildAuditEvidenceReportAuditEvent,
   buildBacktestReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
+  buildOperatorRunbookAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
   buildResearchContextReadinessReportAuditEvent,
@@ -124,6 +130,7 @@ import {
   withVerifiedResearchRunExportPackageReportSignatures,
   withResearchRunExportReportSignatures,
   buildP0AcceptanceReviewAuditEvent,
+  buildP2ReadinessAcceptanceReviewAuditEvent,
   MarketCalendarResult,
   MarketCalendarStatus,
   MarketDataReadinessResult,
@@ -133,7 +140,10 @@ import {
   P0PaperSimulationResponse,
   P0AcceptanceLatestResult,
   P1AcceptanceLatestResult,
+  P2PaperReplayLatestResult,
   P2PreLiveAcceptanceLatestResult,
+  P2ReadinessAcceptanceLatestResult,
+  P2ManifestChainPreflightLatestResult,
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
   AiReviewRunHistoryPagination,
@@ -243,6 +253,7 @@ import {
   buildAuditEvidenceReportLedgerSummary,
   buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
   buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery,
+  buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery,
   buildAuditEvidenceReportLedgerRowCurrentGapActionDescriptor,
   buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness,
   buildAuditEvidenceReportLedgerRowCurrentGapReadinessQuery,
@@ -307,6 +318,8 @@ import {
   buildExecutionAdapterLedgerRows,
   buildExecutionAdapterPreLiveRunbookMarkdown,
   buildExecutionAdapterPreLiveRunbookSummary,
+  buildOperatorRunbookAuditCoverage,
+  buildOperatorRunbookMarkdown,
   buildPreLiveRunbookAuditCoverage,
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
@@ -314,7 +327,13 @@ import {
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
+  buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
+  buildP2ManifestChainPreflightSummary,
+  buildP2ReadinessAcceptanceReviewMarkdown,
+  buildP2ReadinessAcceptanceSummary,
+  buildP2ReadinessEvidenceCoverage,
+  buildOperatorRunbookSummary,
   buildP0CompletionChecklist,
   buildP0CompletionGapUrlSearch,
   buildP0GoldenPathJourney,
@@ -478,7 +497,13 @@ import {
   P0CompletionCriterion,
   P0AcceptanceSummary,
   P1AcceptanceSummary,
+  P2PaperReplaySummary,
   P2PreLiveAcceptanceSummary,
+  P2ManifestChainPreflightSummary,
+  P2ReadinessAcceptanceSummary,
+  P2ReadinessEvidenceCoverage,
+  OperatorRunbookAuditCoverage,
+  OperatorRunbookSummary,
   P0GoldenPathJourney,
   P0PlatformActionOutcome,
   P0PlatformBacklogItem,
@@ -692,7 +717,16 @@ const initialP0AcceptanceLatestState: P0AcceptanceLatestResult = {
 const initialP1AcceptanceLatestState: P1AcceptanceLatestResult = {
   source: "fallback"
 };
+const initialP2PaperReplayLatestState: P2PaperReplayLatestResult = {
+  source: "fallback"
+};
 const initialP2PreLiveAcceptanceLatestState: P2PreLiveAcceptanceLatestResult = {
+  source: "fallback"
+};
+const initialP2ReadinessAcceptanceLatestState: P2ReadinessAcceptanceLatestResult = {
+  source: "fallback"
+};
+const initialP2ManifestChainPreflightLatestState: P2ManifestChainPreflightLatestResult = {
   source: "fallback"
 };
 const initialPortfolioBacktestState: PortfolioBacktestResult = {
@@ -1891,8 +1925,17 @@ export function App() {
   const [p1AcceptanceLatestState, setP1AcceptanceLatestState] = useState<P1AcceptanceLatestResult>(
     initialP1AcceptanceLatestState
   );
+  const [p2PaperReplayLatestState, setP2PaperReplayLatestState] = useState<P2PaperReplayLatestResult>(
+    initialP2PaperReplayLatestState
+  );
   const [p2PreLiveAcceptanceLatestState, setP2PreLiveAcceptanceLatestState] =
     useState<P2PreLiveAcceptanceLatestResult>(initialP2PreLiveAcceptanceLatestState);
+  const [p2ReadinessAcceptanceLatestState, setP2ReadinessAcceptanceLatestState] =
+    useState<P2ReadinessAcceptanceLatestResult>(initialP2ReadinessAcceptanceLatestState);
+  const [p2ManifestChainPreflightLatestState, setP2ManifestChainPreflightLatestState] =
+    useState<P2ManifestChainPreflightLatestResult>(initialP2ManifestChainPreflightLatestState);
+  const [p2ManifestChainPreflightAuditEvent, setP2ManifestChainPreflightAuditEvent] =
+    useState<AuditEventRecord | null>(null);
   const [portfolioBacktestState, setPortfolioBacktestState] =
     useState<PortfolioBacktestResult>(initialPortfolioBacktestState);
   const [portfolioPaperOrderBatches, setPortfolioPaperOrderBatches] = useState<PortfolioPaperOrderBatch[]>([]);
@@ -1953,7 +1996,12 @@ export function App() {
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isLoadingP0Acceptance, setIsLoadingP0Acceptance] = useState(false);
   const [isLoadingP1Acceptance, setIsLoadingP1Acceptance] = useState(false);
+  const [isLoadingP2PaperReplay, setIsLoadingP2PaperReplay] = useState(false);
   const [isLoadingP2PreLiveAcceptance, setIsLoadingP2PreLiveAcceptance] = useState(false);
+  const [isLoadingP2ReadinessAcceptance, setIsLoadingP2ReadinessAcceptance] = useState(false);
+  const [isGeneratingP2ReadinessAcceptance, setIsGeneratingP2ReadinessAcceptance] = useState(false);
+  const [isLoadingP2ManifestChainPreflight, setIsLoadingP2ManifestChainPreflight] = useState(false);
+  const [isGeneratingP2ManifestChainPreflight, setIsGeneratingP2ManifestChainPreflight] = useState(false);
   const [isSavingAiReviewRecord, setIsSavingAiReviewRecord] = useState(false);
   const [isLoadingAiReviewHistory, setIsLoadingAiReviewHistory] = useState(false);
   const [isInspectingExportPackage, setIsInspectingExportPackage] = useState(false);
@@ -2035,11 +2083,15 @@ export function App() {
   const [copiedImportAuditEvidenceEventId, setCopiedImportAuditEvidenceEventId] = useState<string | null>(null);
   const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId] = useState<string | null>(null);
   const [copiedP0AcceptanceReview, setCopiedP0AcceptanceReview] = useState(false);
+  const [copiedP2ReadinessAcceptanceReview, setCopiedP2ReadinessAcceptanceReview] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
+  const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
   const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
+  const [isRecordingOperatorRunbook, setIsRecordingOperatorRunbook] = useState(false);
   const [isRecordingPreLiveRunbook, setIsRecordingPreLiveRunbook] = useState(false);
   const [savingP0ReadinessReport, setSavingP0ReadinessReport] = useState(false);
   const [savingP0AcceptanceReview, setSavingP0AcceptanceReview] = useState(false);
+  const [savingP2ReadinessAcceptanceReview, setSavingP2ReadinessAcceptanceReview] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [copiedResearchContextLink, setCopiedResearchContextLink] = useState(false);
@@ -2098,6 +2150,7 @@ export function App() {
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
   const researchContextLinkCopyResetTimerRef = useRef<number | null>(null);
   const researchContextReadinessReportCopyResetTimerRef = useRef<number | null>(null);
+  const operatorRunbookCopyResetTimerRef = useRef<number | null>(null);
   const preLiveRunbookCopyResetTimerRef = useRef<number | null>(null);
   const initialImportAuditEvidenceDeepLinkRef = useRef(initialImportAuditEvidenceDeepLink);
   const initialPaperExecutionDeepLinkRef = useRef(initialPaperExecutionDeepLink);
@@ -2531,11 +2584,53 @@ export function App() {
     () => buildP1AcceptanceSummary(p1AcceptanceLatestState.acceptance),
     [p1AcceptanceLatestState.acceptance]
   );
+  const p2PaperReplaySummary = useMemo(
+    () => buildP2PaperReplaySummary(p2PaperReplayLatestState.replay),
+    [p2PaperReplayLatestState.replay]
+  );
   const p2PreLiveAcceptanceSummary = useMemo(
     () => buildP2PreLiveAcceptanceSummary(p2PreLiveAcceptanceLatestState.acceptance),
     [p2PreLiveAcceptanceLatestState.acceptance]
   );
+  const operatorRunbookSummary = buildOperatorRunbookSummary({
+    adapterChainHealthRollups: executionAdapterChainHealthRollups,
+    p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
+    paperExecutionReplayGate,
+    preLiveChecklist: preLiveReadinessChecklist,
+    workspace
+  });
+  const operatorRunbookAuditCoverage = buildOperatorRunbookAuditCoverage(
+    auditEvidenceReportLedgerRows,
+    operatorRunbookSummary,
+    workspace
+  );
+  const p2ReadinessEvidenceCoverage = buildP2ReadinessEvidenceCoverage({
+    adapterChainHealthRollups: executionAdapterChainHealthRollups,
+    operatorRunbookAuditCoverage,
+    p2PaperReplay: p2PaperReplaySummary,
+    p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
+    preLiveChecklist: preLiveReadinessChecklist
+  });
+  const p2ReadinessAcceptanceSummary = buildP2ReadinessAcceptanceSummary({
+    evidenceCoverage: p2ReadinessEvidenceCoverage,
+    p1Acceptance: p1AcceptanceSummary,
+    p2PaperReplay: p2PaperReplaySummary,
+    p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
+    preLiveChecklist: preLiveReadinessChecklist
+  });
+  const p2ManifestChainPreflightSummary = useMemo(
+    () => buildP2ManifestChainPreflightSummary(p2ManifestChainPreflightLatestState.preflight),
+    [p2ManifestChainPreflightLatestState.preflight]
+  );
   const p2PreLiveAcceptanceSummaryHeadlineText = p2PreLiveAcceptanceSummaryHeadline(i18n, p2PreLiveAcceptanceSummary);
+  const p2ReadinessAcceptanceReviewMarkdown = useMemo(
+    () =>
+      buildP2ReadinessAcceptanceReviewMarkdown({
+        acceptance: p2ReadinessAcceptanceLatestState.acceptance ?? null,
+        summary: p2ReadinessAcceptanceSummary
+      }),
+    [p2ReadinessAcceptanceLatestState.acceptance, p2ReadinessAcceptanceSummary]
+  );
   const p0AcceptanceReviewMarkdown = useMemo(
     () =>
       buildP0AcceptanceReviewMarkdown({
@@ -2647,6 +2742,10 @@ export function App() {
   useEffect(() => {
     setCopiedP0AcceptanceReview(false);
   }, [p0AcceptanceReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedP2ReadinessAcceptanceReview(false);
+  }, [p2ReadinessAcceptanceReviewMarkdown]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -2773,12 +2872,76 @@ export function App() {
     }
   }, []);
 
+  const refreshP2PaperReplayLatest = useCallback(async () => {
+    setIsLoadingP2PaperReplay(true);
+    try {
+      setP2PaperReplayLatestState(await loadP2PaperReplayLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingP2PaperReplay(false);
+    }
+  }, []);
+
   const refreshP2PreLiveAcceptanceLatest = useCallback(async () => {
     setIsLoadingP2PreLiveAcceptance(true);
     try {
       setP2PreLiveAcceptanceLatestState(await loadP2PreLiveAcceptanceLatest(quantCoreBaseUrl));
     } finally {
       setIsLoadingP2PreLiveAcceptance(false);
+    }
+  }, []);
+
+  const refreshP2ReadinessAcceptanceLatest = useCallback(async () => {
+    setIsLoadingP2ReadinessAcceptance(true);
+    try {
+      setP2ReadinessAcceptanceLatestState(await loadP2ReadinessAcceptanceLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingP2ReadinessAcceptance(false);
+    }
+  }, []);
+
+  const generateP2ReadinessAcceptanceReport = useCallback(async () => {
+    setIsGeneratingP2ReadinessAcceptance(true);
+    try {
+      const result = await generateP2ReadinessAcceptance(quantCoreBaseUrl);
+      setP2ReadinessAcceptanceLatestState({
+        acceptance: result.acceptance,
+        source: result.source,
+        error: result.error
+      });
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel:
+          result.status === "acceptance_generated"
+            ? "P2 readiness acceptance manifest generated"
+            : "P2 readiness acceptance manifest generation failed",
+        error: result.error
+      }));
+    } finally {
+      setIsGeneratingP2ReadinessAcceptance(false);
+    }
+  }, []);
+
+  const refreshP2ManifestChainPreflightLatest = useCallback(async () => {
+    setIsLoadingP2ManifestChainPreflight(true);
+    try {
+      setP2ManifestChainPreflightLatestState(await loadP2ManifestChainPreflightLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingP2ManifestChainPreflight(false);
+    }
+  }, []);
+
+  const generateP2ManifestChainPreflightReport = useCallback(async () => {
+    setIsGeneratingP2ManifestChainPreflight(true);
+    try {
+      const result = await generateP2ManifestChainPreflight(quantCoreBaseUrl);
+      setP2ManifestChainPreflightAuditEvent(result.auditEvent ?? null);
+      setP2ManifestChainPreflightLatestState({
+        preflight: result.preflight,
+        source: result.source,
+        error: result.error
+      });
+    } finally {
+      setIsGeneratingP2ManifestChainPreflight(false);
     }
   }, []);
 
@@ -2802,8 +2965,20 @@ export function App() {
   }, [refreshP1AcceptanceLatest]);
 
   useEffect(() => {
+    void refreshP2PaperReplayLatest();
+  }, [refreshP2PaperReplayLatest]);
+
+  useEffect(() => {
     void refreshP2PreLiveAcceptanceLatest();
   }, [refreshP2PreLiveAcceptanceLatest]);
+
+  useEffect(() => {
+    void refreshP2ReadinessAcceptanceLatest();
+  }, [refreshP2ReadinessAcceptanceLatest]);
+
+  useEffect(() => {
+    void refreshP2ManifestChainPreflightLatest();
+  }, [refreshP2ManifestChainPreflightLatest]);
 
   const refreshAiReviewRunHistory = useCallback(
     async (runId: string, options: { offset?: number; query?: string } = {}) => {
@@ -2833,7 +3008,7 @@ export function App() {
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType:
-        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,pre_live_runbook_report,research_context_readiness_report",
+        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -3132,6 +3307,9 @@ export function App() {
       }
       if (researchContextReadinessReportCopyResetTimerRef.current !== null) {
         window.clearTimeout(researchContextReadinessReportCopyResetTimerRef.current);
+      }
+      if (operatorRunbookCopyResetTimerRef.current !== null) {
+        window.clearTimeout(operatorRunbookCopyResetTimerRef.current);
       }
       if (preLiveRunbookCopyResetTimerRef.current !== null) {
         window.clearTimeout(preLiveRunbookCopyResetTimerRef.current);
@@ -5995,6 +6173,102 @@ export function App() {
     }
   }, [auditEvidenceSummary]);
 
+  const copyOperatorRunbook = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+      await navigator.clipboard.writeText(buildOperatorRunbookMarkdown(operatorRunbookSummary));
+      setCopiedOperatorRunbook(true);
+      if (operatorRunbookCopyResetTimerRef.current !== null) {
+        window.clearTimeout(operatorRunbookCopyResetTimerRef.current);
+      }
+      operatorRunbookCopyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedOperatorRunbook(false);
+        operatorRunbookCopyResetTimerRef.current = null;
+      }, 1800);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [operatorRunbookSummary]);
+
+  const downloadOperatorRunbook = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      const markdown = buildOperatorRunbookMarkdown(operatorRunbookSummary);
+      objectUrl = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+      const anchor = document.createElement("a");
+      const safeAdapterId = operatorRunbookSummary.adapterId.replace(/[^a-z0-9._-]+/giu, "-");
+      const safeContext = operatorRunbookSummary.contextLabel.replace(/[^a-z0-9._-]+/giu, "-");
+      anchor.href = objectUrl;
+      anchor.download = `${safeAdapterId}-${safeContext}-operator-runbook.md`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Runbook download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [operatorRunbookSummary]);
+
+  const recordOperatorRunbook = useCallback(async () => {
+    setIsRecordingOperatorRunbook(true);
+    try {
+      const markdown = buildOperatorRunbookMarkdown(operatorRunbookSummary);
+      const auditEvent = await buildOperatorRunbookAuditEvent({
+        markdown,
+        runbook: operatorRunbookSummary,
+        workspace
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source !== "core" || !result.event) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Operator runbook audit failed",
+          error: result.error ?? "Audit ledger unavailable"
+        }));
+        return;
+      }
+      setAuditEvidenceReportEvents((current) =>
+        mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+      );
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Operator runbook audited · ${result.event!.eventId}`,
+        error: undefined
+      }));
+    } catch (recordError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook audit failed",
+        error: recordError instanceof Error ? recordError.message : "Audit ledger save failed"
+      }));
+    } finally {
+      setIsRecordingOperatorRunbook(false);
+    }
+  }, [operatorRunbookSummary, quantCoreBaseUrl, workspace]);
+
   const copyExecutionAdapterPreLiveRunbook = useCallback(async () => {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -7506,6 +7780,66 @@ export function App() {
     }));
   }, [executionAdapterPreLiveRunbookAuditCoverage.query, selectProductWorkArea, updateAuditEvidenceReportQuery]);
 
+  const focusOperatorRunbookAudit = useCallback(() => {
+    const query = operatorRunbookAuditCoverage.query;
+    selectProductWorkArea("audit");
+    if (!query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook audit coverage unavailable",
+        error: "No matching operator runbook report has been recorded yet."
+      }));
+      return;
+    }
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Operator runbook audit coverage selected",
+      error: undefined
+    }));
+  }, [operatorRunbookAuditCoverage.query, selectProductWorkArea, updateAuditEvidenceReportQuery]);
+
+  const openP2ManifestChainPreflightAudit = useCallback(() => {
+    const auditEventId = p2ManifestChainPreflightAuditEvent?.eventId ?? "";
+    const matchingRow = auditEventId
+      ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId)
+      : undefined;
+    const ledgerQuery = buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(matchingRow);
+    const fallbackQuery = [
+      "p2_manifest_chain_preflight",
+      auditEventId,
+      p2ManifestChainPreflightSummary.sourcePath,
+      p2ManifestChainPreflightSummary.state,
+      `${p2ManifestChainPreflightSummary.validStageCount}/${p2ManifestChainPreflightSummary.totalStageCount}`,
+      p2ManifestChainPreflightSummary.nextAction,
+      p2ManifestChainPreflightSummary.blockerIds.join(" ")
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const query = ledgerQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: auditEventId
+        ? "P2 manifest chain preflight audit event selected"
+        : "P2 manifest chain preflight audit query prepared",
+      error: query ? undefined : "Generate the P2 manifest chain preflight before opening its audit event."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    p2ManifestChainPreflightAuditEvent?.eventId,
+    p2ManifestChainPreflightSummary.blockerIds,
+    p2ManifestChainPreflightSummary.nextAction,
+    p2ManifestChainPreflightSummary.sourcePath,
+    p2ManifestChainPreflightSummary.state,
+    p2ManifestChainPreflightSummary.totalStageCount,
+    p2ManifestChainPreflightSummary.validStageCount,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
   const openExecutionAdapterPaperExecutionEvidence = useCallback(
     (row: ExecutionAdapterPaperExecutionAuditLedgerRow) => {
       setFocusedAdapterPaperExecutionAuditEventId(row.id);
@@ -7776,6 +8110,19 @@ export function App() {
     await copyAuditReportLedgerQueryLink(query);
   }, [copyAuditReportLedgerQueryLink, executionAdapterPreLiveRunbookAuditCoverage.query]);
 
+  const copyOperatorRunbookAuditLink = useCallback(async () => {
+    const query = operatorRunbookAuditCoverage.query;
+    if (!query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Operator runbook audit link copy failed",
+        error: "No matching operator runbook report has been recorded yet."
+      }));
+      return;
+    }
+    await copyAuditReportLedgerQueryLink(query);
+  }, [copyAuditReportLedgerQueryLink, operatorRunbookAuditCoverage.query]);
+
   const copyLatestOtherResearchContextReportAuditLink = useCallback(async () => {
     const query = latestOtherResearchContextReadinessReport?.query ?? "";
     if (!query.trim() || !navigator.clipboard?.writeText) {
@@ -7953,6 +8300,80 @@ export function App() {
       error: undefined
     }));
   }, [p0AcceptanceReviewMarkdown, p0AcceptanceSummary.runId]);
+
+  const copyP2ReadinessAcceptanceReview = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P2 readiness acceptance review copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(p2ReadinessAcceptanceReviewMarkdown);
+    setCopiedP2ReadinessAcceptanceReview(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P2 readiness acceptance review copied",
+      error: undefined
+    }));
+  }, [p2ReadinessAcceptanceReviewMarkdown]);
+
+  const downloadP2ReadinessAcceptanceReview = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([p2ReadinessAcceptanceReviewMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    const safeRunId = (p2ReadinessAcceptanceLatestState.acceptance?.runId || "latest").replace(/[^a-z0-9._-]+/giu, "-");
+    anchor.href = objectUrl;
+    anchor.download = `${safeRunId}-p2-readiness-acceptance-review.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P2 readiness acceptance review download ready",
+      error: undefined
+    }));
+  }, [p2ReadinessAcceptanceLatestState.acceptance?.runId, p2ReadinessAcceptanceReviewMarkdown]);
+
+  const saveP2ReadinessAcceptanceReview = useCallback(async () => {
+    setSavingP2ReadinessAcceptanceReview(true);
+    try {
+      const auditEvent = await buildP2ReadinessAcceptanceReviewAuditEvent({
+        acceptance: p2ReadinessAcceptanceLatestState.acceptance ?? null,
+        markdown: p2ReadinessAcceptanceReviewMarkdown,
+        summary: p2ReadinessAcceptanceSummary
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "P2 readiness acceptance review saved to audit ledger",
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P2 readiness acceptance review ledger save failed",
+        error: result.error ?? "P2 readiness acceptance review ledger save failed"
+      }));
+    } finally {
+      setSavingP2ReadinessAcceptanceReview(false);
+    }
+  }, [
+    p2ReadinessAcceptanceLatestState.acceptance,
+    p2ReadinessAcceptanceReviewMarkdown,
+    p2ReadinessAcceptanceSummary,
+    quantCoreBaseUrl
+  ]);
 
   const saveP0AcceptanceReview = useCallback(async () => {
     setSavingP0AcceptanceReview(true);
@@ -9012,6 +9433,15 @@ export function App() {
             onOpenAudit={() => selectProductWorkArea("audit")}
             onOpenPortfolio={() => selectProductWorkArea("portfolio")}
           />
+          <P2PaperReplayManifestPanel
+            className="workflow-p2-paper-replay-panel"
+            headline={p2PaperReplaySummaryHeadline(i18n, p2PaperReplaySummary)}
+            i18n={i18n}
+            isRefreshing={isLoadingP2PaperReplay}
+            onOpenAudit={() => selectProductWorkArea("audit")}
+            onRefresh={() => void refreshP2PaperReplayLatest()}
+            summary={p2PaperReplaySummary}
+          />
           <PromotionQueuePanel
             adapterCertificationApplyRows={executionAdapterCertificationApplyRows}
             adapterControlledRestartEvidenceRows={executionAdapterControlledRestartEvidenceRows}
@@ -9055,6 +9485,45 @@ export function App() {
             onOpenAudit={() => selectProductWorkArea("audit")}
             onRefresh={() => void refreshP2PreLiveAcceptanceLatest()}
             summary={p2PreLiveAcceptanceSummary}
+          />
+          <P2ReadinessAcceptancePanel
+            className="workflow-p2-readiness-acceptance-panel"
+            i18n={i18n}
+            isGenerating={isGeneratingP2ReadinessAcceptance}
+            isRefreshing={isLoadingP2ReadinessAcceptance}
+            onGenerateAcceptance={() => void generateP2ReadinessAcceptanceReport()}
+            onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}
+            readback={p2ReadinessAcceptanceLatestState.acceptance ?? null}
+            summary={p2ReadinessAcceptanceSummary}
+          />
+          <P2ManifestChainPreflightPanel
+            auditEventId={p2ManifestChainPreflightAuditEvent?.eventId ?? ""}
+            className="workflow-p2-chain-preflight-panel"
+            i18n={i18n}
+            isGenerating={isGeneratingP2ManifestChainPreflight}
+            isRefreshing={isLoadingP2ManifestChainPreflight}
+            onGeneratePreflight={() => void generateP2ManifestChainPreflightReport()}
+            onOpenAudit={openP2ManifestChainPreflightAudit}
+            onRefresh={() => void refreshP2ManifestChainPreflightLatest()}
+            summary={p2ManifestChainPreflightSummary}
+          />
+          <P2ReadinessEvidenceCoveragePanel
+            className="workflow-p2-evidence-coverage-panel"
+            coverage={p2ReadinessEvidenceCoverage}
+            i18n={i18n}
+          />
+          <OperatorRunbookPanel
+            auditCoverage={operatorRunbookAuditCoverage}
+            className="workflow-operator-runbook-panel"
+            i18n={i18n}
+            isCopied={copiedOperatorRunbook}
+            isRecordingAudit={isRecordingOperatorRunbook}
+            onCopy={copyOperatorRunbook}
+            onCopyAuditLink={copyOperatorRunbookAuditLink}
+            onDownload={downloadOperatorRunbook}
+            onFocusAudit={focusOperatorRunbookAudit}
+            onRecordAudit={recordOperatorRunbook}
+            runbook={operatorRunbookSummary}
           />
           <PreLiveRunbookPanel
             className="workflow-pre-live-runbook-panel"
@@ -9169,6 +9638,19 @@ export function App() {
             onOpenAudit={() => selectProductWorkArea("audit")}
             onRefresh={() => void refreshP2PreLiveAcceptanceLatest()}
             summary={p2PreLiveAcceptanceSummary}
+          />
+          <P2ReadinessAcceptanceReviewPanel
+            acceptance={p2ReadinessAcceptanceLatestState.acceptance ?? null}
+            className="workflow-p2-readiness-acceptance-audit-panel"
+            i18n={i18n}
+            isCopied={copiedP2ReadinessAcceptanceReview}
+            isRecordingAudit={savingP2ReadinessAcceptanceReview}
+            isRefreshing={isLoadingP2ReadinessAcceptance}
+            onCopy={() => void copyP2ReadinessAcceptanceReview()}
+            onDownload={downloadP2ReadinessAcceptanceReview}
+            onRecordAudit={() => void saveP2ReadinessAcceptanceReview()}
+            onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}
+            summary={p2ReadinessAcceptanceSummary}
           />
           <P0AcceptanceReviewPanel
             acceptance={p0AcceptanceLatestState.acceptance ?? null}
@@ -10840,6 +11322,260 @@ function p2PreLiveAcceptanceSummaryStatusLabel(
     return summary.state;
   }
   return { invalid: "无效", missing: "缺失", passed: "已记录" }[summary.state];
+}
+
+function p2PaperReplaySummaryStatusLabel(i18n: AppI18n, summary: P2PaperReplaySummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.state;
+  }
+  return { invalid: "无效", missing: "缺失", passed: "已回读" }[summary.state];
+}
+
+function p2PaperReplaySummaryHeadline(i18n: AppI18n, summary: P2PaperReplaySummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      "P2 paper replay manifest invalid": "P2 纸面回放清单无效",
+      "P2 paper replay manifest missing": "P2 纸面回放清单缺失",
+      "P2 paper replay manifest recorded": "P2 纸面回放已回读"
+    }[summary.headline] ?? summary.headline
+  );
+}
+
+function p2PaperReplaySummaryDetail(i18n: AppI18n, summary: P2PaperReplaySummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "passed") {
+    const run = summary.runId ? `运行 ${summary.runId}` : "最近一次 P2 纸面回放";
+    const context = [summary.market, summary.symbol, summary.timeframe].filter(Boolean).join(" ");
+    const adapter = summary.adapterId ? ` · 适配器 ${summary.adapterId}` : "";
+    return `${run} · ${context || "未绑定上下文"}${adapter} · ${summary.passedCheckCount}/${
+      summary.totalCheckCount
+    } 项回放证据 · ${summary.warningCount} 个警告 · 实盘仍阻断。`;
+  }
+  if (summary.state === "invalid") {
+    return `P2 纸面回放未通过校验：${summary.detail
+      .replace("P2 paper replay evidence is invalid: ", "")
+      .replace("Live trading remains blocked and direct order submission stays disabled.", "")}；下单通道和实盘仍阻断。`;
+  }
+  return `运行 P2 纸面回放 manifest 后会在这里读取 ${summary.sourcePath}；缺失时不能把回放证据当作便携验收材料。`;
+}
+
+function p2PaperReplayBoundaryLabel(i18n: AppI18n, summary: P2PaperReplaySummary): string {
+  if (
+    summary.reportedOrderSubmissionEnabled ||
+    summary.reportedLiveTradingAllowed ||
+    summary.reportedLiveOrderSubmitted ||
+    summary.reportedRouteExecuted
+  ) {
+    return i18n.locale === "zh-CN"
+      ? "manifest 声称存在实盘/下单动作，平台已阻断"
+      : "Manifest reports live or order activity; platform blocks it";
+  }
+  if (!summary.liveBlockedBoundary) {
+    return i18n.locale === "zh-CN"
+      ? "manifest 缺少实盘阻断边界，平台已阻断"
+      : "Manifest lacks live-blocked boundary; platform blocks it";
+  }
+  return i18n.locale === "zh-CN"
+    ? "回放证据可复核，实盘保持阻断"
+    : "Replay evidence is reviewable; live trading blocked";
+}
+
+function p2ManifestChainPreflightStatusLabel(
+  i18n: AppI18n,
+  status: P2ManifestChainPreflightSummary["state"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { blocked: "阻断", invalid: "无效", missing: "缺失", ready: "就绪" }[status];
+}
+
+function p2ManifestChainPreflightHeadline(i18n: AppI18n, summary: P2ManifestChainPreflightSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      "P2 manifest chain blocked": "P2 manifest 链路被阻断",
+      "P2 manifest chain preflight invalid": "P2 manifest 链路预检无效",
+      "P2 manifest chain preflight missing": "P2 manifest 链路预检缺失",
+      "P2 manifest chain ready": "P2 manifest 链路已就绪"
+    }[summary.headline] ?? summary.headline
+  );
+}
+
+function p2ManifestChainPreflightDetail(i18n: AppI18n, summary: P2ManifestChainPreflightSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  if (summary.state === "ready") {
+    return `${summary.validStageCount}/${summary.totalStageCount} 个归档 manifest 已通过校验；仍只允许审计复核，不授权实盘。`;
+  }
+  if (summary.state === "invalid") {
+    return `预检报告未通过校验：${summary.detail
+      .replace("P2 chain preflight evidence is invalid: ", "")
+      .replace(". Direct order submission remains disabled and live trading remains blocked.", "")}；平台继续阻断下单和实盘。`;
+  }
+  if (summary.state === "missing") {
+    return `运行 docker:smoke:p2:preflight 后会读取 ${summary.sourcePath}；缺失时先从 P1 验收开始补齐证据。`;
+  }
+  return `${summary.validStageCount}/${summary.totalStageCount} 个 manifest 已通过；下一步 ${summary.nextAction || "人工处理"}：${
+    summary.nextCommand || "查看本地命令"
+  }。`;
+}
+
+function p2ManifestChainPreflightStageStatusLabel(
+  i18n: AppI18n,
+  status: P2ManifestChainPreflightSummary["stages"][number]["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { invalid: "无效", missing: "缺失", valid: "有效" }[status];
+}
+
+function p2EvidenceCoverageStatusLabel(
+  i18n: AppI18n,
+  status: P2ReadinessEvidenceCoverage["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { blocked: "阻断", covered: "已覆盖", missing: "缺失", stale: "过期" }[status];
+}
+
+function p2EvidenceCoverageHeadline(i18n: AppI18n, coverage: P2ReadinessEvidenceCoverage): string {
+  if (i18n.locale === "en-US") {
+    return coverage.headline;
+  }
+  return (
+    {
+      "P2 readiness evidence blocked": "P2 证据覆盖存在阻断",
+      "P2 readiness evidence fully covered": "P2 证据已完整覆盖",
+      "P2 readiness evidence incomplete": "P2 证据覆盖未完成",
+      "P2 readiness evidence stale": "P2 证据覆盖已过期"
+    }[coverage.headline] ?? coverage.headline
+  );
+}
+
+function p2EvidenceCoverageDetail(i18n: AppI18n, coverage: P2ReadinessEvidenceCoverage): string {
+  if (i18n.locale === "en-US") {
+    return coverage.detail;
+  }
+  return `${coverage.coveredCount}/${coverage.totalCount} 条 readiness 声明已有审计事件或本地 manifest；${coverage.blockingCount} 条仍阻断预实盘信心。直接下单和实盘交易仍关闭。`;
+}
+
+function p2EvidenceCoverageRowLabel(
+  i18n: AppI18n,
+  rowId: P2ReadinessEvidenceCoverage["rows"][number]["id"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        "adapter-chain-health": "Adapter chain",
+        "operator-runbook-audit": "Operator runbook",
+        "p2-acceptance-manifest": "P2 acceptance",
+        "paper-replay-manifest": "Paper replay",
+        "pre-live-checklist": "Pre-live checklist",
+        "safety-boundary": "Safety boundary"
+      }[rowId] ?? rowId
+    );
+  }
+  return (
+    {
+      "adapter-chain-health": "适配器链路",
+      "operator-runbook-audit": "操作手册审计",
+      "p2-acceptance-manifest": "P2 验收清单",
+      "paper-replay-manifest": "纸面回放清单",
+      "pre-live-checklist": "预实盘 checklist",
+      "safety-boundary": "安全边界"
+    }[rowId] ?? rowId
+  );
+}
+
+function p2EvidenceCoverageSourceLabel(
+  i18n: AppI18n,
+  sourceType: P2ReadinessEvidenceCoverage["rows"][number]["sourceType"]
+): string {
+  if (i18n.locale === "en-US") {
+    return sourceType;
+  }
+  return { audit: "审计", "local-state": "本地状态", manifest: "manifest", "safety-boundary": "边界" }[
+    sourceType
+  ];
+}
+
+function p2ReadinessAcceptanceStatusLabel(
+  i18n: AppI18n,
+  status: P2ReadinessAcceptanceSummary["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { accepted: "已验收", blocked: "阻断", incomplete: "未完成" }[status];
+}
+
+function p2ReadinessAcceptanceRowStatusLabel(
+  i18n: AppI18n,
+  status: P2ReadinessAcceptanceSummary["rows"][number]["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return { blocked: "阻断", missing: "缺失", passed: "通过" }[status];
+}
+
+function p2ReadinessAcceptanceHeadline(i18n: AppI18n, summary: P2ReadinessAcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      "P2 pre-live readiness accepted": "P2 预实盘验收通过",
+      "P2 pre-live readiness blocked": "P2 预实盘验收阻断",
+      "P2 pre-live readiness incomplete": "P2 预实盘验收未完成"
+    }[summary.headline] ?? summary.headline
+  );
+}
+
+function p2ReadinessAcceptanceDetail(i18n: AppI18n, summary: P2ReadinessAcceptanceSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  return `${summary.acceptedCount}/${summary.totalCount} 项 P2 验收定义通过；${summary.blockingCount} 项仍阻断最终预实盘验收。直接下单和实盘交易仍关闭。`;
+}
+
+function p2ReadinessAcceptanceRowLabel(
+  i18n: AppI18n,
+  rowId: P2ReadinessAcceptanceSummary["rows"][number]["id"]
+): string {
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        "live-blocked-boundary": "Live boundary",
+        "p1-acceptance": "P1 acceptance",
+        "p2-pre-live-manifest": "P2 manifest",
+        "paper-execution-replay": "Paper replay",
+        "pre-live-checklist": "Pre-live checklist",
+        "readiness-evidence-coverage": "Evidence coverage"
+      }[rowId] ?? rowId
+    );
+  }
+  return (
+    {
+      "live-blocked-boundary": "实盘阻断边界",
+      "p1-acceptance": "P1 研究验收",
+      "p2-pre-live-manifest": "P2 manifest",
+      "paper-execution-replay": "纸面回放",
+      "pre-live-checklist": "预实盘清单",
+      "readiness-evidence-coverage": "证据覆盖"
+    }[rowId] ?? rowId
+  );
 }
 
 function p2PreLiveAcceptanceSummaryHeadline(i18n: AppI18n, summary: P2PreLiveAcceptanceSummary): string {
@@ -17095,6 +17831,368 @@ function paperReplayGateBoundaryLabel(i18n: AppI18n, gate: PaperExecutionReplayG
     : "Pre-live review is blocked by the current replay gate.";
 }
 
+function P2PaperReplayManifestPanel({
+  className,
+  headline,
+  i18n,
+  isRefreshing,
+  onOpenAudit,
+  onRefresh,
+  summary
+}: {
+  className?: string;
+  headline: string;
+  i18n: AppI18n;
+  isRefreshing: boolean;
+  onOpenAudit: () => void;
+  onRefresh: () => void;
+  summary: P2PaperReplaySummary;
+}) {
+  const context = [summary.market ? i18n.marketLabel(summary.market) : null, summary.symbol, summary.timeframe]
+    .filter(Boolean)
+    .join(" · ");
+  const checkLabel =
+    summary.totalCheckCount > 0
+      ? `${summary.passedCheckCount}/${summary.totalCheckCount}`
+      : `${summary.checkCount}/${summary.requiredCheckCount}`;
+  const auditLabel =
+    summary.auditEventIds.length > 0
+      ? summary.auditEventIds.slice(0, 2).join(", ")
+      : i18n.locale === "zh-CN"
+        ? "待写入审计"
+        : "audit pending";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 纸面回放 manifest" : "P2 Paper Replay Manifest"}
+      subtitle={i18n.locale === "zh-CN" ? "回读本地证据，仍阻断实盘" : "Local replay evidence with live trading blocked"}
+      className={className}
+      action={
+        <div className="p2-paper-replay-actions">
+          <button disabled={isRefreshing} onClick={onRefresh} type="button">
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计复核" : "Audit review"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-paper-replay ${summary.tone}`}>
+        <div className="p2-paper-replay-head">
+          <div>
+            <span>{p2PaperReplaySummaryStatusLabel(i18n, summary)}</span>
+            <strong>{headline}</strong>
+            <p>{p2PaperReplaySummaryDetail(i18n, summary)}</p>
+          </div>
+          <em>{checkLabel}</em>
+        </div>
+        <div className="p2-paper-replay-meta">
+          <span title={summary.sourcePath}>
+            {i18n.locale === "zh-CN" ? "来源" : "Source"} · {summary.sourcePath}
+          </span>
+          <span>{i18n.locale === "zh-CN" ? "上下文" : "Context"} · {context || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "适配器" : "Adapter"} · {summary.adapterId || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "回放状态" : "Replay"} · {summary.replayStatus || summary.state}</span>
+          <span>{i18n.locale === "zh-CN" ? "警告" : "Warnings"} · {summary.warningCount}</span>
+          <span>{i18n.locale === "zh-CN" ? "最新证据" : "Latest evidence"} · {summary.latestEvidenceId || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"} · {auditLabel}</span>
+          <span>{p2PaperReplayBoundaryLabel(i18n, summary)}</span>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function P2ReadinessEvidenceCoveragePanel({
+  className,
+  coverage,
+  i18n
+}: {
+  className?: string;
+  coverage: P2ReadinessEvidenceCoverage;
+  i18n: AppI18n;
+}) {
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 证据覆盖矩阵" : "P2 Evidence Coverage"}
+      subtitle={i18n.locale === "zh-CN" ? "把 readiness 声明追溯到审计或本地 manifest" : "Readiness claims traced to audit or local manifests"}
+      className={className}
+    >
+      <div className={`p2-evidence-coverage ${coverage.tone}`}>
+        <div className="p2-evidence-coverage-head">
+          <div>
+            <span>{p2EvidenceCoverageStatusLabel(i18n, coverage.status)}</span>
+            <strong>{p2EvidenceCoverageHeadline(i18n, coverage)}</strong>
+            <p>{p2EvidenceCoverageDetail(i18n, coverage)}</p>
+          </div>
+          <em>
+            {coverage.coveredCount}/{coverage.totalCount}
+          </em>
+        </div>
+        <div className="p2-evidence-coverage-grid">
+          {coverage.rows.map((row) => (
+            <div className={`p2-evidence-coverage-row ${row.tone}`} key={row.id}>
+              <div>
+                <span>{p2EvidenceCoverageRowLabel(i18n, row.id)}</span>
+                <strong>{p2EvidenceCoverageStatusLabel(i18n, row.status)}</strong>
+              </div>
+              <p>{row.evidence}</p>
+              <small title={row.sourceId ?? row.detail}>
+                {p2EvidenceCoverageSourceLabel(i18n, row.sourceType)} · {row.sourceId || "n/a"}
+              </small>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function P2ReadinessAcceptancePanel({
+  className,
+  i18n,
+  isGenerating,
+  isRefreshing,
+  onGenerateAcceptance,
+  onRefresh,
+  readback,
+  summary
+}: {
+  className?: string;
+  i18n: AppI18n;
+  isGenerating: boolean;
+  isRefreshing: boolean;
+  onGenerateAcceptance: () => void;
+  onRefresh: () => void;
+  readback: NonNullable<P2ReadinessAcceptanceLatestResult["acceptance"]> | null;
+  summary: P2ReadinessAcceptanceSummary;
+}) {
+  const readbackTone =
+    readback?.status === "accepted" && readback.liveBlockedBoundary && !readback.liveTradingAllowed
+      ? "positive"
+      : readback?.status === "invalid"
+        ? "risk"
+        : "warning";
+  const readbackStatusLabel =
+    readback?.status === "accepted"
+      ? i18n.locale === "zh-CN"
+        ? "manifest 已验收"
+        : "manifest accepted"
+      : readback?.status === "invalid"
+        ? i18n.locale === "zh-CN"
+          ? "manifest 无效"
+          : "manifest invalid"
+        : i18n.locale === "zh-CN"
+          ? "manifest 未回读"
+          : "manifest missing";
+  const readbackCriteriaLabel = readback
+    ? `${readback.acceptedCriterionCount}/${readback.totalCriterionCount}`
+    : "0/6";
+  const readbackBoundaryLabel =
+    readback?.liveBlockedBoundary && !readback.liveTradingAllowed && !readback.orderSubmissionEnabled
+      ? i18n.locale === "zh-CN"
+        ? "实盘边界关闭"
+        : "live boundary closed"
+      : i18n.locale === "zh-CN"
+        ? "实盘边界需复核"
+        : "live boundary needs review";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 顶层验收门禁" : "P2 Acceptance Gate"}
+      subtitle={i18n.locale === "zh-CN" ? "验收定义 6 项，不授权实盘" : "Six acceptance criteria, no live authorization"}
+      className={className}
+      action={
+        <div className="p2-readiness-acceptance-actions">
+          <button
+            className="p2-readiness-acceptance-generate"
+            disabled={isGenerating || isRefreshing}
+            onClick={onGenerateAcceptance}
+            type="button"
+          >
+            {isGenerating ? <RefreshCw className="spin" size={13} /> : <Play size={13} />}
+            <span>
+              {isGenerating
+                ? i18n.locale === "zh-CN"
+                  ? "生成中"
+                  : "Generating"
+                : i18n.locale === "zh-CN"
+                  ? "生成验收"
+                  : "Generate"}
+            </span>
+          </button>
+          <button
+            className="p2-readiness-acceptance-refresh"
+            disabled={isRefreshing || isGenerating}
+            onClick={onRefresh}
+            type="button"
+          >
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-readiness-acceptance ${summary.tone}`}>
+        <div className="p2-readiness-acceptance-head">
+          <div>
+            <span>{p2ReadinessAcceptanceStatusLabel(i18n, summary.status)}</span>
+            <strong>{p2ReadinessAcceptanceHeadline(i18n, summary)}</strong>
+            <p>{p2ReadinessAcceptanceDetail(i18n, summary)}</p>
+          </div>
+          <em>
+            {summary.acceptedCount}/{summary.totalCount}
+          </em>
+        </div>
+        <div className={`p2-readiness-acceptance-readback ${readbackTone}`}>
+          <div>
+            <span>{readbackStatusLabel}</span>
+            <strong>{readback?.runId ?? "n/a"}</strong>
+            <p title={readback?.sourcePath ?? "data/p2-readiness-acceptance.json"}>
+              {readback?.sourcePath ?? "data/p2-readiness-acceptance.json"}
+            </p>
+          </div>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "验收项" : "Criteria"}</span>
+            <strong>{readbackCriteriaLabel}</strong>
+            <p>{readback?.readinessCoverageStatus ?? "n/a"}</p>
+          </div>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "安全边界" : "Safety boundary"}</span>
+            <strong>{readbackBoundaryLabel}</strong>
+            <p>
+              {i18n.locale === "zh-CN" ? "下单" : "orders"} ·{" "}
+              {readback?.orderSubmissionEnabled ? "on" : "off"}
+            </p>
+          </div>
+        </div>
+        <div className="p2-readiness-acceptance-grid">
+          {summary.rows.map((row) => (
+            <div className={`p2-readiness-acceptance-row ${row.tone}`} key={row.id}>
+              <span>{p2ReadinessAcceptanceRowLabel(i18n, row.id)}</span>
+              <strong>{p2ReadinessAcceptanceRowStatusLabel(i18n, row.status)}</strong>
+              <small title={row.sourceId ?? row.detail}>{row.evidence}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function P2ManifestChainPreflightPanel({
+  auditEventId,
+  className,
+  i18n,
+  isGenerating,
+  isRefreshing,
+  onGeneratePreflight,
+  onOpenAudit,
+  onRefresh,
+  summary
+}: {
+  auditEventId: string;
+  className?: string;
+  i18n: AppI18n;
+  isGenerating: boolean;
+  isRefreshing: boolean;
+  onGeneratePreflight: () => void;
+  onOpenAudit: () => void;
+  onRefresh: () => void;
+  summary: P2ManifestChainPreflightSummary;
+}) {
+  const commandLabel =
+    summary.nextCommand ||
+    (i18n.locale === "zh-CN" ? "当前链路无推荐命令" : "No command required for the current chain");
+  const boundaryLabel =
+    summary.liveBlockedBoundary && !summary.reportedLiveTradingAllowed && !summary.reportedOrderSubmissionEnabled
+      ? i18n.locale === "zh-CN"
+        ? "只读预检，实盘和直接下单保持关闭"
+        : "Read-only preflight; live trading and direct order submission stay disabled"
+      : i18n.locale === "zh-CN"
+        ? "预检声明了不安全执行字段，平台继续阻断"
+        : "Preflight reports unsafe execution fields; platform keeps blocking";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 manifest 链路预检" : "P2 Manifest Chain Preflight"}
+      subtitle={i18n.locale === "zh-CN" ? "定位 P1/P2 证据链的第一个阻断点" : "First blocker across archived P1/P2 manifests"}
+      className={className}
+      action={
+        <div className="p2-chain-preflight-actions">
+          <button disabled={isGenerating || isRefreshing} onClick={onGeneratePreflight} type="button">
+            {isGenerating ? <RefreshCw className="spin" size={13} /> : <Play size={13} />}
+            <span>
+              {isGenerating
+                ? i18n.locale === "zh-CN"
+                  ? "生成中"
+                  : "Generating"
+                : i18n.locale === "zh-CN"
+                  ? "生成预检"
+                  : "Generate"}
+            </span>
+          </button>
+          <button disabled={isRefreshing || isGenerating} onClick={onRefresh} type="button">
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-chain-preflight ${summary.tone}`}>
+        <div className="p2-chain-preflight-head">
+          <div>
+            <span>{p2ManifestChainPreflightStatusLabel(i18n, summary.state)}</span>
+            <strong>{p2ManifestChainPreflightHeadline(i18n, summary)}</strong>
+            <p>{p2ManifestChainPreflightDetail(i18n, summary)}</p>
+          </div>
+          <em>
+            {summary.validStageCount}/{summary.totalStageCount}
+          </em>
+        </div>
+        <div className="p2-chain-preflight-command">
+          <span>{i18n.locale === "zh-CN" ? "下一步" : "Next"}</span>
+          <strong>{summary.nextAction || (i18n.locale === "zh-CN" ? "无需动作" : "none")}</strong>
+          <code>{commandLabel}</code>
+        </div>
+        {auditEventId ? (
+          <small className="p2-chain-preflight-audit">
+            <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
+            <code>{auditEventId}</code>
+          </small>
+        ) : null}
+        <div className="p2-chain-preflight-stages">
+          {summary.stages.length ? (
+            summary.stages.map((stage) => (
+              <div className={`p2-chain-preflight-stage ${stage.status}`} key={stage.id}>
+                <div>
+                  <span>{stage.label}</span>
+                  <strong>{p2ManifestChainPreflightStageStatusLabel(i18n, stage.status)}</strong>
+                </div>
+                <p title={stage.reason || stage.summary}>{stage.summary || stage.reason || stage.path}</p>
+              </div>
+            ))
+          ) : (
+            <p className="empty-state">
+              {i18n.locale === "zh-CN"
+                ? "暂无预检阶段结果；先运行 docker:smoke:p2:preflight。"
+                : "No preflight stage results yet; run docker:smoke:p2:preflight first."}
+            </p>
+          )}
+        </div>
+        <small className="p2-chain-preflight-boundary">{boundaryLabel}</small>
+      </div>
+    </Panel>
+  );
+}
+
 function AdapterChainHealthPanel({
   className,
   i18n,
@@ -17371,6 +18469,144 @@ function P2PreLiveAcceptancePanel({
           <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {blockerLabel}</span>
           <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"} · {auditLabel}</span>
           <span>{p2PreLiveAcceptanceBoundaryLabel(i18n, summary)}</span>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function P2ReadinessAcceptanceReviewPanel({
+  acceptance,
+  className,
+  i18n,
+  isCopied,
+  isRecordingAudit,
+  isRefreshing,
+  onCopy,
+  onDownload,
+  onRecordAudit,
+  onRefresh,
+  summary
+}: {
+  acceptance: P2ReadinessAcceptanceLatestResult["acceptance"] | null;
+  className?: string;
+  i18n: AppI18n;
+  isCopied: boolean;
+  isRecordingAudit: boolean;
+  isRefreshing: boolean;
+  onCopy: () => void;
+  onDownload: () => void;
+  onRecordAudit: () => void;
+  onRefresh: () => void;
+  summary: P2ReadinessAcceptanceSummary;
+}) {
+  const context = [acceptance?.market ? i18n.marketLabel(acceptance.market) : null, acceptance?.symbol, acceptance?.timeframe]
+    .filter(Boolean)
+    .join(" · ");
+  const criteria = acceptance?.criterionIds.map((criterionId) => criterionId) ?? [];
+  const reviewCriteria = criteria.length
+    ? criteria
+    : summary.status === "incomplete"
+      ? ["p2_readiness_acceptance_manifest_missing"]
+      : ["p2_readiness_acceptance_manifest_invalid"];
+  const readinessCoverageStatus = acceptance?.readinessCoverageStatus ?? "n/a";
+  const boundaryLabel =
+    acceptance?.liveBlockedBoundary &&
+    !acceptance.orderSubmissionEnabled &&
+    !acceptance.liveTradingAllowed &&
+    !acceptance.liveOrderSubmitted &&
+    !acceptance.routeExecuted
+      ? i18n.locale === "zh-CN"
+        ? "实盘边界关闭"
+        : "live boundary closed"
+      : i18n.locale === "zh-CN"
+        ? "实盘边界需复核"
+        : "live boundary needs review";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 顶层验收复核" : "P2 Readiness Acceptance Review"}
+      subtitle={i18n.locale === "zh-CN" ? "本地 readiness manifest 与实盘阻断边界" : "Local readiness manifest and live-blocked boundary"}
+      className={className}
+      action={
+        <div className="p2-readiness-acceptance-review-actions">
+          <button onClick={onCopy} type="button">
+            {isCopied ? <Check size={13} /> : <Copy size={13} />}
+            <span>
+              {isCopied
+                ? i18n.locale === "zh-CN"
+                  ? "已复制"
+                  : "Copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制"
+                  : "Copy"}
+            </span>
+          </button>
+          <button onClick={onDownload} type="button">
+            <Download size={13} />
+            <span>{i18n.locale === "zh-CN" ? "下载" : "Download"}</span>
+          </button>
+          <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+            {isRecordingAudit ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+            <span>
+              {isRecordingAudit
+                ? i18n.locale === "zh-CN"
+                  ? "入账中"
+                  : "Recording"
+                : i18n.locale === "zh-CN"
+                  ? "入账"
+                  : "Record"}
+            </span>
+          </button>
+          <button disabled={isRefreshing} onClick={onRefresh} type="button">
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-readiness-acceptance-review ${summary.tone}`}>
+        <div className="p2-readiness-acceptance-review-head">
+          <div>
+            <span>{p2ReadinessAcceptanceStatusLabel(i18n, summary.status)}</span>
+            <strong>{p2ReadinessAcceptanceHeadline(i18n, summary)}</strong>
+            <p>{p2ReadinessAcceptanceDetail(i18n, summary)}</p>
+          </div>
+          <em>
+            {acceptance?.acceptedCriterionCount ?? summary.acceptedCount}/
+            {acceptance?.totalCriterionCount ?? summary.totalCount}
+          </em>
+        </div>
+        <div className="p2-readiness-acceptance-review-meta">
+          <span title={acceptance?.sourcePath ?? "data/p2-readiness-acceptance.json"}>
+            {i18n.locale === "zh-CN" ? "来源" : "Source"} ·{" "}
+            {acceptance?.sourcePath ?? "data/p2-readiness-acceptance.json"}
+          </span>
+          <span>{i18n.locale === "zh-CN" ? "运行" : "Run"} · {acceptance?.runId ?? "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "上下文" : "Context"} · {context || "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "适配器" : "Adapter"} · {acceptance?.adapterId ?? "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "覆盖" : "Coverage"} · {readinessCoverageStatus}</span>
+          <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {acceptance?.blockingCriterionCount ?? summary.blockingCount}</span>
+          <span>{boundaryLabel}</span>
+        </div>
+        <div className="p2-readiness-acceptance-review-manifests">
+          <span>{i18n.locale === "zh-CN" ? "P1 验收" : "P1 acceptance"} · {acceptance?.manifestPaths.p1Acceptance ?? "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "P2 pre-live" : "P2 pre-live"} · {acceptance?.manifestPaths.p2PreLiveAcceptance ?? "n/a"}</span>
+          <span>{i18n.locale === "zh-CN" ? "纸面回放" : "Paper replay"} · {acceptance?.manifestPaths.p2PaperReplay ?? "n/a"}</span>
+        </div>
+        <div className="p2-readiness-acceptance-review-criteria">
+          {reviewCriteria.map((criterionId) => (
+            <div className="p2-readiness-acceptance-review-criterion" key={criterionId}>
+              <span>{p2ReadinessAcceptanceRowLabel(i18n, criterionId as P2ReadinessAcceptanceSummary["rows"][number]["id"])}</span>
+              <em>
+                {summary.status === "accepted"
+                  ? i18n.locale === "zh-CN"
+                    ? "通过"
+                    : "passed"
+                  : p2ReadinessAcceptanceStatusLabel(i18n, summary.status)}
+              </em>
+            </div>
+          ))}
         </div>
       </div>
     </Panel>
@@ -18209,6 +19445,7 @@ function AuditEvidenceReportLedgerPanel({
                         row.status === "invalid" ||
                         row.importVerificationInvalid > 0 ||
                         row.reportKind === "p0_readiness_report" ||
+                        row.reportKind === "p2_manifest_chain_preflight" ||
                         row.reportKind === "pre_live_runbook_report" ||
                         row.reportKind === "research_context_readiness_report" ||
                         row.signatureStatus === "revoked"
@@ -18224,6 +19461,7 @@ function AuditEvidenceReportLedgerPanel({
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
                         row.reportKind === "p0_readiness_report" ||
+                        row.reportKind === "p2_manifest_chain_preflight" ||
                         row.reportKind === "pre_live_runbook_report" ||
                         row.reportKind === "research_context_readiness_report" ||
                         row.signatureStatus === "unsigned" ||
@@ -18248,6 +19486,7 @@ function AuditEvidenceReportLedgerPanel({
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "invalid" ||
                         row.reportKind === "p0_readiness_report" ||
+                        row.reportKind === "p2_manifest_chain_preflight" ||
                         row.reportKind === "pre_live_runbook_report" ||
                         row.reportKind === "research_context_readiness_report" ||
                         row.signatureStatus === "revoked"
@@ -18296,6 +19535,11 @@ function auditReportLedgerSigningPolicyDetail(i18n: AppI18n, row: AuditEvidenceR
     return i18n.locale === "zh-CN"
       ? "P0 就绪报告只作为审计辅助材料入账，不进入签名链或实盘授权"
       : "P0 readiness reports are audit aids only; they do not enter the signing chain or live authorization";
+  }
+  if (row.reportKind === "p2_manifest_chain_preflight") {
+    return i18n.locale === "zh-CN"
+      ? "P2 manifest 链路预检只作为操作员审计辅助材料入账，不进入签名链或实盘授权"
+      : "P2 manifest chain preflights are operator audit aids only; they do not enter the signing chain or live authorization";
   }
   if (row.reportKind === "pre_live_runbook_report") {
     return i18n.locale === "zh-CN"
@@ -23425,6 +24669,316 @@ function PreLiveRunbookPanel({
       </div>
     </Panel>
   );
+}
+
+function OperatorRunbookPanel({
+  auditCoverage,
+  className,
+  i18n,
+  isCopied = false,
+  isRecordingAudit = false,
+  onCopy,
+  onCopyAuditLink,
+  onDownload,
+  onFocusAudit,
+  onRecordAudit,
+  runbook
+}: {
+  auditCoverage: OperatorRunbookAuditCoverage;
+  className?: string;
+  i18n: AppI18n;
+  isCopied?: boolean;
+  isRecordingAudit?: boolean;
+  onCopy?: () => void;
+  onCopyAuditLink?: () => void;
+  onDownload?: () => void;
+  onFocusAudit?: () => void;
+  onRecordAudit?: () => void;
+  runbook: OperatorRunbookSummary;
+}) {
+  const controlRows = [
+    ["killSwitch", runbook.controls.killSwitch],
+    ["rollbackOwner", runbook.controls.rollbackOwner],
+    ["positionLimit", runbook.controls.positionLimit],
+    ["dataFreshness", runbook.controls.dataFreshness],
+    ["environmentState", runbook.controls.environmentState],
+    ["auditPackage", runbook.controls.auditPackage]
+  ];
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "操作员运行手册" : "Operator Runbook"}
+      subtitle={i18n.locale === "zh-CN" ? "实盘前复核清单，仍不授权下单" : "Pre-live operator checklist; no order authorization"}
+      className={className}
+      action={
+        <div className="operator-runbook-actions">
+          {onCopy ? (
+            <button onClick={onCopy} type="button">
+              {isCopied ? <Check size={13} /> : <Copy size={13} />}
+              <span>
+                {isCopied
+                  ? i18n.locale === "zh-CN"
+                    ? "已复制"
+                    : "Copied"
+                  : i18n.locale === "zh-CN"
+                    ? "复制报告"
+                    : "Copy report"}
+              </span>
+            </button>
+          ) : null}
+          {onDownload ? (
+            <button onClick={onDownload} type="button">
+              <Download size={13} />
+              <span>{i18n.locale === "zh-CN" ? "下载" : "Download"}</span>
+            </button>
+          ) : null}
+          {onRecordAudit ? (
+            <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+              {isRecordingAudit ? <Timer size={13} /> : <Save size={13} />}
+              <span>{operatorRunbookAuditRecordActionLabel(i18n, auditCoverage.status, isRecordingAudit)}</span>
+            </button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className={`operator-runbook ${runbook.tone}`}>
+        <div className="operator-runbook-head">
+          <span>{operatorRunbookStatusLabel(i18n, runbook.status)}</span>
+          <strong>{operatorRunbookHeadline(i18n, runbook.headline)}</strong>
+          <p>{operatorRunbookSummaryText(i18n, runbook.summary)}</p>
+          <em>
+            {runbook.contextLabel} · {runbook.adapterId} · {runbook.completedSections}/{runbook.totalSections}
+          </em>
+          <small>{operatorRunbookNextActionText(i18n, runbook.nextAction)}</small>
+        </div>
+        <div className={`operator-runbook-audit ${auditCoverage.status}`}>
+          <span>{operatorRunbookAuditCoverageStatusLabel(i18n, auditCoverage)}</span>
+          <strong>{operatorRunbookAuditCoverageHeadline(i18n, auditCoverage)}</strong>
+          <p>{operatorRunbookAuditCoverageDetail(i18n, auditCoverage.detail)}</p>
+          {auditCoverage.latestEventId || auditCoverage.shortHash || auditCoverage.sectionLabel ? (
+            <small className="operator-runbook-audit-meta" title={auditCoverage.latestEventId || auditCoverage.query}>
+              {operatorRunbookAuditCoverageMetaLabel(i18n, auditCoverage)}
+            </small>
+          ) : null}
+          {(auditCoverage.query && (onFocusAudit || onCopyAuditLink)) ||
+          (auditCoverage.status !== "matched" && onRecordAudit) ? (
+            <div className="operator-runbook-audit-actions">
+              {onFocusAudit ? (
+                <button onClick={onFocusAudit} type="button">
+                  <Search size={12} />
+                  <span>{i18n.locale === "zh-CN" ? "定位审计" : "Focus audit"}</span>
+                </button>
+              ) : null}
+              {onCopyAuditLink ? (
+                <button onClick={onCopyAuditLink} type="button">
+                  <Copy size={12} />
+                  <span>{i18n.locale === "zh-CN" ? "复制审计链接" : "Copy audit link"}</span>
+                </button>
+              ) : null}
+              {auditCoverage.status !== "matched" && onRecordAudit ? (
+                <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+                  {isRecordingAudit ? <Timer size={12} /> : <Save size={12} />}
+                  <span>{operatorRunbookAuditRecordActionLabel(i18n, auditCoverage.status, isRecordingAudit)}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="operator-runbook-controls">
+          {controlRows.map(([key, value]) => (
+            <article key={key}>
+              <span>{operatorRunbookControlLabel(i18n, key)}</span>
+              <strong>{operatorRunbookControlValue(i18n, value)}</strong>
+            </article>
+          ))}
+        </div>
+        <div className="operator-runbook-sections">
+          {runbook.sections.map((section) => (
+            <article className={`operator-runbook-section ${section.tone}`} key={section.id}>
+              <span>{operatorRunbookSectionLabel(i18n, section.id, section.label)}</span>
+              <strong>{operatorRunbookSectionStatusLabel(i18n, section.status)}</strong>
+              <em>{operatorRunbookControlValue(i18n, section.evidence)}</em>
+              <p>{operatorRunbookControlValue(i18n, section.detail)}</p>
+              <small>{operatorRunbookNextActionText(i18n, section.nextAction)}</small>
+            </article>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function operatorRunbookStatusLabel(i18n: AppI18n, status: OperatorRunbookSummary["status"]): string {
+  if (i18n.locale === "en-US") {
+    return status.replaceAll("_", " ");
+  }
+  return {
+    blocked: "已阻断",
+    review_pending: "待复核",
+    manual_review_ready: "人工复核就绪"
+  }[status];
+}
+
+function operatorRunbookHeadline(i18n: AppI18n, headline: string): string {
+  if (i18n.locale === "en-US") {
+    return headline;
+  }
+  return {
+    "Operator runbook ready for manual review": "操作员运行手册已可人工复核",
+    "Operator runbook pending review": "操作员运行手册待补证据",
+    "Operator runbook blocked": "操作员运行手册已阻断"
+  }[headline] ?? headline;
+}
+
+function operatorRunbookSummaryText(i18n: AppI18n, summary: string): string {
+  if (i18n.locale === "en-US") {
+    return summary;
+  }
+  return operatorRunbookControlValue(i18n, summary)
+    .replace("All operator runbook sections are aligned for manual pre-live review only; live trading remains blocked.", "所有运行手册 section 已对齐，仅允许人工实盘前复核；实盘交易仍阻断。")
+    .replace("operator runbook sections passed", "个运行手册 section 通过")
+    .replace("is next", "是下一步");
+}
+
+function operatorRunbookNextActionText(i18n: AppI18n, action: string): string {
+  if (i18n.locale === "en-US") {
+    return action;
+  }
+  return operatorRunbookControlValue(i18n, action)
+    .replace("Resolve", "处理")
+    .replace("Record or review the operator runbook before any separate live-route enablement.", "记录或复核运行手册后，才能进入后续单独的实盘路由启用流程。")
+    .replace("Keep checklist evidence attached to the runbook.", "保持 checklist 证据绑定到运行手册。")
+    .replace("Keep replay evidence aligned with the current run.", "保持回放证据与当前运行一致。")
+    .replace("Keep adapter chain evidence available for audit.", "保持适配器链路证据可审计。")
+    .replace("Keep acceptance manifest linked to this operator runbook.", "保持验收 manifest 绑定到当前运行手册。")
+    .replace("Do not enable live routes in P2.", "P2 阶段不要启用实盘路由。");
+}
+
+function operatorRunbookControlLabel(i18n: AppI18n, key: string): string {
+  if (i18n.locale === "en-US") {
+    return key.replace(/([A-Z])/g, " $1").toLowerCase();
+  }
+  return {
+    killSwitch: "急停",
+    rollbackOwner: "回滚负责人",
+    positionLimit: "仓位限制",
+    dataFreshness: "数据新鲜度",
+    environmentState: "环境状态",
+    auditPackage: "审计包"
+  }[key] ?? key;
+}
+
+function operatorRunbookSectionLabel(i18n: AppI18n, id: string, fallback: string): string {
+  if (i18n.locale === "en-US") {
+    return fallback;
+  }
+  return {
+    "pre-live-checklist": "实盘前清单",
+    "paper-execution-replay": "纸面执行回放",
+    "adapter-chain": "适配器链路",
+    "p2-acceptance": "P2 验收",
+    "safety-boundary": "安全边界"
+  }[id] ?? fallback;
+}
+
+function operatorRunbookSectionStatusLabel(
+  i18n: AppI18n,
+  status: OperatorRunbookSummary["sections"][number]["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status;
+  }
+  return {
+    passed: "通过",
+    review: "复核",
+    blocked: "阻断"
+  }[status];
+}
+
+function operatorRunbookControlValue(i18n: AppI18n, value: string): string {
+  if (i18n.locale === "en-US") {
+    return value;
+  }
+  return value
+    .replace("Disable execution route and keep adapters in paper-only mode", "禁用执行路由并保持适配器为模拟模式")
+    .replace("Disable adapter route and stop the scheduler", "禁用适配器路由并停止调度器")
+    .replace("operator", "操作员")
+    .replace("max position per instrument", "单标的最大仓位")
+    .replace("complete", "完整")
+    .replace("review", "复核")
+    .replace("missing", "缺失")
+    .replace("blocked", "阻断")
+    .replace("passed", "通过")
+    .replace("paper_ready", "模拟链路就绪")
+    .replace("live blocked", "实盘阻断")
+    .replace("replay checks", "回放检查")
+    .replace("gates", "闸门")
+    .replace("stages", "阶段")
+    .replace("No adapter chain health rollup is available.", "没有可用的适配器链路健康汇总。")
+    .replace("Order submission, live orders, route execution, and live trading remain disabled.", "下单、实盘订单、路由执行和实盘交易仍禁用。");
+}
+
+function operatorRunbookAuditCoverageStatusLabel(
+  i18n: AppI18n,
+  coverage: OperatorRunbookAuditCoverage
+): string {
+  if (i18n.locale === "en-US") {
+    return coverage.status === "matched" ? "Audited" : coverage.status === "stale" ? "Needs re-audit" : "Not audited";
+  }
+  return coverage.status === "matched" ? "已审计" : coverage.status === "stale" ? "需重新入账" : "未审计";
+}
+
+function operatorRunbookAuditCoverageHeadline(
+  i18n: AppI18n,
+  coverage: OperatorRunbookAuditCoverage
+): string {
+  if (i18n.locale === "en-US") {
+    return coverage.status === "matched"
+      ? "Runbook matches current evidence"
+      : coverage.status === "stale"
+        ? "Runbook audit is stale"
+        : "Record operator runbook";
+  }
+  return coverage.status === "matched"
+    ? "运行手册与当前证据一致"
+    : coverage.status === "stale"
+      ? "运行手册审计已过期"
+      : "记录操作员运行手册";
+}
+
+function operatorRunbookAuditCoverageDetail(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .replace("Latest audited operator runbook matches the current context, controls, and section state.", "最近入账的操作员运行手册与当前上下文、控制项和 section 状态一致。")
+    .replace("Latest audited operator runbook is for this context, but its controls or section state differ from the current screen.", "最近入账的操作员运行手册属于当前上下文，但控制项或 section 状态与当前页面不同。")
+    .replace("No audited operator runbook report is recorded for", "尚未为以下上下文记录操作员运行手册审计：");
+}
+
+function operatorRunbookAuditCoverageMetaLabel(
+  i18n: AppI18n,
+  coverage: OperatorRunbookAuditCoverage
+): string {
+  const parts = [
+    coverage.shortHash ? `sha ${coverage.shortHash}` : "",
+    coverage.sectionLabel,
+    coverage.mismatchLabel || (coverage.currentSectionLabel && coverage.currentSectionLabel !== coverage.sectionLabel ? `current ${coverage.currentSectionLabel}` : "")
+  ].filter(Boolean);
+  return operatorRunbookControlValue(i18n, parts.join(" · "));
+}
+
+function operatorRunbookAuditRecordActionLabel(
+  i18n: AppI18n,
+  status: OperatorRunbookAuditCoverage["status"],
+  isRecording: boolean
+): string {
+  if (isRecording) {
+    return i18n.locale === "zh-CN" ? "入账中" : "Recording";
+  }
+  if (i18n.locale === "en-US") {
+    return status === "stale" ? "Re-audit" : "Audit";
+  }
+  return status === "stale" ? "重新入账" : "审计入账";
 }
 
 function BrokerAdapterPanel({

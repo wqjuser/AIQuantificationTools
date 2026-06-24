@@ -21,7 +21,15 @@
     "docker:smoke:p0": "python tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json",
     "docker:smoke:p0:validate": "python tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
     "docker:smoke:p1": "python tools/docker_smoke.py --p1-acceptance --p1-acceptance-report data/p1-acceptance.json",
-    "docker:smoke:p1:validate": "python tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json"
+    "docker:smoke:p1:validate": "python tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+    "docker:smoke:p2:preflight": "python tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+    "docker:smoke:p2:paper-replay": "python tools/docker_smoke.py --p2-paper-replay --p2-paper-replay-report data/p2-paper-replay.json",
+    "docker:smoke:p2:paper-replay:validate": "python tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",
+    "docker:smoke:p2:pre-live": "python tools/docker_smoke.py --p2-pre-live-acceptance --p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+    "docker:smoke:p2:pre-live:validate": "python tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+    "docker:smoke:p2:chain": "python tools/docker_smoke.py --p2-paper-replay --p2-pre-live-acceptance --p2-readiness-acceptance --p2-paper-replay-report data/p2-paper-replay.json --p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json --p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
+    "docker:smoke:p2": "python tools/docker_smoke.py --p2-readiness-acceptance --p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
+    "docker:smoke:p2:validate": "python tools/docker_smoke.py --validate-p2-readiness-acceptance-report data/p2-readiness-acceptance.json"
   },
   "engines": {
     "node": ">=22",
